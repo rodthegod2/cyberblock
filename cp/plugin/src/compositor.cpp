@@ -1,8 +1,11 @@
 // Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
+// Cyberpunk 2077 renders with D3D12 only, so everything here goes through reshade::api with the explicit resource
+// barriers D3D12 needs: textures live in the shader_resource state and are moved to copy_dest only around uploads.
 #include "compositor.h"
 #include <windows.h>
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -19,10 +22,12 @@ namespace
 	constexpr int kSlotDesc = 256;
 	constexpr int kSlotDescBytes = 128;
 	constexpr const char *kEffect = "Cyberblock.fx";
+	/// A Minecraft frame this old is not shown: Minecraft stalled or quit, and its last picture would hang in the air.
+	constexpr float kMaxFrameAgeMs = 250.0f;
 
 	std::atomic<bool> g_registered{false};
 	std::atomic<bool> g_active{false};
-	std::atomic<float> g_hostNear{0.15f};
+	std::atomic<float> g_hostNear{0.1f};
 	std::atomic<float> g_hostFar{10000.0f};
 	std::atomic<uint32_t> g_bbWidth{0}, g_bbHeight{0};
 	std::atomic<bool> g_cameraLocked{false};
@@ -37,11 +42,11 @@ namespace
 		bool valid = false;
 	};
 	std::mutex g_poseLock;
-	// GTA's recent camera poses, newest last. The script reads the camera GTA is about to render (the next frame),
-	// while the picture being presented was rendered with the one before: re-project to that (g_poseLag back).
+	// Cyberpunk's recent camera poses, newest last. The caller may read the camera Cyberpunk is about to render (the
+	// next frame) while the picture being presented was rendered with the one before: re-project to that (g_poseLag back).
 	Pose g_hostPoses[4];
 	unsigned g_hostPoseCount = 0;
-	std::atomic<int> g_poseLag{0}; // measured: 0 matches best (third and first person)
+	std::atomic<int> g_poseLag{0};
 	Pose g_mcPose;
 
 	HANDLE g_mapping = nullptr;
@@ -59,7 +64,8 @@ namespace
 	Layer g_world, g_depth, g_overlay;
 	uint32_t g_width = 0, g_height = 0;
 	bool g_hasFrame = false;
-	float g_mcNear = 0.05f, g_mcFar = 2048.0f;
+	std::chrono::steady_clock::time_point g_frameTime; // when the shown frame was uploaded
+	float g_mcNear = 0.05f, g_mcFar = 1024.0f;
 	int32_t g_mcFlags = 7;
 
 	template <typename T>
@@ -92,6 +98,14 @@ namespace
 		g_slots = read<int32_t>(header + 12);
 		g_stride = read<int64_t>(header + 16);
 		UnmapViewOfFile(header);
+		// the slot descriptors must fit the header, and the slots must be addressable
+		if (g_slots <= 0 || kSlotDesc + kSlotDescBytes * g_slots > kHeader || g_stride <= 0 || g_stride > (int64_t(1) << 40) / g_slots)
+		{
+			reshade::log::message(reshade::log::level::error, "Cyberblock: frame export header has an invalid slot layout");
+			CloseHandle(g_mapping);
+			g_mapping = nullptr;
+			return false;
+		}
 		g_view = static_cast<const uint8_t *>(MapViewOfFile(g_mapping, FILE_MAP_READ, 0, 0, static_cast<SIZE_T>(kHeader + g_stride * g_slots)));
 		if (g_view == nullptr)
 		{
@@ -103,18 +117,36 @@ namespace
 		return true;
 	}
 
-	void destroy_layers(device *dev)
+	/// Points the effect's CB_* textures at our layers; zero handles make ReShade bind its empty texture instead.
+	void bind(effect_runtime *runtime)
 	{
-		for (Layer *layer : {&g_world, &g_depth, &g_overlay})
-		{
-			if (layer->srv.handle != 0)
-				dev->destroy_resource_view(layer->srv);
-			if (layer->tex.handle != 0)
-				dev->destroy_resource(layer->tex);
-			*layer = Layer();
-		}
+		runtime->update_texture_bindings("CB_WORLD", g_world.srv, g_world.srv);
+		runtime->update_texture_bindings("CB_DEPTH", g_depth.srv, g_depth.srv);
+		runtime->update_texture_bindings("CB_OVERLAY", g_overlay.srv, g_overlay.srv);
+	}
+
+	void destroy_layers(effect_runtime *runtime)
+	{
+		const Layer old[3] = {g_world, g_depth, g_overlay};
+		g_world = g_depth = g_overlay = Layer();
 		g_width = g_height = 0;
 		g_hasFrame = false;
+		g_lastPublish = -1; // upload the current frame again into the next layers
+		// ReShade keeps semantic bindings across effect reloads and runtime resets: drop ours before the views go away
+		bind(runtime);
+		// D3D12 frees resources at once: run the barriers still recorded on the immediate command list and let the GPU
+		// finish every frame that samples or fills the old layers
+		command_queue *const queue = runtime->get_command_queue();
+		queue->flush_immediate_command_list();
+		queue->wait_idle();
+		device *const dev = runtime->get_device();
+		for (const Layer &layer : old)
+		{
+			if (layer.srv.handle != 0)
+				dev->destroy_resource_view(layer.srv);
+			if (layer.tex.handle != 0)
+				dev->destroy_resource(layer.tex);
+		}
 	}
 
 	bool create_layer(device *dev, Layer &layer, uint32_t w, uint32_t h, format fmt)
@@ -124,13 +156,6 @@ namespace
 				nullptr, resource_usage::shader_resource, &layer.tex))
 			return false;
 		return dev->create_resource_view(layer.tex, resource_usage::shader_resource, resource_view_desc(fmt), &layer.srv);
-	}
-
-	void bind(effect_runtime *runtime)
-	{
-		runtime->update_texture_bindings("MCWORLD", g_world.srv, g_world.srv);
-		runtime->update_texture_bindings("MCDEPTH", g_depth.srv, g_depth.srv);
-		runtime->update_texture_bindings("MCOVERLAY", g_overlay.srv, g_overlay.srv);
 	}
 
 	/// Upload the newest published Minecraft frame, if there is one we haven't shown yet.
@@ -147,17 +172,22 @@ namespace
 		if (seq & 1)
 			return;
 		const uint32_t w = read<uint32_t>(desc + 24), h = read<uint32_t>(desc + 28);
-		if (w == 0 || h == 0)
+		if (w == 0 || h == 0 || uint64_t(w) * h * 4 * 3 > uint64_t(g_stride))
+			return; // nothing yet, or the three layers would run past the slot
+		command_list *const cmd = runtime->get_command_queue()->get_immediate_command_list();
+		if (cmd == nullptr)
 			return;
-		device *dev = runtime->get_device();
 		if (w != g_width || h != g_height)
 		{
-			destroy_layers(dev);
+			if (g_width != 0)
+				destroy_layers(runtime);
+			device *const dev = runtime->get_device();
 			if (!create_layer(dev, g_world, w, h, format::r8g8b8a8_unorm) ||
 				!create_layer(dev, g_depth, w, h, format::r32_float) ||
 				!create_layer(dev, g_overlay, w, h, format::r8g8b8a8_unorm))
 			{
-				destroy_layers(dev);
+				reshade::log::message(reshade::log::level::error, "Cyberblock: could not create the frame textures");
+				destroy_layers(runtime);
 				return;
 			}
 			g_width = w;
@@ -169,12 +199,19 @@ namespace
 		subresource_data data;
 		data.row_pitch = w * 4;
 		data.slice_pitch = static_cast<uint32_t>(layer);
-		data.data = const_cast<uint8_t *>(base);
-		dev->update_texture_region(data, g_world.tex, 0);
-		data.data = const_cast<uint8_t *>(base + layer);
-		dev->update_texture_region(data, g_depth.tex, 0);
-		data.data = const_cast<uint8_t *>(base + 2 * layer);
-		dev->update_texture_region(data, g_overlay.tex, 0);
+		// D3D12: the upload goes through the queue's immediate command list (device::update_texture_region uses the one
+		// last used on this thread; the command_list overload pins it to this queue, as ReShade's own texture loading
+		// does), so the barriers around it go on that same list
+		const resource textures[3] = {g_world.tex, g_depth.tex, g_overlay.tex};
+		const resource_usage sampled[3] = {resource_usage::shader_resource, resource_usage::shader_resource, resource_usage::shader_resource};
+		const resource_usage copied[3] = {resource_usage::copy_dest, resource_usage::copy_dest, resource_usage::copy_dest};
+		cmd->barrier(3, textures, sampled, copied);
+		for (int i = 0; i < 3; ++i)
+		{
+			data.data = const_cast<uint8_t *>(base + i * layer);
+			cmd->update_texture_region(data, textures[i], 0);
+		}
+		cmd->barrier(3, textures, copied, sampled);
 		if (read<int64_t>(desc) != seq)
 			return; // Minecraft rewrote the slot mid-copy: show the next one instead
 		g_lastPublish = published;
@@ -190,48 +227,10 @@ namespace
 		g_mcPose.z = read<double>(desc + 64);
 		g_mcPose.valid = true;
 		g_hasFrame = true;
+		g_frameTime = std::chrono::steady_clock::now();
 	}
 
-	/// Camera-to-world rotation, as Minecraft builds it: rotationYXZ(pi - yaw, -pitch, roll) (camera looks down -z).
-	void camera_rotation(const Pose &p, float m[3][3])
-	{
-		const float d2r = 3.14159265f / 180.0f;
-		const float a = 3.14159265f - p.yaw * d2r, b = -p.pitch * d2r, c = p.roll * d2r;
-		const float ca = std::cos(a), sa = std::sin(a), cb = std::cos(b), sb = std::sin(b), cc = std::cos(c), sc = std::sin(c);
-		// Ry(a) * Rx(b) * Rz(c)
-		const float ry[3][3] = {{ca, 0, sa}, {0, 1, 0}, {-sa, 0, ca}};
-		const float rx[3][3] = {{1, 0, 0}, {0, cb, -sb}, {0, sb, cb}};
-		const float rz[3][3] = {{cc, -sc, 0}, {sc, cc, 0}, {0, 0, 1}};
-		float t[3][3] = {};
-		for (int i = 0; i < 3; ++i)
-			for (int j = 0; j < 3; ++j)
-				for (int k = 0; k < 3; ++k)
-					t[i][j] += ry[i][k] * rx[k][j];
-		for (int i = 0; i < 3; ++i)
-			for (int j = 0; j < 3; ++j)
-			{
-				m[i][j] = 0;
-				for (int k = 0; k < 3; ++k)
-					m[i][j] += t[i][k] * rz[k][j];
-			}
-	}
-
-	/// Rows of R_mc^T * R_host: turns a ray in GTA's camera space into Minecraft's camera space.
-	void warp_matrix(const Pose &host, const Pose &mc, float out[3][3])
-	{
-		float rh[3][3], rm[3][3];
-		camera_rotation(host, rh);
-		camera_rotation(mc, rm);
-		for (int i = 0; i < 3; ++i)
-			for (int j = 0; j < 3; ++j)
-			{
-				out[i][j] = 0;
-				for (int k = 0; k < 3; ++k)
-					out[i][j] += rm[k][i] * rh[k][j];
-			}
-	}
-
-	/// Reload Cyberblock.fx when the file changes (ReShade doesn't watch it), so tweaks don't need a GTA restart.
+	/// Reload Cyberblock.fx when the file changes (ReShade doesn't watch it), so tweaks don't need a game restart.
 	void watch_effect_file(effect_runtime *runtime)
 	{
 		static DWORD next = 0;
@@ -260,27 +259,54 @@ namespace
 		watch_effect_file(runtime); // every frame, even when the effect failed to compile
 	}
 
+	void set_pose_uniform(effect_runtime *runtime, const char *name, const Pose &p)
+	{
+		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, name); v.handle != 0)
+		{
+			const float values[7] = {p.yaw, p.pitch, p.roll, p.fov, float(p.x), float(p.y), float(p.z)};
+			runtime->set_uniform_value_float(v, values, 7);
+		}
+	}
+
 	void on_begin_effects(effect_runtime *runtime, command_list *, resource_view, resource_view)
 	{
 		uint32_t bw = 0, bh = 0;
 		runtime->get_screenshot_width_and_height(&bw, &bh);
 		g_bbWidth = bw;
 		g_bbHeight = bh;
-		bool on = g_active && open_mapping();
+		auto uniform = [runtime](const char *name) { return runtime->find_uniform_variable(kEffect, name); };
+		// the clip planes also drive CyberblockDepthDebug, which works while compositing is off
+		if (const effect_uniform_variable v = uniform("cb_host_near"); v.handle != 0)
+			runtime->set_uniform_value_float(v, g_hostNear.load());
+		if (const effect_uniform_variable v = uniform("cb_host_far"); v.handle != 0)
+			runtime->set_uniform_value_float(v, g_hostFar.load());
+		// "Show test frames": composite whatever is in the shared memory (replay_frame.py), as rendered, without the link
+		bool test = false;
+		if (const effect_uniform_variable v = uniform("TestFrames"); v.handle != 0)
+			runtime->get_uniform_value_bool(v, &test, 1);
+
+		bool on = (g_active || test) && open_mapping();
 		if (on)
 			upload(runtime);
-		on = on && g_hasFrame;
-		// The technique stays enabled (preset); McActive gates it, so GTA passes through untouched until a
+		const float age = g_hasFrame ? std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - g_frameTime).count() : 1e9f;
+		on = on && g_hasFrame && age <= kMaxFrameAgeMs;
+		// The technique stays enabled (preset); cb_active gates it, so Cyberpunk passes through untouched until a
 		// Minecraft frame is here. (Toggling techniques from inside this callback crashes ReShade.)
-		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "McActive"); v.handle != 0)
+		if (const effect_uniform_variable v = uniform("cb_active"); v.handle != 0)
 			runtime->set_uniform_value_bool(v, on);
+		if (const effect_uniform_variable v = uniform("cb_age_ms"); v.handle != 0)
+			runtime->set_uniform_value_float(v, age);
 		if (!on)
 			return;
-		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "McPlanes"); v.handle != 0)
-			runtime->set_uniform_value_float(v, g_mcNear, g_mcFar, float(g_mcFlags));
+		if (const effect_uniform_variable v = uniform("cb_mc_near"); v.handle != 0)
+			runtime->set_uniform_value_float(v, g_mcNear);
+		if (const effect_uniform_variable v = uniform("cb_mc_far"); v.handle != 0)
+			runtime->set_uniform_value_float(v, g_mcFar);
+		if (const effect_uniform_variable v = uniform("cb_mc_flags"); v.handle != 0)
+			runtime->set_uniform_value_int(v, g_mcFlags);
 		// a scene's look overrides the preset's light matching and depth bias; the preset's values come back after
 		auto look = [&](const char *name, float want, float &saved) {
-			const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, name);
+			const effect_uniform_variable v = uniform(name);
 			if (v.handle == 0)
 				return;
 			if (want >= 0.0f)
@@ -298,14 +324,14 @@ namespace
 		look("LightMatch", g_lookLight.load(), g_savedLight);
 		look("DepthBias", g_lookBias.load(), g_savedBias);
 		look("SlopeBias", g_lookSlope.load(), g_savedSlope);
-		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "Shake"); v.handle != 0)
+		if (const effect_uniform_variable v = uniform("cb_shake"); v.handle != 0)
 			runtime->set_uniform_value_float(v, g_shakeX.load(), g_shakeY.load(), g_shakeRoll.load());
-		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "PortalWarp"); v.handle != 0)
+		if (const effect_uniform_variable v = uniform("cb_portal_warp"); v.handle != 0)
 			runtime->set_uniform_value_float(v, g_portalWarp.load());
-		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "HostPlanes"); v.handle != 0)
-			runtime->set_uniform_value_float(v, g_hostNear.load(), g_hostFar.load());
 
-		// Re-projection from Minecraft's pose to GTA's latest (extrapolated by the effect's PosePrediction frames).
+		// Re-projection (done by the effect) from Minecraft's pose to Cyberpunk's latest, extrapolated by the effect's
+		// PosePrediction frames. Without a host pose, a locked camera or test frames, the host pose is Minecraft's own:
+		// the frame is composited as rendered.
 		Pose host, prev;
 		{
 			std::lock_guard<std::mutex> lock(g_poseLock);
@@ -316,12 +342,14 @@ namespace
 				prev = g_hostPoses[(g_hostPoseCount - 2 - lag) & 3];
 		}
 		float predict = 0.0f;
-		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "PosePrediction"); v.handle != 0)
+		if (const effect_uniform_variable v = uniform("PosePrediction"); v.handle != 0)
 			runtime->get_uniform_value_float(v, &predict, 1);
-		const bool warp = host.valid && g_mcPose.valid && !g_cameraLocked;
-		if (warp && prev.valid && predict != 0.0f)
+		const bool warp = host.valid && g_mcPose.valid && !g_cameraLocked && !test;
+		if (!warp)
+			host = g_mcPose;
+		else if (prev.valid && predict != 0.0f)
 		{
-			auto delta = [](float a, float b) { float d = std::fmod(a - b + 540.0f, 360.0f) - 180.0f; return d; };
+			auto delta = [](float a, float b) { return std::fmod(a - b + 540.0f, 360.0f) - 180.0f; };
 			host.yaw += delta(host.yaw, prev.yaw) * predict;
 			host.pitch += (host.pitch - prev.pitch) * predict;
 			host.roll += (host.roll - prev.roll) * predict;
@@ -329,28 +357,8 @@ namespace
 			host.y += (host.y - prev.y) * predict;
 			host.z += (host.z - prev.z) * predict;
 		}
-		float m[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
-		float t[3] = {0, 0, 0};
-		if (warp)
-		{
-			warp_matrix(host, g_mcPose, m);
-			// T = R_mc^T (host position - Minecraft's camera position), in Minecraft's camera space
-			float rm[3][3];
-			camera_rotation(g_mcPose, rm);
-			const float d[3] = {float(host.x - g_mcPose.x), float(host.y - g_mcPose.y), float(host.z - g_mcPose.z)};
-			for (int i = 0; i < 3; ++i)
-				t[i] = rm[0][i] * d[0] + rm[1][i] * d[1] + rm[2][i] * d[2];
-		}
-		const char *rows[3] = {"WarpRow0", "WarpRow1", "WarpRow2"};
-		for (int i = 0; i < 3; ++i)
-			if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, rows[i]); v.handle != 0)
-				runtime->set_uniform_value_float(v, m[i][0], m[i][1], m[i][2]);
-		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "WarpT"); v.handle != 0)
-			runtime->set_uniform_value_float(v, t[0], t[1], t[2]);
-		const float d2r = 3.14159265f / 180.0f;
-		const float tanHost = std::tan((warp ? host.fov : g_mcPose.fov) * d2r * 0.5f), tanMc = std::tan(g_mcPose.fov * d2r * 0.5f);
-		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "WarpTan"); v.handle != 0)
-			runtime->set_uniform_value_float(v, tanHost, tanMc, float(g_width) / float(g_height));
+		set_pose_uniform(runtime, "cb_host_pose", host);
+		set_pose_uniform(runtime, "cb_mc_pose", g_mcPose);
 	}
 
 	void on_reloaded_effects(effect_runtime *runtime)
@@ -361,7 +369,7 @@ namespace
 
 	void on_destroy_effect_runtime(effect_runtime *runtime)
 	{
-		destroy_layers(runtime->get_device());
+		destroy_layers(runtime);
 	}
 }
 
