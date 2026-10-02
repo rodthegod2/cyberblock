@@ -30,11 +30,13 @@ public class CyberblockSystem extends ScriptableSystem {
   private let state: CyberblockState;
   private let tickId: DelayID;
   private let playerState: ref<CyberblockPlayerState>;
+  private let probes: ref<CyberblockProbes>;
   private let saving: Bool;
 
   private func OnAttach() -> Void {
     this.state = CyberblockState.Off;
     this.playerState = new CyberblockPlayerState();
+    this.probes = new CyberblockProbes();
     Cyberblock_SetActive(false, false);
     let callbacks = GameInstance.GetCallbackSystem();
     callbacks.RegisterCallback(n"Session/BeforeSave", this, n"OnBeforeSave");
@@ -102,6 +104,9 @@ public class CyberblockSystem extends ScriptableSystem {
     }
     this.Step(player, toggle);
     this.UpdatePlayer(player);
+    if Equals(this.state, CyberblockState.Active) || Equals(this.state, CyberblockState.Vehicle) {
+      this.probes.Tick(player);
+    }
   }
 
   private func Step(player: ref<PlayerPuppet>, toggle: Bool) -> Void {
