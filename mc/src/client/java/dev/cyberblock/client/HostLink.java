@@ -20,7 +20,9 @@ import org.java_websocket.server.WebSocketServer;
  *
  * <p>Host to Minecraft (JSON, Minecraft coordinates):
  * <ul>
- * <li>{"t":"cam","f":frame,"p":[x,y,z],"r":[yaw,pitch,roll],"fov":vertical degrees,"fp":first person,"pl":[feet x,y,z],"h":body yaw}</li>
+ * <li>{"t":"cam","f":frame,"p":[x,y,z],"r":[yaw,pitch,roll],"fov":vertical degrees,"fp":first person,"pl":[feet x,y,z],"h":body yaw}:
+ * every number must be finite, positions within +-2.9e7 (y +-20000) and fov within 1..179, else the message is logged and
+ * ignored (pitch is clamped to +-90)</li>
  * <li>{"t":"ground","c":[x,z,yBottom,yTop, ...]}: solid ranges (barriers); "unground" takes the same ranges out again</li>
  * <li>{"t":"clear"}: remove the barriers placed so far</li>
  * <li>{"t":"cmd","c":"setblock 0 64 0 stone"}: a server command, for test tools (not part of protocol v1)</li>

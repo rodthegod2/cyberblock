@@ -5,8 +5,8 @@ Start the dev client first (it opens or creates the "cyberblock" world, so wait 
 then, from the repo root:
     uv run python mc/tools-dev/link_check.py --log mc/run/logs/latest.log
 
-Checks hello, status, protocol mismatch, browser origins, bad input, ground/unground (read back with `say` through the
-game log, so --log is needed for those) and the screen keys. Prints PASS/FAIL per check; exit code 1 on any FAIL.
+Checks hello, status, protocol mismatch, browser origins, bad input (including non-finite camera values), ground/unground
+(read back with `say` through the game log, so --log is needed for those) and the screen keys. Prints PASS/FAIL per check; exit code 1 on any FAIL.
 This is a dev aid inside mc/, separate from tools/fakehost.py (the frame oracle).
 """
 import argparse
@@ -147,6 +147,25 @@ async def main(log: Path | None, wait_s: float) -> int:
     report("bad input ignored, link alive", len(link.status_times) > before and not ws.close_code, f"{len(link.status_times) - before} status after")
     if log is not None:
         report("bad input never throws inside Minecraft", "Error executing task" not in log.read_text(encoding="utf-8", errors="replace"))
+
+    # Gson's parser is lenient: NaN and Infinity literals parse as numbers, "NaN" strings convert too. A NaN pose used to
+    # reach player.setPos and the server then kicked the player for an invalid move, ending the singleplayer session. Each
+    # message gets a few client ticks (50 ms each) to be acted on, because only the newest pose survives a tick.
+    for bad in ('{"t":"cam","p":[NaN,0,0],"r":[0,0,0]}', '{"t":"cam","p":["NaN",0,0],"r":[0,0,0]}',
+                '{"t":"cam","p":[0,0,0],"r":[0,NaN,0]}', '{"t":"cam","p":[0,0,0],"r":[Infinity,0,0]}',
+                '{"t":"cam","p":[0,0,0],"r":[0,0,0],"fov":Infinity}', '{"t":"cam","p":[0,0,0],"r":[0,0,0],"fov":0}',
+                '{"t":"cam","p":[0,0,0],"r":[0,0,0],"fov":180}', '{"t":"cam","p":[1e12,0,0],"r":[0,0,0]}',
+                '{"t":"cam","p":[0,1e9,0],"r":[0,0,0]}', '{"t":"cam","p":[0,0,0],"r":[0,0,0],"pl":[0,-Infinity,0]}',
+                '{"t":"cam","p":[0,0,0],"r":[0,0,0],"h":NaN}', '{"t":"cam","p":[0,0,0],"r":[0,0,0],"fp":false,"pl":[NaN,0,0]}',
+                '{"t":"cam","p":[0,0,0],"r":[0,0,0],"look":[NaN,0]}'):
+        await ws.send(bad)
+        await asyncio.sleep(0.15)
+    before = len(link.status_times)
+    await asyncio.sleep(0.6)
+    report("non-finite or absurd camera values ignored, player still in the world", len(link.status_times) > before and not ws.close_code,
+           f"{len(link.status_times) - before} status after")
+    if log is not None:
+        report("bad camera values never throw inside Minecraft", "Error executing task" not in log.read_text(encoding="utf-8", errors="replace"))
 
     game = Game(link, log)
     if log is None:

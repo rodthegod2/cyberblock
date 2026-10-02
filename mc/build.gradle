@@ -34,6 +34,14 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+// the client classes under test that do not need a running game (HostState)
+sourceSets {
+	test {
+		compileClasspath += sourceSets.client.output
+		runtimeClasspath += sourceSets.client.output
+	}
+}
+
 test {
 	useJUnitPlatform()
 }
