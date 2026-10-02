@@ -17,11 +17,6 @@ import net.minecraft.world.level.block.state.BlockState;
 public final class WorldBridge {
 	/** Layer 1 does not tell the host about block changes (layer 2 turns this on and turns them into collision boxes). */
 	private static final boolean REPORT_BLOCKS = false;
-	/**
-	 * What Night City's solid cells are made of: invisible barriers. -Dcyberblock.debugGround=true makes them stone, so a
-	 * ground slab from a fake host can be seen in the exported frames.
-	 */
-	private static final Block GROUND = Boolean.getBoolean("cyberblock.debugGround") ? Blocks.STONE : Blocks.BARRIER;
 	/** More than this in one message is a bug or an attack: it would stall the server thread. */
 	private static final long MAX_CELLS = 16_384L;
 	private static volatile MinecraftServer server;
@@ -77,7 +72,7 @@ public final class WorldBridge {
 			}
 
 			BlockState air = Blocks.AIR.defaultBlockState();
-			BlockState ground = GROUND.defaultBlockState();
+			BlockState barrier = Blocks.BARRIER.defaultBlockState();
 			BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 			placingGround = true;
 			try {
@@ -90,10 +85,10 @@ public final class WorldBridge {
 
 						if (place) {
 							if (level.getBlockState(pos).isAir()) {
-								level.setBlock(pos, ground, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+								level.setBlock(pos, barrier, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
 								barriers.add(pos.immutable());
 							}
-						} else if (barriers.remove(pos.immutable()) && level.getBlockState(pos).is(GROUND)) {
+						} else if (barriers.remove(pos.immutable()) && level.getBlockState(pos).is(Blocks.BARRIER)) {
 							level.setBlock(pos, air, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
 						}
 					}
@@ -116,7 +111,7 @@ public final class WorldBridge {
 	private static void removeBarriers(final ServerLevel level) {
 		placingGround = true;
 		for (BlockPos pos : barriers) {
-			if (level.getBlockState(pos).is(GROUND)) {
+			if (level.getBlockState(pos).is(Blocks.BARRIER)) {
 				level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
 			}
 		}
