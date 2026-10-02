@@ -159,11 +159,14 @@ bool WsClient::poll(std::string &message)
 
 void WsClient::run()
 {
+	// Largest message accepted from the peer; a bigger one means a broken or hostile peer and ends the connection.
+	constexpr uint64_t kMaxMessage = 16u << 20;
 	std::string partial;
 	while (!m_stop)
 	{
 		if (!m_connected)
 		{
+			partial.clear(); // a fragment from the previous connection must not prefix the next session's first message
 			if (open())
 			{
 				m_connected = true;
@@ -176,60 +179,72 @@ void WsClient::run()
 			}
 		}
 
-		unsigned char head[2];
-		if (!recvAll(head, 2))
+		// Nothing the peer sends may throw out of this thread: that would terminate the host process (the game).
+		try
 		{
-			close();
-			continue;
-		}
-		const int opcode = head[0] & 0x0F;
-		const bool fin = (head[0] & 0x80) != 0;
-		uint64_t size = head[1] & 0x7F;
-		if (size == 126)
-		{
-			unsigned char ext[2];
-			if (!recvAll(ext, 2)) { close(); continue; }
-			size = (uint64_t(ext[0]) << 8) | ext[1];
-		}
-		else if (size == 127)
-		{
-			unsigned char ext[8];
-			if (!recvAll(ext, 8)) { close(); continue; }
-			size = 0;
-			for (int i = 0; i < 8; ++i)
-				size = (size << 8) | ext[i];
-		}
-		unsigned char mask[4] = {};
-		const bool masked = (head[1] & 0x80) != 0;
-		if (masked && !recvAll(mask, 4)) { close(); continue; }
-		std::string payload(static_cast<size_t>(size), '\0');
-		if (size > 0 && !recvAll(payload.data(), payload.size())) { close(); continue; }
-		if (masked)
-			for (size_t i = 0; i < payload.size(); ++i)
-				payload[i] ^= mask[i & 3];
-
-		switch (opcode)
-		{
-		case 0x0: // continuation
-		case 0x1: // text
-			partial += payload;
-			if (fin)
+			unsigned char head[2];
+			if (!recvAll(head, 2))
 			{
-				std::lock_guard<std::mutex> lock(m_queueLock);
-				m_queue.push_back(std::move(partial));
-				partial.clear();
-				if (m_queue.size() > 1024)
-					m_queue.pop_front();
+				close();
+				continue;
 			}
-			break;
-		case 0x8: // close
-			close();
-			break;
-		case 0x9: // ping
-			sendFrame(0xA, payload.data(), payload.size());
-			break;
-		default:
-			break;
+			const int opcode = head[0] & 0x0F;
+			const bool fin = (head[0] & 0x80) != 0;
+			uint64_t size = head[1] & 0x7F;
+			if (size == 126)
+			{
+				unsigned char ext[2];
+				if (!recvAll(ext, 2)) { close(); continue; }
+				size = (uint64_t(ext[0]) << 8) | ext[1];
+			}
+			else if (size == 127)
+			{
+				unsigned char ext[8];
+				if (!recvAll(ext, 8)) { close(); continue; }
+				size = 0;
+				for (int i = 0; i < 8; ++i)
+					size = (size << 8) | ext[i];
+			}
+			// RFC 6455 5.5: control frames carry at most 125 bytes and are never fragmented. Data frames may not grow
+			// the message past kMaxMessage (partial never exceeds it, so the subtraction cannot wrap).
+			const bool refused = opcode >= 0x8 ? (size > 125 || !fin) : (size > kMaxMessage - partial.size());
+			if (refused) { close(); continue; }
+			unsigned char mask[4] = {};
+			const bool masked = (head[1] & 0x80) != 0;
+			if (masked && !recvAll(mask, 4)) { close(); continue; }
+			std::string payload(static_cast<size_t>(size), '\0');
+			if (size > 0 && !recvAll(payload.data(), payload.size())) { close(); continue; }
+			if (masked)
+				for (size_t i = 0; i < payload.size(); ++i)
+					payload[i] ^= mask[i & 3];
+
+			switch (opcode)
+			{
+			case 0x0: // continuation
+			case 0x1: // text
+				partial += payload;
+				if (fin)
+				{
+					std::lock_guard<std::mutex> lock(m_queueLock);
+					m_queue.push_back(std::move(partial));
+					partial.clear();
+					if (m_queue.size() > 1024)
+						m_queue.pop_front();
+				}
+				break;
+			case 0x8: // close
+				close();
+				break;
+			case 0x9: // ping
+				sendFrame(0xA, payload.data(), payload.size());
+				break;
+			default:
+				break;
+			}
+		}
+		catch (...)
+		{
+			close(); // partial is cleared before the reconnect
 		}
 	}
 }

@@ -1,7 +1,8 @@
 // Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
 // A minimal WebSocket client (RFC 6455 text frames) for the link to the Minecraft mod on 127.0.0.1.
 // A background thread connects (and reconnects), answers pings and queues received text messages;
-// send() may be called from any thread.
+// send() may be called from any thread. A message over 16 MiB or a malformed control frame ends the connection
+// (the thread then reconnects); nothing the peer sends can throw out of the thread.
 #pragma once
 #include <atomic>
 #include <deque>
