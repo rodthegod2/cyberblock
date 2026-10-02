@@ -1,6 +1,8 @@
 // Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
 // Cyberpunk 2077 renders with D3D12 only, so everything here goes through reshade::api with the explicit resource
 // barriers D3D12 needs: textures live in the shader_resource state and are moved to copy_dest only around uploads.
+// Frames reach the textures through persistently mapped upload buffers and recorded copies, never through
+// device::update_texture_region: on D3D12 that creates a buffer per call and waits for the GPU to finish everything.
 #include "compositor.h"
 #include <windows.h>
 #include <algorithm>
@@ -56,13 +58,25 @@ namespace
 	int64_t g_lastPublish = -1;
 	DWORD g_nextOpenAttempt = 0;
 
+	/// Upload buffers per layer. The CPU fills one while the GPU may still be copying from the others, so neither waits
+	/// on the other (spec section 3); a buffer is refilled only after g_fence shows its last copy has finished.
+	constexpr uint32_t kRing = 3;
+
 	struct Layer
 	{
 		resource tex = {0};
 		resource_view srv = {0};
+		resource upload[kRing] = {};
+		uint8_t *mapped[kRing] = {};
 	};
 	Layer g_world, g_depth, g_overlay;
 	uint32_t g_width = 0, g_height = 0;
+	uint32_t g_pitch = 0; // bytes per row in the upload buffers: D3D12 copies need 256-byte aligned rows
+	fence g_fence = {0};
+	uint64_t g_fenceValue = 0;      // last value queued on g_fence
+	uint64_t g_ringDone[kRing] = {}; // g_fence reaches this once the GPU has finished copying from ring slot i
+	uint32_t g_ringNext = 0;
+	int g_ringPending = -1; // ring slot whose copies are recorded but not yet followed by a fence signal
 	bool g_hasFrame = false;
 	std::chrono::steady_clock::time_point g_frameTime; // when the shown frame was uploaded
 	float g_mcNear = 0.05f, g_mcFar = 1024.0f;
@@ -128,14 +142,20 @@ namespace
 	void destroy_layers(effect_runtime *runtime)
 	{
 		const Layer old[3] = {g_world, g_depth, g_overlay};
+		const fence old_fence = g_fence;
 		g_world = g_depth = g_overlay = Layer();
-		g_width = g_height = 0;
+		g_width = g_height = g_pitch = 0;
+		g_fence = {0};
+		g_fenceValue = 0;
+		std::fill_n(g_ringDone, kRing, uint64_t(0));
+		g_ringNext = 0;
+		g_ringPending = -1;
 		g_hasFrame = false;
 		g_lastPublish = -1; // upload the current frame again into the next layers
 		// ReShade keeps semantic bindings across effect reloads and runtime resets: drop ours before the views go away
 		bind(runtime);
-		// D3D12 frees resources at once: run the barriers still recorded on the immediate command list and let the GPU
-		// finish every frame that samples or fills the old layers
+		// D3D12 frees resources at once: run the barriers and copies still recorded on the immediate command list and let
+		// the GPU finish every frame that samples or fills the old layers
 		command_queue *const queue = runtime->get_command_queue();
 		queue->flush_immediate_command_list();
 		queue->wait_idle();
@@ -146,7 +166,17 @@ namespace
 				dev->destroy_resource_view(layer.srv);
 			if (layer.tex.handle != 0)
 				dev->destroy_resource(layer.tex);
+			for (uint32_t i = 0; i < kRing; ++i)
+			{
+				if (layer.upload[i].handle == 0)
+					continue;
+				if (layer.mapped[i] != nullptr)
+					dev->unmap_buffer_region(layer.upload[i]);
+				dev->destroy_resource(layer.upload[i]);
+			}
 		}
+		if (old_fence.handle != 0)
+			dev->destroy_fence(old_fence);
 	}
 
 	bool create_layer(device *dev, Layer &layer, uint32_t w, uint32_t h, format fmt)
@@ -155,10 +185,59 @@ namespace
 				resource_desc(w, h, 1, 1, fmt, 1, memory_heap::default_, resource_usage::shader_resource | resource_usage::copy_dest),
 				nullptr, resource_usage::shader_resource, &layer.tex))
 			return false;
-		return dev->create_resource_view(layer.tex, resource_usage::shader_resource, resource_view_desc(fmt), &layer.srv);
+		if (!dev->create_resource_view(layer.tex, resource_usage::shader_resource, resource_view_desc(fmt), &layer.srv))
+			return false;
+		// Upload-heap buffers as ReShade's own uploads make them (they stay in the cpu_access state, which D3D12 copies
+		// can read), mapped once for their whole life: D3D12 allows the GPU to read a mapped upload buffer.
+		for (uint32_t i = 0; i < kRing; ++i)
+		{
+			void *mapped = nullptr;
+			if (!dev->create_resource(resource_desc(uint64_t(g_pitch) * h, memory_heap::upload, resource_usage::copy_source),
+					nullptr, resource_usage::cpu_access, &layer.upload[i]) ||
+				!dev->map_buffer_region(layer.upload[i], 0, UINT64_MAX, map_access::write_only, &mapped))
+				return false;
+			layer.mapped[i] = static_cast<uint8_t *>(mapped);
+		}
+		return true;
 	}
 
-	/// Upload the newest published Minecraft frame, if there is one we haven't shown yet.
+	/// Queues a fence signal behind the copies recorded from ring slot g_ringPending, so that slot is refilled only
+	/// after the GPU has read it. Called at present, after all of the frame's commands are recorded.
+	void signal_upload(effect_runtime *runtime)
+	{
+		if (g_ringPending < 0)
+			return;
+		const auto slot = static_cast<uint32_t>(g_ringPending);
+		g_ringPending = -1;
+		// the signal must follow the copies, which sit on the immediate command list: submit it first (no waiting)
+		command_queue *const queue = runtime->get_command_queue();
+		queue->flush_immediate_command_list();
+		if (queue->signal(g_fence, g_fenceValue + 1))
+		{
+			g_ringDone[slot] = ++g_fenceValue;
+			return;
+		}
+		// without the signal there is no telling when the GPU is done with the slot: let it finish (not expected)
+		reshade::log::message(reshade::log::level::warning, "Cyberblock: could not signal the upload fence; waiting for the GPU");
+		queue->wait_idle();
+	}
+
+	/// Copies one layer from the shared memory into a mapped upload buffer, row by row when the pitches differ.
+	void stage_layer(uint8_t *dst, const uint8_t *src, uint32_t w, uint32_t h)
+	{
+		const size_t row = size_t(w) * 4;
+		if (g_pitch == row)
+		{
+			std::memcpy(dst, src, row * h);
+			return;
+		}
+		for (uint32_t y = 0; y < h; ++y)
+			std::memcpy(dst + size_t(y) * g_pitch, src + size_t(y) * row, row);
+	}
+
+	/// Upload the newest published Minecraft frame, if there is one we haven't shown yet. Never waits for the GPU: when
+	/// the next upload buffer is still being read, or Minecraft rewrites the slot while we read it, the frame on screen
+	/// stays and the next call tries again.
 	void upload(effect_runtime *runtime)
 	{
 		const int64_t published = read<int64_t>(g_view + 32);
@@ -167,24 +246,43 @@ namespace
 		const int32_t slot = read<int32_t>(g_view + 40);
 		if (slot < 0 || slot >= g_slots)
 			return;
+		// Seqlock read: everything read between the two loads of seq is used only if seq was even and did not change.
 		const uint8_t *desc = g_view + kSlotDesc + kSlotDescBytes * slot;
 		const int64_t seq = read<int64_t>(desc);
+		std::atomic_thread_fence(std::memory_order_acquire);
 		if (seq & 1)
 			return;
 		const uint32_t w = read<uint32_t>(desc + 24), h = read<uint32_t>(desc + 28);
+		const float mc_near = read<float>(desc + 32), mc_far = read<float>(desc + 36);
+		const int32_t mc_flags = read<int32_t>(desc + 44);
+		Pose pose;
+		pose.fov = read<float>(desc + 40);
+		pose.yaw = read<float>(desc + 72);
+		pose.pitch = read<float>(desc + 76);
+		pose.roll = read<float>(desc + 80);
+		pose.x = read<double>(desc + 48);
+		pose.y = read<double>(desc + 56);
+		pose.z = read<double>(desc + 64);
+		pose.valid = true;
+		std::atomic_thread_fence(std::memory_order_acquire);
+		if (read<int64_t>(desc) != seq)
+			return; // the descriptor is being rewritten: don't resize to a torn size
 		if (w == 0 || h == 0 || uint64_t(w) * h * 4 * 3 > uint64_t(g_stride))
 			return; // nothing yet, or the three layers would run past the slot
-		command_list *const cmd = runtime->get_command_queue()->get_immediate_command_list();
+		command_queue *const queue = runtime->get_command_queue();
+		command_list *const cmd = queue->get_immediate_command_list();
 		if (cmd == nullptr)
 			return;
+		device *const dev = runtime->get_device();
 		if (w != g_width || h != g_height)
 		{
 			if (g_width != 0)
 				destroy_layers(runtime);
-			device *const dev = runtime->get_device();
+			g_pitch = (w * 4 + 255) & ~255u;
 			if (!create_layer(dev, g_world, w, h, format::r8g8b8a8_unorm) ||
 				!create_layer(dev, g_depth, w, h, format::r32_float) ||
-				!create_layer(dev, g_overlay, w, h, format::r8g8b8a8_unorm))
+				!create_layer(dev, g_overlay, w, h, format::r8g8b8a8_unorm) ||
+				!dev->create_fence(0, fence_flags::none, &g_fence))
 			{
 				reshade::log::message(reshade::log::level::error, "Cyberblock: could not create the frame textures");
 				destroy_layers(runtime);
@@ -194,38 +292,38 @@ namespace
 			g_height = h;
 			bind(runtime);
 		}
+		// copies recorded since the last present (effects rendered from outside it) get their signal before the check
+		signal_upload(runtime);
+		const uint32_t ring = g_ringNext;
+		if (dev->get_completed_fence_value(g_fence) < g_ringDone[ring])
+			return; // the GPU is still copying from this buffer
+
+		Layer *const layers[3] = {&g_world, &g_depth, &g_overlay};
 		const uint8_t *base = g_view + kHeader + g_stride * slot;
-		const size_t layer = size_t(w) * h * 4;
-		subresource_data data;
-		data.row_pitch = w * 4;
-		data.slice_pitch = static_cast<uint32_t>(layer);
-		// D3D12: the upload goes through the queue's immediate command list (device::update_texture_region uses the one
-		// last used on this thread; the command_list overload pins it to this queue, as ReShade's own texture loading
-		// does), so the barriers around it go on that same list
+		const size_t layer_bytes = size_t(w) * h * 4;
+		for (int i = 0; i < 3; ++i)
+			stage_layer(layers[i]->mapped[ring], base + i * layer_bytes, w, h);
+		std::atomic_thread_fence(std::memory_order_acquire);
+		if (read<int64_t>(desc) != seq)
+			return; // Minecraft rewrote the slot while we copied it: the textures and pose keep the last good frame
+
+		// The copies go on the queue's immediate command list, which the runtime records the effects on and submits at
+		// present, so they land before the effect samples the textures; signal_upload fences them at present.
 		const resource textures[3] = {g_world.tex, g_depth.tex, g_overlay.tex};
 		const resource_usage sampled[3] = {resource_usage::shader_resource, resource_usage::shader_resource, resource_usage::shader_resource};
 		const resource_usage copied[3] = {resource_usage::copy_dest, resource_usage::copy_dest, resource_usage::copy_dest};
 		cmd->barrier(3, textures, sampled, copied);
 		for (int i = 0; i < 3; ++i)
-		{
-			data.data = const_cast<uint8_t *>(base + i * layer);
-			cmd->update_texture_region(data, textures[i], 0);
-		}
+			cmd->copy_buffer_to_texture(layers[i]->upload[ring], 0, g_pitch / 4, h, textures[i], 0);
 		cmd->barrier(3, textures, copied, sampled);
-		if (read<int64_t>(desc) != seq)
-			return; // Minecraft rewrote the slot mid-copy: show the next one instead
+		g_ringPending = static_cast<int>(ring);
+		g_ringNext = (ring + 1) % kRing;
+
 		g_lastPublish = published;
-		g_mcNear = read<float>(desc + 32);
-		g_mcFar = read<float>(desc + 36);
-		g_mcFlags = read<int32_t>(desc + 44);
-		g_mcPose.fov = read<float>(desc + 40);
-		g_mcPose.yaw = read<float>(desc + 72);
-		g_mcPose.pitch = read<float>(desc + 76);
-		g_mcPose.roll = read<float>(desc + 80);
-		g_mcPose.x = read<double>(desc + 48);
-		g_mcPose.y = read<double>(desc + 56);
-		g_mcPose.z = read<double>(desc + 64);
-		g_mcPose.valid = true;
+		g_mcNear = mc_near;
+		g_mcFar = mc_far;
+		g_mcFlags = mc_flags;
+		g_mcPose = pose;
 		g_hasFrame = true;
 		g_frameTime = std::chrono::steady_clock::now();
 	}
@@ -256,6 +354,7 @@ namespace
 
 	void on_present(effect_runtime *runtime)
 	{
+		signal_upload(runtime);
 		watch_effect_file(runtime); // every frame, even when the effect failed to compile
 	}
 
