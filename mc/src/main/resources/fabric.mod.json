@@ -1,0 +1,34 @@
+{
+	"schemaVersion": 1,
+	"id": "cyberblock",
+	"version": "${version}",
+	"name": "Cyberblock",
+	"description": "Runs alongside Cyberpunk 2077: its camera drives Minecraft's, its collision becomes invisible blocks, and Minecraft's picture (colour + depth) is handed back to be composited into the game. Based on universal-modder (MIT) by Rehan.",
+	"authors": [
+		"Cyberblock",
+		"Rehan (universal-modder)"
+	],
+	"license": "MIT",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"dev.cyberblock.Cyberblock"
+		],
+		"client": [
+			"dev.cyberblock.client.CyberblockClient"
+		]
+	},
+	"mixins": [
+		"cyberblock.mixins.json",
+		{
+			"config": "cyberblock.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
