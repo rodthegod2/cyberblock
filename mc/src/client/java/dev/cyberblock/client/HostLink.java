@@ -26,7 +26,9 @@ import org.java_websocket.server.WebSocketServer;
  * <li>{"t":"ground","c":[x,z,yBottom,yTop, ...]}: solid ranges (barriers); "unground" takes the same ranges out again</li>
  * <li>{"t":"clear"}: remove the barriers placed so far</li>
  * <li>{"t":"cmd","c":"setblock 0 64 0 stone"}: a server command, for test tools (not part of protocol v1)</li>
- * <li>{"t":"key","k":"use|attack|pick|inventory|drop|swap|escape","down":bool}</li>
+ * <li>{"t":"key","k":"use|attack|pick|inventory|drop|swap|chat|command|escape","down":bool}, and "slot": while a screen is open
+ * these are key presses for that screen (E closes the inventory, Q drops the hovered stack, 1-9 swap it into the hotbar) and
+ * never reach the game, so nothing is replayed when the screen closes</li>
  * <li>{"t":"slot","n":0-8}, {"t":"scroll","d":+-1}, {"t":"hud","hidden":bool}, {"t":"view","w":px,"h":px}</li>
  * <li>{"t":"state","active":bool,"vehicle":bool}: in a vehicle Steve, his hand and the HUD are hidden</li>
  * </ul>

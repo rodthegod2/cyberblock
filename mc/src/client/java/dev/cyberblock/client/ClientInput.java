@@ -2,11 +2,15 @@
 package dev.cyberblock.client;
 
 import com.google.gson.JsonObject;
+import com.mojang.blaze3d.platform.InputConstants;
 import dev.cyberblock.client.mixin.KeyMappingAccessor;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.player.Inventory;
+import org.lwjgl.sdl.SDLKeyboard;
 import org.lwjgl.sdl.SDLVideo;
 
 /** Host input, applied on the client thread: the host window has the focus, so Minecraft never sees these itself. */
@@ -28,6 +32,24 @@ final class ClientInput {
 		if (minecraft.gui.hud.isHidden() != (hudHidden || HostState.vehicle())) {
 			minecraft.gui.hud.toggle();
 		}
+	}
+
+	/**
+	 * Presses a key bound to the open screen, the way vanilla's KeyboardHandler does (the screen decides: the inventory key closes a
+	 * container screen, drop drops the hovered stack, number keys swap it into the hotbar; other screens ignore it). A mapping bound
+	 * to the mouse (use, attack and pick by default) is not a key press: the host sends "click" while a screen is open.
+	 */
+	private static void pressOnScreen(final Screen screen, final KeyMapping mapping) {
+		InputConstants.Key bound = ((KeyMappingAccessor)mapping).cyberblock$getKey();
+		if (bound.getType() != InputConstants.Type.KEYBOARD || bound.equals(InputConstants.UNKNOWN)) {
+			return;
+		}
+
+		// KeyEvent is (scancode, keycode, modifiers) as SDL reports them: the mapping holds the scancode. Passing it as the keycode too
+		// would make the default swap key (scancode 9) look like Tab (keycode 9) to the screen's focus navigation.
+		int scancode = bound.getValue();
+		screen.afterKeyboardAction();
+		screen.keyPressed(new KeyEvent(scancode, SDLKeyboard.SDL_GetKeyFromScancode(scancode, (short)0, false), 0));
 	}
 
 	static void handle(final Minecraft minecraft, final JsonObject m) {
@@ -55,7 +77,18 @@ final class ClientInput {
 					case "command" -> minecraft.options.keyCommand;
 					default -> null;
 				};
-				if (key != null) {
+				if (key == null) {
+					return;
+				}
+
+				Screen screen = minecraft.gui.screen();
+				if (screen != null) {
+					// vanilla gives a key to the open screen and never to the game (handleKeybinds does not run, and KeyMapping.releaseAll
+					// only runs when a screen opens): a click counted now would stay queued and fire as soon as the screen closes
+					if (down) {
+						pressOnScreen(screen, key);
+					}
+				} else {
 					if (down && !key.isDown()) {
 						KeyMappingAccessor access = (KeyMappingAccessor)key;
 						access.cyberblock$setClickCount(access.cyberblock$getClickCount() + 1);
@@ -65,8 +98,13 @@ final class ClientInput {
 				}
 			}
 			case "slot" -> {
-				if (player != null) {
-					player.getInventory().setSelectedSlot(Math.clamp(m.get("n").getAsInt(), 0, Inventory.getSelectionSize() - 1));
+				int n = Math.clamp(m.get("n").getAsInt(), 0, Inventory.getSelectionSize() - 1);
+				Screen screen = minecraft.gui.screen();
+				if (screen != null) {
+					// in an inventory the number keys swap the hovered stack with that hotbar slot
+					pressOnScreen(screen, minecraft.options.keyHotbarSlots[n]);
+				} else if (player != null) {
+					player.getInventory().setSelectedSlot(n);
 				}
 			}
 			case "cursor" -> HostCursor.move(minecraft, m.get("x").getAsDouble(), m.get("y").getAsDouble());

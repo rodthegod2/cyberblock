@@ -199,6 +199,36 @@ async def main(log: Path | None, wait_s: float) -> int:
         closed = await link.wait(lambda: link.status and not link.status["screen"], 3)
         report(f"escape closes it ({key})", bool(closed))
 
+    async def screen_stays(value: bool, seconds: float) -> bool:
+        """True when no status in the next `seconds` says otherwise."""
+        mark = len(link.messages)
+        await asyncio.sleep(seconds)
+        return all(m["screen"] == value for m in link.messages[mark:] if m.get("t") == "status")
+
+    # while a screen is open, keys go to the screen (vanilla) and never queue up for the game
+    await link.send(t="key", k="inventory", down=True)
+    await link.send(t="key", k="inventory", down=False)
+    opened = await link.wait(lambda: link.status and link.status["screen"], 3)
+    await link.send(t="key", k="inventory", down=True)
+    await link.send(t="key", k="inventory", down=False)
+    closed = await link.wait(lambda: link.status and not link.status["screen"], 3)
+    report("key inventory closes the open inventory", bool(opened) and bool(closed))
+    report("the inventory stays closed", await screen_stays(False, 1.0))
+
+    await link.send(t="key", k="inventory", down=True)
+    await link.send(t="key", k="inventory", down=False)
+    await link.wait(lambda: link.status and link.status["screen"], 3)
+    for k in ("chat", "command", "drop", "swap", "use", "attack", "pick"):
+        await link.send(t="key", k=k, down=True)
+        await link.send(t="key", k=k, down=False)
+    for n in range(9):
+        await link.send(t="slot", n=n)
+    await asyncio.sleep(0.3)
+    report("other keys do not close or replace the open inventory", bool(link.status and link.status["screen"]))
+    await link.send(t="key", k="escape", down=True)
+    await link.wait(lambda: link.status and not link.status["screen"], 3)
+    report("keys sent while a screen was open are not replayed when it closes", await screen_stays(False, 1.0))
+
     await link.send(t="state", active=False, vehicle=False)
     await ws.close()
     print("FAILED: " + ", ".join(FAILED) if FAILED else "all checks passed")
