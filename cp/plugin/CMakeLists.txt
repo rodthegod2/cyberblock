@@ -24,3 +24,8 @@ target_include_directories(cb_tests PRIVATE src)
 target_link_libraries(cb_tests PRIVATE nlohmann_json::nlohmann_json)
 target_compile_definitions(cb_tests PRIVATE CB_VECTORS="${ROOT}/shared/vectors.json")
 add_test(NAME cb_tests COMMAND cb_tests)
+
+# Manual link check against a running Minecraft (tests/link_smoke.cpp); built only when asked for.
+add_executable(link_smoke EXCLUDE_FROM_ALL tests/link_smoke.cpp src/link.cpp src/ws.cpp src/log.cpp)
+target_include_directories(link_smoke PRIVATE src)
+target_link_libraries(link_smoke PRIVATE nlohmann_json::nlohmann_json ws2_32)
