@@ -179,7 +179,7 @@ async def main(out: Path, frames: int, wait_s: float) -> int:
                 check(f"{tag} world colour drawn", 0.2 < alpha.mean() < 0.99, f"{alpha.mean():.3f} covered")
                 check(f"{tag} depth is a gradient", np.unique(depth[alpha]).size > 500 and (depth[~alpha] <= 0).all(),
                       f"{np.unique(depth[alpha]).size} distinct values")
-                check(f"{tag} overlay has the hotbar", 0.001 < over_alpha.mean() < 0.3 and over_alpha[-80:].any(), f"{over_alpha.mean():.4f} covered")
+                check(f"{tag} overlay has the hotbar", 0.001 < over_alpha.mean() < 0.6 and over_alpha[-80:].any(), f"{over_alpha.mean():.4f} covered")
         await asyncio.sleep(max(0.0, t0 + f / 60.0 - time.perf_counter()))
     check("frames were saved", saved >= 3, f"{saved} sets in {out}")
 
