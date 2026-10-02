@@ -2,6 +2,7 @@
 package dev.cyberblock;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -16,6 +17,13 @@ import net.minecraft.world.level.block.state.BlockState;
 public final class WorldBridge {
 	/** Layer 1 does not tell the host about block changes (layer 2 turns this on and turns them into collision boxes). */
 	private static final boolean REPORT_BLOCKS = false;
+	/**
+	 * What Night City's solid cells are made of: invisible barriers. -Dcyberblock.debugGround=true makes them stone, so a
+	 * ground slab from a fake host can be seen in the exported frames.
+	 */
+	private static final Block GROUND = Boolean.getBoolean("cyberblock.debugGround") ? Blocks.STONE : Blocks.BARRIER;
+	/** More than this in one message is a bug or an attack: it would stall the server thread. */
+	private static final long MAX_CELLS = 16_384L;
 	private static volatile MinecraftServer server;
 	/** Barriers we placed (so a reset only removes ours, never the player's builds). */
 	private static final Set<BlockPos> barriers = ConcurrentHashMap.newKeySet();
@@ -40,8 +48,17 @@ public final class WorldBridge {
 		}
 	}
 
-	/** Columns of solid ground from the host: {x, z, yBottom, yTop, ...} in block coordinates (inclusive). Only air is replaced. */
-	public static void solid(final int[] columns) {
+	/** Night City ground from the host: barriers, only into air. */
+	public static void solid(final List<Ranges.Range> ranges) {
+		edit(ranges, true);
+	}
+
+	/** Ranges the host no longer reports as solid: our barriers there come out; anything else (the player's builds) stays. */
+	public static void unsolid(final List<Ranges.Range> ranges) {
+		edit(ranges, false);
+	}
+
+	private static void edit(final List<Ranges.Range> ranges, final boolean place) {
 		MinecraftServer s = server;
 		if (s == null) {
 			return;
@@ -49,20 +66,41 @@ public final class WorldBridge {
 
 		s.execute(() -> {
 			ServerLevel level = s.overworld();
-			BlockState barrier = Blocks.BARRIER.defaultBlockState();
-			BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-			placingGround = true;
-			for (int i = 0; i + 3 < columns.length; i += 4) {
-				for (int y = columns[i + 2]; y <= columns[i + 3]; y++) {
-					pos.set(columns[i], y, columns[i + 1]);
-					if (level.isInWorldBounds(pos) && level.getBlockState(pos).isAir()) {
-						level.setBlock(pos, barrier, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
-						barriers.add(pos.immutable());
-					}
-				}
+			long cells = 0;
+			for (Ranges.Range r : ranges) {
+				cells += Math.max(0L, (long) Math.min(r.yTop(), level.getMaxY()) - Math.max(r.yBottom(), level.getMinY()) + 1L);
 			}
 
-			placingGround = false;
+			if (cells > MAX_CELLS) {
+				Cyberblock.LOG.warn("ignoring {} of {} cells (limit {})", place ? "ground" : "unground", cells, MAX_CELLS);
+				return;
+			}
+
+			BlockState air = Blocks.AIR.defaultBlockState();
+			BlockState ground = GROUND.defaultBlockState();
+			BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+			placingGround = true;
+			try {
+				for (Ranges.Range r : ranges) {
+					for (int y = Math.max(r.yBottom(), level.getMinY()); y <= Math.min(r.yTop(), level.getMaxY()); y++) {
+						pos.set(r.x(), y, r.z());
+						if (!level.isInWorldBounds(pos)) {
+							continue;
+						}
+
+						if (place) {
+							if (level.getBlockState(pos).isAir()) {
+								level.setBlock(pos, ground, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+								barriers.add(pos.immutable());
+							}
+						} else if (barriers.remove(pos.immutable()) && level.getBlockState(pos).is(GROUND)) {
+							level.setBlock(pos, air, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+						}
+					}
+				}
+			} finally {
+				placingGround = false;
+			}
 		});
 	}
 
@@ -78,7 +116,7 @@ public final class WorldBridge {
 	private static void removeBarriers(final ServerLevel level) {
 		placingGround = true;
 		for (BlockPos pos : barriers) {
-			if (level.getBlockState(pos).is(Blocks.BARRIER)) {
+			if (level.getBlockState(pos).is(GROUND)) {
 				level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
 			}
 		}

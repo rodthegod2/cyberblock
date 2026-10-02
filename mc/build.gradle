@@ -30,6 +30,12 @@ dependencies {
 	// WebSocket server the host game's script connects to (FiveM NUI can only speak WebSocket/HTTP)
 	implementation "org.java-websocket:Java-WebSocket:1.6.0"
 	include "org.java-websocket:Java-WebSocket:1.6.0"
+	testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+	useJUnitPlatform()
 }
 
 processResources {

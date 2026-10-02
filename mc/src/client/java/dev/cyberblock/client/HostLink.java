@@ -5,6 +5,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.Ranges;
 import dev.cyberblock.WorldBridge;
 import java.net.InetSocketAddress;
 import java.util.Locale;
@@ -20,7 +21,7 @@ import org.java_websocket.server.WebSocketServer;
  * <p>Host to Minecraft (JSON, Minecraft coordinates):
  * <ul>
  * <li>{"t":"cam","f":frame,"p":[x,y,z],"r":[yaw,pitch,roll],"fov":vertical degrees,"fp":first person,"pl":[feet x,y,z],"h":body yaw}</li>
- * <li>{"t":"ground","c":[x,z,yBottom,yTop, ...]}: solid columns (barriers)</li>
+ * <li>{"t":"ground","c":[x,z,yBottom,yTop, ...]}: solid ranges (barriers); "unground" takes the same ranges out again</li>
  * <li>{"t":"clear"}: remove the barriers placed so far</li>
  * <li>{"t":"key","k":"use|attack|pick|inventory|drop|swap|escape","down":bool}</li>
  * <li>{"t":"slot","n":0-8}, {"t":"scroll","d":+-1}, {"t":"hud","hidden":bool}, {"t":"view","w":px,"h":px}</li>
@@ -65,7 +66,8 @@ public final class HostLink extends WebSocketServer {
 			JsonObject m = JsonParser.parseString(message).getAsJsonObject();
 			switch (m.get("t").getAsString()) {
 				case "cam" -> HostState.update(m);
-				case "ground" -> WorldBridge.solid(ints(m.getAsJsonArray("c")));
+				case "ground" -> WorldBridge.solid(Ranges.decode(ints(m.getAsJsonArray("c"))));
+				case "unground" -> WorldBridge.unsolid(Ranges.decode(ints(m.getAsJsonArray("c"))));
 				case "clear" -> WorldBridge.clearSolid();
 				default -> {
 					Minecraft minecraft = Minecraft.getInstance();
