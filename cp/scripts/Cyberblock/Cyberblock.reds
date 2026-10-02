@@ -5,6 +5,9 @@
 //   ScriptableSystem.OnAttach/OnDetach/GetGameInstance, DelaySystem.DelayCallback/CancelCallback, DelayCallback.Call,
 //   GetPlayer(GameInstance), VehicleComponent.IsMountedToVehicle(GameInstance, wref<GameObject>),
 //   UI_Notifications.WarningMessage + SimpleScreenMessage (as in PreventionSystem.ShowMessage).
+//   Codeware 1.20 CallbackSystem.RegisterCallback(CName, ref<IScriptable>, CName) with the session events
+//   Session/BeforeSave, Session/AfterSave, Session/Ready, Session/BeforeEnd (GameSessionEvent); callbacks
+//   registered from a ScriptableSystem are removed by Codeware at the end of the session.
 
 enum CyberblockState {
   Off = 0,
@@ -26,17 +29,61 @@ public class CyberblockTick extends DelayCallback {
 public class CyberblockSystem extends ScriptableSystem {
   private let state: CyberblockState;
   private let tickId: DelayID;
+  private let playerState: ref<CyberblockPlayerState>;
+  private let saving: Bool;
 
   private func OnAttach() -> Void {
     this.state = CyberblockState.Off;
+    this.playerState = new CyberblockPlayerState();
     Cyberblock_SetActive(false, false);
+    let callbacks = GameInstance.GetCallbackSystem();
+    callbacks.RegisterCallback(n"Session/BeforeSave", this, n"OnBeforeSave");
+    callbacks.RegisterCallback(n"Session/AfterSave", this, n"OnAfterSave");
+    callbacks.RegisterCallback(n"Session/Ready", this, n"OnSessionReady");
+    callbacks.RegisterCallback(n"Session/BeforeEnd", this, n"OnSessionEnd");
     this.ScheduleTick();
   }
 
   private func OnDetach() -> Void {
     GameInstance.GetDelaySystem(this.GetGameInstance()).CancelCallback(this.tickId);
+    this.playerState.ShowHud();
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
+  }
+
+  // Saves stay vanilla: status effects and god mode are removed before the save and re-applied after it if
+  // still Active (the HUD layer is not saved). Ticks leave V alone while the save is written.
+  private cb func OnBeforeSave(event: ref<GameSessionEvent>) {
+    this.saving = true;
+    this.playerState.ClearSaved(GetPlayer(this.GetGameInstance()));
+  }
+
+  private cb func OnAfterSave(event: ref<GameSessionEvent>) {
+    this.saving = false;
+    this.UpdatePlayer(GetPlayer(this.GetGameInstance()));
+  }
+
+  // On every load (and new game): remove anything of ours the save may carry and start Off.
+  private cb func OnSessionReady(event: ref<GameSessionEvent>) {
+    let player = GetPlayer(this.GetGameInstance());
+    this.playerState.Clear(player);
+    if IsDefined(player) {
+      CyberblockPlayerState.ClearLeftovers(player);
+    }
+    this.state = CyberblockState.Off;
+    Cyberblock_SetActive(false, false);
+  }
+
+  private cb func OnSessionEnd(event: ref<GameSessionEvent>) {
+    this.playerState.Clear(GetPlayer(this.GetGameInstance()));
+    this.state = CyberblockState.Off;
+    Cyberblock_SetActive(false, false);
+  }
+
+  private func UpdatePlayer(player: ref<PlayerPuppet>) -> Void {
+    if IsDefined(player) && !this.saving {
+      this.playerState.Update(player, Equals(this.state, CyberblockState.Active), Cyberblock_ScreenOpen());
+    }
   }
 
   private func ScheduleTick() -> Void {
@@ -53,6 +100,11 @@ public class CyberblockSystem extends ScriptableSystem {
     if !IsDefined(player) {
       return;
     }
+    this.Step(player, toggle);
+    this.UpdatePlayer(player);
+  }
+
+  private func Step(player: ref<PlayerPuppet>, toggle: Bool) -> Void {
     let mounted = VehicleComponent.IsMountedToVehicle(this.GetGameInstance(), player);
     let linked = Cyberblock_IsLinked();
     // Without the link the DLL cannot send cam, so Minecraft frames would go stale: treat it as lost too.
