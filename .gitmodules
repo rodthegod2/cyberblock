@@ -1,0 +1,10 @@
+[submodule "third_party/universal-modder"]
+	path = third_party/universal-modder
+	url = https://github.com/rehan-remade/universal-modder
+[submodule "third_party/RED4ext.SDK"]
+	path = third_party/RED4ext.SDK
+	url = https://github.com/WopsS/RED4ext.SDK
+[submodule "third_party/reshade"]
+	path = third_party/reshade
+	url = https://github.com/crosire/reshade
+	shallow = true

@@ -1,0 +1,9 @@
+/out/
+/build/
+/cp/plugin/build/
+/mc/.gradle/
+/mc/build/
+/mc/run/
+/.venv/
+__pycache__/
+*.log
