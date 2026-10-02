@@ -70,12 +70,16 @@ console.
 - Rotation conversion (yaw/pitch/roll, Cyberpunk quaternion → Minecraft yaw/pitch) is fixed by
   `shared/vectors.json`, measured in-game in layer 1 (step "cube test") and checked by all three test suites.
 
-### 3.3 Protocol (WebSocket, JSON text frames, every message has `t` = sender ms timestamp)
+### 3.3 Protocol (WebSocket, JSON text frames; `t` = message type, as in the GTA reference)
+All positions and angles on the wire are already in **Minecraft convention**: the DLL is the only place that
+converts from Cyberpunk. Full field lists live in `shared/protocol.md`.
+
 Cyberpunk → Minecraft
 - `hello {proto:1, game:"cp2077", build:"2.31"}`
-- `cam {pos[3], rot[4], fovY, near, far, w, h}` — every Cyberpunk frame
-- `player {feet[3], heading, vel[3], inVehicle, onGround}` — every frame
-- `probe {add:[[x,y,z],…], remove:[…]}` — solid Night City cells (Minecraft coords), deltas only
+- `cam {f, p[3], r[yaw,pitch,roll], fov, fp, pl[3], h}` — every Cyberpunk frame (camera, vertical fov, feet,
+  body yaw)
+- `ground {c:[x,z,yBottom,yTop,…]}` / `unground {c:[…]}` — solid Night City ranges per column (inclusive
+  block coords), deltas only; several ranges per column for multi-level places; `clear` drops all
 - `npcs {list:[{id, pos[3], yaw, kind:"human"|"vehicle", faction, hostile, hp}]}` — 10 Hz, within 48 m
 - `input {buttons, wheel, keys[], cursor[2]|null}`
 - `dmg {amount, kind, from[3]}` — damage V received (V is invincible; Steve takes it)
@@ -95,9 +99,9 @@ Minecraft → Cyberpunk
 - `hack {target, hack}` · `perk {id, rank}`
 
 ### 3.4 Shared memory frame
-Named mapping `Local\CyberblockFrame`. Header: magic, version, latest slot, width, height, sequence, and
-the pose the frame was rendered with (`pos, rot, fovY, near, far`). Three slots, each: world RGBA8, world
-depth float32, overlay RGBA8 (hand, hotbar, HUD, open screens). Minecraft renders at Cyberpunk's output
+Named mapping `Local\CyberblockFrame`, same layout as the GTA reference's `FrameExporter` (4096-byte
+header, three slots with seqlock, render pose in Minecraft convention, near/far/fov, depth flags) with magic
+`"CBFR"`. Each slot: world RGBA8, world depth float32, overlay RGBA8 (hand, hotbar, HUD, open screens). Minecraft renders at Cyberpunk's output
 resolution (2560×1440 → ~44 MB per slot). Asynchronous GPU readback; neither process ever waits on the other.
 
 ## 4. Layer 1: core passthrough
