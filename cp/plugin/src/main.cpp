@@ -3,6 +3,7 @@
 // publishes Cyberpunk's camera every frame.
 #include <RED4ext/RED4ext.hpp>
 
+#include "camera.hpp"
 #include "compositor.h"
 #include "link.hpp"
 #include "log.hpp"
@@ -37,6 +38,7 @@ namespace
 		int width = 0, height = 0;
 		compositor::backbuffer_size(width, height);
 		cb::link().set_view(width, height);
+		cb::camera::publish();
 		return false;
 	}
 }
