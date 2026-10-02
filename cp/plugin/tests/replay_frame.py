@@ -11,6 +11,10 @@ always on top.
 The mapping uses the reference FrameExporter layout (plan section 1.3) with the same sizes as the Minecraft mod, so the
 two are interchangeable; run one at a time. tools/shm.py was not available, so the writer lives here.
 
+The game's compositor keeps the mapping open once it has seen it, so a mapping left behind by an earlier replay or
+Minecraft session is reused. The script refuses (exit 2) only while another writer is alive: its publish counter moves,
+or the writer process recorded in the header is still running (Minecraft can sit idle without publishing).
+
     uv run python cp/plugin/tests/replay_frame.py [--width 1920] [--height 1080] [--hz 30] [--seconds 0]
 """
 import argparse
@@ -37,6 +41,10 @@ NEAR, FAR = 0.05, 1024.0
 FOV = 60.0  # vertical; with test frames the compositor shows the frame as rendered, so the pose does not matter
 DEPTH_M = 5.0
 FILE_MAP_READ = 0x0004
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+SYNCHRONIZE = 0x00100000
+WAIT_TIMEOUT = 0x102
+LIVE_CHECK_S = 0.25  # a writer that publishes at all does so within this long
 
 
 def reversed_depth(metres: float) -> float:
@@ -58,26 +66,88 @@ def make_layers(w: int, h: int) -> tuple[bytes, bytes, bytes]:
     return tuple(layer[::-1].tobytes() for layer in (world, depth, overlay))  # bottom-up rows (flag 2)
 
 
-def mapping_exists() -> bool:
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.OpenFileMappingW.restype = ctypes.c_void_p
-    kernel32.OpenFileMappingW.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_wchar_p)
-    kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
-    handle = kernel32.OpenFileMappingW(FILE_MAP_READ, False, NAME)
-    if handle:
-        kernel32.CloseHandle(handle)
-    return bool(handle)
+def kernel32():
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.OpenFileMappingW.restype = ctypes.c_void_p
+    k.OpenFileMappingW.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_wchar_p)
+    k.MapViewOfFile.restype = ctypes.c_void_p
+    k.MapViewOfFile.argtypes = (ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_size_t)
+    k.UnmapViewOfFile.argtypes = (ctypes.c_void_p,)
+    k.OpenProcess.restype = ctypes.c_void_p
+    k.OpenProcess.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
+    k.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+    k.WaitForSingleObject.restype = ctypes.c_uint32
+    k.GetProcessTimes.argtypes = (ctypes.c_void_p,) + (ctypes.POINTER(ctypes.c_uint64),) * 4
+    k.CloseHandle.argtypes = (ctypes.c_void_p,)
+    return k
+
+
+def writer_running(pid: int, last_publish_ns: int | None) -> bool:
+    """Whether process `pid` runs and already existed at the last publish (a newer process merely reused the pid)."""
+    k = kernel32()
+    handle = k.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, pid)
+    if not handle:
+        return False
+    try:
+        if k.WaitForSingleObject(handle, 0) != WAIT_TIMEOUT:
+            return False  # exited
+        times = [ctypes.c_uint64() for _ in range(4)]  # creation, exit, kernel, user
+        if last_publish_ns is None or not k.GetProcessTimes(handle, *(ctypes.byref(t) for t in times)):
+            return True
+        created = times[0].value / 1e7 - 11644473600  # FILETIME (100 ns ticks since 1601) to Unix seconds
+        # publish times are QueryPerformanceCounter based (System.nanoTime, perf_counter_ns) like this clock
+        published = time.time() - (time.perf_counter_ns() - last_publish_ns) / 1e9
+        return created < published
+    finally:
+        k.CloseHandle(handle)
+
+
+def mapping_in_use() -> str | None:
+    """Why NAME can't be written now, or None: it doesn't exist, or it is the same layout left by a writer that stopped."""
+    k = kernel32()
+    handle = k.OpenFileMappingW(FILE_MAP_READ, False, NAME)
+    if not handle:
+        return None
+    try:
+        view = k.MapViewOfFile(handle, FILE_MAP_READ, 0, 0, HEADER)
+        if not view:
+            return "it exists but cannot be read"
+        try:
+            magic, _, header, slots, stride = struct.unpack("<iiiiq", ctypes.string_at(view, 24))
+            if (magic, header, slots, stride) != (MAGIC, HEADER, SLOTS, STRIDE):
+                return f"it exists with another layout (magic {magic:#x}, {slots} slots, stride {stride})"
+            counter = struct.unpack("<q", ctypes.string_at(view + 32, 8))[0]
+            time.sleep(LIVE_CHECK_S)
+            latest, pid = struct.unpack("<ii", ctypes.string_at(view + 40, 8))
+            if struct.unpack("<q", ctypes.string_at(view + 32, 8))[0] != counter:
+                return f"a writer (pid {pid}) is publishing frames to it"
+            last_publish = None
+            if 0 <= latest < SLOTS:
+                last_publish = struct.unpack("<q", ctypes.string_at(view + SLOT_DESC + SLOT_DESC_BYTES * latest + 96, 8))[0]
+            if writer_running(pid, last_publish):
+                return f"its writer (pid {pid}) is still running"
+            return None
+        finally:
+            k.UnmapViewOfFile(view)
+    finally:
+        k.CloseHandle(handle)
 
 
 class FrameWriter:
     """The writer half of the frame export: header once, then each publish fills the next slot under its seqlock."""
 
     def __init__(self):
+        # creates the mapping, or opens the one an earlier writer left behind (mapping_in_use checked its layout)
         self.mm = mmap.mmap(-1, HEADER + STRIDE * SLOTS, tagname=NAME)
+        published, latest = 0, -1
+        if struct.unpack_from("<i", self.mm, 0)[0] == MAGIC:
+            # continue the old counter so a reader that saw the last frame notices the new ones
+            published, latest = struct.unpack_from("<qi", self.mm, 32)
         struct.pack_into("<iiiiqii", self.mm, 0, MAGIC, VERSION, HEADER, SLOTS, STRIDE, MAX_W, MAX_H)
-        struct.pack_into("<qii", self.mm, 32, 0, -1, os.getpid())
-        self.slot = 0
-        self.published = 0
+        struct.pack_into("<qii", self.mm, 32, published, latest, os.getpid())
+        self.slot = (latest + 1) % SLOTS
+        self.published = published
+        self.count = 0
 
     def publish(self, w: int, h: int, layers: tuple[bytes, bytes, bytes]):
         mm, slot = self.mm, self.slot
@@ -91,6 +161,7 @@ class FrameWriter:
             mm[base + i * n:base + (i + 1) * n] = layer
         now = time.perf_counter_ns()
         self.published += 1
+        self.count += 1
         struct.pack_into("<qqiifffidddfffiqq", mm, desc + 8,
                          self.published, 0, w, h, NEAR, FAR, FOV, FLAGS,
                          0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1, now, now)
@@ -115,8 +186,9 @@ def main() -> int:
         parser.error("--hz must be positive and --seconds not negative")
     if sys.platform != "win32":
         parser.error("Windows only (named shared memory)")
-    if mapping_exists():
-        print(f"{NAME} already exists: Minecraft or another replay is exporting frames; stop it first", file=sys.stderr)
+    busy = mapping_in_use()
+    if busy:
+        print(f"{NAME} is in use: {busy} (Minecraft or another replay); stop it first", file=sys.stderr)
         return 2
 
     layers = make_layers(args.width, args.height)
@@ -136,7 +208,7 @@ def main() -> int:
         pass
     finally:
         writer.close()
-    print(f"published {writer.published} frames")
+    print(f"published {writer.count} frames")
     return 0
 
 
