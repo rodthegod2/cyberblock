@@ -58,11 +58,13 @@ public class CyberblockSystem extends ScriptableSystem {
   private cb func OnBeforeSave(event: ref<GameSessionEvent>) {
     this.saving = true;
     this.playerState.ClearSaved(GetPlayer(this.GetGameInstance()));
+    Cyberblock_Log("before save: effects and god mode removed");
   }
 
   private cb func OnAfterSave(event: ref<GameSessionEvent>) {
     this.saving = false;
     this.UpdatePlayer(GetPlayer(this.GetGameInstance()));
+    Cyberblock_Log(s"after save: state \(CyberblockSystem.Name(this.state))");
   }
 
   // On every load (and new game): remove anything of ours the save may carry and start Off.
@@ -74,12 +76,14 @@ public class CyberblockSystem extends ScriptableSystem {
     }
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
+    Cyberblock_Log("session ready: leftovers removed, Off");
   }
 
   private cb func OnSessionEnd(event: ref<GameSessionEvent>) {
     this.playerState.Clear(GetPlayer(this.GetGameInstance()));
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
+    Cyberblock_Log("session end: V restored, Off");
   }
 
   private func UpdatePlayer(player: ref<PlayerPuppet>) -> Void {
