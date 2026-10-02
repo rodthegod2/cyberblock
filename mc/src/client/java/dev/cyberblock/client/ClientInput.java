@@ -11,7 +11,23 @@ import org.lwjgl.sdl.SDLVideo;
 
 /** Host input, applied on the client thread: the host window has the focus, so Minecraft never sees these itself. */
 final class ClientInput {
+	/** What the host asked for with "hud"; in a vehicle the HUD is hidden whatever it said. */
+	private static boolean hudHidden;
+
 	private ClientInput() {
+	}
+
+	/** The host went away: Steve, his hand and the HUD are back. */
+	static void reset(final Minecraft minecraft) {
+		hudHidden = false;
+		HostState.setVehicle(false);
+		applyHud(minecraft);
+	}
+
+	private static void applyHud(final Minecraft minecraft) {
+		if (minecraft.gui.hud.isHidden() != (hudHidden || HostState.vehicle())) {
+			minecraft.gui.hud.toggle();
+		}
 	}
 
 	static void handle(final Minecraft minecraft, final JsonObject m) {
@@ -59,9 +75,13 @@ final class ClientInput {
 				}
 			}
 			case "hud" -> {
-				if (minecraft.gui.hud.isHidden() != m.get("hidden").getAsBoolean()) {
-					minecraft.gui.hud.toggle();
-				}
+				hudHidden = m.get("hidden").getAsBoolean();
+				applyHud(minecraft);
+			}
+			case "state" -> {
+				boolean active = !m.has("active") || m.get("active").getAsBoolean();
+				HostState.setVehicle(active && m.has("vehicle") && m.get("vehicle").getAsBoolean());
+				applyHud(minecraft);
 			}
 			case "view" -> {
 				// match the host's picture exactly: un-minimize/un-maximize first (resizing a maximized window is ignored)

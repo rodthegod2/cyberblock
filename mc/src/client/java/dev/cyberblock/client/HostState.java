@@ -27,6 +27,8 @@ public final class HostState {
 
 	private static final long TIMEOUT_NANOS = 2_000_000_000L;
 	private static volatile Pose latest;
+	/** Cyberpunk says V is in a vehicle: Steve, his hand and the HUD are hidden. */
+	private static volatile boolean vehicle;
 	/** The pose this frame renders with, taken once per frame so every hook agrees. Render thread only. */
 	private static Pose frame;
 
@@ -53,6 +55,14 @@ public final class HostState {
 			m.has("look") ? m.getAsJsonArray("look").get(1).getAsFloat() : r.get(1).getAsFloat(),
 			m.has("gun") && m.get("gun").getAsBoolean()
 		);
+	}
+
+	public static boolean vehicle() {
+		return vehicle;
+	}
+
+	static void setVehicle(final boolean inVehicle) {
+		vehicle = inVehicle;
 	}
 
 	/** The latest pose if the host is still sending, else null. */

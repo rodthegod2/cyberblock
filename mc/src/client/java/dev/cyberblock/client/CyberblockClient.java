@@ -85,6 +85,7 @@ public class CyberblockClient implements ClientModInitializer {
 		}
 
 		AutoWorld.tick(minecraft);
+		StatusReporter.tick(minecraft);
 	}
 
 	/** Settings for sitting behind another game: keep running unfocused, and no sky/cloud/bobbing effects in the picture. */
