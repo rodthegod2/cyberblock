@@ -51,6 +51,8 @@ final class ClientInput {
 					case "inventory" -> minecraft.options.keyInventory;
 					case "drop" -> minecraft.options.keyDrop;
 					case "swap" -> minecraft.options.keySwapOffhand;
+					case "chat" -> minecraft.options.keyChat;
+					case "command" -> minecraft.options.keyCommand;
 					default -> null;
 				};
 				if (key != null) {
@@ -67,8 +69,12 @@ final class ClientInput {
 					player.getInventory().setSelectedSlot(Math.clamp(m.get("n").getAsInt(), 0, Inventory.getSelectionSize() - 1));
 				}
 			}
+			case "cursor" -> HostCursor.move(minecraft, m.get("x").getAsDouble(), m.get("y").getAsDouble());
+			case "click" -> HostCursor.click(minecraft, m.get("b").getAsInt(), !m.has("down") || m.get("down").getAsBoolean());
 			case "scroll" -> {
-				if (player != null) {
+				if (minecraft.gui.screen() != null) {
+					HostCursor.scroll(minecraft, m.get("d").getAsInt());
+				} else if (player != null) {
 					Inventory inventory = player.getInventory();
 					int size = Inventory.getSelectionSize();
 					inventory.setSelectedSlot(Math.floorMod(inventory.getSelectedSlot() - m.get("d").getAsInt(), size));

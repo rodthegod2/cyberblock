@@ -94,7 +94,13 @@ public final class HostLink extends WebSocketServer {
 				case "cmd" -> WorldBridge.command(m.get("c").getAsString());
 				default -> {
 					Minecraft minecraft = Minecraft.getInstance();
-					minecraft.execute(() -> ClientInput.handle(minecraft, m));
+					minecraft.execute(() -> {
+						try {
+							ClientInput.handle(minecraft, m);
+						} catch (RuntimeException e) {
+							Cyberblock.LOG.warn("bad host message {}: {}", message.length() > 200 ? message.substring(0, 200) : message, e.toString());
+						}
+					});
 				}
 			}
 		} catch (RuntimeException e) {

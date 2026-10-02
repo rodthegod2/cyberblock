@@ -145,6 +145,8 @@ async def main(log: Path | None, wait_s: float) -> int:
     before = len(link.status_times)
     await asyncio.sleep(0.6)
     report("bad input ignored, link alive", len(link.status_times) > before and not ws.close_code, f"{len(link.status_times) - before} status after")
+    if log is not None:
+        report("bad input never throws inside Minecraft", "Error executing task" not in log.read_text(encoding="utf-8", errors="replace"))
 
     game = Game(link, log)
     if log is None:
@@ -169,7 +171,7 @@ async def main(log: Path | None, wait_s: float) -> int:
         await link.send(t="cmd", c="setblock 12 70 10 minecraft:air")
 
     # keys that open Minecraft screens: status.screen says so
-    for key in ("inventory",):
+    for key in ("inventory", "chat", "command"):
         await link.send(t="key", k=key, down=True)
         await link.send(t="key", k=key, down=False)
         opened = await link.wait(lambda: link.status and link.status["screen"], 3)
