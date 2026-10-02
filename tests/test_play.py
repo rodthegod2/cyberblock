@@ -1,7 +1,10 @@
 import json
+import signal
 import socket
 import subprocess
 import sys
+import threading
+import time
 
 import pytest
 
@@ -74,6 +77,23 @@ def test_starts_minecraft_waits_for_the_port_then_starts_the_game_and_ctrl_c_sto
     assert inv["argv"] == ["runClient", "--args=--quickPlaySingleplayer cyberblock"] and inv["java_home"] == str(jdk)
     assert not alive(inv["pid"])
     assert f"127.0.0.1:{port}" in capsys.readouterr().out  # says what it is waiting for
+
+
+def test_ctrl_c_while_minecraft_is_running_stops_it_promptly(fake_mc, monkeypatch):
+    """A blocking Popen.wait() on Windows is not interruptible: Ctrl+C would only be seen once Minecraft exited by itself."""
+    mc, port, jdk = fake_mc
+    monkeypatch.setenv("FAKE_LIFETIME", "20")
+    # Raised from another thread one second after the main phase begins, like the console's Ctrl+C handler does.
+    ctrl_c = threading.Timer(1, lambda: signal.raise_signal(signal.SIGINT))
+    begin = time.monotonic()
+    try:
+        assert play.play(mc, jdk, port, 30, ctrl_c.start) == 0
+        elapsed = time.monotonic() - begin
+    finally:
+        ctrl_c.cancel()
+        subprocess.run(["taskkill", "/PID", str(invocation(mc)["pid"]), "/F"], capture_output=True)
+    assert elapsed < 10  # startup takes ~1 s and Ctrl+C comes 1 s later; a blocking wait would take the full 20 s
+    assert not alive(invocation(mc)["pid"])
 
 
 def test_returns_minecrafts_exit_code_when_it_ends_by_itself(fake_mc, monkeypatch):

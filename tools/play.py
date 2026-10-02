@@ -103,7 +103,10 @@ def play(mc: Path, java_home: Path, port: int, timeout: float, start_game: Calla
             start_game()
         if proc is not None:
             print("Minecraft is running; press Ctrl+C here to stop it")
-            return proc.wait()
+            # Not proc.wait(): on Windows that is one uninterruptible wait, so Ctrl+C would only be seen after Minecraft exited.
+            while proc.poll() is None:
+                time.sleep(0.5)
+            return proc.returncode
         return 0
     except KeyboardInterrupt:
         print("stopping Minecraft")
