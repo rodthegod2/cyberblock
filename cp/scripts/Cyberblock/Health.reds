@@ -144,9 +144,9 @@ public abstract class CyberblockHealth {
     Cyberblock_Log(s"dmg \(NameToString(kind)) \(damage) of \(maxHealth) from \(hasFrom ? "known" : "unknown") (\(TDBID.ToStringDEBUG(CyberblockHealth.AttackID(hitEvent))))");
   }
 
-  // An instant kill aimed at V (ProcessInstantKill wrap): Steve takes 4 x his max health, from where the hit came. A
-  // landing's while Minecraft owns the fall (CyberblockFlight.SuppressFall: a flight, or 2 s after one or a pearl
-  // teleport) is not reported at all; the landing wraps in Flight.reds should already keep those landings from starting.
+  // An instant kill aimed at V (ProcessInstantKill wrap): Steve takes 4 x his max health, from where the hit came. One
+  // from a landing attack while Minecraft owns the fall (CyberblockFlight.SuppressFall: a flight, or 2 s after one or a
+  // pearl teleport) is not reported at all; the landing wraps in Flight.reds should keep such landings from starting.
   public static func ReportInstantKill(hitEvent: ref<gameHitEvent>) -> Void {
     let id = CyberblockHealth.AttackID(hitEvent);
     let attack = TDBID.ToStringDEBUG(id);
