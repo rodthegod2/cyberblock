@@ -50,6 +50,17 @@ public final class ProxyDamage {
 		};
 	}
 
+	/** A longer fire than the burn still running must beat vanilla's per-tick re-ignition by this much (ticks) to be reported again. */
+	static final int REIGNITE_MARGIN = 20;
+
+	/**
+	 * Whether a fire of remainingTicks is for the host to hear: when no earlier ignition is still burning (cooldownTicks left), or when this one
+	 * outlasts it by more than a second (lava after flint and steel). Vanilla sets the same fire again every tick; those are not new.
+	 */
+	public static boolean igniteDue(final int cooldownTicks, final int remainingTicks) {
+		return cooldownTicks <= 0 || remainingTicks > cooldownTicks + REIGNITE_MARGIN;
+	}
+
 	/**
 	 * The part of a hit that counts under vanilla's damage cooldown: while it runs only a hit stronger than the last one
 	 * counts, and only by the difference; otherwise the whole hit.

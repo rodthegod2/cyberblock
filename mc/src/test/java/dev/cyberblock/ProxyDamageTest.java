@@ -40,6 +40,22 @@ class ProxyDamageTest {
 	}
 
 	@Test
+	void anIgnitionIsReportedOnceUntilItHasBurntOut() {
+		assertTrue(ProxyDamage.igniteDue(0, 160), "flint and steel on a dry NPC");
+		assertFalse(ProxyDamage.igniteDue(160, 160), "the same fire set again the next tick");
+		assertFalse(ProxyDamage.igniteDue(159, 160), "vanilla re-sets it every tick of a flame");
+		assertFalse(ProxyDamage.igniteDue(100, 120), "within a second of what is burning");
+	}
+
+	@Test
+	void aLongerFireIsReportedWhileAShorterOneBurns() {
+		// flint and steel (8 s) and then lava (15 s): the host must hear of the 15 s, not wait for the 8 s to end
+		assertTrue(ProxyDamage.igniteDue(100, 300));
+		assertTrue(ProxyDamage.igniteDue(160, 181));
+		assertFalse(ProxyDamage.igniteDue(160, 180));
+	}
+
+	@Test
 	void damageCooldownCountsOnlyTheExtra() {
 		assertEquals(7.0F, ProxyDamage.afterCooldown(7.0F, 3.0F, false));
 		assertEquals(0.0F, ProxyDamage.afterCooldown(3.0F, 7.0F, true));
