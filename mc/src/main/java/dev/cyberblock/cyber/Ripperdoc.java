@@ -93,6 +93,16 @@ public final class Ripperdoc {
 		return true;
 	}
 
+	/** On join, before the first `cyberware` send: an older save's Operating System implants move to their fixed positions. */
+	public static void normalize(final ServerPlayer player) {
+		Map<String, String> slots = CyberData.slots(player);
+		Map<String, String> fixed = CyberwareRules.normalize(slots);
+		if (fixed != slots) {
+			CyberData.setSlots(player, fixed);
+			Cyberblock.LOG.info("cyberware: normalized slots {} -> {}", slots, fixed);
+		}
+	}
+
 	/** A click on an installed implant in the cyberware screen: out it goes (back into the inventory in survival). */
 	public static void remove(final ServerPlayer player, final String slotKey) {
 		Map<String, String> slots = new HashMap<>(CyberData.slots(player));

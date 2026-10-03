@@ -117,10 +117,9 @@ public final class CyberData {
 		return player.getAttachedOrElse(RAM, 0);
 	}
 
-	/** An installed cyberdeck, or one carried while the Operating System slot is empty (plan retest2 section 1.7). Either side. */
+	/** An installed or a carried cyberdeck (Ram.hasDeck). Either side. */
 	public static boolean hasDeck(final Player player) {
-		boolean osSlotEmpty = CyberwareRules.osImplant(slots(player)) == null;
-		return Ram.hasDeck(has(player, Cyberware.CYBERDECK), osSlotEmpty, osSlotEmpty && player.getInventory().contains(stack -> stack.is(CyberItems.CYBERDECK)));
+		return Ram.hasDeck(has(player, Cyberware.CYBERDECK), player.getInventory().contains(stack -> stack.is(CyberItems.CYBERDECK)));
 	}
 
 	/** Either side (the inventory, the perks and the cyberware are synced to the client). */

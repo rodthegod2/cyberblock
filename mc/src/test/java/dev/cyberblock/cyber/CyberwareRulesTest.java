@@ -58,7 +58,7 @@ class CyberwareRulesTest {
 
 	@Test
 	void slotsAndCapacities() {
-		Map<String, Integer> plan = Map.of("arms", 1, "legs", 1, "operating_system", 1, "nervous_system", 1,
+		Map<String, Integer> plan = Map.of("arms", 1, "legs", 1, "operating_system", 2, "nervous_system", 1,
 			"integumentary", 2, "eyes", 1, "circulatory", 2, "frontal_cortex", 1);
 		assertEquals(8, CyberSlot.values().length);
 		for (CyberSlot slot : CyberSlot.values()) {
@@ -84,12 +84,12 @@ class CyberwareRulesTest {
 
 	@Test
 	void aFullSlotReplacesItsFirstImplant() {
-		CyberwareRules.Installed deck = CyberwareRules.install(Map.of(), Cyberware.CYBERDECK);
-		CyberwareRules.Installed sandy = CyberwareRules.install(deck.slots(), Cyberware.SANDEVISTAN);
-		assertEquals(CyberwareRules.Install.REPLACED, sandy.outcome());
-		assertSame(Cyberware.CYBERDECK, sandy.replaced());
-		assertEquals("operating_system/0", sandy.slotKey());
-		assertEquals(Map.of("operating_system/0", "sandevistan"), sandy.slots());
+		CyberwareRules.Installed pls = CyberwareRules.install(Map.of(), Cyberware.PROJECTILE_LAUNCH_SYSTEM);
+		CyberwareRules.Installed mantis = CyberwareRules.install(pls.slots(), Cyberware.MANTIS_BLADES);
+		assertEquals(CyberwareRules.Install.REPLACED, mantis.outcome());
+		assertSame(Cyberware.PROJECTILE_LAUNCH_SYSTEM, mantis.replaced());
+		assertEquals("arms/0", mantis.slotKey());
+		assertEquals(Map.of("arms/0", "mantis_blades"), mantis.slots());
 		// a removed implant leaves a gap that is free again; a slot holding an id nobody knows is free too
 		Map<String, String> gap = new HashMap<>(Map.of("circulatory/0", "biomonitor", "circulatory/1", "second_heart"));
 		gap.remove("circulatory/0");
@@ -99,19 +99,39 @@ class CyberwareRulesTest {
 		assertEquals(Map.of("eyes/0", "kiroshi_optics"), stale.slots());
 	}
 
-	/**
-	 * The kit installs the deck, then the player installs its Sandevistan: the Operating System slot holds the Sandevistan, so a
-	 * carried deck gives no RAM (Ram.hasDeck) and the no-deck message names the Sandevistan instead of saying "carry one".
-	 */
+	/** Plan retest3 section 1.8 (F9): two Operating System positions, the deck in 0, Sandevistan or Berserk in 1. */
 	@Test
-	void theOperatingSystemSlotHoldsOneImplant() {
-		assertNull(CyberwareRules.osImplant(Map.of()));
-		Map<String, String> deck = CyberwareRules.install(Map.of("eyes/0", "kiroshi_optics"), Cyberware.CYBERDECK).slots();
-		assertSame(Cyberware.CYBERDECK, CyberwareRules.osImplant(deck));
-		Map<String, String> sandy = CyberwareRules.install(deck, Cyberware.SANDEVISTAN).slots();
-		assertSame(Cyberware.SANDEVISTAN, CyberwareRules.osImplant(sandy));
-		assertSame(Cyberware.BERSERK, CyberwareRules.osImplant(CyberwareRules.install(sandy, Cyberware.BERSERK).slots()));
-		assertNull(CyberwareRules.osImplant(Map.of("operating_system/0", "x-ray"))); // an id nobody knows: the slot is free
+	void theDeckAndASandevistanRunTogether() {
+		assertEquals(0, CyberSlot.position(Cyberware.CYBERDECK));
+		assertEquals(1, CyberSlot.position(Cyberware.SANDEVISTAN));
+		assertEquals(1, CyberSlot.position(Cyberware.BERSERK));
+		assertEquals(-1, CyberSlot.position(Cyberware.KIROSHI_OPTICS));
+		// Sandevistan first: it still takes position 1, and the deck then goes to 0
+		CyberwareRules.Installed sandy = CyberwareRules.install(Map.of(), Cyberware.SANDEVISTAN);
+		assertEquals("operating_system/1", sandy.slotKey());
+		CyberwareRules.Installed deck = CyberwareRules.install(sandy.slots(), Cyberware.CYBERDECK);
+		assertEquals(CyberwareRules.Install.INSTALLED, deck.outcome());
+		assertEquals(Map.of("operating_system/0", "cyberdeck", "operating_system/1", "sandevistan"), deck.slots());
+		// Berserk replaces the Sandevistan, never the deck
+		CyberwareRules.Installed berserk = CyberwareRules.install(deck.slots(), Cyberware.BERSERK);
+		assertEquals(CyberwareRules.Install.REPLACED, berserk.outcome());
+		assertSame(Cyberware.SANDEVISTAN, berserk.replaced());
+		assertEquals(Map.of("operating_system/0", "cyberdeck", "operating_system/1", "berserk"), berserk.slots());
+		// an unknown id in a fixed position counts as free
+		CyberwareRules.Installed stale = CyberwareRules.install(Map.of("operating_system/1", "x-ray"), Cyberware.SANDEVISTAN);
+		assertEquals(CyberwareRules.Install.INSTALLED, stale.outcome());
+	}
+
+	@Test
+	void normalizeMovesAnOldSavesSandevistanToItsPosition() {
+		assertEquals(Map.of("operating_system/1", "sandevistan", "eyes/0", "kiroshi_optics"),
+			CyberwareRules.normalize(Map.of("operating_system/0", "sandevistan", "eyes/0", "kiroshi_optics")));
+		assertEquals(Map.of("operating_system/1", "berserk"), CyberwareRules.normalize(Map.of("operating_system/0", "berserk")));
+		// already right (or nothing to move): the very same map
+		Map<String, String> right = Map.of("operating_system/0", "cyberdeck", "operating_system/1", "sandevistan");
+		assertSame(right, CyberwareRules.normalize(right));
+		Map<String, String> none = Map.of("arms/0", "monowire");
+		assertSame(none, CyberwareRules.normalize(none));
 	}
 
 	@Test

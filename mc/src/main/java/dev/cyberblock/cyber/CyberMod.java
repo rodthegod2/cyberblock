@@ -47,6 +47,7 @@ public class CyberMod implements ModInitializer {
 		// (Ripperdoc.migrate) runs on his first server tick, once he is in the world.
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			PerkShop.sendPerks(handler.player);
+			Ripperdoc.normalize(handler.player);
 			Ripperdoc.sendCyberware(handler.player);
 		});
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {

@@ -49,6 +49,8 @@ public final class CyberwareScreen extends Screen {
 	private static final int INSTALLED = 0xFF5FF4FF;
 	private static final int EMPTY = 0xFF4A5478;
 	private static final int KEY = 0xFFFFE14D;
+	/** Over a ghost icon (an empty Operating System position): mostly hides it. */
+	private static final int GHOST = 0xB0141826;
 
 	public CyberwareScreen() {
 		super(Component.translatable("cyberblock.cyberware.title"));
@@ -126,6 +128,7 @@ public final class CyberwareScreen extends Screen {
 		graphics.centeredText(this.font, this.title, left + PANEL_W / 2, top + 6, 0xFFFFFFFF);
 		Map<String, String> slots = CyberData.slots(player);
 		ItemStack hovered = ItemStack.EMPTY;
+		Component hoveredGhost = null;
 		for (CyberSlot slot : CyberSlot.values()) {
 			int x = this.boxX(slot), y = this.boxY(slot);
 			graphics.fill(x, y, x + BOX_W, y + BOX_H, 0xC00A0C15);
@@ -154,6 +157,15 @@ public final class CyberwareScreen extends Screen {
 
 					if (inside(mouseX, mouseY, fx, fy, FRAME)) {
 						hovered = stack;
+					}
+				} else if (slot == CyberSlot.OPERATING_SYSTEM) {
+					// plan retest3 section 1.8: the two fixed positions show what goes there, greyed out
+					graphics.item(new ItemStack((n == 0 ? Cyberware.CYBERDECK : Cyberware.SANDEVISTAN).item()), fx + 1, fy + 1);
+					graphics.fill(fx + 1, fy + 1, fx + FRAME - 1, fy + FRAME - 1, GHOST);
+					if (inside(mouseX, mouseY, fx, fy, FRAME)) {
+						hoveredGhost = n == 0
+							? Component.translatableWithFallback("cyberblock.cyberware.screen.os_deck", "Cyberdeck goes here")
+							: Component.translatableWithFallback("cyberblock.cyberware.screen.os_combat", "Sandevistan or Berserk goes here");
 					}
 				}
 			}
@@ -200,6 +212,8 @@ public final class CyberwareScreen extends Screen {
 
 		if (!hovered.isEmpty()) {
 			graphics.setTooltipForNextFrame(this.font, hovered, mouseX, mouseY);
+		} else if (hoveredGhost != null) {
+			graphics.setTooltipForNextFrame(this.font, hoveredGhost, mouseX, mouseY);
 		}
 	}
 

@@ -151,16 +151,9 @@ public final class CyberwareRules {
 	}
 
 	/**
-	 * The one implant in the Operating System slot (the cyberdeck, Sandevistan or Berserk), or null when it is free. While it
-	 * holds anything but the deck, a carried deck does not count (Ram.hasDeck).
-	 */
-	public static @Nullable Cyberware osImplant(final Map<String, String> slots) {
-		return Cyberware.byId(slots.get(CyberSlot.OPERATING_SYSTEM.key(0)));
-	}
-
-	/**
-	 * Installs into the first free position of the implant's slot (one holding an unknown id counts as free), else replaces
-	 * position 0. An implant already installed anywhere changes nothing.
+	 * Installs into the implant's fixed position (CyberSlot.position: deck 0, Sandevistan/Berserk 1 of the Operating System
+	 * slot), replacing whatever is there; any other implant goes into the first free position of its slot (one holding an
+	 * unknown id counts as free), else replaces position 0. An implant already installed anywhere changes nothing.
 	 */
 	public static Installed install(final Map<String, String> slots, final Cyberware cyberware) {
 		for (Map.Entry<String, String> e : slots.entrySet()) {
@@ -171,17 +164,51 @@ public final class CyberwareRules {
 
 		Map<String, String> next = new HashMap<>(slots);
 		CyberSlot slot = cyberware.slot();
-		for (int n = 0; n < slot.capacity(); n++) {
-			String key = slot.key(n);
-			if (Cyberware.byId(slots.get(key)) == null) {
-				next.put(key, cyberware.id());
-				return new Installed(Map.copyOf(next), Install.INSTALLED, null, key);
+		int fixed = CyberSlot.position(cyberware);
+		if (fixed < 0) {
+			for (int n = 0; n < slot.capacity(); n++) {
+				String key = slot.key(n);
+				if (Cyberware.byId(slots.get(key)) == null) {
+					next.put(key, cyberware.id());
+					return new Installed(Map.copyOf(next), Install.INSTALLED, null, key);
+				}
 			}
 		}
 
-		String first = slot.key(0);
-		Cyberware replaced = Cyberware.byId(next.put(first, cyberware.id()));
-		return new Installed(Map.copyOf(next), Install.REPLACED, replaced, first);
+		String key = slot.key(Math.max(0, fixed));
+		Cyberware replaced = Cyberware.byId(next.put(key, cyberware.id()));
+		return new Installed(Map.copyOf(next), replaced == null ? Install.INSTALLED : Install.REPLACED, replaced, key);
+	}
+
+	/**
+	 * An older save (one Operating System position) kept its Sandevistan or Berserk in operating_system/0: every implant with a
+	 * fixed position moves there (swapping with what holds it), once on join before the first `cyberware` send. Returns the
+	 * same map when nothing moved.
+	 */
+	public static Map<String, String> normalize(final Map<String, String> slots) {
+		Map<String, String> next = new HashMap<>(slots);
+		boolean moved = false;
+		for (CyberSlot slot : CyberSlot.values()) {
+			for (int n = 0; n < slot.capacity(); n++) {
+				String key = slot.key(n);
+				Cyberware c = Cyberware.byId(next.get(key));
+				int fixed = c == null ? -1 : CyberSlot.position(c);
+				if (fixed >= 0 && fixed != n) {
+					String to = slot.key(fixed);
+					String there = next.get(to);
+					next.put(to, c.id());
+					if (there == null) {
+						next.remove(key);
+					} else {
+						next.put(key, there);
+					}
+
+					moved = true;
+				}
+			}
+		}
+
+		return moved ? Map.copyOf(next) : slots;
 	}
 
 	/** The HUD's row: every installed ACTIVE or AUTO implant, in catalogue order. */

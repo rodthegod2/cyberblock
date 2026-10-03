@@ -22,8 +22,8 @@ import org.jspecify.annotations.Nullable;
  * activation in survival, and by `/cyberblock kit` at any time. The hotbar gets what is used first (sword, bow, blocks,
  * TNT, flint and steel, pearls, rockets, lead, fishing rod), the shield goes in the offhand and the elytra on the chest;
  * the quickhack chips and the rest go in the main inventory, so they never crowd the hotbar. A basic set of cyberware is
- * installed at once (cyberdeck, Kiroshi optics, reinforced tendons, biomonitor: plan retest2 C4) and three ACTIVE
- * implants come as items to try installing.
+ * installed at once (cyberdeck and Sandevistan in the two Operating System positions, Kiroshi optics, reinforced tendons,
+ * biomonitor: plan retest2 C4, retest3 section 1.8) and two ACTIVE implants come as items to try installing.
  */
 public final class Kit {
 	/** {@link Entry#slot()}: the first free slot of the main inventory (9..35). */
@@ -80,11 +80,11 @@ public final class Kit {
 			e.add(new Entry("cyberblock:" + hack.item(), 1, MAIN));
 		}
 
-		for (Cyberware c : List.of(Cyberware.CYBERDECK, Cyberware.KIROSHI_OPTICS, Cyberware.REINFORCED_TENDONS, Cyberware.BIOMONITOR)) {
+		for (Cyberware c : List.of(Cyberware.CYBERDECK, Cyberware.SANDEVISTAN, Cyberware.KIROSHI_OPTICS, Cyberware.REINFORCED_TENDONS, Cyberware.BIOMONITOR)) {
 			e.add(new Entry("cyberblock:" + c.id(), 1, INSTALL));
 		}
 
-		for (Cyberware c : List.of(Cyberware.SANDEVISTAN, Cyberware.OPTICAL_CAMO, Cyberware.PROJECTILE_LAUNCH_SYSTEM)) {
+		for (Cyberware c : List.of(Cyberware.OPTICAL_CAMO, Cyberware.PROJECTILE_LAUNCH_SYSTEM)) {
 			e.add(new Entry("cyberblock:" + c.id(), 1, MAIN));
 		}
 

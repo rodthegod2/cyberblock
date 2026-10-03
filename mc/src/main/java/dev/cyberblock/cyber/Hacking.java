@@ -27,8 +27,6 @@ public final class Hacking {
 	static final long CONNECTED_ANSWER_NANOS = 60_000_000_000L;
 	static final double SCAN_RANGE = 48.0;
 	static final double KIROSHI_SCAN_RANGE = 80.0;
-	/** cyberblock.hack.no_deck_os, shown until the lang file has its line: the implant, then the cyberware screen's key. */
-	private static final String NO_DECK_OS_FALLBACK = "Your Operating System slot holds %s: swap in the cyberdeck with %s to hack";
 	private static final AtomicInteger ids = new AtomicInteger();
 	private static final Map<Integer, Pending> pending = new HashMap<>();
 	private static @Nullable Locked locked;
@@ -142,18 +140,9 @@ public final class Hacking {
 		return true;
 	}
 
-	/**
-	 * Why there is no RAM (quickhacks, RAM shards). With Sandevistan or Berserk in the Operating System slot only an installed
-	 * deck counts, so the message names that implant instead of the plain one's "or carry one". Server side.
-	 */
+	/** Why there is no RAM (quickhacks, RAM shards): no cyberdeck installed or carried. */
 	static Component noDeck(final Player player) {
-		Cyberware os = CyberwareRules.osImplant(CyberData.slots(player));
-		if (os == null || os == Cyberware.CYBERDECK) {
-			return Component.translatable("cyberblock.hack.no_deck");
-		}
-
-		return Component.translatableWithFallback("cyberblock.hack.no_deck_os", NO_DECK_OS_FALLBACK, Ripperdoc.name(os),
-			Component.keybind("key.cyberblock.cyberware"));
+		return Component.translatableWithFallback("cyberblock.hack.no_deck", "No cyberdeck: install one in the Operating System slot (U) or carry one");
 	}
 
 	/** A `hackresult`: a failure gives the RAM back and says why; a success lets HackFx finish the upload and play the impact. */

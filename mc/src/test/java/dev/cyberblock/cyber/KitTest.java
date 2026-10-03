@@ -33,10 +33,12 @@ class KitTest {
 			Map.entry("minecraft:elytra", 1), Map.entry("minecraft:firework_rocket", 16),
 			Map.entry("minecraft:zombie_spawn_egg", 4), Map.entry("minecraft:skeleton_spawn_egg", 2), Map.entry("minecraft:creeper_spawn_egg", 2));
 		vanilla.forEach((item, count) -> assertEquals(count, c.get(item), item));
-		// plan retest2 C4: a basic set installed at once, three ACTIVE implants to install, and the old weapons gone
+		// plan retest2 C4 / retest3 1.8: a basic set installed at once (the deck and the Sandevistan together), two ACTIVE
+		// implants to install, and the old weapons gone
 		List<String> install = Kit.ENTRIES.stream().filter(e -> e.slot() == Kit.INSTALL).map(Kit.Entry::item).toList();
-		assertEquals(List.of("cyberblock:cyberdeck", "cyberblock:kiroshi_optics", "cyberblock:reinforced_tendons", "cyberblock:biomonitor"), install);
-		for (String implant : List.of("cyberblock:sandevistan", "cyberblock:optical_camo", "cyberblock:projectile_launch_system")) {
+		assertEquals(List.of("cyberblock:cyberdeck", "cyberblock:sandevistan", "cyberblock:kiroshi_optics", "cyberblock:reinforced_tendons",
+			"cyberblock:biomonitor"), install);
+		for (String implant : List.of("cyberblock:optical_camo", "cyberblock:projectile_launch_system")) {
 			assertEquals(Kit.MAIN, slotOf(implant), implant);
 			assertEquals(1, c.get(implant), implant);
 		}
@@ -44,7 +46,7 @@ class KitTest {
 		assertNull(c.get("cyberblock:mantis_blade"));
 		assertNull(c.get("cyberblock:gorilla_gauntlet"));
 		// nothing else
-		assertEquals(1 + Hack.values().length + vanilla.size() + install.size() + 3, c.size());
+		assertEquals(1 + Hack.values().length + vanilla.size() + install.size() + 2, c.size());
 		List<String> potions = Kit.ENTRIES.stream().filter(e -> e.potion() != null).map(e -> e.item() + " " + e.potion() + " " + e.count()).toList();
 		assertEquals(List.of("minecraft:potion minecraft:swiftness 1", "minecraft:potion minecraft:invisibility 1", "minecraft:potion minecraft:leaping 1"), potions);
 	}
