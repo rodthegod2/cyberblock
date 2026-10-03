@@ -28,6 +28,7 @@ namespace cb::keys
 	inline constexpr uint32_t kS = 0x53;
 	inline constexpr uint32_t kT = 0x54;
 	inline constexpr uint32_t kW = 0x57;
+	inline constexpr uint32_t kX = 0x58;
 	inline constexpr uint32_t kF5 = 0x74;
 	inline constexpr uint32_t kF9 = 0x78;
 	inline constexpr uint32_t kLeftShift = 0xA0;
@@ -44,7 +45,7 @@ namespace cb::keys
 		bool operator==(const Binds &) const = default;
 	};
 
-	/// Keys Cyberpunk never sees while forwarding: E, Q, T, 1-9, "/", F5 and the two bound keys, and F9 (Cyberblock's
+	/// Keys Cyberpunk never sees while forwarding: E, Q, T, X, 1-9, "/", F5 and the two bound keys, and F9 (Cyberblock's
 	/// toggle, which input.cpp keeps from Cyberpunk in every state, so its QuickLoad never fires).
 	bool is_swallowed(uint32_t vk, const Binds &binds);
 

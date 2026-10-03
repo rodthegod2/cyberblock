@@ -704,7 +704,7 @@
   },
   {
    "vk": 88,
-   "bindable": true
+   "bindable": false
   },
   {
    "vk": 89,

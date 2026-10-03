@@ -33,10 +33,10 @@ namespace
 
 // ---- the swallow set ---------------------------------------------------------------------------------------------------
 
-TEST(the_fixed_swallow_set_is_e_q_t_digits_slash_and_f5)
+TEST(the_fixed_swallow_set_is_e_q_t_x_digits_slash_and_f5)
 {
 	const Binds defaults;
-	for (uint32_t vk : {uint32_t('E'), uint32_t('Q'), uint32_t('T'), kOem2, kF5})
+	for (uint32_t vk : {uint32_t('E'), uint32_t('Q'), uint32_t('T'), uint32_t('X'), kOem2, kF5})
 		CHECK(is_swallowed(vk, defaults));
 	for (uint32_t vk = '1'; vk <= '9'; ++vk)
 		CHECK(is_swallowed(vk, defaults));
@@ -52,8 +52,8 @@ TEST(the_default_binds_g_and_k_are_swallowed_too)
 
 TEST(rebinding_moves_the_swallowed_keys)
 {
-	const Binds moved{'Z', 'X'};
-	CHECK(is_swallowed('Z', moved) && is_swallowed('X', moved));
+	const Binds moved{'L', 'O'};
+	CHECK(is_swallowed('L', moved) && is_swallowed('O', moved));
 	CHECK(!is_swallowed('G', moved) && !is_swallowed('K', moved)); // Cyberpunk gets its walk toggle and crafting back
 	CHECK(is_swallowed('E', moved) && is_swallowed(kF5, moved));   // the fixed set stays
 }
@@ -61,8 +61,8 @@ TEST(rebinding_moves_the_swallowed_keys)
 TEST(everything_else_reaches_cyberpunk)
 {
 	const Binds defaults;
-	for (uint32_t vk : {uint32_t('W'), uint32_t('A'), uint32_t('S'), uint32_t('D'), kSpace, kShift, kLeftShift, kControl, kLeftControl,
-						uint32_t('C'), kEscape, uint32_t('X'), uint32_t('R'), uint32_t('F'), uint32_t('V'), uint32_t(0x09) /*Tab*/,
+	for (uint32_t vk : {uint32_t('W'), uint32_t('A'), uint32_t('S'), uint32_t('D'), kSpace, kShift, kLeftShift, kRightShift, kControl,
+						kLeftControl, uint32_t('C'), kEscape, uint32_t('R'), uint32_t('F'), uint32_t('V'), uint32_t(0x09) /*Tab*/,
 						uint32_t(0x70) /*F1*/, uint32_t(0x61) /*Numpad 1*/, uint32_t(0x12) /*Alt*/})
 		CHECK(!is_swallowed(vk, defaults));
 }
@@ -88,7 +88,7 @@ TEST(bindable_keys_are_1_to_254_and_not_reserved)
 TEST(reserved_keys_cannot_be_bound)
 {
 	CHECK(!bindable(kF9) && !bindable(kEscape));
-	for (uint32_t vk : {uint32_t('E'), uint32_t('Q'), uint32_t('T'), kOem2, kF5}) // the swallow set
+	for (uint32_t vk : {uint32_t('E'), uint32_t('Q'), uint32_t('T'), uint32_t('X'), kOem2, kF5}) // the swallow set
 		CHECK(!bindable(vk));
 	for (uint32_t vk = '1'; vk <= '9'; ++vk)
 		CHECK(!bindable(vk));
@@ -107,15 +107,15 @@ TEST(the_default_binds_are_bindable_and_distinct)
 
 TEST(a_binds_message_sets_both_keys)
 {
-	const auto update = apply_binds(binds_message(R"({"hack":90,"skills":88})"), Binds{});
-	CHECK(update.has_value() && update->binds == binds_of(90, 88) && !update->hackRejected && !update->skillsRejected);
+	const auto update = apply_binds(binds_message(R"({"hack":90,"skills":79})"), Binds{});
+	CHECK(update.has_value() && update->binds == binds_of(90, 79) && !update->hackRejected && !update->skillsRejected);
 }
 
 TEST(a_missing_key_stays_and_an_unusable_one_keeps_its_previous_value)
 {
-	const Binds current{'Z', 'X'};
+	const Binds current{'Z', 'O'};
 	const auto onlyHack = apply_binds(binds_message(R"({"hack":86})"), current); // V
-	CHECK(onlyHack && onlyHack->binds == binds_of('V', 'X') && !onlyHack->hackRejected && !onlyHack->skillsRejected);
+	CHECK(onlyHack && onlyHack->binds == binds_of('V', 'O') && !onlyHack->hackRejected && !onlyHack->skillsRejected);
 	const auto badHack = apply_binds(binds_message(R"({"hack":69,"skills":82})"), current); // hack = E (swallowed), skills = R
 	CHECK(badHack && badHack->binds == binds_of('Z', 'R') && badHack->hackRejected && !badHack->skillsRejected);
 	const auto bothBad = apply_binds(binds_message(R"({"hack":0,"skills":120})"), current); // 0 and F9
@@ -134,19 +134,19 @@ TEST(a_binds_message_without_a_keys_object_is_malformed)
 	CHECK(!apply_binds(json::parse(R"({"t":"binds"})"), binds_of()));
 	CHECK(!apply_binds(json::parse(R"({"t":"binds","keys":[71,75]})"), binds_of()));
 	CHECK(!apply_binds(json::parse(R"({"t":"binds","keys":"GK"})"), binds_of()));
-	const auto empty = apply_binds(binds_message("{}"), Binds{'Z', 'X'});
-	CHECK(empty && empty->binds == binds_of('Z', 'X') && !empty->hackRejected && !empty->skillsRejected);
+	const auto empty = apply_binds(binds_message("{}"), Binds{'Z', 'O'});
+	CHECK(empty && empty->binds == binds_of('Z', 'O') && !empty->hackRejected && !empty->skillsRejected);
 }
 
 TEST(one_key_for_both_actions_is_refused)
 {
-	const Binds current{'Z', 'X'};
+	const Binds current{'Z', 'O'};
 	const auto same = apply_binds(binds_message(R"({"hack":86,"skills":86})"), current);
 	CHECK(same && same->binds == current && same->hackRejected && same->skillsRejected);
-	const auto clash = apply_binds(binds_message(R"({"hack":88})"), current); // hack onto the current skills key
+	const auto clash = apply_binds(binds_message(R"({"hack":79})"), current); // hack onto the current skills key
 	CHECK(clash && clash->binds == current && clash->hackRejected && !clash->skillsRejected);
-	const auto swap = apply_binds(binds_message(R"({"hack":88,"skills":90})"), current); // swapping is fine
-	CHECK(swap && swap->binds == binds_of('X', 'Z') && !swap->hackRejected && !swap->skillsRejected);
+	const auto swap = apply_binds(binds_message(R"({"hack":79,"skills":90})"), current); // swapping is fine
+	CHECK(swap && swap->binds == binds_of('O', 'Z') && !swap->hackRejected && !swap->skillsRejected);
 }
 
 // ---- the key-up rule ---------------------------------------------------------------------------------------------------

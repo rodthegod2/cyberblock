@@ -30,7 +30,6 @@ namespace
 	constexpr double kCursorCountsPerWindow = 800.0; // raw mouse counts to cross the whole window
 	constexpr auto kCursorInterval = std::chrono::microseconds(1'000'000 / 120);
 	constexpr char kEscape[] = "key:escape";
-	constexpr UINT kLeftShiftScanCode = 0x2A; // WM_KEYDOWN reports Shift as VK_SHIFT: the scan code tells left from right
 
 	std::atomic<HWND> g_window{nullptr};     // set once found (hooked or not), so the search stops
 	std::atomic<WNDPROC> g_original{nullptr}; // the window's own procedure, null unless hooked
@@ -211,20 +210,22 @@ namespace
 		return raw.header.dwType == RIM_TYPEKEYBOARD && swallow_raw_key(raw.data.keyboard);
 	}
 
-	/// The `key` name Minecraft knows `vk` by, or null when it is not forwarded. Left Shift (sprint) is told from the right
-	/// one by its scan code.
-	const char *key_name(WPARAM vk, LPARAM lParam)
+	/// The `key` name Minecraft knows `vk` by, or null when it is not forwarded. Either Shift is sprint (a double tap is
+	/// Steve's Sandevistan); Cyberpunk keeps both.
+	const char *key_name(WPARAM vk)
 	{
 		switch (vk)
 		{
 		case 'E': return "inventory";
 		case 'Q': return "drop";
 		case 'T': return "chat";
+		case 'X': return "swap"; // main hand <-> offhand (Minecraft's F, which is Cyberpunk's interact key)
 		case VK_OEM_2: return "command"; // the "/?" key on US layouts
 		case VK_F5: return "perspective";
 		case VK_SPACE: return "jump";
-		case VK_LSHIFT: return "sprint";
-		case VK_SHIFT: return ((lParam >> 16) & 0xFF) == kLeftShiftScanCode ? "sprint" : nullptr;
+		case VK_SHIFT:
+		case VK_LSHIFT:
+		case VK_RSHIFT: return "sprint";
 		}
 		if (vk == g_bindHack)
 			return "hack";
@@ -259,7 +260,7 @@ namespace
 		const bool swallow = (down ? g_messageGate.down(static_cast<uint32_t>(vk), swallowable)
 								   : g_messageGate.up(static_cast<uint32_t>(vk))) == cb::keys::KeyGate::Verdict::Swallow;
 
-		if (const char *name = key_name(vk, lParam))
+		if (const char *name = key_name(vk))
 		{
 			const std::string id = std::string("key:") + name;
 			if (!down)

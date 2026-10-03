@@ -26,7 +26,7 @@ mc_vels = [(1.0, 2.0, 3.0), (0.0, -9.8, 0.5), (-30.5, 12.25, 7.0), (0.5, 0.0, 0.
 # DLL takes (plan 2026-10-03 D5: not W A S D C, not the forwarded E Q T 1-9 F5, not F9). The DLL's keys::bindable and
 # Minecraft's VirtualKeys.of are both checked against this set, so the two lists cannot drift apart.
 bind_keys = list(range(0x41, 0x5B)) + list(range(0x30, 0x3A)) + list(range(0x70, 0x7C))
-bind_refused = {ord(c) for c in "WASDCEQT123456789"} | {0x74, 0x78}
+bind_refused = {ord(c) for c in "WASDCEQTX123456789"} | {0x74, 0x78}
 out = {
     "quat": [{"q": list(q), "yaw": y, "pitch": p} for q in qs for y, p in [cbmath.cp_quat_to_mc_yaw_pitch(*q)]],
     "down": [{"hit": list(h), "range": list(cbmath.down_hit_to_range(*h))} for h in hits],

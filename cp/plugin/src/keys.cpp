@@ -10,10 +10,10 @@ namespace
 		return vk >= kDigit1 && vk <= kDigit9;
 	}
 
-	/// The keys of the swallow set that never change: E, Q, T, 1-9, "/" and F5.
+	/// The keys of the swallow set that never change: E, Q, T, X, 1-9, "/" and F5.
 	bool in_fixed_swallow_set(uint32_t vk)
 	{
-		return vk == kE || vk == kQ || vk == kT || vk == kOem2 || vk == kF5 || is_digit(vk);
+		return vk == kE || vk == kQ || vk == kT || vk == kX || vk == kOem2 || vk == kF5 || is_digit(vk);
 	}
 
 	/// Reads `keys[name]`: leaves `slot` alone when it is missing, sets it when it is usable, and flags `rejected` when
