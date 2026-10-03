@@ -112,7 +112,9 @@ public final class SkillTreeScreen extends Screen {
 			this.drawNode(graphics, perk, PerkShop.check(perk, ranks, levels));
 		}
 
-		graphics.centeredText(this.font, Component.translatable("cyberblock.skills.levels", levels), left + PANEL / 2, top + PANEL - 16, 0xFF7CFF5A);
+		// beside the title: at 720p the GUI is 240 high and the panel's bottom edge is off screen
+		Component levelsText = Component.translatable("cyberblock.skills.levels", levels);
+		graphics.text(this.font, levelsText, left + PANEL - 8 - this.font.width(levelsText), top + 8, 0xFF7CFF5A, true);
 		Component note = CyberKeys.note();
 		if (note != null) {
 			graphics.centeredText(this.font, note, this.width / 2, Math.min(this.height - 10, top + PANEL + 4), 0xFFFF8A2B);

@@ -4,6 +4,8 @@ import com.mojang.blaze3d.platform.InputConstants;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.cyber.mixin.CyberKeyMappingAccessor;
 import dev.cyberblock.cyber.CyberWire;
+import java.util.HashSet;
+import java.util.Set;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -24,6 +26,8 @@ public final class CyberKeys {
 	private static int sentSkills = -1;
 	private static InputConstants.@Nullable Key lastHackKey;
 	private static InputConstants.@Nullable Key lastSkillsKey;
+	/** Keys the host holds down: released when the host goes away, so a lost key-up never leaves the hack key held. */
+	private static final Set<KeyMapping> hostHeld = new HashSet<>();
 
 	private CyberKeys() {
 	}
@@ -69,14 +73,19 @@ public final class CyberKeys {
 	}
 
 	/**
-	 * Every client tick: a skill key press opens the skill tree; a changed binding is sent to Cyberpunk at once (and noted
-	 * when it cannot be forwarded).
+	 * Every client tick: a skill key press opens the skill tree; keys the host held are let go once it stopped driving; a
+	 * changed binding is sent to Cyberpunk at once (and noted when it cannot be forwarded).
 	 */
 	static void tick(final Minecraft minecraft) {
 		while (skills.consumeClick()) {
 			if (minecraft.player != null && minecraft.gui.screen() == null) {
 				minecraft.gui.setScreen(new SkillTreeScreen());
 			}
+		}
+
+		if (!Cyberblock.active && !hostHeld.isEmpty()) {
+			hostHeld.forEach(mapping -> mapping.setDown(false));
+			hostHeld.clear();
 		}
 
 		InputConstants.Key hackKey = KeyMappingHelper.getBoundKeyOf(hack);
@@ -122,5 +131,10 @@ public final class CyberKeys {
 		}
 
 		mapping.setDown(down);
+		if (down) {
+			hostHeld.add(mapping);
+		} else {
+			hostHeld.remove(mapping);
+		}
 	}
 }
