@@ -30,6 +30,17 @@ namespace cb
 		return {x, z, -y};
 	}
 
+	Vec3 mc_to_cp_pos(double x, double y, double z)
+	{
+		return {x, -z, y};
+	}
+
+	Aabb mc_block_to_cp_aabb(int bx, int by, int bz)
+	{
+		const double x = bx, y = by, z = bz; // doubles first: no int overflow at the extremes
+		return {{x, -(z + 1), y}, {x + 1, -z, y + 1}};
+	}
+
 	Vec3 cp_quat_forward(double i, double j, double k, double r)
 	{
 		return {2 * (i * j - r * k), 1 - 2 * (i * i + k * k), 2 * (j * k + r * i)};

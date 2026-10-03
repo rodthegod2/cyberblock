@@ -9,6 +9,7 @@
 #include "link.hpp"
 #include "log.hpp"
 #include "natives.hpp"
+#include "world.hpp"
 
 namespace
 {
@@ -77,7 +78,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 		if (!aSdk->gameStates->Add(aHandle, RED4ext::EGameStateType::Running, &running))
 			cb::log::error("could not add the Running game state; no compositor or camera");
 
-		cb::link().start();
+		cb::link().start(cb::world::on_minecraft_message);
 		break;
 	}
 	case RED4ext::v1::EMainReason::Unload:
