@@ -10,7 +10,8 @@
 //   ignite -> CyberblockEffects.Ignite         teleport -> CyberblockEffects.Teleport
 //   lead / lead_release / pull / knock -> CyberblockTether.Lead / Release / Pull / Knockback
 //   effect -> CyberblockBuffs.Effect           hack -> CyberblockHacks.Hack       scan -> CyberblockScan.Scan
-//   perk -> CyberblockPerks.Set                perkfx -> CyberblockPerks.Fx
+//   perk -> CyberblockPerks.Set                perkfx -> CyberblockPerks.Fx (hands it to CyberblockCyberware.Fx)
+//   cyber -> CyberblockCyberware.Set           cyberfx -> CyberblockCyberware.Fx  (plan 2026-10-03-retest2 1.3)
 //
 // While a save is written, CyberblockSystem does not call Tick at all: the events wait in the DLL's queue and are applied
 // after the save. While not live otherwise (Off, Lost, no player) Night City is left alone:
@@ -18,7 +19,7 @@
 //     Minecraft world once live again (e.g. blocks a TNT chain removed while a lag spike made us Lost). Only the
 //     registry changes: boxes are spawned by CyberblockCollision.Stream while live, and every box was already despawned
 //     on leaving live (ClearWorld), so nothing appears in Night City;
-//   - perk ranks are recorded (Minecraft sends them after each hello, whatever the state);
+//   - perk ranks and installed cyberware are recorded (Minecraft sends them after each hello, whatever the state);
 //   - hack and scan requests are answered at once with ok:false, "Cyberblock is not active" (Minecraft waits for an
 //     answer to every request);
 //   - everything else refers to a moment that has passed and is dropped (counted in the log).
@@ -59,6 +60,8 @@ public class CyberblockEvents {
         n += 1;
         if Equals(kind, n"perk") {
           CyberblockPerks.Set(game, Cyberblock_EventName(), RoundF(Cyberblock_EventAmount()));
+        } else if Equals(kind, n"cyber") {
+          CyberblockCyberware.Set(game, Cyberblock_EventName(), RoundF(Cyberblock_EventAmount()) == 1);
         } else if !live {
           if !CyberblockEvents.Refuse(kind) {
             dropped += 1;
@@ -106,6 +109,8 @@ public class CyberblockEvents {
       }
     } else if Equals(kind, n"perkfx") {
       CyberblockPerks.Fx(game, Cyberblock_EventName(), Cyberblock_EventAmount());
+    } else if Equals(kind, n"cyberfx") {
+      CyberblockCyberware.Fx(game, Cyberblock_EventName(), Cyberblock_EventAmount());
     } else {
       Cyberblock_Log(s"events: unknown kind \(NameToString(kind)) ignored");
     }

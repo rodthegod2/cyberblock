@@ -8,7 +8,8 @@
 //   Look-at: TargetingSystem.GetLookAtObject(V, withLOS true, ignoreTransparent true), the call PlayerPuppet
 //     .ReevaluateLookAtTarget makes for V's own look-at target. When it gives nothing, or nothing Minecraft can show,
 //     TargetingSystem.GetObjectClosestToCrosshair(V, out angle distance, TargetSearchQuery) is asked, as
-//     kiroshiHighlightEffector and HUDManager.LookAtNearestCroshairTarget do: query.maxDistance 48 m, the default
+//     kiroshiHighlightEffector and HUDManager.LookAtNearestCroshairTarget do: query.maxDistance 48 m (80 m with the
+//     kiroshi_optics implant, plan 2026-10-03-retest2 section 1.7), the default
 //     testedSet (TargetingSet.Visible), and the hit is kept only within 4 degrees of the crosshair (|Yaw| and |Pitch|
 //     of the EulerAngles distance). The first query uses vanilla's quickhack filter TSF_Quickhackable(); its
 //     St_QuickHackable state follows IsQuickHackAble, which QuickhackModule.IsQuickhackBlockedByScene turns off for
@@ -99,10 +100,11 @@ public abstract class CyberblockScan {
   }
 
   // The fallback when V's look-at target is missing or nothing Minecraft can show: the object closest to the crosshair
-  // within 48 m and 4 degrees (see the header), first among vanilla's quickhack targets, then among any target but V.
+  // within 48 m (80 m with Kiroshi Optics installed, Cyberware.reds) and 4 degrees (see the header), first among
+  // vanilla's quickhack targets, then among any target but V.
   private static func NearCrosshair(game: GameInstance, player: ref<PlayerPuppet>) -> ref<GameObject> {
     let query: TargetSearchQuery;
-    query.maxDistance = 48.0;
+    query.maxDistance = CyberblockCyberware.Has(game, n"kiroshi_optics") ? 80.0 : 48.0;
     query.searchFilter = TSF_Quickhackable();
     let found = CyberblockScan.ClosestInCone(game, player, query);
     if IsDefined(found) {
