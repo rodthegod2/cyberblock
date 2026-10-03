@@ -188,7 +188,13 @@ public abstract class CyberblockEffects {
   }
 
   private static func Strike(game: GameInstance, target: Uint64, frac: Float, impulse: Vector4, attacker: ref<GameObject>) -> Void {
-    let object = CyberblockEffects.Find(game, target);
+    CyberblockEffects.StrikeBy(game, CyberblockEffects.Find(game, target), frac, impulse, attacker);
+  }
+
+  // Hit with an explicit attacker (instigator and source of the attack): Hit passes V, HitFrom a mob's puppet, the
+  // quickhack extras (HackFx.reds) V or a frenzied NPC.
+  public static func StrikeBy(game: GameInstance, target: ref<GameObject>, frac: Float, impulse: Vector4, attacker: ref<GameObject>) -> Void {
+    let object = target;
     let player = GetPlayer(game);
     if !IsDefined(object) || !IsDefined(player) || !IsDefined(attacker) {
       return;

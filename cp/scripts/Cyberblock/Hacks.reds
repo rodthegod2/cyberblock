@@ -104,6 +104,15 @@ public abstract class CyberblockHacks {
     }
     Cyberblock_HackResult(id, true, "", run.upload, run.kind);
     Cyberblock_Log(s"hack \(NameToString(hack)) on \(target): ok (\(NameToString(run.kind)), upload \(run.upload)s, +\(ArraySize(run.extras)) spread)");
+    // the upload-time extras (HackFx.reds); ping and frenzy report their NPCs after the result
+    if IsDefined(run.target) {
+      CyberblockHackFx.Queue(game, id, hack, run.target, run.kind, run.upload, true);
+    }
+    for chained in run.chained {
+      if IsDefined(chained) {
+        CyberblockHackFx.Queue(game, id, hack, chained, CyberblockHacks.PersonKind(chained), run.upload, false);
+      }
+    }
   }
 
   // The quickhack ObjectAction for a hack name (plan section 1.5), TDBID.None() for device or unknown names.
