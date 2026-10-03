@@ -3,6 +3,7 @@ package dev.cyberblock.client;
 
 import com.google.gson.JsonObject;
 import com.mojang.blaze3d.platform.InputConstants;
+import dev.cyberblock.client.cyber.HackWheel;
 import dev.cyberblock.client.mixin.KeyMappingAccessor;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -99,6 +100,11 @@ final class ClientInput {
 						pressOnScreen(screen, key);
 					}
 				} else {
+					// right-click while the hack key is held fires the chip the wheel picked (HackWheel), never a use
+					if (key == minecraft.options.keyUse && HackWheel.use(minecraft, down)) {
+						return;
+					}
+
 					if (down && !key.isDown()) {
 						KeyMappingAccessor access = (KeyMappingAccessor)key;
 						access.cyberblock$setClickCount(access.cyberblock$getClickCount() + 1);
@@ -121,12 +127,14 @@ final class ClientInput {
 			case "cursor" -> HostCursor.move(minecraft, m.get("x").getAsDouble(), m.get("y").getAsDouble());
 			case "click" -> HostCursor.click(minecraft, m.get("b").getAsInt(), !m.has("down") || m.get("down").getAsBoolean());
 			case "scroll" -> {
+				int notches = m.get("d").getAsInt();
 				if (minecraft.gui.screen() != null) {
-					HostCursor.scroll(minecraft, m.get("d").getAsInt());
-				} else if (player != null) {
+					HostCursor.scroll(minecraft, notches);
+				} else if (player != null && !HackWheel.scroll(minecraft, notches)) {
+					// the hotbar, unless the hack key is held and the wheel picked a quickhack chip instead
 					Inventory inventory = player.getInventory();
 					int size = Inventory.getSelectionSize();
-					inventory.setSelectedSlot(Math.floorMod(inventory.getSelectedSlot() - m.get("d").getAsInt(), size));
+					inventory.setSelectedSlot(Math.floorMod(inventory.getSelectedSlot() - notches, size));
 				}
 			}
 			case "hud" -> {

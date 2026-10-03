@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.cyberblock.client.cyber.HackWheel;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,17 @@ class HackTest {
 	void onlyTheLeverNeedsADevice() {
 		assertTrue(Hack.DEVICE.needsDevice());
 		assertEquals(1, Arrays.stream(Hack.values()).filter(Hack::needsDevice).count());
+	}
+
+	/** The hack key's wheel steps through the chips he has like the hotbar: wheel down (-1) forward, up (+1) back, wrapping. */
+	@Test
+	void theWheelStepsThroughTheChipsHeHas() {
+		List<Hack> chips = List.of(Hack.SHORT_CIRCUIT, Hack.PING, Hack.DEVICE);
+		assertSame(Hack.PING, HackWheel.step(chips, Hack.SHORT_CIRCUIT, -1));
+		assertSame(Hack.DEVICE, HackWheel.step(chips, Hack.SHORT_CIRCUIT, 1));
+		assertSame(Hack.SHORT_CIRCUIT, HackWheel.step(chips, Hack.DEVICE, -1));
+		assertSame(Hack.PING, HackWheel.step(chips, Hack.PING, 3));
+		assertSame(Hack.PING, HackWheel.step(List.of(Hack.PING), Hack.PING, -1));
 	}
 
 	@Test

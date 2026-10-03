@@ -11,6 +11,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
 
@@ -59,6 +60,34 @@ public final class Hacking {
 	public static @Nullable Locked locked() {
 		Locked l = locked;
 		return l != null && System.nanoTime() - l.untilNanos() < 0 ? l : null;
+	}
+
+	/** The first stack of hack's chip anywhere in the player's inventory (hotbar, main inventory, offhand), else EMPTY. Either side. */
+	public static ItemStack findChip(final Player player, final Hack hack) {
+		for (ItemStack stack : player.getInventory()) {
+			if (stack.is(CyberItems.QUICKHACKS.get(hack))) {
+				return stack;
+			}
+		}
+
+		return ItemStack.EMPTY;
+	}
+
+	/**
+	 * The hack key's wheel fired a chip (HackWheel): the first one of that kind in the inventory is used as if it were in his
+	 * hand; one that recharges says so.
+	 */
+	public static void useChip(final ServerPlayer player, final Hack hack) {
+		ItemStack stack = findChip(player, hack);
+		if (stack.isEmpty()) {
+			return;
+		}
+
+		if (player.getCooldowns().isOnCooldown(stack)) {
+			player.sendOverlayMessage(Component.translatable("cyberblock.hack.cooldown"));
+		} else {
+			use(player, stack, hack);
+		}
 	}
 
 	/** A quickhack item used (QuickhackItem): the rules, then RAM, cooldown and the `hack` message. True when it was sent. */

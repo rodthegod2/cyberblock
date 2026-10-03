@@ -191,35 +191,43 @@ final class ScanClient {
 
 	/**
 	 * HUD element: the tooltip right of the crosshair (name, faction, threat, an HP bar for people and vehicles). Once the key
-	 * is up the locked target is drawn dimmed, with how long the lock lasts.
+	 * is up the locked target is drawn dimmed, with how long the lock lasts. While the key is held it also names the chip the
+	 * wheel has picked (HackWheel), with or without a target.
 	 */
 	static void draw(final GuiGraphicsExtractor graphics, final DeltaTracker deltaTracker) {
+		Minecraft minecraft = Minecraft.getInstance();
 		ScanInfo info = shown;
-		if (info == null) {
+		List<Component> head = new ArrayList<>();
+		List<Component> tail = new ArrayList<>();
+		boolean dim = !held;
+		if (info != null) {
+			int threatRgb = dim ? 0x707A8A : threatColour(info) & 0xFFFFFF;
+			head.add(Component.literal(info.name().isEmpty() ? "?" : info.name()).withStyle(dim ? ChatFormatting.GRAY : ChatFormatting.WHITE, ChatFormatting.BOLD));
+			if (!info.faction().isEmpty()) {
+				head.add(Component.literal(info.faction()).withStyle(dim ? ChatFormatting.DARK_GRAY : ChatFormatting.GRAY));
+			}
+
+			if (info.device()) {
+				head.add(Component.translatable("cyberblock.scan.device").withColor(threatRgb));
+			} else {
+				Component threat = Component.translatable("cyberblock.scan.threat." + info.threat().toLowerCase(Locale.ROOT));
+				head.add(Component.translatable("cyberblock.scan.threat", threat).withColor(threatRgb));
+			}
+
+			if (dim) {
+				tail.add(Component.translatable("cyberblock.scan.locked", lockSeconds()).withStyle(ChatFormatting.AQUA));
+			}
+		}
+
+		if (held && minecraft.player != null) {
+			tail.addAll(HackWheel.lines(minecraft.player));
+		}
+
+		if (head.isEmpty() && tail.isEmpty()) {
 			return;
 		}
 
-		boolean dim = !held;
-		int threatRgb = dim ? 0x707A8A : threatColour(info) & 0xFFFFFF;
-		List<Component> head = new ArrayList<>();
-		head.add(Component.literal(info.name().isEmpty() ? "?" : info.name()).withStyle(dim ? ChatFormatting.GRAY : ChatFormatting.WHITE, ChatFormatting.BOLD));
-		if (!info.faction().isEmpty()) {
-			head.add(Component.literal(info.faction()).withStyle(dim ? ChatFormatting.DARK_GRAY : ChatFormatting.GRAY));
-		}
-
-		if (info.device()) {
-			head.add(Component.translatable("cyberblock.scan.device").withColor(threatRgb));
-		} else {
-			Component threat = Component.translatable("cyberblock.scan.threat." + info.threat().toLowerCase(Locale.ROOT));
-			head.add(Component.translatable("cyberblock.scan.threat", threat).withColor(threatRgb));
-		}
-
-		List<Component> tail = new ArrayList<>();
-		if (dim) {
-			tail.add(Component.translatable("cyberblock.scan.locked", lockSeconds()).withStyle(ChatFormatting.AQUA));
-		}
-
-		Font font = Minecraft.getInstance().font;
+		Font font = minecraft.font;
 		int width = 60;
 		for (Component line : head) {
 			width = Math.max(width, font.width(line));
@@ -229,7 +237,7 @@ final class ScanClient {
 			width = Math.max(width, font.width(line));
 		}
 
-		int barHeight = info.device() ? 0 : 5;
+		int barHeight = info == null || info.device() ? 0 : 5;
 		int height = (head.size() + tail.size()) * 10 - 2 + barHeight;
 		int x = graphics.guiWidth() / 2 + 16;
 		int y = graphics.guiHeight() / 2 - height / 2;

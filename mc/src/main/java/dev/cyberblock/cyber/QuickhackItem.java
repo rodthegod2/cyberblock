@@ -17,7 +17,8 @@ import net.minecraft.world.level.Level;
 /**
  * One quickhack (plan section 1.5): reusable, used on the target locked by holding the hack key. The server decides (it
  * holds the lock): RAM, cooldown and the `hack` message, or an action-bar message saying what is missing (a use while the
- * chip recharges is answered by CyberMod's UseItemCallback, since vanilla skips the item then).
+ * chip recharges is answered by CyberMod's UseItemCallback, since vanilla skips the item then). The hack key's wheel
+ * (HackWheel, client) fires chips from anywhere in the inventory through the same rules (Hacking.useChip).
  */
 public class QuickhackItem extends Item {
 	/** Whether the player reading a tooltip owns Cheap Hacks: the client half sets it (its own player's synced perks). */

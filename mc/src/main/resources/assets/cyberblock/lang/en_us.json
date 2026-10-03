@@ -46,6 +46,9 @@
 
 	"cyberblock.scan.device": "Device",
 	"cyberblock.scan.locked": "Locked %s s",
+	"cyberblock.wheel.chip": "Chip: %s (%s RAM)",
+	"cyberblock.wheel.recharging": "Chip: %s (recharging)",
+	"cyberblock.wheel.hint": "Wheel: pick chip, right-click: fire",
 	"cyberblock.scan.threat": "Threat: %s",
 	"cyberblock.scan.threat.none": "None",
 	"cyberblock.scan.threat.low": "Low",
