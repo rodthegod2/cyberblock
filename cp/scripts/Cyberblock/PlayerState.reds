@@ -1,7 +1,9 @@
 // V's state while Cyberblock is Active (on foot): weapons holstered, combat, quickhacks and phone blocked, god
-// mode, Cyberpunk HUD hidden (shown again while an interaction prompt or dialogue choices are up, which the HUD layer
-// draws), camera frozen while a Minecraft screen is open. Everything is runtime-only and is removed before every save
-// and on every load (see CyberblockSystem in Cyberblock.reds).
+// mode, V's meshes hidden, camera frozen while a Minecraft screen is open. In the Vehicle state only V's meshes are
+// hidden (re-test 3 plan task U1, F3: Steve sits in the car instead), checked every tick so meshes an FPP/TPP camera
+// switch re-enables vanish within a tick. Cyberpunk's HUD is no longer this object's business: CyberblockInk (Ui.reds)
+// keeps the 2D layers invisible while On. Everything is runtime-only and is removed before every save and on every
+// load (see CyberblockSystem in Cyberblock.reds).
 //
 // DISABLE list (plan 2026-10-03 S1.2, docs/notes/cp-mechanics-audit.md A.2 and A.4): also the healing hotkey, the
 // scanner (and its world slow-down), the radial/weapon wheel (and its freeze), quick melee, zoom and body pickup are
@@ -34,20 +36,17 @@
 //   StatusEffectSystem.RemoveStatusEffect, StatusEffectSystem.ObjectHasStatusEffect,
 //   StatusEffectHelper.RemoveStatusEffectsByInstigatorID, GodModeSystem.AddGodMode/ClearGodMode,
 //   EquipmentSystemWeaponManipulationRequest + EquipmentManipulationAction.UnequipAll (as QuickSlotsManager.HideWeapon).
-//   Codeware: GameInstance.GetInkSystem().GetLayer(n"inkHUDLayer").GetVirtualWindow() (Codeware wiki, ink layers).
-//   UIInteractions blackboard: InteractionChoiceHub (InteractionChoiceHubData: active, choices) and DialogChoiceHubs
-//   (DialogChoiceHubs.choiceHubs), read with FromVariant as PlayerPuppet.RemoveInteractionChoices and settingsMain do.
 
 public class CyberblockPlayerState {
   // Restrictions we applied. One the game already had is left alone and never removed by us.
   private let own: array<TweakDBID>;
   private let applied: Bool;
-  private let hudHidden: Bool;
-  private let hudDelay: Int32;
   // V's mesh components we switched off (first-person arms and body would otherwise show over Steve).
   private let hiddenMeshes: array<wref<IComponent>>;
   // Ticks until the next body check (every 2 s: toggling meshes rebuilds their render proxies on the GPU).
   private let bodyCheckDelay: Int32;
+  // Log lines about meshes the game re-enabled (at most 50 per session object).
+  private let reenableLogs: Int32;
   // Ability stats we zeroed and the modifier on each (parallel arrays); exactly these are removed again.
   private let zeroedStats: array<gamedataStatType>;
   private let zeroMods: array<ref<gameStatModifierData>>;
@@ -57,8 +56,15 @@ public class CyberblockPlayerState {
     return t"Cyberblock.PlayerState";
   }
 
-  // Called every tick (except while a save is written). active: Cyberblock state is Active (on foot).
-  public func Update(player: ref<PlayerPuppet>, active: Bool, screenOpen: Bool) -> Void {
+  // Called every tick (except while a save is written). active: Cyberblock state is Active (on foot); vehicle: the
+  // Vehicle state (only V's meshes are hidden there, every tick).
+  public func Update(player: ref<PlayerPuppet>, active: Bool, vehicle: Bool, screenOpen: Bool) -> Void {
+    if vehicle {
+      this.ClearEffects(player);
+      this.bodyCheckDelay = 0;
+      this.HideBody(player);
+      return;
+    }
     if !active {
       this.Clear(player);
       return;
@@ -67,9 +73,6 @@ public class CyberblockPlayerState {
       this.Holster(player);
       GameInstance.GetGodModeSystem(player.GetGame()).AddGodMode(player.GetEntityID(), gameGodModeType.Invulnerable, n"Cyberblock");
       this.applied = true;
-      if !this.hudHidden {
-        this.hudDelay = 20; // 2 s at 10 Hz, so the transition notification is read before the HUD goes away
-      }
     }
     // Re-checked every tick so a restriction the game removes in the meantime comes back, and so meshes the game
     // adds later (equipping clothes or cyberware) are hidden too.
@@ -88,40 +91,21 @@ public class CyberblockPlayerState {
     } else {
       this.Release(player, t"GameplayRestriction.NoCameraControl");
     }
-    if this.hudDelay > 0 {
-      this.hudDelay -= 1;
-    } else {
-      // The F prompts and dialogue choices are drawn on the HUD layer too: it shows while they are up and hides
-      // again on the first tick after they are gone.
-      if CyberblockPlayerState.ChoicesShown(player) {
-        this.ShowHud();
-      } else {
-        this.HideHud();
-      }
-    }
-  }
-
-  // An interaction prompt or a dialogue choice list is up (UIInteractions blackboard, the test of settingsMain.swift's
-  // noChoiceHubsShown: an active interaction hub with choices, or any dialogue choice hub).
-  private static func ChoicesShown(player: ref<PlayerPuppet>) -> Bool {
-    let bb = GameInstance.GetBlackboardSystem(player.GetGame()).Get(GetAllBlackboardDefs().UIInteractions);
-    if !IsDefined(bb) {
-      return false;
-    }
-    let hub = FromVariant<InteractionChoiceHubData>(bb.GetVariant(GetAllBlackboardDefs().UIInteractions.InteractionChoiceHub));
-    let dialog = FromVariant<DialogChoiceHubs>(bb.GetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs));
-    return (hub.active && ArraySize(hub.choices) > 0) || ArraySize(dialog.choiceHubs) > 0;
   }
 
   // Removes everything this object applied. Cheap when nothing is applied.
   public func Clear(player: ref<PlayerPuppet>) -> Void {
-    this.ShowHud();
     this.ClearSaved(player);
   }
 
-  // Removes what a save would carry (status effects, god mode). The HUD layer is not saved, so it stays hidden.
+  // Removes what a save would carry (status effects, god mode) and shows V again.
   public func ClearSaved(player: ref<PlayerPuppet>) -> Void {
     this.ShowBody();
+    this.ClearEffects(player);
+  }
+
+  // Restrictions, zeroed ability stats and god mode; V's meshes are left as they are.
+  private func ClearEffects(player: ref<PlayerPuppet>) -> Void {
     if !IsDefined(player) {
       return;
     }
@@ -141,40 +125,6 @@ public class CyberblockPlayerState {
   public static func ClearLeftovers(player: ref<PlayerPuppet>) -> Void {
     StatusEffectHelper.RemoveStatusEffectsByInstigatorID(player, CyberblockPlayerState.Instigator());
     GameInstance.GetGodModeSystem(player.GetGame()).ClearGodMode(player.GetEntityID(), n"Cyberblock");
-  }
-
-  // Always back to visible: the layer belongs to the global InkSystem, so a hidden one would outlast loads. Nothing but
-  // Cyberblock hides it for long; the game hides it again itself where it needs to (photo mode), so a visibility
-  // remembered at HideHud could be such a moment's and would hide the HUD for good.
-  public func ShowHud() -> Void {
-    if !this.hudHidden {
-      return;
-    }
-    let hud = this.HudWindow();
-    if IsDefined(hud) {
-      hud.SetVisible(true);
-    }
-    this.hudHidden = false;
-  }
-
-  private func HideHud() -> Void {
-    let hud = this.HudWindow();
-    if !IsDefined(hud) {
-      return;
-    }
-    this.hudHidden = true;
-    // Re-asserted every tick in case the game shows the layer again (e.g. after photo mode).
-    if hud.IsVisible() {
-      hud.SetVisible(false);
-    }
-  }
-
-  private func HudWindow() -> wref<inkVirtualWindow> {
-    let layer = GameInstance.GetInkSystem().GetLayer(n"inkHUDLayer");
-    if IsDefined(layer) {
-      return layer.GetVirtualWindow();
-    }
-    return null;
   }
 
   private func Own(player: ref<PlayerPuppet>, id: TweakDBID) -> Void {
@@ -261,7 +211,11 @@ public class CyberblockPlayerState {
         }
       }
     }
-    if hidden > 0 || reenabled > 0 {
+    // In a vehicle the check runs every tick and a camera switch re-enables meshes each time: those reports are capped.
+    if hidden > 0 || (reenabled > 0 && this.reenableLogs < 50) {
+      if hidden == 0 {
+        this.reenableLogs += 1;
+      }
       Cyberblock_Log(s"body: hid \(hidden) new meshes, \(reenabled) re-enabled by the game, tracking \(ArraySize(this.hiddenMeshes))");
     }
   }
