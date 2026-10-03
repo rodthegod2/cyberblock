@@ -26,7 +26,7 @@ public final class Ripperdoc {
 	}
 
 	/** The implant's item name, for messages. */
-	static Component name(final Cyberware cyberware) {
+	public static Component name(final Cyberware cyberware) {
 		return new ItemStack(cyberware.item()).getHoverName();
 	}
 
@@ -56,14 +56,16 @@ public final class Ripperdoc {
 			return;
 		}
 
-		if (!free) {
-			stack.shrink(1);
-		}
-
 		CyberData.setSlots(player, result.slots());
 		Cyberware replaced = result.replaced();
-		if (replaced != null && !free) {
-			player.getInventory().placeItemBackInInventory(new ItemStack(replaced.item()), Prediction.SERVER_ONLY);
+		if (!free) {
+			// the replaced implant goes back first: once the used stack is empty its slot counts as free, and when the item was
+			// used from the hand, vanilla then empties that hand slot (ServerPlayerGameMode.useItem), with whatever went into it
+			if (replaced != null) {
+				player.getInventory().placeItemBackInInventory(new ItemStack(replaced.item()), Prediction.SERVER_ONLY);
+			}
+
+			stack.shrink(1);
 		}
 
 		Cyberblock.LOG.info("cyberware: installed {} in {}", cyberware.id(), result.slotKey());
