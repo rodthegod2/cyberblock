@@ -1,6 +1,7 @@
 // Layers 2-6 (world interaction, mobs, flight, tethers, powers), the parts that need no game: what Minecraft sends
 // (`block`, `blocks`, `explosion`, `hit`, `ignite`, `teleport`, `lead`, `pull`, `knock`, `effect`, `hack`, `scan`, `perks`,
-// `perkfx`) is validated, converted to Cyberpunk space and queued for redscript, and the messages for Minecraft are built
+// `perkfx`, and since re-test 2 `cyberware` and `cyberfx`) is validated, converted to Cyberpunk space and queued for
+// redscript, `align` sets the ground alignment, and the messages for Minecraft are built
 // from what redscript submits. natives.cpp is the thin game-facing layer over this.
 // Wire formats: shared/protocol.md; plans: docs/superpowers/plans/2026-10-02-layer2-world-interaction.md section 1 and
 // docs/superpowers/plans/2026-10-03-layers3-6-complete-mod.md sections 1.2, 1.3 and 1.5, and
@@ -46,11 +47,13 @@ namespace cb::world
 		Scan,
 		Perk,
 		PerkFx,
+		Cyber,   // re-test 2: one installed/removed implant (plan section 1.3)
+		CyberFx, // re-test 2: an implant effect starts or ends
 	};
 
 	/// The CName redscript sees from Cyberblock_NextEvent: "explosion", "hit", "ignite", "block_add", "block_remove",
-	/// "block_reset", "teleport", "lead", "lead_release", "pull", "knock", "effect", "hack", "scan", "perk", "perkfx";
-	/// "" (the empty CName) for None.
+	/// "block_reset", "teleport", "lead", "lead_release", "pull", "knock", "effect", "hack", "scan", "perk", "perkfx",
+	/// "cyber", "cyberfx"; "" (the empty CName) for None.
 	const char *event_name(EventKind kind);
 
 	/// One Minecraft event, already in Cyberpunk space. Which fields each kind fills is the event table of plan
@@ -62,10 +65,10 @@ namespace cb::world
 		uint64_t target = 0; // hit / ignite / lead / pull / hack / scan target: the EntityID hash (scan: 0 = look-at)
 		double amount = 0;   // explosion power | hit dmg / 20 (fraction of the target's max health) | ignite seconds |
 							 // teleport yaw (Cyberpunk degrees) | lead length | pull strength | knock radius |
-							 // effect seconds | perk rank | perkfx seconds
+							 // effect seconds | perk rank | perkfx seconds | cyber 1 installed, 0 not | cyberfx seconds
 		Vec3 vector{};       // hit impulse, m/s
 		bool flag = false;   // explosion fire | lead has a fixed anchor | hack chains
-		std::string name;    // effect name | hack name | perk id | perkfx id
+		std::string name;    // effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id
 		double extra = 0;    // knock strength | effect amplifier
 		int32_t id = 0;      // hit: the mob that dealt it (-1 none) | hack, scan: the request id
 	};
@@ -79,6 +82,16 @@ namespace cb::world
 											   "field_medic",  "demolitions",  "extra_ram",  "cheap_hacks",  "chain_hack",
 											   "overclock",    "optical_camo", "headhunter", "cold_blood",   "silent_steps"};
 
+	/// Re-test 2 (plan section 1.7): the 17 cyberware ids, in the wire order, for `cyberware.list[].id`, and the three
+	/// implant effects of `cyberfx.id`.
+	inline constexpr const char *kCyberwareIds[] = {
+		"mantis_blades", "gorilla_arms", "monowire",     "projectile_launch_system", "reinforced_tendons", "fortified_ankles",
+		"lynx_paws",     "sandevistan",  "berserk",      "cyberdeck",                "kerenzikov",         "optical_camo",
+		"subdermal_armor", "kiroshi_optics", "biomonitor", "second_heart",           "ram_upgrade"};
+	inline constexpr const char *kCyberFxIds[] = {"sandevistan", "kerenzikov", "berserk"};
+	/// Most entries one `cyberware` message may hold (17 ids: a sane bound, the rest is dropped).
+	inline constexpr size_t kMaxCyberwareEntries = 32;
+
 	struct Parsed
 	{
 		enum class Status
@@ -89,9 +102,11 @@ namespace cb::world
 		};
 		Status status = Status::Ignored;
 		/// Status::Event: what the message expands to, in order. Usually one event. `blocks` is a `block_reset` (when it
-		/// resets) followed by a `block_add` per cell, `perks` is a `perk` per entry; a `blocks` without cells has none.
+		/// resets) followed by a `block_add` per cell, `perks` is a `perk` per entry, `cyberware` a `cyber` per entry; a
+		/// `blocks` without cells has none.
 		std::vector<Event> events;
-		/// List entries (`perks` entries, `blocks` cells) that were invalid and left out; `reason` names the first one.
+		/// List entries (`perks` and `cyberware` entries, `blocks` cells) that were invalid and left out; `reason` names
+		/// the first one.
 		size_t droppedEntries = 0;
 		std::string reason;
 	};
@@ -100,7 +115,8 @@ namespace cb::world
 	/// numbers), explosion power 0..20, hit dmg 0..1000, ignite seconds 0..120, ids decimal uint64 strings, and the
 	/// layers 3-6 limits of plan section 1.2: lead length 1..32, pull/knock strength 0..50, knock radius 0..16, effect
 	/// seconds 0..86400 and amplifier 0..255, perkfx seconds 0..30, at most 64 block cells per `blocks`, hack names and
-	/// perk ids from the lists above, effect names [a-z_]{1,32}. `hit` without `impulse` gets a zero impulse, and `hit`
+	/// perk ids from the lists above, effect names [a-z_]{1,32}; re-test 2: `cyberware` entries {id of kCyberwareIds,
+	/// on 0|1} (at most 32; a bad one is dropped and counted), `cyberfx` {id of kCyberFxIds, seconds 0..30}. `hit` without `impulse` gets a zero impulse, and `hit`
 	/// without `mob` the mob id -1. Positions (block AABBs, explosion, teleport, lead anchor, pull toward, knock centre)
 	/// get `+off`; the hit impulse does not. The production caller passes the current level_offset; the 0.0 default is
 	/// for tests. Never throws.
@@ -119,7 +135,7 @@ namespace cb::world
 	/// Block changes are state, so they are never lost to a burst: they are kept per cell (the last add or remove of each
 	/// cell wins, and a `block_reset` forgets every change before it), so memory is bounded by the cells that changed, at
 	/// most kMaxBlockCells. Every other kind is a FIFO of at most kCapacity events; when it is full the oldest transient
-	/// event goes first (a perk, scan or hack only when nothing else is left). next() hands out that FIFO first, then a
+	/// event goes first (a perk, cyber, scan or hack only when nothing else is left). next() hands out that FIFO first, then a
 	/// pending `block_reset`, then the block changes (by cell, not by arrival: their order does not matter once each cell
 	/// has one change).
 	class EventQueue
@@ -129,10 +145,10 @@ namespace cb::world
 		static constexpr size_t kMaxBlockCells = size_t(1) << 20;
 
 		/// Whether the mashup is Active. While it is not, the transient events (explosion, hit, ignite, teleport, lead,
-		/// lead_release, pull, knock, effect, perkfx) are discarded (nothing can act on them), and each change of state
-		/// discards the ones already queued, so a stale blast never replays on the next activation. `block_add`,
-		/// `block_remove`, `block_reset`, `perk`, `scan` and `hack` are always kept: redscript's block registry and perk
-		/// ranks need every one of them, and a scan or a hack must be answered.
+		/// lead_release, pull, knock, effect, perkfx, cyberfx) are discarded (nothing can act on them), and each change of
+		/// state discards the ones already queued, so a stale blast never replays on the next activation. `block_add`,
+		/// `block_remove`, `block_reset`, `perk`, `cyber`, `scan` and `hack` are always kept: redscript's block registry,
+		/// perk ranks and installed cyberware need every one of them, and a scan or a hack must be answered.
 		void set_active(bool active);
 		void push(const Event &event);
 		/// Counts a message parse_event rejected.

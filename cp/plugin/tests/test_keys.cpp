@@ -1,4 +1,5 @@
-// Input forwarding, the pure parts (plan 2026-10-03 task D5): the swallow set with the rebindable keys, bind validation,
+// Input forwarding, the pure parts (plan 2026-10-03 task D5, re-test 2 task D6: four binds): the swallow set with the
+// rebindable keys, bind validation,
 // the key-up rule as a state machine, the mouse bits and the look deltas.
 #include "keys.hpp"
 #include "test.hpp"
@@ -43,16 +44,16 @@ TEST(the_fixed_swallow_set_is_e_q_t_x_digits_slash_and_f5)
 	CHECK(!is_swallowed('0', defaults)); // the 0 key is not in the set
 }
 
-TEST(the_default_binds_g_and_k_are_swallowed_too)
+TEST(the_default_binds_g_k_u_and_y_are_swallowed_too)
 {
 	const Binds defaults;
-	CHECK(defaults.hack == 0x47 && defaults.skills == 0x4B);
-	CHECK(is_swallowed('G', defaults) && is_swallowed('K', defaults));
+	CHECK(defaults.hack == 0x47 && defaults.skills == 0x4B && defaults.cyberware == 0x55 && defaults.activate == 0x59);
+	CHECK(is_swallowed('G', defaults) && is_swallowed('K', defaults) && is_swallowed('U', defaults) && is_swallowed('Y', defaults));
 }
 
 TEST(rebinding_moves_the_swallowed_keys)
 {
-	const Binds moved{'L', 'O'};
+	const Binds moved{'L', 'O', 0x70, 0x71};
 	CHECK(is_swallowed('L', moved) && is_swallowed('O', moved));
 	CHECK(!is_swallowed('G', moved) && !is_swallowed('K', moved)); // Cyberpunk gets its walk toggle and crafting back
 	CHECK(is_swallowed('E', moved) && is_swallowed(kF5, moved));   // the fixed set stays
@@ -170,35 +171,89 @@ TEST(reserved_keys_cannot_be_bound)
 TEST(the_default_binds_are_bindable_and_distinct)
 {
 	const Binds defaults;
-	CHECK(bindable(defaults.hack) && bindable(defaults.skills) && defaults.hack != defaults.skills);
+	const uint32_t keys[] = {defaults.hack, defaults.skills, defaults.cyberware, defaults.activate};
+	for (size_t i = 0; i < 4; ++i)
+	{
+		CHECK(bindable(keys[i]));
+		for (size_t j = i + 1; j < 4; ++j)
+			CHECK(keys[i] != keys[j]);
+	}
 }
 
-// ---- the binds message -------------------------------------------------------------------------------------------------
+// ---- the binds message (plan 2026-10-03-retest2 section 1.8: four keys) ---------------------------------------------------
 
-TEST(a_binds_message_sets_both_keys)
+namespace
 {
-	const auto update = apply_binds(binds_message(R"({"hack":76,"skills":79})"), Binds{}); // L, O
-	CHECK(update.has_value() && update->binds == binds_of('L', 'O') && !update->fellBack());
+	/// Four binds as a function call (see binds_of).
+	Binds four(uint32_t hack, uint32_t skills, uint32_t cyberware, uint32_t activate)
+	{
+		return {hack, skills, cyberware, activate};
+	}
+
+	constexpr uint32_t kL = 'L', kO = 'O', k0 = '0', kF1 = 0x70, kF2 = 0x71, kF4 = 0x73;
 }
 
-TEST(a_missing_key_stays_and_an_unusable_one_sends_both_back_to_g_and_k)
+TEST(a_binds_message_sets_all_four_keys)
 {
-	const Binds current{'L', 'O'};
-	const auto onlyHack = apply_binds(binds_message(R"({"hack":85})"), current); // U
-	CHECK(onlyHack && onlyHack->binds == binds_of('U', 'O') && !onlyHack->fellBack());
-	const auto badHack = apply_binds(binds_message(R"({"hack":69,"skills":89})"), current); // hack = E (swallowed), skills = Y
-	CHECK(badHack && badHack->binds == binds_of() && badHack->hackRejected && !badHack->skillsRejected && badHack->fellBack());
+	const auto update =
+		apply_binds(binds_message(R"({"hack":76,"skills":79,"cyberware":48,"activate":112})"), Binds{}); // L, O, 0, F1
+	CHECK(update.has_value() && update->binds == four(kL, kO, k0, kF1) && !update->fellBack());
+}
+
+TEST(a_missing_name_keeps_the_current_key)
+{
+	// an older Minecraft build sends only hack and skills: cyberware and activate stay as they are
+	const auto older = apply_binds(binds_message(R"({"hack":76,"skills":79})"), four(kG, kK, k0, kF1));
+	CHECK(older && older->binds == four(kL, kO, k0, kF1) && !older->fellBack());
+	const auto onlyActivate = apply_binds(binds_message(R"({"activate":115})"), four(kL, kO, k0, kF1)); // F4
+	CHECK(onlyActivate && onlyActivate->binds == four(kL, kO, k0, kF4) && !onlyActivate->fellBack());
+	const auto empty = apply_binds(binds_message("{}"), four(kL, kO, k0, kF1));
+	CHECK(empty && empty->binds == four(kL, kO, k0, kF1) && !empty->fellBack());
+}
+
+TEST(an_unusable_key_falls_back_to_its_own_default)
+{
+	const Binds current = four(kL, kO, k0, kF1);
+	const auto badHack = apply_binds(binds_message(R"({"hack":69})"), current); // E: swallowed
+	CHECK(badHack && badHack->binds == four(kG, kO, k0, kF1) && badHack->hackRejected && badHack->fellBack());
+	CHECK(!badHack->skillsRejected && !badHack->cyberwareRejected && !badHack->activateRejected && !badHack->clash);
 	const auto badSkills = apply_binds(binds_message(R"({"skills":70})"), current); // F: Cyberpunk's interact
-	CHECK(badSkills && badSkills->binds == binds_of() && badSkills->skillsRejected);
-	const auto bothBad = apply_binds(binds_message(R"({"hack":0,"skills":120})"), current); // 0 and F9
-	CHECK(bothBad && bothBad->binds == binds_of() && bothBad->hackRejected && bothBad->skillsRejected);
-	for (const char *value : {R"("71")", "71.5", "-71", "300", "null", "true", "[71]", "255", "82" /*R*/, "86" /*V*/, "73" /*I*/})
+	CHECK(badSkills && badSkills->binds == four(kL, kK, k0, kF1) && badSkills->skillsRejected);
+	const auto badCyberware = apply_binds(binds_message(R"({"cyberware":120})"), current); // F9
+	CHECK(badCyberware && badCyberware->binds == four(kL, kO, kU, kF1) && badCyberware->cyberwareRejected);
+	const auto badActivate = apply_binds(binds_message(R"({"activate":87})"), current); // W
+	CHECK(badActivate && badActivate->binds == four(kL, kO, k0, kY) && badActivate->activateRejected);
+	for (const char *value : {R"("71")", "71.5", "-71", "300", "null", "true", "[71]", "255", "0", "82" /*R*/, "86" /*V*/, "73" /*I*/})
 	{
 		const auto update = apply_binds(binds_message(std::string(R"({"hack":)") + value + "}"), current);
-		CHECK(update && update->binds == binds_of() && update->hackRejected);
+		CHECK(update && update->binds == four(kG, kO, k0, kF1) && update->hackRejected);
 	}
-	const auto whole = apply_binds(binds_message(R"({"hack":85.0})"), current); // a whole number written as a float
-	CHECK(whole && whole->binds == binds_of('U', 'O') && !whole->fellBack());
+	const auto whole = apply_binds(binds_message(R"({"hack":113.0})"), current); // F2, a whole number written as a float
+	CHECK(whole && whole->binds == four(kF2, kO, k0, kF1) && !whole->fellBack());
+	const auto allBad = apply_binds(binds_message(R"({"hack":0,"skills":120,"cyberware":32,"activate":16})"), current);
+	CHECK(allBad && allBad->binds == Binds{} && allBad->hackRejected && allBad->skillsRejected && allBad->cyberwareRejected &&
+		  allBad->activateRejected && !allBad->clash);
+}
+
+TEST(any_two_equal_keys_send_all_four_back_to_g_k_u_y)
+{
+	const Binds current = four(kL, kO, k0, kF1);
+	const auto same = apply_binds(binds_message(R"({"hack":85,"skills":85})"), current);
+	CHECK(same && same->binds == Binds{} && same->clash && !same->hackRejected && !same->skillsRejected);
+	const auto ontoCurrent = apply_binds(binds_message(R"({"cyberware":76})"), current); // onto the current hack key
+	CHECK(ontoCurrent && ontoCurrent->binds == Binds{} && ontoCurrent->clash);
+	const auto lastTwo = apply_binds(binds_message(R"({"cyberware":114,"activate":114})"), current); // F3 twice
+	CHECK(lastTwo && lastTwo->binds == Binds{} && lastTwo->clash);
+	const auto ontoDefault = apply_binds(binds_message(R"({"activate":71})"), Binds{}); // Y -> G, the hack key
+	CHECK(ontoDefault && ontoDefault->binds == Binds{} && ontoDefault->clash);
+	// a refused key falls back to its default, which another key may already use: that is a clash too
+	const auto refusedOntoAnother = apply_binds(binds_message(R"({"skills":69})"), four(kK, kL, k0, kF1));
+	CHECK(refusedOntoAnother && refusedOntoAnother->binds == Binds{} && refusedOntoAnother->skillsRejected &&
+		  refusedOntoAnother->clash);
+	const auto swap = apply_binds(binds_message(R"({"hack":79,"skills":76,"cyberware":112,"activate":48})"), current);
+	CHECK(swap && swap->binds == four(kO, kL, kF1, k0) && !swap->fellBack()); // a permutation is fine
+	const auto defaults = apply_binds(binds_message(R"({"hack":71,"skills":75,"cyberware":85,"activate":89})"), current);
+	CHECK(defaults && defaults->binds == Binds{} && !defaults->fellBack());
 }
 
 TEST(a_binds_message_without_a_keys_object_is_malformed)
@@ -206,21 +261,17 @@ TEST(a_binds_message_without_a_keys_object_is_malformed)
 	CHECK(!apply_binds(json::parse(R"({"t":"binds"})"), binds_of()));
 	CHECK(!apply_binds(json::parse(R"({"t":"binds","keys":[71,75]})"), binds_of()));
 	CHECK(!apply_binds(json::parse(R"({"t":"binds","keys":"GK"})"), binds_of()));
-	const auto empty = apply_binds(binds_message("{}"), Binds{'L', 'O'});
-	CHECK(empty && empty->binds == binds_of('L', 'O') && !empty->fellBack());
 }
 
-TEST(one_key_for_both_actions_sends_both_back_to_g_and_k)
+TEST(the_cyberware_and_activate_keys_u_and_y_are_swallowed)
 {
-	const Binds current{'L', 'O'};
-	const auto same = apply_binds(binds_message(R"({"hack":85,"skills":85})"), current);
-	CHECK(same && same->binds == binds_of() && same->clash && !same->hackRejected && !same->skillsRejected);
-	const auto clash = apply_binds(binds_message(R"({"hack":79})"), current); // hack onto the current skills key
-	CHECK(clash && clash->binds == binds_of() && clash->clash);
-	const auto swap = apply_binds(binds_message(R"({"hack":79,"skills":76})"), current); // swapping is fine
-	CHECK(swap && swap->binds == binds_of('O', 'L') && !swap->fellBack());
-	const auto defaults = apply_binds(binds_message(R"({"hack":71,"skills":75})"), current); // G, K
-	CHECK(defaults && defaults->binds == binds_of() && !defaults->fellBack());
+	const Binds defaults;
+	CHECK(defaults.cyberware == 0x55 && defaults.activate == 0x59 && kU == 0x55 && kY == 0x59);
+	CHECK(is_swallowed('U', defaults) && is_swallowed('Y', defaults));
+	const Binds moved = four(kL, kO, kF2, kF4);
+	CHECK(is_swallowed(kF2, moved) && is_swallowed(kF4, moved));
+	CHECK(!is_swallowed('U', moved) && !is_swallowed('Y', moved)); // Cyberpunk gets them back
+	CHECK(is_swallowed('U', defaults, Context{.choices = true}));  // not a choice key
 }
 
 // ---- the key-up rule ---------------------------------------------------------------------------------------------------

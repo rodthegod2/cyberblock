@@ -30,6 +30,7 @@ namespace
 	constexpr double kMaxRequestId = 2147483647.0; // scripts get request and mob ids as Int32
 	constexpr size_t kMaxBlockCells = 64;
 	constexpr size_t kMaxPerkEntries = 32; // the table has 20 ids: a sane bound, the rest is dropped
+	constexpr size_t kMaxCyberwareEntries = cb::world::kMaxCyberwareEntries;
 	constexpr size_t kMaxEffectName = 32;
 
 	using cb::wire::Bad;
@@ -261,6 +262,47 @@ namespace
 		return e;
 	}
 
+	/// {"t":"cyberware","list":[{"id","on"}]} (plan 2026-10-03-retest2 section 1.2): a `cyber` per entry. A bad entry (not
+	/// an object, an unknown id, an `on` that is not 0 or 1, or past the 32nd) is left out and counted; a `list` that is
+	/// not an array rejects the message.
+	void parse_cyberware(const json &m, cb::world::Parsed &out)
+	{
+		const auto list = m.find("list");
+		if (list == m.end() || !list->is_array())
+			throw Bad{"list is missing or not an array"};
+		size_t seen = 0;
+		for (const json &entry : *list)
+		{
+			try
+			{
+				if (++seen > kMaxCyberwareEntries)
+					throw Bad{"more than 32 entries"};
+				if (!entry.is_object())
+					throw Bad{"an entry is not an object"};
+				Event e;
+				e.kind = EventKind::Cyber;
+				e.name = one_of(entry, "id", cb::world::kCyberwareIds);
+				e.amount = integer(entry, "on", 0.0, 1.0);
+				out.events.push_back(std::move(e));
+			}
+			catch (const Bad &bad)
+			{
+				if (out.droppedEntries++ == 0)
+					out.reason = "cyberware: " + bad.why;
+			}
+		}
+	}
+
+	/// {"t":"cyberfx","id","seconds"}: an implant effect starts (0 seconds: it ends now). It replaces Minecraft's perkfx.
+	Event parse_cyberfx(const json &m)
+	{
+		Event e;
+		e.kind = EventKind::CyberFx;
+		e.name = one_of(m, "id", cb::world::kCyberFxIds);
+		e.amount = number(m, "seconds", 0.0, kMaxPerkFxSeconds);
+		return e;
+	}
+
 	/// The kinds that are kept while the mashup is not Active (see EventQueue::set_active); every other kind is transient.
 	bool kept_while_inactive(EventKind kind)
 	{
@@ -270,6 +312,7 @@ namespace
 		case EventKind::BlockRemove:
 		case EventKind::BlockReset:
 		case EventKind::Perk:
+		case EventKind::Cyber: // the install state, like a perk rank
 		case EventKind::Scan:
 		case EventKind::Hack:
 			return true;
@@ -306,6 +349,8 @@ namespace cb::world
 		case EventKind::Scan: return "scan";
 		case EventKind::Perk: return "perk";
 		case EventKind::PerkFx: return "perkfx";
+		case EventKind::Cyber: return "cyber";
+		case EventKind::CyberFx: return "cyberfx";
 		case EventKind::None: break;
 		}
 		return "";
@@ -326,6 +371,8 @@ namespace cb::world
 				parse_blocks(message, out, off);
 			else if (t == "perks")
 				parse_perks(message, out);
+			else if (t == "cyberware")
+				parse_cyberware(message, out);
 			else if (t == "block")
 				out.events.push_back(parse_block(message, off));
 			else if (t == "explosion")
@@ -350,6 +397,8 @@ namespace cb::world
 				out.events.push_back(parse_scan(message));
 			else if (t == "perkfx")
 				out.events.push_back(parse_perkfx(message));
+			else if (t == "cyberfx")
+				out.events.push_back(parse_cyberfx(message));
 			else
 				return out; // another layer's message
 			out.status = Parsed::Status::Event;

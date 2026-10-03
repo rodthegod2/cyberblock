@@ -309,7 +309,9 @@ namespace
 
 	// Cyberblock_NextEvent() -> CName: pops the oldest Minecraft event and makes it current: n"explosion", n"hit",
 	// n"ignite", n"block_add", n"block_remove", n"block_reset", n"teleport", n"lead", n"lead_release", n"pull", n"knock",
-	// n"effect", n"hack", n"scan", n"perk" or n"perkfx"; n"" (the empty CName, hash 0) when there is none.
+	// n"effect", n"hack", n"scan", n"perk", n"perkfx", n"cyber" or n"cyberfx" (re-test 2: one `cyber` per entry of a
+	// `cyberware` message, kept while not Active like n"perk"; n"cyberfx" is dropped while not Active); n"" (the empty
+	// CName, hash 0) when there is none.
 	void NextEvent(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
 	{
 		++frame->code;
@@ -335,7 +337,7 @@ namespace
 	}
 
 	// Cyberblock_EventAmount() -> Float: explosion power | hit damage as a fraction of the target's max health | ignite
-	// seconds.
+	// seconds | ... (world.hpp Event::amount) | cyber: 1 installed, 0 not | cyberfx: seconds (0 = end now).
 	void EventAmount(IScriptable *, CStackFrame *frame, float *out, int64_t)
 	{
 		++frame->code;
@@ -359,7 +361,8 @@ namespace
 			*out = cb::world::events().current().flag;
 	}
 
-	// Cyberblock_EventName() -> CName: the effect name | hack name | perk id | perkfx id; n"" for the other kinds.
+	// Cyberblock_EventName() -> CName: the effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id; n""
+	// for the other kinds.
 	void EventName(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
 	{
 		++frame->code;

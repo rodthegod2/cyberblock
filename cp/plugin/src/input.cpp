@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <cwchar>
 #include <map>
 #include <mutex>
@@ -40,9 +41,11 @@ namespace
 	std::map<std::string, nlohmann::json> g_held;
 	int g_wheel = 0; // wheel delta not yet worth a notch. Window thread only.
 
-	// The keys bound to the hack and skills actions: written on the link thread (`binds`), read on the window thread.
+	// The keys bound to the four actions: written on the link thread (`binds`), read on the window thread.
 	std::atomic<uint32_t> g_bindHack{cb::keys::kG};
 	std::atomic<uint32_t> g_bindSkills{cb::keys::kK};
+	std::atomic<uint32_t> g_bindCyberware{cb::keys::kU};
+	std::atomic<uint32_t> g_bindActivate{cb::keys::kY};
 	// One gate per input path, since each of WM_INPUT and WM_KEYDOWN sees every key event. Window thread only.
 	cb::keys::KeyGate g_rawGate;
 	cb::keys::KeyGate g_messageGate;
@@ -73,7 +76,19 @@ namespace
 
 	cb::keys::Binds binds()
 	{
-		return {g_bindHack, g_bindSkills};
+		return {g_bindHack, g_bindSkills, g_bindCyberware, g_bindActivate};
+	}
+
+	/// A bound key as a player reads it: the letter or digit, F1..F24, else the VK code.
+	std::string vk_name(uint32_t vk)
+	{
+		if ((vk >= 'A' && vk <= 'Z') || (vk >= '0' && vk <= '9'))
+			return std::string(1, char(vk));
+		if (vk >= VK_F1 && vk <= VK_F24)
+			return "F" + std::to_string(vk - VK_F1 + 1);
+		char hex[8];
+		std::snprintf(hex, sizeof(hex), "0x%02X", unsigned(vk));
+		return hex;
 	}
 
 	/// Forward to Minecraft right now: mashup on, on foot, no Cyberpunk menu, linked, Cyberpunk's window in front.
@@ -260,6 +275,10 @@ namespace
 			return "hack";
 		if (vk == g_bindSkills)
 			return "skills";
+		if (vk == g_bindCyberware)
+			return "cyberware";
+		if (vk == g_bindActivate)
+			return "activate";
 		return nullptr;
 	}
 
@@ -574,14 +593,19 @@ namespace cb::input
 			world::note_invalid(1, "binds: keys is missing or not an object");
 			return;
 		}
-		g_bindHack = update->binds.hack;
-		g_bindSkills = update->binds.skills;
+		const keys::Binds &next = update->binds;
+		g_bindHack = next.hack;
+		g_bindSkills = next.skills;
+		g_bindCyberware = next.cyberware;
+		g_bindActivate = next.activate;
 		static std::atomic<bool> warned{false};
 		if (update->fellBack() && !warned.exchange(true))
-			log::warn("binds: %s; hack and skills fall back to G and K (logged once)",
-					  update->clash ? "the hack and skills keys are the same key"
+			log::warn("binds: %s (logged once)",
+					  update->clash ? "two actions got the same key; all four fall back to G, K, U and Y"
 									: "a key Minecraft sent cannot be used (not 1..254, or one of Cyberpunk's own or Minecraft's "
-									  "forwarded keys)");
+									  "forwarded keys); it falls back to its default");
+		log::info("binds: hack %s, skills %s, cyberware %s, activate %s", vk_name(next.hack).c_str(),
+				  vk_name(next.skills).c_str(), vk_name(next.cyberware).c_str(), vk_name(next.activate).c_str());
 	}
 
 	void shutdown()
