@@ -1045,7 +1045,10 @@ its reason; `needsInGame` has audit G-3…G-8 plus a check per hack and per buff
 - **Layer 4:**
   - glide from a megabuilding roof with fireworks and land on a street (if it jitters:
     `CyberblockFlight.SetCameraOnly(true)`);
-  - an ender pearl onto a rooftop teleports V.
+  - an ender pearl onto a rooftop teleports V;
+  - V held by the game: sitting in a seated conversation (a workspot) or during a quest scene, an ender pearl logs
+    `effects: teleport ignored, V is held by ...` and V stays seated; jumping off a roof into a scene trigger
+    mid-glide logs `flight: stopped, V is held by ...` and the scene plays on.
 - **Layer 5:**
   - drag a pedestrian with a lead;
   - reel a car with the fishing rod;

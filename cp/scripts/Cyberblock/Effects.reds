@@ -33,7 +33,10 @@
 //   Teleport: TeleportationFacility.Teleport(player, feet, Vector4.ToRotation(forward)) as vanilla teleports keep the
 //     look (worldMap.swift, roadBlockTrap.swift); the camera pitch lives in FPPCameraComponent, which fast travel
 //     resets explicitly (ResetPitch) before teleporting, so a plain teleport keeps it. Fall suppression on sim time
-//     (TimeSystem.GetSimTime).
+//     (TimeSystem.GetSimTime). Refused while V is in a vehicle or PlayerLocked: WorkspotGameSystem.IsActorInWorkspot,
+//     SceneSystemInterface.IsEntityInScene (as IsProtected does for NPCs), BraindanceSystem.GetIsInBraindance (fetched
+//     from the scriptable systems container as PlayerPuppet does), PlayerStateMachine.IsPlayerInsideMovingElevator
+//     (settingsMain.swift).
 //   Targets: Codeware EntityID.FromHash (inverse of the EntityID hash S1 sends) + GameInstance.FindEntityByID.
 
 public abstract class CyberblockEffects {
@@ -118,8 +121,27 @@ public abstract class CyberblockEffects {
       Cyberblock_Log("effects: teleport ignored, V is in a vehicle");
       return;
     }
+    if CyberblockEffects.PlayerLocked(game, player) {
+      Cyberblock_Log("effects: teleport ignored, V is held by a scene, workspot, braindance or moving elevator");
+      return;
+    }
     CyberblockEffectsService.Get().SuppressFall(game, 2.0);
     GameInstance.GetTeleportationFacility(game).Teleport(player, feet, CyberblockEffects.Facing(yaw));
+  }
+
+  // V is held by the game: a workspot (seated dialogue, quest animations), a scene, a braindance or a moving elevator.
+  // Moving V then (an ender pearl, a glide) could break the scene or the quest, and turning Cyberblock off would not
+  // undo it.
+  public static func PlayerLocked(game: GameInstance, player: ref<PlayerPuppet>) -> Bool {
+    if GameInstance.GetWorkspotSystem(game).IsActorInWorkspot(player) || GameInstance.GetSceneSystem(game).GetScriptInterface().IsEntityInScene(player.GetEntityID()) {
+      return true;
+    }
+    let braindance = GameInstance.GetScriptableSystemsContainer(game).Get(n"BraindanceSystem") as BraindanceSystem;
+    if IsDefined(braindance) && braindance.GetIsInBraindance() {
+      return true;
+    }
+    let psm = player.GetPlayerStateMachineBlackboard();
+    return IsDefined(psm) && psm.GetBool(GetAllBlackboardDefs().PlayerStateMachine.IsPlayerInsideMovingElevator);
   }
 
   private static func Strike(game: GameInstance, target: Uint64, frac: Float, impulse: Vector4, attacker: ref<GameObject>) -> Void {

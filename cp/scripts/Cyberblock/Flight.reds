@@ -7,7 +7,9 @@
 //     along Minecraft's yaw/pitch, and the mouse goes to Minecraft (Cyberblock_SetLookCapture).
 // On landing V is placed at the landing spot; falls are not reported while flying and for 2 s after a landing (or a
 // Teleport, Effects.reds). Clear stops everything and gives V back the view; if V was left in mid-air it is put on
-// the ground below, so leaving Cyberblock in mid-glide does not drop V from the sky.
+// the ground below, so leaving Cyberblock in mid-glide does not drop V from the sky. No flight starts while V is in a
+// vehicle or held by the game (CyberblockEffects.PlayerLocked: a scene, workspot, braindance or moving elevator), and
+// one that is under way when that happens stops where V is, without the landing teleport.
 //
 // 2.31 + Codeware 1.20.3 APIs (decompiled 2.31 scripts, Codeware.Global.reds; compile-checked):
 //   DelaySystem.DelayCallbackNextFrame(ref<DelayCallback>) (no DelayID: a generation number stops the loop),
@@ -67,7 +69,7 @@ public class CyberblockFlightService extends ScriptableService {
   private let anchor: Vector4; // camera only: where V waits
   private let camera: EntityID;
   private let cameraActive: Bool;
-  private let mountedLogged: Bool;
+  private let ignoredLogged: Bool;
 
   public static func Get() -> ref<CyberblockFlightService> {
     return GameInstance.GetScriptableServiceContainer().GetService(n"CyberblockFlightService") as CyberblockFlightService;
@@ -105,13 +107,13 @@ public class CyberblockFlightService extends ScriptableService {
       return;
     }
     if !Cyberblock_FlightActive() {
-      this.mountedLogged = false;
+      this.ignoredLogged = false;
       return;
     }
-    if VehicleComponent.IsMountedToVehicle(game, player) {
-      if !this.mountedLogged {
-        this.mountedLogged = true;
-        Cyberblock_Log("flight: ignored, V is in a vehicle");
+    if VehicleComponent.IsMountedToVehicle(game, player) || CyberblockEffects.PlayerLocked(game, player) {
+      if !this.ignoredLogged {
+        this.ignoredLogged = true;
+        Cyberblock_Log("flight: ignored, V is in a vehicle or held by a scene, workspot, braindance or moving elevator");
       }
       return;
     }
@@ -135,6 +137,12 @@ public class CyberblockFlightService extends ScriptableService {
       return;
     }
     this.lastFrame = CyberblockEffectsService.Now(game);
+    if CyberblockEffects.PlayerLocked(game, player) {
+      // A scene or the like took V mid-flight: leave V to it (Stop keeps falls quiet for 2 s).
+      this.Stop(game);
+      Cyberblock_Log("flight: stopped, V is held by a scene, workspot, braindance or moving elevator");
+      return;
+    }
     let teleport = GameInstance.GetTeleportationFacility(game);
     if !Cyberblock_FlightActive() {
       // Landed (FlightSeq moved on): the position is now the landing spot. A spot more than 1 m above the ground below

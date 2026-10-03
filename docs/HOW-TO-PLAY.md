@@ -229,6 +229,9 @@ so ragdolls, NCPD heat, deaths and explosions are all native.
   - it is always ignored under Slow Falling.
 - **Ender pearls:** throw one (right mouse). Where it lands, V is teleported, with the same 2 s fall grace. Steve
   takes the usual pearl damage.
+- **While the game holds V** (a quest scene or seated conversation, a braindance, a moving elevator), pearls and
+  gliding leave V where V is: a pearl does not move V, no glide starts, and a glide already under way stops (with the
+  same 2 s fall grace). This keeps quests from breaking.
 - Thrown things (pearls, arrows, tridents, potions, wind charges, the fishing hook) also stop on Night City walls,
   because the walls on their predicted paths are filled in ahead of time.
 - **Fallback** if the per-frame flight jitters: `CyberblockFlight.SetCameraOnly(true)` in CET. Then only the camera
