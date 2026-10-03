@@ -21,7 +21,8 @@ loom {
 			// a void world needs little heap; uncapped, the client grew to 4.4 GB of commit next to Cyberpunk
 			vmArgs "--enable-native-access=ALL-UNNAMED", "-Xmx2G", "-XX:+UseZGC"
 			// a test client beside the real game: gradlew runClient -Pcyberblock.port=25702 "-Pcyberblock.frame=Local\CyberblockFrameTestM"
-			["cyberblock.port", "cyberblock.frame"].each { if (project.hasProperty(it)) vmArg "-D${it}=${project.property(it)}" }
+			// (-Pcyberblock.autostart=true opens the Night City world from the title screen, as the launcher profile does)
+			["cyberblock.port", "cyberblock.frame", "cyberblock.autostart"].each { if (project.hasProperty(it)) vmArg "-D${it}=${project.property(it)}" }
 		}
 	}
 }
@@ -47,6 +48,11 @@ sourceSets {
 
 test {
 	useJUnitPlatform()
+}
+
+// the licence and credits travel inside the mod jar (plan retest3 M5); a file the repository does not have yet is skipped
+jar {
+	from(files("../LICENSE", "../NOTICE.md", "../THIRD-PARTY-NOTICES.md").filter { it.exists() })
 }
 
 processResources {
