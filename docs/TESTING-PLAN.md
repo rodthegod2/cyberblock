@@ -1,10 +1,231 @@
 # Cyberblock — in-game test session (2026-10-03)
 
 Everything below is built, unit-tested, compile-checked against the real 2.31 game scripts and reviewed. Work top to
-bottom; each step says what should happen. Tell Claude "R5 L-1: what you saw" (or "step N: ...") and it reads
+bottom (**Re-test 3 first**); each step says what should happen. Tell Claude "F4: what you saw" or "R5 L-1: what you saw" (or "step N: ...") and it reads
 `red4ext\logs\Cyberblock.log`, Minecraft's `mc\run\logs\latest.log` and captures the game window to diagnose.
 
-## Re-test 2 (do this first)
+## Re-test 3 (do this first)
+
+The third session (`out/user-issues.md`, section "Re-test 3 feedback") raised thirteen items, **F1 to F13**. They are all
+built on this version; this list is one check per item, in the user's order. (The R1-R6 below, under "Re-test 2", are an
+older list.) The plan behind them is `docs/superpowers/plans/2026-10-03-retest3-polish.md`; the wire is `shared/protocol.md`
+("Re-test 3"); the player guide is `docs/HOW-TO-PLAY.md`.
+
+| Item | What was wrong, and what changed |
+|---|---|
+| **F1** every quickhack feels the same | The hack wheel fired the first chip (Short Circuit) over the chip in your hand, and no chip had its own look. The chip in your hand wins now; every chip has its own Minecraft effect and a distinct Cyberpunk effect, also on crowd pedestrians. |
+| **F2** a Minecraft UI for the rest of the game, third person | Radar, eddies, wanted stars, quest, locator-bar waypoint, prompts, choices, subtitles, toasts, calls, journal, phone, atlas and pause are drawn by Minecraft. **F5** is a third-person view. |
+| **F3** Steve visible in vehicles | First-person: Steve's hands and the hotbar. Third-person camera: the whole seated Steve. |
+| **F4** the glide could not turn | The DLL now owns the glide's yaw and applies your mouse turn; it steers like the vanilla elytra. |
+| **F5** ground alignment | Perfect, unchanged: a regression check only. |
+| **F6** arm cyberware models | 3D models for Mantis Blades, Gorilla Arms, Monowire and the Projectile Launch System, first and third person. |
+| **F7** hits fling NPCs | Vanilla-like pushes; stagger, knockdown and ragdoll only on stronger hits. |
+| **F8** one key for all implants | **Y** = Operating System implant, **L** = Arms implant, **O** = Optical Camo; six rebindable keys, no clashes. |
+| **F9** deck and Sandevistan together | Two Operating System places. |
+| **F10** Sandevistan looks like nothing | A ReShade screen effect (chromatic split, tint, ghost trails, edge glow) and a Minecraft flourish. |
+| **F11** release-ready | Release zip with installer, launcher install, README, CHANGELOG, licences, CI, version 1.0.0. |
+| **F12** the old Cyberpunk UI must never show | Every Cyberpunk layer is invisible; menus are Minecraft screens; the few that cannot be replaced are restyled and framed. |
+| **F13** prompts and choices | Minecraft-styled prompt box and choice list, still driven by Cyberpunk's input. |
+
+**Before testing:**
+1. Close Cyberpunk. Either install from source (`uv run python -m tools.install` after building the DLL) or, for F11, the
+   release zip (`uv run python -m tools.package`, then `install.bat` from the unzipped folder).
+2. **Restart Minecraft** (`uv run python -m tools.play`, or the launcher installation): a Minecraft that was already running
+   still has the old mod.
+3. Load a save on a street, press **F9**, and wait for "Cyberblock on". Use survival (the kit is handed out) unless a check
+   says otherwise.
+4. To try the interface without Cyberpunk, a running Minecraft client can be driven by the fake host:
+   `uv run python -m tools.fakehost --ui --hold 12`, `--hacks` (answers hacks with `upload`, `kind` and spreads) and
+   `--seat` (a vehicle, `fp` flipping every 2 s).
+
+**Logs to grep** (`<Cyberpunk 2077>\red4ext\logs\Cyberblock.log` for the DLL and scripts, `mc\run\logs\latest.log` for
+Minecraft):
+
+| Where | Line |
+|---|---|
+| DLL | `Cyberblock 1.0.0 loading`; `Minecraft says hello: mod cyberblock 1.0.0, Minecraft 26.3`; `version mismatch: DLL 1.0.0, mod X` |
+| DLL | `binds: hack G, skills K, cyberware U, activate Y, arms L, camo O` |
+| DLL | `flight: N frames, ..., yaw start A end B, mouse x N counts at R deg/count, pitch min..max`; `look: R deg per mouse count` |
+| DLL | `seat: on (third person\|first person)`, `seat: off`; `view: third person on (distance D m)`, `view: first person (<reason>)`, `view: applied, eye moved D m` |
+| DLL | `screenfx: sandevistan S s`; `compositor: menu pass-through on\|off` |
+| DLL | `ui: pump ready` or `ui: pump disabled: CyberblockUi.Pump missing`; `ui: action <a>`; `ui: unpaused (<reason>)`; `ui: reply <kind> <n> groups, <m> lines, <k> pins, <b> bytes` |
+| Scripts | `ui: ink layers <names>`, `ui: hidden (on)`, `ui: restored (<reason>)`, `ui: shown for <reason>`, `ui: menu <name> -> minecraft <screen>`, `ui: pass-through <menu>`, `ui: paused by Minecraft`, `ui: resumed`, `ui: notify <kind>`, `ui: escape hatch <menu>` |
+| Scripts | `hack <name> on <id>: ok (<kind>, upload <s>s, +<n> spread)`; `hackfx: <hack> <kind> <what>`; `knock: <id> s=<s> tier=<tier> impulse=<i>`; `seat: slot <slot> hips (<x>, <y>, <z>) tpp <b>`, `seat: no Hips slot`; `cyberfx: <id> <s> s` |
+| Minecraft | `hackfx: {} on {} upload {} s`; `webs: placed {} removed {}`; `binds: unbound vanilla {} ({})`; `cyberware: fire {} ({})`; `ui: screen {}`; `persp: {}`; `launcher: opening {} (autostart\|button)` |
+
+### F1. Every quickhack is unique (and the chip in your hand fires)
+Survival, the kit (deck and all ten chips), a **ganger** (a hostile NPC in a gang area: a red dot on the radar) and a **pedestrian** (crowd) within 20 m.
+1. **Chip in hand.** Put **Blaze Chip** on a hotbar slot and select it. Hold **G** on the ganger, roll the wheel to
+   **Redstone Charge**, right-click.
+   - **Expect:** the action bar says "Hack: Blaze Chip" (orange); the **Blaze Chip** hack runs, not Short Circuit. Select a
+     hotbar slot that holds a different chip: that one fires, and the wheel pick is forgotten.
+   - **Log:** `script: hack overheat ...` (the chip in hand), never `short_circuit` for every shot.
+2. **All ten, on the ganger, then on the pedestrian.** Fire each chip once at each, from the hand. Wait for the effect (1-4 s
+   after the beam starts).
+
+   | Chip | Minecraft at the impact | Ganger (vanilla quickhack) | Pedestrian (extra) |
+   |---|---|---|---|
+   | Redstone Charge | visual lightning bolt, sparks | electrocuted | electrocuted (kills) |
+   | Blaze Chip | flame spiral, lava pops, smoke, no fire blocks | burns | set alight 5 s |
+   | Ink Sac Daemon | ink burst and halo | blinded | blinded 5 s |
+   | Cobweb Daemon | **real cobwebs** round the target, gone after 6 s | cannot walk | stunned 4 s |
+   | Spider Eye Virus | green cloud, arcs to people it spreads to | contagion spreads | the 2 nearest within 6 m get it |
+   | Wither Skull Daemon | wither trail, soul and smoke burst | brain damage | heavy hit, no ragdoll |
+   | Compass Ping | gold ring, hostiles within 32 blocks glow through walls 10 s | squad revealed | hostile NPCs within 30 m revealed |
+   | Bottle of Forgetting | swirl at the head; mobs drop their target | forgets V | dazed 2 s |
+   | Creeper Brain | green creeper face above the head | attacks its friends | frenzy 6 s, hits the nearest person within 4 m |
+   | Redstone Lever (on a camera, traffic light, vending machine, other) | click and smoke / bell and dust / notes / dust | the device's action | - |
+
+   - **Log:** `hack <name> on <id>: ok (<kind>, upload <s>s, +<n> spread)` with `kind` `squad` for the ganger and `crowd` for
+     the pedestrian (`driver` for a car, `camera` / `traffic` / `distract` / `device` for the lever); `hackfx: <hack> <kind>
+     <what>` for every extra that ran on a pedestrian. Minecraft: `hackfx: <hack> on <id> upload <s> s`, and `webs: placed N
+     removed N` for the Cobweb Daemon (N equal after 6 s).
+   - **Report** any chip whose look is the same as another's, or whose Cyberpunk effect is invisible.
+3. **Busy.** Fire a chip, then another at the same target during the beam: "<target> is still uploading a hack", RAM not spent.
+
+### F2. The Minecraft interface on screen, and third person
+1. **Radar and stats.** The 80 x 80 radar is top left with dots for people and squares for cars; under it the eddies
+   (`€$ <money>`), the wanted stars, the time, the district. Walk around: the radar rotates with the camera.
+2. **Quest and waypoint.** Open **J**, **Track** a quest (the Journal screen is Minecraft's). **Expect:** the quest panel at
+   the top right with its objectives and the distance, a marker on the locator bar, and the arrow at the radar's edge
+   pointing at it. Complete or change an objective: the panel updates.
+3. **Money and wanted.** Earn or spend eddies (a vendor, a street vending machine): the figure changes and an "Eddies" toast
+   shows. Make NCPD notice you (a TNT near police): stars appear and the toast says "Wanted".
+4. **Calls and messages.** When a call arrives (story or a fixer): a toast "Incoming call: <name>" with `[T] Answer / hold [T]
+   Reject`; **T** answers, hold **T** rejects; **T** is chat again afterwards. A new SMS gives a "Message" toast; **Messages**
+   shows the Phone screen. (If no call arrives in your save, note it as "not tested".)
+5. **Third person.** Press **F5** on foot: Steve seen from behind, the camera about 3 m back; walk into a wall, the camera
+   shortens; **F5** again is first person. It returns to first person in a car, a scene and a menu.
+   - **Log:** `view: third person on (distance D m)`, `view: applied, eye moved D m` (once, the measured movement),
+     `view: first person (<reason>)`; Minecraft `persp: back`, `persp: first`.
+
+### F3. Steve in vehicles
+Get into a car and then a bike.
+1. First-person vehicle camera: Steve's hands and the hotbar are visible; **no** Cyberpunk HUD, V's body is hidden. The
+   health, food and armour bars are hidden, the hotbar stays.
+2. Switch to the third-person vehicle camera: the **whole of Steve, seated** at V's seat. Switch back and forth several times:
+   V's own body never appears in either camera.
+3. Get out: bars and crosshair return.
+- **Log:** `seat: on (third person)` / `seat: on (first person)`, `seat: slot <slot> hips (...) tpp <b>`, `seat: off`.
+  `seat: no Hips slot` means the seat position fell back (Steve may float: report the vehicle's name).
+
+### F4. The glide steers with the camera
+Elytra, rockets, a megabuilding roof. Jump off, press Space, glide for 10 s and swing the mouse hard **left**, then **right**,
+then up and down.
+- **Expect:** the glide turns with the camera at once, like the vanilla elytra, left, right, up and down; it is no longer
+  locked to the start direction; the picture stays smooth.
+- **Log:** the flight summary `flight: N frames, ... yaw start A end B, mouse x N counts at R deg/count, pitch min..max`:
+  `A` and `B` differ by about the turn you made, `N` is not 0, and `look: R deg per mouse count` appears once.
+
+### F5. Ground alignment is unchanged
+On a flat street place a stone block: it sits **on** the street, not a block above it (as in Re-test 2 R4). Run
+`/cyberblock level` while standing on a different floor and place another: also level.
+- **Log:** `ground alignment: ...` lines as before.
+
+### F6. Arm implants in 3D
+Install **Mantis Blades**, **Gorilla Arms**, **Monowire** and the **Projectile Launch System** in turn (U; one arm at a time).
+- **Expect:** each has its own model on your arm in first person and on Steve's arms in third person (**F5**), and the model
+  changes while the implant is out (blades extended, launcher open). Glowing parts glow; nothing floats away from the arm.
+- Also look at Kiroshi Optics (glowing eyes), Subdermal Armor and Reinforced Tendons on Steve in third person, and Optical
+  Camo (Steve shimmers translucent cyan in third person).
+- **Report** a model that sits wrong on the arm (the transform is adjusted in code, not in the model).
+
+### F7. Knockback tiers
+Hit pedestrians with the iron sword, an empty hand with Gorilla Arms, a sprint hit, Knockback I and II swords and the
+gauntlet.
+
+| Hit | Expected |
+|---|---|
+| plain hit | a flinch, no flying |
+| sprint hit or Knockback I | a stagger, a step back |
+| Knockback II, gauntlet or Gorilla Arms | the person falls down |
+| Gorilla Arms and sprint | falls down |
+| gauntlet and Gorilla Arms | falls down and slides a short way (never flies metres) |
+
+- **Log:** `knock: <id> s=<speed> tier=<tier> impulse=<...>` with `s` about 2, 4.5, 7, 9.5 and 12 and tiers impact,
+  stagger, knockdown, knockdown and ragdoll. A Gorilla slam (**L**) knocks people down, no further.
+
+### F8. Y, L and O, and rebinding
+1. **Keys.** Install Sandevistan (U), Mantis Blades and Optical Camo. **Y** starts the Sandevistan, **L** lunges (aim at an
+   entity within 10 blocks), **O** cloaks you. Each key fires only its own slot; with nothing for a key the chat says "No
+   ... to fire (<key>)".
+2. **First start.** The first time the mod runs after the update, the chat says "Cyberblock took L from Advancements (rebind
+   it in Controls)" (and O from Friends). Advancements are in the pause menu.
+3. **Rebinding and a clash.** In Controls (category Cyberblock) set Arms to **Y**: all six keys go back to G K U Y L O and
+   chat says so. Rebind Arms to **F10** (allowed): L is Cyberpunk's again, F10 lunges. A refused key (for example **E**) falls
+   back to that action's own default.
+   - **Log:** `binds: hack G, skills K, cyberware U, activate Y, arms L, camo O` (changing with each rebind), Minecraft
+     `binds: unbound vanilla {} ({})` (first start only), `cyberware: fire <id> (<trigger>)`.
+
+### F9. Deck and Sandevistan together
+`/cyberblock kit`, press **U**: the Operating System slot has **two places**, the deck in the first and Sandevistan in the
+second. Hack a ganger (the deck works), press **Y** (Sandevistan) and hack again during it. Install **Berserk**: it replaces
+Sandevistan, never the deck. Take the deck out and carry it instead: RAM still works.
+- **Expect:** the advancement "Two Brains" appears. An older save with Sandevistan in the first place has it moved to the
+  second.
+- **Log:** `cyberware: installed <id> in operating_system`, `cyberfx: sandevistan <s> s`, `hack <name> on <id>: ok` during it.
+
+### F10. The Sandevistan screen effect
+Fire the Sandevistan (**Y**) while moving and looking around.
+- **Expect:** the picture gets a chromatic colour split at the edges, a lime and teal tint, ghost trails behind moving
+  things, an edge glow and a pulsing vignette; it fades in over about 0.15 s and out over 0.4 s; your hotbar and hand stay
+  sharp; the Minecraft side adds the afterimages and the "SANDEVISTAN" label. Kerenzikov (draw a bow while falling) shows
+  half of it. Open a Cyberpunk menu in the middle: the effect is off meanwhile.
+- **Slider:** in the ReShade overlay set **SandevistanStrength** to **0**: no screen effect (the Minecraft flourish stays);
+  back to 1: it returns.
+- **Log:** `screenfx: sandevistan <S> s`, `cyberfx: sandevistan <S> s`.
+
+### F11. Release install, the launcher and the Play button
+On a **clean copy** (a copy of the Cyberpunk folder with the frameworks, or a spare Windows account) with no earlier
+Cyberblock:
+1. `uv run python -m tools.package` and unzip `dist/Cyberblock-1.0.0.zip` somewhere else. Close Cyberpunk, run **install.bat**.
+   **Expect:** it finds the game (or accepts a dropped folder), warns if RED4ext, redscript, Codeware or ReShade is missing, backs
+   up the saves, refuses to overwrite a foreign file, keeps an existing `ReShade.fxh` and `ReShadePreset.ini`.
+2. Create the launcher installation as README and HOW-TO-PLAY say (Fabric 26.3, game directory `%APPDATA%\.minecraft-cyberblock`,
+   the JVM arguments **replaced** by `-Xmx2G -XX:+UseZGC --enable-native-access=ALL-UNNAMED -Dcyberblock.autostart=true`, the jar and
+   Fabric API in `mods`). Start it from the launcher: the title screen has **Play Cyberblock** and the world opens by itself.
+3. Start Cyberpunk, load a save, **F9**. Play for a minute; quit.
+4. **uninstall.bat**: the game folder is as before (a file you edited is left with a message).
+- **Log:** `Cyberblock 1.0.0 loading`, `Minecraft says hello: mod cyberblock 1.0.0, Minecraft 26.3`, no `version mismatch`;
+  Minecraft `launcher: opening cyberblock (autostart)` or `(button)`.
+- Also open the advancements screen (pause menu): the Cyberblock tab lists six advancements.
+
+### F12. No Cyberpunk HUD, ever (the full walk)
+Cyberblock Active, survival. Do each of these and look at the whole screen the whole time. **No Cyberpunk interface element
+may appear at any moment**: not the health bar, minimap, quest tracker, ammo, "F" prompts, dialogue wheel or subtitles, not a
+notification, not the loading or waiting sign.
+1. Walk up to a **door** (the prompt is Minecraft's tooltip box), an **item** to pick up, an **NPC** to talk to, a **vending
+   machine**, and get into a **car** (and out).
+2. Start a **dialogue** (choices are Minecraft's list, picked with E/Q/1-4/F), and a timed one if you find it.
+3. Open a **vendor** (shop), a stash or the ripperdoc if you can reach one: the menu is Cyberpunk's but in Minecraft colours with
+   a Minecraft title bar and frame, and the Minecraft world is not drawn over it. Its font stays Cyberpunk's (known limit).
+4. Press **Esc**: the Minecraft "Night City (paused)" screen; Night City is frozen behind it. Press Esc to go back.
+5. **M** (Atlas), **J** (Journal), **I** (inventory), **P** (skill tree), **H** (pause screen): all are Minecraft screens.
+6. Click **Night City Menu...** in the pause screen: the real Cyberpunk pause menu opens once (the escape hatch); close it.
+7. **Save** from the pause screen (Minecraft toast "Saving Night City..." then "Saved"), then **Load Last Save** and watch the
+   loading cover ("Loading Night City...").
+8. Die (`/kill` in chat in survival): the Minecraft death screen, no Cyberpunk game over.
+9. A tutorial or shard popup (if one shows) is framed in Minecraft style and works.
+10. **F9** off: Cyberpunk's own HUD is back at once; **F9** on: it vanishes.
+- **Log:** `ui: ink layers <names>`, `ui: hidden (on)`, `ui: menu <name> -> minecraft <screen>`, `ui: pass-through <menu>`,
+  `compositor: menu pass-through on|off`, `ui: paused by Minecraft` / `ui: resumed`, `ui: escape hatch <menu>`, `ui: restored
+  (<reason>)` on F9 off. **A `ui: shown for <reason>` line is a report-worthy exception** (only a foreign pause popup or a
+  braindance may cause it).
+- **Report** every element that showed, with what you were doing and the `ui:` lines around that time.
+
+### F13. Prompts and choices
+1. Walk to several things: a door ("[F] Open"), a corpse or loot ("[F] Pick up", "[F] Loot"), an NPC ("[F] Talk"), a car ("[F]
+   Enter"). **Expect:** a Minecraft tooltip box right of the crosshair with the key in yellow; several prompts on one thing
+   form a list (E/Q or the wheel scroll, 1-4 pick, **F** confirms); a hold action shows a fill bar.
+2. A **dialogue**: the list sits at the bottom centre above the subtitles; the selected line starts with `>`; unavailable lines
+   are grey; quest lines gold; a timed line shows a timer bar that runs down. Picking works with E/Q/1-4/wheel/F as in
+   Cyberpunk. Subtitles above the hotbar show the speaker in aqua.
+- **Log:** `ui: notify ...` for the toasts; no `ui: shown for ...` lines.
+
+If a check fails, tell Claude "F<n>: what you saw" and it reads the logs and captures the window to diagnose. For anything
+visual, a screenshot helps most.
+
+## Re-test 2 (still valid; do it after Re-test 3)
 
 The second session (when you ran the first re-test below, `out/user-issues.md` section "Re-test 2026-10-03 ~15:05-15:20") found six things.
 They are fixed or added on this build; **R1 to R6 below are those six, in the user's order**. (The R1-R6 of the older
@@ -476,6 +697,52 @@ already running still has the old mod. The full key table and the netrunning wal
 ---
 
 ## Appendix — every in-game check the build agents recorded
+
+### Re-test 3 — needsInGame lists
+
+Each package of the Re-test 3 build lists the checks that only the real game can answer. The integrator pastes the lists
+of packages D, U, S, M, C, W and A under the headings below; the F1-F13 checks above cover them in the user's order. The
+checks of package P (docs and release) are filled in.
+
+#### Re-test 3 — package D (DLL)
+_(the integrator pastes the list here)_
+
+#### Re-test 3 — package U (Cyberpunk UI bridge)
+_(the integrator pastes the list here)_
+
+#### Re-test 3 — package S (scripts)
+_(the integrator pastes the list here)_
+
+#### Re-test 3 — package M (Minecraft core)
+_(the integrator pastes the list here)_
+
+#### Re-test 3 — package C (Minecraft cyber)
+_(the integrator pastes the list here)_
+
+#### Re-test 3 — package W (Minecraft UI)
+_(the integrator pastes the list here)_
+
+#### Re-test 3 — package A (art, assets, lang, data)
+_(the integrator pastes the list here)_
+
+#### Re-test 3 — package P (protocol, docs and release)
+- **Release zip on a clean machine (F11).** Unzip `dist/Cyberblock-1.0.0.zip`, run `install.bat` on a copy of the game
+  folder: it must refuse while Cyberpunk runs, find the game through Steam (or accept a dropped folder with `-Game`), warn
+  about missing frameworks, back up the saves once, never overwrite a foreign file, keep an existing `ReShade.fxh` and
+  `ReShadePreset.ini`. The manifest it writes must be readable by `tools/install.py --remove`, and the manifest of
+  `tools/install.py` by `uninstall.bat`. (The automated tests run `install.ps1` against a fake game folder; the real
+  Steam lookup and the registry are only checked here.)
+- **Launcher install (F11).** Follow HOW-TO-PLAY section 1 literally with a fresh launcher profile: the dedicated game
+  directory, the JVM arguments **replaced**, the jar and Fabric API in `mods`. The title screen must show "Play
+  Cyberblock" and the world must open (autostart). If any step of the written instructions is wrong for the real launcher,
+  correct HOW-TO-PLAY and README.
+- **Docs against the build.** Compare the key table, the chip table (HOW-TO-PLAY "What each chip does") and the UI tour with
+  what you see; tell Claude every sentence that is wrong.
+- **Wire.** Run `uv run python -m tools.fakehost --ui --hacks --hold 12` against the dev client (port 25600 is the real
+  link: use another port with `--port` and a client started with `-Pcyberblock.port`): the HUD elements, the pause and
+  pass-through screens, the upload beam and the spreads must show, and Minecraft's `uiact`, `persp`, `status.pause`, `binds`
+  lines print in the terminal.
+
 
 ### Re-test 2 — package D (DLL)
 - [ ] Drive signature: on the first flight Cyberblock.log shows exactly one `drive: ready (Teleport handle:gameObject,
