@@ -6,6 +6,16 @@ def cp_to_mc_pos(x: float, y: float, z: float) -> tuple[float, float, float]:
     return (x, z, -y)
 
 
+def mc_to_cp_pos(x: float, y: float, z: float) -> tuple[float, float, float]:
+    """Inverse of cp_to_mc_pos: Minecraft (x, y, z) -> Cyberpunk (x, -z, y)."""
+    return (x, -z, y)
+
+
+def mc_block_to_cp_aabb(bx: int, by: int, bz: int) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    """Cyberpunk AABB (min, max) of the Minecraft block (bx, by, bz): min (bx, -(bz+1), by), max (bx+1, -bz, by+1)."""
+    return (bx, -(bz + 1), by), (bx + 1, -bz, by + 1)
+
+
 def cp_quat_forward(i: float, j: float, k: float, r: float) -> tuple[float, float, float]:
     """Cyberpunk camera forward: the quaternion (i, j, k, r) applied to local +Y."""
     return (2 * (i * j - r * k), 1 - 2 * (i * i + k * k), 2 * (j * k + r * i))
