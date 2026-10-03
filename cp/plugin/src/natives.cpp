@@ -462,8 +462,7 @@ namespace
 		cb::natives::flightFollowing = following;
 	}
 
-	// Cyberblock_FlightPos() -> Vector4: feet, Cyberpunk space, p + v * min(age, extrapolation cap) while flying, else the
-	// landing spot.
+	// Cyberblock_FlightPos() -> Vector4: feet, Cyberpunk space, p + v * min(age, 0.05 s) while flying, else the landing spot.
 	void FlightPos(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
 	{
 		++frame->code;

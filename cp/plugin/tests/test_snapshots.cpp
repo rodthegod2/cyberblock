@@ -363,16 +363,17 @@ TEST(flight_starts_inactive)
 	CHECK(approx(f.pos(t0), 0, 0, 0) && approx(f.velocity(t0), 0, 0, 0));
 }
 
-TEST(flight_position_is_extrapolated_by_velocity_times_the_age_up_to_a_tenth_of_a_second)
+TEST(flight_position_is_extrapolated_by_velocity_times_the_age_up_to_one_minecraft_tick)
 {
 	Flight f;
 	const Clock::time_point t0 = Clock::now();
 	f.update(sample(true, {0, 0, 100}, {10, 0, -5}, 30, 12), t0);
 	CHECK(f.active(t0) && f.seq(t0) == 1);
 	CHECK(approx(f.pos(t0), 0, 0, 100));
+	CHECK(approx(f.pos(t0 + 20ms), 0.2, 0, 99.9));
 	CHECK(approx(f.pos(t0 + 50ms), 0.5, 0, 99.75));
-	CHECK(approx(f.pos(t0 + 100ms), 1.0, 0, 99.5));
-	CHECK(approx(f.pos(t0 + 300ms), 1.0, 0, 99.5)); // clamped: no further than 0.1 s of travel
+	CHECK(approx(f.pos(t0 + 100ms), 0.5, 0, 99.75)); // clamped: no further than 0.05 s (one tick) of travel
+	CHECK(approx(f.pos(t0 + 300ms), 0.5, 0, 99.75));
 	CHECK(approx(f.pos(t0 - 50ms), 0, 0, 100));     // a query before the sample never extrapolates backwards
 	CHECK(approx(f.velocity(t0 + 300ms), 10, 0, -5) && approx(f.yaw(t0), 30) && approx(f.pitch(t0), 12));
 }
@@ -396,7 +397,7 @@ TEST(a_sample_older_than_half_a_second_ends_the_flight)
 	CHECK(f.active(t0 + 500ms) && f.seq(t0 + 500ms) == 1); // exactly 0.5 s old: still flying
 	CHECK(!f.active(t0 + 501ms));                           // older: Minecraft vanished mid-flight
 	CHECK(f.seq(t0 + 501ms) == 2);                          // a landing: FlightSeq moved
-	CHECK(approx(f.pos(t0 + 2s), 1.0, 0, 99.5));            // V ends where the flight was last seen (clamped extrapolation)
+	CHECK(approx(f.pos(t0 + 2s), 0.5, 0, 99.75));           // V ends where the flight was last seen (clamped extrapolation)
 	CHECK(approx(f.velocity(t0 + 2s), 0, 0, 0));
 	CHECK(f.seq(t0 + 10s) == 2);                            // and it is counted once
 }
@@ -406,7 +407,7 @@ TEST(staleness_is_noticed_by_any_query_and_counted_before_the_next_start)
 	Flight f;
 	const Clock::time_point t0 = Clock::now();
 	f.update(sample(true, {0, 0, 100}, {10, 0, 0}), t0);
-	CHECK(approx(f.pos(t0 + 1s).x, 1.0)); // the first query after the gap ends the flight
+	CHECK(approx(f.pos(t0 + 1s).x, 0.5)); // the first query after the gap ends the flight
 	CHECK(f.seq(t0 + 1s) == 2);
 	f.update(sample(true, {50, 0, 90}, {10, 0, 0}), t0 + 2s);
 	CHECK(f.active(t0 + 2s) && f.seq(t0 + 2s) == 3);

@@ -130,7 +130,9 @@ namespace cb::snap
 	{
 	public:
 		static constexpr auto kMaxAge = std::chrono::milliseconds(500);
-		static constexpr auto kMaxExtrapolation = std::chrono::milliseconds(100);
+		/// Minecraft's physics move Steve once per 50 ms tick: guessing past one tick of travel only overshoots, and V snaps
+		/// back when the next sample lands.
+		static constexpr auto kMaxExtrapolation = std::chrono::milliseconds(50);
 
 		void update(const FlightSample &sample, Clock::time_point now);
 		/// A new Minecraft session or a dropped link: a flight in progress ends where it was last seen.
@@ -142,7 +144,7 @@ namespace cb::snap
 		/// The flight ended because its sample went stale (kMaxAge without a new one), not by a landing message; false again
 		/// after any new sample and after reset().
 		bool timed_out(Clock::time_point now);
-		/// Feet, Cyberpunk space: p + v * min(age, 0.1 s) while active, else the landing spot.
+		/// Feet, Cyberpunk space: p + v * min(age, 0.05 s) while active, else the landing spot.
 		Vec3 pos(Clock::time_point now);
 		Vec3 velocity(Clock::time_point now);
 		double yaw(Clock::time_point now);

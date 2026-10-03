@@ -36,7 +36,7 @@ public native func Cyberblock_MobPos(i: Int32) -> Vector4;           // feet, Cy
 public native func Cyberblock_MobYaw(i: Int32) -> Float;             // Cyberpunk yaw, degrees
 public native func Cyberblock_MobSize(i: Int32) -> Vector4;          // X width, Y height, Z hp, W max hp
 public native func Cyberblock_MobDamage(id: Int32, frac: Float, by: Uint64, hasBy: Bool) -> Void;   // -> mobdmg
-// Layer 4 flight (latest flight message; position extrapolated by v * min(age, 0.1 s); the landing spot once inactive)
+// Layer 4 flight (latest flight message; position extrapolated by v * min(age, 0.05 s); the landing spot once inactive)
 public native func Cyberblock_FlightActive() -> Bool;              // a sample older than 0.5 s counts as ended
 public native func Cyberblock_FlightSeq() -> Int32;                 // +1 on every start and every end (landing, 0.5 s timeout, reset)
 public native func Cyberblock_FlightTimedOut() -> Bool;             // the last flight ended by the 0.5 s timeout, not a landing
