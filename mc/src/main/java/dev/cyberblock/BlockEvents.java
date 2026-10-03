@@ -28,10 +28,12 @@ public final class BlockEvents {
 	}
 
 	/**
-	 * At most this many events leave per server tick. The host's script drains 64 events per frame and its queue holds 256, so a
-	 * burst (a big explosion, /fill) is spread over ticks instead of overflowing it and silently losing cells.
+	 * At most this many events leave per server tick: 16 x 20 = 320 a second. The host's script (Events.reds) drains up to 64
+	 * events every 100 ms, so about 640 a second, and its queue holds 256 and drops the oldest when full. Staying at half that
+	 * rate leaves room for the hit and explosion events that share the queue and for a slow host tick, so a burst (a big
+	 * explosion, /fill) is spread over ticks instead of overflowing the queue and silently losing collision boxes.
 	 */
-	static final int PER_TICK = 64;
+	static final int PER_TICK = 16;
 
 	private BlockEvents() {
 	}

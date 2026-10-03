@@ -122,6 +122,16 @@ class BlockEventsTest {
 		assertEquals(List.of(), drain(box, 64));
 	}
 
+	/** Events.reds drains up to 64 events per Tick and CyberblockSystem ticks it every 100 ms: the host's real consumer rate. */
+	private static final int HOST_DRAIN_PER_CALL = 64;
+	private static final int HOST_CALLS_PER_SECOND = 10;
+
+	@Test
+	void blocksLeaveAtHalfTheRateTheHostDrains() {
+		int hostPerSecond = HOST_DRAIN_PER_CALL * HOST_CALLS_PER_SECOND;
+		assertEquals(hostPerSecond / 2, BlockEvents.PER_TICK * 20);
+	}
+
 	@Test
 	void blockMessageIsOneJsonLine() {
 		String m = Wire.block(Op.ADD, 10, -4, -21);
