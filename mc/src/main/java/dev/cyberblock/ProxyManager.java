@@ -21,6 +21,14 @@ public final class ProxyManager {
 	/** Where each proxy was last put and how fast it was going: the proxy runs on at that speed until the next list. */
 	private static final Map<Long, ProxyDiff.Motion> motions = new HashMap<>();
 	private static int bad;
+	/** The log says how many proxies there are, and how many hits went to the host, at most this often (ns). */
+	private static final long REPORT_NANOS = 5_000_000_000L;
+	private static long lastReport = System.nanoTime() - REPORT_NANOS;
+	/** What the last log line said, and the proxies spawned and removed since. */
+	private static int loggedHumans = -1, loggedCars = -1, spawned, removed;
+	/** Hits sent to the host since the last log line, and the latest one. */
+	private static int hitsSent;
+	private static String lastHit = "";
 
 	private ProxyManager() {
 	}
@@ -96,6 +104,7 @@ public final class ProxyManager {
 			proxies.put(e.id(), proxy);
 			kinds.put(e.id(), e.kind());
 			motions.put(e.id(), ProxyDiff.Motion.first(e, received));
+			spawned++;
 		}
 	}
 
@@ -105,6 +114,8 @@ public final class ProxyManager {
 	 * out removes it by itself.
 	 */
 	static void tick(final MinecraftServer s) {
+		long now = System.nanoTime();
+		report(now);
 		if (proxies.isEmpty()) {
 			return;
 		}
@@ -115,13 +126,43 @@ public final class ProxyManager {
 		}
 
 		// between the host's lists (10 per second) every proxy goes on at the speed it was last seen at
-		long now = System.nanoTime();
 		for (Map.Entry<Long, ProxyEntity> e : proxies.entrySet()) {
 			ProxyDiff.Motion m = motions.get(e.getKey());
 			if (m != null && m.moving() && !e.getValue().isRemoved()) {
 				Vec3 at = m.position(now);
 				e.getValue().setPos(at.x, at.y, at.z);
 			}
+		}
+	}
+
+	/** Says in the log how many proxies there are when that changed, and how many hits went to the host: at most every REPORT_NANOS. */
+	private static void report(final long now) {
+		if (now - lastReport < REPORT_NANOS) {
+			return;
+		}
+
+		int humans = 0, cars = 0;
+		for (ProxyDiff.Kind kind : kinds.values()) {
+			if (kind == ProxyDiff.Kind.HUMAN) {
+				humans++;
+			} else {
+				cars++;
+			}
+		}
+
+		if (humans != loggedHumans || cars != loggedCars) {
+			Cyberblock.LOG.info(ProxyDiff.summary(humans, cars, spawned, removed));
+			loggedHumans = humans;
+			loggedCars = cars;
+			spawned = 0;
+			removed = 0;
+			lastReport = now;
+		}
+
+		if (hitsSent > 0) {
+			Cyberblock.LOG.info("proxies: {} hits sent to the host (latest: {})", hitsSent, lastHit);
+			hitsSent = 0;
+			lastReport = now;
 		}
 	}
 
@@ -141,6 +182,7 @@ public final class ProxyManager {
 	 * more), so it stops dragging the NPC: in a vehicle (an empty list), after the list timeout, out of the 48 m list.
 	 */
 	private static void remove(final ProxyEntity proxy) {
+		removed++;
 		proxy.reportRemoved();
 		if (proxy.isLeashed()) {
 			proxy.dropLeash();
@@ -178,6 +220,8 @@ public final class ProxyManager {
 	static void hit(final ProxyEntity proxy, final float damage, final String kind, final Vec3 impulse, final int mob) {
 		if (Cyberblock.active) {
 			Cyberblock.events.accept(Wire.hit(Long.toUnsignedString(proxy.proxyId()), Math.min(damage, 1000.0F), kind, impulse.x, impulse.y, impulse.z, mob));
+			hitsSent++;
+			lastHit = kind + " " + damage + " dmg on " + Long.toUnsignedString(proxy.proxyId());
 		}
 	}
 

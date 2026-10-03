@@ -269,6 +269,12 @@ class ProxyDiffTest {
 	}
 
 	@Test
+	void theLogLineCountsPeopleAndCars() {
+		assertEquals("proxies: 7 people, 3 cars (spawned 9, removed 2)", ProxyDiff.summary(7, 3, 9, 2));
+		assertEquals("proxies: 0 people, 0 cars (spawned 0, removed 4)", ProxyDiff.summary(0, 0, 0, 4));
+	}
+
+	@Test
 	void noProxiesAndAFullListSpawnsAll() {
 		Plan plan = ProxyDiff.apply(Map.of(), List.of(entry(1, Kind.HUMAN), entry(-1, Kind.VEHICLE)));
 		assertEquals(2, plan.spawn().size());

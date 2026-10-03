@@ -138,6 +138,11 @@ public final class ProxyDiff {
 		return e instanceof JsonPrimitive p && p.isNumber() ? p.getAsDouble() : Double.NaN;
 	}
 
+	/** The log line for the proxies in the world: how many of each kind, and how many came and went since the last such line. */
+	public static String summary(final int humans, final int cars, final int spawned, final int removed) {
+		return "proxies: " + humans + " people, " + cars + " cars (spawned " + spawned + ", removed " + removed + ")";
+	}
+
 	/**
 	 * What turns the proxies that exist (id to kind) into the entries: removals first (an id that is gone, or that changed
 	 * kind and is spawned again), then moves, then spawns.
