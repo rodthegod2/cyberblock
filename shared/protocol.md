@@ -2,7 +2,8 @@
 
 Contract between the Minecraft mod (`mc/`), `Cyberblock.dll` (`cp/plugin/`) and the test tools (`tools/`).
 Change it only through the integrator. Coordinate conversion lives in `tools/cbmath.py`
-(Cyberpunk `(x, y, z)`, Z-up → Minecraft `(x, z, -y)`); everything on the wire is already in Minecraft convention.
+(Cyberpunk `(x, y, z)`, Z-up → Minecraft `(x, z, -y)`; back: Minecraft `(x, y, z)` → Cyberpunk `(x, -z, y)`);
+everything on the wire is already in Minecraft convention, in both directions.
 
 ## Wire protocol v1 (WebSocket on `127.0.0.1:25600`, Minecraft is the server)
 
@@ -25,14 +26,35 @@ Messages are JSON text frames, one object per frame, discriminated by `t`.
 | `scroll` | `d` int (wheel notches, +1 = up) | wheel |
 | `cursor` | `x, y` in 0..1 of the window | only while `status.screen` |
 | `click` | `b` 0 left, 1 right, 2 middle, `down:bool` | only while `status.screen` |
+| `dmg` | `frac` 0..4 (fraction of V's max health the hit would have taken), `kind` ∈ `bullet, explosion, melee, fall, vehicle, fire, other`, `from:[x,y,z]` or `null` | each damage event on V while active (layer 2) |
+| `npcs` | `list:[{id:"<uint64 as decimal string>", p:[x,y,z] feet, yaw, kind:"human"\|"vehicle", hostile:bool}]` | 10 Hz while active: everything alive within 48 m, nearest first, at most 48 entries; an id missing from the list is gone (layer 2) |
 
 ### Minecraft → Cyberpunk
 | `t` | fields | when |
 |---|---|---|
 | `hello` | `proto:1, mod:"cyberblock", mc:"26.3"` | on connect |
 | `status` | `hp, maxHp, food, gm` (`survival`/`creative`/`adventure`/`spectator`), `screen:bool` | 10 Hz and on change |
+| `block` | `op:"add"\|"remove"`, `pos:[bx,by,bz]` | the player or an explosion places/removes a solid non-barrier block (layer 2) |
+| `explosion` | `pos:[x,y,z]`, `power` (Minecraft radius: TNT 4, creeper 3, charged creeper 6, firework 1.5), `fire:bool` | every explosion in the Minecraft world while the host is attached (layer 2) |
+| `hit` | `target:"<id>"`, `dmg` (Minecraft health points after armour), `kind` ∈ `melee, arrow, trident, mob, explosion, fire`, `impulse:[x,y,z]` m/s | a proxy takes damage (layer 2) |
+| `ignite` | `target:"<id>"`, `seconds` | a proxy is set on fire: fire charge, flint & steel, lava, fire aspect, flaming arrow (layer 2) |
 
 Unknown `t` values are ignored by both sides (forward compatibility for layers 2–6).
+
+### Layer 2 semantics and limits
+Both receivers validate every number and drop a bad message or list entry without crashing or disconnecting.
+- **Ids** (`npcs[].id`, `hit.target`, `ignite.target`) are the Cyberpunk entity id hash as a decimal string
+  (unsigned 64 bit; it does not fit a JSON double). A `hit` or `ignite` for an id that is not (or no longer) a proxy
+  is ignored.
+- **Proxies**: Minecraft keeps one invisible proxy entity per id in the last `npcs` list, at feet position `p` facing
+  `yaw`; humans are 0.6 × 1.8 m, vehicles 2.0 × 1.6 m. Damage to a proxy never hurts it in Minecraft: it is sent as `hit`.
+- **Positions and vectors** are finite with `|coordinate| < 3e7`; `block.pos` holds integers. `dmg.from` is the
+  attacker's position, `null` when unknown. `hit.impulse` is a velocity in m/s.
+- **Ranges**: `dmg.frac` 0..4, `explosion.power` 0..20, `hit.dmg` 0..1000, `ignite.seconds` 0..120.
+- **Scaling** (applied once, on the receiving side): `dmg.frac` → Steve loses `frac × Steve's max health`
+  (Minecraft side); `hit.dmg` → the target loses `dmg / 20` of its max health (redscript side).
+- **Block cells** are Minecraft cells; the DLL maps a block `(bx, by, bz)` to the Cyberpunk box `(bx, -(bz+1), by)`
+  … `(bx+1, -bz, by+1)` (`tools/cbmath.py` `mc_block_to_cp_aabb`).
 
 ### Examples
 One message per line (JSON Lines), one line per `t` in the tables above.
@@ -53,12 +75,18 @@ Cyberpunk → Minecraft:
 {"t":"scroll","d":-1}
 {"t":"cursor","x":0.5,"y":0.5}
 {"t":"click","b":0,"down":true}
+{"t":"dmg","frac":0.25,"kind":"bullet","from":[-1250.5,66.6,805.0]}
+{"t":"npcs","list":[{"id":"9007199254740993","p":[-1243.0,64.9,808.5],"yaw":90.0,"kind":"human","hostile":true},{"id":"18446744073709551615","p":[-1240.25,64.9,815.0],"yaw":-45.0,"kind":"human","hostile":false},{"id":"4503599627370497","p":[-1252.0,64.9,820.5],"yaw":180.0,"kind":"vehicle","hostile":false}]}
 ```
 
 Minecraft → Cyberpunk:
 ```jsonl
 {"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3"}
 {"t":"status","hp":20,"maxHp":20,"food":20,"gm":"survival","screen":false}
+{"t":"block","op":"add","pos":[10,4,-21]}
+{"t":"explosion","pos":[10.5,4.0,-20.5],"power":4.0,"fire":false}
+{"t":"hit","target":"9007199254740993","dmg":7.0,"kind":"melee","impulse":[0.0,1.5,6.0]}
+{"t":"ignite","target":"9007199254740993","seconds":8.0}
 ```
 
 ## Shared memory `Local\CyberblockFrame`
