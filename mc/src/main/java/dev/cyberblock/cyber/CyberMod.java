@@ -5,10 +5,13 @@ import dev.cyberblock.Cyberblock;
 import dev.cyberblock.WorldBridge;
 import java.util.List;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import org.jspecify.annotations.Nullable;
@@ -26,6 +29,13 @@ public class CyberMod implements ModInitializer {
 		});
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> PerkEffects.reset(server));
 		ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> PerkEffects.apply(newPlayer));
+		// /cyberblock kit, for everyone (permission level 0)
+		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> dispatcher.register(
+			Commands.literal("cyberblock").then(Commands.literal("kit").executes(command -> {
+				Kit.give(command.getSource().getPlayerOrException());
+				command.getSource().sendSuccess(() -> Component.translatable("cyberblock.kit.given"), false);
+				return 1;
+			}))));
 		Bridge.perkRank = id -> {
 			ServerPlayer player = localPlayer();
 			return player == null ? 0 : CyberData.rank(player, id);

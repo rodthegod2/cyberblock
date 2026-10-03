@@ -7,6 +7,8 @@ import dev.cyberblock.WorldBridge;
 import dev.cyberblock.cyber.CyberMod;
 import dev.cyberblock.cyber.HackResult;
 import dev.cyberblock.cyber.Hacking;
+import dev.cyberblock.cyber.Kills;
+import dev.cyberblock.cyber.Kit;
 import dev.cyberblock.cyber.PerkEffects;
 import dev.cyberblock.cyber.PerkRules;
 import dev.cyberblock.cyber.PerkShop;
@@ -34,16 +36,34 @@ final class CyberLink {
 	static void register() {
 		listen("hello", m -> {
 			onClient(CyberKeys::sendBinds);
-			onServer(() -> {
-				ServerPlayer player = CyberMod.localPlayer();
-				if (player != null) {
-					PerkShop.sendPerks(player);
-				}
-			});
+			onLocalPlayer(PerkShop::sendPerks);
 		});
 		listen("key", CyberLink::key);
 		listen("scaninfo", CyberLink::scanInfo);
 		listen("hackresult", CyberLink::hackResult);
+		listen("state", m -> {
+			if (!m.has("active") || m.get("active").getAsBoolean()) {
+				onLocalPlayer(Kit::onActive);
+			}
+		});
+		listen("killed", m -> {
+			Kills.Killed killed = Kills.parse(m);
+			if (killed == null) {
+				warn("bad killed dropped");
+			} else {
+				onLocalPlayer(player -> Kills.onKilled(player, killed));
+			}
+		});
+	}
+
+	/** Runs on the server thread with the singleplayer world's player, when there is one. */
+	private static void onLocalPlayer(final Consumer<ServerPlayer> task) {
+		onServer(() -> {
+			ServerPlayer player = CyberMod.localPlayer();
+			if (player != null) {
+				task.accept(player);
+			}
+		});
 	}
 
 	/** {"t":"hackresult",...}: refund or sound, on the server. */
@@ -89,12 +109,7 @@ final class CyberLink {
 		boolean down = !m.has("down") || m.get("down").getAsBoolean();
 		if (k.equals("sprint")) {
 			if (down && sprintTaps.press(Util.getMillis())) {
-				onServer(() -> {
-					ServerPlayer player = CyberMod.localPlayer();
-					if (player != null) {
-						PerkEffects.sandevistan(player.level().getServer(), player);
-					}
-				});
+				onLocalPlayer(player -> PerkEffects.sandevistan(player.level().getServer(), player));
 			}
 
 			return;
