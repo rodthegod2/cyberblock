@@ -32,4 +32,18 @@ class CyberWireTest {
 
 		assertTrue(CyberWire.cyberware(Set.of()).startsWith("{\"t\":\"cyberware\",\"list\":[{\"id\":\"mantis_blades\",\"on\":0},"));
 	}
+
+	@Test
+	void cyberfxSecondsAreClampedToThirty() {
+		assertEquals("{\"t\":\"cyberfx\",\"id\":\"sandevistan\",\"seconds\":6.0}", CyberWire.cyberfx("sandevistan", 6.0));
+		assertEquals("{\"t\":\"cyberfx\",\"id\":\"kerenzikov\",\"seconds\":2.0}", CyberWire.cyberfx("kerenzikov", 2.0));
+		assertEquals("{\"t\":\"cyberfx\",\"id\":\"berserk\",\"seconds\":30.0}", CyberWire.cyberfx("berserk", 99.0));
+		assertEquals("{\"t\":\"cyberfx\",\"id\":\"berserk\",\"seconds\":0.0}", CyberWire.cyberfx("berserk", -1.0));
+	}
+
+	@Test
+	void bindsCarriesAllFourKeys() {
+		assertEquals("{\"t\":\"binds\",\"keys\":{\"hack\":71,\"skills\":75,\"cyberware\":85,\"activate\":89}}", CyberWire.binds(71, 75, 85, 89));
+		assertEquals("{\"t\":\"binds\",\"keys\":{\"hack\":76,\"skills\":79,\"cyberware\":48,\"activate\":121}}", CyberWire.binds(new int[]{76, 79, 48, 121}));
+	}
 }

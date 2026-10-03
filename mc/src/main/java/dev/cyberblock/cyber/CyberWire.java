@@ -11,11 +11,19 @@ public final class CyberWire {
 	private CyberWire() {
 	}
 
-	/** {"t":"binds","keys":{"hack":vk,"skills":vk}}: Windows virtual-key codes 1..254. */
-	public static String binds(final int hackVk, final int skillsVk) {
+	/** The `binds` names in VirtualKeys order (plan retest2 section 1.8). */
+	private static final String[] BIND_NAMES = {"hack", "skills", "cyberware", "activate"};
+
+	/**
+	 * {"t":"binds","keys":{"hack":vk,"skills":vk,"cyberware":vk,"activate":vk}}: Windows virtual-key codes 1..254, in that order
+	 * (VirtualKeys.binds gives all four).
+	 */
+	public static String binds(final int... vks) {
 		JsonObject keys = new JsonObject();
-		keys.addProperty("hack", hackVk);
-		keys.addProperty("skills", skillsVk);
+		for (int i = 0; i < Math.min(vks.length, BIND_NAMES.length); i++) {
+			keys.addProperty(BIND_NAMES[i], vks[i]);
+		}
+
 		JsonObject m = new JsonObject();
 		m.addProperty("t", "binds");
 		m.add("keys", keys);
@@ -57,10 +65,13 @@ public final class CyberWire {
 		return m.toString();
 	}
 
-	/** {"t":"perkfx","id":"sandevistan","seconds":s}: a perk's Cyberpunk effect fires now (seconds 0..30). */
-	public static String perkfx(final String id, final double seconds) {
+	/**
+	 * {"t":"cyberfx","id":"sandevistan"|"kerenzikov"|"berserk","seconds":s}: an implant's Cyberpunk effect starts now (seconds
+	 * 0..30, 0 ends it). It replaces the perks' `perkfx`.
+	 */
+	public static String cyberfx(final String id, final double seconds) {
 		JsonObject m = new JsonObject();
-		m.addProperty("t", "perkfx");
+		m.addProperty("t", "cyberfx");
 		m.addProperty("id", id);
 		m.addProperty("seconds", Math.clamp(seconds, 0.0, 30.0));
 		return m.toString();

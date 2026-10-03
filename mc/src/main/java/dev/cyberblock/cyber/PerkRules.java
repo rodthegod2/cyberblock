@@ -1,14 +1,12 @@
 package dev.cyberblock.cyber;
 
-/** The pure parts of the perks' Minecraft effects (task C7, plan section 1.5): timings, cones and multipliers. */
+/**
+ * The pure parts of the perks' Minecraft effects (task C7, plan section 1.5): timings, cones and multipliers. The
+ * Sandevistan's times and the slowed tick rate are the implant's now (CyberwareRules, plan retest2 section 1.7).
+ */
 public final class PerkRules {
-	/** Sandevistan: two sprint presses at most this far apart. */
+	/** Sandevistan (perk and implant): two sprint presses at most this far apart. */
 	public static final long DOUBLE_TAP_MS = 300L;
-	public static final long SANDEVISTAN_MS = 5000L;
-	public static final long SANDEVISTAN_COOLDOWN_MS = 20000L;
-	/** The server's tick rate while the Sandevistan runs, and the normal one. */
-	public static final float SLOW_TICK_RATE = 10.0F;
-	public static final float NORMAL_TICK_RATE = 20.0F;
 	/** Optical camo: crouched and within this distance of where the stillness began, for CAMO_STILL_MS. */
 	public static final double CAMO_STILL_METRES = 0.1;
 	public static final long CAMO_STILL_MS = 2000L;
@@ -39,11 +37,6 @@ public final class PerkRules {
 			this.last = nowMs;
 			return false;
 		}
-	}
-
-	/** May the Sandevistan fire again (lastFiredMs: Long.MIN_VALUE for never)? */
-	public static boolean sandevistanReady(final long nowMs, final long lastFiredMs) {
-		return lastFiredMs == Long.MIN_VALUE || nowMs - lastFiredMs >= SANDEVISTAN_COOLDOWN_MS;
 	}
 
 	/** Optical camo's stillness timer: true when the invisibility should be given (again) now. */

@@ -21,7 +21,6 @@ class KitTest {
 	@Test
 	void kitMatchesThePlan() {
 		Map<String, Integer> c = counts();
-		assertEquals(1, c.get("cyberblock:cyberdeck"));
 		assertEquals(2, c.get("cyberblock:ram_shard"));
 		for (Hack h : Hack.values()) {
 			assertEquals(1, c.get("cyberblock:" + h.item()), h.item());
@@ -32,11 +31,20 @@ class KitTest {
 			Map.entry("minecraft:bow", 1), Map.entry("minecraft:arrow", 32), Map.entry("minecraft:shield", 1), Map.entry("minecraft:iron_sword", 1),
 			Map.entry("minecraft:lead", 2), Map.entry("minecraft:fishing_rod", 1), Map.entry("minecraft:wind_charge", 8), Map.entry("minecraft:ender_pearl", 8),
 			Map.entry("minecraft:elytra", 1), Map.entry("minecraft:firework_rocket", 16),
-			Map.entry("minecraft:zombie_spawn_egg", 4), Map.entry("minecraft:skeleton_spawn_egg", 2), Map.entry("minecraft:creeper_spawn_egg", 2),
-			Map.entry("cyberblock:mantis_blade", 1), Map.entry("cyberblock:gorilla_gauntlet", 1));
+			Map.entry("minecraft:zombie_spawn_egg", 4), Map.entry("minecraft:skeleton_spawn_egg", 2), Map.entry("minecraft:creeper_spawn_egg", 2));
 		vanilla.forEach((item, count) -> assertEquals(count, c.get(item), item));
+		// plan retest2 C4: a basic set installed at once, three ACTIVE implants to install, and the old weapons gone
+		List<String> install = Kit.ENTRIES.stream().filter(e -> e.slot() == Kit.INSTALL).map(Kit.Entry::item).toList();
+		assertEquals(List.of("cyberblock:cyberdeck", "cyberblock:kiroshi_optics", "cyberblock:reinforced_tendons", "cyberblock:biomonitor"), install);
+		for (String implant : List.of("cyberblock:sandevistan", "cyberblock:optical_camo", "cyberblock:projectile_launch_system")) {
+			assertEquals(Kit.MAIN, slotOf(implant), implant);
+			assertEquals(1, c.get(implant), implant);
+		}
+
+		assertNull(c.get("cyberblock:mantis_blade"));
+		assertNull(c.get("cyberblock:gorilla_gauntlet"));
 		// nothing else
-		assertEquals(2 + Hack.values().length + vanilla.size(), c.size());
+		assertEquals(1 + Hack.values().length + vanilla.size() + install.size() + 3, c.size());
 		List<String> potions = Kit.ENTRIES.stream().filter(e -> e.potion() != null).map(e -> e.item() + " " + e.potion() + " " + e.count()).toList();
 		assertEquals(List.of("minecraft:potion minecraft:swiftness 1", "minecraft:potion minecraft:invisibility 1", "minecraft:potion minecraft:leaping 1"), potions);
 	}
@@ -66,9 +74,9 @@ class KitTest {
 		assertEquals(Kit.OFFHAND, slotOf("minecraft:shield"));
 		assertEquals(Kit.CHEST, slotOf("minecraft:elytra"));
 		assertEquals(Kit.MAIN, slotOf("minecraft:arrow")); // the bow finds them anywhere in the inventory
-		assertEquals(Kit.MAIN, slotOf("cyberblock:cyberdeck"));
+		assertEquals(Kit.INSTALL, slotOf("cyberblock:cyberdeck"));
 		for (Kit.Entry e : Kit.ENTRIES) {
-			assertTrue(e.slot() == Kit.MAIN || e.slot() == Kit.CHEST || e.slot() == Kit.OFFHAND || e.slot() >= 0 && e.slot() <= 8, e.item());
+			assertTrue(e.slot() == Kit.MAIN || e.slot() == Kit.INSTALL || e.slot() == Kit.CHEST || e.slot() == Kit.OFFHAND || e.slot() >= 0 && e.slot() <= 8, e.item());
 		}
 	}
 
@@ -91,17 +99,23 @@ class KitTest {
 		return placed;
 	}
 
+	/**
+	 * The worst case: every INSTALL entry finds its slot taken and goes to the main inventory too; the whole kit still fits
+	 * the 27 main slots, so nothing is dropped at his feet.
+	 */
 	@Test
 	void aFreshInventoryTakesTheWholeKitInPlace() {
 		Map<String, Integer> placed = place(new boolean[41]);
 		for (Kit.Entry e : Kit.ENTRIES) {
 			int slot = placed.get(e.item() + (e.potion() == null ? "" : " " + e.potion()));
-			if (e.slot() == Kit.MAIN) {
+			if (e.slot() == Kit.MAIN || e.slot() == Kit.INSTALL) {
 				assertTrue(slot >= 9 && slot < 36, e.item() + " went to " + slot);
 			} else {
 				assertEquals(e.slot(), slot, e.item());
 			}
 		}
+
+		assertTrue(Kit.ENTRIES.stream().filter(e -> e.slot() == Kit.MAIN || e.slot() == Kit.INSTALL).count() <= 27);
 	}
 
 	@Test

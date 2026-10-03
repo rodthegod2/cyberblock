@@ -5,13 +5,14 @@ import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.WorldBridge;
 import dev.cyberblock.cyber.CyberMod;
+import dev.cyberblock.cyber.CyberwareEffects;
 import dev.cyberblock.cyber.HackResult;
 import dev.cyberblock.cyber.Hacking;
 import dev.cyberblock.cyber.Kills;
 import dev.cyberblock.cyber.Kit;
-import dev.cyberblock.cyber.PerkEffects;
 import dev.cyberblock.cyber.PerkRules;
 import dev.cyberblock.cyber.PerkShop;
+import dev.cyberblock.cyber.Ripperdoc;
 import dev.cyberblock.cyber.ScanInfo;
 import java.util.function.Consumer;
 import net.minecraft.client.KeyMapping;
@@ -38,6 +39,7 @@ final class CyberLink {
 			// the binds, and a chat note when Cyberpunk uses other keys than Minecraft's controls show
 			onClient(CyberKeys::hostHello);
 			onLocalPlayer(PerkShop::sendPerks);
+			onLocalPlayer(Ripperdoc::sendCyberware);
 		});
 		listen("key", CyberLink::key);
 		listen("scaninfo", CyberLink::scanInfo);
@@ -110,7 +112,7 @@ final class CyberLink {
 		boolean down = !m.has("down") || m.get("down").getAsBoolean();
 		if (k.equals("sprint")) {
 			if (down && sprintTaps.press(Util.getMillis())) {
-				onLocalPlayer(player -> PerkEffects.sandevistan(player.level().getServer(), player));
+				onLocalPlayer(CyberwareEffects::sprintSandevistan);
 			}
 
 			return;

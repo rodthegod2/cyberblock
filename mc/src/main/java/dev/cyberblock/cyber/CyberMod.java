@@ -11,6 +11,7 @@ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.commands.CommandSourceStack;
@@ -19,10 +20,13 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.item.BowItem;
+import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.TridentItem;
 import org.jspecify.annotations.Nullable;
 
-/** Layer 6 (plan 2026-10-03, track C), server half: cyber items, RAM, perks, the starter kit. */
+/** Layer 6 (plan 2026-10-03, track C; plan retest2 package C), server half: cyber items, RAM, perks, cyberware, the starter kit. */
 public class CyberMod implements ModInitializer {
 	@Override
 	public void onInitialize() {
@@ -31,22 +35,48 @@ public class CyberMod implements ModInitializer {
 		ServerTickEvents.END_SERVER_TICK.register(CyberServer::tick);
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
 			Hacking.clear();
-			PerkEffects.reset(server);
+			PerkEffects.reset();
+			CyberwareEffects.reset(server);
 		});
-		// the host usually says hello at the title screen, before any world: so `perks` also goes out when the player joins
-		// (handler.player: JOIN fires before PlayerList adds him, so localPlayer() is still null), and a closed world's
-		// ranks are dropped on the Cyberpunk side when he leaves
-		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> PerkShop.sendPerks(handler.player));
+		// the host usually says hello at the title screen, before any world: so `perks` and `cyberware` also go out when the
+		// player joins (handler.player: JOIN fires before PlayerList adds him, so localPlayer() is still null), and a closed
+		// world's ranks and implants are dropped on the Cyberpunk side when he leaves. The perk owners' implant hand-out
+		// (Ripperdoc.migrate) runs on his first server tick, once he is in the world.
+		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+			PerkShop.sendPerks(handler.player);
+			Ripperdoc.sendCyberware(handler.player);
+		});
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
-			PerkEffects.reset(server);
+			PerkEffects.reset();
+			CyberwareEffects.reset(server);
 			Cyberblock.events.accept(CyberWire.perks(Map.of()));
+			Ripperdoc.disconnected();
 		});
-		ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> PerkEffects.apply(newPlayer));
-		// vanilla's ServerPlayerGameMode.useItem ignores an item on cooldown without a word (this callback runs before that test)
+		ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> {
+			PerkEffects.apply(newPlayer);
+			CyberwareEffects.apply(newPlayer);
+			Ripperdoc.sendCyberware(newPlayer);
+		});
+		// Steve's attacks: the arms implants' particles and sounds, and the camo breaks
+		AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
+			if (player instanceof ServerPlayer serverPlayer && !level.isClientSide()) {
+				CyberwareEffects.onAttack(serverPlayer, entity);
+			}
+
+			return InteractionResult.PASS;
+		});
 		UseItemCallback.EVENT.register((player, level, hand) -> {
 			ItemStack stack = player.getItemInHand(hand);
-			if (player instanceof ServerPlayer serverPlayer && stack.getItem() instanceof QuickhackItem && player.getCooldowns().isOnCooldown(stack)) {
-				serverPlayer.sendOverlayMessage(Component.translatable("cyberblock.hack.cooldown"));
+			if (player instanceof ServerPlayer serverPlayer) {
+				// vanilla's ServerPlayerGameMode.useItem ignores an item on cooldown without a word (this callback runs before that test)
+				if (stack.getItem() instanceof QuickhackItem && player.getCooldowns().isOnCooldown(stack)) {
+					serverPlayer.sendOverlayMessage(Component.translatable("cyberblock.hack.cooldown"));
+				}
+
+				// Kerenzikov: drawing a bow, crossbow or trident in the air
+				if (stack.getItem() instanceof BowItem || stack.getItem() instanceof CrossbowItem || stack.getItem() instanceof TridentItem) {
+					CyberwareEffects.kerenzikov(serverPlayer);
+				}
 			}
 
 			return InteractionResult.PASS;

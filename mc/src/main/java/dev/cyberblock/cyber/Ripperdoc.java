@@ -73,6 +73,24 @@ public final class Ripperdoc {
 		changed(player);
 	}
 
+	/**
+	 * The starter kit's quiet install (no item used, no message): true when the implant is in now (or already was), false when
+	 * its slot is full of other implants and the kit hands out the item instead. Call changed() once the kit is given.
+	 */
+	static boolean installFree(final ServerPlayer player, final Cyberware cyberware) {
+		CyberwareRules.Installed result = CyberwareRules.install(CyberData.slots(player), cyberware);
+		if (result.outcome() == CyberwareRules.Install.REPLACED) {
+			return false;
+		}
+
+		if (result.outcome() == CyberwareRules.Install.INSTALLED) {
+			CyberData.setSlots(player, result.slots());
+			Cyberblock.LOG.info("cyberware: installed {} in {}", cyberware.id(), result.slotKey());
+		}
+
+		return true;
+	}
+
 	/** A click on an installed implant in the cyberware screen: out it goes (back into the inventory in survival). */
 	public static void remove(final ServerPlayer player, final String slotKey) {
 		Map<String, String> slots = new HashMap<>(CyberData.slots(player));
@@ -157,8 +175,10 @@ public final class Ripperdoc {
 		player.level().sendParticles(ParticleTypes.ELECTRIC_SPARK, player.getX(), player.getY() + 1.0, player.getZ(), 10, 0.3, 0.5, 0.3, 0.05);
 	}
 
-	/** After an install or remove: the effects match the new set, and Cyberpunk hears of it. */
-	private static void changed(final ServerPlayer player) {
+	/** After an install or remove: the effects match the new set (perk upgrades too), and Cyberpunk hears of it. */
+	static void changed(final ServerPlayer player) {
+		CyberwareEffects.apply(player);
+		PerkEffects.apply(player);
 		sendCyberware(player);
 	}
 }
