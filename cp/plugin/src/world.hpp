@@ -184,6 +184,9 @@ namespace cb::world
 	/// and `look` are already converted). `r` is [yaw, pitch, 0]; `cr` is whether V is crouched. Numbers are not rounded.
 	nlohmann::json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, bool crouched);
 
+	/// {"t":"look","d":[dyaw,dpitch]}: raw mouse movement as Minecraft look deltas in degrees (right and down are positive).
+	nlohmann::json make_look(double dyaw, double dpitch);
+
 	/// {"t":"mobdmg","id","frac","by"}: a Cyberpunk NPC damaged the puppet of mob `id`. `frac` (fraction of the puppet's
 	/// max health) is clamped to 0..4; `by` is the NPC's id as a decimal string, null unless `hasBy`. nullopt when `id`
 	/// is negative or `frac` is not finite.

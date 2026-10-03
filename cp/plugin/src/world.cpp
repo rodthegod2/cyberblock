@@ -497,6 +497,11 @@ namespace cb::world
 				{"cr", crouched}};
 	}
 
+	json make_look(double dyaw, double dpitch)
+	{
+		return {{"t", "look"}, {"d", {rounded(dyaw, 1e4), rounded(dpitch, 1e4)}}};
+	}
+
 	std::optional<json> make_mobdmg(int32_t id, double frac, uint64_t by, bool hasBy)
 	{
 		if (id < 0 || !std::isfinite(frac))

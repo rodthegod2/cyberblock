@@ -18,6 +18,10 @@ namespace cb
 		inline std::atomic<bool> inVehicle{false};
 		/// Set by Cyberblock_SetStance: V is crouched. Sent as `cam.cr` with every camera frame.
 		inline std::atomic<bool> crouched{false};
+		/// Set by Cyberblock_SetMenu: a Cyberpunk menu is open, so input forwarding pauses.
+		inline std::atomic<bool> menuOpen{false};
+		/// Set by Cyberblock_SetLookCapture: raw mouse deltas go to Minecraft as `look` (the camera-only flight fallback).
+		inline std::atomic<bool> lookCapture{false};
 		/// F9 went down: set by the window hook, read and cleared by Cyberblock_ConsumeToggle.
 		inline std::atomic<bool> togglePressed{false};
 	}

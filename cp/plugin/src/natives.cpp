@@ -624,6 +624,25 @@ namespace
 		cb::natives::crouched = crouched;
 	}
 
+	// Cyberblock_SetMenu(open: Bool) -> Void: a Cyberpunk menu is open; input forwarding pauses until it closes.
+	void SetMenu(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		bool open = false;
+		RED4ext::GetParameter(frame, &open);
+		++frame->code;
+		cb::natives::menuOpen = open;
+	}
+
+	// Cyberblock_SetLookCapture(on: Bool) -> Void: the camera-only flight fallback: while on, raw mouse movement goes to
+	// Minecraft as `look` deltas.
+	void SetLookCapture(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		bool on = false;
+		RED4ext::GetParameter(frame, &on);
+		++frame->code;
+		cb::natives::lookCapture = on;
+	}
+
 	// Cyberblock_Log(msg: String) -> Void
 	void Log(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
@@ -711,6 +730,8 @@ namespace cb::natives
 		add(rtti, "Cyberblock_HackResult", &HackResult, nullptr, {{"Int32", "id"}, {"Bool", "ok"}, {"String", "reason"}});
 		add(rtti, "Cyberblock_Killed", &Killed, nullptr, {{"Uint64", "target"}, {"Bool", "vehicle"}, {"Bool", "hostile"}});
 		add(rtti, "Cyberblock_SetStance", &SetStance, nullptr, {{"Bool", "crouched"}});
+		add(rtti, "Cyberblock_SetMenu", &SetMenu, nullptr, {{"Bool", "open"}});
+		add(rtti, "Cyberblock_SetLookCapture", &SetLookCapture, nullptr, {{"Bool", "on"}});
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});
 		log::info("redscript natives registered");
 	}

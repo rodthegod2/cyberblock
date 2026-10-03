@@ -104,7 +104,7 @@ TEST(mob_kinds_are_lowercase_words_up_to_32)
 {
 	const std::string longest(32, 'a');
 	CHECK(parse_mobs(mobs_message({mob_entry(R"("kind":")" + longest + R"(")")})).items.size() == 1);
-	for (const char *kind : {"", "Zombie", "zombie-villager", "zombie villager", "minecraft:zombie", "zÃ¶mbie"})
+	for (const char *kind : {"", "Zombie", "zombie-villager", "zombie villager", "minecraft:zombie", "z\xc3\xb6mbie"})
 	{
 		const ListParse<Mob> p = parse_mobs(mobs_message({mob_entry("\"kind\":" + json(kind).dump())}));
 		CHECK(p.valid && p.items.empty() && p.dropped == 1);

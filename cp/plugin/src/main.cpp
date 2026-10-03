@@ -84,6 +84,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 			{
 				cb::world::on_minecraft_message(message);
 				cb::snap::on_minecraft_message(message);
+				cb::input::on_minecraft_message(message);
 			},
 			cb::snap::on_link_dropped);
 		break;

@@ -255,6 +255,18 @@ TEST(cam_carries_the_stance_in_cr)
 	CHECK(survives_the_wire(standing));
 }
 
+// ---- look --------------------------------------------------------------------------------------------------------------
+
+TEST(look_carries_the_yaw_and_pitch_deltas_in_degrees)
+{
+	const json m = cb::world::make_look(1.5, -0.6);
+	CHECK(m.at("t") == "look" && m.at("d").size() == 2 && m.size() == 2);
+	CHECK(approx(m.at("d")[0], 1.5) && approx(m.at("d")[1], -0.6));
+	// 0.15 degrees per count sums to values like 0.30000000000000004: rounded, so the wire text stays short
+	CHECK(cb::world::make_look(0.1 + 0.2, 0.15 * 3).dump() == R"({"d":[0.3,0.45],"t":"look"})");
+	CHECK(survives_the_wire(m));
+}
+
 // ---- truncate_utf8 -----------------------------------------------------------------------------------------------------
 
 TEST(truncate_utf8_never_splits_a_character)
