@@ -6,6 +6,11 @@ Audit: `docs/notes/cp-mechanics-audit.md` (B, C, needsInGame G-3…G-8).
 Files: `cp/scripts/Cyberblock/Hacks.reds`, `Scan.reds`, `Perks.reds`, `Buffs.reds`, `Kills.reds`. All compile against
 the 2.31 scripts plus Codeware with `cp/scripts/compile_check.py` (run with stubs for the three §1.3 natives S1 adds).
 
+**Re-test 2 (2026-10-03, plan `2026-10-03-retest2-and-cyberware.md`).** Three things below changed and are collected in
+[Re-test 2: ids, cyberware and cyberfx](#re-test-2-ids-cyberware-and-cyberfx) at the end: how entity ids are hashed,
+the `cyberware` and `cyberfx` messages (which moved the double jump, the visibility modifier and the slow-mo out of
+`Perks.reds` into `Cyberware.reds`), and the scan range. Rows and sentences affected are marked "(re-test 2)".
+
 ## Sources and how IDs were confirmed
 
 - **Scripts:** the decompiled 2.31 scripts the audit used (codeberg.org/adamsmasher/cyberpunk at `a2e6bb3 "2.31"`).
@@ -40,7 +45,9 @@ the 2.31 scripts plus Codeware with `cp/scripts/compile_check.py` (run with stub
 Reasons:
 - **"no such hack"**: an unknown name, or the record is missing at run time.
 - **"target gone"**: no player, no entity for the id, or the NPC is not active (`ScriptedPuppet.IsActive`: dead,
-  defeated, unconscious or turned off).
+  defeated, unconscious or turned off). (Re-test 2: this now only happens for an entity that is really dead or
+  despawned. Before, every hack on a live target said "target gone" because the id Minecraft was given was the wrong
+  hash, see the section at the end.)
 - **"not hackable"**: the entity is not a `ScriptedPuppet` (for `device`: not a `Device`), V's friend,
   Invulnerable or Immortal, in a scene, or a non-crowd NPC whose record offers no `PuppetQuickHack` ObjectAction (how
   story NPCs are made unhackable); a crowd NPC whose record has a quest affiliation other than General; or V is in
@@ -82,7 +89,10 @@ Side effects (audit B.4) stay as in vanilla:
 
 - **Target:** a target of 0 means what V looks at. That is `TargetingSystem.GetLookAtObject(V, true, true)`, the
   same call `PlayerPuppet.ReevaluateLookAtTarget` makes. Any other value is `EntityID.FromHash` +
-  `FindEntityByID`.
+  `FindEntityByID`. (Re-test 2: the value is now picked by Minecraft on the server thread from the proxies' real
+  positions, and `Scan` returns a one-line note, `scan N: ok <class> <8-digit id> (requested|look-at|near crosshair)`,
+  that `Events.reds` logs at most once a second. The maximum scan distance is 80 m with the `kiroshi_optics` implant,
+  else 48 m.)
 - **NPC** (`ScriptedPuppet`):
   - name: the scanner's own rules (alternative name, then civilian `DisplayName`, else `FullDisplayName` /
     `DisplayName`, else `GetDisplayName`);
@@ -117,12 +127,12 @@ keeps them while not Active, and accepts only the 20 §1.5 ids. `Clear` keeps th
 
 | Perk | Cyberpunk side | Source |
 |---|---|---|
-| `double_jump` | `HasDoubleJump` Additive +1 while Active | audit C.2 `GrantStat`. `DoubleJumpDecisions.EnterCondition` checks `HasStatFlag(HasDoubleJump)` and refuses while `HasChargeJump`/`HasAirHover` are set; S1 zeroes those while Active, so the granted double jump works even with charge-jump legs. |
-| `silent_steps` | `Visibility` Multiplier 0.5 while Active | audit C.4 `Stealth`: `UpdateVisibilityModifier` → `VisibleObjectDetectionMultEvent` |
-| `sandevistan` (`perkfx`) | `SetIgnoreTimeDilationOnLocalPlayerZero(true)` + `SetTimeDilation(n"cyberblockSlowMo", 0.2, s + 1)`; end: `UnsetTimeDilation(…, n"SandevistanEaseOut")` + ignore off | audit C.1 `SlowMo`/`SlowMoEnd` |
+| `double_jump` | **(re-test 2) nothing on V.** The perk never touches `HasDoubleJump`: Minecraft only adds 4 blocks of safe fall with a legs implant. V's `HasDoubleJump` Additive +1 now comes from the **`reinforced_tendons`** implant (`Cyberware.reds`), the original design of this row | audit C.2 `GrantStat`. `DoubleJumpDecisions.EnterCondition` checks `HasStatFlag(HasDoubleJump)` and refuses while `HasChargeJump`/`HasAirHover` are set; S1 zeroes those while Active, so the granted double jump works even with charge-jump legs. |
+| `silent_steps` | `Visibility` Multiplier 0.5 while Active, **one modifier shared with the `lynx_paws` implant** (re-test 2: it lives in `Cyberware.reds` and applies once if either is present) | audit C.4 `Stealth`: `UpdateVisibilityModifier` → `VisibleObjectDetectionMultEvent` |
+| `sandevistan` | **(re-test 2)** the slow-mo is `cyberfx sandevistan` from the implant, handled by `CyberblockCyberware.Fx`; `CyberblockPerks.Fx` delegates to it, so an old `perkfx` still works. `SetIgnoreTimeDilationOnLocalPlayerZero(true)` + `SetTimeDilation(n"cyberblockSlowMo", 0.2, s + 1)`; end: `UnsetTimeDilation(…, n"SandevistanEaseOut")` + ignore off | audit C.1 `SlowMo`/`SlowMoEnd` |
 | `dodge` | nothing here: S1 reads `Has(n"dodge")` | plan §1.5 |
 
-How the Sandevistan slow-mo is timed:
+How the Sandevistan slow-mo is timed (re-test 2: the same code, now in `Cyberware.reds`, shared with Kerenzikov):
 - **End time:** it runs on engine time (`GameInstance.GetEngineTime`, the clock `GameObject.ProcessDamageReceived`
   stamps damage with), so the slow-mo cannot stretch its own end. The engine duration `s + 1` is only a safety net if
   ticks stop.
@@ -295,3 +305,77 @@ The target is a hostile ganger, except where a check says otherwise. Every use a
   - killing a hostile ganger with a sword logs `killed human <id> (hostile)` once;
   - destroying a car with TNT logs `killed vehicle <id>`;
   - a kill V makes with Cyberblock Off logs nothing.
+
+## Re-test 2: ids, cyberware and cyberfx
+
+Plan `docs/superpowers/plans/2026-10-03-retest2-and-cyberware.md` §1.3, §1.5, §1.7 and tasks S1, S2, S5, S6. Wire
+messages are in `shared/protocol.md` (the **re-test 2** rows).
+
+### The `ToHash` rule: never pass a call result (R2, the main cause of "target lost")
+
+- **Symptom:** every scan logged "nothing under the crosshair at 0" and every hack "target gone", although Minecraft had
+  40+ proxies.
+- **Cause:** Codeware's `EntityID.ToHash(id: script_ref<EntityID>)` takes a **reference**. When it is given a call result
+  (`EntityID.ToHash(object.GetEntityID())`) there is no variable to refer to, and it hashes garbage: a heap-address-like
+  number. Four call sites (Scan, Kills, Puppets, Effects) sent such ids (`2668059858640`, `0`) instead of the real ones
+  (`10019101`). Minecraft locked that id, the `hack` came back with it, and `FindEntityByID` failed with "target gone".
+  The log shows both numbers for one NPC, two lines apart: `events: hit target 10019101 ...`, then
+  `effects: push withheld from 2668059858640 (workspot)` (`Cyberblock.log` 2026-10-03 15:12:12). Codeware:
+  `Codeware.Global.reds` 42199-42201.
+- **Rule:** **always** `CyberblockIds.Hash(entity)` (`cp/scripts/Cyberblock/Ids.reds`). It returns `0ul` when the entity is not
+  defined, copies `GetEntityID()` into a local first, and calls `EntityID.ToHash(local)`. Scan, Kills, Puppets, Effects and
+  Npcs all use it now.
+- **Guard:** `tests/test_reds_ids.py` strips the `//` comments of every `cp/scripts/Cyberblock/*.reds` and requires that
+  each `EntityID.ToHash(...)` argument is a bare identifier; a failure names `file:line`.
+- **Checking in game:** the scan line carries the id (`scan N: ok <class> <id> ...`): a real id has about 8 digits.
+
+### `cyberware` events (R6)
+
+- **Wire to script:** one `cyberware` message becomes one `cyber` event per entry (`EventName` = the cyberware id,
+  `EventAmount` = 1 installed or 0 not). Unlike `cyberfx`, `cyber` is **kept while the host is not Active** and outranks
+  like `perk`, so installs survive a vehicle ride or F9. `Events.reds` applies it with
+  `CyberblockCyberware.Set(game, EventName, RoundF(EventAmount) == 1)` in both the live and the inactive branch.
+- **The service** (`Cyberware.reds`, `CyberblockCyberwareService`, a Codeware `ScriptableService` like the perks):
+  it holds the 17 known ids, the install flags, the owner entity and the modifiers it added. API: `Set`, `Has`, `Fx`,
+  `Tick`, `Clear`. `Tick` (live and not live) adds or removes its modifiers through the `Perks.reds` owner and
+  `RemoveModifiers` pattern, on engine time:
+
+  | Implant | On V (while Active) |
+  |---|---|
+  | `reinforced_tendons` | `HasDoubleJump` Additive +1 (`PlayerState.ZeroAbilities` keeps the ability only for it) |
+  | `fortified_ankles` | `HasChargeJump` Additive +1 (same rule) |
+  | `lynx_paws` (or the `silent_steps` perk) | `Visibility` Multiplier 0.5, **one** modifier |
+  | `kiroshi_optics` | `CyberblockScan` `maxDistance` 80 instead of 48 |
+  | everything else | nothing on V: its effect is Minecraft's, or it comes through `cyberfx` or `effect` |
+
+  `PlayerState.ZeroAbilities` still zeroes everything else (`CanUseOpticalCamo` too: camo comes through `effect`
+  `invisibility`), and keeps `HasDodge` / `HasDodgeAir` only for the `dodge` perk.
+- **Clear** removes every modifier, ends any slow-mo and unsets the dilation.
+- **Log:** `cyberware: <id> on|off`.
+
+### `cyberfx` (R6)
+
+- **Wire to script:** `cyberfx` (`id`, `seconds` 0..30) becomes a `cyberfx` event (`EventName` the id, `EventAmount` the
+  seconds, 0 = end). It is **discarded while the host is not Active**. `Events.reds` calls
+  `CyberblockCyberware.Fx(game, id, seconds)` for live ones only.
+- **`sandevistan`:** `SetIgnoreTimeDilationOnLocalPlayerZero(true)` and `SetTimeDilation(n"cyberblockSlowMo", 0.2, s + 1)`
+  (the C.1 recipe above, ended on engine time).
+- **`kerenzikov`:** the same with factor 0.3. A newer call replaces the factor and the end; it never stacks; `0` ends the
+  effect.
+- **`berserk` (task S6, gated):** the record `BaseStatusEffect.BerserkPlayerBuff` is applied only if its tweakdb entry
+  carries nothing beyond visual effects and its forced superhero fall cannot stomp NPCs; otherwise the script logs
+  `berserk: Minecraft side only` and the jump boost still reaches V through the ordinary `effect` path. The decision and
+  its reason are written in the header of `Cyberware.reds` and in package S's report.
+- **Log:** `cyberfx: <id> <s> s`.
+
+### needsInGame (re-test 2)
+
+The ready-made list is `docs/TESTING-PLAN.md` "Re-test 2". The ones that belong to this file:
+- **Scan id:** hold G on a pedestrian: `scan N: ok <class> <8-digit id> (requested)`; then a Bottle of Forgetting gives
+  `hack memory_wipe on <same id>: ok`.
+- **Cyberware events:** `CyberblockCyberware.Has(Game.GetPlayer():GetGame(), n"reinforced_tendons")` is true after
+  installing it; `Game.GetStatsSystem():GetStatValue(Game.GetPlayer():GetEntityID(), gamedataStatType.HasDoubleJump)` is 1
+  with it and 0 without, even with the Double Jump perk; `HasChargeJump` likewise with Fortified Ankles.
+- **cyberfx:** Y on Sandevistan logs `cyberfx: sandevistan 6 s` and Night City slows to x0.2 while V does not; Kerenzikov
+  in the air logs `cyberfx: kerenzikov 2 s` and slows to x0.3; F9 off mid-effect restores time at once.
+- **Berserk:** note which line appears (`cyberfx: berserk 8 s` with or without `berserk: Minecraft side only`).

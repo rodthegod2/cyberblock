@@ -1,142 +1,198 @@
-# Spike S2.4: following Minecraft's elytra flight with V, every frame, from scripts
+# Flight: V follows Minecraft's glide and launch, every frame (spike S2.4, rewritten for re-test 2)
 
-Question (plan 2026-10-03, S2.4): while Steve glides, Minecraft's physics move him and the DLL keeps the latest
-`flight` sample (`Cyberblock_FlightPos`, extrapolated by at most 0.1 s). Can redscript put V there every rendered frame
-and keep the mouse look working? What does Cyberpunk's locomotion make of it? And what is the fallback if it
-jitters?
+Question (plan 2026-10-03, S2.4): while Steve glides, Minecraft's physics move him. Can Cyberpunk put V there every
+rendered frame, keep the mouse look working, and land V cleanly? Re-test 2 (R1 and R5) added a second source of
+flight, the **launch** (a wind charge or a mace burst throws Steve), and found that the first answer did not work.
 
-**Answer:**
-- **Primary mode.** A `DelayCallback` that re-queues itself with `DelaySystem.DelayCallbackNextFrame` runs once per
-  frame. Each run teleports V with `TeleportationFacility.Teleport(V, flightPos, Vector4.ToRotation(V's forward))`.
-  The body keeps its own yaw and the camera keeps its pitch, so the mouse look is untouched.
-- **Fallback, camera only** (`CyberblockFlight.SetCameraOnly(true)`). V stays where the glide started (already hidden
-  by PlayerState while Active). A vanilla free-camera entity is spawned and activated, and it is moved every frame to
-  the flight position + 1.6 m, looking along Minecraft's yaw/pitch. Minecraft gets the mouse through
-  `Cyberblock_SetLookCapture(true)`.
+**Answer (current method, re-test 2): the DLL drives V.**
+- **Where:** `cp/plugin/src/drive.cpp`, called from RED4ext's Running-state `OnUpdate` every rendered frame, just
+  before the camera is published (the place that already publishes the camera every frame).
+- **How:** it teleports V with `gameTeleportationFacility::Teleport(V, position, ToRotation(V's forward))`, so the body
+  keeps its own yaw and the camera keeps its pitch: the mouse look is untouched.
+- **What stays in redscript:** `cp/scripts/Cyberblock/Flight.reds` only decides, at 10 Hz, whether V *may* be moved
+  (`Cyberblock_SetFlightAllowed`), clears the drive, and owns the fall-damage rules (landing wraps, `Health.reds`).
+- **Gone:** the 10 Hz-restarted script loop, `Cyberblock_SetFlightFollowing`, and the camera-only fallback
+  (`SetCameraOnly`, the free camera entity). Nothing calls `Cyberblock_SetLookCapture` any more; the native and the
+  `look` message stay for a follow-up.
 
-Everything compiles against the 2.31 scripts plus Codeware (`Flight.reds`, `cp/scripts/compile_check.py`). Smoothness,
-the landing behaviour and the camera switch can only be judged in game: the checks are at the end.
+Everything compiles against the 2.31 scripts plus the RED4ext SDK (`cp/scripts/compile_check.py`, `cb_tests`).
+Smoothness, the landing behaviour and the `Teleport`-from-`OnUpdate` call can only be judged in game: the checks are at
+the end.
 
-## Method (`cp/scripts/Cyberblock/Flight.reds`)
+## Why the script loop was replaced (R1-a)
 
-1. **Start.** The 10 Hz `CyberblockFlight.Tick` sees `Cyberblock_FlightActive()` turn true (V on foot, live, not
-   held). It remembers the start time and V's position, calls `Cyberblock_SetFlightFollowing(true)` (Minecraft reads
-   it as `cam.fly`), bumps a loop generation and queues the first frame callback. `FlightSeq` is not used: the loop
-   runs until `Cyberblock_FlightActive()` is false. A refused start (vehicle, `PlayerLocked`) sets following false and
-   logs the lock reason; Minecraft then calls the glide off within 0.5 s and Steve goes back to V.
-2. **Every frame.** The callback stops as soon as its generation is stale (`DelayCallbackNextFrame` returns no id, so
-   it cannot be cancelled), then:
-   - **landing:** if `Cyberblock_FlightActive()` is false and the flight was not timed out (Minecraft sent
-     `active:false`), the loop ends at `Cyberblock_FlightPos()` (the landing spot): no teleport when the flight
-     lasted under 0.3 s or the spot is within 1.5 m of V; otherwise the ground is raycast from 1.5 m above the spot
-     and a higher surface wins (V never ends under the real floor), and a spot more than 1 m above the ground goes
-     down to it. In primary mode the spot is first clipped like a frame (below);
-   - **timed out** (`Cyberblock_FlightTimedOut()`: the samples stopped without `active:false`): V is held where it is
-     for up to 1 s and following resumes if the samples come back; after that V is put on the ground below;
-   - **primary:** otherwise V goes to `Cyberblock_FlightPos()`, stopped 0.3 m short of any Night City surface
-     (Static + Terrain, not our collision boxes) between the last position V was put at and it;
-   - **camera only:** V is put back at the take-off spot if it drifted more than 5 cm. The camera entity is teleported
-     to `FlightPos + (0, 0, 1.6)` looking along `(−sin a·cos p, cos a·cos p, −sin p)` for Cyberpunk yaw `a` and
-     Minecraft pitch `p` (positive = down).
-   Every frame that follows calls `Cyberblock_SetFlightFollowing(true)` again; while the camera flies,
-   `CyberblockFlight.Center` (the flight position) is where `Probes.reds` probes the ground.
-3. **Landing.** The game is told nothing: V is simply teleported to the landing spot (when the rules above call for a
-   teleport). Fall reports are suppressed for 2 s after it (`CyberblockFlight.SuppressFall`, which S1's `Health.reds`
-   reads). In camera-only mode the camera is deactivated and despawned, look capture is switched off, and V is turned
-   to the flight yaw. Every stop sets following false.
-4. **`Clear`** (before saves, on load, at session end, on leaving Active/Vehicle) stops the loop and restores the
-   camera and look capture. A save in mid-flight therefore saves V wherever the last frame put it. The next live tick
-   restarts following if Minecraft is still gliding.
+The first method queued `DelaySystem.DelayCallbackNextFrame` from inside its own callback so that a script ran once per
+frame. In 2.31 that re-queue **never fires**: the callback runs one frame and stops, and only the 10 Hz watchdog
+(`CyberblockFlight.Tick`) restarts it, about once per 1.05 s. The log of the re-test (`Cyberblock.log`, 2026-10-03)
+shows it as flights that last a whole number of watchdog periods:
 
-## Minecraft side (`Flight.java`, `FlightRules.java`)
+| `flight: start (primary)` | end line | length | in watchdog periods |
+|---|---|---|---|
+| 15:07:15.078 | 15:07:18.217 `over, V stays where it is` | 3.139 s | 3 x 1.046 s |
+| 15:08:49.762 | 15:09:14.014 `V stopped short of Night City geometry ...` | 24.252 s | 23 x 1.054 s |
+| 15:15:58.979 | 15:16:00.015 `landed` | 1.036 s | 1 x 1.036 s |
 
-- **Start:** a usable elytra, at least 3 blocks of free air straight down from V's feet (a `COLLIDER` ray, so barriers
-  count) and Steve's gliding box at V's feet clear of any collision; then a jump press while V falls faster than
-  1 m/s between the newest two samples, or a fall faster than 12 m/s for 0.3 s. With Steve's Double Jump perk the
-  first press while `cam.air` is V's own double jump and the second opens the elytra. Not while `cam.held` or
-  `cam.menu`, nor for 1 s after a glide was called off.
-- **Following:** a glide whose `cam.fly` does not turn true within 0.5 s, or turns false after it was true, is called
-  off: Steve snaps back to V's feet and the host hears `active:false` at V's own feet (no landing teleport). The host's
-  fall damage is ignored, and the 0.5 s landing settle armed, only once the host followed.
-- **Menus:** while `cam.menu` Steve waits in the air where he was, with no gravity and no flight samples; when it
-  closes he carries on with the velocity he had (the host holds V meanwhile, step 2 "timed out").
+Minecraft's own log of the same flights (`glide started ... with 6.0 m/s`, `glide ended ...`) shows glides of 30 m and
+about 400 m. Consequences, all matching the user's report ("it teleports you, the camera only updates every few
+seconds"):
+- V and the first-person camera jumped about **17 m per second** at glide speed, once per watchdog period.
+- The landing was decided from a position up to **1 s old**, so V could be left short of the real spot, possibly in
+  mid-air, and Steve snapped back to V after the 0.5 s settle.
+- A wind-charge launch (R5) could never have worked on top of it: V could only follow through that broken loop.
+
+## Method
+
+### Samples (`snapshots.cpp`, `flight` messages)
+- `flight` carries `kind` (`glide` or `launch`) and `ts` (Minecraft's sample clock in ms); see `shared/protocol.md`.
+- The DLL keeps a ring of the last 32 `{sample, local}` entries. With `ts`: `local = ts + offset`, where the offset is the
+  minimum of (arrival − `ts`) over the ring (so network jitter does not move the clock); without `ts`: `local = arrival`.
+- `Flight::render_pos(now)`: it plays the stream out `D = clamp(1.5 x median spacing, 8 ms, 60 ms)` behind (`u = now − D`),
+  interpolates linearly between the two samples around `u`, and past the newest sample extrapolates `v x min(u − newest, 50 ms)`.
+  Inactive: the landing spot. The ring is cleared on every active change.
+
+### Follower (`follow.cpp`, pure, unit-tested)
+States Idle, Following, Holding. Constants: hold 1.0 s, quick landing 0.3 s, near landing 1.5 m, clip margin 0.3 m.
+- **Start:** Idle, gate open, flight active, no menu: Following, move to the target, log `flight: start (glide|launch)`.
+- **Gate closes** while Following or Holding: Stop with **no teleport**, log
+  `flight: stopped, V is held, in a vehicle or Cyberblock is off`.
+- **Menu open:** nothing happens and the timers are moved forward by the frame time (frozen).
+- **Active:** move to the target; Holding becomes Following (`flight: samples back`).
+- **Landing** (`active:false`, not timed out): Stop (`flight: over, V stays where it is`) when the flight lasted under 0.3 s
+  or the target is within 1.5 m of V's feet; otherwise Land.
+- **Timeout** (samples stopped without `active:false`): hold V at the last position for up to 1 s
+  (`flight: no samples, holding V`), then put V on the ground below (`flight: no samples for 1 s, V put on the ground`).
+- Land, Ground and Stop end the flight and return to Idle.
+
+### Drive (`drive.cpp`, game-facing)
+- **Gate:** the DLL is active, V is not in a vehicle and not held, `flightAllowed` is set by the script, the link is up,
+  and the player resolves. It keeps ticking while the game is paused; with a menu open it does nothing.
+- **Move:** two rays (Static, then Terrain) from the last position +0.9 m to the target +0.9 m; on a hit V stops 0.3 m short
+  (`flight: V stopped short of Night City geometry`, once per flight); then `Teleport`, and `cam.fly` becomes true on the
+  first frame V is moved.
+- **Land:** the ground below the (clipped) spot: a ray down from spot +1.5 m to spot −1000 m, Static and Terrain, the
+  higher hit wins, used when it is above the spot or the spot is more than 1 m above it. V never ends in mid-air.
+- **Summary:** after every flight, `flight: N frames, M samples (median spacing a ms, max gap b ms), max step c m,
+  clipped yes|no`.
+- **Setup:** `drive: ready (Teleport <param types>, raycast <param types>)` once, or one `drive: disabled: <what> missing`
+  (then `cam.fly` stays false and Minecraft calls every flight off within 0.5 s).
+
+### Scripts (`Flight.reds`, `Health.reds`)
+- `CyberblockFlight.Tick` (10 Hz): `allowed = live && V is defined && !mounted && !PlayerLocked`, then
+  `Cyberblock_SetFlightAllowed(allowed)`. A flight that is active while `!allowed` logs
+  `flight: ignored ... (<LockReason>)` once.
+- `CyberblockFlight.Clear` (F9, Lost, before-save, session end): allowed false first; if the drive is moving V, V is
+  teleported to the ground below.
+- **Landing wraps** (audit G-9): `LocomotionAirDecisions.ToHardLand`, `ToVeryHardLand`, `ToDeathLand` and
+  `ToSuperheroLand` return false while `CyberblockFlight.SuppressFall` (`Cyberblock_SecondsSinceFlight() < 2.0`, or a
+  fall-suppressing effect such as Slow Falling). `ToRegularLand` is **not** wrapped.
+- `Health.reds`: a landing instant kill (`Attacks.HardLanding`, `VeryHardLanding`, `DeathLanding`) while `SuppressFall` is
+  not reported to Steve (`dmg instant kill (landing) not reported: flight`).
+
+## Minecraft side (`Flight.java`, `FlightRules.java`, `ClientPacketListenerMixin`)
+
+- **Glide start** (unchanged): a usable elytra, at least 3 blocks of free air straight down from V's feet (a `COLLIDER`
+  ray, so barriers count) and Steve's gliding box at V's feet clear of any collision; then a jump press while V falls
+  faster than 1 m/s, or a fall faster than 12 m/s for 0.3 s. With the **Reinforced Tendons** implant the first press in the
+  air is V's own double jump and the second opens the elytra (this was the Double Jump perk before the cyberware
+  rework). Not while `cam.held` or `cam.menu`, nor for 1 s after a flight was called off.
+- **Launch start** (new): `ClientPacketListenerMixin` forwards the local player's explosion knockback (`handleExplosion`,
+  `playerKnockback`) and its set-entity-motion packets (`handleSetEntityMotion`) to `Flight.impulse(v, explosion)`. A
+  kick counts when it passes `FlightRules.launch` (`LAUNCH_MIN_UP` 0.25 and `LAUNCH_MIN_SPEED` 0.4 blocks/tick for an
+  explosion, `MOTION_LAUNCH_MIN_UP` 0.6 blocks/tick for a motion packet), the host is not held, in a menu or in a vehicle,
+  and Steve is alive and not a passenger or a spectator. `startLaunch`
+  switches creative flying off, clears `onGround`, lifts Steve out of collision (at most 1 block, in 1/16 steps), sets his
+  motion to the kick, and logs `launch started at {} with {} m/s`. A server-side mixin gives a creative-flying Steve
+  explosion knockback while Cyberblock is active.
+- **Touchdown:** the glide rule for a glide; for a launch, on the ground or in water after a 100 ms settle. A launch
+  switches to a glide on a jump press with an elytra, a fall faster than 1 m/s and 3 blocks clear (no new handshake).
+- **Samples:** `Wire.flight` now sends `kind` and `ts = (System.nanoTime() − Flight.EPOCH) / 1e6`.
+- **Following:** a flight whose `cam.fly` does not turn true within 0.5 s, or turns false after it was true, is called off:
+  Steve snaps back to V's feet and the host hears `active:false` at V's own feet. `followsCam()` also turns true as soon
+  as a pose that arrived after touchdown has `!fly` and feet within 1.5 m of the landing spot (the 0.5 s settle stays as
+  the upper bound). The host's fall damage is ignored, and `HostDamage.fallFreeUntil` armed, only once the host followed.
+- **Menus:** while `cam.menu` Steve waits in the air where he was, with no gravity and no flight samples; when it closes he
+  carries on with the velocity he had (the DLL holds V meanwhile, timers frozen).
 
 ## Evidence
 
 | Fact | Source |
 |---|---|
-| `DelaySystem.DelayCallbackNextFrame(delayCallback: ref<DelayCallback>) -> Void` (no `DelayID`), vanilla use with a `DelayCallback` subclass | decompiled 2.31 scripts `orphans.swift` 11826; `cyberpunk/player/psm/equipment.swift` 524 |
-| `TeleportationFacility.Teleport(GameObject, Vector4, EulerAngles)` | `orphans.swift` 31935 |
+| `DelaySystem.DelayCallbackNextFrame(delayCallback: ref<DelayCallback>) -> Void` exists and vanilla uses it once per request; re-queueing it from inside its own callback **never fired** in 2.31 (R1-a, table above) | decompiled 2.31 scripts `orphans.swift` 11826, `cyberpunk/player/psm/equipment.swift` 524; `Cyberblock.log` 2026-10-03 15:07-15:16 |
+| `gameTeleportationFacility::Teleport(objectToTeleport, position: Vector4, orientation: EulerAngles)`; scripts reach it through `TeleportationFacility.Teleport(GameObject, Vector4, EulerAngles)` | NativeDB; `orphans.swift` 31935 |
+| `gameSpatialQueriesSystem::SyncRaycastByCollisionGroup(start, end, collisionGroup: CName, out result: physicsTraceResult, staticOnly, dynamicOnly) -> Bool` for the clip and ground rays | NativeDB |
 | Vanilla player teleports that keep the facing pass `Vector4.ToRotation(player.GetWorldForward())` | `cyberpunk/UI/fullscreen/map/worldMap.swift` 949, `cyberpunk/devices/roadBlock/roadBlockTrap.swift` 74 |
-| The look pitch belongs to `FPPCameraComponent` (`ResetPitch()`). Fast travel calls `GetFPPCameraComponent().ResetPitch()` explicitly before `TeleportToNode`, so a teleport by itself does not reset the pitch [inferred] | `orphans.swift` 27006–27011; `core/systems/fastTravelSystem.swift` 335–339 |
-| Locomotion in the air: `FallDecisions` → `LocomotionAirEvents.OnUpdate`. The landing type (Regular / Hard / VeryHard / Death) is chosen from `GetVerticalSpeed` = `physicsStateValue.LinearVelocity.Z` against speeds derived from fall heights (`GetFallingSpeedBasedOnHeight`, default gravity −16). Hard, very hard and death landings start `Attacks.HardLanding` / `VeryHardLanding` / `DeathLanding`, which `Health.reds` reports as `fall` | `cyberpunk/player/psm/locomotionTransitions.swift` 214–226, 3617–3754, 3813–3850, 99–103; `defaultTransition.swift` 553–557 |
-| Free camera template `base\entities\cameras\simple_free_camera.ent`: entity class `gameFreeCamera` (extends `gameObject`); components `gameCameraComponent` "camera", `entColliderComponent` "collider" (dynamic sphere, preset `World Dynamic`), `entMeshComponent` "mesh" (`engine\meshes\editor\box_red.w2mesh`) | archive `basegame_4_gamedata.archive`, CR2W strings (scratch only, never copied); NativeDB `gameFreeCamera` |
-| `CameraComponent.Activate(opt blendTime, opt shouldOverrideAudioListeners)` / `Deactivate(...)`; devices take the view with `Activate(0.00, true)` and give it back with `Deactivate(0.00, true)` | `orphans.swift` 21894–21916; `cyberpunk/devices/core/deviceBase.swift` 3831, 3838 |
-| `StaticEntitySystem.SpawnEntity/GetEntity/DespawnEntity`, `StaticEntitySpec`, `Entity.GetComponents`, `IComponent.Toggle/IsA` | Codeware 1.20.3 `Codeware.Global.reds` 43500–43532, 42157–42168 |
-| `Quaternion.BuildFromDirectionVector(direction, opt up)`, `Quaternion.ToEulerAngles` | `orphans.swift` 23007, 23049 |
+| The look pitch belongs to `FPPCameraComponent` (`ResetPitch()`). Fast travel calls `GetFPPCameraComponent().ResetPitch()` explicitly before `TeleportToNode`, so a teleport by itself does not reset the pitch [inferred] | `orphans.swift` 27006-27011; `core/systems/fastTravelSystem.swift` 335-339 |
+| Locomotion in the air: `FallDecisions` → `LocomotionAirEvents.OnUpdate`. The landing type (Regular / Hard / VeryHard / Death) is chosen from `GetVerticalSpeed` = `physicsStateValue.LinearVelocity.Z`. Hard, very hard and death landings start `Attacks.HardLanding` / `VeryHardLanding` / `DeathLanding`, which `Health.reds` reports as `fall` | `cyberpunk/player/psm/locomotionTransitions.swift` 214-226, 3617-3754, 3813-3850, 99-103; `defaultTransition.swift` 553-557 |
+| The landing transitions the wraps cover are `LocomotionAirDecisions.ToHardLand`, `ToVeryHardLand`, `ToDeathLand`, `ToSuperheroLand` (protected const) | the 2.31 scripts and `cp/scripts/compile_check.py` |
+| RED4ext calls the Running state's `OnUpdate` once per rendered frame; the camera publisher already runs there (`on_running_update` calls `cb::camera::publish()`) | `third_party/RED4ext.SDK` `GameStates.hpp` (`CRunningState::OnUpdate`), `cp/plugin/src/main.cpp` |
 
 ## What locomotion is expected to do (to verify in game)
 
-- **During the glide**, V is in the air every frame, so the locomotion state machine enters `Fall`: falling wind loop,
-  `Fall` animation event. V's meshes are hidden while Active, so only the sound matters. Whether teleporting resets
-  the character controller's velocity is native code. If it does not, gravity builds up a large
-  `LinearVelocity.Z` between frames.
-- **At touchdown**, `LocomotionAirEvents.OnUpdate` picks the landing from that vertical speed. With a built-up speed
-  this is a hard, very hard or **death** landing:
-  - the landing attacks are reported as `fall` but suppressed (flying or less than 2 s after landing);
-  - V is invulnerable under Cyberblock's god mode;
-  - whether a death landing still kills an invulnerable V is the open audit G-9.
-- **If check F-3 shows death landings,** the narrow fix is to wrap `LocomotionAirDecisions.ToDeathLand` (protected
-  const) to return false while `CyberblockFlight.SuppressFall(game)`. It is not shipped, because whether it is needed
-  depends on F-3.
+- **During the flight**, V is in the air every frame, so the locomotion state machine enters `Fall` (falling wind loop).
+  V's meshes are hidden while Active, so only the sound matters. Whether `Teleport` resets the character controller's
+  velocity is native code. If it does not, gravity builds up a large `LinearVelocity.Z` between frames.
+- **At touchdown**, `LocomotionAirEvents.OnUpdate` picks the landing from that vertical speed. The hard, very hard,
+  death and superhero landings are **suppressed by the wraps** for 2 s after the flight (audit G-9 is covered), and their
+  attacks are not reported. `ToRegularLand` still runs: if V hangs in the Fall pose on the ground, the follow-up is
+  `wrappedMethod || SuppressFall && IsOnGround()` in that wrap.
+- **The risks of the drive:** `Teleport` called from `OnUpdate` (not from a game-thread script), a static call to
+  `Vector4::ToRotation` with a null context, and yaw "stickiness" on fast mouse turns (the fix would be to read
+  `GetWorldOrientation` just before the call).
 
 ## In-game checks (needsInGame)
 
-Mashup Active, Steve with an elytra and rockets, fakehost or real Minecraft. `red4ext/logs/Cyberblock.log` is the
-log.
+Cyberblock Active, Steve with an elytra and rockets (the survival kit), real Minecraft. `red4ext/logs/Cyberblock.log` is
+the log; the lines quoted are in `docs/TESTING-PLAN.md` "Re-test 2".
 
-- **F-1 per-frame hook:** start a glide. Expected:
-  - the log has `flight: start (primary)`;
-  - V follows Steve smoothly (no 10 Hz stepping), with no visible jitter of Night City;
-  - the mouse still turns the view, and Steve's look follows `cam.r`.
-- **F-2 look kept:** look 45° down, then start a glide. Expected: the pitch stays at 45° down at take-off (not reset
-  to level), and the yaw is unchanged.
-- **F-3 landing:** glide from a megabuilding roof down to the street. Expected:
-  - the log has `flight: over, V stays where it is` (primary: V is already at the spot) or `flight: landed`, and no
-    `dmg fall` line within 2 s;
-  - V stands at the landing spot and V's Health is unchanged;
-  - note which landing plays (sound/camera shake): regular, hard or death. If V dies or the death-landing effects
-    play, enable the `ToDeathLand` wrap described above.
-- **F-4 camera only:** `CyberblockFlight.SetCameraOnly(true)` in CET, then glide. Expected:
-  - the log has `flight: start (camera only)`;
-  - the view flies with Steve while V stays at the take-off spot;
-  - moving the mouse turns the view through Minecraft (look capture);
-  - on landing V appears at the landing spot, the view is V's own again, and the log has `flight: camera released`.
-  - `CyberblockFlight.SetCameraOnly(false)` switches back for the next flight.
-- **F-5 free camera entity:** during F-4, check that no red box is visible around the camera and that the camera
-  does not fall or collide (its collider is switched off).
-- **F-6 clear mid-flight:** quicksave is blocked while Active, so test with F9 (Off) in mid-glide. Expected: following
-  stops at once, the camera is V's own, and look capture is off (Minecraft's look no longer moves without the
-  mouse).
-- **F-7 ender pearl:** throw a pearl onto a rooftop. Expected:
-  - V is teleported there facing Steve's yaw, with the camera pitch unchanged;
-  - the log has no `dmg fall` within 2 s.
-- **F-8 refused glide (fix B):** start a glide while V is held (a workspot, e.g. sitting) or let it be refused.
-  Expected: `flight: ignored ... (<reason>)` in the Cyberpunk log; Minecraft's log has `glide called off (the host
-  did not follow)` within 0.5 s and Steve is back with V; no 300 m solo flight.
-- **F-9 clearance and double jump (fix B):** Space at the end of a normal jump never opens the elytra; a jump off a
-  ledge with 3+ blocks below does. With Steve's Double Jump perk, the first Space in the air double-jumps V and the
-  second opens the elytra.
-- **F-10 menu mid-glide (fix B):** open the map mid-glide for 5 s, close it. Expected: Minecraft logs `glide paused`
-  then `glide resumed`, the Cyberpunk log may show `flight: no samples, holding V` then `flight: samples back`, and
-  V carries on gliding from where it was.
-- **F-11 walls (fix B):** glide fast into a building away from probed ground. Expected: V stops at the wall
-  (`flight: V stopped short of Night City geometry ...` once) instead of entering it; after the landing Steve comes
-  back to V.
-- **F-12 pearl refused (fix B):** throw a pearl while V sits or drives. Expected: the overlay "Pearl blocked: V cannot
-  be moved right now", the pearl back in the inventory, no 5 HP lost, no `teleport` handled by Cyberpunk.
+- **F-0 start-up:** the log has `drive: ready (Teleport <param types>, raycast <param types>)` once. A `drive: disabled:
+  <what> missing` line means the drive is off: send it.
+- **F-1 per-frame drive:** glide for about 10 s with rockets at about 20 m/s. Expected:
+  - the log has `flight: start (glide)`;
+  - V and the camera move smoothly every frame, with no 1 Hz stepping and no jitter of Night City;
+  - the summary line shows a **median spacing of 17 ms or less and a max step under 1 m**, `clipped no`.
+- **F-2 look kept:** look 45° down, then start a glide. Expected: the pitch stays at 45° down at take-off, the yaw is
+  unchanged.
+- **F-2b turning while gliding:** swing the mouse hard in all directions mid-glide. Expected: the view and the glide
+  follow the mouse at once; V's facing does not stick or snap back.
+- **F-3 landing:** glide from a megabuilding roof to the street. Expected:
+  - the log has `flight: landed (glide) after X s` (or `flight: over, V stays where it is` for a hop within 1.5 m);
+  - V stands on the street within a frame of touchdown, not in mid-air and not hanging in the Fall pose;
+  - **no** `dmg fall` within 2 s and no instant kill (`dmg instant kill (landing) not reported: flight` is fine);
+  - V's health is unchanged and no death-landing effects play. If V hangs in the Fall pose, record it and ship the
+    `IsOnGround()` follow-up above.
+- **F-6 clear mid-flight:** quicksave is blocked while Active, so test with F9 (Off) in mid-glide. Expected: the drive
+  stops at once and V is put on the ground below; the camera is V's own.
+- **F-7 ender pearl:** throw a pearl onto a rooftop. Expected: V is teleported there facing Steve's yaw, onto the Night City
+  floor (no sinking), the pitch unchanged, and no `dmg fall` within 2 s.
+- **F-8 refused glide:** start a glide while V is held (sitting) or let it be refused. Expected: `flight: ignored ...
+  (<reason>)` in the Cyberpunk log; Minecraft's log has `glide called off (the host did not follow)` within 0.5 s and
+  Steve is back with V; no solo flight.
+- **F-9 clearance and double jump:** Space at the end of a normal jump never opens the elytra; a jump off a ledge with 3+
+  blocks below does. With **Reinforced Tendons** installed, the first Space in the air double-jumps V and the second
+  opens the elytra; the Double Jump perk alone gives no double jump.
+- **F-11 walls:** glide fast into a building away from probed ground. Expected: V stops at the wall
+  (`flight: V stopped short of Night City geometry ...` once); after the landing Steve comes back to V.
+- **F-12 pearl refused:** throw a pearl while V sits or drives. Expected: the overlay "Pearl blocked: V cannot be moved
+  right now", the pearl back, no 5 HP lost, no `teleport` handled by Cyberpunk.
+- **L-1 own charge, survival:** throw a wind charge at your feet. Expected: Steve and V launch; the Minecraft log has
+  `launch started at ... with ... m/s`, Cyberblock.log `flight: start (launch)` then `flight: landed (launch) after X s`;
+  V follows every frame; no `dmg fall` within 2 s.
+- **L-2 the same in creative:** it launches too (creative flying off for the launch).
+- **L-3 another player's or a Breeze's charge:** the same launch.
+- **L-4 mace wind burst:** smash from a height with the Wind Burst enchantment; the burst launches Steve and V follows.
+- **L-5 launch, then glide:** with the elytra on, press Space at the top (falling faster than 1 m/s, 3 blocks clear).
+  Expected: the elytra opens with no pause and no second `launch started`.
+- **L-6 no launch while V is held:** sit or drive and throw a charge at your feet. Expected: no `launch started`, Steve
+  stays with V, people and cars are still knocked back.
+- **L-7 menu mid-flight:** glide or launch, press Esc (or open the map) for 5 s, close it. Expected: Steve waits in the
+  air; Minecraft logs `glide paused` then `glide resumed`; the DLL may log `flight: no samples, holding V` then
+  `flight: samples back`, never `V put on the ground`; the flight carries on.
 
-**Pending in-game (fix B, 2026-10-03):** F-1 to F-3 were never run with a real Cyberpunk, and F-8 to F-12 check the
-fix-B changes; all need package A's `Cyberblock_SetFlightFollowing`, `Cyberblock_FlightTimedOut` and the cam flags
-`fly`, `menu`, `air`, `held`. If F-3 shows death landings (V dies, or the death-landing effects play), ship the
-`LocomotionAirDecisions.ToDeathLand` wrap described above.
+## History: the script loop (replaced)
+
+The first answer (plan 2026-10-03, S2.4) was a `DelayCallback` that re-queued itself with `DelayCallbackNextFrame`, with
+`Teleport` per run, and a **camera-only fallback** (`CyberblockFlight.SetCameraOnly(true)`): a free-camera entity moved
+with Steve while V stayed at the take-off spot, with `Cyberblock_SetLookCapture(true)` giving Minecraft the mouse. Both
+were compiled but never run against a real Cyberpunk before the re-test, which showed the loop stops after one frame
+(R1-a above). Re-test 2 removed the loop and the fallback together: there is no longer a second flight method to switch
+to, and the checks F-4 (camera only) and F-5 (free camera entity) are gone with it.

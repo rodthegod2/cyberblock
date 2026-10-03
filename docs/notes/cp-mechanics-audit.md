@@ -73,6 +73,12 @@ In the scripts [S], the `NoCombat` tag drives `DefaultTransition.IsNoCombatActio
   (`upperBodyTransitions.swift:530`).
 - **`IsUsingLeftHandAllowed`** (`:1267`). This gates grenades, gadgets and left-hand cyberware.
 
+**Re-test 2 note (cyberware).** The disable list below is unchanged except for one thing: Cyberblock's own **cyberware**
+gives V two abilities back. `HasDoubleJump` and `HasChargeJump` are no longer zeroed while the `reinforced_tendons` and
+`fortified_ankles` implants are installed (the cyberware service adds Additive +1 to each, see A.4 and C.2). V's other
+Cyberpunk cyberware (arms, Sandevistan, Kerenzikov, camo) stays blocked: those implants act through Minecraft and the
+`effect`/`cyberfx` messages instead.
+
 ### A.2 Mechanics: how each is blocked, and whether PlayerState covers it
 
 | V mechanic | 2.31 mechanism (source) | Covered now? | Recommendation |
@@ -89,8 +95,8 @@ In the scripts [S], the `NoCombat` tag drives `DefaultTransition.IsNoCombatActio
 | Quickhack wheel | `QuickhackModule.BaseOpenCheck` needs focus (scanner) mode and `!IsQuickhackBlockedByScene` (the `NoQuickHacks` tag) (`quickhackModule.swift:71–90`). [C] | **Yes** (the NoQuickHacks tag comes from NoCombat) | Keep. Blocking the scanner (next row) also blocks it. |
 | Scanner (hold Tab / CapsLock, `Vision*`) | `PlayerVisionModeController.UpdateNoScanningRestriction` reads the `NoScanning` tag (`playerVisionModeController.swift:413`, triggered from `player.swift:4259`). Focus mode slows the world: `timeSystem.focusModeTimeDilation.timeDilation = 0.03` [T]. [C] | **No** | Add `GameplayRestriction.NoScanning`. The layer-6 hack key must then use its own highlight, not Cyberpunk's scanner. |
 | Consumables / healing hotkey (X, `UseConsumable`) | Allowed even in forceEmptyHands (`upperBodyTransitions.swift:337–344`), and only refused by `IsUsingConsumableRestricted`. That calls `IsHotkeyRestricted(DPAD_UP)`, which reads `DPadUIData.DPAD_UP.restrictionTags = [NoInhalerOrInjector]` (`defaultTransition.swift:1294–1316`, T). [C] | **No** | Add `GameplayRestriction.NoHealing` (tag `NoInhalerOrInjector`). |
-| Double jump | `AirThrustersDecisions.ToDoubleJump` and `DoubleJumpDecisions` check `HasDoubleJump` (`locomotionTransitions.swift:3936,4237`). Granted by `Items.BoostedTendonsRare` and `Items.AdvancedBoostedTendonsUncommon` (+1) [T]. [C] | **No** | Multiply `HasDoubleJump` by 0 (A.4). The Steve perk removes that modifier (C.2). |
-| Charge jump / hover | `ChargeJumpDecisions` needs `HasChargeJump` and no `HasAirHover`; `HoverJumpDecisions` uses `HasAirHover` (`locomotionTransitions.swift:4312–4334,4440`). Granted by `Items.ReinforcedMuscles*` [T]. [C] | **No** | Multiply `HasChargeJump` and `HasAirHover` by 0. |
+| Double jump | `AirThrustersDecisions.ToDoubleJump` and `DoubleJumpDecisions` check `HasDoubleJump` (`locomotionTransitions.swift:3936,4237`). Granted by `Items.BoostedTendonsRare` and `Items.AdvancedBoostedTendonsUncommon` (+1) [T]. [C] | **No** | Multiply `HasDoubleJump` by 0 (A.4). **Re-test 2:** the `reinforced_tendons` implant is the only thing that gives it back (A.4 keeps the ability only for it, +1); the Steve Double Jump perk no longer touches it (C.2). |
+| Charge jump / hover | `ChargeJumpDecisions` needs `HasChargeJump` and no `HasAirHover`; `HoverJumpDecisions` uses `HasAirHover` (`locomotionTransitions.swift:4312–4334,4440`). Granted by `Items.ReinforcedMuscles*` [T]. [C] | **No** | Multiply `HasChargeJump` and `HasAirHover` by 0. **Re-test 2:** `HasChargeJump` is kept (+1) only for the `fortified_ankles` implant; `HasAirHover` stays zeroed. |
 | Dodge, dash, air dash | `LocomotionTransition.WantsToDodge` needs `HasDodge`, which every player gets from `Character.Player_Primary_Stats_Base_inline100` [T]. In the air it also needs perk `Reflexes_Central_Milestone_3` at level 3 (`locomotionTransitions.swift:262–299`). `DodgeDecisions` turns a dodge into a **Dash**, which leaps at a hostile in the crosshair (`LeapToTarget`), when `Reflexes_Central_Milestone_2` is at level 2 (`:2340–2364`). `DodgeAirDecisions` also needs `HasDodgeAir` (`:4581–4604`). [C] | **No** | Multiply `HasDodge` and `HasDodgeAir` by 0. This turns off the ground dodge too, which matches the layer-6 Dodge perk design (see C.2). Air dash and dash depend on perks, so stats cannot grant them. Use the `IsNewPerkBought` wrap (Appendix). |
 | Superhero landing (ground slam) | Stat `HasSuperheroFall`, which `NoDangerousCyberware` multiplies by 0 [T]. No script reads it, so it is gated in PSM/TweakDB data [I]. `SuperheroFallEvents` lives at `locomotionTransitions.swift:4114`. | **No** | Multiply `HasSuperheroFall` by 0. [G-12] |
 | Takedowns, grapples, aerial takedowns, finishers | `Takedown.Grapple`, `Takedown.AerialTakedown` and `Takedown.NewPerkFinisher` list `Takedown.GameplayRestrictions` among their instigatorPrereqs. That is an AND of inverted `StatusEffectPrereq`s on, among others, **exactly the ID `GameplayRestriction.NoCombat`** (the ID, not the tag) [T]. [C] | **Yes** | Keep applying that exact record. |
@@ -170,6 +176,13 @@ All of them are confirmed as records in both TweakDB files:
 
 The last two lists come from `GameplayRestriction.NoDangerousCyberware`'s package [T], minus `CanUseStrongArms`.
 `CanUseStrongArms` is the Gorilla Arms body ability, which opens doors on foot, and it is not combat.
+
+**Re-test 2: `ZeroAbilities` keeps an ability only when** (`PlayerState.reds`; the cyberware service adds the +1):
+- `HasDoubleJump` and the `reinforced_tendons` implant is installed;
+- `HasChargeJump` and the `fortified_ankles` implant is installed;
+- the `dodge` perk is bought (`HasDodge`, `HasDodgeAir`).
+
+Everything else in the list stays zeroed, `CanUseOpticalCamo` too (camo comes through the `effect` `invisibility` path).
 
 **How the modifiers work:**
 - Add them with `StatsSystem.AddModifier`. Remove them with `RemoveModifier` on the same object.
@@ -296,7 +309,10 @@ Caveats:
 
 - **Double jump and charge jump** are pure stat flags (A.2), read fresh on every check. To grant them, remove our
   multiply-by-0 modifier, or add `Additive 1` to `HasDoubleJump` / `HasChargeJump` with
-  `RPGManager.CreateStatModifier` (`rpgManager.swift:1387`) and `StatsSystem.AddModifier`.
+  `RPGManager.CreateStatModifier` (`rpgManager.swift:1387`) and `StatsSystem.AddModifier`. **Re-test 2:** Cyberblock
+  grants them through cyberware: `HasDoubleJump` +1 for the `reinforced_tendons` implant and `HasChargeJump` +1 for
+  `fortified_ankles` (`Cyberware.reds`, the `GrantStat` pattern). The Double Jump perk no longer grants it: it only adds
+  4 blocks of safe fall to a legs implant on the Minecraft side.
 - **Air dash** needs `HasDodge`, plus perk `Reflexes_Central_Milestone_3` reported at level 3, plus stamina
   (`WantsToDodge`). Dash needs `Reflexes_Central_Milestone_2` at level 2. Stats cannot grant either.
 - **The perk wrap.** The compile-checked wrap of `PlayerDevelopmentData.IsNewPerkBought`
@@ -325,6 +341,7 @@ Caveats:
   - It runs whenever `Visibility` changes, through `VisibilityStatListener` (`playerListeners.swift:544–555`,
     registered at `player.swift:3612–3615`).
 - **The perk:** Silent Steps = `Visibility × 0.5` through `StatsSystem.AddModifier` (snippet `Stealth`, CC).
+  **Re-test 2:** the modifier is shared with the `lynx_paws` implant and applied once if either is present.
 - **Open question:** whether the multiplier scales detection range or detection speed is native [I, G-8].
 
 ---
@@ -395,6 +412,12 @@ Caveats:
      forces Health to 0 when the player dies.
    - **What Health.reds does:** it reports `Attacks.DeathLanding` (+10000 physical [T]) as `fall`.
    - **Open question:** whether V's own death path is reached under god mode is [G-9].
+  - **Re-test 2, the flight part is covered:** `Flight.reds` wraps `LocomotionAirDecisions.ToHardLand`, `ToVeryHardLand`,
+    `ToDeathLand` and `ToSuperheroLand` to return false while `CyberblockFlight.SuppressFall` (within 2 s of a glide or
+    launch, or under a fall-suppressing effect), and `Health.reds` does not report a `HardLanding`, `VeryHardLanding` or
+    `DeathLanding` hit in that window (`dmg instant kill (landing) not reported: flight`). `ToRegularLand` is not
+    wrapped. A death landing from an ordinary fall with no flight is not covered by the wraps and stays the open fall
+    test of G-9.
 
 ---
 
@@ -428,8 +451,9 @@ Each check is concrete. Where possible it uses the CET console (Lua) and a save 
   `OpticalCamoPlayerBuffRare` and compare.
 - **G-8 Visibility.** Add `Visibility ×0.5`, crouch-walk towards an idle guard, and compare the detection meter fill
   time with and without it.
-- **G-9 Lethal paths under Cyberblock god mode.** The instant-kill path (D gap 2) is now wrapped (fix package C);
-  both tests below are still to be run.
+- **G-9 Lethal paths under Cyberblock god mode.** The instant-kill path (D gap 2) is now wrapped (fix package C), and
+  since re-test 2 the **landing after a glide or launch** is covered by the landing wraps (D gap 5; checked by
+  F-3 and L-1 in `docs/TESTING-PLAN.md`). Both tests below are still to be run.
   - **Fall test:** jump from a megabuilding roof (DeathLand). Expect V to survive and Steve to get `fall` damage with
     a frac of about 4.
   - **Kill test:** find a scripted kill, or apply `BaseStatusEffect.ForceKill` in a throwaway save; or, in the
