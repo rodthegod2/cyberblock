@@ -108,7 +108,9 @@ know. `filter.preset = n"World Static"` is kept as well, as cooked colliders do.
 - **Lifetime.** The box registry lives in a Codeware `ScriptableService`, so it survives loading a save (the
   Minecraft world keeps its blocks). It does not survive a game restart, and Minecraft never re-sends existing
   blocks; a later layer needs a "resend blocks on connect" message (or Codeware persistent service fields).
-  Spawned entities are never saved: `Clear` despawns all of them before every save, on deactivate and at session end.
+  Spawned entities are never saved (Codeware's StaticEntitySystem has no persistence options), so they stay through
+  a save (V may be standing on one); `Clear` despawns all of them on deactivate, on load and at session end. In-game
+  check: save (autosave and manual) while standing on a placed block, then load that save and confirm no box is left.
 - **Blocker for the integrator: nothing empties the registry.** `Clear` only despawns, and plan §1.4 has no reset.
   If the user connects to a different Minecraft world or server, or Minecraft removes a block while the link is down
   (that `remove` never arrives), the old boxes stay registered. Whenever Cyberblock is Active, `Stream` spawns them

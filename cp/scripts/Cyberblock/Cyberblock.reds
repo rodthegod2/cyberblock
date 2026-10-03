@@ -15,7 +15,7 @@
 // Layer 2 wiring (plan section 1.4 and track S1): every tick drains the Minecraft event queue (Events.reds; live
 // only while Active/Vehicle and not saving), keeps CyberblockCollision boxes streamed around V while live, and sends
 // the NPC/vehicle list while Active (Npcs.reds). Collision boxes are cleared whenever Night City stops being live
-// (Off, Lost), before every save, on every load and at session end. The health link (Health.reds) needs no call:
+// (Off, Lost), on every load and at session end; a save leaves them (StaticEntitySystem entities are never saved). The health link (Health.reds) needs no call:
 // it acts exactly while our god mode is V's only invulnerability, i.e. while Active. CyberblockCreative (Health.reds)
 // keeps V invulnerable in the Vehicle state while Minecraft is in creative mode (Cyberblock_GameMode).
 //
@@ -24,8 +24,8 @@
 // CyberblockPerks and CyberblockBuffs (active: Active, not saving), reports whether V is crouched, in the air or held by
 // a vehicle or the game (Cyberblock_SetStance), whether a Cyberpunk menu is open (Cyberblock_SetMenu) and whether a dialogue offers two or more
 // choices while Active (Cyberblock_SetChoices: E, Q, 1-4 and the wheel then stay Cyberpunk's). ClearWorld (every section 1.4
-// Clear plus CyberblockCollision.Clear) runs before every save, on session ready, at session end and on every
-// transition out of Active/Vehicle.
+// Clear) runs before every save, on session ready, at session end and on every transition out of Active/Vehicle; all
+// but the save also run CyberblockCollision.Clear (the boxes are never saved, and V may stand on them).
 //
 // While a save is written (Session/BeforeSave until Session/AfterSave) Minecraft's side is left as it is: its events
 // wait in the DLL's queue and the tethers stay (ClearWorld only restarted their timers); all of it carries on after the
@@ -98,9 +98,10 @@ public class CyberblockSystem extends ScriptableSystem {
     Cyberblock_SetActive(false, false);
   }
 
-  // Saves stay vanilla: status effects, stat modifiers, god modes, collision boxes, puppets, tethers, perk and potion
-  // effects are removed before the save; after it V's state comes back if still Active and the rest on the next live
-  // tick (the HUD layer is not saved). Ticks leave V and Night City alone while the save is written.
+  // Saves stay vanilla: status effects, stat modifiers, god modes, puppets, tethers, perk and potion effects are
+  // removed before the save; after it V's state comes back if still Active and the rest on the next live tick (the HUD
+  // layer is not saved). The collision boxes stay: the save never holds them, and V may be standing on one. Ticks leave
+  // V and Night City alone while the save is written.
   private cb func OnBeforeSave(event: ref<GameSessionEvent>) {
     this.saving = true;
     this.savingTicks = 0;
@@ -214,8 +215,13 @@ public class CyberblockSystem extends ScriptableSystem {
   // Everything of ours in Night City (plan 2026-10-03 section 1.4 Clears). Perk ranks and the collision registry stay.
   // leaving: Night City stops being live (Off, Lost, load, session end, detach), so Steve's infinite potions are
   // forgotten too; false before a save, after which they come back.
+  // The collision boxes stay through a save (leaving false): Codeware's StaticEntitySystem never writes its entities into
+  // a save (StaticEntitySpec has no persistence options, unlike DynamicEntitySystem's), so despawning them only took the
+  // floor from under V on a Minecraft bridge or tower until the next live tick streamed them back (64 per 100 ms).
   private static func ClearWorld(game: GameInstance, leaving: Bool) -> Void {
-    CyberblockCollision.Clear(game);
+    if leaving {
+      CyberblockCollision.Clear(game);
+    }
     CyberblockPuppets.Clear(game);
     CyberblockFlight.Clear(game);
     CyberblockTether.Clear(game);
@@ -251,7 +257,9 @@ public class CyberblockSystem extends ScriptableSystem {
 
   // The choices on screen: every choice of every dialogue choice hub (UIInteractions.DialogChoiceHubs, as
   // DefaultTransition.AreChoiceHubsActive reads it, defaultTransition.swift:1586; DialogChoiceHubs.choiceHubs and
-  // ListChoiceHubData.choices, orphans.swift).
+  // ListChoiceHubData.choices, orphans.swift), plus those of an active interaction list (UIInteractions
+  // .InteractionChoiceHub, InteractionChoiceHubData.active/choices, as PlayerState.reds' ChoicesShown reads it): both are
+  // the InteractionActions input context, which scrolls with the wheel and picks choices 3 and 4 with 1 and 2.
   private static func ChoiceCount(game: GameInstance) -> Int32 {
     let interactions = GameInstance.GetBlackboardSystem(game).Get(GetAllBlackboardDefs().UIInteractions);
     if !IsDefined(interactions) {
@@ -261,6 +269,10 @@ public class CyberblockSystem extends ScriptableSystem {
     let count = 0;
     for hub in hubs.choiceHubs {
       count += ArraySize(hub.choices);
+    }
+    let list = FromVariant<InteractionChoiceHubData>(interactions.GetVariant(GetAllBlackboardDefs().UIInteractions.InteractionChoiceHub));
+    if list.active {
+      count += ArraySize(list.choices);
     }
     return count;
   }
