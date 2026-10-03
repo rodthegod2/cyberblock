@@ -113,7 +113,7 @@ public class CyberblockFlightService extends ScriptableService {
     if VehicleComponent.IsMountedToVehicle(game, player) || CyberblockEffects.PlayerLocked(game, player) {
       if !this.ignoredLogged {
         this.ignoredLogged = true;
-        Cyberblock_Log("flight: ignored, V is in a vehicle or held by a scene, workspot, braindance or moving elevator");
+        Cyberblock_Log(s"flight: ignored, V is in a vehicle or held (\(NameToString(CyberblockEffects.LockReason(game, player))))");
       }
       return;
     }
@@ -140,7 +140,7 @@ public class CyberblockFlightService extends ScriptableService {
     if CyberblockEffects.PlayerLocked(game, player) {
       // A scene or the like took V mid-flight: leave V to it (Stop keeps falls quiet for 2 s).
       this.Stop(game);
-      Cyberblock_Log("flight: stopped, V is held by a scene, workspot, braindance or moving elevator");
+      Cyberblock_Log(s"flight: stopped, V is held (\(NameToString(CyberblockEffects.LockReason(game, player))))");
       return;
     }
     let teleport = GameInstance.GetTeleportationFacility(game);

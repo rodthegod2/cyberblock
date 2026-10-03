@@ -122,7 +122,7 @@ public abstract class CyberblockEffects {
       return;
     }
     if CyberblockEffects.PlayerLocked(game, player) {
-      Cyberblock_Log("effects: teleport ignored, V is held by a scene, workspot, braindance or moving elevator");
+      Cyberblock_Log(s"effects: teleport ignored, V is held (\(NameToString(CyberblockEffects.LockReason(game, player))))");
       return;
     }
     CyberblockEffectsService.Get().SuppressFall(game, 2.0);
@@ -133,15 +133,30 @@ public abstract class CyberblockEffects {
   // Moving V then (an ender pearl, a glide) could break the scene or the quest, and turning Cyberblock off would not
   // undo it.
   public static func PlayerLocked(game: GameInstance, player: ref<PlayerPuppet>) -> Bool {
-    if GameInstance.GetWorkspotSystem(game).IsActorInWorkspot(player) || GameInstance.GetSceneSystem(game).GetScriptInterface().IsEntityInScene(player.GetEntityID()) {
-      return true;
+    return NotEquals(CyberblockEffects.LockReason(game, player), n"");
+  }
+
+  // Why the game holds V (n"" when it does not). In-game test 2026-10-03: SceneSystem.IsEntityInScene(V) was true
+  // during free open-world play and blocked every glide and pearl, so scenes are judged by the player state
+  // machine's high level instead: tiers 3-5 take movement from the player, tier 1-2 is gameplay.
+  public static func LockReason(game: GameInstance, player: ref<PlayerPuppet>) -> CName {
+    if GameInstance.GetWorkspotSystem(game).IsActorInWorkspot(player) {
+      return n"workspot";
     }
     let braindance = GameInstance.GetScriptableSystemsContainer(game).Get(n"BraindanceSystem") as BraindanceSystem;
     if IsDefined(braindance) && braindance.GetIsInBraindance() {
-      return true;
+      return n"braindance";
     }
     let psm = player.GetPlayerStateMachineBlackboard();
-    return IsDefined(psm) && psm.GetBool(GetAllBlackboardDefs().PlayerStateMachine.IsPlayerInsideMovingElevator);
+    if IsDefined(psm) {
+      if psm.GetBool(GetAllBlackboardDefs().PlayerStateMachine.IsPlayerInsideMovingElevator) {
+        return n"elevator";
+      }
+      if psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.HighLevel) >= EnumInt(gamePSMHighLevel.SceneTier3) {
+        return n"scene";
+      }
+    }
+    return n"";
   }
 
   private static func Strike(game: GameInstance, target: Uint64, frac: Float, impulse: Vector4, attacker: ref<GameObject>) -> Void {

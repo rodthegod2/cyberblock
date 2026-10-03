@@ -73,6 +73,9 @@ public class CyberblockNpcs {
     // Nearest first: insertion into arrays kept sorted by squared distance, at most maxCount long.
     let picked: array<wref<GameObject>>;
     let pickedDistance2: array<Float>;
+    // Why entities were left out this tick (logged with the 5 s line; in-game test 2026-10-03 sent 0 of 62).
+    let far = 0;
+    let rejected: array<CName>;
     let i = ArraySize(this.known) - 1;
     while i >= 0 {
       let object = this.known[i];
@@ -84,8 +87,16 @@ public class CyberblockNpcs {
         if ArraySize(picked) >= maxCount {
           limit = pickedDistance2[maxCount - 1];
         }
+        if distance2 >= limit {
+          far += 1;
+        } else {
+          let reason = CyberblockNpcs.Reason(game, object);
+          if NotEquals(reason, n"") {
+            ArrayPush(rejected, reason);
+          }
+        }
         if distance2 < limit {
-          if CyberblockNpcs.Counts(game, object) {
+          if Equals(CyberblockNpcs.Reason(game, object), n"") {
             let at = ArraySize(picked);
             while at > 0 {
               if pickedDistance2[at - 1] <= distance2 {
@@ -126,30 +137,53 @@ public class CyberblockNpcs {
       this.logDelay -= 1;
     } else {
       this.logDelay = 50; // 5 s
-      Cyberblock_Log(s"npcs: \(ArraySize(ids)) sent of \(ArraySize(this.known)) NPCs/vehicles attached");
+      Cyberblock_Log(s"npcs: \(ArraySize(ids)) sent of \(ArraySize(this.known)) NPCs/vehicles attached; left out: \(far) beyond 48 m, \(CyberblockNpcs.Tally(rejected))");
     }
   }
 
-  // Alive, attached, and not riding in a vehicle. Nested ifs: nothing is called on a missing object.
-  private static func Counts(game: GameInstance, object: wref<GameObject>) -> Bool {
+  // n"" when the entity goes to Minecraft: alive, attached, not riding in a vehicle; else why not. Nested ifs:
+  // nothing is called on a missing object.
+  private static func Reason(game: GameInstance, object: wref<GameObject>) -> CName {
     if !object.IsAttached() {
-      return false;
+      return n"detached";
     }
     let vehicle = object as VehicleObject;
     if IsDefined(vehicle) {
-      return !vehicle.IsDestroyed();
+      return vehicle.IsDestroyed() ? n"destroyed" : n"";
     }
     let npc = object as NPCPuppet;
     if !IsDefined(npc) {
-      return false;
+      return n"not_npc";
     }
     // Our own mob stand-ins (Puppets.reds): a proxy on every mob would draw the mobs' and Steve's attacks.
     if CyberblockPuppets.IsPuppet(game, npc.GetEntityID()) {
-      return false;
+      return n"puppet";
     }
     if !ScriptedPuppet.IsAlive(npc) || npc.IsDead() {
-      return false;
+      return n"dead";
     }
-    return !VehicleComponent.IsMountedToVehicle(game, npc);
+    return VehicleComponent.IsMountedToVehicle(game, npc) ? n"mounted" : n"";
+  }
+
+  // "detached 2, puppet 40" style counts for the log.
+  private static func Tally(reasons: array<CName>) -> String {
+    let names: array<CName>;
+    let counts: array<Int32>;
+    for r in reasons {
+      let at = ArrayFindFirst(names, r);
+      if at < 0 {
+        ArrayPush(names, r);
+        ArrayPush(counts, 1);
+      } else {
+        counts[at] += 1;
+      }
+    }
+    let text = "";
+    let k = 0;
+    while k < ArraySize(names) {
+      text += s"\(NameToString(names[k])) \(counts[k]) ";
+      k += 1;
+    }
+    return ArraySize(names) == 0 ? "nothing else" : text;
   }
 }
