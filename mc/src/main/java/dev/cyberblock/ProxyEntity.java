@@ -1,5 +1,8 @@
 package dev.cyberblock;
 
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -49,13 +52,22 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	private int damageCooldown;
 	private float lastDamage;
 	private long proxyId;
-	/** Hostile to V as far as the host knows (its latest list): the mobs hunt these first. */
-	private boolean hostile;
+	/**
+	 * Hostile to V as far as the host knows (its latest list): the mobs hunt these first, and the client outlines them (Kiroshi
+	 * optics, plan retest2 R6), so it is synced entity data.
+	 */
+	private static final EntityDataAccessor<Boolean> DATA_HOSTILE = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.BOOLEAN);
 
 	public ProxyEntity(final EntityType<? extends ProxyEntity> type, final Level level) {
 		super(type, level);
 		this.setInvisible(true);
 		this.setNoGravity(true);
+	}
+
+	@Override
+	protected void defineSynchedData(final SynchedEntityData.Builder entityData) {
+		super.defineSynchedData(entityData);
+		entityData.define(DATA_HOSTILE, false);
 	}
 
 	/** The Cyberpunk entity id hash this proxy stands for. */
@@ -68,11 +80,12 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	}
 
 	void setHostile(final boolean hostile) {
-		this.hostile = hostile;
+		this.entityData.set(DATA_HOSTILE, hostile);
 	}
 
-	boolean isHostile() {
-		return this.hostile;
+	/** Hostile to V (the host's latest list); valid on the client too (Bridge.hostileProxy). */
+	public boolean hostile() {
+		return this.entityData.get(DATA_HOSTILE);
 	}
 
 	@Override
@@ -206,7 +219,15 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 		Vec3 look = attacker.getLookAngle();
 		Vec3 along = Math.hypot(look.x, look.z) > 1.0E-3 ? look : this.position().subtract(attacker.position());
 		Vec3 melee = ProxyDamage.melee(along.x, along.z, attacker instanceof LivingEntity living ? this.knockbackLevel(level, source, living) : 0.0);
-		return attacker instanceof Player && perk("gorilla_arms") ? ProxyDamage.gorillaArms(melee, this.getType() == ProxyEntities.VEHICLE) : melee;
+		return attacker instanceof Player player && gorillaArms(player) ? ProxyDamage.gorillaArms(melee, this.getType() == ProxyEntities.VEHICLE) : melee;
+	}
+
+	/**
+	 * The gorilla_arms perk, or the gorilla_arms implant swung with an empty main hand (plan retest2 section 1.7): either way one
+	 * shove, never two.
+	 */
+	private static boolean gorillaArms(final Player attacker) {
+		return perk("gorilla_arms") || Bridge.installedCyberware.contains("gorilla_arms") && attacker.getMainHandItem().isEmpty();
 	}
 
 	/** Server thread: Steve owns this perk (plan section 1.5; the cyber track keeps the ranks). */

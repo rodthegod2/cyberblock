@@ -47,6 +47,32 @@ class WireTest {
 		assertEquals("18446744073709551615", hit.get("target").getAsString());
 	}
 
+	/** Plan retest2 section 1.2: {"t":"align","k":57}. */
+	@Test
+	void alignMatchesTheProtocolExample() {
+		assertEquals("{\"t\":\"align\",\"k\":57}", Wire.align(57));
+		assertEquals(0, json(Wire.align(0)).get("k").getAsInt());
+		assertEquals(63, json(Wire.align(63)).get("k").getAsInt());
+	}
+
+	/** Plan retest2 section 1.2: flight with kind and Minecraft's sample clock ts. */
+	@Test
+	void flightWithKindAndTs() {
+		assertEquals("{\"t\":\"flight\",\"active\":true,\"p\":[1.0000,70.0000,2.0000],\"v\":[0.000,1.200,0.000],\"yaw\":0.00,\"pitch\":10.00,\"kind\":\"launch\",\"ts\":81234.500}",
+			Wire.flight(true, 1.0, 70.0, 2.0, 0.0, 1.2, 0.0, 0.0, 10.0, true, 81234.5));
+		JsonObject launch = json(Wire.flight(true, 1.0, 70.0, 2.0, 0.0, 1.2, 0.0, 0.0, 10.0, true, 81234.5));
+		assertEquals("launch", launch.get("kind").getAsString());
+		assertEquals(81234.5, launch.get("ts").getAsDouble());
+		JsonObject glide = json(Wire.flight(false, 1.0, 64.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, false, 5.0));
+		assertEquals("glide", glide.get("kind").getAsString());
+		assertFalse(glide.get("active").getAsBoolean());
+		// a bad clock is left out (the host ignores it anyway); one outside the protocol's 0..1e13 is clamped
+		assertFalse(json(Wire.flight(true, 0, 0, 0, 0, 0, 0, 0, 0, false, Double.NaN)).has("ts"));
+		assertFalse(json(Wire.flight(true, 0, 0, 0, 0, 0, 0, 0, 0, false, Double.POSITIVE_INFINITY)).has("ts"));
+		assertEquals(1.0E13, json(Wire.flight(true, 0, 0, 0, 0, 0, 0, 0, 0, false, 5.0E15)).get("ts").getAsDouble());
+		assertEquals(0.0, json(Wire.flight(true, 0, 0, 0, 0, 0, 0, 0, 0, false, -3.0)).get("ts").getAsDouble());
+	}
+
 	@Test
 	void numbersUseADotWhateverTheLocale() {
 		java.util.Locale old = java.util.Locale.getDefault();

@@ -41,6 +41,13 @@ public final class WorldBridge {
 	/** A block change the host never heard of (it was not active then): resync once it is again (server thread). */
 	private static boolean missed;
 	private static boolean wasActive;
+	/** The ground alignment of the world the host plays in (server thread; null while no world runs). */
+	private static GroundAlign align;
+	/**
+	 * Held while Bridge.alignK changes and its align message goes out, and while a host hello's align goes out (link thread): the
+	 * host never ends up with an older k than ours.
+	 */
+	private static final Object ALIGN_LOCK = new Object();
 
 	private WorldBridge() {
 	}
@@ -49,6 +56,15 @@ public final class WorldBridge {
 	static void attach(final MinecraftServer s) {
 		server = s;
 		placed = s.overworld().getDataStorage().computeIfAbsent(PlacedBlocks.TYPE);
+		align = s.overworld().getDataStorage().computeIfAbsent(GroundAlign.TYPE);
+		synchronized (ALIGN_LOCK) {
+			Bridge.alignK = Math.max(align.k(), 0);
+			if (linked) {
+				// before the resync, so the host places this world's blocks with this world's alignment
+				Cyberblock.events.accept(Wire.align(Bridge.alignK));
+			}
+		}
+
 		if (linked) {
 			resyncDue = true;
 		}
@@ -61,6 +77,8 @@ public final class WorldBridge {
 		blockEvents.clear();
 		resync.clear();
 		placed = null;
+		align = null;
+		Bridge.alignK = 0;
 		missed = wasActive = false;
 		if (linked) {
 			// this world's blocks are leaving Night City with it
@@ -72,10 +90,67 @@ public final class WorldBridge {
 		}
 	}
 
-	/** Link thread: the host said hello (a new session, or a restart of either side): it gets every block again, once it is active. */
+	/**
+	 * Link thread: the host said hello (a new session, or a restart of either side): it starts again from k 0, so it hears this
+	 * world's alignment at once, and gets every block again once it is active.
+	 */
 	public static void hostHello() {
 		linked = true;
+		synchronized (ALIGN_LOCK) {
+			if (server != null) {
+				Cyberblock.events.accept(Wire.align(Bridge.alignK));
+			}
+		}
+
 		resyncDue = true;
+	}
+
+	/** A host said hello and has not gone. */
+	public static boolean linked() {
+		return linked;
+	}
+
+	/** V stands still on the ground, out of any vehicle, and its feet are known: the ground there can be aligned to. */
+	private static boolean vStands() {
+		return Bridge.hostStands && !Bridge.hostInVehicle && Double.isFinite(Bridge.hostFeetCpZ);
+	}
+
+	/**
+	 * Server thread: why the ground cannot be aligned to V now (a lang key for /cyberblock level), or null when it can.
+	 */
+	static String levelRefused() {
+		if (!Cyberblock.active || !linked || align == null) {
+			return "cyberblock.level.no_host";
+		}
+
+		return vStands() ? null : "cyberblock.level.not_standing";
+	}
+
+	/**
+	 * Server thread, with levelRefused() null: aligns the world's ground to the floor V stands on (plan retest2 R4). The host hears
+	 * the new k and at once gets every block again (a reset resync), so the blocks Steve placed are moved by it too. Returns the k
+	 * the world had (UNSET when none was chosen yet).
+	 */
+	static int level(final MinecraftServer s, final String why) {
+		double z = Bridge.hostFeetCpZ;
+		int was = align.k();
+		int k = GroundAlign.kOf(z);
+		align.set(k);
+		synchronized (ALIGN_LOCK) {
+			Bridge.alignK = k;
+			Cyberblock.events.accept(Wire.align(k));
+		}
+
+		Cyberblock.LOG.info("ground alignment: k {} -> {} (offset {} m) at Cyberpunk z {} ({})", was, k, GroundAlign.offset(k), z, why);
+		// the blocks follow on this thread, before any other block message: the reset first
+		resyncDue = false;
+		startResync(s);
+		String first = resync.next();
+		if (first != null) {
+			Cyberblock.events.accept(first);
+		}
+
+		return was;
 	}
 
 	/** Link thread: the last host connection closed. */
@@ -268,6 +343,12 @@ public final class WorldBridge {
 		}
 
 		boolean active = Cyberblock.active;
+		// a world (new or from before re-test 2) without an alignment gets one the first time V stands in it
+		GroundAlign a = align;
+		if (active && linked && a != null && a.k() == GroundAlign.UNSET && vStands()) {
+			level(s, "first activation");
+		}
+
 		if (active && linked && (resyncDue || !wasActive && missed)) {
 			resyncDue = false;
 			startResync(s);

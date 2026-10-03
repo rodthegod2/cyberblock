@@ -50,5 +50,10 @@ class BridgeTest {
 	@Test
 	void defaultsAreHarmless() {
 		assertEquals(0, Bridge.perkRank.applyAsInt("iron_skin"));
+		// plan retest2 section 1.6
+		assertNull(Bridge.proxyAimedAt.at(net.minecraft.world.phys.Vec3.ZERO, new net.minecraft.world.phys.Vec3(0.0, 0.0, 1.0), 48.0));
+		assertFalse(Bridge.hostileProxy.test(null));
+		assertTrue(Bridge.installedCyberware.isEmpty());
+		assertEquals(0, Bridge.alignK);
 	}
 }

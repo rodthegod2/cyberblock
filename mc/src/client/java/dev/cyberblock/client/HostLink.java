@@ -28,7 +28,8 @@ import org.java_websocket.server.WebSocketServer;
  * <ul>
  * <li>{"t":"cam","f":frame,"p":[x,y,z],"r":[yaw,pitch,roll],"fov":vertical degrees,"fp":first person,"pl":[feet x,y,z],"h":body yaw,"cr":V crouched}:
  * every number must be finite, positions within +-2.9e7 (y +-20000) and fov within 1..179, else the message is logged and
- * ignored (pitch is clamped to +-90)</li>
+ * ignored (pitch is clamped to +-90). "lv" (0..63) is the ground alignment k it was converted with (HostState corrects y to this
+ * world's k)</li>
  * <li>{"t":"ground","c":[x,z,yBottom,yTop, ...]}: solid ranges (barriers); "unground" takes the same ranges out again</li>
  * <li>{"t":"clear"}: remove the barriers placed so far</li>
  * <li>{"t":"npcs","list":[{"id":"...","p":[x,y,z],"yaw":deg,"kind":"human|vehicle","hostile":bool}, ...]}: the Cyberpunk NPCs and
