@@ -12,6 +12,7 @@ EXPECTED = [
     "r6/scripts/Cyberblock/Cyberblock.reds",
     "r6/scripts/Cyberblock/Natives.reds",
     "bin/x64/reshade-shaders/Shaders/Cyberblock.fx",
+    "bin/x64/reshade-shaders/Shaders/ReShade.fxh",
     "bin/x64/ReShadePreset.ini",
 ]
 
@@ -33,6 +34,8 @@ class World:
         (self.source / "cp/scripts/Cyberblock/Natives.reds").write_text("natives")
         (self.source / "cp/shaders").mkdir(parents=True)
         (self.source / "cp/shaders/Cyberblock.fx").write_text("shader")
+        (self.source / "cp/shaders/vendor").mkdir()
+        (self.source / "cp/shaders/vendor/ReShade.fxh").write_text("reshade header")
         (self.saves / "manualSave-1").mkdir(parents=True)
         (self.saves / "manualSave-1/sav.dat").write_bytes(b"save data")
 
@@ -64,6 +67,7 @@ def test_fresh_install_writes_files_and_manifest(world):
     assert (world.game / "red4ext/plugins/Cyberblock/Cyberblock.dll").read_bytes() == b"dll v1"
     assert (world.game / "r6/scripts/Cyberblock/Natives.reds").read_text() == "natives"
     assert (world.game / "bin/x64/reshade-shaders/Shaders/Cyberblock.fx").read_text() == "shader"
+    assert (world.game / "bin/x64/reshade-shaders/Shaders/ReShade.fxh").read_text() == "reshade header"
     assert (world.game / "bin/x64/ReShadePreset.ini").read_text().strip() == "Techniques=Cyberblock@Cyberblock.fx"
     m = world.manifest()
     assert sorted(m["files"]) == sorted(EXPECTED)

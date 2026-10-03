@@ -26,6 +26,7 @@ MANIFEST = "red4ext/plugins/Cyberblock/install-manifest.json"
 DLL = "red4ext/plugins/Cyberblock/Cyberblock.dll"
 SCRIPTS = "r6/scripts/Cyberblock"
 SHADER = "bin/x64/reshade-shaders/Shaders/Cyberblock.fx"
+SHADER_HEADER = "bin/x64/reshade-shaders/Shaders/ReShade.fxh"  # Cyberblock.fx includes it (CC0, vendored)
 PRESET = "bin/x64/ReShadePreset.ini"
 PRESET_TEXT = "Techniques=Cyberblock@Cyberblock.fx\n"
 
@@ -64,7 +65,8 @@ def find_game(steam: Path | None = None) -> Path:
 def payload(build: Path, source: Path) -> dict[str, Path]:
     """Game-relative destination -> source file for everything an install writes (except the ReShade preset)."""
     scripts = sorted((source / "cp/scripts/Cyberblock").glob("*.reds"))
-    files = {DLL: build / "Cyberblock.dll", SHADER: source / "cp/shaders/Cyberblock.fx"}
+    files = {DLL: build / "Cyberblock.dll", SHADER: source / "cp/shaders/Cyberblock.fx",
+             SHADER_HEADER: source / "cp/shaders/vendor/ReShade.fxh"}
     files |= {f"{SCRIPTS}/{p.name}": p for p in scripts}
     missing = [str(p) for p in files.values() if not p.is_file()]
     if not scripts:
