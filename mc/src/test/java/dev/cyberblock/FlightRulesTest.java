@@ -237,6 +237,71 @@ class FlightRulesTest {
 		assertEquals(0.0, fast.get("yaw").getAsDouble());
 	}
 
+	/** Plan retest2 R5: what a knockback (blocks per tick) has to be to launch Steve off V's ground. */
+	@Test
+	void anUpwardKickLaunches() {
+		assertTrue(FlightRules.launch(0.0, 1.22, 0.0, true), "his own wind charge at his feet");
+		assertTrue(FlightRules.launch(0.31, 0.34, 0.0, true), "a wind charge a block and a half beside him");
+		assertTrue(FlightRules.launch(0.0, 0.25, -0.35, true), "just enough up, fast enough");
+		assertFalse(FlightRules.launch(0.1, 0.1, 0.0, true), "a weak push from far off");
+		assertFalse(FlightRules.launch(1.5, 0.1, 0.0, true), "sideways: he stays with V");
+		assertFalse(FlightRules.launch(0.0, 0.3, 0.0, true), "up but too slow");
+		assertFalse(FlightRules.launch(0.0, -1.5, 0.0, true), "down");
+	}
+
+	/** A motion packet is any knockback the server gives him: a hit's 0.4 up is no launch. */
+	@Test
+	void aMotionKickNeedsMoreLift() {
+		assertFalse(FlightRules.launch(0.5, 0.4, 0.0, false), "a mob's hit");
+		assertFalse(FlightRules.launch(0.0, 0.59, 0.0, false));
+		assertTrue(FlightRules.launch(0.0, 0.6, 0.0, false));
+		assertTrue(FlightRules.launch(0.2, 1.1, 0.3, false));
+	}
+
+	@Test
+	void aNonFiniteKickIsNoLaunch() {
+		assertFalse(FlightRules.launch(Double.NaN, 1.0, 0.0, true));
+		assertFalse(FlightRules.launch(0.0, Double.POSITIVE_INFINITY, 0.0, true));
+		assertFalse(FlightRules.launch(0.0, 1.0, Double.NEGATIVE_INFINITY, false));
+	}
+
+	/** On the ground or in water, but not in the first 100 ms (the tick of the launch may still say on ground). */
+	@Test
+	void aLaunchLands() {
+		assertFalse(FlightRules.launchLanded(true, false, 50_000_000L));
+		assertTrue(FlightRules.launchLanded(true, false, 100_000_000L));
+		assertTrue(FlightRules.launchLanded(false, true, 2_000_000_000L));
+		assertFalse(FlightRules.launchLanded(false, false, 2_000_000_000L));
+		assertFalse(FlightRules.launchLanded(false, true, 99_999_999L));
+	}
+
+	/** In a launch, the jump key opens the elytra like a glide start (falling, with air below). */
+	@Test
+	void aLaunchTurnsIntoAGlide() {
+		assertTrue(FlightRules.launchToGlide(true, true, 1.5, 5.0));
+		assertFalse(FlightRules.launchToGlide(false, true, 1.5, 5.0), "no jump");
+		assertFalse(FlightRules.launchToGlide(true, false, 1.5, 5.0), "no elytra");
+		assertFalse(FlightRules.launchToGlide(true, true, 0.5, 5.0), "still rising or at the top");
+		assertFalse(FlightRules.launchToGlide(true, true, 1.5, 2.9), "too close to the ground");
+		assertFalse(FlightRules.launchToGlide(true, true, Double.NaN, 5.0));
+	}
+
+	/**
+	 * After touchdown Steve waits at the landing spot until the host has put V there: half a second at most, less once a pose that
+	 * arrived after touchdown says V is no longer following and stands within 1.5 m of the spot.
+	 */
+	@Test
+	void theSettleEndsWhenVIsAtTheLandingSpot() {
+		long touchdown = 1_000_000_000L;
+		assertFalse(FlightRules.settled(touchdown + 10_000_000L, touchdown, touchdown - 5_000_000L, false, 0.2), "a pose from before touchdown");
+		assertFalse(FlightRules.settled(touchdown + 30_000_000L, touchdown, touchdown + 20_000_000L, true, 0.2), "V still follows");
+		assertFalse(FlightRules.settled(touchdown + 30_000_000L, touchdown, touchdown + 20_000_000L, false, 1.5), "V is not there");
+		assertTrue(FlightRules.settled(touchdown + 30_000_000L, touchdown, touchdown + 20_000_000L, false, 1.49));
+		assertTrue(FlightRules.settled(touchdown + 500_000_000L, touchdown, touchdown - 5_000_000L, true, 40.0), "the upper bound");
+		assertTrue(FlightRules.settled(touchdown + 30_000_000L, touchdown, touchdown + 20_000_000L, false, 0.0));
+		assertFalse(FlightRules.settled(touchdown + 30_000_000L, touchdown, touchdown + 20_000_000L, false, Double.NaN));
+	}
+
 	@Test
 	void hostFallDamageIsIgnoredAroundAGlideAndWithSlowFalling() {
 		long now = 5_000_000_000L;

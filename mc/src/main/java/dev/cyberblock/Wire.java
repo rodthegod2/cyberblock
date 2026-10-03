@@ -77,6 +77,20 @@ public final class Wire {
 			active, fin(x), fin(y), fin(z), v[0], v[1], v[2], fin(yaw), fin(pitch));
 	}
 
+	/** The protocol's limit for flight.ts (ms). */
+	static final double MAX_TS = 1.0E13;
+
+	/**
+	 * As flight, plus "kind" ("launch" or "glide") and "ts": Minecraft's monotonic sample clock in ms, clamped to 0..1e13 (plan retest2
+	 * section 1.2). A ts that is not a number is left out (the host would ignore it).
+	 */
+	public static String flight(final boolean active, final double x, final double y, final double z, final double vx, final double vy, final double vz,
+		final double yaw, final double pitch, final boolean launch, final double ts) {
+		String base = flight(active, x, y, z, vx, vy, vz, yaw, pitch);
+		String clock = Double.isFinite(ts) ? String.format(Locale.ROOT, ",\"ts\":%.3f", Math.clamp(ts, 0.0, MAX_TS)) : "";
+		return base.substring(0, base.length() - 1) + ",\"kind\":\"" + (launch ? "launch" : "glide") + "\"" + clock + "}";
+	}
+
 	/** {"t":"proj","list":[{"id":n,"p":[x,y,z],"v":[x,y,z] m/s (at most 200),"g":m/s^2}, ...]} in the given order. */
 	public static String proj(final List<Projectiles.Flying> list) {
 		StringBuilder b = new StringBuilder("{\"t\":\"proj\",\"list\":[");

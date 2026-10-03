@@ -3,12 +3,11 @@ package dev.cyberblock.client;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.FlightRules;
 import dev.cyberblock.HostDamage;
 import dev.cyberblock.Wire;
-import dev.cyberblock.cyber.CyberData;
-import dev.cyberblock.cyber.Perk;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.server.IntegratedServer;
@@ -33,17 +32,36 @@ import org.jspecify.annotations.Nullable;
  * camera (or from the host's raw look deltas in its camera-only fallback), and every frame the host hears where he is
  * ({"t":"flight"}) and moves V there. Touchdown ends it. The host says in every cam whether it follows (cam.fly): a glide it does
  * not take up within half a second, or stops following, is called off and Steve goes back to V (in-game 2026-10-03: the host
- * refused a glide and Steve flew 320 m alone, into the void). Client thread only.
+ * refused a glide and Steve flew 320 m alone, into the void).
+ *
+ * <p>Plan retest2 R5, the launch: a knockback that lifts Steve (his own or anyone's wind charge, a breeze's, a mace's wind burst,
+ * any explosion: ClientPacketListenerMixin hands it over) throws him off V's ground with vanilla physics, and V follows him like a
+ * glide until he lands ({"t":"flight","kind":"launch"}). The jump key while he falls in it opens his elytra: the launch goes on as a
+ * glide, with no new handshake. Every flight sample carries Minecraft's clock (ts) so the host can play them out smoothly every
+ * frame. Client thread only.
  */
 public final class Flight {
+	/** A launch (vanilla physics from a knockback) or a glide (the elytra). */
+	enum Mode {
+		GLIDE, LAUNCH
+	}
+
+	/** The origin of the flight samples' clock (ts, ms since this): System.nanoTime is monotonic. */
+	public static final long EPOCH = System.nanoTime();
 	private static final long FRAME_NANOS = 1_000_000_000L / 120;
 	private static final FlightRules.Fall fall = new FlightRules.Fall();
 	private static final FlightRules.Follow follow = new FlightRules.Follow();
 	private static final FlightRules.AirJumps airJumps = new FlightRules.AirJumps();
 	private static long lastPose;
 	private static boolean driving;
+	private static Mode mode = Mode.GLIDE;
+	private static long launchStart;
+	/** Knockback waiting for the next tick (blocks per tick): explosions add up, a motion packet replaces the last one. Null: none. */
+	private static @Nullable Vec3 explosionKick, motionKick;
 	private static boolean landed;
 	private static long touchdownNanos;
+	/** Where the last flight touched down: V standing near it ends the settle (followsCam). */
+	private static Vec3 landingSpot = Vec3.ZERO;
 	/** No glide starts before this (System.nanoTime, compared as a difference) after one was called off. */
 	private static long retryAt = System.nanoTime();
 	/** A Cyberpunk menu paused the glide: where Steve waits, and the velocity he carries on with. Both null while not paused. */
@@ -56,22 +74,66 @@ public final class Flight {
 	private Flight() {
 	}
 
-	/** Minecraft moves Steve (gliding). */
+	/** Minecraft moves Steve (gliding or launched). */
 	public static boolean driving() {
 		return driving;
 	}
 
-	/** Steve is placed at the host's V: not while gliding, nor for half a second after touchdown (the host is placing V). */
+	/**
+	 * Steve is placed at the host's V: not while he flies, nor after touchdown until the host has placed V at the landing spot (a
+	 * pose that arrived since says V no longer follows and stands within 1.5 m of it), half a second at most.
+	 */
 	static boolean followsCam() {
-		return !driving && (!landed || System.nanoTime() - touchdownNanos >= FlightRules.SETTLE_NANOS);
+		if (driving) {
+			return false;
+		}
+
+		if (!landed) {
+			return true;
+		}
+
+		HostState.Pose p = HostState.live();
+		long now = System.nanoTime();
+		boolean settled = p == null ? now - touchdownNanos >= FlightRules.SETTLE_NANOS
+			: FlightRules.settled(now, touchdownNanos, p.receivedNanos(), p.fly(), landingSpot.distanceTo(new Vec3(p.px(), p.py(), p.pz())));
+		if (settled) {
+			landed = false; // V walking off afterwards does not make Steve wait again
+		}
+
+		return settled;
+	}
+
+	/**
+	 * Client thread, from ClientPacketListenerMixin: knockback the server gave Steve (blocks per tick), from an explosion (its
+	 * playerKnockback, added up) or a motion packet (the latest one counts). The next tick decides whether it launches him.
+	 */
+	public static void impulse(final Vec3 v, final boolean explosion) {
+		if (explosion) {
+			explosionKick = explosionKick == null ? v : explosionKick.add(v);
+		} else {
+			motionKick = v;
+		}
+	}
+
+	/** The knockback since the last tick that launches Steve (an explosion's first), or null. Either way nothing is left waiting. */
+	private static @Nullable Vec3 takeKick() {
+		Vec3 explosion = explosionKick, motion = motionKick;
+		explosionKick = motionKick = null;
+		if (explosion != null && FlightRules.launch(explosion.x, explosion.y, explosion.z, true)) {
+			return explosion;
+		}
+
+		return motion != null && FlightRules.launch(motion.x, motion.y, motion.z, false) ? motion : null;
 	}
 
 	/** Every client tick, at the start of the player's tick, before PlayerSync follows the host. */
 	static void tick(final LocalPlayer player) {
 		boolean jumpPressed = HostState.takeJumpPress();
+		// flying already, vanilla has applied the knockback to his motion: nothing more to do with it
+		Vec3 kick = takeKick();
 		HostState.Pose p = HostState.live();
 		if (driving) {
-			drive(player, p);
+			drive(player, p, jumpPressed);
 			return;
 		}
 
@@ -81,13 +143,19 @@ public final class Flight {
 			return;
 		}
 
+		// a host that cannot move V (held by the game, or paused in a menu) would only refuse the launch
+		if (kick != null && !p.held() && !p.menu()) {
+			startLaunch(player, p, kick);
+			return;
+		}
+
 		if (p.receivedNanos() != lastPose) {
 			lastPose = p.receivedNanos();
 			fall.sample(lastPose, p.px(), p.py(), p.pz());
 		}
 
-		// with Steve's Double Jump perk V's first jump in the air is V's own (the client's synced copy of his perks)
-		boolean glidePress = airJumps.press(p.air(), jumpPressed, CyberData.has(player, Perk.DOUBLE_JUMP));
+		// with the reinforced tendons implant V's first jump in the air is V's own double jump (plan retest2 section 1.7)
+		boolean glidePress = airJumps.press(p.air(), jumpPressed, Bridge.installedCyberware.contains("reinforced_tendons"));
 		// a host that cannot move V (held by the game, or paused in a menu) would only refuse the glide
 		if (!followsCam() || p.held() || p.menu() || System.nanoTime() - retryAt < 0L || !hasElytra(player)) {
 			return;
@@ -96,21 +164,20 @@ public final class Flight {
 		// Steve's gliding box at V's feet, and the free air under them (barriers count: they are Night City's ground)
 		AABB box = player.getDimensions(Pose.FALL_FLYING).makeBoundingBox(p.px(), p.py(), p.pz());
 		boolean overlapping = !player.level().noCollision(player, box);
-		if (FlightRules.start(glidePress, true, fall.speed(), fall.fastNanos(), clearance(player, p), overlapping)) {
+		if (FlightRules.start(glidePress, true, fall.speed(), fall.fastNanos(), clearance(player, new Vec3(p.px(), p.py(), p.pz())), overlapping)) {
 			start(player, p);
 		}
 	}
 
-	/** Free air (blocks) straight down from V's feet, MIN_CLEARANCE when nothing solid is that close. */
-	private static double clearance(final LocalPlayer player, final HostState.Pose p) {
-		Vec3 feet = new Vec3(p.px(), p.py(), p.pz());
+	/** Free air (blocks) straight down from these feet, MIN_CLEARANCE when nothing solid is that close. */
+	private static double clearance(final LocalPlayer player, final Vec3 feet) {
 		Vec3 below = feet.subtract(0.0, FlightRules.MIN_CLEARANCE, 0.0);
 		BlockHitResult hit = player.level().clip(new ClipContext(feet, below, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
 		return hit.getType() == HitResult.Type.MISS ? FlightRules.MIN_CLEARANCE : feet.y - hit.getLocation().y;
 	}
 
-	/** A client tick while gliding: carry on, call it off when the host does not follow, or land. */
-	private static void drive(final LocalPlayer player, final HostState.@Nullable Pose p) {
+	/** A client tick while flying: carry on, call it off when the host does not follow, open the elytra from a launch, or land. */
+	private static void drive(final LocalPlayer player, final HostState.@Nullable Pose p, final boolean jumpPressed) {
 		if (!player.isAlive()) {
 			abort(player, p); // died mid-glide: no landing spot (after the respawn it would be the world spawn)
 			return;
@@ -140,9 +207,77 @@ public final class Flight {
 			HostDamage.fallFreeUntil = now + FlightRules.FALL_GRACE_NANOS;
 		}
 
+		if (mode == Mode.LAUNCH) {
+			if (FlightRules.launchLanded(player.onGround(), player.isInWater(), now - launchStart)) {
+				land(player, p);
+			} else if (FlightRules.launchToGlide(jumpPressed, hasElytra(player), -player.getDeltaMovement().y * 20.0, clearance(player, player.position()))) {
+				glideFromLaunch(player);
+			}
+
+			return;
+		}
+
 		if (FlightRules.touchdown(player.onGround(), player.isFallFlying())) {
 			land(player, p);
 		}
+	}
+
+	/** The jump key while a launch falls: vanilla's glide start, and the flight goes on as a glide (the host already follows it). */
+	private static void glideFromLaunch(final LocalPlayer player) {
+		if (!player.tryToStartFallFlying()) {
+			return;
+		}
+
+		player.connection.send(new ServerboundPlayerCommandPacket(player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING));
+		mode = Mode.GLIDE;
+		Cyberblock.LOG.info("launch turned into a glide at {}", player.position());
+	}
+
+	/**
+	 * A knockback lifts Steve off V's ground (plan retest2 R5): from V's feet (or, while the host is still placing V after a landing,
+	 * from where he stands), clear of any block, with the knockback as his motion and gravity on; vanilla's physics carry him and the
+	 * host follows with V as in a glide. A creative player stops flying for it (else he would hover); PlayerSync gives the flight
+	 * back once he is with V again.
+	 */
+	private static void startLaunch(final LocalPlayer player, final HostState.Pose p, final Vec3 kick) {
+		Abilities abilities = player.getAbilities();
+		if (abilities.flying) {
+			abilities.flying = false;
+			player.onUpdateAbilities();
+		}
+
+		player.setOnGround(false);
+		player.connection.send(new ServerboundMovePlayerPacket.StatusOnly(false, player.horizontalCollision));
+		Vec3 at = clearOfBlocks(player, followsCam() ? new Vec3(p.px(), p.py(), p.pz()) : player.position());
+		player.setPos(at);
+		player.xo = player.xOld = at.x;
+		player.yo = player.yOld = at.y;
+		player.zo = player.zOld = at.z;
+		player.setDeltaMovement(kick);
+		gravity(player, true, false);
+		driving = true;
+		mode = Mode.LAUNCH;
+		landed = false;
+		lookFromDeltas = false;
+		lastSent = 0L;
+		long now = System.nanoTime();
+		launchStart = now;
+		follow.start(now);
+		fall.reset();
+		airJumps.reset();
+		Cyberblock.LOG.info("launch started at {} with {} m/s", at, kick.length() * 20.0);
+	}
+
+	/** The lowest spot at most one block above feet (in 1/16 steps) where Steve's box is free of blocks and barriers; feet if none. */
+	private static Vec3 clearOfBlocks(final LocalPlayer player, final Vec3 feet) {
+		for (int i = 0; i <= 16; i++) {
+			Vec3 at = feet.add(0.0, i / 16.0, 0.0);
+			if (player.level().noCollision(player, player.getDimensions(player.getPose()).makeBoundingBox(at.x, at.y, at.z))) {
+				return at;
+			}
+		}
+
+		return feet;
 	}
 
 	/**
@@ -154,7 +289,7 @@ public final class Flight {
 			pausedAt = player.position();
 			pausedVelocity = player.getDeltaMovement();
 			gravity(player, false, false);
-			Cyberblock.LOG.info("glide paused at {} (Cyberpunk menu)", pausedAt);
+			Cyberblock.LOG.info("{} paused at {} (Cyberpunk menu)", mode == Mode.LAUNCH ? "launch" : "glide", pausedAt);
 		}
 
 		player.setPos(pausedAt);
@@ -170,7 +305,7 @@ public final class Flight {
 		gravity(player, true, false);
 		pausedAt = pausedVelocity = null;
 		follow.restart(now); // a host that had not followed yet gets its full half second again
-		Cyberblock.LOG.info("glide resumed");
+		Cyberblock.LOG.info("{} resumed", mode == Mode.LAUNCH ? "launch" : "glide");
 	}
 
 	private static boolean hasElytra(final LivingEntity player) {
@@ -210,6 +345,7 @@ public final class Flight {
 		player.connection.send(new ServerboundPlayerCommandPacket(player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING));
 		gravity(player, true, false);
 		driving = true;
+		mode = Mode.GLIDE;
 		landed = false;
 		lookFromDeltas = false;
 		lastSent = 0L;
@@ -233,9 +369,16 @@ public final class Flight {
 		touchdownNanos = System.nanoTime();
 		HostDamage.fallFreeUntil = touchdownNanos + FlightRules.FALL_GRACE_NANOS;
 		Vec3 feet = player.position();
-		Cyberblock.events.accept(Wire.flight(false, feet.x, feet.y, feet.z, 0.0, 0.0, 0.0, player.getYRot(), player.getXRot()));
+		landingSpot = feet;
+		boolean launch = mode == Mode.LAUNCH;
+		Cyberblock.events.accept(Wire.flight(false, feet.x, feet.y, feet.z, 0.0, 0.0, 0.0, player.getYRot(), player.getXRot(), launch, clock(touchdownNanos)));
 		endGlide(player);
-		Cyberblock.LOG.info("glide ended at {}", feet);
+		Cyberblock.LOG.info("{} ended at {}", launch ? "launch" : "glide", feet);
+	}
+
+	/** Minecraft's sample clock (flight.ts): milliseconds since EPOCH. */
+	private static double clock(final long nanos) {
+		return (nanos - EPOCH) / 1.0E6;
 	}
 
 	/**
@@ -252,22 +395,28 @@ public final class Flight {
 		retryAt = now + FlightRules.RETRY_NANOS;
 		HostDamage.fallFreeUntil = followed ? now + FlightRules.FALL_GRACE_NANOS : Long.MIN_VALUE;
 		Vec3 at = p == null ? player.position() : new Vec3(p.px(), p.py(), p.pz());
-		Cyberblock.events.accept(Wire.flight(false, at.x, at.y, at.z, 0.0, 0.0, 0.0, player.getYRot(), player.getXRot()));
+		boolean launch = mode == Mode.LAUNCH;
+		Cyberblock.events.accept(Wire.flight(false, at.x, at.y, at.z, 0.0, 0.0, 0.0, player.getYRot(), player.getXRot(), launch, clock(now)));
 		endGlide(player);
 		player.setPos(at);
 		player.xo = player.xOld = at.x;
 		player.yo = player.yOld = at.y;
 		player.zo = player.zOld = at.z;
-		Cyberblock.LOG.info("glide called off ({}), Steve back at {}", followed ? "the host stopped following" : "the host did not follow", at);
+		Cyberblock.LOG.info("{} called off ({}), Steve back at {}", launch ? "launch" : "glide",
+			followed ? "the host stopped following" : "the host did not follow", at);
 	}
 
-	/** Steve hangs with no gravity again. Vanilla ends a glide only on the ground: in mid-air he would hover gliding. */
+	/**
+	 * Steve hangs with no gravity again. Vanilla ends a glide only on the ground: in mid-air he would hover gliding. The next flight is
+	 * a glide unless a launch starts it.
+	 */
 	private static void endGlide(final LocalPlayer player) {
 		gravity(player, false, true);
 		player.stopFallFlying();
 		player.setDeltaMovement(Vec3.ZERO);
 		pausedAt = pausedVelocity = null;
 		fall.reset();
+		mode = Mode.GLIDE;
 	}
 
 	/**
@@ -310,7 +459,10 @@ public final class Flight {
 		lookPitch = Math.clamp(lookPitch + (float) dpitch, -90.0F, 90.0F);
 	}
 
-	/** Every frame while gliding: steer with the host's look, and tell the host where Steve is drawn (at most 120 times a second). */
+	/**
+	 * Every frame while flying: steer with the host's look, and tell the host where Steve is drawn (at most 120 times a second), with
+	 * the flight's kind and the time of the sample (ts) so the host can play the samples out evenly whatever their arrival jitter.
+	 */
 	static void frame(final LocalPlayer player, final HostState.Pose p, final float partialTick) {
 		float yaw = lookFromDeltas ? lookYaw : p.yaw();
 		float pitch = lookFromDeltas ? lookPitch : p.pitch();
@@ -328,6 +480,6 @@ public final class Flight {
 		// where the player is drawn this frame and how fast that moves (the slope of the tick interpolation, per second)
 		Vec3 at = player.getPosition(partialTick);
 		Cyberblock.events.accept(Wire.flight(true, at.x, at.y, at.z, (player.getX() - player.xo) * 20.0, (player.getY() - player.yo) * 20.0,
-			(player.getZ() - player.zo) * 20.0, yaw, pitch));
+			(player.getZ() - player.zo) * 20.0, yaw, pitch, mode == Mode.LAUNCH, clock(now)));
 	}
 }

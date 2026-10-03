@@ -26,8 +26,58 @@ public final class FlightRules {
 	public static final long FALL_GRACE_NANOS = 2_000_000_000L;
 	/** The protocol's limit for flight.v and proj.v (m/s). */
 	public static final double MAX_SPEED = 200.0;
+	/**
+	 * Plan retest2 R5: an explosion's knockback (blocks per tick; his own wind charge at his feet gives 1.22 up) launches Steve when
+	 * it lifts him at least this much...
+	 */
+	public static final double LAUNCH_MIN_UP = 0.25;
+	/** ...and is at least this fast. */
+	public static final double LAUNCH_MIN_SPEED = 0.4;
+	/** Any other knockback the server sends (a motion packet) must lift more: a hit's knockback is 0.4 up. */
+	public static final double MOTION_LAUNCH_MIN_UP = 0.6;
+	/** A launch cannot land before this: the tick of the launch may still say on the ground. */
+	public static final long LAUNCH_SETTLE_NANOS = 100_000_000L;
+	/** After touchdown, V standing this close to the landing spot (no longer following) ends the settle early (the DLL's kNearLand). */
+	public static final double NEAR_LAND = 1.5;
 
 	private FlightRules() {
+	}
+
+	/**
+	 * Whether a knockback (blocks per tick) launches Steve off V's ground: upward by LAUNCH_MIN_UP (MOTION_LAUNCH_MIN_UP for a
+	 * motion packet) and at least LAUNCH_MIN_SPEED fast. Not a finite vector: no.
+	 *
+	 * @param explosion the kick came with an explosion (its playerKnockback), not a motion packet
+	 */
+	public static boolean launch(final double vx, final double vy, final double vz, final boolean explosion) {
+		if (!Double.isFinite(vx) || !Double.isFinite(vy) || !Double.isFinite(vz)) {
+			return false;
+		}
+
+		return vy >= (explosion ? LAUNCH_MIN_UP : MOTION_LAUNCH_MIN_UP) && Math.sqrt(vx * vx + vy * vy + vz * vz) >= LAUNCH_MIN_SPEED;
+	}
+
+	/** A launch is over once Steve is on the ground or in water, and LAUNCH_SETTLE_NANOS have passed since it started. */
+	public static boolean launchLanded(final boolean onGround, final boolean inWater, final long sinceStartNanos) {
+		return sinceStartNanos >= LAUNCH_SETTLE_NANOS && (onGround || inWater);
+	}
+
+	/**
+	 * In a launch, a jump press opens the elytra as a glide start would: Steve falls faster than JUMP_FALL_SPEED (m/s) with at least
+	 * MIN_CLEARANCE of air below.
+	 */
+	public static boolean launchToGlide(final boolean jumpPressed, final boolean elytra, final double fallSpeed, final double clearance) {
+		return jumpPressed && elytra && fallSpeed > JUMP_FALL_SPEED && clearance >= MIN_CLEARANCE;
+	}
+
+	/**
+	 * After touchdown, whether Steve may follow V again: SETTLE_NANOS after it at the latest, at once when a pose that arrived after
+	 * touchdown says the host no longer follows (cam.fly false) and V's feet are within NEAR_LAND of the landing spot.
+	 *
+	 * @param distance metres from that pose's feet to the landing spot
+	 */
+	public static boolean settled(final long now, final long touchdownNanos, final long poseNanos, final boolean fly, final double distance) {
+		return now - touchdownNanos >= SETTLE_NANOS || poseNanos - touchdownNanos > 0L && !fly && distance < NEAR_LAND;
 	}
 
 	/**
