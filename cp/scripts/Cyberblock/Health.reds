@@ -16,14 +16,19 @@
 // VeryHardLanding / DeathLanding with V as instigator and source (locomotionTransitions, PrepareGameEffectAoEAttack);
 // there is no other scripted fall damage, and r6/cache/tweakdb.bin gives DeathLanding a +10000 physical damage
 // modifier (Attacks.DeathLanding_inline0), so these attacks are what hurts V on landing. When one damages V it
-// arrives here and is sent as fall.
+// arrives here and is sent as fall. A fall is not sent while CyberblockFlight.SuppressFall (S2): during a glide and
+// for 2 s after its landing or an ender pearl teleport, Minecraft applies its own fall rules.
+// Damage over time (burning, poison, shock) also reaches Steve: the IsImmune wrap below lets DoT debuffs land on V
+// while only our god mode protects V, and their ticks come through DealDamages like any hit.
 //
 // APIs: DamageSystem.InvulnerabilityCheck(ref<gameHitEvent>, ref<CacheData>) and DealDamages(ref<gameHitEvent>)
 // (private final, scripted), AttackData.HasFlag/RemoveFlag(hitFlag, CName)/GetAttackType/GetSource/GetInstigator/
 // GetAttackDefinition, IAttack.GetRecord() -> wref<Attack_Record>, gameAttackComputed.GetTotalAttackValue(
 // gamedataStatPoolType.Health)/GetDominatingDamageType, GodModeSystem.GetGodModeSources(EntityID, gameGodModeType)
 // -> array<CName>, StatsSystem.GetStatValue(StatsObjectID, gamedataStatType.Health | IsInvulnerable) (max health as in
-// DamageSystem.ProcessOneShotProtection), gameHitEvent.hitDirection, Vector4.IsZero/Normalize.
+// DamageSystem.ProcessOneShotProtection), gameHitEvent.hitDirection, Vector4.IsZero/Normalize,
+// DamageSystem.IsImmune(ref<GameObject>, TweakDBID, ref<AttackData>) -> Bool (private final, scripted),
+// TweakDBInterface.GetStatusEffectRecord, StatusEffect_Record.GameplayTagsContains/ImmunityStats.
 
 // Removes only the flag the god-mode branch adds (AddFlag never duplicates a flag, so with no DealNoDamage before the
 // call, a DealNoDamage with source n"invulnerable" afterwards is that branch's). RemoveFlag(flag, source) is a no-op
@@ -44,6 +49,33 @@ private final func DealDamages(hitEvent: ref<gameHitEvent>) -> Void {
     return;
   }
   wrappedMethod(hitEvent);
+}
+
+// Audit D gap 1 (docs/notes/cp-mechanics-audit.md appendix, verbatim but for its OnlyCyberblock test, which is
+// CyberblockHealth.Covers): let damage-over-time debuffs land on V while only Cyberblock's god mode protects V, so
+// their ticks reach Steve through the report above. Every other immunity (DoNotApplyOnPlayer, immunity stats, other
+// god modes) stays. 2.31: DamageSystem.IsImmune (damageSystem.swift:1526) returns true for any Debuff-tagged effect on
+// an Invulnerable target (:1561-1565); every DoT record is tagged Debuff and DoT (TweakDB). The ticks are attacks
+// with AttackType.Effect (e.g. BaseStatusEffect.PlayerBurning -> TriggerContinuousAttackEffector ->
+// Attacks.LightThermalDamageOverTime, damage type Thermal), which Kind reports as fire.
+@wrapMethod(DamageSystem)
+private final func IsImmune(target: ref<GameObject>, statusEffectID: TweakDBID, attackData: ref<AttackData>) -> Bool {
+  let immune = wrappedMethod(target, statusEffectID, attackData);
+  if !immune || !target.IsPlayer() || !CyberblockHealth.Covers(target) {
+    return immune;
+  }
+  let record = TweakDBInterface.GetStatusEffectRecord(statusEffectID);
+  if !IsDefined(record) || !record.GameplayTagsContains(n"DoT") || record.GameplayTagsContains(n"DoNotApplyOnPlayer") {
+    return immune;
+  }
+  let stats: array<wref<Stat_Record>>;
+  record.ImmunityStats(stats);
+  for stat in stats {
+    if GameInstance.GetStatsSystem(target.GetGame()).GetStatValue(Cast<StatsObjectID>(target.GetEntityID()), stat.StatType()) > 0.0 {
+      return immune;
+    }
+  }
+  return false;
 }
 
 public abstract class CyberblockHealth {
@@ -80,6 +112,11 @@ public abstract class CyberblockHealth {
     let from: Vector4;
     let hasFrom = CyberblockHealth.From(hitEvent, from);
     let kind = CyberblockHealth.Kind(hitEvent);
+    // Minecraft owns the fall damage of a glide or an ender pearl teleport (plan 2026-10-03 S1.3, CyberblockFlight).
+    if Equals(kind, n"fall") && CyberblockFlight.SuppressFall(target.GetGame()) {
+      Cyberblock_Log(s"dmg fall \(damage) of \(maxHealth) not reported: flight or teleport landing");
+      return;
+    }
     Cyberblock_Damage(damage / maxHealth, kind, from, hasFrom);
     Cyberblock_Log(s"dmg \(NameToString(kind)) \(damage) of \(maxHealth) from \(hasFrom ? "known" : "unknown") (\(TDBID.ToStringDEBUG(CyberblockHealth.AttackID(hitEvent))))");
   }
@@ -137,5 +174,46 @@ public abstract class CyberblockHealth {
       }
     }
     return TDBID.None();
+  }
+}
+
+// Creative (plan 2026-10-03 S1.3): in Minecraft's creative mode Steve cannot be hurt, so neither can V where Steve's
+// health does not cover V: in the Vehicle state (on foot, Active already makes V invulnerable through the report
+// above). The source is n"CyberblockCreative", not n"Cyberblock", so Covers stays false (nothing is reported) and the
+// Active-gated wraps (Disable.reds, IsImmune above) stay off. Removed in every other state or game mode, before
+// saves, on load and at Off. GodModeSystem.AddGodMode/ClearGodMode as PlayerState.reds.
+public class CyberblockCreative {
+  private let applied: Bool;
+
+  public static func Source() -> CName {
+    return n"CyberblockCreative";
+  }
+
+  // Every tick, except while a save is written. vehicle: the Cyberblock state is Vehicle.
+  public func Update(player: ref<PlayerPuppet>, vehicle: Bool) -> Void {
+    let on = vehicle && Equals(Cyberblock_GameMode(), n"creative");
+    if on && !this.applied {
+      GameInstance.GetGodModeSystem(player.GetGame()).AddGodMode(player.GetEntityID(), gameGodModeType.Invulnerable, CyberblockCreative.Source());
+      this.applied = true;
+      Cyberblock_Log("creative: V invulnerable in the vehicle");
+    } else {
+      if !on {
+        this.Clear(player);
+      }
+    }
+  }
+
+  public func Clear(player: ref<PlayerPuppet>) -> Void {
+    if !this.applied || !IsDefined(player) {
+      return;
+    }
+    GameInstance.GetGodModeSystem(player.GetGame()).ClearGodMode(player.GetEntityID(), CyberblockCreative.Source());
+    this.applied = false;
+    Cyberblock_Log("creative: V vulnerable again");
+  }
+
+  // On load: a save may still carry it.
+  public static func ClearLeftovers(player: ref<PlayerPuppet>) -> Void {
+    GameInstance.GetGodModeSystem(player.GetGame()).ClearGodMode(player.GetEntityID(), CyberblockCreative.Source());
   }
 }

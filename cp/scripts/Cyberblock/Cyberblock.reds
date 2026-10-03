@@ -13,7 +13,8 @@
 // only while Active/Vehicle and not saving), keeps CyberblockCollision boxes streamed around V while live, and sends
 // the NPC/vehicle list while Active (Npcs.reds). Collision boxes are cleared whenever Night City stops being live
 // (Off, Lost), before every save, on every load and at session end. The health link (Health.reds) needs no call:
-// it acts exactly while our god mode is V's only invulnerability, i.e. while Active.
+// it acts exactly while our god mode is V's only invulnerability, i.e. while Active. CyberblockCreative (Health.reds)
+// keeps V invulnerable in the Vehicle state while Minecraft is in creative mode (Cyberblock_GameMode).
 
 enum CyberblockState {
   Off = 0,
@@ -36,6 +37,7 @@ public class CyberblockSystem extends ScriptableSystem {
   private let state: CyberblockState;
   private let tickId: DelayID;
   private let playerState: ref<CyberblockPlayerState>;
+  private let creative: ref<CyberblockCreative>;
   private let probes: ref<CyberblockProbes>;
   private let events: ref<CyberblockEvents>;
   private let npcs: ref<CyberblockNpcs>;
@@ -45,6 +47,7 @@ public class CyberblockSystem extends ScriptableSystem {
   private func OnAttach() -> Void {
     this.state = CyberblockState.Off;
     this.playerState = new CyberblockPlayerState();
+    this.creative = new CyberblockCreative();
     this.probes = new CyberblockProbes();
     this.events = new CyberblockEvents();
     this.npcs = new CyberblockNpcs();
@@ -82,6 +85,7 @@ public class CyberblockSystem extends ScriptableSystem {
   private cb func OnBeforeSave(event: ref<GameSessionEvent>) {
     this.saving = true;
     this.playerState.ClearSaved(GetPlayer(this.GetGameInstance()));
+    this.creative.Clear(GetPlayer(this.GetGameInstance()));
     CyberblockCollision.Clear(this.GetGameInstance());
     Cyberblock_Log("before save: effects, god mode and collision boxes removed");
   }
@@ -96,8 +100,10 @@ public class CyberblockSystem extends ScriptableSystem {
   private cb func OnSessionReady(event: ref<GameSessionEvent>) {
     let player = GetPlayer(this.GetGameInstance());
     this.playerState.Clear(player);
+    this.creative.Clear(player);
     if IsDefined(player) {
       CyberblockPlayerState.ClearLeftovers(player);
+      CyberblockCreative.ClearLeftovers(player);
     }
     CyberblockCollision.Clear(this.GetGameInstance());
     this.state = CyberblockState.Off;
@@ -107,6 +113,7 @@ public class CyberblockSystem extends ScriptableSystem {
 
   private cb func OnSessionEnd(event: ref<GameSessionEvent>) {
     this.playerState.Clear(GetPlayer(this.GetGameInstance()));
+    this.creative.Clear(GetPlayer(this.GetGameInstance()));
     CyberblockCollision.Clear(this.GetGameInstance());
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
@@ -116,6 +123,7 @@ public class CyberblockSystem extends ScriptableSystem {
   private func UpdatePlayer(player: ref<PlayerPuppet>) -> Void {
     if IsDefined(player) && !this.saving {
       this.playerState.Update(player, Equals(this.state, CyberblockState.Active), Cyberblock_ScreenOpen());
+      this.creative.Update(player, Equals(this.state, CyberblockState.Vehicle));
     }
   }
 
