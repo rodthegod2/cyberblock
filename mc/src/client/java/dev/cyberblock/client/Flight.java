@@ -230,7 +230,7 @@ public final class Flight {
 
 		player.connection.send(new ServerboundPlayerCommandPacket(player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING));
 		mode = Mode.GLIDE;
-		Cyberblock.LOG.info("launch turned into a glide at {}", player.position());
+		Cyberblock.LOG.info("launch turned into a glide at {}, yaw {}", player.position(), player.getYRot());
 	}
 
 	/**
@@ -266,7 +266,7 @@ public final class Flight {
 		follow.start(now);
 		fall.reset();
 		airJumps.reset();
-		Cyberblock.LOG.info("launch started at {} with {} m/s", at, kick.length() * 20.0);
+		Cyberblock.LOG.info("launch started at {} with {} m/s, yaw {}", at, kick.length() * 20.0, player.getYRot());
 	}
 
 	/** The lowest spot at most one block above feet (in 1/16 steps) where Steve's box is free of blocks and barriers; feet if none. */
@@ -352,7 +352,8 @@ public final class Flight {
 		lastSent = 0L;
 		// V's fall damage is only ignored once the host follows (drive): a refused glide leaves V falling for real
 		follow.start(System.nanoTime());
-		Cyberblock.LOG.info("glide started at {} with {} m/s", player.position(), Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]));
+		// yaw in start and end lines: the F4 check (plan retest3 M6) compares them with the DLL's flight summary
+		Cyberblock.LOG.info("glide started at {} with {} m/s, yaw {}", player.position(), Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]), player.getYRot());
 	}
 
 	/**
@@ -374,7 +375,7 @@ public final class Flight {
 		boolean launch = mode == Mode.LAUNCH;
 		Cyberblock.events.accept(Wire.flight(false, feet.x, feet.y, feet.z, 0.0, 0.0, 0.0, player.getYRot(), player.getXRot(), launch, clock(touchdownNanos)));
 		endGlide(player);
-		Cyberblock.LOG.info("{} ended at {}", launch ? "launch" : "glide", feet);
+		Cyberblock.LOG.info("{} ended at {}, yaw {}", launch ? "launch" : "glide", feet, player.getYRot());
 	}
 
 	/** Minecraft's sample clock (flight.ts): milliseconds since EPOCH. */
