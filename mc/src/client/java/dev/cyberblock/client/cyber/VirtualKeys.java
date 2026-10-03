@@ -58,9 +58,21 @@ public final class VirtualKeys {
 		return -1;
 	}
 
-	/** As of, with the default for a key Cyberpunk cannot forward. */
-	public static int orDefault(final boolean keyboard, final int scancode, final int fallback) {
-		int vk = of(keyboard, scancode);
-		return vk < 0 ? fallback : vk;
+	/**
+	 * Whether the hack and skill-tree keys (each as `of` gives it, -1: Cyberpunk cannot forward it) would be the same key in
+	 * Cyberpunk once a refused one stands for its default (G, K). The DLL refuses that pair and would keep the old one.
+	 */
+	public static boolean clash(final int hack, final int skills) {
+		return (hack < 0 ? VK_G : hack) == (skills < 0 ? VK_K : skills);
+	}
+
+	/** The {hack, skills} pair `binds` sends: each key, a refused one as its default, and both defaults when they clash. */
+	public static int[] binds(final int hack, final int skills) {
+		return clash(hack, skills) ? new int[]{VK_G, VK_K} : new int[]{hack < 0 ? VK_G : hack, skills < 0 ? VK_K : skills};
+	}
+
+	/** How a forwardable virtual key is written on the keyboard: "G", "0", "F10". */
+	public static String name(final int vk) {
+		return vk >= 0x70 && vk <= 0x7B ? "F" + (vk - 0x6F) : String.valueOf((char) vk);
 	}
 }

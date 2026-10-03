@@ -54,24 +54,44 @@ class VirtualKeysTest {
 	}
 
 	@Test
-	void keysTheDllRefusesStandForTheDefault() {
+	void keysTheDllRefusesCannotBeForwarded() {
 		for (int sc : new int[]{SC_A, SC_B, SC_1, SC_9, SC_F5, SC_F9, scancode('X'), scancode('F'), scancode('R')}) {
 			assertEquals(-1, VirtualKeys.of(true, sc), "scancode " + sc);
-			assertEquals(VirtualKeys.VK_G, VirtualKeys.orDefault(true, sc, VirtualKeys.VK_G));
 		}
 	}
 
 	@Test
-	void everythingElseFallsBackToTheDefault() {
+	void nothingElseCanBeForwarded() {
 		for (int sc : new int[]{SC_ENTER, SC_ESCAPE, SC_SPACE, SC_F13, SC_LSHIFT, SC_RSHIFT, SC_LCTRL, SC_RCTRL, 0, -1, 3}) {
 			assertEquals(-1, VirtualKeys.of(true, sc), "scancode " + sc);
-			assertEquals(VirtualKeys.VK_G, VirtualKeys.orDefault(true, sc, VirtualKeys.VK_G));
 		}
 
 		// a mouse button bound to the mapping: Cyberpunk cannot forward it either
 		assertEquals(-1, VirtualKeys.of(false, SC_G));
-		assertEquals(VirtualKeys.VK_K, VirtualKeys.orDefault(false, 1, VirtualKeys.VK_K));
-		assertEquals(0x4C, VirtualKeys.orDefault(true, SC_L, VirtualKeys.VK_K));
+		assertEquals(-1, VirtualKeys.of(false, 1));
+	}
+
+	private static String pair(final int hack, final int skills) {
+		int[] keys = VirtualKeys.binds(hack, skills);
+		return VirtualKeys.name(keys[0]) + VirtualKeys.name(keys[1]);
+	}
+
+	/** keys-8c: what `binds` sends. A key Cyberpunk cannot forward is its default; a pair that would clash is G and K. */
+	@Test
+	void bindsUseTheDefaultsForRefusedOrClashingKeys() {
+		int g = VirtualKeys.VK_G, k = VirtualKeys.VK_K, l = 0x4C, o = 0x4F, f10 = 0x79;
+		assertEquals("GK", pair(g, k));
+		assertEquals("LO", pair(l, o));
+		assertEquals("KG", pair(k, g)); // swapped is fine: still two keys
+		assertEquals("F10K", pair(f10, -1));
+		assertEquals("GL", pair(-1, l));
+		assertEquals("GK", pair(-1, -1));
+		// clashes: the same key twice, or a refused hack key whose default G is the skill key (and the other way round)
+		assertEquals("GK", pair(l, l));
+		assertEquals("GK", pair(-1, g));
+		assertEquals("GK", pair(k, -1));
+		assertTrue(VirtualKeys.clash(l, l) && VirtualKeys.clash(-1, g) && VirtualKeys.clash(k, -1));
+		assertTrue(!VirtualKeys.clash(-1, -1) && !VirtualKeys.clash(k, g) && !VirtualKeys.clash(-1, l));
 	}
 
 	/** A..Z, 0..9 and F1..F12 as virtual keys. */

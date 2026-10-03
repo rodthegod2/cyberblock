@@ -35,7 +35,8 @@ final class CyberLink {
 
 	static void register() {
 		listen("hello", m -> {
-			onClient(CyberKeys::sendBinds);
+			// the binds, and a chat note when Cyberpunk uses other keys than Minecraft's controls show
+			onClient(CyberKeys::hostHello);
 			onLocalPlayer(PerkShop::sendPerks);
 		});
 		listen("key", CyberLink::key);
