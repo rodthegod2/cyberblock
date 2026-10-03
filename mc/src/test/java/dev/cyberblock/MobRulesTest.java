@@ -104,6 +104,15 @@ class MobRulesTest {
 		assertEquals(Wire.hit("42", 3.0, "melee", 1.0, 0.0, 0.0), Wire.hit("42", 3.0, "melee", 1.0, 0.0, 0.0, -1));
 	}
 
+	/** A mob's fire (a ghast's fireball) is a "fire" hit, and it names the mob like any other blow: the puppet in Night City is the attacker. */
+	@Test
+	void aMobsFireNamesTheMobToo() {
+		assertEquals("fire", ProxyDamage.kind(false, true, ProxyDamage.Medium.PROJECTILE, ProxyDamage.Actor.MOB));
+		JsonObject hit = json(Wire.hit("42", 6.0, "fire", 0.0, 0.0, 0.0, 17));
+		assertEquals("fire", hit.get("kind").getAsString());
+		assertEquals(17, hit.get("mob").getAsInt());
+	}
+
 	@Test
 	void mobdmgParses() {
 		MobRules.Damage d = MobRules.parseDamage(json("{'t':'mobdmg','id':12,'frac':0.25,'by':'18446744073709551615'}"));

@@ -168,8 +168,8 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 			counted *= ProxyDamage.HEADSHOT;
 		}
 
-		// layer 3: a mob's own blow or projectile names the mob, so its puppet in Night City is the attacker
-		int mob = attacker instanceof Mob && (kind.equals("mob") || kind.equals("arrow") || kind.equals("trident")) ? attacker.getId() : -1;
+		// layer 3: whatever a mob deals (blow, arrow, trident, a ghast's fireball) names the mob, so its puppet in Night City is the attacker
+		int mob = attacker instanceof Mob ? attacker.getId() : -1;
 		ProxyManager.hit(this, counted, kind, this.impulse(level, source, kind, medium, attacker, direct), mob);
 		return true;
 	}
