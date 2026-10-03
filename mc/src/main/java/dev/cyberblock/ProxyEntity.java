@@ -149,7 +149,9 @@ public final class ProxyEntity extends LivingEntity {
 
 		this.lastDamage = damage;
 		this.damageCooldown = COOLDOWN_TICKS;
-		ProxyManager.hit(this, counted, kind, this.impulse(level, source, kind, medium, attacker, direct, counted));
+		// layer 3: a mob's own blow or projectile names the mob, so its puppet in Night City is the attacker
+		int mob = attacker instanceof Mob && (kind.equals("mob") || kind.equals("arrow") || kind.equals("trident")) ? attacker.getId() : -1;
+		ProxyManager.hit(this, counted, kind, this.impulse(level, source, kind, medium, attacker, direct, counted), mob);
 		return true;
 	}
 

@@ -123,10 +123,10 @@ public final class ProxyManager {
 		return entity instanceof ProxyEntity proxy && !proxy.isRemoved() && proxies.get(proxy.proxyId()) == proxy ? proxy.proxyId() : 0L;
 	}
 
-	/** Server thread, from a proxy: it took damage that counts. */
-	static void hit(final ProxyEntity proxy, final float damage, final String kind, final Vec3 impulse) {
+	/** Server thread, from a proxy: it took damage that counts (mob: the attacking mob's entity id, -1 for none). */
+	static void hit(final ProxyEntity proxy, final float damage, final String kind, final Vec3 impulse, final int mob) {
 		if (Cyberblock.active) {
-			Cyberblock.events.accept(Wire.hit(Long.toUnsignedString(proxy.proxyId()), Math.min(damage, 1000.0F), kind, impulse.x, impulse.y, impulse.z));
+			Cyberblock.events.accept(Wire.hit(Long.toUnsignedString(proxy.proxyId()), Math.min(damage, 1000.0F), kind, impulse.x, impulse.y, impulse.z, mob));
 		}
 	}
 

@@ -7,6 +7,7 @@ import com.google.gson.JsonParser;
 import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.HostDamage;
+import dev.cyberblock.MobWar;
 import dev.cyberblock.ProxyManager;
 import dev.cyberblock.Ranges;
 import dev.cyberblock.WorldBridge;
@@ -126,6 +127,7 @@ public final class HostLink extends WebSocketServer {
 				case "clear" -> WorldBridge.clearSolid();
 				case "npcs" -> ProxyManager.update(m);
 				case "dmg" -> HostDamage.update(m);
+				case "mobdmg" -> MobWar.damage(m);
 				case "cmd" -> WorldBridge.command(m.get("c").getAsString());
 				default -> {
 					Minecraft minecraft = Minecraft.getInstance();

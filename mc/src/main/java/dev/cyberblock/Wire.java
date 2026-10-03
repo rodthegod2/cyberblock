@@ -1,5 +1,6 @@
 package dev.cyberblock;
 
+import java.util.List;
 import java.util.Locale;
 import net.minecraft.core.BlockPos;
 
@@ -41,6 +42,31 @@ public final class Wire {
 	public static String hit(final String target, final double dmg, final String kind, final double ix, final double iy, final double iz) {
 		return String.format(Locale.ROOT, "{\"t\":\"hit\",\"target\":\"%s\",\"dmg\":%.3f,\"kind\":\"%s\",\"impulse\":[%.3f,%.3f,%.3f]}",
 			target, fin(dmg), kind, fin(ix), fin(iy), fin(iz));
+	}
+
+	/** As hit, plus "mob":id (layer 3) when mob &gt;= 0: the mob that dealt a mob, arrow or trident hit. */
+	public static String hit(final String target, final double dmg, final String kind, final double ix, final double iy, final double iz, final int mob) {
+		String hit = hit(target, dmg, kind, ix, iy, iz);
+		return mob < 0 ? hit : hit.substring(0, hit.length() - 1) + ",\"mob\":" + mob + "}";
+	}
+
+	/** {"t":"mobs","list":[{"id":n,"kind":"zombie","p":[x,y,z],"yaw":deg,"w":m,"h":m,"hp":n,"maxHp":n}, ...]} in the given order. */
+	public static String mobs(final List<MobRules.Seen> list) {
+		StringBuilder b = new StringBuilder("{\"t\":\"mobs\",\"list\":[");
+		for (int i = 0; i < list.size(); i++) {
+			MobRules.Seen s = list.get(i);
+			b.append(i == 0 ? "" : ",").append(String.format(Locale.ROOT,
+				"{\"id\":%d,\"kind\":\"%s\",\"p\":[%.3f,%.3f,%.3f],\"yaw\":%.2f,\"w\":%.3f,\"h\":%.3f,\"hp\":%.2f,\"maxHp\":%.2f}",
+				s.id(), MobRules.kind(s.kind()), fin(s.x()), fin(s.y()), fin(s.z()), fin(s.yaw()),
+				clamp(s.w(), 16.0), clamp(s.h(), 16.0), clamp(s.hp(), 2048.0), clamp(s.maxHp(), 2048.0)));
+		}
+
+		return b.append("]}").toString();
+	}
+
+	/** Within the protocol's 0..max. */
+	private static double clamp(final double v, final double max) {
+		return Math.clamp(fin(v), 0.0, max);
 	}
 
 	/** {"t":"ignite","target":"id","seconds":s}: a proxy was set on fire. */
