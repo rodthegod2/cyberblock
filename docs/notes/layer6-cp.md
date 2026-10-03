@@ -189,10 +189,11 @@ handler runs.
 
 ## Cross-check with S1 and S2
 
-The five S3 files were compiled together with `l36/S1` at `41f14f5` and `l36/S2` at `2fd373a`. The S1 files were
-Natives (with the real §1.3 declarations), Events, Cyberblock, PlayerState, Disable, Health and Probes; the S2 files
-were Effects and Puppets. Stubs covered only the S2 classes that were not committed yet (Flight, Tether,
-Projectiles). Result: OK. So every call S1 makes into the S3 API matches these signatures, and no class or wrap
+The five S3 files were compiled together with `l36/S1` at `41f14f5` and `l36/S2` at `2fd373a`, and again with
+`l36/S2` at `a59ee62`. The S1 files were Natives (with the real §1.3 declarations), Events, Cyberblock, PlayerState,
+Disable, Health and Probes. The S2 files were Effects and Puppets, plus Flight in the second run. Stubs covered only
+the S2 classes that were not committed yet (Tether and Projectiles, plus Flight in the first run). Result: OK both
+times. So every call S1 makes into the S3 API matches these signatures, and no class or wrap
 collides.
 
 ## needsInGame
