@@ -6,11 +6,16 @@ package dev.cyberblock;
  * it. The client's Flight applies them.
  */
 public final class FlightRules {
-	/** With a jump press, V's feet must have fallen faster than this (m/s) over the last 3 ticks. */
+	/** With a jump press, V's feet must fall faster than this (m/s) between the newest two samples. */
 	static final double JUMP_FALL_SPEED = 1.0;
 	/** Without one, a glide starts by itself after falling faster than this (m/s) for AUTO_NANOS. */
-	static final double AUTO_FALL_SPEED = 15.0;
-	static final long AUTO_NANOS = 500_000_000L;
+	static final double AUTO_FALL_SPEED = 12.0;
+	static final long AUTO_NANOS = 300_000_000L;
+	/**
+	 * Free air (blocks) needed below V's feet: a glide opened lower touches down at once (in-game 2026-10-03: glides opened
+	 * 0.4 m above the ground and ended within the second).
+	 */
+	public static final double MIN_CLEARANCE = 3.0;
 	/** The host must say it follows a glide (cam.fly) this soon after the start, or the glide is called off. */
 	static final long FOLLOW_NANOS = 500_000_000L;
 	/** After a glide was called off, no new one starts for this long. */
@@ -26,11 +31,22 @@ public final class FlightRules {
 	}
 
 	/**
-	 * A glide starts with a usable elytra when the host's jump key is pressed while V falls faster than 1 m/s (over the last 3
-	 * ticks), or by itself after V fell faster than 15 m/s for half a second.
+	 * A glide starts with a usable elytra, at least MIN_CLEARANCE of free air below V's feet and room for Steve's gliding box
+	 * there: when a glide press of the host's jump key comes while V falls faster than 1 m/s, or by itself after V fell faster
+	 * than 12 m/s for 0.3 s.
+	 *
+	 * @param fallSpeed V's downward speed between the newest two samples (Fall.speed)
+	 * @param clearance free air below V's feet, in blocks (barriers count)
+	 * @param overlapping Steve's gliding box at V's feet already intersects a block or barrier (V stands inside the rounded-up
+	 *     barrier of Night City's ground)
 	 */
-	public static boolean start(final boolean jumpPressed, final boolean elytra, final double fallSpeed3, final long fastNanos) {
-		return elytra && (jumpPressed && fallSpeed3 > JUMP_FALL_SPEED || fastNanos >= AUTO_NANOS);
+	public static boolean start(final boolean jumpPressed, final boolean elytra, final double fallSpeed, final long fastNanos,
+		final double clearance, final boolean overlapping) {
+		if (!elytra || overlapping || !(clearance >= MIN_CLEARANCE)) {
+			return false;
+		}
+
+		return jumpPressed && fallSpeed > JUMP_FALL_SPEED || fastNanos >= AUTO_NANOS;
 	}
 
 	/** The glide is over once Steve stands on something, or vanilla stopped it (elytra broke, water, the server said no). */
@@ -47,6 +63,34 @@ public final class FlightRules {
 
 		double k = speed > MAX_SPEED ? MAX_SPEED / speed : 1.0;
 		return new double[] {vx * k, vy * k, vz * k};
+	}
+
+	/**
+	 * Presses of the host's jump key while V is in the air (cam.air). With the Double Jump perk the first one is V's own double
+	 * jump, so only the ones after it may open the elytra. A press on the ground is passed on (it cannot open the elytra: V is not
+	 * falling with air below). The count starts again whenever V is on the ground.
+	 */
+	public static final class AirJumps {
+		private int presses;
+
+		public void reset() {
+			this.presses = 0;
+		}
+
+		/** One client tick: true when this tick has a jump press that may open the elytra. */
+		public boolean press(final boolean air, final boolean pressed, final boolean doubleJump) {
+			if (!air) {
+				this.presses = 0;
+				return pressed;
+			}
+
+			if (!pressed) {
+				return false;
+			}
+
+			this.presses++;
+			return !doubleJump || this.presses >= 2;
+		}
 	}
 
 	/**
@@ -88,8 +132,8 @@ public final class FlightRules {
 	}
 
 	/**
-	 * The host's feet, one sample per client tick that brought a new pose: how fast they fell over the last 3 ticks, how long
-	 * they have been falling fast, and their velocity (m/s).
+	 * The host's feet, one sample per client tick that brought a new pose: how fast they fall now, how long they have been falling
+	 * fast, and their velocity (m/s).
 	 */
 	public static final class Fall {
 		private static final int SAMPLES = 4;
@@ -137,13 +181,17 @@ public final class FlightRules {
 			return this.count < SAMPLES ? 0 : this.count % SAMPLES;
 		}
 
-		/** Downward speed (m/s) over the last 3 ticks (4 samples), 0 until there are 4. */
-		public double speed3() {
-			if (this.count < SAMPLES) {
+		/**
+		 * Downward speed (m/s) between the newest two samples, 0 until there are 2. Not an average over 3 ticks: that still held
+		 * the rise of a jump, or missed the start of the fall, when the key was pressed again near its top.
+		 */
+		public double speed() {
+			if (this.count < 2) {
 				return 0.0;
 			}
 
-			return (this.y[this.oldest()] - this.y[this.newest()]) / ((this.t[this.newest()] - this.t[this.oldest()]) / 1.0E9);
+			int b = this.newest(), a = (this.count - 2) % SAMPLES;
+			return (this.y[a] - this.y[b]) / ((this.t[b] - this.t[a]) / 1.0E9);
 		}
 
 		/** How long (ns) the feet have been falling faster than AUTO_FALL_SPEED, 0 when they are not. */

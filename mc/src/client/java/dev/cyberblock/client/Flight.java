@@ -7,6 +7,8 @@ import dev.cyberblock.Cyberblock;
 import dev.cyberblock.FlightRules;
 import dev.cyberblock.HostDamage;
 import dev.cyberblock.Wire;
+import dev.cyberblock.cyber.CyberData;
+import dev.cyberblock.cyber.Perk;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.server.IntegratedServer;
@@ -15,13 +17,19 @@ import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.player.Abilities;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Layer 4 elytra flight. Steve normally hangs at the host's V (PlayerSync). With a usable elytra, the host's jump key while V
- * falls (or a long fast fall) starts a vanilla glide: Minecraft's physics move Steve ("drive mode"), the look comes from the host
+ * Layer 4 elytra flight. Steve normally hangs at the host's V (PlayerSync). With a usable elytra and at least 3 blocks of air
+ * below V, the host's jump key while V falls (with the Double Jump perk: the second press in the air), or a long fast fall,
+ * starts a vanilla glide: Minecraft's physics move Steve ("drive mode"), the look comes from the host
  * camera (or from the host's raw look deltas in its camera-only fallback), and every frame the host hears where he is
  * ({"t":"flight"}) and moves V there. Touchdown ends it. The host says in every cam whether it follows (cam.fly): a glide it does
  * not take up within half a second, or stops following, is called off and Steve goes back to V (in-game 2026-10-03: the host
@@ -31,6 +39,7 @@ public final class Flight {
 	private static final long FRAME_NANOS = 1_000_000_000L / 120;
 	private static final FlightRules.Fall fall = new FlightRules.Fall();
 	private static final FlightRules.Follow follow = new FlightRules.Follow();
+	private static final FlightRules.AirJumps airJumps = new FlightRules.AirJumps();
 	private static long lastPose;
 	private static boolean driving;
 	private static boolean landed;
@@ -66,6 +75,7 @@ public final class Flight {
 
 		if (p == null || HostState.vehicle() || !player.isAlive() || player.isSpectator() || player.isPassenger()) {
 			fall.reset();
+			airJumps.reset();
 			return;
 		}
 
@@ -74,11 +84,27 @@ public final class Flight {
 			fall.sample(lastPose, p.px(), p.py(), p.pz());
 		}
 
+		// with Steve's Double Jump perk V's first jump in the air is V's own (the client's synced copy of his perks)
+		boolean glidePress = airJumps.press(p.air(), jumpPressed, CyberData.has(player, Perk.DOUBLE_JUMP));
 		// a host that cannot move V (held by the game, or paused in a menu) would only refuse the glide
-		boolean may = followsCam() && !p.held() && !p.menu() && System.nanoTime() - retryAt >= 0L;
-		if (may && FlightRules.start(jumpPressed, hasElytra(player), fall.speed3(), fall.fastNanos())) {
+		if (!followsCam() || p.held() || p.menu() || System.nanoTime() - retryAt < 0L || !hasElytra(player)) {
+			return;
+		}
+
+		// Steve's gliding box at V's feet, and the free air under them (barriers count: they are Night City's ground)
+		AABB box = player.getDimensions(Pose.FALL_FLYING).makeBoundingBox(p.px(), p.py(), p.pz());
+		boolean overlapping = !player.level().noCollision(player, box);
+		if (FlightRules.start(glidePress, true, fall.speed(), fall.fastNanos(), clearance(player, p), overlapping)) {
 			start(player, p);
 		}
+	}
+
+	/** Free air (blocks) straight down from V's feet, MIN_CLEARANCE when nothing solid is that close. */
+	private static double clearance(final LocalPlayer player, final HostState.Pose p) {
+		Vec3 feet = new Vec3(p.px(), p.py(), p.pz());
+		Vec3 below = feet.subtract(0.0, FlightRules.MIN_CLEARANCE, 0.0);
+		BlockHitResult hit = player.level().clip(new ClipContext(feet, below, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
+		return hit.getType() == HitResult.Type.MISS ? FlightRules.MIN_CLEARANCE : feet.y - hit.getLocation().y;
 	}
 
 	/** A client tick while gliding: carry on, call it off when the host does not follow, or land. */
