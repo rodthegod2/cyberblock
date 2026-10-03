@@ -98,5 +98,10 @@ public final class PlayerSync {
 			abilities.flying = fly;
 			player.onUpdateAbilities();
 		}
+
+		// Steve has no physics, so nothing else tells Minecraft that he stands: V's ground is his (cam.air). Off the ground he mines
+		// 5 times slower and every hit can crit; the server takes a stale "on ground" for standing on air. A flying player is never
+		// on the ground (vanilla's aiStep would stop the creative flight every tick).
+		player.setOnGround(!p.air() && !abilities.flying);
 	}
 }
