@@ -69,6 +69,14 @@ public final class Wire {
 		return Math.clamp(fin(v), 0.0, max);
 	}
 
+	/** {"t":"flight","active":bool,"p":[x,y,z] feet,"v":[x,y,z] m/s (at most 200),"yaw":deg,"pitch":deg}: Steve gliding, or where he landed. */
+	public static String flight(final boolean active, final double x, final double y, final double z, final double vx, final double vy, final double vz,
+		final double yaw, final double pitch) {
+		double[] v = FlightRules.capSpeed(vx, vy, vz);
+		return String.format(Locale.ROOT, "{\"t\":\"flight\",\"active\":%b,\"p\":[%.4f,%.4f,%.4f],\"v\":[%.3f,%.3f,%.3f],\"yaw\":%.2f,\"pitch\":%.2f}",
+			active, fin(x), fin(y), fin(z), v[0], v[1], v[2], fin(yaw), fin(pitch));
+	}
+
 	/** {"t":"ignite","target":"id","seconds":s}: a proxy was set on fire. */
 	public static String ignite(final String target, final double seconds) {
 		return String.format(Locale.ROOT, "{\"t\":\"ignite\",\"target\":\"%s\",\"seconds\":%.2f}", target, fin(seconds));

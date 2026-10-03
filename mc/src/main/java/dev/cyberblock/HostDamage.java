@@ -15,6 +15,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageType;
 import net.minecraft.world.damagesource.DamageTypes;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
@@ -31,6 +32,11 @@ public final class HostDamage {
 	private static final double XZ_LIMIT = 2.9E7;
 	private static final double Y_LIMIT = 20000.0;
 	private static int bad;
+	/**
+	 * Until when (System.nanoTime) the host's "fall" damage is ignored: Steve's own glide set it (layer 4: while gliding and 2 s
+	 * after touchdown, Minecraft's elytra rules hurt him, not V's landing). Long.MIN_VALUE: never.
+	 */
+	public static volatile long fallFreeUntil = Long.MIN_VALUE;
 
 	/** @param from where the damage came from (Minecraft coordinates), null when unknown */
 	record Hit(float frac, String kind, @Nullable Vec3 from) {
@@ -102,9 +108,18 @@ public final class HostDamage {
 		}
 
 		ServerPlayer steve = players.get(0);
+		if (ignoredFall(hit.kind(), System.nanoTime(), fallFreeUntil, steve.hasEffect(MobEffects.SLOW_FALLING))) {
+			return;
+		}
+
 		// every bullet counts: vanilla's damage cooldown would swallow all but the strongest hit in half a second
 		steve.damageCooldownTime = 0;
 		steve.hurtServer(steve.level(), source(steve.level(), hit), hit.frac() * steve.getMaxHealth());
+	}
+
+	/** V's fall damage does not reach Steve with Slow Falling, nor around his own glide (until fallFreeUntil). */
+	static boolean ignoredFall(final String kind, final long now, final long fallFreeUntil, final boolean slowFalling) {
+		return kind.equals("fall") && (slowFalling || fallFreeUntil != Long.MIN_VALUE && now - fallFreeUntil < 0L);
 	}
 
 	private static DamageSource source(final ServerLevel level, final Hit hit) {

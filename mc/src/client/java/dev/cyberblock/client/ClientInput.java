@@ -117,6 +117,7 @@ final class ClientInput {
 					player.getInventory().setSelectedSlot(n);
 				}
 			}
+			case "look" -> Flight.look(m);
 			case "cursor" -> HostCursor.move(minecraft, m.get("x").getAsDouble(), m.get("y").getAsDouble());
 			case "click" -> HostCursor.click(minecraft, m.get("b").getAsInt(), !m.has("down") || m.get("down").getAsBoolean());
 			case "scroll" -> {

@@ -18,7 +18,7 @@ public final class HostState {
 	 * @param firstPerson whether the host camera is first person (third person shows the player model)
 	 * @param px the player's feet (third person)
 	 * @param bodyYaw the player's body yaw (third person)
-	 * @param drive Minecraft moves the player (elytra flight) and the host follows; lookYaw/lookPitch steer
+	 * @param drive the reference's host-driven flight flag (cam "drive", "look"); unused: Flight decides when Minecraft moves Steve
 	 * @param gun the player holds one of the host's guns (Steve aims it; his own item isn't drawn)
 	 */
 	public record Pose(
