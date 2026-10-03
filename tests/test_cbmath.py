@@ -48,6 +48,42 @@ def test_probe_ranges():
     assert cbmath.down_hit_to_range(10.4, 20.6, 5.0) == (10, -21, 3, 4)
     assert cbmath.wall_hit_to_range(10.4, 20.6, 5.7) == (10, -21, 5, 5)
 
+def _cp_yaw_to_mc_yaw(a):
+    """The layer 2 formula (cp/plugin/src/world.cpp cp_yaw_to_mc_yaw): m = 180 - a, normalised to (-180, 180]."""
+    m = math.fmod(180.0 - a, 360.0)
+    return m - 360.0 if m > 180.0 else m + 360.0 if m <= -180.0 else m
+
+def test_mc_yaw_to_cp_yaw_known_values():
+    assert cbmath.mc_yaw_to_cp_yaw(0) == 180
+    assert cbmath.mc_yaw_to_cp_yaw(90) == 90
+    assert cbmath.mc_yaw_to_cp_yaw(-90) == -90      # 180 - -90 = 270 -> normalised to -90
+    assert cbmath.mc_yaw_to_cp_yaw(180) == 0
+    assert cbmath.mc_yaw_to_cp_yaw(-180) == 0       # 360 -> 0
+    assert cbmath.mc_yaw_to_cp_yaw(359.5) == -179.5
+
+def test_mc_yaw_to_cp_yaw_is_normalised_to_half_open_range():
+    for m in range(-720, 721, 15):
+        a = cbmath.mc_yaw_to_cp_yaw(m)
+        assert -180 < a <= 180
+
+def test_mc_yaw_cp_yaw_round_trip_with_the_layer2_formula():
+    for m in [-179.5, -90, -1, 0, 0.25, 45, 90, 135.5, 180]:
+        assert math.isclose(_cp_yaw_to_mc_yaw(cbmath.mc_yaw_to_cp_yaw(m)), m, abs_tol=1e-9)
+    for a in [-179.5, -90, 0, 90, 179.9, 180]:
+        assert math.isclose(cbmath.mc_yaw_to_cp_yaw(_cp_yaw_to_mc_yaw(a)), a, abs_tol=1e-9)
+
+def test_mc_yaw_to_cp_yaw_agrees_with_the_quaternion_conversion():
+    # a camera yawed by a (counter-clockwise from above, 0 = +Y) looks along Minecraft yaw 180 - a
+    for a in range(-170, 180, 30):
+        h = math.radians(a) / 2
+        yaw, _ = cbmath.cp_quat_to_mc_yaw_pitch(0, 0, math.sin(h), math.cos(h))
+        assert math.isclose(cbmath.mc_yaw_to_cp_yaw(yaw), a, abs_tol=1e-6)
+
+def test_mc_vel_to_cp_is_the_position_mapping_without_offset():
+    assert cbmath.mc_vel_to_cp(1, 2, 3) == (1, -3, 2)
+    for v in [(0.0, -9.8, 0.0), (-30.5, 12.25, 7.0)]:
+        assert cbmath.mc_vel_to_cp(*v) == cbmath.mc_to_cp_pos(*v)
+
 def test_vectors_file_matches_truth():
     data = json.loads(Path("shared/vectors.json").read_text())
     for case in data["quat"]:
@@ -65,3 +101,9 @@ def test_vectors_file_matches_truth():
     for case in data["mc_block"]:
         lo, hi = cbmath.mc_block_to_cp_aabb(*case["block"])
         assert [list(lo), list(hi)] == [case["min"], case["max"]]
+
+    assert len(data["mc_yaw"]) >= 6 and len(data["mc_vel"]) >= 6
+    for case in data["mc_yaw"]:
+        assert cbmath.mc_yaw_to_cp_yaw(case["mc"]) == case["cp"]
+    for case in data["mc_vel"]:
+        assert list(cbmath.mc_vel_to_cp(*case["mc"])) == case["cp"]

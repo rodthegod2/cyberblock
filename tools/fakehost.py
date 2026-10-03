@@ -13,8 +13,22 @@ colour and overlay composited over dark grey, depth as a grey ramp (white = near
 With --layer2 it then plays Cyberpunk's part of layer 2 (shared/protocol.md): an `npcs` list with two humans (one
 hostile) and a vehicle standing on the slab, and one `dmg` (25 % of V's health, a bullet from the hostile human), then
 any --cmd server commands (e.g. --cmd "summon tnt 0 64 0"). For --hold seconds (default 10) it holds the last camera pose
-and resends the NPC list at 10 Hz, as the real host does, while printing every `block`, `explosion`, `hit` and `ignite`
-Minecraft reports, one line each: `<type>: <json>`.
+and resends the NPC list at 10 Hz, as the real host does, while printing every `block`, `explosion`, `hit`, `ignite` and
+`blocks` Minecraft reports, one line each: `<type>: <json>`.
+
+--layer3 .. --layer6 (combinable with each other and with --layer2, all after the layer 1 script, all with the same
+--hold, --cmd and NPC resend; --port picks Minecraft's port, default 25600) play Cyberpunk's part of layers 3-6 and
+print what Minecraft reports for their layer as `<type>: <json>`:
+  --layer3  sends the `npcs`; the first non-empty `mobs` list is answered once with `mobdmg` (frac 0.5, by the hostile
+            human). Prints `mobs`.
+  --layer4  V falls from y = 200 at 8 m/s (the `cam` stream) with a `key jump` tap at 0.5 s; while Minecraft reports
+            `flight` active the `cam` follows its position and look, a touchdown or a `teleport` puts V down there; every
+            `proj` is answered with `pcells`, a 3 x 3 wall 0.5 s ahead of each projectile. Prints `flight`, `teleport`
+            and `proj`.
+  --layer5  prints `lead`, `pull`, `knock` and `effect` (set the scene with --cmd).
+  --layer6  answers every `scan` with a canned `scaninfo` (Officer Test, NCPD, high, 0.8, the first human) and every
+            `hack` with `hackresult ok:true`; holds `key hack` from 1 s to 2 s, `key skills` from 2.5 s to 2.6 s and
+            reports `killed` for the hostile human at 3 s. Prints `perks`, `perkfx`, `binds`, `scan` and `hack`.
 """
 import argparse
 import asyncio
@@ -32,14 +46,25 @@ from websockets.exceptions import ConnectionClosed
 
 from tools import cbmath, shm
 
-URL = "ws://127.0.0.1:25600"
+DEFAULT_PORT = 25600
 VIEW = (1280, 720)
 CENTER = (0.0, 65.0, 0.0)
 RADIUS, EYE_Y, FOV = 6.0, 66.5, 70.0
 SLAB_HALF, SLAB_Y = 8, 63
 SAVE_EVERY = 30
-LAYER2_EVENTS = {"block", "explosion", "hit", "ignite"}  # what Minecraft reports back to Cyberpunk in layer 2
+LAYER2_EVENTS = {"block", "explosion", "hit", "ignite", "blocks"}  # what Minecraft reports back to Cyberpunk in layer 2 (and the resync)
+LAYER_EVENTS = {  # ... and in layers 3-6 (printed only when the layer's flag is given)
+    3: {"mobs"},
+    4: {"flight", "teleport", "proj"},
+    5: {"lead", "pull", "knock", "effect"},
+    6: {"perks", "perkfx", "binds", "scan", "hack"},
+}
 NPC_HZ = 10
+SCRIPT_SCALE = 1.0  # multiplies every time of the layer 4 and layer 6 scripts (the tests shrink it)
+FALL_FROM, FALL_SPEED, FALL_XZ, EYE_HEIGHT, FLOOR_Y = 200.0, 8.0, (-1.0, -1.0), 1.62, SLAB_Y + 1.0  # layer 4: V's fall
+JUMP_AT, JUMP_FOR = 0.5, 0.1  # layer 4: seconds after the scenario starts, and how long the key stays down
+HACK_KEY, SKILLS_KEY, KILLED_AT = (1.0, 2.0), (2.5, 2.6), 3.0  # layer 6: (down, up) and the kill, in seconds
+PCELLS_AHEAD, MAX_PCELLS = 0.5, 64  # layer 4: seconds ahead of a projectile for its wall, and the `pcells` cap
 DEPTH_RANGE_M = 32.0
 BACKGROUND = np.array([40, 40, 48], np.float64)
 SETUP_COMMANDS = [  # a gold block at the centre and four coloured blocks on the axes: +x red, -x blue, +z lime, -z yellow
@@ -63,7 +88,7 @@ def orbit_cam(f: int, frames: int) -> dict:
     eye = (CENTER[0] + RADIUS * math.sin(a), EYE_Y, CENTER[2] + RADIUS * math.cos(a))
     yaw, pitch = cbmath.mc_yaw_pitch(*(c - e for c, e in zip(CENTER, eye)))
     return {"t": "cam", "f": f, "p": list(eye), "r": [yaw, pitch, 0.0], "fov": FOV, "fp": True,
-            "pl": [eye[0], SLAB_Y + 1.0, eye[2]], "h": yaw}
+            "pl": [eye[0], SLAB_Y + 1.0, eye[2]], "h": yaw, "cr": False}
 
 
 def npcs_message() -> dict:
@@ -82,6 +107,105 @@ def dmg_message() -> dict:
     return {"t": "dmg", "frac": 0.25, "kind": "bullet", "from": [x, y + 1.3, z]}
 
 
+def hostile_human() -> dict:
+    """The hostile human of `npcs_message`: the canned scan target, the `mobdmg` attacker and the kill."""
+    return next(e for e in npcs_message()["list"] if e["kind"] == "human" and e["hostile"])
+
+
+def scaninfo_message(request: int) -> dict:
+    """The canned reply to a `scan`: the hostile human, Officer Test of the NCPD."""
+    h = hostile_human()
+    return {"t": "scaninfo", "id": request, "ok": True, "target": h["id"], "name": "Officer Test", "faction": "NCPD",
+            "threat": "high", "hp": 0.8, "device": False, "p": h["p"], "size": [0.6, 1.8]}
+
+
+def pcells_message(projectiles: list) -> dict | None:
+    """`pcells` for a `proj` list: per projectile a 3 x 3 wall of cells PCELLS_AHEAD s ahead on its ballistic path, across
+    its horizontal heading. Cells are deduplicated and capped at MAX_PCELLS; None when there is nothing to send."""
+    cells: dict[tuple[int, int, int], None] = {}
+    for e in projectiles:
+        try:
+            (x, y, z), (vx, vy, vz), g = e["p"], e["v"], e["g"]
+            t = PCELLS_AHEAD
+            cx, cy, cz = (math.floor(c) for c in (x + vx * t, y + vy * t - g * t * t / 2, z + vz * t))
+        except (KeyError, TypeError, ValueError, OverflowError):  # not a projectile entry
+            continue
+        for dy in (-1, 0, 1):
+            for d in (-1, 0, 1):
+                cells[(cx, cy + dy, cz + d) if abs(vx) >= abs(vz) else (cx + d, cy + dy, cz)] = None
+    flat = [c for cell in list(cells)[:MAX_PCELLS] for c in cell]
+    return {"t": "pcells", "c": flat} if flat else None
+
+
+class Body:
+    """Where V is in layer 4: falls from FALL_FROM at FALL_SPEED until Minecraft reports `flight`, then follows it; a
+    touchdown (`flight` inactive) or an ender pearl's `teleport` puts V down at that spot."""
+
+    def __init__(self) -> None:
+        self.mode, self.feet, self.yaw, self.pitch = "fall", [FALL_XZ[0], FALL_FROM, FALL_XZ[1]], 0.0, 0.0
+
+    def update(self, m: dict) -> None:
+        feet = m.get("p")
+        if m.get("t") not in ("flight", "teleport") or not (isinstance(feet, list) and len(feet) == 3 and all(isinstance(c, (int, float)) for c in feet)):
+            return
+        self.mode = "flight" if m["t"] == "flight" and m.get("active") is True else "ground"
+        self.feet = [float(c) for c in feet]
+        self.yaw = m["yaw"] if isinstance(m.get("yaw"), (int, float)) else self.yaw
+        self.pitch = m["pitch"] if isinstance(m.get("pitch"), (int, float)) else self.pitch
+
+    def cam(self, f: int, t: float) -> dict:
+        """The `cam` message for frame f, t seconds into the scenario."""
+        x, y, z = self.feet
+        if self.mode == "fall":
+            y = max(FLOOR_Y, FALL_FROM - FALL_SPEED * t)
+        return {"t": "cam", "f": f, "p": [x, y + EYE_HEIGHT, z], "r": [self.yaw, self.pitch, 0.0], "fov": FOV, "fp": True,
+                "pl": [x, y, z], "h": self.yaw, "cr": False}
+
+
+class Cyberpunk:
+    """Cyberpunk's side of layers 2-6 once the orbit is over: the timed messages it sends by itself and its answers."""
+
+    def __init__(self, layers: frozenset[int]) -> None:
+        self.layers, self.body, self.mobdmg_sent = layers, Body(), False
+
+    def script(self) -> list[tuple[float, dict]]:
+        """(seconds after the scenario starts, message), in time order: the layer 4 jump tap, the layer 6 keys and kill."""
+        def key(k: str, down: bool) -> dict:
+            return {"t": "key", "k": k, "down": down}
+
+        events = []
+        if 4 in self.layers:
+            events += [(JUMP_AT, key("jump", True)), (JUMP_AT + JUMP_FOR, key("jump", False))]
+        if 6 in self.layers:
+            events += [(HACK_KEY[0], key("hack", True)), (HACK_KEY[1], key("hack", False)),
+                       (SKILLS_KEY[0], key("skills", True)), (SKILLS_KEY[1], key("skills", False)),
+                       (KILLED_AT, {"t": "killed", "target": hostile_human()["id"], "kind": "human", "hostile": True})]
+        return sorted(((t * SCRIPT_SCALE, m) for t, m in events), key=lambda e: e[0])
+
+    def cam(self, f: int, t: float, held: dict) -> dict:
+        """The `cam` for frame f, t seconds into the scenario: V's body in layer 4, else the last orbit pose held."""
+        return self.body.cam(f, t) if 4 in self.layers else {**held, "f": f}
+
+    def reply(self, m: dict) -> list[dict]:
+        """What Cyberpunk answers to Minecraft's message `m` (only for the layers that were asked for)."""
+        t, items, rid = m.get("t"), m.get("list"), m.get("id")
+        if 4 in self.layers:
+            self.body.update(m)
+            if t == "proj" and isinstance(items, list) and (pcells := pcells_message(items)):
+                return [pcells]
+        if 3 in self.layers and t == "mobs" and not self.mobdmg_sent and isinstance(items, list) and items:
+            mob = items[0].get("id") if isinstance(items[0], dict) else None
+            if isinstance(mob, int):
+                self.mobdmg_sent = True
+                return [{"t": "mobdmg", "id": mob, "frac": 0.5, "by": hostile_human()["id"]}]
+        if 6 in self.layers and isinstance(rid, int):
+            if t == "scan":
+                return [scaninfo_message(rid)]
+            if t == "hack":
+                return [{"t": "hackresult", "id": rid, "ok": True, "reason": ""}]
+        return []
+
+
 def save_frame(frame: dict, out: Path, f: int) -> None:
     def over_background(rgba: np.ndarray) -> Image.Image:  # premultiplied alpha
         px = rgba.astype(np.float64)
@@ -94,8 +218,15 @@ def save_frame(frame: dict, out: Path, f: int) -> None:
     over_background(frame["overlay"]).save(out / f"frame_{f:03d}_overlay.png")
 
 
-async def listen(ws) -> None:
-    """Print Minecraft's hello, every change of its status and every layer 2 event it reports."""
+def printed_events(layers: frozenset[int]) -> set[str]:
+    """The message types of Minecraft that are printed: layer 2's always, a layer 3-6 flag adds its own."""
+    return LAYER2_EVENTS.union(*(LAYER_EVENTS.get(n, ()) for n in layers))
+
+
+async def listen(ws, host: Cyberpunk) -> None:
+    """Print Minecraft's hello, every change of its status and the events of layer 2 and of the active layers; send
+    `host`'s answers."""
+    printed = printed_events(host.layers)
     last = None
     async for raw in ws:
         m = json.loads(raw)
@@ -106,32 +237,40 @@ async def listen(ws) -> None:
         elif m.get("t") == "status" and m != last:
             print("status:", m)
             last = m
-        elif m.get("t") in LAYER2_EVENTS:
+        elif m.get("t") in printed:
             print(f"{m['t']}: {json.dumps(m)}")
+        for reply in host.reply(m):
+            await ws.send(json.dumps(reply))
 
 
-async def layer2(ws, first_frame: int, cam: dict, fps: float, hold: float, commands: Sequence[str]) -> None:
-    """Cyberpunk's side of layer 2: the NPC list, one bullet hit, the commands; then hold `cam` and resend the NPCs for `hold` seconds."""
+async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, commands: Sequence[str], host: Cyberpunk) -> None:
+    """Cyberpunk's side of layers 2-6: the NPC list, the layer 2 bullet hit, the commands; then for `hold` seconds the
+    camera (`host.cam`: `cam` held, or V's body in layer 4), the NPC list at 10 Hz and the layers' timed messages."""
     npcs = npcs_message()
-    for m in (npcs, dmg_message(), *({"t": "cmd", "c": c} for c in commands)):
+    for m in (npcs, *([dmg_message()] if 2 in host.layers else []), *({"t": "cmd", "c": c} for c in commands)):
         await ws.send(json.dumps(m))
-    print(f"layer 2: sent {len(npcs['list'])} npcs, a bullet dmg and {len(commands)} command(s); "
-          f"listening {hold:g} s for {', '.join(sorted(LAYER2_EVENTS))}")
+    print(f"layer {', '.join(map(str, sorted(host.layers)))}: sent {len(npcs['list'])} npcs, {len(commands)} command(s)"
+          f"{' and a bullet dmg' if 2 in host.layers else ''}; listening {hold:g} s for {', '.join(sorted(printed_events(host.layers)))}")
     npcs_every = max(1, round(fps / NPC_HZ))
+    timeline = host.script()
     t0 = time.perf_counter()
     for i in range(round(hold * fps)):
+        t = i / fps
         if i and i % npcs_every == 0:
             await ws.send(json.dumps(npcs))
-        await ws.send(json.dumps({**cam, "f": first_frame + i}))
+        while timeline and timeline[0][0] <= t:
+            await ws.send(json.dumps(timeline.pop(0)[1]))
+        await ws.send(json.dumps(host.cam(first_frame + i, t, cam)))
         await asyncio.sleep(max(0.0, t0 + (i + 1) / fps - time.perf_counter()))
 
 
 async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str = shm.NAME, setup: bool = True,
-              layer2_hold: float | None = None, commands: Sequence[str] = ()) -> int:
-    """Returns the number of frame sets saved. `layer2_hold` (seconds) enables the layer 2 script after the orbit."""
+              hold: float | None = None, commands: Sequence[str] = (), layers: frozenset[int] = frozenset({2})) -> int:
+    """Returns the number of frame sets saved. `hold` (seconds) runs the scripts of `layers` (2 to 6) after the orbit."""
     out.mkdir(parents=True, exist_ok=True)
+    host = Cyberpunk(layers if hold is not None else frozenset())
     async with connect(url, max_size=None) as ws:
-        listener = asyncio.create_task(listen(ws))
+        listener = asyncio.create_task(listen(ws, host))
         for m in ({"t": "hello", "proto": 1, "game": "cp2077", "build": "2.31"}, {"t": "view", "w": VIEW[0], "h": VIEW[1]},
                   {"t": "clear"}, {"t": "state", "active": True, "vehicle": False}, {"t": "hud", "hidden": False}):
             await ws.send(json.dumps(m))
@@ -156,8 +295,8 @@ async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str
                 saved += 1
                 break
             await asyncio.sleep(0.01)
-        if layer2_hold is not None:
-            await layer2(ws, frames + 1, orbit_cam(frames, frames), fps, layer2_hold, commands)
+        if hold is not None:
+            await scenario(ws, frames + 1, orbit_cam(frames, frames), fps, hold, commands, host)
         listener.cancel()
     return saved
 
@@ -166,25 +305,32 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Fake Cyberpunk host: drives the Cyberblock Minecraft mod and dumps its frames to PNG.")
     ap.add_argument("--frames", type=int, default=120, help="camera messages to send, one orbit (default 120)")
     ap.add_argument("--out", type=Path, default=Path("out/fakehost"), help="where the PNGs go (default out/fakehost)")
-    ap.add_argument("--url", default=URL, help=f"Minecraft's WebSocket (default {URL})")
+    ap.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Minecraft's WebSocket port on 127.0.0.1 (default {DEFAULT_PORT})")
+    ap.add_argument("--url", default=None, help="Minecraft's WebSocket (default ws://127.0.0.1:<--port>)")
     ap.add_argument("--fps", type=float, default=60.0, help="camera message rate (default 60)")
     ap.add_argument("--shm", default=shm.NAME, help=f"shared memory name (default {shm.NAME})")
     ap.add_argument("--no-setup", action="store_true", help="do not send the visible-block setup commands")
-    ap.add_argument("--layer2", action="store_true", help="after the orbit: send 3 npcs and a bullet dmg, print Minecraft's block/explosion/hit/ignite")
-    ap.add_argument("--hold", type=float, default=10.0, help="--layer2: seconds to keep the link up and listen (default 10)")
-    ap.add_argument("--cmd", action="append", default=[], metavar="COMMAND", help='--layer2: a server command to send after the dmg, e.g. "summon tnt 0 64 0" (repeatable)')
+    ap.add_argument("--layer2", action="store_true", help="after the orbit: send 3 npcs and a bullet dmg, print Minecraft's block/explosion/hit/ignite/blocks")
+    ap.add_argument("--layer3", action="store_true", help="after the orbit: send the npcs, answer the first mobs list with a mobdmg, print mobs")
+    ap.add_argument("--layer4", action="store_true", help="after the orbit: V falls from y 200 with a jump tap, follows flight/teleport, answers proj with pcells; print flight/teleport/proj")
+    ap.add_argument("--layer5", action="store_true", help="after the orbit: print lead/pull/knock/effect (set the scene with --cmd)")
+    ap.add_argument("--layer6", action="store_true", help="after the orbit: answer scan and hack, press the hack/skills keys, report a kill; print perks/perkfx/binds/scan/hack")
+    ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6: seconds to keep the link up and listen (default 10)")
+    ap.add_argument("--cmd", action="append", default=[], metavar="COMMAND", help='--layer2 .. --layer6: a server command to send after the npcs, e.g. "summon tnt 0 64 0" (repeatable)')
     args = ap.parse_args()
+    layers = frozenset(n for n in range(2, 7) if getattr(args, f"layer{n}"))
+    url = args.url or f"ws://127.0.0.1:{args.port}"
     if args.frames < 1 or args.fps <= 0:
         ap.error("--frames and --fps must be positive")
     if args.hold < 0:
         ap.error("--hold must not be negative")
-    if args.cmd and not args.layer2:
-        ap.error("--cmd needs --layer2")
+    if args.cmd and not layers:
+        ap.error("--cmd needs one of --layer2 .. --layer6")
     try:
-        saved = asyncio.run(run(args.url, args.frames, args.out, args.fps, args.shm, not args.no_setup,
-                                args.hold if args.layer2 else None, args.cmd))
+        saved = asyncio.run(run(url, args.frames, args.out, args.fps, args.shm, not args.no_setup,
+                                args.hold if layers else None, args.cmd, layers))
     except (ConnectionError, TimeoutError, ConnectionClosed) as e:
-        print(f"no connection to Minecraft at {args.url} ({e}); start the dev client first:\n"
+        print(f"no connection to Minecraft at {url} ({e}); start the dev client first:\n"
               '  mc\\gradlew.bat runClient --args="--quickPlaySingleplayer cyberblock"', file=sys.stderr)
         return 1
     print(f"saved {saved} frame set(s) to {args.out}")

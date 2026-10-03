@@ -11,6 +11,23 @@ def mc_to_cp_pos(x: float, y: float, z: float) -> tuple[float, float, float]:
     return (x, -z, y)
 
 
+def mc_vel_to_cp(vx: float, vy: float, vz: float) -> tuple[float, float, float]:
+    """Minecraft velocity or impulse (m/s) -> Cyberpunk (x, -z, y): the position mapping with no offset, under its own
+    name so that callers say what they mean."""
+    return (vx, -vz, vy)
+
+
+def mc_yaw_to_cp_yaw(mc_yaw: float) -> float:
+    """Minecraft yaw (0 = facing +Z, degrees) -> Cyberpunk yaw (0 = facing +Y, counter-clockwise from above):
+    a = 180 - m, normalised to (-180, 180]. Its own inverse, as is cp_yaw_to_mc_yaw in the DLL."""
+    a = math.fmod(180.0 - mc_yaw, 360.0)
+    if a > 180.0:
+        a -= 360.0
+    elif a <= -180.0:
+        a += 360.0
+    return a
+
+
 def mc_block_to_cp_aabb(bx: int, by: int, bz: int) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
     """Cyberpunk AABB (min, max) of the Minecraft block (bx, by, bz): min (bx, -(bz+1), by), max (bx+1, -bz, by+1)."""
     return (bx, -(bz + 1), by), (bx + 1, -bz, by + 1)

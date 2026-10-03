@@ -19,3 +19,99 @@ uv run tools/play.py              # start the Minecraft dev client, then Cyberpu
 uv run tools/install.py --remove  # remove exactly what was installed
 ```
 F9 toggles Cyberblock in game.
+
+Status: layer 1 is verified in game. Layers 2 to 6 are implemented; their in-game acceptance list is
+`docs/superpowers/plans/2026-10-03-layers3-6-complete-mod.md`, section I.2.
+
+## What you can do
+Cyberpunk moves V, Steve acts. Everything below works on Night City's real NPCs, vehicles and devices.
+
+- **Layer 1, passthrough:** Minecraft is drawn into Night City with hand and hotbar; placed blocks sit on Night City's
+  floors and are hidden behind its walls; Night City's floors and walls are solid for Steve, arrows and mobs.
+- **Layer 2, building and explosions:** blocks you place stop pedestrians and cars. TNT, creepers and fireworks explode
+  as Cyberpunk explosions. Swords, arrows, tridents and crossbows hurt NPCs and vehicles (ragdolls, shoves, NCPD heat);
+  flint and steel, fire charges and lava set them alight.
+- **Layer 3, mobs vs Night City:** hostile mobs attack pedestrians as well as Steve. NPCs and NCPD shoot back at up to
+  12 nearest mobs through invisible stand-in puppets; the damage they deal lands on the mob. Fallback if puppets
+  misbehave: `CyberblockPuppets.SetEnabled(false)`.
+- **Layer 4, movement:** open an elytra in free fall (Space) and glide over Night City with firework boosts; touching
+  down gives control back to Cyberpunk movement. An ender pearl teleports V to where it lands. Fallback if the
+  per-frame body moves jitter: `CyberblockFlight.SetCameraOnly(true)`.
+- **Layer 5, interactive items:**
+  - a lead tethers a pedestrian (5 m) or a car (8 m) to Steve and drags it back when it strays; a fishing rod reels one in;
+  - a wind charge knocks back everything around the burst;
+  - a raised shield facing a shooter blocks the bullets;
+  - potions map to Cyberpunk effects: invisibility is optical camo, speed, slowness and jump boost change how V moves,
+    nausea and blindness hit the screen. Damage-over-time potions (poison, wither) are never mapped.
+- **Layer 6, Cyberpunk in Minecraft form:**
+  - hold the hack key to scan: the target gets an outline and a tooltip with name, faction, threat and health;
+  - a RAM bar above the hotbar (it needs the cyberdeck in your inventory);
+  - quickhack items fire the real Cyberpunk quickhack at the scanned target for RAM:
+
+    | Item | Quickhack | RAM |
+    |---|---|---|
+    | Redstone Charge | Short Circuit | 3 |
+    | Blaze Chip | Overheat | 4 |
+    | Ink Sac Daemon | Reboot Optics | 3 |
+    | Cobweb Daemon | Cripple Movement | 2 |
+    | Spider Eye Virus | Contagion | 4 |
+    | Wither Skull Daemon | Synapse Burnout | 6 |
+    | Compass Ping | Ping | 1 |
+    | Bottle of Forgetting | Memory Wipe | 3 |
+    | Creeper Brain | Cyberpsychosis | 8 |
+    | Redstone Lever | device hack (traffic lights, cameras, vending machines) | 1 |
+
+  - a skill tree with 20 perks in five branches (Body, Reflexes, Technical, Intelligence, Cool), four each, bought with
+    XP levels (3, 5, 8, 12 per tier), each with a Minecraft and a Cyberpunk effect; NPCs you kill drop XP;
+  - `/cyberblock kit` gives the starter kit (cyberdeck, RAM shards, every quickhack item, blocks, weapons, elytra,
+    rockets, potions, spawn eggs).
+
+## Keys
+Cyberpunk keeps focus: it keeps the movement keys and the camera; Cyberblock forwards the rest to Minecraft and stops
+Cyberpunk from acting on it.
+
+| Key | What it does |
+|---|---|
+| F9 | Toggle Cyberblock on and off (the watchdog also turns it off if Minecraft goes away) |
+| W A S D, mouse look, C | Cyberpunk moves V; Steve crouches when V crouches (Optical Camo needs it) |
+| Space | V jumps as in Cyberpunk. Pressed while falling with an elytra, it also opens the elytra: a fall faster than 15 m/s for half a second opens it on its own |
+| Left Shift | V sprints as in Cyberpunk. Double-tap it within 300 ms with the Sandevistan perk for Sandevistan Sprint |
+| Mouse buttons, wheel, 1-9, E, Q, T, / | Minecraft: attack and use, hotbar, inventory, drop, chat, command. Cyberpunk never sees them |
+| F5 | Minecraft's perspective key (ignored while Cyberpunk drives the camera); it no longer quick-saves in Cyberpunk |
+| G (hold) | Hack key: scan the target under the crosshair, or what V looks at when no mob proxy is hit |
+| K | Skill tree |
+
+G and K are the defaults. Rebind them in Minecraft's Controls (category Cyberblock); Cyberpunk only forwards letters,
+digits and F-keys, so any other key falls back to G or K. Cyberblock refuses the keys it needs elsewhere (W A S D,
+Space, Shift, Ctrl, C, F9, Esc and the Minecraft keys above) and keeps the previous binding.
+
+While Cyberblock is active on foot, Cyberpunk's own guns, cyberware, scanner, quickhacks, healing, radial menus, quick
+melee, zoom, crafting (K), walk toggle (G) and quick save (F5) are off, and V has no dodge, air dash or double jump
+until you buy the perk. In a vehicle the Cyberpunk HUD and controls return.
+
+## Survival and creative
+Steve's health is the only health. While Cyberblock is active V is invincible on foot, and every hit V would take
+(bullets, explosions, melee, falls, fire, damage over time) becomes damage to Steve, scaled by V's maximum health.
+Cyberpunk never shows a game over.
+
+- **Survival** (default): Steve can die and respawns the Minecraft way. The first activation in survival gives the
+  starter kit once, with the elytra on Steve's chest if that slot is empty. Hacks cost RAM, perks cost XP levels.
+  Cyberpunk's fall damage is ignored under an open elytra, for 2 s after touchdown or a pearl teleport, and with Slow
+  Falling; vanilla elytra rules (durability, kinetic damage) still apply.
+- **Creative** (`/gamemode creative`): Steve and V are both invincible, also in vehicles.
+  The kit is not handed out on activation; `/cyberblock kit` still works.
+- In a vehicle in survival, plain Cyberpunk damage rules apply.
+
+## Development
+```
+uv run pytest -q                                              # protocol, tools and fake-host tests
+cd mc && gradlew.bat test build                               # Minecraft mod (JAVA_HOME = JDK 25)
+cmake --build cp/plugin/build --config Release                # then cp\plugin\build\Release\cb_tests.exe
+uv run python cp/scripts/compile_check.py                     # redscript against the real 2.31 scripts
+uv run python -m tools.gen_vectors                            # regenerate shared/vectors.json (no diff expected)
+uv run python -m tools.fakehost --layer3 --layer4 --layer6    # fake Cyberpunk for a running Minecraft client
+```
+`tools.fakehost` plays Cyberpunk's part of layers 2 to 6 (`--layer2` .. `--layer6`, combinable, `--port` for a client
+on another port, `--cmd` for server commands) and prints what Minecraft reports. The wire format is
+`shared/protocol.md`. The untracked `net/` folder holds decompiled Minecraft source for reference; it is git-ignored and
+must never be committed.
