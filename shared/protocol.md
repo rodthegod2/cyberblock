@@ -10,7 +10,9 @@ Change it only through the integrator. Coordinate conversion lives in `tools/cbm
 
 Everything on the wire is already in Minecraft convention, in both directions. Parts marked **re-test 2** come from
 `docs/superpowers/plans/2026-10-03-retest2-and-cyberware.md` §1 (ground alignment, flight launches and the DLL drive,
-cyberware, four binds).
+cyberware, four binds). Parts marked **re-test 3** come from `docs/superpowers/plans/2026-10-03-retest3-polish.md` §1
+(distinct quickhacks, Minecraft-drawn UI, vehicles, six binds); they are collected in
+[Re-test 3](#re-test-3-minecraft-drawn-ui-distinct-quickhacks-seat-six-binds).
 
 ## Wire protocol v1 (WebSocket on `127.0.0.1:25600`, Minecraft is the server)
 
@@ -27,7 +29,7 @@ Messages are JSON text frames, one object per frame, discriminated by `t`.
 | `state` | `active:bool, vehicle:bool` | on change |
 | `view` | `w, h` | on connect and when Cyberpunk's backbuffer size changes |
 | `aim` | `d` metres from the camera to the Night City surface under the crosshair, `-1` if none within 8 m | on change (2 cm), 10 Hz; Minecraft caps block targeting at `d` |
-| `hud` | `hidden:bool` | on change (hidden in vehicles) |
+| `hud` | `hidden:bool` | on change (hidden in vehicles; **re-test 3:** the DLL now always sends `hidden:false`, see [Re-test 3](#re-test-3-minecraft-drawn-ui-distinct-quickhacks-seat-six-binds)) |
 | `key` | `k` ∈ `use, attack, pick, inventory, drop, swap, chat, command, escape`, `down:bool` | input (layers 3–6 add more values of `k`, see below) |
 | `slot` | `n` 0–8 | number keys |
 | `scroll` | `d` int (wheel notches, +1 = up) | wheel |
@@ -283,7 +285,8 @@ follows.
   effect now. A newer message for the same id replaces the earlier end.
 - **Keys:** the `cyberware` key (default U) opens the Cyberware screen, the `activate` key (default Y) fires the selected
   implant on a tap and cycles the selection on a hold. Both come from Cyberpunk as `key` messages and are swallowed
-  while forwarding.
+  while forwarding. **Re-test 3 supersedes the tap and hold cycling:** `activate` now fires the Operating System implant,
+  and two new keys `arms` and `camo` fire the Arms implant and Optical Camo (see [Re-test 3: keys](#re-test-3-keys-six-binds)).
 
 ### Layers 3–6 names
 - **Hack names** (`hack.hack`) — `short_circuit`, `overheat`, `reboot_optics`, `cripple_movement`, `contagion`, `synapse_burnout`, `ping`, `memory_wipe`, `cyberpsychosis`, `device`
@@ -335,6 +338,165 @@ Layers 3–6 examples, Minecraft to Cyberpunk:
 {"t":"align","k":57}
 {"t":"cyberware","list":[{"id":"mantis_blades","on":1},{"id":"gorilla_arms","on":0},{"id":"monowire","on":0},{"id":"projectile_launch_system","on":0},{"id":"reinforced_tendons","on":1},{"id":"fortified_ankles","on":0},{"id":"lynx_paws","on":0},{"id":"sandevistan","on":1},{"id":"berserk","on":0},{"id":"cyberdeck","on":0},{"id":"kerenzikov","on":0},{"id":"optical_camo","on":1},{"id":"subdermal_armor","on":0},{"id":"kiroshi_optics","on":1},{"id":"biomonitor","on":0},{"id":"second_heart","on":1},{"id":"ram_upgrade","on":0}]}
 {"t":"cyberfx","id":"sandevistan","seconds":6}
+```
+
+## Re-test 3 (Minecraft-drawn UI, distinct quickhacks, seat, six binds)
+
+Same wire, same conventions; `proto` stays 1 and older builds ignore unknown `t` values and unknown fields. Plan:
+`docs/superpowers/plans/2026-10-03-retest3-polish.md` §1.1. The principle: **Cyberpunk keeps the game logic and its own
+input; Minecraft draws every piece of UI.** While Cyberblock is on, Cyberpunk streams UI data (stats, quest, pins, prompt,
+choices, subtitles, calls, notifications, menu requests) and Minecraft renders it with its own font, sprites and colours.
+Positions in the new messages use the same alignment rule as before (`cp_to_mc_pos(…, off)`); directions get no offset.
+
+### Re-test 3: Cyberpunk → Minecraft
+Rows marked **extends** add to an earlier message of the same `t`; the old fields stay as they were. Text limits are in
+**UTF-8 bytes**: the DLL cuts a string at the limit on a character boundary and strips control characters (below 0x20 and
+0x7F) before it sends.
+
+| `t` | fields | when |
+|---|---|---|
+| `hackresult` | **extends layers 3–6:** adds optional `upload` (seconds, finite, clamped 0..30, `action.GetActivationTime()`, 0 = instant) and `kind` ∈ `squad, crowd, driver, camera, traffic, distract, device` (anything else is dropped by the DLL). Both are sent only when `ok` is true | reply to every `hack` |
+| `hackspread` | `id` (the `hack` request id), `target:"<id>"` (decimal uint64), `why` ∈ `chain, spread, ping, frenzy` | one per extra NPC the hack touched, ≤ 16 per `id`. `chain` and `spread` come before that id's `hackresult`; `ping` and `frenzy` may come after it (upload completion) |
+| `cam` | **extends layers 3–6:** adds `seat:bool` (V sits in a vehicle; `pl` is then V's hips point, not the feet). `fp` is now honest: false in a third-person vehicle camera and while the on-foot third-person view is applied | every frame |
+| `hud` | **extends layer 1:** kept for older Minecraft builds; the DLL now always sends `hidden:false` (Minecraft's HUD is never hidden by Cyberpunk, not even in vehicles) | on change |
+| `key` | **extends layers 3–6:** `k` also ∈ `arms`, `camo` (the new binds, swallowed while forwarding) | input while forwarding |
+| `stats` | `money` int ≥ 0, `wanted` int 0..5, `district` str ≤ 64, `time:[h,m]` (`h` 0..23, `m` 0..59), `speed` km/h ≥ 0 or -1 on foot | 1 Hz and on change, while On and linked |
+| `quest` | `title` ≤ 128, `kind` ∈ `main, side, gig, other`, `obj:[{text, cur, tot, opt, on}]` ≤ 12 (`text` ≤ 256, `cur` and `tot` ints ≥ 0, `tot` 0 = no counter, `opt` an optional objective, `on` the active objective), `wp:[x,y,z]` or `null` | on change; `wp` at ≤ 5 Hz |
+| `pins` | `list:[{p, kind, tr}]` ≤ 32 within 150 m (`p:[x,y,z]`, `kind` ∈ `quest, vendor, fasttravel, gig, police, ripperdoc, apartment, car, other`, `tr` tracked) | ≤ 2 Hz and on change |
+| `prompt` | `title` ≤ 128 (may be `""`), `list:[{text, key, hold, inactive}]` ≤ 6 (`text` ≤ 128, `key` ≤ 3 chars such as `F`, `R`, `1`, `hold` a hold action, `inactive` greyed out); an empty list clears | on change |
+| `choices` | `hubs:[{id, title, list}]` ≤ 4 (`id` int, `title` ≤ 128, `list:[{text, f}]` with `text` ≤ 256 and `f` a list of flags), ≤ 12 entries in all; `active` the active hub id, `sel` int (-1 none), `left` seconds or -1; empty `hubs` clears | on change |
+| `sub` | `show:bool`, `key` ≤ 64 (line id), `who` ≤ 64, `text` ≤ 256, `secs` 0..30 | each dialogue line shown or hidden |
+| `call` | `phase` ∈ `incoming, start, active, end`, `who` ≤ 64, `audio:bool`, `reject:bool` (V can reject it) | on change |
+| `notify` | `kind` ∈ `quest, item, money, xp, level, sms, shard, zone, wanted, warning, save, info`, `title` ≤ 128, `text` ≤ 256, `secs` 0..30 | each Cyberpunk notification while On |
+| `screen` | either `open` ∈ `pause, map, journal, phone, inventory, skills, cyberware` (Minecraft opens that screen), or `pass` = a pass-through name (below), `""` = the pass-through ended | a menu was intercepted, or a pass-through menu opened or closed |
+| `reply` | `kind` ∈ `journal, phone, atlas`, `id` (the request id), `groups:[{hash, title, kind, tracked, done, lines}]` ≤ 128 groups and ≤ 512 lines in all (`title` ≤ 128, `lines:[{hash, text, state}]` with `text` ≤ 256), `pins:[{p, kind, name, i}]` ≤ 256 (`name` ≤ 64); the whole message ≤ 256 KB | answer to `uiact journalreq`, `phonereq` or `atlasreq` |
+
+### Re-test 3: Minecraft → Cyberpunk
+| `t` | fields | when |
+|---|---|---|
+| `binds` | **extends layers 3–6:** `keys:{hack, skills, cyberware, activate, arms, camo}`, Windows virtual-key codes 1..254; a missing name keeps the current key | after each host `hello`, and when rebound |
+| `hello` | **extends layer 1:** adds `ver` (the mod version, e.g. `"1.0.0"`, ≤ 32 chars) | on connect |
+| `status` | **extends layer 1:** adds `pause:bool` (the Night City pause screen is open: Cyberpunk must be paused) | 10 Hz and on change |
+| `uiact` | `a` ∈ `save, loadlast, mainmenu, cpmenu, track, smsreply, fasttravel, journalreq, phonereq, atlasreq`, `arg` str ≤ 64, `hash` uint32, `id` int ≥ 0; an absent `arg`, `hash` or `id` means `""`, 0 and 0 | a Night City screen button |
+| `persp` | `mode` ∈ `first, back` | on F5 (`key perspective`) and after each host `hello` |
+
+### Re-test 3 semantics and limits
+- **Validation:** every receiver checks types and limits, counts a bad message and drops it (or the bad entry); it never
+  ends the link. Unknown enum values become `other` for `pins.kind` and `quest.kind`, are dropped for `choices` flags,
+  and make the whole message invalid for `screen`, `hackspread.why`, `uiact.a` and `persp.mode`. A `hackresult` whose
+  `kind` is unknown loses the `kind` only; `upload` is clamped into 0..30 and a non-finite `upload` counts as 0.
+- **Quickhack timing (F1):** `hackresult` is the answer to the request: it arrives when the upload **starts**. Minecraft
+  draws an upload beam from the send until the result, then for `upload` more seconds, and plays the chip's **impact** when
+  the upload completes. `kind` tells Minecraft which Night City effect it is showing: `squad` an AI-driven person, `crowd`
+  a crowd pedestrian (vanilla does not quickhack crowd records, so Cyberblock adds a visible extra), `driver` the driver
+  of a car, and `camera`, `traffic`, `distract` or `device` for the device chip. A target that is still uploading refuses
+  a new hack in Minecraft (no RAM spent). `hackspread` is accepted for the last 32 request ids; an unknown id is dropped
+  quietly. `why`: `chain` (Chain Hack), `spread` (Contagion), `ping` (Compass Ping revealed it), `frenzy` (a Cyberpsychosis
+  victim of the hacked person).
+- **Seat (F3):** with `cam.seat` true, `pl` is V's hips point (the rotated seat offset from the vehicle's Hips slot), `fp`
+  is false when the vehicle camera is third person, and Minecraft draws the whole seated Steve instead of the hand.
+  `hud` is always `hidden:false`: Minecraft's hotbar and hand are no longer hidden in vehicles (the mod itself hides the
+  survival bars while it is in a vehicle).
+- **Third person (F2):** `fp` is false while the on-foot third-person view is applied. Minecraft asks for it with `persp`
+  `mode:"back"` (F5); the DLL applies it only while allowed (Active on foot, not held, no menu, no braindance, no photo
+  mode) and keeps reporting `fp:true` while it cannot.
+- **Pause authority is level-triggered:** Cyberpunk is paused by Minecraft exactly while `status.pause` is true **and**
+  the link is up **and** Cyberblock is On. On a link drop, F9 off, Lost or a host `hello` the DLL unpauses. A Cyberpunk
+  pause that Minecraft did not ask for is left alone.
+- **Rates:** `stats` 1 Hz, `pins` ≤ 2 Hz, `quest.wp` ≤ 5 Hz, everything else on change. The DLL deduplicates, so a
+  message identical to the last one of its type is not sent again.
+- **Limits** (checked by the receiver):
+  - `stats.wanted` is 0..5, `stats.time` is `[0..23, 0..59]`, `stats.speed` is -1 or ≥ 0, `stats.money` an int ≥ 0;
+  - `quest.obj` has ≤ 12 entries, `pins.list` ≤ 32, `prompt.list` ≤ 6, `choices.hubs` ≤ 4 and ≤ 12 entries in all;
+    `choices.sel` is ≥ -1 and `choices.left` is -1 or ≥ 0;
+  - `sub.secs` and `notify.secs` are 0..30; `call.phase` is one of the four phases;
+  - `reply.groups` ≤ 128, ≤ 512 lines in all, `reply.pins` ≤ 256, a line `state` is 0, 1 or 2, every `hash` is a uint32
+    JSON number, and the whole message is ≤ 256 KB (the DLL drops extra entries and counts them);
+  - every position is finite with `|c| < 3e7`; `binds.keys` values are 1..254; `hello.ver` is ≤ 32 chars.
+- **`reply` meanings:**
+  - **journal:** groups are quests (`kind` main, side, gig or other), lines are objectives (`state` 0 active, 1 done,
+    2 failed);
+  - **phone:** groups are contacts or threads (`kind` `sms`), lines are messages (`state` 0 from the contact, 1 from V,
+    2 a reply V can choose; its `hash` is what `uiact smsreply` sends);
+  - **atlas:** `pins` are every Map-target mappin plus the fast-travel points (`i` is the fast-travel index, -1 when it is
+    not one), `groups` is empty.
+- **Knockback (F7):** `hit.impulse` is horizontal, `|impulse| = (0.4 + extra) × 5` m/s, where `extra` is the knockback
+  level (attack knockback plus the sprint bonus, times 0.5). Gorilla Arms add +1.0 on people, and projectiles use
+  `(0.4 + 0.6 × Punch level) × 5` along their horizontal direction. A plain hit is 2 m/s, a sprint hit or Knockback I
+  4.5, Knockback II or a gauntlet or Gorilla Arms 7, Gorilla Arms plus sprint 9.5, gauntlet plus Gorilla Arms 12.
+  Cyberpunk turns `s = |impulse|` on people into a tier: `s < 4.0` impact, `4.0 ≤ s < 6.5` stagger, `6.5 ≤ s < 10.0`
+  knockdown, `s ≥ 10.0` knockdown plus a short ragdoll. The wire shape of `hit` did not change.
+
+### Re-test 3: keys (six binds)
+| Action | Default | VK | wire name |
+|---|---|---|---|
+| Hack | G | 71 | `hack` |
+| Skill tree | K | 75 | `skills` |
+| Cyberware screen | U | 85 | `cyberware` |
+| Operating System implant | Y | 89 | `activate` |
+| Arms implant | L | 76 | `arms` |
+| Optical Camo | O | 79 | `camo` |
+
+- Both sides refuse the same keys as before (W A S D C E Q T X F I M J H N B P V Z R, 1–9, F5, F9, Space, Shift, Ctrl,
+  Esc; allowed: G K L O U Y 0 F1–F4 F6–F8 F10–F12). A refused key falls back to **its own** default. If any two of the
+  **six** resolved keys are equal, **all six** go back to G K U Y L O. A missing name keeps the current key (older
+  Minecraft builds). `shared/vectors.json` `binds_apply` pins the rule.
+- Each key fires its slot's active implant: `activate` the Operating System implant (Sandevistan or Berserk), `arms` the
+  Arms implant (Mantis Blades lunge, Gorilla Arms slam, Monowire lash, Projectile Launch System), `camo` Optical Camo.
+  There is no tap and hold cycling any more.
+- `key arms` and `key camo` are swallowed while forwarding, like every other Cyberblock key. DLL log line:
+  `binds: hack G, skills K, cyberware U, activate Y, arms L, camo O`.
+- Vanilla Minecraft mappings bound to one of the six keys (Advancements on L, Friends on O, Quick Actions on G) are
+  unbound once by the mod on the first client tick.
+
+### Re-test 3 names
+- **Hack kinds** (`hackresult.kind`) — `squad`, `crowd`, `driver`, `camera`, `traffic`, `distract`, `device`
+- **Spread reasons** (`hackspread.why`) — `chain`, `spread`, `ping`, `frenzy`
+- **Quest kinds** (`quest.kind`) — `main`, `side`, `gig`, `other`
+- **Pin kinds** (`pins.list[].kind`, `reply.pins[].kind`) — `quest`, `vendor`, `fasttravel`, `gig`, `police`, `ripperdoc`, `apartment`, `car`, `other`
+- **Choice flags** (`choices.hubs[].list[].f`) — `inactive`, `pay`, `quest`, `check_ok`, `check_fail`, `timed`
+- **Call phases** (`call.phase`) — `incoming`, `start`, `active`, `end`
+- **Notify kinds** (`notify.kind`) — `quest`, `item`, `money`, `xp`, `level`, `sms`, `shard`, `zone`, `wanted`, `warning`, `save`, `info`
+- **Screen open names** (`screen.open`) — `pause`, `map`, `journal`, `phone`, `inventory`, `skills`, `cyberware`
+- **Pass-through names** (`screen.pass`) — `vendor`, `ripperdoc`, `stash`, `wardrobe`, `crafting`, `breach`, `arcade`, `braindance`, `tutorial`, `settings`, `saves`, `death`, `loading`, `other`
+- **Reply kinds** (`reply.kind`) — `journal`, `phone`, `atlas`
+- **UI actions** (`uiact.a`) — `save`, `loadlast`, `mainmenu`, `cpmenu`, `track`, `smsreply`, `fasttravel`, `journalreq`, `phonereq`, `atlasreq`
+- **Perspective modes** (`persp.mode`) — `first`, `back`
+
+### Re-test 3 examples
+One message per line (JSON Lines). Every `t` of the two re-test 3 tables has at least one line; `screen` shows both of its
+forms, `key` both new keys and `reply` all three kinds.
+
+Re-test 3 examples, Cyberpunk to Minecraft:
+```jsonl
+{"t":"hackresult","id":8,"ok":true,"reason":"","upload":2.5,"kind":"squad"}
+{"t":"hackspread","id":8,"target":"9007199254740993","why":"spread"}
+{"t":"cam","f":1044,"p":[-1245.5,66.62,812.25],"r":[150.0,12.5,0.0],"fov":58.7,"fp":false,"pl":[-1245.5,65.4,812.25],"h":150.0,"cr":false,"air":false,"held":false,"menu":false,"fly":false,"lv":57,"seat":true}
+{"t":"hud","hidden":false}
+{"t":"key","k":"arms","down":true,"mods":0}
+{"t":"key","k":"camo","down":false,"mods":0}
+{"t":"stats","money":12450,"wanted":2,"district":"Watson","time":[14,35],"speed":-1}
+{"t":"quest","title":"The Pickup","kind":"main","obj":[{"text":"Meet Jackie at the bar","cur":0,"tot":0,"opt":false,"on":true},{"text":"Collect the shards","cur":1,"tot":3,"opt":true,"on":false}],"wp":[-1230.5,65.0,820.5]}
+{"t":"pins","list":[{"p":[-1240.0,65.0,830.0],"kind":"vendor","tr":false},{"p":[-1230.5,65.0,820.5],"kind":"quest","tr":true}]}
+{"t":"prompt","title":"Vending Machine","list":[{"text":"Open","key":"F","hold":false,"inactive":false},{"text":"Hack","key":"R","hold":true,"inactive":true}]}
+{"t":"choices","hubs":[{"id":3,"title":"Judy","list":[{"text":"How are you?","f":[]},{"text":"Pay 500 eddies","f":["pay","quest"]},{"text":"Leave","f":["timed"]}]}],"active":3,"sel":0,"left":4.5}
+{"t":"sub","show":true,"key":"q101_jackie_0042","who":"Jackie","text":"Hey, choom!","secs":3.5}
+{"t":"call","phase":"incoming","who":"Judy","audio":true,"reject":true}
+{"t":"notify","kind":"money","title":"Eddies","text":"+250","secs":4}
+{"t":"screen","open":"pause"}
+{"t":"screen","pass":"vendor"}
+{"t":"reply","kind":"journal","id":21,"groups":[{"hash":3735928559,"title":"The Pickup","kind":"main","tracked":true,"done":false,"lines":[{"hash":1001,"text":"Meet Jackie at the bar","state":0},{"hash":1002,"text":"Get the car","state":1}]}],"pins":[]}
+{"t":"reply","kind":"phone","id":22,"groups":[{"hash":77,"title":"Judy","kind":"sms","tracked":false,"done":false,"lines":[{"hash":5,"text":"Call me later.","state":0},{"hash":6,"text":"Will do.","state":2}]}],"pins":[]}
+{"t":"reply","kind":"atlas","id":23,"groups":[],"pins":[{"p":[-1240.0,65.0,830.0],"kind":"fasttravel","name":"Watson Docks","i":4}]}
+```
+
+Re-test 3 examples, Minecraft to Cyberpunk:
+```jsonl
+{"t":"binds","keys":{"hack":71,"skills":75,"cyberware":85,"activate":89,"arms":76,"camo":79}}
+{"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3","ver":"1.0.0"}
+{"t":"status","hp":20,"maxHp":20,"food":20,"gm":"survival","screen":false,"pause":true}
+{"t":"uiact","a":"fasttravel","arg":"","hash":0,"id":4}
+{"t":"persp","mode":"back"}
 ```
 
 ## Shared memory `Local\CyberblockFrame`
