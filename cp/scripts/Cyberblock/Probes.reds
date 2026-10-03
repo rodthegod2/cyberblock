@@ -9,7 +9,8 @@
 //   feet.z - (10 + s), columns on a 1-m grid within 24 m and a 2-m grid beyond. Each pass over them probes the columns
 //   inside a +-60 degree cone ahead of the horizontal velocity first (nearest first), then the others; the wall rays
 //   run before each of the two groups.
-//   "V's feet" is CyberblockFlight.Center (V's position). The aim ray always starts at the active camera.
+//   "V's feet" is CyberblockFlight.Center (V's position). The aim ray starts at V's first-person eye
+//   (Cyberblock_ViewEye, the active camera without the third-person offset) along the active camera's forward.
 // Our own collision boxes (Collision.reds, Minecraft's blocks) are not Night City: a ray that hits one goes on
 // through it, so the probes and the aim report what is behind (collision-spike "Side effects").
 //
@@ -239,6 +240,9 @@ public class CyberblockProbes {
 
   // The Night City surface under the crosshair, so Minecraft never targets (or outlines, places, breaks) a block
   // behind it. Minecraft reaches 4.5-5 blocks; 8 m covers that from Cyberpunk's camera with margin.
+  // Re-test 3 (F2, task S5): measured from V's first-person eye (Cyberblock_ViewEye: the camera without the DLL's
+  // third-person offset), as Minecraft measures its reach from Steve's eyes in either view; identical to the camera in
+  // first person. A zero eye (none known yet) falls back to the camera.
   private func Aim(player: ref<PlayerPuppet>, queries: ref<SpatialQueriesSystem>, filter: QueryFilter) -> Void {
     let cameras = GameInstance.GetCameraSystem(player.GetGame());
     let view: Transform;
@@ -246,7 +250,8 @@ public class CyberblockProbes {
       Cyberblock_SetAim(-1.0);
       return;
     }
-    let from = Transform.GetPosition(view);
+    let eye = Cyberblock_ViewEye();
+    let from = Vector4.IsZero(new Vector4(eye.X, eye.Y, eye.Z, 0.0)) ? Transform.GetPosition(view) : new Vector4(eye.X, eye.Y, eye.Z, 1.0);
     let forward = cameras.GetActiveCameraForward();
     let to = new Vector4(from.X + forward.X * 8.0, from.Y + forward.Y * 8.0, from.Z + forward.Z * 8.0, 1.0);
     let result: TraceResult;
