@@ -5,6 +5,7 @@ import dev.cyberblock.Cyberblock;
 import dev.cyberblock.WorldBridge;
 import java.util.List;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import org.jspecify.annotations.Nullable;
@@ -15,6 +16,7 @@ public class CyberMod implements ModInitializer {
 	public void onInitialize() {
 		CyberData.register();
 		CyberItems.register();
+		ServerTickEvents.END_SERVER_TICK.register(CyberServer::tick);
 		Bridge.perkRank = id -> {
 			ServerPlayer player = localPlayer();
 			return player == null ? 0 : CyberData.rank(player, id);

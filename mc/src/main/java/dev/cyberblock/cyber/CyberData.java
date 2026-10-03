@@ -55,8 +55,8 @@ public final class CyberData {
 		return player.getAttachedOrElse(PERKS, Map.of()).getOrDefault(perkId, 0);
 	}
 
-	public static boolean has(final Player player, final String perkId) {
-		return rank(player, perkId) > 0;
+	public static boolean has(final Player player, final Perk perk) {
+		return rank(player, perk.id()) > 0;
 	}
 
 	/** Server side: sets one perk's rank (the change is synced to the client). */
@@ -68,6 +68,15 @@ public final class CyberData {
 
 	public static int ram(final Player player) {
 		return player.getAttachedOrElse(RAM, 0);
+	}
+
+	public static boolean hasDeck(final Player player) {
+		return player.getInventory().contains(stack -> stack.is(CyberItems.CYBERDECK));
+	}
+
+	/** Either side (the inventory and the perks are synced to the client). */
+	public static int maxRam(final Player player) {
+		return Ram.max(hasDeck(player), has(player, Perk.EXTRA_RAM));
 	}
 
 	/** Server side. */
