@@ -123,7 +123,8 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	public InteractionResult interact(final Player player, final InteractionHand hand, final Vec3 location) {
 		ItemStack held = player.getItemInHand(hand);
 		boolean flint = held.is(Items.FLINT_AND_STEEL);
-		if (!flint && !held.is(Items.FIRE_CHARGE)) {
+		// a vehicle does not burn: the item stays unused (and is not worn or consumed)
+		if (this.getType() == ProxyEntities.VEHICLE || !flint && !held.is(Items.FIRE_CHARGE)) {
 			return super.interact(player, hand, location);
 		}
 
