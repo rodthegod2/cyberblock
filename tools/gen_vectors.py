@@ -42,6 +42,30 @@ def off(k):
     return cbmath.level_offset(k)
 
 
+# re-test 3 (plan section 1.7): `binds` messages applied to a current set of six keys, with the clash rule. Every given
+# key is a whole number (the C++ tests cover non-numbers). F1..F6 = 0x70..0x75 (F5 is refused), F10..F12 = 0x79..0x7B.
+F = {n: 0x6F + n for n in range(1, 13)}
+DEFAULT_BINDS = dict(cbmath.BIND_DEFAULTS)
+CUSTOM_BINDS = {"hack": F[1], "skills": F[2], "cyberware": F[3], "activate": F[4], "arms": F[6], "camo": F[7]}
+binds_given = [
+    ({}, DEFAULT_BINDS),                                   # nothing given: nothing changes
+    (dict(DEFAULT_BINDS), CUSTOM_BINDS),                   # all six back to the defaults
+    (dict(CUSTOM_BINDS), DEFAULT_BINDS),                   # six custom keys
+    ({"hack": F[8]}, CUSTOM_BINDS),                        # a missing name keeps its current key
+    ({"arms": F[10], "camo": F[11]}, CUSTOM_BINDS),
+    ({"hack": F[1], "skills": F[1]}, DEFAULT_BINDS),       # two-key clash: all six go back to G K U Y L O
+    ({"activate": F[2]}, CUSTOM_BINDS),                    # clash with a key that was not given (skills is F2)
+    ({"hack": ord("L")}, DEFAULT_BINDS),                   # L as hack now clashes with arms
+    ({"skills": ord("O")}, DEFAULT_BINDS),                 # O as skills now clashes with camo
+    ({"hack": ord("L"), "arms": F[10]}, DEFAULT_BINDS),    # L as hack is fine once arms moves away
+    ({"hack": ord("W")}, {**CUSTOM_BINDS, "skills": 0x47}),  # a refusal falls back to G, which skills holds: clash
+    ({"hack": 0x30, "camo": F[12]}, DEFAULT_BINDS),        # 0 and F12 are bindable
+] + [
+    # every single refusal: each name given each refused kind of key falls back to its own default
+    ({name: vk}, CUSTOM_BINDS) for name in cbmath.BIND_NAMES for vk in (ord("W"), ord("E"), ord("1"), 0x74, 0x78, 0, 255)
+]
+
+
 out = {
     "quat": [{"q": list(q), "yaw": y, "pitch": p} for q in qs for y, p in [cbmath.cp_quat_to_mc_yaw_pitch(*q)]],
     "down": [{"hit": list(h), "k": k, "range": list(cbmath.down_hit_to_range(*h, off(k)))} for k in hit_ks for h in hits]
@@ -54,8 +78,11 @@ out = {
                  for k in pos_ks for b in mc_blocks for lo, hi in [cbmath.mc_block_to_cp_aabb(*b, off(k))]],
     "align": [{"z": z, "k": cbmath.align_k(z)} for z in align_zs],
     "binds": [{"vk": vk, "bindable": vk not in bind_refused} for vk in bind_keys],
+    "binds_apply": [{"given": given, "current": current, "expect": expect, "clash": clash}
+                    for given, current in binds_given for expect, clash in [cbmath.apply_binds(given, current)]],
 }
 Path("shared/vectors.json").write_text(json.dumps(out, indent=1), newline="\n")
 print(f"wrote {len(out['quat'])} quat, {len(out['down'])} down, {len(out['wall'])} wall, "
       f"{len(out['mc_pos'])} mc_pos, {len(out['mc_block'])} mc_block, {len(out['align'])} align, "
-      f"{len(out['mc_yaw'])} mc_yaw, {len(out['mc_vel'])} mc_vel, {len(out['binds'])} binds cases")
+      f"{len(out['mc_yaw'])} mc_yaw, {len(out['mc_vel'])} mc_vel, {len(out['binds'])} binds, "
+      f"{len(out['binds_apply'])} binds_apply cases")

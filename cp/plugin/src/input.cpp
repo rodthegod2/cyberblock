@@ -46,6 +46,8 @@ namespace
 	std::atomic<uint32_t> g_bindSkills{cb::keys::kK};
 	std::atomic<uint32_t> g_bindCyberware{cb::keys::kU};
 	std::atomic<uint32_t> g_bindActivate{cb::keys::kY};
+	std::atomic<uint32_t> g_bindArms{cb::keys::kL};
+	std::atomic<uint32_t> g_bindCamo{cb::keys::kO};
 	// One gate per input path, since each of WM_INPUT and WM_KEYDOWN sees every key event. Window thread only.
 	cb::keys::KeyGate g_rawGate;
 	cb::keys::KeyGate g_messageGate;
@@ -76,7 +78,7 @@ namespace
 
 	cb::keys::Binds binds()
 	{
-		return {g_bindHack, g_bindSkills, g_bindCyberware, g_bindActivate};
+		return {g_bindHack, g_bindSkills, g_bindCyberware, g_bindActivate, g_bindArms, g_bindCamo};
 	}
 
 	/// A bound key as a player reads it: the letter or digit, F1..F24, else the VK code.
@@ -279,6 +281,10 @@ namespace
 			return "cyberware";
 		if (vk == g_bindActivate)
 			return "activate";
+		if (vk == g_bindArms)
+			return "arms";
+		if (vk == g_bindCamo)
+			return "camo";
 		return nullptr;
 	}
 
@@ -598,14 +604,17 @@ namespace cb::input
 		g_bindSkills = next.skills;
 		g_bindCyberware = next.cyberware;
 		g_bindActivate = next.activate;
+		g_bindArms = next.arms;
+		g_bindCamo = next.camo;
 		static std::atomic<bool> warned{false};
 		if (update->fellBack() && !warned.exchange(true))
 			log::warn("binds: %s (logged once)",
-					  update->clash ? "two actions got the same key; all four fall back to G, K, U and Y"
+					  update->clash ? "two actions got the same key; all six fall back to G, K, U, Y, L and O"
 									: "a key Minecraft sent cannot be used (not 1..254, or one of Cyberpunk's own or Minecraft's "
 									  "forwarded keys); it falls back to its default");
-		log::info("binds: hack %s, skills %s, cyberware %s, activate %s", vk_name(next.hack).c_str(),
-				  vk_name(next.skills).c_str(), vk_name(next.cyberware).c_str(), vk_name(next.activate).c_str());
+		log::info("binds: hack %s, skills %s, cyberware %s, activate %s, arms %s, camo %s", vk_name(next.hack).c_str(),
+				  vk_name(next.skills).c_str(), vk_name(next.cyberware).c_str(), vk_name(next.activate).c_str(),
+				  vk_name(next.arms).c_str(), vk_name(next.camo).c_str());
 	}
 
 	void shutdown()

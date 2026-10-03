@@ -164,6 +164,38 @@ def test_directions_and_quaternions_never_take_the_offset():
         f = cbmath.cp_quat_forward(*q)
         assert cbmath.cp_quat_to_mc_yaw_pitch(*q) == cbmath.mc_yaw_pitch(f[0], f[2], -f[1])
 
+# ---- re-test 3 (plan 2026-10-03-retest3-polish section 1.7): six binds ---------------------------------------------------
+
+G, K, U, Y, L, O = (ord(c) for c in "GKUYLO")
+DEFAULTS = {"hack": G, "skills": K, "cyberware": U, "activate": Y, "arms": L, "camo": O}
+
+def test_bind_defaults_are_g_k_u_y_l_o_and_bindable():
+    assert cbmath.BIND_DEFAULTS == DEFAULTS
+    assert cbmath.BIND_NAMES == ("hack", "skills", "cyberware", "activate", "arms", "camo")
+    assert all(cbmath.bindable(vk) for vk in DEFAULTS.values())
+
+def test_bindable_refuses_cyberpunks_and_forwarded_keys():
+    for c in "WASDCFIMJHNBPVZREQTX123456789":
+        assert not cbmath.bindable(ord(c)), c
+    for vk in (0, 255, 0x1B, 0x20, 0x10, 0x11, 0xA0, 0xA3, 0x74, 0x78, 0xBF):
+        assert not cbmath.bindable(vk), hex(vk)
+    for vk in (G, K, L, O, U, Y, 0x30, 0x70, 0x73, 0x75, 0x77, 0x79, 0x7B):
+        assert cbmath.bindable(vk), hex(vk)
+
+def test_apply_binds_single_refusal_falls_back_to_its_own_default():
+    current = {**DEFAULTS, "hack": 0x70}
+    assert cbmath.apply_binds({"hack": ord("W")}, current) == (DEFAULTS, False)
+    assert cbmath.apply_binds({"hack": 71.5}, current) == (DEFAULTS, False)  # not a whole number
+    assert cbmath.apply_binds({"hack": "G"}, current) == (DEFAULTS, False)   # not a number
+    assert cbmath.apply_binds({"hack": True}, current) == (DEFAULTS, False)  # a bool is not a key
+
+def test_apply_binds_missing_names_keep_their_key_and_clashes_reset_all_six():
+    current = {**DEFAULTS, "arms": 0x79}
+    assert cbmath.apply_binds({"camo": 0x7A}, current) == ({**current, "camo": 0x7A}, False)
+    assert cbmath.apply_binds({"camo": 0x79}, current) == (DEFAULTS, True)
+    assert cbmath.apply_binds({"hack": L}, DEFAULTS) == (DEFAULTS, True)
+    assert cbmath.apply_binds({"skills": O}, DEFAULTS) == (DEFAULTS, True)
+
 def test_vectors_file_matches_truth():
     data = json.loads(Path("shared/vectors.json").read_text())
     for case in data["quat"]:
@@ -193,6 +225,14 @@ def test_vectors_file_matches_truth():
     assert len(data["align"]) == 7
     for case in data["align"]:
         assert cbmath.align_k(case["z"]) == case["k"]
+
+    # re-test 3 (plan section 1.7): the bindable set and the six-key clash rule
+    for case in data["binds"]:
+        assert cbmath.bindable(case["vk"]) == case["bindable"], case
+    assert len(data["binds_apply"]) >= 12 + 6 * 7
+    for case in data["binds_apply"]:
+        assert cbmath.apply_binds(case["given"], case["current"]) == (case["expect"], case["clash"]), case
+        assert set(case["expect"]) == set(cbmath.BIND_NAMES) and set(case["current"]) == set(cbmath.BIND_NAMES)
 
     assert len(data["mc_yaw"]) >= 6 and len(data["mc_vel"]) >= 6
     for case in data["mc_yaw"]:

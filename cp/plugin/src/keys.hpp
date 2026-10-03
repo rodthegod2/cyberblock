@@ -1,7 +1,7 @@
 // The pure parts of input forwarding (plan 2026-10-03 task D5, audit A.3; re-test 2 plan section 1.8 and task D6): which
-// keys Cyberpunk never sees while Minecraft has the keyboard, which keys may be bound to the four rebindable actions
-// (hack, skills, cyberware, activate), the rule that keeps a key from sticking in Cyberpunk, and the mouse bits and look
-// deltas. Nothing here needs Windows: input.cpp is the thin layer over it.
+// keys Cyberpunk never sees while Minecraft has the keyboard, which keys may be bound to the six rebindable actions
+// (hack, skills, cyberware, activate, arms, camo; re-test 3 plan section 1.7), the rule that keeps a key from sticking in
+// Cyberpunk, and the mouse bits and look deltas. Nothing here needs Windows: input.cpp is the thin layer over it.
 #pragma once
 #include <array>
 #include <chrono>
@@ -41,15 +41,23 @@ namespace cb::keys
 	inline constexpr uint32_t kRightControl = 0xA3;
 	inline constexpr uint32_t kOem2 = 0xBF; // the "/?" key on US layouts
 
-	/// The four rebindable actions' keys; the defaults are G (hack), K (skills), U (cyberware screen) and Y (activate
-	/// implant), as Minecraft's KeyMappings.
+	inline constexpr uint32_t kL = 0x4C;
+	inline constexpr uint32_t kO = 0x4F;
+
+	/// The six rebindable actions' keys (plan 2026-10-03-retest3-polish section 1.7); the defaults are G (hack), K
+	/// (skills), U (cyberware screen), Y (Operating System implant), L (Arms implant) and O (Optical Camo), as Minecraft's
+	/// KeyMappings.
 	struct Binds
 	{
 		uint32_t hack = kG;
 		uint32_t skills = kK;
 		uint32_t cyberware = kU;
 		uint32_t activate = kY;
+		uint32_t arms = kL;
+		uint32_t camo = kO;
 		bool operator==(const Binds &) const = default;
+		/// The six keys in the wire order (hack, skills, cyberware, activate, arms, camo).
+		std::array<uint32_t, 6> keys() const { return {hack, skills, cyberware, activate, arms, camo}; }
 	};
 
 	/// What is on screen besides the world.
@@ -65,7 +73,7 @@ namespace cb::keys
 	/// E, Q and 1-4: the keys a Cyberpunk choice list needs while Context::choices.
 	bool is_choice_key(uint32_t vk);
 
-	/// Keys Cyberpunk never sees while forwarding: E, Q, T, X, 1-9, "/", F5 and the four bound keys (but not E, Q and 1-4
+	/// Keys Cyberpunk never sees while forwarding: E, Q, T, X, 1-9, "/", F5 and the six bound keys (but not E, Q and 1-4
 	/// while `context.choices`), every key while `context.screenOpen`, and F9 (Cyberblock's toggle, which input.cpp keeps
 	/// from Cyberpunk in every state, so its QuickLoad never fires). Esc is decided by input.cpp.
 	bool is_swallowed(uint32_t vk, const Binds &binds, Context context = {});
@@ -101,16 +109,23 @@ namespace cb::keys
 		bool skillsRejected = false;
 		bool cyberwareRejected = false;
 		bool activateRejected = false;
-		bool clash = false;             // two of the four resolved to one key: all four went back to G/K/U/Y
-		/// Something was wrong: a key went back to its default, or all four did.
-		bool fellBack() const { return hackRejected || skillsRejected || cyberwareRejected || activateRejected || clash; }
+		bool armsRejected = false;
+		bool camoRejected = false;
+		bool clash = false;             // two of the six resolved to one key: all six went back to G/K/U/Y/L/O
+		/// Something was wrong: a key went back to its default, or all six did.
+		bool fellBack() const
+		{
+			return hackRejected || skillsRejected || cyberwareRejected || activateRejected || armsRejected || camoRejected ||
+				   clash;
+		}
 	};
 
-	/// Applies a `binds` message ({"keys":{"hack","skills","cyberware","activate"}}, VK codes) to `current` with the clash
-	/// rule of plan 2026-10-03-retest2 section 1.8, the same as Minecraft's VirtualKeys: a name that is missing keeps its
-	/// current key (older Minecraft builds send only hack and skills); a given key that is not a whole number or not
-	/// bindable falls back to its own default; then, if any two of the four resolved keys are equal, ALL FOUR go back to
-	/// G/K/U/Y. nullopt when `keys` is missing or not an object.
+	/// Applies a `binds` message ({"keys":{"hack","skills","cyberware","activate","arms","camo"}}, VK codes) to `current`
+	/// with the clash rule of plan 2026-10-03-retest3-polish section 1.7, the same as Minecraft's VirtualKeys and
+	/// tools/cbmath.py apply_binds (shared/vectors.json `binds_apply`): a name that is missing keeps its current key (older
+	/// Minecraft builds send fewer names); a given key that is not a whole number or not bindable falls back to its own
+	/// default; then, if any two of the six resolved keys are equal, ALL SIX go back to G/K/U/Y/L/O. nullopt when `keys`
+	/// is missing or not an object.
 	std::optional<BindsUpdate> apply_binds(const nlohmann::json &message, const Binds &current);
 
 	/// Decides, key by key, what Cyberpunk gets: a key that goes down while forwarding is swallowed (with its repeats and its

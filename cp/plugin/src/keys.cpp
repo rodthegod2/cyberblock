@@ -1,4 +1,5 @@
 #include "keys.hpp"
+#include <algorithm>
 #include <cmath>
 #include <iterator>
 #include <string_view>
@@ -50,7 +51,10 @@ namespace cb::keys
 			return true;
 		if (context.choices && is_choice_key(vk))
 			return false;
-		return in_fixed_swallow_set(vk) || vk == binds.hack || vk == binds.skills || vk == binds.cyberware || vk == binds.activate;
+		if (in_fixed_swallow_set(vk))
+			return true;
+		const auto keys = binds.keys();
+		return std::find(keys.begin(), keys.end(), vk) != keys.end();
 	}
 
 	bool bindable(uint32_t vk)
@@ -89,8 +93,10 @@ namespace cb::keys
 		read_bind(*keys, "skills", next.skills, defaults.skills, out.skillsRejected);
 		read_bind(*keys, "cyberware", next.cyberware, defaults.cyberware, out.cyberwareRejected);
 		read_bind(*keys, "activate", next.activate, defaults.activate, out.activateRejected);
+		read_bind(*keys, "arms", next.arms, defaults.arms, out.armsRejected);
+		read_bind(*keys, "camo", next.camo, defaults.camo, out.camoRejected);
 		// one key for two actions would fire both: every action goes back to its default
-		const uint32_t resolved[] = {next.hack, next.skills, next.cyberware, next.activate};
+		const auto resolved = next.keys();
 		for (size_t i = 0; i < std::size(resolved); ++i)
 			for (size_t j = i + 1; j < std::size(resolved); ++j)
 				out.clash = out.clash || resolved[i] == resolved[j];

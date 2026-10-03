@@ -1588,5 +1588,1207 @@
    "vk": 123,
    "bindable": true
   }
+ ],
+ "binds_apply": [
+  {
+   "given": {},
+   "current": {
+    "hack": 71,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 79
+   },
+   "expect": {
+    "hack": 71,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 79
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "hack": 71,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 79
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 71,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 79
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "current": {
+    "hack": 71,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 79
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "hack": 119
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 119,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "arms": 121,
+    "camo": 122
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 121,
+    "camo": 122
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "hack": 112,
+    "skills": 112
+   },
+   "current": {
+    "hack": 71,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 79
+   },
+   "expect": {
+    "hack": 71,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 79
+   },
+   "clash": true
+  },
+  {
+   "given": {
+    "activate": 113
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 71,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 79
+   },
+   "clash": true
+  },
+  {
+   "given": {
+    "hack": 76
+   },
+   "current": {
+    "hack": 71,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 79
+   },
+   "expect": {
+    "hack": 71,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 79
+   },
+   "clash": true
+  },
+  {
+   "given": {
+    "skills": 79
+   },
+   "current": {
+    "hack": 71,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 79
+   },
+   "expect": {
+    "hack": 71,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 79
+   },
+   "clash": true
+  },
+  {
+   "given": {
+    "hack": 76,
+    "arms": 121
+   },
+   "current": {
+    "hack": 71,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 79
+   },
+   "expect": {
+    "hack": 76,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 121,
+    "camo": 79
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "hack": 87
+   },
+   "current": {
+    "hack": 112,
+    "skills": 71,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 71,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 79
+   },
+   "clash": true
+  },
+  {
+   "given": {
+    "hack": 48,
+    "camo": 123
+   },
+   "current": {
+    "hack": 71,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 79
+   },
+   "expect": {
+    "hack": 48,
+    "skills": 75,
+    "cyberware": 85,
+    "activate": 89,
+    "arms": 76,
+    "camo": 123
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "hack": 87
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 71,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "hack": 69
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 71,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "hack": 49
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 71,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "hack": 116
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 71,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "hack": 120
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 71,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "hack": 0
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 71,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "hack": 255
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 71,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "skills": 87
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 75,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "skills": 69
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 75,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "skills": 49
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 75,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "skills": 116
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 75,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "skills": 120
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 75,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "skills": 0
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 75,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "skills": 255
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 75,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "cyberware": 87
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 85,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "cyberware": 69
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 85,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "cyberware": 49
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 85,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "cyberware": 116
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 85,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "cyberware": 120
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 85,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "cyberware": 0
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 85,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "cyberware": 255
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 85,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "activate": 87
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 89,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "activate": 69
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 89,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "activate": 49
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 89,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "activate": 116
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 89,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "activate": 120
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 89,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "activate": 0
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 89,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "activate": 255
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 89,
+    "arms": 117,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "arms": 87
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 76,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "arms": 69
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 76,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "arms": 49
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 76,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "arms": 116
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 76,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "arms": 120
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 76,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "arms": 0
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 76,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "arms": 255
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 76,
+    "camo": 118
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "camo": 87
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 79
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "camo": 69
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 79
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "camo": 49
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 79
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "camo": 116
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 79
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "camo": 120
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 79
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "camo": 0
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 79
+   },
+   "clash": false
+  },
+  {
+   "given": {
+    "camo": 255
+   },
+   "current": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 118
+   },
+   "expect": {
+    "hack": 112,
+    "skills": 113,
+    "cyberware": 114,
+    "activate": 115,
+    "arms": 117,
+    "camo": 79
+   },
+   "clash": false
+  }
  ]
 }
