@@ -374,7 +374,8 @@ public class CyberblockEffectsService extends ScriptableService {
   private let hits: array<wref<gameHitEvent>>;
   private let amounts: array<Float>;
   private let impulses: array<Vector4>;
-  // Falls are not reported until this simulation time (Teleport, and flight landings in Flight.reds).
+  // Falls are not reported until this simulation time (Teleport; flights count through Cyberblock_SecondsSinceFlight,
+  // CyberblockFlight.SuppressFall).
   private let fallQuietUntil: Float;
   private let fallQuietFor: Float;
   // Targets whose withheld push was logged in the last 10 s, and when (parallel arrays).

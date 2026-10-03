@@ -17,8 +17,9 @@
 // VeryHardLanding / DeathLanding with V as instigator and source (locomotionTransitions, PrepareGameEffectAoEAttack);
 // there is no other scripted fall damage, and r6/cache/tweakdb.bin gives DeathLanding a +10000 physical damage
 // modifier (Attacks.DeathLanding_inline0), so these attacks are what hurts V on landing. When one damages V it
-// arrives here and is sent as fall. A fall is not sent while CyberblockFlight.SuppressFall (S2): during a glide and
-// for 2 s after its landing or an ender pearl teleport, Minecraft applies its own fall rules.
+// arrives here and is sent as fall. A fall is not sent while CyberblockFlight.SuppressFall: while the DLL moves V
+// after Steve's glide or wind-charge launch, for 2 s after it ends and for 2 s after an ender pearl teleport, Minecraft
+// applies its own fall rules (and Flight.reds keeps those landings from being hard ones in the first place).
 // Damage over time (burning, poison, shock) also reaches Steve: the IsImmune wrap below lets DoT debuffs land on V
 // while only our god mode protects V, and their ticks come through DealDamages like any hit.
 //
@@ -130,7 +131,7 @@ public abstract class CyberblockHealth {
       return;
     }
     let kind = CyberblockHealth.Kind(hitEvent);
-    // Minecraft owns the fall damage of a glide or an ender pearl teleport (plan 2026-10-03 S1.3, CyberblockFlight).
+    // Minecraft owns the fall damage of a flight or an ender pearl teleport (CyberblockFlight.SuppressFall).
     if Equals(kind, n"fall") && CyberblockFlight.SuppressFall(target.GetGame()) {
       Cyberblock_Log(s"dmg fall \(damage) of \(maxHealth) not reported: flight or teleport landing");
       return;
@@ -143,9 +144,16 @@ public abstract class CyberblockHealth {
     Cyberblock_Log(s"dmg \(NameToString(kind)) \(damage) of \(maxHealth) from \(hasFrom ? "known" : "unknown") (\(TDBID.ToStringDEBUG(CyberblockHealth.AttackID(hitEvent))))");
   }
 
-  // An instant kill aimed at V (ProcessInstantKill wrap): Steve takes 4 x his max health, from where the hit came.
+  // An instant kill aimed at V (ProcessInstantKill wrap): Steve takes 4 x his max health, from where the hit came. A
+  // landing's while Minecraft owns the fall (CyberblockFlight.SuppressFall: a flight, or 2 s after one or a pearl
+  // teleport) is not reported at all; the landing wraps in Flight.reds should already keep those landings from starting.
   public static func ReportInstantKill(hitEvent: ref<gameHitEvent>) -> Void {
-    let attack = TDBID.ToStringDEBUG(CyberblockHealth.AttackID(hitEvent));
+    let id = CyberblockHealth.AttackID(hitEvent);
+    let attack = TDBID.ToStringDEBUG(id);
+    if CyberblockHealth.IsLanding(id) && CyberblockFlight.SuppressFall(hitEvent.target.GetGame()) {
+      Cyberblock_Log(s"dmg instant kill (landing) not reported: flight (\(attack))");
+      return;
+    }
     if CyberblockHealth.StatInvulnerable(hitEvent.target) {
       Cyberblock_Log(s"dmg instant kill not reported: V's IsInvulnerable stat is set (\(attack))");
       return;
@@ -181,7 +189,7 @@ public abstract class CyberblockHealth {
     if IsDefined(hitEvent as gameVehicleHitEvent) || attack.HasFlag(hitFlag.VehicleImpact) || attack.HasFlag(hitFlag.VehicleImpactWithPlayer) || id == t"Attacks.CarHitPlayer" {
       return n"vehicle";
     }
-    if id == t"Attacks.HardLanding" || id == t"Attacks.VeryHardLanding" || id == t"Attacks.DeathLanding" {
+    if CyberblockHealth.IsLanding(id) {
       return n"fall";
     }
     let type = attack.GetAttackType();
@@ -198,6 +206,11 @@ public abstract class CyberblockHealth {
       return n"fire";
     }
     return n"other";
+  }
+
+  // The landing attacks (records confirmed in r6/cache/tweakdb.bin and tweakdb_ep1.bin, 2026-10-03).
+  private static func IsLanding(id: TweakDBID) -> Bool {
+    return id == t"Attacks.HardLanding" || id == t"Attacks.VeryHardLanding" || id == t"Attacks.DeathLanding";
   }
 
   private static func AttackID(hitEvent: ref<gameHitEvent>) -> TweakDBID {
