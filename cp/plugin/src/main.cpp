@@ -1,14 +1,17 @@
 // Cyberblock.dll: a RED4ext plugin (loaded from red4ext\plugins\Cyberblock\) that also registers itself as a ReShade
-// add-on (compositor.h). Natives, the Minecraft link, camera publish and input forwarding are added by tasks C4-C6.
+// add-on (compositor.h). It links to the Minecraft mod (link.hpp), gives redscript its natives (natives.hpp),
+// publishes Cyberpunk's camera every frame (camera.hpp) and forwards input from Cyberpunk's window (input.hpp).
 #include <RED4ext/RED4ext.hpp>
 
+#include "camera.hpp"
 #include "compositor.h"
+#include "input.hpp"
+#include "link.hpp"
 #include "log.hpp"
+#include "natives.hpp"
 
 namespace
 {
-	constexpr char kVersion[] = "0.1.0"; // keep in step with Query() and project(VERSION) in CMakeLists.txt
-
 	RED4ext::v1::PluginHandle g_handle = nullptr;
 	bool g_compositorRegistered = false; // only touched from the game's update thread
 
@@ -24,15 +27,20 @@ namespace
 		return true;
 	}
 
-	/// Runs every frame while the game is running. ReShade may load after this plugin, so keep trying to register the
-	/// compositor with it until that succeeds.
+	/// Runs every frame while the game is running.
 	bool on_running_update(RED4ext::CGameApplication *)
 	{
+		// ReShade may load after this plugin, so keep trying to register the compositor with it until that succeeds.
 		if (!g_compositorRegistered && compositor::try_register(g_handle))
 		{
 			g_compositorRegistered = true;
 			cb::log::info("compositor registered with ReShade");
 		}
+		int width = 0, height = 0;
+		compositor::backbuffer_size(width, height);
+		cb::link().set_view(width, height);
+		cb::camera::publish();
+		cb::input::tick();
 		return false;
 	}
 }
@@ -50,10 +58,10 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 		const RED4ext::v1::SemVer *runtime = aSdk != nullptr ? aSdk->runtime : nullptr;
 		if (runtime == nullptr)
 		{
-			cb::log::error("Cyberblock %s: RED4ext did not report the game version; staying inactive", kVersion);
+			cb::log::error("Cyberblock %s: RED4ext did not report the game version; staying inactive", cb::kVersion);
 			return true;
 		}
-		cb::log::info("Cyberblock %s loading, game version %u.%u.%u", kVersion, static_cast<unsigned>(runtime->major),
+		cb::log::info("Cyberblock %s loading, game version %u.%u.%u", cb::kVersion, static_cast<unsigned>(runtime->major),
 					  static_cast<unsigned>(runtime->minor), static_cast<unsigned>(runtime->patch));
 		if (!is_supported_runtime(*runtime))
 		{
@@ -61,13 +69,21 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 			return true; // loaded but registered nothing: the game runs untouched
 		}
 
+		RED4ext::CRTTISystem *rtti = RED4ext::CRTTISystem::Get();
+		rtti->AddRegisterCallback(cb::natives::register_types);
+		rtti->AddPostRegisterCallback(cb::natives::post_register_types);
+
 		RED4ext::v1::GameState running{on_running_enter, on_running_update, nullptr};
 		if (!aSdk->gameStates->Add(aHandle, RED4ext::EGameStateType::Running, &running))
-			cb::log::error("could not add the Running game state; the compositor will not register");
+			cb::log::error("could not add the Running game state; no compositor or camera");
+
+		cb::link().start();
 		break;
 	}
 	case RED4ext::v1::EMainReason::Unload:
 	{
+		cb::input::shutdown();
+		cb::link().stop();
 		compositor::unregister(g_handle);
 		g_compositorRegistered = false;
 		cb::log::info("Cyberblock unloaded");

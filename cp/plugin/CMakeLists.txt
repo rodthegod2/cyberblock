@@ -18,20 +18,15 @@ add_library(Cyberblock SHARED ${CB_SOURCES})
 target_include_directories(Cyberblock PRIVATE src ${ROOT}/third_party/reshade/include)
 target_link_libraries(Cyberblock PRIVATE RED4ext::SDK nlohmann_json::nlohmann_json ws2_32 user32)
 
-# Test sources arrive with tasks C2 (cbmath) and C3 (probes). Build `cb_tests` from whichever of them exist, so
-# configuring a partial tree does not fail on a missing file (CMake rejects nonexistent sources at generate time).
 enable_testing()
-set(CB_TEST_SOURCES tests/test_main.cpp tests/test_cbmath.cpp tests/test_probes.cpp src/cbmath.cpp src/probes.cpp)
-set(CB_TEST_PRESENT "")
-foreach(CB_TEST_SOURCE IN LISTS CB_TEST_SOURCES)
-  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${CB_TEST_SOURCE})
-    list(APPEND CB_TEST_PRESENT ${CB_TEST_SOURCE})
-  endif()
-endforeach()
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_main.cpp)
-  add_executable(cb_tests ${CB_TEST_PRESENT})
-  target_include_directories(cb_tests PRIVATE src)
-  target_link_libraries(cb_tests PRIVATE nlohmann_json::nlohmann_json)
-  target_compile_definitions(cb_tests PRIVATE CB_VECTORS="${ROOT}/shared/vectors.json")
-  add_test(NAME cb_tests COMMAND cb_tests)
-endif()
+add_executable(cb_tests tests/test_main.cpp tests/test_cbmath.cpp tests/test_probes.cpp tests/test_ws.cpp
+	src/cbmath.cpp src/probes.cpp src/ws.cpp)
+target_include_directories(cb_tests PRIVATE src)
+target_link_libraries(cb_tests PRIVATE nlohmann_json::nlohmann_json ws2_32)
+target_compile_definitions(cb_tests PRIVATE CB_VECTORS="${ROOT}/shared/vectors.json")
+add_test(NAME cb_tests COMMAND cb_tests)
+
+# Manual link check against a running Minecraft (tests/link_smoke.cpp); built only when asked for.
+add_executable(link_smoke EXCLUDE_FROM_ALL tests/link_smoke.cpp src/link.cpp src/ws.cpp src/log.cpp)
+target_include_directories(link_smoke PRIVATE src)
+target_link_libraries(link_smoke PRIVATE nlohmann_json::nlohmann_json ws2_32)

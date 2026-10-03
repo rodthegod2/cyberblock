@@ -1,0 +1,68 @@
+// Line-for-line mirror of tools/cbmath.py (see cbmath.hpp).
+#include "cbmath.hpp"
+#include <algorithm>
+#include <cmath>
+#include <numbers>
+
+namespace
+{
+	// as CPython's math.degrees / math.radians
+	double degrees(double x)
+	{
+		return x * (180.0 / std::numbers::pi);
+	}
+
+	double radians(double x)
+	{
+		return x * (std::numbers::pi / 180.0);
+	}
+
+	int floor_int(double x)
+	{
+		return static_cast<int>(std::floor(x));
+	}
+}
+
+namespace cb
+{
+	Vec3 cp_to_mc_pos(double x, double y, double z)
+	{
+		return {x, z, -y};
+	}
+
+	Vec3 cp_quat_forward(double i, double j, double k, double r)
+	{
+		return {2 * (i * j - r * k), 1 - 2 * (i * i + k * k), 2 * (j * k + r * i)};
+	}
+
+	YawPitch mc_yaw_pitch(double dx, double dy, double dz)
+	{
+		const double n = std::sqrt(dx * dx + dy * dy + dz * dz);
+		dx /= n, dy /= n, dz /= n;
+		return {degrees(std::atan2(-dx, dz)), degrees(std::asin(std::max(-1.0, std::min(1.0, -dy))))};
+	}
+
+	YawPitch cp_quat_to_mc_yaw_pitch(double i, double j, double k, double r)
+	{
+		const Vec3 f = cp_quat_forward(i, j, k, r);
+		const Vec3 m = cp_to_mc_pos(f.x, f.y, f.z);
+		return mc_yaw_pitch(m.x, m.y, m.z);
+	}
+
+	double vfov_from_hfov(double hfov_deg, double aspect)
+	{
+		return degrees(2 * std::atan(std::tan(radians(hfov_deg) / 2) / aspect));
+	}
+
+	Range down_hit_to_range(double x, double y, double z)
+	{
+		const int top = static_cast<int>(std::ceil(z)) - 1;
+		return {floor_int(x), floor_int(-y), top - 1, top};
+	}
+
+	Range wall_hit_to_range(double x, double y, double z)
+	{
+		const int b = floor_int(z);
+		return {floor_int(x), floor_int(-y), b, b};
+	}
+}
