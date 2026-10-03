@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * The host's {"t":"npcs","list":[...]} as validated entries, and what to do about the proxies that exist: spawn, move,
@@ -25,6 +26,47 @@ public final class ProxyDiff {
 	}
 
 	public record Plan(List<Entry> spawn, List<Entry> move, List<Long> remove) {
+	}
+
+	/**
+	 * Where the host last put one NPC or vehicle, how fast it was going by the last two lists (m/s), and when (System.nanoTime). The host
+	 * lists 10 times a second, a car at 15 m/s would otherwise jump 1.5 m at a time: the proxy carries on at that speed in between, so
+	 * what Minecraft aims at is where the car is now.
+	 */
+	public record Motion(double x, double y, double z, double vx, double vy, double vz, long nanos) {
+		/** Faster than this between two lists is a teleport (a respawn, a fast travel), not driving: the proxy only jumps. */
+		static final double MAX_SPEED = 40.0;
+		/** The proxy never runs on further than this (s) ahead of the last list: a host gone quiet leaves it where it was heading. */
+		static final double MAX_EXTRAPOLATION = 0.5;
+		/** Two lists closer than this (s) say nothing about the speed. */
+		static final double MIN_INTERVAL = 0.02;
+
+		/** The first sighting: standing still until the next list says otherwise. */
+		public static Motion first(final Entry e, final long nanos) {
+			return new Motion(e.x(), e.y(), e.z(), 0.0, 0.0, 0.0, nanos);
+		}
+
+		/** The host's next list (received at nanos) put it at e: the speed it took to get there, or none for a teleport. */
+		public Motion next(final Entry e, final long nanos) {
+			double dt = (nanos - this.nanos) / 1.0E9;
+			if (!(dt >= MIN_INTERVAL)) {
+				return new Motion(e.x(), e.y(), e.z(), this.vx, this.vy, this.vz, nanos);
+			}
+
+			double nvx = (e.x() - this.x) / dt, nvy = (e.y() - this.y) / dt, nvz = (e.z() - this.z) / dt;
+			boolean drives = Math.sqrt(nvx * nvx + nvy * nvy + nvz * nvz) <= MAX_SPEED;
+			return new Motion(e.x(), e.y(), e.z(), drives ? nvx : 0.0, drives ? nvy : 0.0, drives ? nvz : 0.0, nanos);
+		}
+
+		/** Where it is by now: the last list's position plus the speed times the time since, at most MAX_EXTRAPOLATION of it. */
+		public Vec3 position(final long nanos) {
+			double t = Math.clamp((nanos - this.nanos) / 1.0E9, 0.0, MAX_EXTRAPOLATION);
+			return new Vec3(this.x + this.vx * t, this.y + this.vy * t, this.z + this.vz * t);
+		}
+
+		public boolean moving() {
+			return this.vx != 0.0 || this.vy != 0.0 || this.vz != 0.0;
+		}
 	}
 
 	/** The usable entries of a message and how many were thrown out. */

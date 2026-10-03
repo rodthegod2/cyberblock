@@ -18,6 +18,8 @@ import net.minecraft.world.phys.Vec3;
 public final class ProxyManager {
 	private static final Map<Long, ProxyEntity> proxies = new HashMap<>();
 	private static final Map<Long, ProxyDiff.Kind> kinds = new HashMap<>();
+	/** Where each proxy was last put and how fast it was going: the proxy runs on at that speed until the next list. */
+	private static final Map<Long, ProxyDiff.Motion> motions = new HashMap<>();
 	private static int bad;
 
 	private ProxyManager() {
@@ -26,12 +28,13 @@ public final class ProxyManager {
 	/** Link thread: the host's npcs list. */
 	public static void update(final JsonObject message) {
 		MinecraftServer s = WorldBridge.server();
+		long received = System.nanoTime();
 		if (s != null) {
-			s.execute(() -> apply(s.overworld(), message));
+			s.execute(() -> apply(s.overworld(), message, received));
 		}
 	}
 
-	private static void apply(final ServerLevel level, final JsonObject message) {
+	private static void apply(final ServerLevel level, final JsonObject message, final long received) {
 		if (!Cyberblock.active) {
 			return;
 		}
@@ -49,18 +52,21 @@ public final class ProxyManager {
 		// a proxy that was killed or unloaded under us is simply gone: it is spawned again below if the host still lists it
 		proxies.values().removeIf(ProxyEntity::isRemoved);
 		kinds.keySet().retainAll(proxies.keySet());
+		motions.keySet().retainAll(proxies.keySet());
 		ProxyDiff.Plan plan = ProxyDiff.apply(kinds, parsed.entries());
 		for (Long id : plan.remove()) {
 			kinds.remove(id);
+			motions.remove(id);
 			remove(proxies.remove(id));
 		}
 
 		for (ProxyDiff.Entry e : plan.move()) {
 			place(proxies.get(e.id()), e);
+			motions.merge(e.id(), ProxyDiff.Motion.first(e, received), (was, first) -> was.next(e, received));
 		}
 
 		for (ProxyDiff.Entry e : plan.spawn()) {
-			spawn(level, e);
+			spawn(level, e, received);
 		}
 	}
 
@@ -72,7 +78,7 @@ public final class ProxyManager {
 		proxy.setYBodyRot(e.yaw());
 	}
 
-	private static void spawn(final ServerLevel level, final ProxyDiff.Entry e) {
+	private static void spawn(final ServerLevel level, final ProxyDiff.Entry e, final long received) {
 		// beyond the loaded chunks it could not be ticked or hit anyway
 		if (!level.hasChunkAt(BlockPos.containing(e.x(), e.y(), e.z()))) {
 			return;
@@ -89,6 +95,7 @@ public final class ProxyManager {
 		if (level.addFreshEntity(proxy)) {
 			proxies.put(e.id(), proxy);
 			kinds.put(e.id(), e.kind());
+			motions.put(e.id(), ProxyDiff.Motion.first(e, received));
 		}
 	}
 
@@ -98,8 +105,23 @@ public final class ProxyManager {
 	 * out removes it by itself.
 	 */
 	static void tick(final MinecraftServer s) {
-		if (!proxies.isEmpty() && !Cyberblock.active) {
+		if (proxies.isEmpty()) {
+			return;
+		}
+
+		if (!Cyberblock.active) {
 			clear();
+			return;
+		}
+
+		// between the host's lists (10 per second) every proxy goes on at the speed it was last seen at
+		long now = System.nanoTime();
+		for (Map.Entry<Long, ProxyEntity> e : proxies.entrySet()) {
+			ProxyDiff.Motion m = motions.get(e.getKey());
+			if (m != null && m.moving() && !e.getValue().isRemoved()) {
+				Vec3 at = m.position(now);
+				e.getValue().setPos(at.x, at.y, at.z);
+			}
 		}
 	}
 
@@ -111,6 +133,7 @@ public final class ProxyManager {
 
 		proxies.clear();
 		kinds.clear();
+		motions.clear();
 	}
 
 	/**
