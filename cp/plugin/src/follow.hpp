@@ -34,7 +34,7 @@ namespace cb::follow
 	/// One frame, as the drive sees it.
 	struct In
 	{
-		bool gate = false;     // V may be moved: Cyberblock active, not in a vehicle, not held, flightAllowed, linked, V found
+		bool gate = false;     // V may be moved: Cyberblock active, not in a vehicle, not held, flightAllowed, V found
 		bool menu = false;     // a Cyberpunk menu is open: do nothing, freeze the timers
 		bool active = false;   // Steve flies (Flight::active)
 		bool timedOut = false; // the flight ended because its samples stopped (Flight::timed_out)
