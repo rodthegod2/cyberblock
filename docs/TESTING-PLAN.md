@@ -141,6 +141,14 @@ already running still has the old mod. The full key table and the netrunning wal
 12. With package A: typing in chat while Cyberpunk has focus (char/skey), Shift-click quick-move in a chest, Ctrl+Q
     with no screen and in an inventory, Esc on the death screen (it must stay open), X swaps to the offhand.
 
+**R6. Verifier fixes**
+1. Stand at an object with two or more F prompts (a body: "Pick up" / "Loot", or a vending machine): the wheel scrolls
+   Cyberpunk's list and E does not open Steve's inventory. Step away: E opens it again.
+2. Build a 3-block bridge over a gap, stand on it and save (quick save from the pause menu, and wait for an autosave):
+   V does not drop. Then load that save with Cyberblock off: no invisible box is left (walk through where it stood).
+3. Hold G on an NPC, release, open the pause menu for 2 s, close it: the tooltip and the lock agree (a hack fires at
+   the NPC only while 'Locked n s' still shows).
+
 ---
 
 # Full pass (first session's plan, updated for the fixes)

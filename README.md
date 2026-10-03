@@ -50,7 +50,7 @@ Cyberpunk moves V, Steve acts. Everything below works on Night City's real NPCs,
     nausea and blindness hit the screen. Damage-over-time potions (poison, wither) are never mapped.
 - **Layer 6, Cyberpunk in Minecraft form:**
   - hold the hack key to scan: the target gets an outline and a tooltip with name, faction, threat and health;
-  - a RAM bar above the hotbar (it needs the cyberdeck in your inventory);
+  - a RAM bar left of the hotbar (it needs the cyberdeck in your inventory);
   - quickhack items fire the real Cyberpunk quickhack at the scanned target for RAM:
 
     | Item | Quickhack | RAM |
@@ -82,7 +82,7 @@ Cyberpunk from acting on it. The full conflict-free table, with the dialogue and
 | W A S D, mouse look, C / RCtrl | Cyberpunk moves V; Steve crouches when V crouches (Optical Camo needs it) |
 | Space | V jumps as in Cyberpunk. Pressed while V falls with at least 3 blocks of air below and an elytra on, it opens the elytra (with the Double Jump perk: the 2nd press in the air); a fall faster than 12 m/s for 0.3 s opens it on its own |
 | Left or Right Shift | V sprints as in Cyberpunk. Double-tap either within 300 ms with the Sandevistan perk for Sandevistan Sprint |
-| LMB, RMB, MMB, wheel, 1-9, E, Q, T, /, X | Minecraft: attack, use, pick, hotbar, inventory, drop (Ctrl+Q: stack), chat, command, swap to offhand. In a Cyberpunk dialogue with 2+ choices, E, Q, 1-4 and the wheel go to Cyberpunk |
+| LMB, RMB, MMB, wheel, 1-9, E, Q, T, /, X | Minecraft: attack, use, pick, hotbar, inventory, drop (Ctrl+Q: stack), chat, command, swap to offhand. In a Cyberpunk dialogue or interaction list with 2+ choices, E, Q, 1-4 and the wheel go to Cyberpunk |
 | LCtrl, Mouse 4, Mouse 5, F, Tab, Alt and Cyberpunk's other keys | Cyberpunk's own (F: interact, talk, exit car) |
 | F5 | Ignored while Active; it no longer quick-saves in Cyberpunk |
 | G (hold) | Hack key: scan and lock the target for 5 s; while held, the wheel picks a quickhack chip and right-click fires it |

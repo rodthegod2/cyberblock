@@ -137,10 +137,10 @@ in every situation, so nothing fires twice.
 | **LCtrl**, **Mouse4**, **Mouse5** | Cyberpunk's own (dodge/dash, scanner hold etc.; dodge works with Steve's Dodge perk) | - | no longer swallowed |
 | **F** | interact / talk / dialogue choice 1 / exit vehicle | - | never bindable |
 | **LMB / RMB / MMB** | (blocked combat) | attack / use / pick block | Shift/Ctrl held are passed as modifiers in Minecraft screens (Shift-click quick-move) |
-| **Wheel** | - | hotbar scroll; while G held: choose quickhack chip | goes to Cyberpunk while a dialogue with 2+ choices is shown |
-| **1-9** | - | hotbar slots (in inventories: swap hovered stack) | 1-4 go to Cyberpunk while a dialogue with 2+ choices is shown |
-| **E** | - | inventory | goes to Cyberpunk (scroll choices) in a 2+ choice dialogue |
-| **Q** | - | drop item (Ctrl+Q: whole stack) | goes to Cyberpunk in a 2+ choice dialogue |
+| **Wheel** | - | hotbar scroll; while G held: choose quickhack chip | goes to Cyberpunk while a dialogue or interaction list with 2+ choices is shown |
+| **1-9** | - | hotbar slots (in inventories: swap hovered stack) | 1-4 go to Cyberpunk while a dialogue or interaction list with 2+ choices is shown |
+| **E** | - | inventory | goes to Cyberpunk (scroll choices) while 2+ choices are shown |
+| **Q** | - | drop item (Ctrl+Q: whole stack) | goes to Cyberpunk while 2+ choices are shown |
 | **T** | - (phone answer unavailable while Active: press F9 to take a call) | chat (real typing: letters, Enter, Backspace, arrows reach Minecraft while a screen is open) | - |
 | **/** | - | command line | - |
 | **X** | (healing hotkey, already blocked while Active) | swap item to offhand (NEW) | - |
@@ -151,7 +151,7 @@ in every situation, so nothing fires twice.
 | **Tab, CapsLock, Alt, R, B, I, M, J, H, N, P, V, Z** | Cyberpunk's own (scanner/radial/reload/holster are blocked while Active; menus open and pause forwarding) | - | passed through |
 
 ### Context rules
-- **A Cyberpunk dialogue or choice list with 2 or more choices:** E, Q, 1-4 and the wheel go to Cyberpunk only, so
+- **A Cyberpunk dialogue or interaction list with 2 or more choices** (a conversation, or several prompts on one object such as "Pick up" / "Loot"): E, Q, 1-4 and the wheel go to Cyberpunk only, so
   you scroll and pick choices as usual (F picks the highlighted one). The mouse buttons and the other keys (5-9, G, T,
   ...) still go to Minecraft. A single-choice prompt ("[F] Talk") does not count: E still opens Steve's inventory.
 - **A Minecraft screen is open** (inventory, chest, chat, skill tree, death screen): every key except F9 goes to
@@ -227,6 +227,8 @@ the Minecraft log how many proxies exist ("proxies: H people, C cars").
   - each is an invisible 1 m collision box;
   - boxes are kept within 64 m of V, at most 1000, nearest first;
   - mining a block removes its box;
+  - boxes stay through saves (the save never contains them), so a Minecraft bridge does not vanish under V during an
+    autosave;
   - after a restart or reconnect, Minecraft sends all your blocks again.
 - **Explosions** become Cyberpunk explosions scaled by their power (TNT, creepers, firework rockets). Cars blow up
   and NCPD comes. An NPC is hurt once, by the Cyberpunk blast. NPCs hear it: within 10 m of V it reveals V, at 10-30 m
@@ -300,7 +302,8 @@ the Minecraft log how many proxies exist ("proxies: H people, C cars").
   9 m/s with a small hop, cars at 7 m/s.
 - **Wind charge:** the burst knocks back every person and car within about 2.4 m of it (measured to the closest point
   of the body, so a burst at the feet or the head counts). It causes no damage and no explosion, and the Demolitions
-  perk does not widen it.
+  perk does not widen it. It does not launch Steve or V: while Cyberblock is on, Steve has no physics of his own (he
+  stands where V stands), so wind-charge jumps do not work.
 - **Shield:** raise it (hold right mouse) facing a shooter, and Cyberpunk gunfire and blasts from that side are
   blocked, with vanilla durability and sound.
 - **Potions on Steve also act on V:**
@@ -336,7 +339,7 @@ costs apply in both), not in spectator, and not from a car (nothing is forwarded
 - The deck only has to be somewhere in your inventory (hotbar or main inventory). Without it your maximum RAM is 0 and
   every chip says "You need a cyberdeck in your inventory".
 
-**Step 2: watch your RAM.** The bar above the hotbar reads "RAM n/m".
+**Step 2: watch your RAM.** The cyan bar left of the hotbar, level with the experience bar, is labelled "RAM n/m".
 - The maximum is 8, or 12 with the Extra RAM perk. It regenerates 1 point every 3 s (every 1.5 s with Overclock).
 - A **RAM Shard** in your hand plus right-click restores 4 at once ("RAM is already full" when it is). Losing the
   cyberdeck empties the RAM.
@@ -371,7 +374,10 @@ chip's recharge (2 s; 10 s for Synapse Burnout and Cyberpsychosis) and Cyberpunk
 - on a **car**: the hack goes to its driver; an empty car fails with "no driver";
 - with **Chain Hack**: the nearest other hackable living person within 8 m of the target gets the same hack.
 
-A success plays a short beacon sound and Cyberblock.log says "hack <name> on <id>: ok".
+A success plays a short beacon sound and Cyberblock.log says "hack <name> on <id>: ok". That answer comes when the
+upload **starts**, not when the effect lands: Cyberpunk's upload bar is on the HUD that Cyberblock hides, so watch the
+target instead. Long uploads (Synapse Burnout, Cyberpsychosis) take a few seconds, and if the target dies, despawns
+or leaves first, the hack is lost and its RAM is not given back.
 
 **Step 7: read the answer.** Messages appear above the hotbar. Every failure Cyberpunk reports gives the RAM back.
 
@@ -453,7 +459,7 @@ Press **K** to open the skill tree: five branches of four perks.
 | | Painkiller (3) | natural regeneration twice as fast | — |
 | | Juggernaut (4) | full knockback resistance, also against Night City hits | — |
 | **Reflexes** | Double Jump (1) | — | V can double jump |
-| | Sandevistan Sprint (2) | double-tap Left Shift: Speed II and the Minecraft world at half speed for 5 s, 20 s cooldown | Night City slows to 20 %, V does not |
+| | Sandevistan Sprint (2) | double-tap Shift (either one): Speed II and the Minecraft world at half speed for 5 s, 20 s cooldown | Night City slows to 20 %, V does not |
 | | Quick Draw (3) | bows and crossbows charge 30 % faster | — |
 | | Dodge (4) | — | V can dash and air dash |
 | **Technical** | Tinkerer (1) | TNT and arrow recipes make twice as many | — |
