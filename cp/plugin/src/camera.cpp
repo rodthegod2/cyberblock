@@ -9,6 +9,8 @@
 #include "camera.hpp"
 #include "cbmath.hpp"
 #include "compositor.h"
+#include "drive.hpp"
+#include "keys.hpp"
 #include "link.hpp"
 #include "log.hpp"
 #include "natives.hpp"
@@ -34,6 +36,35 @@ namespace
 	int64_t g_frame = 0;
 	int g_loggedPoses = 0;
 	bool g_warned = false;
+
+	// re-test 3 task D3: how far Cyberpunk turns the camera per raw mouse count, learnt on foot (main thread only)
+	cb::keys::TurnRate g_turn;
+	double g_lastYaw = NAN;     // the previous sampled frame's Minecraft yaw; NaN after a frame that was not sampled
+	double g_loggedRate = 0.0;  // the rate the last `look:` line gave
+
+	/// Feeds TurnRate with this frame's yaw change and counts while V turns only by the mouse, and logs the rate once it
+	/// settles and whenever it changes by more than 10 %.
+	void learn_turn_rate(double mcYaw, int64_t counts)
+	{
+		const bool sampling = cb::natives::active && !cb::natives::held && !cb::natives::menuOpen && !cb::natives::inVehicle &&
+							  cb::drive::seconds_since_end() > 0.5f;
+		if (!sampling)
+		{
+			g_lastYaw = NAN;
+			return;
+		}
+		if (std::isfinite(g_lastYaw))
+			g_turn.sample(std::remainder(mcYaw - g_lastYaw, 360.0), counts);
+		g_lastYaw = mcYaw;
+		if (g_turn.counts() < cb::keys::TurnRate::kWarmUpCounts)
+			return;
+		const double rate = g_turn.degrees_per_count();
+		if (g_loggedRate == 0.0 || std::abs(rate - g_loggedRate) > 0.1 * g_loggedRate)
+		{
+			g_loggedRate = rate;
+			cb::log::info("look: %.4f deg per mouse count", rate);
+		}
+	}
 
 	void warn_once(const char *message)
 	{
@@ -64,10 +95,18 @@ namespace
 
 namespace cb::camera
 {
-	void publish()
+	double degrees_per_count()
+	{
+		return g_turn.degrees_per_count();
+	}
+
+	void publish(int64_t mouseX)
 	{
 		if (!natives::active || !link().linked())
+		{
+			g_lastYaw = NAN;
 			return;
+		}
 		RED4ext::IScriptable *cameras = camera_system();
 		if (cameras == nullptr)
 			return;
@@ -115,6 +154,8 @@ namespace cb::camera
 									levelK));
 		compositor::set_host_pose(float(look.yaw), float(look.pitch), 0.0f, float(vfov), position.x, position.y, position.z);
 		compositor::set_host_planes(kNearClip, kFarClip);
+		learn_turn_rate(look.yaw, mouseX);
+		drive::note_pitch(look.pitch);
 
 		if (g_loggedPoses < kLoggedPoses)
 		{

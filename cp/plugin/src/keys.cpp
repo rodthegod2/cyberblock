@@ -162,6 +162,28 @@ namespace cb::keys
 		return verdict;
 	}
 
+	void TurnRate::sample(double yawDeltaDeg, int64_t counts)
+	{
+		const double turned = std::abs(yawDeltaDeg);
+		const double moved = std::abs(double(counts));
+		if (!std::isfinite(turned) || moved < double(kMinCounts) || turned >= kMaxFrameDegrees)
+			return;
+		m_degrees += turned;
+		m_counts += moved;
+		if (m_counts > kHalveAt)
+		{
+			m_degrees *= 0.5;
+			m_counts *= 0.5;
+		}
+	}
+
+	double TurnRate::degrees_per_count() const
+	{
+		if (m_counts < kWarmUpCounts)
+			return kDefault;
+		return std::clamp(m_degrees / m_counts, kMin, kMax);
+	}
+
 	std::optional<std::array<double, 2>> LookAccumulator::take(Clock::time_point now)
 	{
 		if ((m_dx == 0 && m_dy == 0) || now - m_sentAt < kMinInterval)

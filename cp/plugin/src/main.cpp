@@ -43,8 +43,10 @@ namespace
 		int width = 0, height = 0;
 		compositor::backbuffer_size(width, height);
 		cb::link().set_view(width, height);
-		cb::drive::tick(); // before the camera: cam.fly is true on the first frame V is moved
-		cb::camera::publish();
+		// the mouse X of this frame: the drive turns V by it during a glide (it owns V's yaw), the camera learns the rate
+		const int64_t dx = cb::input::take_mouse_x();
+		cb::drive::tick(dx, cb::camera::degrees_per_count()); // before the camera: cam.fly is true on the first frame V is moved
+		cb::camera::publish(dx);
 		cb::input::tick();
 		return false;
 	}

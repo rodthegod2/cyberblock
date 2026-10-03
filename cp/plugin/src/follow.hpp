@@ -7,6 +7,7 @@
 // in RED4ext's Running-state OnUpdate instead, every frame, and this is its brain.
 #pragma once
 #include "cbmath.hpp"
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -20,6 +21,11 @@ namespace cb::follow
 	/// when it is above the spot (the spot sank into it) or the spot is more than 1 m above it (V would fall), else the
 	/// spot itself. No ground found: the spot.
 	Vec3 snap_landing(Vec3 spot, std::optional<double> groundZ);
+
+	/// V's yaw after `counts` raw mouse counts at `degreesPerCount` (re-test 3 plan task D3, the owned glide yaw):
+	/// cpYaw - counts * rate, normalised to (-180, 180]. Cyberpunk yaw is counter-clockwise from above, so moving the mouse
+	/// right (positive counts) lowers it.
+	double turned_yaw(double cpYaw, int64_t counts, double degreesPerCount);
 
 	/// What the drive does this frame.
 	enum class Act

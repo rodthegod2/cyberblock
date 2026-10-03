@@ -255,3 +255,29 @@ TEST(snap_landing_lifts_out_of_the_ground_and_drops_onto_it_from_over_1_m)
 	CHECK(at(snap_landing({5, 6, 10.0}, 10.0), 5, 6, 10.0));  // on it
 	CHECK(at(snap_landing({5, 6, 10.0}, std::nullopt), 5, 6, 10.0)); // no ground found: the spot
 }
+
+// ---- re-test 3 (plan 2026-10-03-retest3-polish task D3): the owned glide yaw --------------------------------------------
+
+TEST(turned_yaw_lowers_the_cyberpunk_yaw_when_the_mouse_moves_right)
+{
+	using cb::follow::turned_yaw;
+	CHECK(std::abs(turned_yaw(10.0, 100, 0.1) - 0.0) < 1e-9);    // right: clockwise from above, the yaw goes down
+	CHECK(std::abs(turned_yaw(10.0, -100, 0.1) - 20.0) < 1e-9);  // left: up
+	CHECK(std::abs(turned_yaw(-35.5, 0, 0.1) - -35.5) < 1e-9);   // no counts: unchanged
+	CHECK(std::abs(turned_yaw(42.0, 0, 0.7) - 42.0) < 1e-9);
+}
+
+TEST(turned_yaw_wraps_to_minus_180_exclusive_180_inclusive)
+{
+	using cb::follow::turned_yaw;
+	CHECK(std::abs(turned_yaw(-170.0, 200, 0.1) - 170.0) < 1e-9); // -190 -> 170
+	CHECK(std::abs(turned_yaw(170.0, -200, 0.1) - -170.0) < 1e-9); // 190 -> -170
+	CHECK(std::abs(turned_yaw(0.0, -1800, 0.1) - 180.0) < 1e-9);   // exactly 180 stays 180
+	CHECK(std::abs(turned_yaw(0.0, 1800, 0.1) - 180.0) < 1e-9);    // -180 becomes 180
+	CHECK(std::abs(turned_yaw(0.0, 3600 * 5 + 10, 0.1) - -1.0) < 1e-6); // many turns
+	for (int64_t counts = -20000; counts <= 20000; counts += 777)
+	{
+		const double yaw = turned_yaw(33.0, counts, 0.15);
+		CHECK(yaw > -180.0 && yaw <= 180.0);
+	}
+}

@@ -198,6 +198,33 @@ namespace cb::keys
 	/// Minecraft turns 0.15 degrees per raw mouse count at sensitivity 100 %.
 	inline constexpr double kLookDegreesPerCount = 0.15;
 
+	/// How many degrees Cyberpunk turns the camera per raw mouse count (re-test 3 plan task D3): learnt from ordinary play
+	/// on foot, so the per-frame drive can turn V by the mouse while it owns V's yaw during a glide. Sums |yaw change| and
+	/// |counts| over frames with at least kMinCounts counts and a yaw change under kMaxFrameDegrees (a teleport or a scene
+	/// cut is not a mouse turn); past kHalveAt counts both sums are halved, so the rate follows a changed sensitivity.
+	class TurnRate
+	{
+	public:
+		static constexpr int64_t kMinCounts = 2;
+		static constexpr double kMaxFrameDegrees = 30.0;
+		static constexpr double kHalveAt = 4000.0;     // counts
+		static constexpr double kWarmUpCounts = 200.0; // the default is used until this many counts were seen
+		static constexpr double kDefault = kLookDegreesPerCount; // 0.15, Minecraft's rate at 100 %
+		static constexpr double kMin = 0.002;
+		static constexpr double kMax = 1.0;
+
+		/// One frame: the camera's yaw changed by `yawDeltaDeg` (wrapped to -180..180) while `counts` raw counts arrived.
+		void sample(double yawDeltaDeg, int64_t counts);
+		/// Degrees per count: kDefault during the warm-up, then the measured ratio clamped to [kMin, kMax].
+		double degrees_per_count() const;
+		/// Counts seen so far (after halving).
+		double counts() const { return m_counts; }
+
+	private:
+		double m_degrees = 0.0;
+		double m_counts = 0.0;
+	};
+
 	/// Raw mouse deltas summed into Minecraft look deltas, handed out at most 120 times a second.
 	class LookAccumulator
 	{

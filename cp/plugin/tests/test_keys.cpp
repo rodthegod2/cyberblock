@@ -483,3 +483,53 @@ TEST(bindable_matches_the_shared_binds_vectors)
 	for (const auto &c : vectors.at("binds"))
 		CHECK(cb::keys::bindable(c.at("vk").get<uint32_t>()) == c.at("bindable").get<bool>());
 }
+
+// ---- re-test 3 (plan 2026-10-03-retest3-polish task D3): the turn rate --------------------------------------------------
+
+TEST(turn_rate_is_the_default_until_200_counts_were_seen)
+{
+	TurnRate rate;
+	CHECK(approx(rate.degrees_per_count(), 0.15));
+	for (int i = 0; i < 19; ++i)
+		rate.sample(0.5, 10); // 0.05 deg/count, 190 counts
+	CHECK(approx(rate.degrees_per_count(), 0.15) && approx(rate.counts(), 190.0));
+	rate.sample(0.5, 10);
+	CHECK(approx(rate.degrees_per_count(), 0.05));
+}
+
+TEST(turn_rate_ignores_tiny_moves_and_big_jumps)
+{
+	TurnRate rate;
+	for (int i = 0; i < 100; ++i)
+		rate.sample(0.3, 1); // under 2 counts: jitter
+	CHECK(approx(rate.counts(), 0.0));
+	rate.sample(45.0, 50); // 30 degrees or more in a frame: a teleport or a cut, not the mouse
+	rate.sample(-30.0, 50);
+	rate.sample(NAN, 50);
+	CHECK(approx(rate.counts(), 0.0));
+	for (int i = 0; i < 40; ++i)
+		rate.sample(i % 2 ? -1.0 : 1.0, i % 2 ? -10 : 10); // left and right count the same: magnitudes are summed
+	CHECK(approx(rate.degrees_per_count(), 0.1));
+}
+
+TEST(turn_rate_halves_its_window_and_follows_a_new_sensitivity)
+{
+	TurnRate rate;
+	for (int i = 0; i < 400; ++i)
+		rate.sample(1.0, 10); // 0.1
+	CHECK(rate.counts() <= TurnRate::kHalveAt && approx(rate.degrees_per_count(), 0.1));
+	for (int i = 0; i < 2000; ++i)
+		rate.sample(2.0, 10); // the player doubled the sensitivity: 0.2
+	CHECK(std::abs(rate.degrees_per_count() - 0.2) < 0.005);
+}
+
+TEST(turn_rate_is_clamped_to_0_002_and_1)
+{
+	TurnRate slow, fast;
+	for (int i = 0; i < 100; ++i)
+	{
+		slow.sample(0.001, 100);
+		fast.sample(29.0, 2);
+	}
+	CHECK(approx(slow.degrees_per_count(), 0.002) && approx(fast.degrees_per_count(), 1.0));
+}
