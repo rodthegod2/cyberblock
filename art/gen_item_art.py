@@ -8,13 +8,16 @@ transparent background, a 1px darker outline derived from the neighbouring colou
 top-left light with a 4-tone ramp (highlight / base / shadow / deep), a small shared
 palette and four neon accents (cyan, magenta, yellow, red).
 
-Outputs (next to this file): items/*.png, gui/*.png and preview.png. Copy items/*.png to
-mc/src/main/resources/assets/cyberblock/textures/item/ and gui/*.png to .../textures/gui/ after a run.
+Outputs (next to this file): items/*.png (16x16 sprites and the 32x32 arm_<id> model textures), gui/*.png,
+gui/ui/*.png (HUD sprites), entity/cyber/*.png (64x64 player-skin overlays), icon.png (128x128 mod icon) and
+preview.png. Every run also copies them into mc/src/main/resources/assets/cyberblock/ (textures/item, textures/gui,
+textures/gui/ui, textures/entity/cyber, icon.png), so the committed assets always match this script byte for byte.
 """
 from __future__ import annotations
 
 import math
 import random
+import shutil
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -22,6 +25,9 @@ from PIL import Image, ImageDraw, ImageFont
 ART = Path(__file__).resolve().parent
 ITEMS = ART / "items"
 GUI = ART / "gui"
+UI = GUI / "ui"
+ENTITY = ART / "entity" / "cyber"
+ASSETS = ART.parent / "mc" / "src" / "main" / "resources" / "assets" / "cyberblock"
 SIZE = 16
 
 
@@ -756,141 +762,401 @@ SPRITES = {
 # =====================================================================================
 # GUI
 # =====================================================================================
+# Minecraft container palette (every GUI sprite below uses only these; the HUD text colours are ChatFormatting's).
+MC_PANEL, MC_SLOT = rgb("#c6c6c6"), rgb("#8b8b8b")
+MC_WHITE, MC_SHADOW, MC_WELL, MC_EDGE = rgb("#ffffff"), rgb("#555555"), rgb("#373737"), rgb("#000000")
+MC_FIGURE = rgb("#b4b4b4")  # the body silhouette: a shade between panel and slot
+MC_YELLOW, MC_GRAY, MC_AQUA, MC_DARK_AQUA = rgb("#ffff55"), rgb("#aaaaaa"), rgb("#55ffff"), rgb("#00aaaa")
+
+
 def ram_bar() -> Image.Image:
-    """182x10 like the XP bar sheet: rows 0-4 empty frame, rows 5-9 filled cyan."""
+    """182x10 like the 10-notch boss/XP bar sheet: rows 0-4 the empty grey frame, rows 5-9 the filled aqua bar."""
     w = 182
     img = Image.new("RGBA", (w, 10), (0, 0, 0, 0))
-    frame = [rgb("#070b14"), rgb("#17233b"), rgb("#0e1829"), rgb("#0e1829"), rgb("#070b14")]
-    fill = [rgb("#19b8cc"), rgb("#9ffcff"), RAMPS["cyan"][1], rgb("#27cfe6"), RAMPS["cyan"][3]]
+    frame = [MC_EDGE, MC_SLOT, MC_SHADOW, MC_SHADOW, MC_EDGE]
+    fill = [MC_EDGE, rgb("#aaffff"), MC_AQUA, MC_DARK_AQUA, MC_EDGE]
     ticks = {round(i * w / 10) for i in range(1, 10)}
     for x in range(w):
         for y in range(5):
             if x in (0, w - 1) and y in (0, 4):
                 continue  # clipped corners
-            e = frame[y] if x not in (0, w - 1) else frame[0]
-            f = fill[y] if x not in (0, w - 1) else dark(fill[y], 0.55)
+            e = frame[y] if x not in (0, w - 1) else MC_EDGE
+            f = fill[y] if x not in (0, w - 1) else MC_EDGE
             if x in ticks and 0 < y < 4:
-                e, f = rgb("#1f2f4d"), dark(fill[y], 0.78)
+                e, f = MC_EDGE, dark(fill[y], 0.5)  # the notches of the 10-segment boss bar
             img.putpixel((x, y), (*e, 255))
             img.putpixel((x, y + 5), (*f, 255))
     return img
 
 
-PANEL_BASE, PANEL_TRACE, PANEL_NODE = rgb("#1b1f30"), rgb("#262d48"), rgb("#323c60")
-BEVEL_LIT, BEVEL_SHD, BEVEL_EDGE = (rgb("#68729a"), rgb("#4a5478")), (rgb("#10131f"), rgb("#0a0c15")), rgb("#05070d")
-
-
 def bevel(img: Image.Image) -> None:
-    """Dark outer edge, a 2px light bevel on the top/left and a 2px shadow on the bottom/right, and the notched
-    corners of a Minecraft panel."""
+    """The Minecraft container border: a black outer edge, a 2px #FFFFFF bevel on the top/left, a 2px #555555 shadow on
+    the bottom/right, and notched corners."""
     w, h = img.size
     px = img.load()
     for y in range(h):
         for x in range(w):
             k = min(x, y, w - 1 - x, h - 1 - y)
             if k == 0:
-                px[x, y] = (*BEVEL_EDGE, 255)
+                px[x, y] = (*MC_EDGE, 255)
             elif k <= 2:
                 lit = min(x, y) <= min(w - 1 - x, h - 1 - y)  # nearer the top/left edge
-                px[x, y] = (*(BEVEL_LIT if lit else BEVEL_SHD)[k - 1], 255)
+                px[x, y] = (*(MC_WHITE if lit else MC_SHADOW), 255)
     for y in range(h):  # notched corners like a Minecraft panel
         for x in range(w):
             dx, dy = min(x, w - 1 - x), min(y, h - 1 - y)
             if dx + dy <= 1:
                 px[x, y] = (0, 0, 0, 0)
             elif dx + dy == 2 and dx <= 2 and dy <= 2:
-                px[x, y] = (*BEVEL_EDGE, 255)
+                px[x, y] = (*MC_EDGE, 255)
+
+
+def slot_well(img: Image.Image, x: int, y: int, size: int) -> None:
+    """A size x size inventory slot: #373737 top/left edge, #FFFFFF bottom/right edge, #8B8B8B inside."""
+    d = ImageDraw.Draw(img)
+    d.rectangle([x, y, x + size - 1, y + size - 1], fill=(*MC_SLOT, 255))
+    d.line([(x, y), (x + size - 2, y)], fill=(*MC_WELL, 255))
+    d.line([(x, y), (x, y + size - 2)], fill=(*MC_WELL, 255))
+    d.line([(x + 1, y + size - 1), (x + size - 1, y + size - 1)], fill=(*MC_WHITE, 255))
+    d.line([(x + size - 1, y + 1), (x + size - 1, y + size - 1)], fill=(*MC_WHITE, 255))
+
+
+def recess(img: Image.Image, x0: int, y0: int, x1: int, y1: int) -> None:
+    """A sunken rectangle outline (inclusive corners): #555555 top/left, #FFFFFF bottom/right, interior untouched."""
+    d = ImageDraw.Draw(img)
+    d.line([(x0, y0), (x1 - 1, y0)], fill=(*MC_SHADOW, 255))
+    d.line([(x0, y0), (x0, y1 - 1)], fill=(*MC_SHADOW, 255))
+    d.line([(x0 + 1, y1), (x1, y1)], fill=(*MC_WHITE, 255))
+    d.line([(x1, y0 + 1), (x1, y1)], fill=(*MC_WHITE, 255))
 
 
 def skill_tree_bg() -> Image.Image:
-    """256x256 beveled dark panel with a faint circuit pattern."""
-    n = 256
-    img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
-    px = img.load()
-    base, trace, node = PANEL_BASE, PANEL_TRACE, PANEL_NODE
-    for y in range(n):
-        for x in range(n):
-            px[x, y] = (*base, 255)
-
-    rng = random.Random(2077)
-    used: set[tuple[int, int]] = set()
-    dirs = [(1, 0), (0, 1), (-1, 0), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)]
-    cell, lo, hi = 8, 3, n // 8 - 3
-    drawn = 0
-    for _ in range(900):
-        if drawn >= 120:
-            break
-        gx, gy = rng.randint(lo, hi), rng.randint(lo, hi)
-        if (gx, gy) in used:
-            continue
-        d, path = rng.choice(dirs), [(gx, gy)]
-        for _ in range(rng.randint(3, 12)):
-            if rng.random() < 0.35:
-                d = rng.choice([dirs[(dirs.index(d) + k) % 8] for k in (-1, 1)] if rng.random() < .6 else dirs)
-            nx, ny = path[-1][0] + d[0], path[-1][1] + d[1]
-            if not (lo <= nx <= hi and lo <= ny <= hi) or (nx, ny) in used or (nx, ny) in path:
-                break
-            path.append((nx, ny))
-        if len(path) < 3:
-            continue
-        used.update(path)
-        drawn += 1
-        pts = [(gx * cell, gy * cell) for gx, gy in path]
-        for a, b in zip(pts, pts[1:]):
-            for x, y in line(a, b):
-                px[x, y] = (*trace, 255)
-        ex, ey = pts[-1]
-        for x, y in ((ex - 1, ey), (ex + 1, ey), (ex, ey - 1), (ex, ey + 1)):
-            px[x, y] = (*node, 255)
-        px[ex, ey] = (*base, 255)
-        sx, sy = pts[0]
-        for x, y in ((sx, sy), (sx + 1, sy), (sx, sy + 1), (sx + 1, sy + 1)):
-            px[x, y] = (*node, 255)
-
+    """256x256 container panel for the perk screen: five branch columns of 51 px, an emblem slot at y 21 (centred on
+    the column) and four 22x22 node slots from y 64 in steps of 42, joined by a groove (the screen's own geometry)."""
+    n, column = 256, 51
+    img = Image.new("RGBA", (n, n), (*MC_PANEL, 255))
+    for b in range(5):
+        x = column * b + (column - 22) // 2
+        slot_well(img, column * b + column // 2 - 9, 21, 18)
+        for tier in range(4):
+            y = 64 + 42 * tier
+            if tier < 3:  # the groove to the next tier: the screen draws its lit link 2px wide over the middle
+                d = ImageDraw.Draw(img)
+                d.rectangle([x + 9, y + 22, x + 12, y + 41], fill=(*MC_SLOT, 255))
+                d.line([(x + 9, y + 22), (x + 9, y + 41)], fill=(*MC_SHADOW, 255))
+                d.line([(x + 12, y + 22), (x + 12, y + 41)], fill=(*MC_WHITE, 255))
+            slot_well(img, x, y, 22)
     bevel(img)
     return img
 
 
 def cyberware_bg() -> Image.Image:
-    """256x192 notched panel for the cyberware screen: a line-art body in the left half (centred on x = 64, y 20..180),
-    a divider at x = 128 and a recessed field in the right half for the list of implants. The title strip (y < 18) and
-    the bottom strip (y > 174) stay empty for text."""
+    """256x192 container panel for the cyberware screen. Left: a blocky player outline (Steve proportions at 5x, a flat grey figure
+    centred on x = 70, y 22..181) behind the eight 60x38 slot boxes the screen lays out in two columns at x 8 and 72,
+    y 20 + 42 n. Right: a sunken field at x 146..242, y 30..162 holding the 4x6 grid of 18 px cells at x 150 + 22 i,
+    y 32 + 22 j. The title strip (y < 18) and the strip under the field stay plain for text."""
     w, h = 256, 192
-    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    img = Image.new("RGBA", (w, h), (*MC_PANEL, 255))
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, w - 1, h - 1], fill=(*PANEL_BASE, 255))
-    for y in range(8, h - 6, 8):  # blueprint dots
-        for x in range(8, w - 6, 8):
-            img.putpixel((x, y), (*PANEL_TRACE, 255))
-    d.line([(8, 17), (w - 9, 17)], fill=(*PANEL_TRACE, 255))
-    d.line([(8, 175), (w - 9, 175)], fill=(*PANEL_TRACE, 255))
-
-    body, node = rgb("#3b5588"), rgb("#2aa6bd")
-    c = 64
-
-    def both(pts: list[tuple[int, int]]) -> None:  # draw a left-side outline and its mirror around x = c
-        d.polygon(pts, outline=(*body, 255))
-        d.polygon([(2 * c - x, y) for x, y in pts], outline=(*body, 255))
-
-    d.ellipse([c - 11, 21, c + 11, 45], outline=(*body, 255))  # head
-    d.rectangle([c - 4, 45, c + 4, 51], outline=(*body, 255))  # neck
-    d.polygon([(c - 16, 51), (c + 16, 51), (c + 20, 57), (c + 19, 99), (c + 14, 113), (c - 14, 113), (c - 19, 99), (c - 20, 57)],
-              outline=(*body, 255))  # torso
-    both([(c - 21, 54), (c - 28, 58), (c - 33, 70), (c - 37, 101), (c - 39, 123), (c - 33, 126), (c - 30, 104), (c - 24, 77), (c - 21, 70)])
-    both([(c - 14, 114), (c - 1, 114), (c - 2, 144), (c - 4, 177), (c - 15, 177), (c - 16, 144)])
-    d.line([(c - 11, 60), (c - 4, 60)], fill=(*body, 255))  # collarbone ticks
-    d.line([(c + 4, 60), (c + 11, 60)], fill=(*body, 255))
-    for x, y in ((c, 33), (c, 40), (c, 62), (c + 7, 74), (c, 86), (c - 10, 96), (c + 10, 96), (c - 35, 106), (c + 35, 106),
-                 (c - 9, 150), (c + 9, 150)):  # frontal cortex, eyes, nervous, circulatory, OS, skin x2, arms x2, legs x2
-        d.rectangle([x - 1, y - 1, x + 1, y + 1], fill=(*node, 255))
-
-    d.line([(128, 22), (128, 171)], fill=(*BEVEL_SHD[0], 255))
-    d.line([(129, 22), (129, 171)], fill=(*BEVEL_LIT[1], 255))
-    d.rectangle([135, 22, w - 9, 171], fill=rgb("#141828") + (255,), outline=(*BEVEL_SHD[0], 255))  # recessed list
-    d.line([(135, 172), (w - 9, 172)], fill=(*BEVEL_LIT[1], 255))
-    d.line([(w - 8, 22), (w - 8, 172)], fill=(*BEVEL_LIT[1], 255))
+    c, u, top = 70, 5, 22  # a Steve is 16 wide, 32 tall (head 8x8, body 8x12, arms 4x12, legs 4x12)
+    for x0, y0, bw, bh in ((4, 0, 8, 8), (4, 8, 8, 12), (0, 8, 4, 12), (12, 8, 4, 12), (4, 20, 4, 12), (8, 20, 4, 12)):
+        d.rectangle([c - 8 * u + x0 * u, top + y0 * u, c - 8 * u + (x0 + bw) * u - 1, top + (y0 + bh) * u - 1],
+                    fill=(*MC_FIGURE, 255))
+    for col in range(2):
+        for row in range(4):
+            x, y = 8 + col * 64, 20 + row * 42
+            recess(img, x, y, x + 59, y + 37)
+    recess(img, 146, 30, 242, 162)
+    for j in range(6):
+        for i in range(4):
+            slot_well(img, 150 + 22 * i, 32 + 22 * j, 18)
     bevel(img)
     return img
+
+
+# =====================================================================================
+# RE-TEST 3: arm model textures, player-skin overlays, HUD sprites, mod icon
+# =====================================================================================
+def _clamp(v: float) -> int:
+    return max(0, min(255, int(round(v))))
+
+
+def _tint(c: Color, delta: int) -> Color:
+    return (_clamp(c[0] + delta), _clamp(c[1] + delta), _clamp(c[2] + delta))
+
+
+def _mix(a: Color, b: Color, t: float) -> Color:
+    return (_clamp(a[0] + (b[0] - a[0]) * t), _clamp(a[1] + (b[1] - a[1]) * t), _clamp(a[2] + (b[2] - a[2]) * t))
+
+
+def arm_texture(seed: int, plate: str, glow: str, trim: Color) -> Image.Image:
+    """32x32 atlas for one arm implant model, four 16x16 quadrants (model uv units: 8 x 8 each):
+    top-left armour plate (panel seams, rivets), top-right brushed steel, bottom-left neon glow (used with
+    light_emission in the models), bottom-right dark circuit board. The models pick a quadrant per element."""
+    rng = random.Random(seed)
+    img = Image.new("RGBA", (32, 32), (0, 0, 0, 255))
+    px = img.load()
+    phi, pbase, plo, pdeep = RAMPS[plate]
+    for y in range(16):  # armour plate: 8x8 panels with a lit top/left seam and a dark bottom/right seam
+        for x in range(16):
+            c = _tint(pbase, rng.randint(-5, 5))
+            if x % 8 == 0 or y % 8 == 0:
+                c = phi
+            elif x % 8 == 7 or y % 8 == 7:
+                c = pdeep
+            elif x % 8 == 6 or y % 8 == 6:
+                c = plo
+            px[x, y] = (*c, 255)
+    for ox, oy in ((0, 0), (8, 0), (0, 8), (8, 8)):  # rivets
+        for dx, dy in ((2, 2), (5, 2), (2, 5), (5, 5)):
+            px[ox + dx, oy + dy] = (*trim, 255)
+    for x in range(1, 15):  # a thin neon accent stripe across the plates
+        px[x, 4] = (*_mix(RAMPS[glow][1], pbase, 0.45), 255)
+
+    steel = RAMPS["steel"]
+    for y in range(16):  # brushed steel, bright at the top
+        shade = 1.15 - 0.45 * y / 15
+        for x in range(16):
+            streak = rng.randint(-7, 7) if x % 2 == 0 else rng.randint(-3, 3)
+            c = tuple(_clamp(v * shade + streak) for v in steel[1])
+            if x == 0:
+                c = steel[0]
+            elif x == 15:
+                c = steel[3]
+            px[16 + x, y] = (*c, 255)
+    for _ in range(5):  # scratches
+        sx, sy = rng.randint(2, 11), rng.randint(1, 12)
+        for k in range(rng.randint(2, 4)):
+            px[16 + sx + k, sy + k] = (*steel[0], 255)
+
+    ghi, gbase, glo, gdeep = RAMPS[glow]
+    for y in range(16):  # neon glow: bright core band, darker rim
+        for x in range(16):
+            rim = min(x, y, 15 - x, 15 - y)
+            c = gbase
+            if rim == 0:
+                c = glo
+            elif 6 <= y <= 9:
+                c = ghi if y in (7, 8) else gbase
+            if y in (7, 8) and 3 <= x <= 12:
+                c = _mix(ghi, WHITE, 0.6)
+            px[x, 16 + y] = (*c, 255)
+
+    void = RAMPS["void"]
+    for y in range(16):  # dark circuit board with traces
+        for x in range(16):
+            px[16 + x, 16 + y] = (*_tint(void[1], rng.randint(-2, 3)), 255)
+    for _ in range(7):
+        x, y = rng.randint(1, 14), rng.randint(1, 14)
+        dx, dy = rng.choice(((1, 0), (0, 1)))
+        for _step in range(rng.randint(3, 7)):
+            if not (0 < x < 15 and 0 < y < 15):
+                break
+            px[16 + x, 16 + y] = (*void[0], 255)
+            if rng.random() < 0.3:
+                dx, dy = dy, dx
+            x, y = x + dx, y + dy
+        if 0 < x < 15 and 0 < y < 15:
+            px[16 + x, 16 + y] = (*RAMPS[glow][2], 255)
+    return img
+
+
+ARM_TEXTURES = {
+    "arm_mantis_blades": lambda: arm_texture(101, "gunmetal", "red", YELLOW),
+    "arm_gorilla_arms": lambda: arm_texture(102, "ash", "yellow", RED),
+    "arm_monowire": lambda: arm_texture(103, "teal", "cyan", MAGENTA),
+    "arm_projectile_launch_system": lambda: arm_texture(104, "gunmetal", "orange", CYAN),
+}
+
+
+# Player skin layout (64x64, classic arms): each rect is (x0, y0, x1, y1) inclusive.
+HEAD_FRONT, HEAD_RIGHT, HEAD_LEFT = (8, 8, 15, 15), (0, 8, 7, 15), (16, 8, 23, 15)
+BODY_FRONT, BODY_BACK, BODY_RIGHT, BODY_LEFT = (20, 20, 27, 31), (32, 20, 39, 31), (16, 20, 19, 31), (28, 20, 31, 31)
+R_ARM = {"outer": (40, 20, 43, 31), "front": (44, 20, 47, 31), "inner": (48, 20, 51, 31), "back": (52, 20, 55, 31)}
+L_ARM = {"outer": (32, 52, 35, 63), "front": (36, 52, 39, 63), "inner": (40, 52, 43, 63), "back": (44, 52, 47, 63)}
+R_LEG = {"outer": (0, 20, 3, 31), "front": (4, 20, 7, 31), "inner": (8, 20, 11, 31), "back": (12, 20, 15, 31)}
+L_LEG = {"outer": (16, 52, 19, 63), "front": (20, 52, 23, 63), "inner": (24, 52, 27, 63), "back": (28, 52, 31, 63)}
+
+
+def _skin() -> Image.Image:
+    return Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+
+
+def _fill(img: Image.Image, x0: int, y0: int, x1: int, y1: int, c: tuple) -> None:
+    for y in range(y0, y1 + 1):
+        for x in range(x0, x1 + 1):
+            img.putpixel((x, y), c)
+
+
+def kiroshi_eyes_overlay() -> Image.Image:
+    """Glowing orange lens rings in the eye positions of the head's front, with a cyan HUD line running back
+    along both temples. Everything else is transparent."""
+    img = _skin()
+    orange, yellow, cyan, hot = (*rgb("#ff8a1f"), 255), (*rgb("#f7ff3d"), 255), (*rgb("#3df5ff"), 255), (*rgb("#fff0a0"), 255)
+    for ex in (9, 13):
+        _fill(img, ex, 12, ex + 1, 13, orange)
+        img.putpixel((ex, 12), yellow)
+        img.putpixel((ex + 1, 13), hot)
+    _fill(img, 3, 12, 7, 12, cyan)    # right temple (towards the front edge at x = 7)
+    _fill(img, 16, 12, 20, 12, cyan)  # left temple
+    img.putpixel((2, 12), orange)
+    img.putpixel((21, 12), orange)
+    return img
+
+
+def subdermal_armor_overlay() -> Image.Image:
+    """Plate seams on the chest and back, shoulder pads, bracers and shin guards, in steel with yellow rivets."""
+    img = _skin()
+    seam, plate, edge, rivet = (*RAMPS["gunmetal"][2], 215), (*RAMPS["steel"][2], 170), (*RAMPS["steel"][0], 200), (*rgb("#f7ff3d"), 255)
+    x0, y0, x1, y1 = BODY_FRONT  # chest: cross seams
+    _fill(img, x0, 24, x1, 24, seam)
+    _fill(img, x0, 28, x1, 28, seam)
+    _fill(img, 23, y0, 24, 27, seam)
+    x0, y0, x1, y1 = BODY_BACK  # back: spine plate and seams
+    _fill(img, x0, 24, x1, 24, seam)
+    _fill(img, x0, 28, x1, 28, seam)
+    _fill(img, 35, y0, 36, y1, plate)
+    for rx, ry in ((21, 21), (26, 21), (21, 26), (26, 26), (33, 21), (38, 21), (33, 26), (38, 26)):
+        img.putpixel((rx, ry), rivet)
+    for x0, y0, x1, y1 in (BODY_RIGHT, BODY_LEFT):
+        _fill(img, x0, 24, x1, 24, seam)
+    for limb in (R_ARM, L_ARM):
+        for face in limb.values():
+            x0, y0, x1, y1 = face
+            _fill(img, x0, y0, x1, y0 + 2, plate)   # shoulder pad
+            _fill(img, x0, y0 + 2, x1, y0 + 2, edge)
+            _fill(img, x0, y1 - 4, x1, y1, plate)   # bracer
+            _fill(img, x0, y1 - 4, x1, y1 - 4, edge)
+        x0, y0, x1, y1 = limb["front"]
+        img.putpixel((x0, y1 - 2), rivet)
+        img.putpixel((x1, y1 - 2), rivet)
+    for limb in (R_LEG, L_LEG):
+        for face in limb.values():
+            x0, y0, x1, y1 = face
+            _fill(img, x0, y1 - 5, x1, y1 - 1, plate)  # shin guard
+            _fill(img, x0, y1 - 5, x1, y1 - 5, edge)
+        x0, y0, x1, y1 = limb["front"]
+        img.putpixel((x0, y1 - 3), rivet)
+        img.putpixel((x1, y1 - 3), rivet)
+    return img
+
+
+def reinforced_tendons_overlay() -> Image.Image:
+    """Glowing crimson tendon cables down the legs and forearms with bright knee and ankle nodes."""
+    img = _skin()
+    cable, bright, node, link = (*RAMPS["crimson"][1], 255), (*RAMPS["red"][1], 255), (*RAMPS["red"][0], 255), (*rgb("#f7ff3d"), 255)
+    for limb, cols in ((R_LEG, {"outer": (1,), "front": (5, 6), "inner": (10,), "back": (13, 14)}),
+                       (L_LEG, {"outer": (17,), "front": (21, 22), "inner": (26,), "back": (29, 30)})):
+        for face, xs in cols.items():
+            _, y0, _, y1 = limb[face]
+            for x in xs:
+                for y in range(y0 + 1, y1 + 1):
+                    img.putpixel((x, y), bright if (y - y0) % 3 == 0 else cable)
+                img.putpixel((x, y0 + 5), node)   # knee
+                img.putpixel((x, y1), link)       # ankle
+    for limb, x in ((R_ARM, 45), (L_ARM, 37)):
+        _, y0, _, y1 = limb["front"]
+        for y in range(y0 + 6, y1 + 1):
+            img.putpixel((x, y), bright if (y - y0) % 3 == 0 else cable)
+        img.putpixel((x, y0 + 6), node)
+        img.putpixel((x, y1), link)
+    return img
+
+
+ENTITY_OVERLAYS = {
+    "kiroshi_eyes": kiroshi_eyes_overlay,
+    "subdermal_armor": subdermal_armor_overlay,
+    "reinforced_tendons": reinforced_tendons_overlay,
+}
+
+STAR = ["....O....",
+        "...OHO...",
+        "...OYO...",
+        "OOOOHYOOO",
+        ".OHHYYYO.",
+        "..OYYSO..",
+        "..OYYSO..",
+        ".OYYOSSO.",
+        ".OOO.OOO."]
+
+
+def wanted_star(filled: bool) -> Image.Image:
+    """9x9 five-point star: gold when the wanted level reaches it, dull grey when it does not."""
+    legend = ({"O": rgb("#8a5412"), "Y": rgb("#ffd23d"), "H": rgb("#fff0a0"), "S": rgb("#d6921f")} if filled else
+              {"O": rgb("#373737"), "Y": rgb("#555555"), "H": rgb("#8b8b8b"), "S": rgb("#464646")})
+    img = Image.new("RGBA", (9, 9), (0, 0, 0, 0))
+    for (x, y), c in glyph(STAR, 0, 0, legend).items():
+        img.putpixel((x, y), (*c, 255))
+    return img
+
+
+def phone() -> Sprite:
+    """16x16 smartphone as a Minecraft item: grey body, dark screen with green and grey message lines, a red unread dot
+    (ChatFormatting green, gray and red)."""
+    body = (rgb("#8b8b8b"), rgb("#555555"), rgb("#373737"), rgb("#1e1e1e"))
+    s = Sprite()
+    s.part(rect(4, 1, 11, 14) - {(4, 1), (11, 1), (4, 14), (11, 14)}, body, sep=True)
+    s.part(rect(5, 3, 10, 11), (MC_SLOT, rgb("#232323"), rgb("#232323"), rgb("#232323")), shade=False)
+    s.dots([(6, 4), (7, 4), (8, 4)], rgb("#55ff55")).dots([(6, 6), (7, 6), (8, 6), (9, 6)], MC_GRAY)
+    s.dots([(6, 8), (7, 8)], MC_GRAY).dots([(9, 4)], rgb("#ff5555"))
+    s.dots([(7, 13), (8, 13)], MC_PANEL)
+    s.dots([(7, 2), (8, 2)], MC_WELL)
+    return s
+
+
+def radar_frame() -> Image.Image:
+    """80x80 frame for the radar, map-item style: the Minecraft container border (black edge, #FFFFFF / #555555 bevel,
+    notched corners), a #8B8B8B inner line and a transparent middle, a yellow north tick on top and #AAAAAA ticks at
+    the other three compass points."""
+    img = Image.new("RGBA", (80, 80), (0, 0, 0, 0))
+    bevel(img)
+    d = ImageDraw.Draw(img)
+    d.rectangle([3, 3, 76, 76], outline=(*MC_SLOT, 255))
+    yellow, gray = (*MC_YELLOW, 255), (*MC_GRAY, 255)
+    _fill(img, 38, 3, 41, 3, yellow)
+    _fill(img, 39, 4, 40, 4, yellow)
+    _fill(img, 38, 76, 41, 76, gray)
+    _fill(img, 3, 38, 3, 41, gray)
+    _fill(img, 76, 38, 76, 41, gray)
+    return img
+
+
+def mod_icon() -> Image.Image:
+    """128x128 mod icon: an isometric circuit-board cube with neon edges on a dark grid, drawn at 32x32 and
+    scaled up by 4 with nearest-neighbour."""
+    n = 32
+    bg = rgb("#0b0f26")
+    img = Image.new("RGBA", (n, n), (*bg, 255))
+    for y in range(0, n, 4):
+        for x in range(0, n, 4):
+            img.putpixel((x, y), (*rgb("#161c3e"), 255))
+    d = ImageDraw.Draw(img)
+    top, left, right = [(16, 4), (28, 10), (16, 16), (4, 10)], [(4, 10), (16, 16), (16, 29), (4, 23)], [(28, 10), (16, 16), (16, 29), (28, 23)]
+    d.polygon(top, fill=RAMPS["steel"][1])
+    d.polygon(left, fill=RAMPS["gunmetal"][1])
+    d.polygon(right, fill=RAMPS["gunmetal"][2])
+    d.line([(10, 7), (22, 13)], fill=RAMPS["steel"][2])  # tile seams on the top face
+    d.line([(22, 7), (10, 13)], fill=RAMPS["steel"][2])
+    d.polygon([(16, 7), (20, 10), (16, 13), (12, 10)], fill=RAMPS["void"][1])
+    d.point([(16, 10)], fill=RAMPS["green"][1])
+    d.line([(6, 12), (6, 16), (10, 18), (10, 22), (14, 24)], fill=CYAN)  # circuit traces
+    d.line([(14, 19), (14, 27)], fill=RAMPS["cyan"][2])
+    d.line([(18, 19), (18, 26), (22, 24), (22, 20), (26, 18)], fill=MAGENTA)
+    d.line([(20, 22), (20, 27)], fill=RAMPS["magenta"][2])
+    d.point([(6, 12), (14, 24), (26, 18), (22, 20)], fill=WHITE)
+    d.line([top[0], top[1], top[2], top[3], top[0]], fill=CYAN)  # neon edges
+    d.line([top[2], (16, 29)], fill=MAGENTA)
+    d.line([left[0], left[3], (16, 29)], fill=RAMPS["cyan"][2])
+    d.line([right[0], right[3], (16, 29)], fill=RAMPS["magenta"][2])
+    for row, fringe in ((21, MAGENTA), (22, CYAN)):  # a glitch slice: the row slides 2 px left, a fringe fills the gap
+        cells = {x: img.getpixel((x, row)) for x in range(n) if img.getpixel((x, row))[:3] not in (bg, rgb("#161c3e"))}
+        for x in cells:
+            img.putpixel((x, row), (*bg, 255))
+        for x, c in cells.items():
+            img.putpixel((x - 2, row), c)
+        for x in (max(cells) - 1, max(cells)):
+            img.putpixel((x, row), (*fringe, 255))
+    return img.resize((128, 128), Image.NEAREST)
 
 
 # =====================================================================================
@@ -926,8 +1192,8 @@ def preview(images: dict[str, Image.Image], gui: dict[str, Image.Image]) -> Imag
 
 
 def main() -> None:
-    ITEMS.mkdir(parents=True, exist_ok=True)
-    GUI.mkdir(parents=True, exist_ok=True)
+    for d in (ITEMS, GUI, UI, ENTITY):
+        d.mkdir(parents=True, exist_ok=True)
     images = {}
     for name, fn in SPRITES.items():
         im = fn().render()
@@ -937,7 +1203,27 @@ def main() -> None:
     for name, im in gui.items():
         im.save(GUI / f"{name}.png")
     preview(images, gui).convert("RGB").save(ART / "preview.png")
-    print(f"wrote {len(images)} items, {len(gui)} gui images, preview.png")
+
+    for name, fn in ARM_TEXTURES.items():
+        fn().save(ITEMS / f"{name}.png")
+    for name, fn in ENTITY_OVERLAYS.items():
+        fn().save(ENTITY / f"{name}.png")
+    wanted_star(True).save(UI / "wanted_star.png")
+    wanted_star(False).save(UI / "wanted_star_empty.png")
+    phone().render().save(UI / "phone.png")
+    radar_frame().save(UI / "radar_frame.png")
+    mod_icon().save(ART / "icon.png")
+
+    # mirror into the mod's resources so the committed assets always match this script
+    textures = ASSETS / "textures"
+    for src, dst in ((ITEMS, textures / "item"), (GUI, textures / "gui"), (UI, textures / "gui" / "ui"),
+                     (ENTITY, textures / "entity" / "cyber")):
+        dst.mkdir(parents=True, exist_ok=True)
+        for png in src.glob("*.png"):
+            shutil.copyfile(png, dst / png.name)
+    shutil.copyfile(ART / "icon.png", ASSETS / "icon.png")
+    print(f"wrote {len(images)} items, {len(ARM_TEXTURES)} arm textures, {len(ENTITY_OVERLAYS)} skin overlays, "
+          f"{len(gui)} gui images, 4 ui sprites, icon.png, preview.png")
 
 
 if __name__ == "__main__":

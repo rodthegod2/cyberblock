@@ -1,0 +1,27 @@
+{
+	"display": {
+		"icon": {
+			"id": "cyberblock:cyberdeck"
+		},
+		"title": {
+			"translate": "advancements.cyberblock.root.title"
+		},
+		"description": {
+			"translate": "advancements.cyberblock.root.description"
+		},
+		"frame": "task",
+		"background": "minecraft:gui/advancements/backgrounds/stone",
+		"show_toast": false,
+		"announce_to_chat": false
+	},
+	"criteria": {
+		"joined": {
+			"trigger": "minecraft:tick"
+		}
+	},
+	"requirements": [
+		[
+			"joined"
+		]
+	]
+}

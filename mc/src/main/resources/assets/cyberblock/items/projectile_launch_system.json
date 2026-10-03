@@ -1,6 +1,26 @@
 {
 	"model": {
-		"type": "minecraft:model",
-		"model": "cyberblock:item/projectile_launch_system"
+		"type": "minecraft:select",
+		"property": "minecraft:custom_model_data",
+		"cases": [
+			{
+				"when": "arm",
+				"model": {
+					"type": "minecraft:model",
+					"model": "cyberblock:item/projectile_launch_system_arm"
+				}
+			},
+			{
+				"when": "arm_out",
+				"model": {
+					"type": "minecraft:model",
+					"model": "cyberblock:item/projectile_launch_system_arm_out"
+				}
+			}
+		],
+		"fallback": {
+			"type": "minecraft:model",
+			"model": "cyberblock:item/projectile_launch_system"
+		}
 	}
 }

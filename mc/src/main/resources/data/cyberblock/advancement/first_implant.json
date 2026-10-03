@@ -1,0 +1,25 @@
+{
+	"display": {
+		"icon": {
+			"id": "cyberblock:mantis_blades"
+		},
+		"title": {
+			"translate": "advancements.cyberblock.first_implant.title"
+		},
+		"description": {
+			"translate": "advancements.cyberblock.first_implant.description"
+		},
+		"frame": "task"
+	},
+	"parent": "cyberblock:root",
+	"criteria": {
+		"installed": {
+			"trigger": "minecraft:impossible"
+		}
+	},
+	"requirements": [
+		[
+			"installed"
+		]
+	]
+}
