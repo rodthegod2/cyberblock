@@ -24,7 +24,9 @@ the landing behaviour and the camera switch can only be judged in game: the chec
 2. **Every frame.** The callback stops as soon as its generation is stale (`DelayCallbackNextFrame` returns no id, so
    it cannot be cancelled), then:
    - **landing:** if `Cyberblock_FlightActive()` is false (`FlightSeq` changed), V is placed at
-     `Cyberblock_FlightPos()` (the landing spot) and the loop ends;
+     `Cyberblock_FlightPos()` (the landing spot) and the loop ends. If that spot is more than 1 m above the
+     Static/Terrain ground below it, Minecraft went silent in mid-air (the DLL ends a flight whose samples are 0.5 s
+     old), so V is put on that ground instead;
    - **primary:** otherwise `Teleport(V, Cyberblock_FlightPos(), Vector4.ToRotation(V.GetWorldForward()))`;
    - **camera only:** V is put back at the take-off spot if it drifted more than 5 cm. The camera entity is teleported
      to `FlightPos + (0, 0, 1.6)` looking along `(−sin a·cos p, cos a·cos p, −sin p)` for Cyberpunk yaw `a` and

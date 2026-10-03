@@ -34,9 +34,12 @@ target V; damage still lands on Steve through `Health.reds`.
      `AttachmentSlots.WeaponRight`/`WeaponLeft` (the record's secondary equipment is a handgun pool, and equipment
      arrives asynchronously);
    - **damage guard:** a `@wrapMethod(DamageSystem) InvulnerabilityCheck` adds `hitFlag.DealNoDamage` (source
-     `n"CyberblockPuppet"`) to every hit whose instigator is a puppet, except Cyberblock's own `HitFrom` hits (found
-     in `CyberblockEffectsService`'s pending list). `Process` returns on that flag, so no damage is dealt, and
-     `TargetTrackingExtension.OnHit` returns on it too, so nobody even retaliates against a stray punch.
+     `n"CyberblockPuppet"`) to every hit whose instigator is a puppet, except Cyberblock's own `HitFrom` hits. Those
+     carry `hitFlag.ForceNoCrit` with source `n"Cyberblock"`: `Attacks.Impact` has no hit flags of its own, and
+     `AttackData.AddFlag` keeps a flag's first source. `Process` returns on that flag, so no damage is dealt, and
+     `TargetTrackingExtension.OnHit` returns on it too, so nobody even retaliates against a stray punch. The
+     `DealDamages` wrap refuses the same hits again, so the order of the `InvulnerabilityCheck` wraps (`Health.reds`
+     has one too) does not matter.
 5. **Who shoots it:** `AttitudeAgent.SetAttitudeGroup(n"hostileToEveryoneExceptPlayer")`. That group's default
    attitude and its attitude to itself are Hostile, and its only relation record makes it Friendly to the player. So
    NCPD, gangs and civilians see it as hostile, while V (who is not fighting while Active) is left alone.

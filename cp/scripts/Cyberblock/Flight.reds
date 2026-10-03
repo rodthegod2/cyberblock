@@ -137,9 +137,16 @@ public class CyberblockFlightService extends ScriptableService {
     this.lastFrame = CyberblockEffectsService.Now(game);
     let teleport = GameInstance.GetTeleportationFacility(game);
     if !Cyberblock_FlightActive() {
-      // Landed (FlightSeq moved on): the position is now the landing spot.
+      // Landed (FlightSeq moved on): the position is now the landing spot. A spot more than 1 m above the ground below
+      // means Minecraft went silent in mid-air (the DLL ends a flight whose samples are 0.5 s old): V goes to the
+      // ground instead of falling from there.
+      let spot = Cyberblock_FlightPos();
+      let ground: Vector4;
+      if CyberblockFlightService.GroundBelow(game, spot, ground) && spot.Z - ground.Z > 1.0 {
+        spot = ground;
+      }
       let facing = this.usingCamera ? CyberblockEffects.Facing(Cyberblock_FlightYaw()) : Vector4.ToRotation(player.GetWorldForward());
-      teleport.Teleport(player, Cyberblock_FlightPos(), facing);
+      teleport.Teleport(player, spot, facing);
       this.Stop(game);
       Cyberblock_Log("flight: landed");
       return;

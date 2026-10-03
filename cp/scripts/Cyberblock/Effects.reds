@@ -240,6 +240,17 @@ public abstract class CyberblockEffects {
     return GameInstance.FindEntityByID(game, EntityID.FromHash(target)) as GameObject;
   }
 
+  // A hit Hit/HitFrom queued: it carries ForceNoCrit with source n"Cyberblock" (Attacks.Impact has no hit flags of
+  // its own, and AttackData.AddFlag keeps the first source of a flag), at every stage of the pipeline.
+  public static func IsOurHit(hitEvent: ref<gameHitEvent>) -> Bool {
+    for flag in hitEvent.attackData.GetFlags() {
+      if Equals(flag.source, n"Cyberblock") {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Orientation facing Cyberpunk yaw (degrees, 0 = +Y, counter-clockwise from above: forward = (-sin, cos)), built
   // from the direction as vanilla teleports do (Vector4.ToRotation, worldMap.swift), so no Euler convention is assumed.
   public static func Facing(yaw: Float) -> EulerAngles {
@@ -325,16 +336,6 @@ public class CyberblockEffectsService extends ScriptableService {
     ArrayPush(this.hits, hit);
     ArrayPush(this.amounts, amount);
     ArrayPush(this.impulses, impulse);
-  }
-
-  // One of our queued hits that has not reached DealDamages yet (e.g. while the pipeline pre-processes it).
-  public func IsPending(hitEvent: ref<gameHitEvent>) -> Bool {
-    for hit in this.hits {
-      if hit == hitEvent {
-        return true;
-      }
-    }
-    return false;
   }
 
   // Replaces the computed damage of one of our hits with the exact amount and pushes the target; any other hit is

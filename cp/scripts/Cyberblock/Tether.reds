@@ -7,9 +7,9 @@
 //     10 Hz they would add up to a throw). More than length + 12 m for 2 s, or the target gone: Cyberblock_Unlead.
 //   Pull: one impulse toward the rod at strength, plus 3 m/s up for people.
 //   Knockback: a radial impulse of strength x (1 - d / radius) on every NPC and vehicle within radius; no damage.
-// Tethers are plain data (ids and numbers): Clear (save, load, Off) keeps them, so an autosave does not cut a lead
-// Minecraft still shows; Tick with live false drops them silently (contract); a target that no longer exists after a
-// load is unleaded on the next live tick.
+// Tethers are plain data (ids and numbers) with nothing of theirs in Night City, so Clear only restarts their timers;
+// Tick with live false drops them silently (contract); a target that no longer exists is unleaded on the next live
+// tick.
 //
 // Which NPCs and vehicles exist: no 2.31 script query lists them (see Npcs.reds), so this service keeps its own
 // registry from Codeware's entity lifecycle callbacks Entity/AfterAttach and Entity/Detach, filtered with
@@ -120,7 +120,7 @@ public class CyberblockTetherService extends ScriptableService {
     }
   }
 
-  // Keeps the tethers (plain data); only the timers restart.
+  // Nothing to remove from Night City: the tethers stay, their timers restart.
   public func Clear() -> Void {
     let i = 0;
     while i < ArraySize(this.targets) {

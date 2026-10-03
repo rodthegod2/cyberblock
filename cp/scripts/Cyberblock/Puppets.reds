@@ -174,33 +174,27 @@ public class CyberblockPuppetsService extends ScriptableService {
   }
 
   // InvulnerabilityCheck: a puppet's own attack deals nothing (and so provokes no retaliation either); Cyberblock's
-  // HitFrom hits, still pending in CyberblockEffectsService at this stage, pass.
+  // HitFrom hits pass.
   public func Guard(hitEvent: ref<gameHitEvent>) -> Void {
-    if ArraySize(this.ids) == 0 {
-      return;
+    if this.ByPuppet(hitEvent) && !CyberblockEffects.IsOurHit(hitEvent) {
+      hitEvent.attackData.AddFlag(hitFlag.DealNoDamage, n"CyberblockPuppet");
     }
-    let instigator = hitEvent.attackData.GetInstigator();
-    if !IsDefined(instigator) || this.Slot(instigator.GetEntityID()) < 0 {
-      return;
-    }
-    if CyberblockEffectsService.Get().IsPending(hitEvent) {
-      return;
-    }
-    hitEvent.attackData.AddFlag(hitFlag.DealNoDamage, n"CyberblockPuppet");
   }
 
-  // DealDamages: true for a hit on a puppet, which is reported to Minecraft (unless V or a puppet caused it: those
-  // are Minecraft's own) and never applied.
+  // DealDamages: true for a hit that must not be applied. A hit on a puppet is reported to Minecraft (unless V or a
+  // puppet caused it: those are Minecraft's own). A puppet's own attack is refused here too, whatever the order of
+  // the InvulnerabilityCheck wraps.
   public func Absorb(hitEvent: ref<gameHitEvent>) -> Bool {
     if ArraySize(this.ids) == 0 || !IsDefined(hitEvent.target) {
       return false;
     }
+    let byPuppet = this.ByPuppet(hitEvent);
     let slot = this.Slot(hitEvent.target.GetEntityID());
     if slot < 0 {
-      return false;
+      return byPuppet && !CyberblockEffects.IsOurHit(hitEvent);
     }
     let attacker = hitEvent.attackData.GetInstigator();
-    if IsDefined(attacker) && (attacker.IsPlayer() || this.Slot(attacker.GetEntityID()) >= 0) {
+    if byPuppet || IsDefined(attacker) && attacker.IsPlayer() {
       return true;
     }
     let damage = hitEvent.attackComputed.GetTotalAttackValue(gamedataStatPoolType.Health);
@@ -247,6 +241,14 @@ public class CyberblockPuppetsService extends ScriptableService {
     Cyberblock_Log(s"puppets: despawned mob \(this.mobs[slot])");
     ArrayErase(this.mobs, slot);
     ArrayErase(this.ids, slot);
+  }
+
+  private func ByPuppet(hitEvent: ref<gameHitEvent>) -> Bool {
+    if ArraySize(this.ids) == 0 {
+      return false;
+    }
+    let instigator = hitEvent.attackData.GetInstigator();
+    return IsDefined(instigator) && this.Slot(instigator.GetEntityID()) >= 0;
   }
 
   private func SlotOfMob(mob: Int32) -> Int32 {
