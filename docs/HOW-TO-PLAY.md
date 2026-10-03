@@ -200,7 +200,7 @@ in every situation, so nothing fires twice.
 | **K** | (crafting, swallowed) | skill tree | - |
 | **U** | (swallowed) | Cyberware screen (install and remove implants); U again closes it | rebindable |
 | **Y** | (swallowed; Cyberpunk's own Y, scene fast-forward and camera pitch reset, works again with F9 off) | fires the **Operating System** implant: Sandevistan or Berserk | rebindable |
-| **L** | (swallowed) | fires the **Arms** implant: Mantis Blades lunge, Gorilla Arms slam, Monowire lash, Projectile Launch System | rebindable. Minecraft's own Advancements key was L: it is now in the pause menu |
+| **L** | (swallowed) | fires the **Arms** implant: Mantis Blades lunge, Gorilla Arms slam, Monowire lash, Projectile Launch System | rebindable. Minecraft's own Advancements key was L: it is unbound (see Vanilla clashes below) |
 | **O** | (swallowed) | fires **Optical Camo** (Integumentary) | rebindable. Minecraft's own Friends key was O, it is unbound |
 | **F5** | (QuickSave, swallowed) | toggles **third person** on foot ("Third person" / "First person" above the hotbar) | see [Third person](#vehicles-and-third-person); never quick-saves |
 | **Esc, M, J, I, P, H** | Cyberpunk's pause menu, map, journal, inventory, perks and hub | the menu is **replaced by a Minecraft screen** (pause, atlas, journal, inventory, skills, pause) | see [the Minecraft interface](#the-minecraft-interface); menus Cyberblock cannot replace stay Cyberpunk's, restyled |
@@ -217,7 +217,7 @@ in every situation, so nothing fires twice.
 - **A Cyberpunk menu is open that Minecraft does not replace** (shops, ripperdoc, stash, settings and similar, see
   [pass-through menus](#menus-cyberblock-cannot-replace)), or **Cyberblock is off:** nothing is forwarded except F9. The
   menus work exactly as in vanilla.
-- **V is in a vehicle:** the driving keys are Cyberpunk's; Steve's hotbar and hand stay (see [Vehicles](#vehicles-and-third-person)).
+- **V is in a vehicle:** the driving keys are Cyberpunk's; Minecraft shows only Steve's hand or the seated Steve, no hotbar (see [Vehicles](#vehicles-and-third-person)).
 - Minecraft's own key settings do not matter for the keys above: Cyberpunk sends Minecraft the action (inventory,
   drop, swap, ...), not the key. Only the six Cyberblock keys below are rebindable.
 
@@ -241,7 +241,8 @@ Minecraft → Options → Controls → Key Binds → category **Cyberblock**. Th
   Cyberblock.log logs it once, and its binds line reads `binds: hack G, skills K, cyberware U, activate Y, arms L, camo O`.
 - **Vanilla clashes:** on the first start, Cyberblock unbinds the vanilla Minecraft keys that sit on one of its six keys
   (Advancements on L, Friends on O, Quick Actions on G), saves the options and tells you in chat ("Cyberblock took L from
-  Advancements (rebind it in Controls)"). Advancements are in the pause menu.
+  Advancements (rebind it in Controls)"). The pause screen has no Advancements button, so to open the advancements screen
+  bind **Advancements** to a free key (Esc, **Minecraft Options...**, Controls).
 - The keys the six actions use are taken from Cyberpunk. Move Skill tree off K and K opens Cyberpunk's crafting menu
   again; move Activate off Y and Y is Cyberpunk's own again (scene fast-forward, camera pitch reset); the same goes for U,
   L and O. Cyberpunk's walk toggle stays off while Active whichever key Hack uses.
@@ -300,7 +301,7 @@ the Minecraft log how many proxies exist ("proxies: H people, C cars").
   - the radius is 24 m on foot, and grows to 64 m while gliding;
   - Steve, mobs and arrows stand on them and bump into them;
   - you cannot break them.
-- **In a car:** Steve rides along, and Minecraft's hotbar and hand stay. Details under
+- **In a car:** Steve rides along: Minecraft shows his hand or the whole seated Steve, and hides the hotbar. Details under
   [Vehicles and third person](#vehicles-and-third-person).
 
 ### Layer 2: building, explosions, weapons
@@ -440,11 +441,11 @@ the Minecraft log how many proxies exist ("proxies: H people, C cars").
 
 ### Vehicles and third person
 **Steve rides along.** Getting into a car, bike or any other vehicle no longer hides Steve or Minecraft:
-- **First-person vehicle camera:** you see Steve's hands and the hotbar, drawn over the dashboard.
+- **First-person vehicle camera:** you see Steve's hand, drawn over the dashboard. The hotbar is hidden.
 - **Third-person vehicle camera:** you see the **whole of Steve, seated** at V's seat. Switching Cyberpunk's vehicle camera
   switches between the two at once.
-- Minecraft hides its survival bars (health, food, armour, experience level) and the crosshair while you are in a vehicle
-  and shows them again when you get out. The hand and the hotbar stay.
+- Minecraft hides its hotbar, survival bars (health, food, armour, experience level) and the crosshair while you are in a
+  vehicle and shows them again when you get out. Only the hand (first person) or the seated Steve (third person) is drawn.
 - V's own body stays hidden in both vehicle cameras, and **Cyberpunk's HUD never appears in a vehicle**: the speed and the
   district are drawn by Minecraft (see [the interface](#the-minecraft-interface)).
 - The health rule, the driving, the radio and the quickhack ban in cars are as before. Minecraft's items, hacks and
@@ -705,7 +706,7 @@ is in the Cyberblock effect (**SandevistanStrength**, 0 turns it off). Cyberbloc
   the matching implant items once, never installed for you: "Your perks now need cyberware: you received <items>.
   Install them with U".
 
-**Advancements.** Cyberblock has its own advancement tab (open Minecraft's advancements from the pause menu): *Cyberblock*
+**Advancements.** Cyberblock has its own advancement tab (the pause screen has no button for it: bind **Advancements** to a free key in Esc, **Minecraft Options...**, Controls, then press it): *Cyberblock*
 (root), *Chromed Up* (install your first cyberware), *Two Brains* (run a cyberdeck and a Sandevistan or Berserk at once),
 *Netrunner* (land your first quickhack), *Script Kiddie No More* (land every quickhack chip) and *Time Is on My Side*
 (defeat an enemy while the Sandevistan runs).

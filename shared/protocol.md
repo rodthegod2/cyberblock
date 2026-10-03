@@ -395,8 +395,8 @@ Rows marked **extends** add to an earlier message of the same `t`; the old field
   victim of the hacked person).
 - **Seat (F3):** with `cam.seat` true, `pl` is V's hips point (the rotated seat offset from the vehicle's Hips slot), `fp`
   is false when the vehicle camera is third person, and Minecraft draws the whole seated Steve instead of the hand.
-  `hud` is always `hidden:false`: Minecraft's hotbar and hand are no longer hidden in vehicles (the mod itself hides the
-  survival bars while it is in a vehicle).
+  `hud` is always `hidden:false`. In a vehicle Minecraft shows only Steve's hand (first-person camera) or the whole seated
+  Steve (third-person camera); the mod itself hides its own HUD elements there (hotbar, survival bars and crosshair).
 - **Third person (F2):** `fp` is false while the on-foot third-person view is applied. Minecraft asks for it with `persp`
   `mode:"back"` (F5); the DLL applies it only while allowed (Active on foot, not held, no menu, no braindance, no photo
   mode) and keeps reporting `fp:true` while it cannot.

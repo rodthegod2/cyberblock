@@ -32,8 +32,8 @@ Version 1.0.0 is set in the files on 2026-10-03; it is tagged and published only
   cobwebs, poison cloud, wither trail, outlines through walls, swirls, a creeper face, per-device effects) played when the
   upload completes, and a distinct Cyberpunk effect, with visible extras on crowd pedestrians. New wire messages `hackspread`
   and the `upload` and `kind` of `hackresult`.
-- **Re-test 3, vehicles.** Steve rides along: hands and hotbar in a first-person vehicle camera, the whole seated Steve in a
-  third-person one.
+- **Re-test 3, vehicles.** Steve rides along: his hand in a first-person vehicle camera, the whole seated Steve in a
+  third-person one (the hotbar, survival bars and crosshair are hidden in a vehicle).
 - **Re-test 3, cyberware.** Separate keys: Y for the Operating System implant, L for the Arms implant, O for Optical Camo
   (six rebindable keys, clash-free); two Operating System places (a Cyberdeck and Sandevistan or Berserk together); active
   abilities for Mantis Blades (lunge), Gorilla Arms (slam) and Monowire (lash); original 3D models for the arm implants in

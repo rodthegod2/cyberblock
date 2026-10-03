@@ -15,7 +15,7 @@ older list.) The plan behind them is `docs/superpowers/plans/2026-10-03-retest3-
 |---|---|
 | **F1** every quickhack feels the same | The hack wheel fired the first chip (Short Circuit) over the chip in your hand, and no chip had its own look. The chip in your hand wins now; every chip has its own Minecraft effect and a distinct Cyberpunk effect, also on crowd pedestrians. |
 | **F2** a Minecraft UI for the rest of the game, third person | Radar, eddies, wanted stars, quest, locator-bar waypoint, prompts, choices, subtitles, toasts, calls, journal, phone, atlas and pause are drawn by Minecraft. **F5** is a third-person view. |
-| **F3** Steve visible in vehicles | First-person: Steve's hands and the hotbar. Third-person camera: the whole seated Steve. |
+| **F3** Steve visible in vehicles | First-person: Steve's hand, no hotbar. Third-person camera: the whole seated Steve. |
 | **F4** the glide could not turn | The DLL now owns the glide's yaw and applies your mouse turn; it steers like the vanilla elytra. |
 | **F5** ground alignment | Perfect, unchanged: a regression check only. |
 | **F6** arm cyberware models | 3D models for Mantis Blades, Gorilla Arms, Monowire and the Projectile Launch System, first and third person. |
@@ -101,8 +101,8 @@ Survival, the kit (deck and all ten chips), a **ganger** (a hostile NPC in a gan
 
 ### F3. Steve in vehicles
 Get into a car and then a bike.
-1. First-person vehicle camera: Steve's hands and the hotbar are visible; **no** Cyberpunk HUD, V's body is hidden. The
-   health, food and armour bars are hidden, the hotbar stays.
+1. First-person vehicle camera: Steve's hand is visible; **no** Cyberpunk HUD, V's body is hidden. The hotbar, health,
+   food and armour bars and the crosshair are all hidden.
 2. Switch to the third-person vehicle camera: the **whole of Steve, seated** at V's seat. Switch back and forth several times:
    V's own body never appears in either camera.
 3. Get out: bars and crosshair return.
@@ -150,7 +150,8 @@ gauntlet.
    entity within 10 blocks), **O** cloaks you. Each key fires only its own slot; with nothing for a key the chat says "No
    ... to fire (<key>)".
 2. **First start.** The first time the mod runs after the update, the chat says "Cyberblock took L from Advancements (rebind
-   it in Controls)" (and O from Friends). Advancements are in the pause menu.
+   it in Controls)" (and O from Friends). The pause screen has no Advancements button: bind **Advancements** to a free key
+   in Esc, **Minecraft Options...**, Controls.
 3. **Rebinding and a clash.** In Controls (category Cyberblock) set Arms to **Y**: all six keys go back to G K U Y L O and
    chat says so. Rebind Arms to **F10** (allowed): L is Cyberpunk's again, F10 lunges. A refused key (for example **E**) falls
    back to that action's own default.
@@ -188,7 +189,8 @@ Cyberblock:
 4. **uninstall.bat**: the game folder is as before (a file you edited is left with a message).
 - **Log:** `Cyberblock 1.0.0 loading`, `Minecraft says hello: mod cyberblock 1.0.0, Minecraft 26.3`, no `version mismatch`;
   Minecraft `launcher: opening cyberblock (autostart)` or `(button)`.
-- Also open the advancements screen (pause menu): the Cyberblock tab lists six advancements.
+- Also open the advancements screen (press the key you bound to Advancements in Controls, see F8 step 2): the Cyberblock tab
+  lists six advancements.
 
 ### F12. No Cyberpunk HUD, ever (the full walk)
 Cyberblock Active, survival. Do each of these and look at the whole screen the whole time. **No Cyberpunk interface element
@@ -630,7 +632,7 @@ already running still has the old mod. The full key table and the netrunning wal
 ## 1. Layer 1 acceptance (5 min)
 1. Walk up stairs and under an overpass: Steve's hand/hotbar stay; placed blocks rest on Night City floors.
 2. Look at a wall that has a Minecraft block behind it: **no block outline shows through the wall** (aim-limit fix).
-3. Get in a car and out again: Cyberpunk HUD returns while driving; Steve/hotbar return on foot.
+3. Get in a car and out again: no Cyberpunk HUD in the car (Steve rides along, hand only, no hotbar); the hotbar returns on foot.
 4. Close the Minecraft window mid-walk: within ~2 s V is restored with a notification. Restart Minecraft: it resumes.
 5. Save while active, then load: the save loads normally.
 

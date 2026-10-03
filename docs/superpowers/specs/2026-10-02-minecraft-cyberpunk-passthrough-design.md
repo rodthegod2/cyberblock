@@ -16,7 +16,7 @@ Night City through real Cyberpunk effects (explosions, damage, collision, telepo
 |---|---|
 | Approach | **True passthrough**: real Minecraft + Fabric mod, composited into Cyberpunk (like the viral videos and the universal-modder Minecraft × GTA V example). |
 | Who moves the body | **Cyberpunk moves, Steve acts.** Cyberpunk's movement on foot; Minecraft physics only during elytra flight. |
-| Cyberpunk combat on foot | **Minecraft only.** Cyberpunk guns, cyberware and hacking are disabled while the mashup is on. **Cars stay**: V drives with Cyberpunk's controls and **Steve rides along** (re-test 3 reverses the first design, which hid Steve and restored the Cyberpunk HUD in a vehicle): the Minecraft hand and hotbar stay in a first-person vehicle camera, the whole seated Steve shows in a third-person one, and Cyberpunk's HUD never comes back (§4.3, §4.8). |
+| Cyberpunk combat on foot | **Minecraft only.** Cyberpunk guns, cyberware and hacking are disabled while the mashup is on. **Cars stay**: V drives with Cyberpunk's controls and **Steve rides along** (re-test 3 reverses the first design, which hid Steve and restored the Cyberpunk HUD in a vehicle): Minecraft shows only Steve's hand in a first-person vehicle camera (hotbar hidden), the whole seated Steve in a third-person one, and Cyberpunk's HUD never comes back (§4.3, §4.8). |
 | Game mode | **Both, switchable** with Minecraft's `/gamemode`. Survival spawns with a starter kit (`/cyberblock kit` refills); creative makes both Steve and V invincible. |
 | Priorities | Building + TNT/creepers → mobs vs Night City → elytra + ender pearls → interactive items (lead/lasso, fishing rod, …) → Cyberpunk-as-Minecraft (quickhack items, hack key, skill tree). Nether and day/night sync are out of scope. |
 
@@ -146,9 +146,9 @@ nearest rounding (§3.2).
 ### 4.3 V's state while active
 V's body and weapons hidden, combat blocked by a gameplay restriction, Cyberpunk's 2D interface layers invisible
 (§4.8), V invincible. **Entering a vehicle (re-test 3):** V stays invincible and V's body stays hidden in both vehicle
-cameras, the interface stays invisible and **Steve rides along** in Minecraft: the hand and hotbar in a first-person
+cameras, the interface stays invisible and **Steve rides along** in Minecraft: Steve's hand (no hotbar) in a first-person
 camera, the whole seated Steve (at V's hips point, read from the vehicle's Hips slot) in a third-person camera; the DLL
-reports `cam.seat` and an honest `cam.fp`, and Minecraft hides only its survival bars and crosshair while seated. Leaving:
+reports `cam.seat` and an honest `cam.fp`, and Minecraft hides its hotbar, survival bars and crosshair while seated. Leaving:
 back to the on-foot state. All state is applied at runtime and cleared before every save and on every load, so saves stay
 vanilla.
 
