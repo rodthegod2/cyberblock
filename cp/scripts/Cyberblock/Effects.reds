@@ -1,6 +1,7 @@
 // Minecraft events applied as real Cyberpunk effects (layer 2 plan §1.4, S2.3). V is the instigator of everything, so
 // the game's own systems give NCPD heat, hostility, kill credit and quest protection (god modes) as for V's attacks;
-// V is never hit by them (the damage pipeline ignores self-damage without hitFlag.CanDamageSelf).
+// V is never hit by them (the damage pipeline ignores self-damage without hitFlag.CanDamageSelf). Hit's push is not
+// part of that pipeline, so Hit withholds it itself from the same targets and from NPCs in workspots and scenes.
 //
 // 2.31 sources (decompiled 2.31 scripts, NativeDB, TweakDB read from r6/cache, archive index; compile-checked):
 //   Explode: the scripted-explosion pattern of ClaymoreMine.Explode / InitiateCyberwareExplosionEffector /
@@ -13,12 +14,17 @@
 //     vehicles; the records explosive devices use) and Attacks.IncendiaryGrenade (burning). VFX: FxSystem.SpawnEffect
 //     with Codeware's FxResource.effect; barrel_explosion.effect is what explosive devices (boiler, c4) reference,
 //     w_explosives_001__frag_grenade_01.effect is the frag grenade explosion.
-//   Hit: a gameHitEvent queued to DamageSystem as VehicleComponent does for car collisions (AttackData
-//     SetAttackDefinition/SetInstigator/SetSource/AddFlag), attack record Attacks.Impact (melee, hit animation);
+//   Hit: a gameHitEvent queued to DamageSystem as VehicleComponent.CreateHitEventOnSelf does for car collisions
+//     (AttackData SetAttackDefinition, PreAttack, SetAttackPosition, SetAttackTime, SetInstigator/SetSource/AddFlag),
+//     attack record Attacks.Impact (attackType AttackType.Melee, hit-reaction severity min 1, read from tweakdb.bin);
 //     the exact amount is set in DamageSystem.DealDamages, the last stage before StatPoolsManager.ApplyDamage, with
-//     MultAttackValue(0) + SetAttackValue as ProcessVehicleTarget does. Knockback: CreateForceRagdollEvent + delayed
-//     CreateRagdollApplyImpulseEvent (AIDeathReactionTask.TurnOnRagdoll); vehicles: PhysicalImpulseEvent
-//     (MotorcycleComponent.OnKnockOverBikeEvent) with VehicleObject.GetTotalMass.
+//     MultAttackValue(0) + SetAttackValue as ProcessVehicleTarget does. Knockback, applied there too (only for a hit
+//     the pipeline accepted): CreateForceRagdollEvent + delayed CreateRagdollApplyImpulseEvent
+//     (AIDeathReactionTask.TurnOnRagdoll) where ScriptedPuppet.CanRagdoll allows; vehicles: PhysicalImpulseEvent
+//     (MotorcycleComponent.OnKnockOverBikeEvent) with VehicleObject.GetTotalMass. Withheld from protected targets:
+//     GodModeSystem.HasGodMode (Invulnerable, Immortal; DamageSystem.ProcessVehicleTarget), GameObject
+//     .IsFriendlyTowardsPlayer, VehicleComponent.GetVehicle/GetDriver, WorkspotGameSystem.IsActorInWorkspot,
+//     SceneSystemInterface.IsEntityInScene (NPCPuppet death handling).
 //   Ignite: StatusEffectSystem.ApplyStatusEffect(t"BaseStatusEffect.Burning", instigator V) +
 //     SetStatusEffectRemainingDuration.
 //   Targets: Codeware EntityID.FromHash (inverse of the EntityID hash S1 sends) + GameInstance.FindEntityByID.
@@ -82,49 +88,91 @@ public abstract class CyberblockEffects {
     if Vector4.IsZero(direction) {
       direction = Vector4.Normalize(object.GetWorldPosition() - player.GetWorldPosition());
     }
-
-    if frac > 0.0 {
-      let amount = ClampF(frac, 0.0, 4.0) * GameInstance.GetStatsSystem(game).GetStatValue(Cast<StatsObjectID>(id), gamedataStatType.Health);
-      let context: AttackInitContext;
-      context.record = TweakDBInterface.GetAttackRecord(t"Attacks.Impact");
-      context.instigator = player;
-      context.source = player;
-      let attack = IAttack.Create(context);
-      // Keeps the attack value above zero, so the pipeline does not mark the hit DealNoDamage before DealDamages.
-      attack.AddStatModifier(RPGManager.CreateStatModifier(gamedataStatType.PhysicalDamage, gameStatModifierType.Additive, amount));
-      let hit = new gameHitEvent();
-      hit.attackData = new AttackData();
-      hit.target = object;
-      hit.attackData.SetAttackDefinition(attack);
-      hit.attackData.SetInstigator(player);
-      hit.attackData.SetSource(player);
-      hit.attackData.AddFlag(hitFlag.ForceNoCrit, n"Cyberblock");
-      hit.hitPosition = hitPosition;
-      hit.hitDirection = direction;
-      CyberblockEffectsService.Get().Expect(hit, amount);
-      GameInstance.GetDamageSystem(game).QueueHitEvent(hit, object);
+    // The damage pipeline protects its targets from the damage only; the push is ours to withhold.
+    if CyberblockEffects.IsProtected(game, object, player) {
+      impulse = new Vector4(0.0, 0.0, 0.0, 0.0);
     }
-
-    let speed = Vector4.Length(impulse);
-    let vehicle = object as VehicleObject;
-    if IsDefined(vehicle) {
-      if speed > 0.0 {
-        let push = new PhysicalImpulseEvent();
-        push.radius = 1.0;
-        push.worldPosition = Vector4.Vector4To3(object.GetWorldPosition() + new Vector4(0.0, 0.0, 0.5, 0.0));
-        push.worldImpulse = Vector4.Vector4To3(impulse * vehicle.GetTotalMass());
-        vehicle.QueueEvent(push);
-      }
+    if frac <= 0.0 {
+      CyberblockEffects.Knock(object, hitPosition, impulse);
       return;
     }
-    // People are knocked over by a Minecraft-strength blow (melee is 6 m/s and more), as a car hit would; not while
-    // seated in a vehicle.
+
+    let amount = ClampF(frac, 0.0, 4.0) * GameInstance.GetStatsSystem(game).GetStatValue(Cast<StatsObjectID>(id), gamedataStatType.Health);
+    let context: AttackInitContext;
+    context.record = TweakDBInterface.GetAttackRecord(t"Attacks.Impact");
+    context.instigator = player;
+    context.source = player;
+    let attack = IAttack.Create(context);
+    // Keeps the attack value above zero, so the pipeline does not mark the hit DealNoDamage before DealDamages.
+    attack.AddStatModifier(RPGManager.CreateStatModifier(gamedataStatType.PhysicalDamage, gameStatModifierType.Additive, amount));
+    let hit = new gameHitEvent();
+    hit.attackData = new AttackData();
+    hit.target = object;
+    hit.attackData.SetAttackDefinition(attack);
+    // Attack type (AttackType.Melee) and hit-reaction severity from Attacks.Impact; left unset, the type is enum 0,
+    // ChargedWhipAttack, which dismembers on kill.
+    hit.attackData.PreAttack();
+    hit.attackData.SetAttackPosition(hitPosition - direction); // where the blow came from, 1 m back
+    hit.attackData.SetAttackTime(EngineTime.ToFloat(GameInstance.GetTimeSystem(game).GetSimTime()));
+    hit.attackData.SetInstigator(player);
+    hit.attackData.SetSource(player);
+    hit.attackData.AddFlag(hitFlag.ForceNoCrit, n"Cyberblock");
+    hit.hitPosition = hitPosition;
+    hit.hitDirection = direction;
+    // The push follows the damage (CyberblockEffectsService.Apply), so a hit the pipeline refuses pushes nothing.
+    CyberblockEffectsService.Get().Expect(hit, amount, impulse);
+    GameInstance.GetDamageSystem(game).QueueHitEvent(hit, object);
+  }
+
+  // Pushes a vehicle, or knocks a person over with a Minecraft-strength blow (melee is 6 m/s and more) as a car hit
+  // would, where the game allows a ragdoll (ScriptedPuppet.CanRagdoll: not seated in a vehicle, not a boss, ...).
+  public static func Knock(object: ref<GameObject>, hitPosition: Vector4, impulse: Vector4) -> Void {
+    let speed = Vector4.Length(impulse);
+    if !IsDefined(object) || speed <= 0.0 {
+      return;
+    }
+    let vehicle = object as VehicleObject;
+    if IsDefined(vehicle) {
+      let push = new PhysicalImpulseEvent();
+      push.radius = 1.0;
+      push.worldPosition = Vector4.Vector4To3(object.GetWorldPosition() + new Vector4(0.0, 0.0, 0.5, 0.0));
+      push.worldImpulse = Vector4.Vector4To3(impulse * vehicle.GetTotalMass());
+      vehicle.QueueEvent(push);
+      return;
+    }
     let ragdollSpeed = 4.0;
     let personMass = 75.0;
-    if speed >= ragdollSpeed && IsDefined(object as ScriptedPuppet) && !VehicleComponent.IsMountedToVehicle(game, object) {
+    if speed >= ragdollSpeed && ScriptedPuppet.CanRagdoll(object) {
       object.QueueEvent(CreateForceRagdollEvent(n"Cyberblock"));
-      GameInstance.GetDelaySystem(game).DelayEvent(object, CreateRagdollApplyImpulseEvent(hitPosition, impulse * personMass, 10000.0), 0.10, false);
+      GameInstance.GetDelaySystem(object.GetGame()).DelayEvent(object, CreateRagdollApplyImpulseEvent(hitPosition, impulse * personMass, 10000.0), 0.10, false);
     }
+  }
+
+  // Targets the push must leave alone: those the damage pipeline protects (V, V's car, god modes, friends of V), cars
+  // they drive, and anyone a quest is animating (workspot, scene), whom a forced ragdoll would pull out of it.
+  private static func IsProtected(game: GameInstance, object: ref<GameObject>, player: ref<PlayerPuppet>) -> Bool {
+    let id = object.GetEntityID();
+    let mounted: wref<GameObject>;
+    if object == player || VehicleComponent.GetVehicle(game, player, mounted) && mounted == object {
+      return true;
+    }
+    if CyberblockEffects.HasGodMode(game, id) || GameObject.IsFriendlyTowardsPlayer(object) {
+      return true;
+    }
+    let vehicle = object as VehicleObject;
+    if IsDefined(vehicle) {
+      let driver = VehicleComponent.GetDriver(game, vehicle, id);
+      if IsDefined(driver) && (CyberblockEffects.HasGodMode(game, driver.GetEntityID()) || GameObject.IsFriendlyTowardsPlayer(driver)) {
+        return true;
+      }
+    }
+    return GameInstance.GetWorkspotSystem(game).IsActorInWorkspot(object)
+      || GameInstance.GetSceneSystem(game).GetScriptInterface().IsEntityInScene(id);
+  }
+
+  private static func HasGodMode(game: GameInstance, id: EntityID) -> Bool {
+    let godModes = GameInstance.GetGodModeSystem(game);
+    return godModes.HasGodMode(id, gameGodModeType.Invulnerable) || godModes.HasGodMode(id, gameGodModeType.Immortal);
   }
 
   // Sets an NPC on fire with the vanilla burning status effect (V as instigator: its damage, heat and kills are V's).
@@ -180,46 +228,59 @@ public abstract class CyberblockEffects {
   }
 }
 
-// Hits Hit queued and the exact damage each must deal; DamageSystem.DealDamages applies it. Bounded: a hit the
-// pipeline drops before DealDamages (dead or invulnerable target) is forgotten when it is released or pushed out.
+// Hits Hit queued, with the exact damage each must deal and the push that goes with it; DamageSystem.DealDamages
+// applies them. Bounded: a hit the pipeline drops before DealDamages (dead or invulnerable target) is forgotten when
+// it is released or pushed out.
 public class CyberblockEffectsService extends ScriptableService {
   private let hits: array<wref<gameHitEvent>>;
   private let amounts: array<Float>;
+  private let impulses: array<Vector4>;
 
   public static func Get() -> ref<CyberblockEffectsService> {
     return GameInstance.GetScriptableServiceContainer().GetService(n"CyberblockEffectsService") as CyberblockEffectsService;
   }
 
-  public func Expect(hit: ref<gameHitEvent>, amount: Float) -> Void {
+  public func Expect(hit: ref<gameHitEvent>, amount: Float, impulse: Vector4) -> Void {
     let i = ArraySize(this.hits) - 1;
     while i >= 0 {
       if !IsDefined(this.hits[i]) {
-        ArrayErase(this.hits, i);
-        ArrayErase(this.amounts, i);
+        this.Forget(i);
       }
       i -= 1;
     }
     if ArraySize(this.hits) >= 64 {
-      ArrayErase(this.hits, 0);
-      ArrayErase(this.amounts, 0);
+      this.Forget(0);
     }
     ArrayPush(this.hits, hit);
     ArrayPush(this.amounts, amount);
+    ArrayPush(this.impulses, impulse);
   }
 
-  // Replaces the computed damage of one of our hits with the exact amount; any other hit is left untouched.
+  // Replaces the computed damage of one of our hits with the exact amount and pushes the target; any other hit is
+  // left untouched. A hit the pipeline refused on the way (DealNoDamage: e.g. a vehicle immune while decaying) keeps
+  // its zero damage and pushes nothing.
   public func Apply(hitEvent: ref<gameHitEvent>) -> Void {
     let i = 0;
     while i < ArraySize(this.hits) {
       if this.hits[i] == hitEvent {
-        hitEvent.attackComputed.MultAttackValue(0.0);
-        hitEvent.attackComputed.SetAttackValue(this.amounts[i], gamedataDamageType.Physical);
-        ArrayErase(this.hits, i);
-        ArrayErase(this.amounts, i);
+        let amount = this.amounts[i];
+        let impulse = this.impulses[i];
+        this.Forget(i);
+        if !hitEvent.attackData.HasFlag(hitFlag.DealNoDamage) {
+          hitEvent.attackComputed.MultAttackValue(0.0);
+          hitEvent.attackComputed.SetAttackValue(amount, gamedataDamageType.Physical);
+          CyberblockEffects.Knock(hitEvent.target, hitEvent.hitPosition, impulse);
+        }
         return;
       }
       i += 1;
     }
+  }
+
+  private func Forget(i: Int32) -> Void {
+    ArrayErase(this.hits, i);
+    ArrayErase(this.amounts, i);
+    ArrayErase(this.impulses, i);
   }
 }
 
