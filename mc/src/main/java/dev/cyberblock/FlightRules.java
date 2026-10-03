@@ -111,6 +111,13 @@ public final class FlightRules {
 			return this.seen;
 		}
 
+		/** A pause (a Cyberpunk menu froze the glide): a host that has not followed yet gets the full time again from now. */
+		public void restart(final long nanos) {
+			if (!this.seen) {
+				this.start = nanos;
+			}
+		}
+
 		/**
 		 * False when the glide must be called off: the host stopped following (fly false after it was true), or it never followed
 		 * within FOLLOW_NANOS.

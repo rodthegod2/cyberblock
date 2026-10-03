@@ -46,6 +46,8 @@ public final class Flight {
 	private static long touchdownNanos;
 	/** No glide starts before this (System.nanoTime, compared as a difference) after one was called off. */
 	private static long retryAt = System.nanoTime();
+	/** A Cyberpunk menu paused the glide: where Steve waits, and the velocity he carries on with. Both null while not paused. */
+	private static @Nullable Vec3 pausedAt, pausedVelocity;
 	/** The host sent look deltas during this flight: they steer, not its camera. */
 	private static boolean lookFromDeltas;
 	private static float lookYaw, lookPitch;
@@ -115,6 +117,15 @@ public final class Flight {
 		}
 
 		long now = System.nanoTime();
+		if (p.menu()) {
+			pause(player);
+			return;
+		}
+
+		if (pausedAt != null) {
+			resume(player, now);
+		}
+
 		if (!follow.ok(now, p.receivedNanos(), p.fly())) {
 			abort(player, p);
 			return;
@@ -127,6 +138,34 @@ public final class Flight {
 		if (FlightRules.touchdown(player.onGround(), player.isFallFlying())) {
 			land(player, p);
 		}
+	}
+
+	/**
+	 * A Cyberpunk menu is open mid-glide: Cyberpunk is paused and V cannot follow, so Steve waits in the air where he is, with no
+	 * gravity and no flight samples (the host holds V when the samples stop, and carries on when they come back).
+	 */
+	private static void pause(final LocalPlayer player) {
+		if (pausedAt == null) {
+			pausedAt = player.position();
+			pausedVelocity = player.getDeltaMovement();
+			gravity(player, false, false);
+			Cyberblock.LOG.info("glide paused at {} (Cyberpunk menu)", pausedAt);
+		}
+
+		player.setPos(pausedAt);
+		player.xo = player.xOld = pausedAt.x;
+		player.yo = player.yOld = pausedAt.y;
+		player.zo = player.zOld = pausedAt.z;
+		player.setDeltaMovement(Vec3.ZERO);
+	}
+
+	/** The menu closed: the glide carries on with the velocity it had. */
+	private static void resume(final LocalPlayer player, final long now) {
+		player.setDeltaMovement(pausedVelocity);
+		gravity(player, true, false);
+		pausedAt = pausedVelocity = null;
+		follow.restart(now); // a host that had not followed yet gets its full half second again
+		Cyberblock.LOG.info("glide resumed");
 	}
 
 	private static boolean hasElytra(final LivingEntity player) {
@@ -164,7 +203,7 @@ public final class Flight {
 		}
 
 		player.connection.send(new ServerboundPlayerCommandPacket(player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING));
-		gravity(player, true);
+		gravity(player, true, false);
 		driving = true;
 		landed = false;
 		lookFromDeltas = false;
@@ -219,17 +258,19 @@ public final class Flight {
 
 	/** Steve hangs with no gravity again. Vanilla ends a glide only on the ground: in mid-air he would hover gliding. */
 	private static void endGlide(final LocalPlayer player) {
-		gravity(player, false);
+		gravity(player, false, true);
 		player.stopFallFlying();
 		player.setDeltaMovement(Vec3.ZERO);
+		pausedAt = pausedVelocity = null;
 		fall.reset();
 	}
 
 	/**
-	 * Gravity on (gliding) or off (hanging at V), on the client and on the integrated server, so neither resyncs the other. Off
-	 * also ends the server's glide, which otherwise keeps taking elytra durability while Steve hangs in the air.
+	 * Gravity on (gliding) or off (hanging at V, or paused by a menu), on the client and on the integrated server, so neither
+	 * resyncs the other. endGlide also ends the server's glide, which otherwise keeps taking elytra durability while Steve hangs
+	 * in the air.
 	 */
-	private static void gravity(final LocalPlayer player, final boolean on) {
+	private static void gravity(final LocalPlayer player, final boolean on, final boolean endGlide) {
 		player.setNoGravity(!on);
 		IntegratedServer server = Minecraft.getInstance().getSingleplayerServer();
 		if (server != null) {
@@ -237,7 +278,7 @@ public final class Flight {
 				ServerPlayer serverPlayer = server.getPlayerList().getPlayer(player.getUUID());
 				if (serverPlayer != null) {
 					serverPlayer.setNoGravity(!on);
-					if (!on) {
+					if (endGlide) {
 						serverPlayer.stopFallFlying();
 					}
 				}
@@ -274,8 +315,8 @@ public final class Flight {
 		player.xRotO = pitch;
 		player.yHeadRot = player.yHeadRotO = yaw;
 		long now = System.nanoTime();
-		if (now - lastSent < FRAME_NANOS) {
-			return;
+		if (pausedAt != null || now - lastSent < FRAME_NANOS) {
+			return; // paused by a Cyberpunk menu: the host hears nothing until it is over
 		}
 
 		lastSent = now;

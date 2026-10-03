@@ -174,6 +174,21 @@ class FlightRulesTest {
 	}
 
 	@Test
+	void aMenuPauseGivesAHostThatHasNotFollowedYetItsTimeAgain() {
+		long start = 1_000_000_000L;
+		FlightRules.Follow follow = new FlightRules.Follow();
+		follow.start(start);
+		follow.restart(start + 3_000_000_000L); // a Cyberpunk menu was open for 3 s
+		assertTrue(follow.ok(start + 3_400_000_000L, start + 3_390_000_000L, false));
+		assertFalse(follow.ok(start + 3_500_000_000L, start + 3_490_000_000L, false));
+		follow.start(start);
+		assertTrue(follow.ok(start + 100_000_000L, start + 90_000_000L, true));
+		follow.restart(start + 3_000_000_000L);
+		assertTrue(follow.seen(), "a host that follows stays followed");
+		assertFalse(follow.ok(start + 3_100_000_000L, start + 3_090_000_000L, false));
+	}
+
+	@Test
 	void onlyPosesAfterTheStartCount() {
 		long start = 1_000_000_000L;
 		FlightRules.Follow follow = new FlightRules.Follow();
