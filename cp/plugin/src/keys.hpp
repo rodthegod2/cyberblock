@@ -101,11 +101,12 @@ namespace cb::keys
 	inline constexpr uint16_t kMouseButton5Down = 0x0100;
 	inline constexpr uint16_t kMouseWheel = 0x0400;
 	inline constexpr uint16_t kMouseHWheel = 0x0800;
-	inline constexpr uint16_t kMouseDownAndWheelBits = kMouseLeftDown | kMouseRightDown | kMouseMiddleDown | kMouseButton4Down |
-													   kMouseButton5Down | kMouseWheel | kMouseHWheel;
+	/// The bits Minecraft takes: left, right and middle down and both wheels. Mouse 4 and 5 are not among them: Cyberpunk
+	/// keeps the side buttons (players bind dodge, the scanner and the like to them).
+	inline constexpr uint16_t kMouseDownAndWheelBits = kMouseLeftDown | kMouseRightDown | kMouseMiddleDown | kMouseWheel | kMouseHWheel;
 
-	/// `usButtonFlags` without the button-down and wheel bits; the button-up bits stay, so a button held before forwarding
-	/// started is still released in Cyberpunk.
+	/// `usButtonFlags` without the left/right/middle button-down and wheel bits; the button-up bits stay, so a button held
+	/// before forwarding started is still released in Cyberpunk, and the side buttons pass untouched.
 	constexpr uint16_t strip_down_and_wheel(uint16_t buttonFlags)
 	{
 		return static_cast<uint16_t>(buttonFlags & ~kMouseDownAndWheelBits);

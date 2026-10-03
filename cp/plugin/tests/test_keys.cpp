@@ -213,12 +213,11 @@ TEST(losing_focus_forgets_every_key)
 
 // ---- mouse bits and look deltas ----------------------------------------------------------------------------------------
 
-TEST(strip_removes_every_button_down_and_wheel_bit_and_keeps_the_up_bits)
+TEST(strip_removes_the_left_right_middle_down_and_wheel_bits_and_keeps_the_up_bits)
 {
-	static_assert(strip_down_and_wheel(0x0001 | 0x0004 | 0x0010 | 0x0040 | 0x0100 | 0x0400 | 0x0800) == 0);
+	static_assert(strip_down_and_wheel(0x0001 | 0x0004 | 0x0010 | 0x0400 | 0x0800) == 0);
 	CHECK(strip_down_and_wheel(kMouseLeftDown) == 0 && strip_down_and_wheel(kMouseRightDown) == 0);
-	CHECK(strip_down_and_wheel(kMouseMiddleDown) == 0 && strip_down_and_wheel(kMouseButton4Down) == 0);
-	CHECK(strip_down_and_wheel(kMouseButton5Down) == 0 && strip_down_and_wheel(kMouseWheel) == 0 && strip_down_and_wheel(kMouseHWheel) == 0);
+	CHECK(strip_down_and_wheel(kMouseMiddleDown) == 0 && strip_down_and_wheel(kMouseWheel) == 0 && strip_down_and_wheel(kMouseHWheel) == 0);
 	// RI_MOUSE_LEFT_BUTTON_UP 0x2, RIGHT 0x8, MIDDLE 0x20, BUTTON_4 0x80, BUTTON_5 0x200: a release is never lost
 	for (uint16_t up : {uint16_t(0x0002), uint16_t(0x0008), uint16_t(0x0020), uint16_t(0x0080), uint16_t(0x0200)})
 	{
@@ -226,7 +225,15 @@ TEST(strip_removes_every_button_down_and_wheel_bit_and_keeps_the_up_bits)
 		CHECK(strip_down_and_wheel(uint16_t(up | kMouseLeftDown | kMouseWheel)) == up);
 	}
 	CHECK(strip_down_and_wheel(0) == 0);
-	CHECK(strip_down_and_wheel(0xFFFF) == 0xF2AA); // 0xFFFF without 0x0D55 (the seven down and wheel bits): the rest is left alone
+	CHECK(strip_down_and_wheel(0xFFFF) == 0xF3EA); // 0xFFFF without 0x0C15 (the five down and wheel bits): the rest is left alone
+}
+
+TEST(mouse_4_and_5_stay_with_cyberpunk)
+{
+	// the side buttons are this player's dodge and scanner: Cyberpunk gets their down bits while forwarding too
+	CHECK(strip_down_and_wheel(kMouseButton4Down) == kMouseButton4Down);
+	CHECK(strip_down_and_wheel(kMouseButton5Down) == kMouseButton5Down);
+	CHECK(strip_down_and_wheel(uint16_t(kMouseButton4Down | kMouseLeftDown | kMouseWheel)) == kMouseButton4Down);
 }
 
 TEST(the_look_deltas_are_summed_scaled_and_sent_at_most_120_times_a_second)

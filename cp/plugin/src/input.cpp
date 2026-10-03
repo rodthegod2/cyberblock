@@ -326,11 +326,6 @@ namespace
 		case WM_MBUTTONUP:
 			button(2, false);
 			break;
-		case WM_XBUTTONDOWN:
-		case WM_XBUTTONDBLCLK:
-			if (forwarding())
-				return TRUE; // not forwarded to Minecraft, but Cyberpunk has no use for it while Steve is active
-			break;
 		case WM_MOUSEWHEEL:
 			if (on_wheel(wParam))
 				return 0;
@@ -349,8 +344,9 @@ namespace
 		return CallWindowProcW(g_original.load(), hwnd, msg, wParam, lParam);
 	}
 
-	/// The game's own GetRawInputData: while forwarding, the mouse packets it gets lose their button-down and wheel bits
-	/// (those go to Minecraft instead), but keep the motion that turns the camera and the button-up bits.
+	/// The game's own GetRawInputData: while forwarding, the mouse packets it gets lose their left/right/middle button-down
+	/// and wheel bits (those go to Minecraft instead), but keep the motion that turns the camera, the button-up bits and
+	/// mouse 4/5.
 	UINT WINAPI get_raw_input_data(HRAWINPUT raw, UINT command, LPVOID data, PUINT size, UINT headerSize)
 	{
 		const UINT copied = reinterpret_cast<GetRawInputDataFn>(g_realGetRawInputData)(raw, command, data, size, headerSize);
