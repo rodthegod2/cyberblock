@@ -375,10 +375,17 @@ namespace
 			if (adapter == nullptr)
 				return;
 		}
+		// System commit too: the 2026-10-02 crash was Windows running out of commit (error 1455), not VRAM.
+		MEMORYSTATUSEX mem = {sizeof(mem)};
+		GlobalMemoryStatusEx(&mem);
+		const unsigned long long commit_used = (mem.ullTotalPageFile - mem.ullAvailPageFile) >> 20;
 		DXGI_QUERY_VIDEO_MEMORY_INFO info = {};
 		if (SUCCEEDED(adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info)))
-			cb::log::info("vram: %llu MB used of %llu MB budget (frames %s)", info.CurrentUsage >> 20, info.Budget >> 20,
+			cb::log::info("memory: vram %llu of %llu MB budget, system commit %llu of %llu MB (frames %s)",
+				info.CurrentUsage >> 20, info.Budget >> 20, commit_used, mem.ullTotalPageFile >> 20,
 				g_hasFrame ? "arriving" : "none");
+		if (commit_used * 100 > (mem.ullTotalPageFile >> 20) * 92)
+			cb::log::warn("memory: system commit above 92%% of the limit; Windows may start killing programs");
 	}
 
 	void on_present(effect_runtime *runtime)
