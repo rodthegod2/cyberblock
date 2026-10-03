@@ -60,6 +60,16 @@ class MobRulesTest {
 	}
 
 	@Test
+	void mobsPreferHostilePedestriansThenTheNearest() {
+		assertTrue(MobRules.preferred(true, 900.0, false, 4.0), "a hostile one far off beats a peaceful one beside it");
+		assertFalse(MobRules.preferred(false, 4.0, true, 900.0));
+		assertTrue(MobRules.preferred(false, 4.0, false, 9.0), "peaceful: the nearer");
+		assertFalse(MobRules.preferred(false, 9.0, false, 4.0));
+		assertTrue(MobRules.preferred(true, 4.0, true, 9.0), "both hostile: the nearer");
+		assertFalse(MobRules.preferred(true, 4.0, true, 4.0), "a tie keeps the one found first");
+	}
+
+	@Test
 	void reportsAtMost12NearestFirstWithin48() {
 		List<MobRules.Seen> all = new ArrayList<>();
 		for (int i = 20; i > 0; i--) {

@@ -47,6 +47,8 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	private int damageCooldown;
 	private float lastDamage;
 	private long proxyId;
+	/** Hostile to V as far as the host knows (its latest list): the mobs hunt these first. */
+	private boolean hostile;
 
 	public ProxyEntity(final EntityType<? extends ProxyEntity> type, final Level level) {
 		super(type, level);
@@ -61,6 +63,14 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 
 	long proxyId() {
 		return this.proxyId;
+	}
+
+	void setHostile(final boolean hostile) {
+		this.hostile = hostile;
+	}
+
+	boolean isHostile() {
+		return this.hostile;
 	}
 
 	@Override

@@ -20,8 +20,8 @@ public final class ProxyDiff {
 		HUMAN, VEHICLE
 	}
 
-	/** One Cyberpunk NPC or vehicle: id (the unsigned 64 bit entity id hash), feet position, facing. */
-	public record Entry(long id, double x, double y, double z, float yaw, Kind kind) {
+	/** One Cyberpunk NPC or vehicle: id (the unsigned 64 bit entity id hash), feet position, facing, and whether it is hostile to V. */
+	public record Entry(long id, double x, double y, double z, float yaw, Kind kind, boolean hostile) {
 	}
 
 	public record Plan(List<Entry> spawn, List<Entry> move, List<Long> remove) {
@@ -82,8 +82,10 @@ public final class ProxyDiff {
 			return null;
 		}
 
+		// optional: an NPC that does not say (or says something else than true or false) is not hostile
+		boolean hostile = o.get("hostile") instanceof JsonPrimitive h && h.isBoolean() && h.getAsBoolean();
 		try {
-			return new Entry(Long.parseUnsignedLong(id.getAsString()), x, y, z, (float) (yaw % 360.0), k);
+			return new Entry(Long.parseUnsignedLong(id.getAsString()), x, y, z, (float) (yaw % 360.0), k, hostile);
 		} catch (NumberFormatException tooBig) {
 			return null; // more than 2^64 - 1
 		}

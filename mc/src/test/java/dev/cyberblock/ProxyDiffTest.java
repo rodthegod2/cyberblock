@@ -32,7 +32,7 @@ class ProxyDiffTest {
 	}
 
 	private static Entry entry(final long id, final Kind kind) {
-		return new Entry(id, 1, 2, 3, 0, kind);
+		return new Entry(id, 1, 2, 3, 0, kind, false);
 	}
 
 	private static Set<Long> ids(final List<Entry> entries) {
@@ -57,6 +57,27 @@ class ProxyDiffTest {
 		assertEquals(-1L, b.id(), "2^64-1 is a valid unsigned id (it is -1 as a signed long)");
 		assertEquals("18446744073709551615", Long.toUnsignedString(b.id()));
 		assertEquals(Kind.VEHICLE, b.kind());
+	}
+
+	@Test
+	void hostileIsReadFromTheList() {
+		Parsed p = parse("[{\"id\":\"1\",\"p\":[0,0,0],\"yaw\":0,\"kind\":\"human\",\"hostile\":true},"
+			+ "{\"id\":\"2\",\"p\":[0,0,0],\"yaw\":0,\"kind\":\"human\",\"hostile\":false},"
+			+ "{\"id\":\"3\",\"p\":[0,0,0],\"yaw\":0,\"kind\":\"vehicle\",\"hostile\":true}]");
+		assertEquals(0, p.rejected());
+		assertTrue(p.entries().get(0).hostile());
+		assertFalse(p.entries().get(1).hostile());
+		assertTrue(p.entries().get(2).hostile());
+	}
+
+	@Test
+	void hostileIsOptionalAndNeverMakesAnEntryBad() {
+		for (String hostile : new String[] {"", ",\"hostile\":null", ",\"hostile\":\"true\"", ",\"hostile\":1", ",\"hostile\":[true]", ",\"hostile\":{}"}) {
+			Parsed p = parse("[{\"id\":\"1\",\"p\":[0,0,0],\"yaw\":0,\"kind\":\"human\"" + hostile + "}]");
+			assertEquals(0, p.rejected(), hostile);
+			assertEquals(1, p.entries().size(), hostile);
+			assertFalse(p.entries().get(0).hostile(), hostile);
+		}
 	}
 
 	@Test

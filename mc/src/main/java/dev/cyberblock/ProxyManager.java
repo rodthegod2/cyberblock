@@ -65,6 +65,7 @@ public final class ProxyManager {
 	}
 
 	private static void place(final ProxyEntity proxy, final ProxyDiff.Entry e) {
+		proxy.setHostile(e.hostile());
 		proxy.setPos(e.x(), e.y(), e.z());
 		proxy.setYRot(e.yaw());
 		proxy.setYHeadRot(e.yaw());

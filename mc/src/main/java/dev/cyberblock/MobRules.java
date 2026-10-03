@@ -63,6 +63,11 @@ public final class MobRules {
 		return !held(dx, dz, true);
 	}
 
+	/** Which of two pedestrians a mob hunts: a hostile one before a peaceful one, then the nearer. True when the first is the better target. */
+	public static boolean preferred(final boolean hostileA, final double distanceSqA, final boolean hostileB, final double distanceSqB) {
+		return hostileA != hostileB ? hostileA : distanceSqA < distanceSqB;
+	}
+
 	/** The wire kind for a mob type path: the path when it fits [a-z0-9_]{1,32}, else "mob". */
 	public static String kind(final String typePath) {
 		return KIND.matcher(typePath).matches() ? typePath : "mob";
