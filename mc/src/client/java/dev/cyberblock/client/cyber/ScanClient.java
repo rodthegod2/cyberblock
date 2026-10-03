@@ -59,7 +59,13 @@ final class ScanClient {
 	static void tick(final Minecraft minecraft) {
 		LocalPlayer player = minecraft.player;
 		long now = Util.getMillis();
-		boolean down = player != null && CyberKeys.hack.isDown();
+		// a tap whose press and release both arrived between two ticks never shows as isDown: its click still scans once
+		boolean clicked = false;
+		while (CyberKeys.hack.consumeClick()) {
+			clicked = true;
+		}
+
+		boolean down = player != null && (CyberKeys.hack.isDown() || clicked);
 		if (down) {
 			visibleUntilMs = now + LINGER_MS;
 			if (ticks++ % PICK_EVERY == 0) {
