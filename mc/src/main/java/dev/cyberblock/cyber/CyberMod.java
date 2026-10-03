@@ -10,11 +10,14 @@ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
 
 /** Layer 6 (plan 2026-10-03, track C), server half: cyber items, RAM, perks, the starter kit. */
@@ -37,6 +40,15 @@ public class CyberMod implements ModInitializer {
 			Cyberblock.events.accept(CyberWire.perks(Map.of()));
 		});
 		ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> PerkEffects.apply(newPlayer));
+		// vanilla's ServerPlayerGameMode.useItem ignores an item on cooldown without a word (this callback runs before that test)
+		UseItemCallback.EVENT.register((player, level, hand) -> {
+			ItemStack stack = player.getItemInHand(hand);
+			if (player instanceof ServerPlayer serverPlayer && stack.getItem() instanceof QuickhackItem && player.getCooldowns().isOnCooldown(stack)) {
+				serverPlayer.sendOverlayMessage(Component.translatable("cyberblock.hack.cooldown"));
+			}
+
+			return InteractionResult.PASS;
+		});
 		// /cyberblock kit, for everyone (permission level 0)
 		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> dispatcher.register(
 			Commands.literal("cyberblock").then(Commands.literal("kit").executes(command -> {

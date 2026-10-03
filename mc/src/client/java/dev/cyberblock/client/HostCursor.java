@@ -61,10 +61,11 @@ public final class HostCursor {
 	}
 
 	/**
-	 * {"t":"click","b":0 left | 1 right | 2 middle,"down":bool}, on the client thread. Minecraft 26.3 numbers its mouse
-	 * buttons like SDL (1 left, 2 middle, 3 right), so the protocol's numbers are translated.
+	 * {"t":"click","b":0 left | 1 right | 2 middle,"down":bool,"mods":bits}, on the client thread. Minecraft 26.3 numbers its mouse
+	 * buttons like SDL (1 left, 2 middle, 3 right), so the protocol's numbers are translated. The modifiers (SDL bits, 0 when
+	 * absent) are the Shift and Ctrl held with the click: Shift-click quick-moves a stack.
 	 */
-	static void click(final Minecraft minecraft, final int protocolButton, final boolean down) {
+	static void click(final Minecraft minecraft, final int protocolButton, final boolean down, final int mods) {
 		int button = switch (protocolButton) {
 			case 0 -> InputConstants.MOUSE_BUTTON_LEFT;
 			case 1 -> InputConstants.MOUSE_BUTTON_RIGHT;
@@ -77,7 +78,7 @@ public final class HostCursor {
 			return;
 		}
 
-		MouseButtonInfo info = new MouseButtonInfo(button, 0);
+		MouseButtonInfo info = new MouseButtonInfo(button, mods);
 		MouseButtonEvent event = new MouseButtonEvent(x, y, info);
 		if (down) {
 			held = info;

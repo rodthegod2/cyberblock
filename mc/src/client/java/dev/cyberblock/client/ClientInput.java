@@ -3,14 +3,17 @@ package dev.cyberblock.client;
 
 import com.google.gson.JsonObject;
 import com.mojang.blaze3d.platform.InputConstants;
+import dev.cyberblock.client.cyber.HackWheel;
 import dev.cyberblock.client.mixin.KeyMappingAccessor;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import org.lwjgl.sdl.SDLKeyboard;
+import org.lwjgl.sdl.SDLScancode;
 import org.lwjgl.sdl.SDLVideo;
 
 /** Host input, applied on the client thread: the host window has the focus, so Minecraft never sees these itself. */
@@ -37,20 +40,32 @@ final class ClientInput {
 
 	/**
 	 * Presses a key bound to the open screen, the way vanilla's KeyboardHandler does (the screen decides: the inventory key closes a
-	 * container screen, drop drops the hovered stack, number keys swap it into the hotbar; other screens ignore it). A mapping bound
-	 * to the mouse (use, attack and pick by default) is not a key press: the host sends "click" while a screen is open.
+	 * container screen, drop drops the hovered stack, Ctrl+drop the whole stack, number keys swap it into the hotbar; other screens
+	 * ignore it). A mapping bound to the mouse (use, attack and pick by default) is not a key press: the host sends "click" while a
+	 * screen is open.
 	 */
-	private static void pressOnScreen(final Screen screen, final KeyMapping mapping) {
+	private static void pressOnScreen(final Screen screen, final KeyMapping mapping, final int mods) {
 		InputConstants.Key bound = ((KeyMappingAccessor)mapping).cyberblock$getKey();
 		if (bound.getType() != InputConstants.Type.KEYBOARD || bound.equals(InputConstants.UNKNOWN)) {
 			return;
 		}
 
-		// KeyEvent is (scancode, keycode, modifiers) as SDL reports them: the mapping holds the scancode. Passing it as the keycode too
-		// would make the default swap key (scancode 9) look like Tab (keycode 9) to the screen's focus navigation.
-		int scancode = bound.getValue();
+		keyPressed(screen, bound.getValue(), mods);
+	}
+
+	/**
+	 * A key press for the open screen as KeyboardHandler gives it: afterKeyboardAction, then keyPressed. KeyEvent is (scancode,
+	 * keycode, modifiers) as SDL reports them; passing the scancode as the keycode too would make the default swap key (scancode 9)
+	 * look like Tab (keycode 9) to the screen's focus navigation.
+	 */
+	private static void keyPressed(final Screen screen, final int scancode, final int mods) {
 		screen.afterKeyboardAction();
-		screen.keyPressed(new KeyEvent(scancode, SDLKeyboard.SDL_GetKeyFromScancode(scancode, (short)0, false), 0));
+		screen.keyPressed(new KeyEvent(scancode, SDLKeyboard.SDL_GetKeyFromScancode(scancode, (short)0, false), mods));
+	}
+
+	/** The message's "mods": SDL modifier bits as Minecraft 26.3 reads them (InputConstants.MOD_SHIFT 3, MOD_CONTROL 192, MOD_ALT 768). */
+	private static int mods(final JsonObject m) {
+		return m.has("mods") ? m.get("mods").getAsInt() : 0;
 	}
 
 	static void handle(final Minecraft minecraft, final JsonObject m) {
@@ -60,8 +75,10 @@ final class ClientInput {
 				String k = m.get("k").getAsString();
 				boolean down = !m.has("down") || m.get("down").getAsBoolean();
 				if (k.equals("escape")) {
-					if (down && minecraft.gui.screen() != null) {
-						minecraft.gui.screen().onClose();
+					// the screen's own Esc handling: it closes only when shouldCloseOnEsc (the death screen stays), chat drops its draft
+					Screen screen = minecraft.gui.screen();
+					if (down && screen != null) {
+						keyPressed(screen, InputConstants.KEY_ESCAPE, 0);
 					}
 
 					return;
@@ -96,9 +113,23 @@ final class ClientInput {
 					// vanilla gives a key to the open screen and never to the game (handleKeybinds does not run, and KeyMapping.releaseAll
 					// only runs when a screen opens): a click counted now would stay queued and fire as soon as the screen closes
 					if (down) {
-						pressOnScreen(screen, key);
+						pressOnScreen(screen, key, mods(m));
 					}
 				} else {
+					// right-click while the hack key is held fires the chip the wheel picked (HackWheel), never a use
+					if (key == minecraft.options.keyUse && HackWheel.use(minecraft, down)) {
+						return;
+					}
+
+					// Ctrl+Q drops the whole stack: vanilla asks the window whether Ctrl is down, and the host's window has the keyboard
+					if (key == minecraft.options.keyDrop && down && (mods(m) & InputConstants.MOD_CONTROL) != 0) {
+						if (player != null && minecraft.gameMode != null && !player.isSpectator()) {
+							minecraft.gameMode.dropItem(player, true);
+						}
+
+						return;
+					}
+
 					if (down && !key.isDown()) {
 						KeyMappingAccessor access = (KeyMappingAccessor)key;
 						access.cyberblock$setClickCount(access.cyberblock$getClickCount() + 1);
@@ -112,21 +143,39 @@ final class ClientInput {
 				Screen screen = minecraft.gui.screen();
 				if (screen != null) {
 					// in an inventory the number keys swap the hovered stack with that hotbar slot
-					pressOnScreen(screen, minecraft.options.keyHotbarSlots[n]);
+					pressOnScreen(screen, minecraft.options.keyHotbarSlots[n], mods(m));
 				} else if (player != null) {
 					player.getInventory().setSelectedSlot(n);
 				}
 			}
 			case "look" -> Flight.look(m);
 			case "cursor" -> HostCursor.move(minecraft, m.get("x").getAsDouble(), m.get("y").getAsDouble());
-			case "click" -> HostCursor.click(minecraft, m.get("b").getAsInt(), !m.has("down") || m.get("down").getAsBoolean());
+			case "click" -> HostCursor.click(minecraft, m.get("b").getAsInt(), !m.has("down") || m.get("down").getAsBoolean(), mods(m));
+			case "char" -> {
+				// {"t":"char","c":codepoint}: text typed while a screen is open (chat, sign, anvil...), as SDL's text input gives it
+				int c = m.get("c").getAsInt();
+				Screen screen = minecraft.gui.screen();
+				if (screen != null && Character.isValidCodePoint(c)) {
+					screen.charTyped(new CharacterEvent(c));
+				}
+			}
+			case "skey" -> {
+				// {"t":"skey","sc":SDL scancode,"mods":bits}: a named key for the open screen (Enter, Backspace, arrows, Tab, Home...)
+				int scancode = m.get("sc").getAsInt();
+				Screen screen = minecraft.gui.screen();
+				if (screen != null && scancode > 0 && scancode < SDLScancode.SDL_SCANCODE_COUNT) {
+					keyPressed(screen, scancode, mods(m));
+				}
+			}
 			case "scroll" -> {
+				int notches = m.get("d").getAsInt();
 				if (minecraft.gui.screen() != null) {
-					HostCursor.scroll(minecraft, m.get("d").getAsInt());
-				} else if (player != null) {
+					HostCursor.scroll(minecraft, notches);
+				} else if (player != null && !HackWheel.scroll(minecraft, notches)) {
+					// the hotbar, unless the hack key is held and the wheel picked a quickhack chip instead
 					Inventory inventory = player.getInventory();
 					int size = Inventory.getSelectionSize();
-					inventory.setSelectedSlot(Math.floorMod(inventory.getSelectedSlot() - m.get("d").getAsInt(), size));
+					inventory.setSelectedSlot(Math.floorMod(inventory.getSelectedSlot() - notches, size));
 				}
 			}
 			case "hud" -> {

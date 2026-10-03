@@ -4,9 +4,10 @@ import java.util.Set;
 
 /**
  * Minecraft key (26.3: SDL scancodes) to Windows virtual-key code, for the `binds` message. Cyberpunk only forwards
- * letters, digits and F1-F12, and Cyberblock.dll refuses the ones it needs itself (keys::bindable: W A S D C, the
- * forwarded E Q T 1-9 F5, and F9), so every other key (and any mouse button) stands for the mapping's default. The
- * shared/vectors.json `binds` set keeps this list and the DLL's the same.
+ * letters, digits and F1-F12, and Cyberblock.dll refuses the ones that already do something while Cyberblock is active
+ * (keys::bindable): movement and crouch (W A S D C), the keys forwarded to Minecraft (E Q T X 1-9 F5), Cyberpunk's own
+ * keys that pass through (F I M J H N B P V Z R) and F9. Every other key (and any mouse button) stands for the
+ * mapping's default. The shared/vectors.json `binds` set keeps this list and the DLL's the same.
  */
 public final class VirtualKeys {
 	public static final int VK_G = 0x47;
@@ -22,7 +23,9 @@ public final class VirtualKeys {
 	private static final int VK_F5 = 0x74;
 	private static final int VK_F9 = 0x78;
 	/** Virtual keys the DLL refuses as a bind: it would keep the previous one, while Minecraft showed the new key. */
-	private static final Set<Integer> REFUSED = Set.of((int) 'W', (int) 'A', (int) 'S', (int) 'D', (int) 'C', (int) 'E', (int) 'Q', (int) 'T',
+	private static final Set<Integer> REFUSED = Set.of(
+		(int) 'W', (int) 'A', (int) 'S', (int) 'D', (int) 'C', (int) 'E', (int) 'Q', (int) 'T', (int) 'X',
+		(int) 'F', (int) 'I', (int) 'M', (int) 'J', (int) 'H', (int) 'N', (int) 'B', (int) 'P', (int) 'V', (int) 'Z', (int) 'R',
 		(int) '1', (int) '2', (int) '3', (int) '4', (int) '5', (int) '6', (int) '7', (int) '8', (int) '9', VK_F5, VK_F9);
 
 	private VirtualKeys() {
@@ -55,9 +58,21 @@ public final class VirtualKeys {
 		return -1;
 	}
 
-	/** As of, with the default for a key Cyberpunk cannot forward. */
-	public static int orDefault(final boolean keyboard, final int scancode, final int fallback) {
-		int vk = of(keyboard, scancode);
-		return vk < 0 ? fallback : vk;
+	/**
+	 * Whether the hack and skill-tree keys (each as `of` gives it, -1: Cyberpunk cannot forward it) would be the same key in
+	 * Cyberpunk once a refused one stands for its default (G, K). The DLL refuses that pair and would keep the old one.
+	 */
+	public static boolean clash(final int hack, final int skills) {
+		return (hack < 0 ? VK_G : hack) == (skills < 0 ? VK_K : skills);
+	}
+
+	/** The {hack, skills} pair `binds` sends: each key, a refused one as its default, and both defaults when they clash. */
+	public static int[] binds(final int hack, final int skills) {
+		return clash(hack, skills) ? new int[]{VK_G, VK_K} : new int[]{hack < 0 ? VK_G : hack, skills < 0 ? VK_K : skills};
+	}
+
+	/** How a forwardable virtual key is written on the keyboard: "G", "0", "F10". */
+	public static String name(final int vk) {
+		return vk >= 0x70 && vk <= 0x7B ? "F" + (vk - 0x6F) : String.valueOf((char) vk);
 	}
 }

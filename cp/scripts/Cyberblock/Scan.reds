@@ -4,7 +4,15 @@
 //
 // 2.31 sources (decompiled 2.31 scripts; compile-checked):
 //   Look-at: TargetingSystem.GetLookAtObject(V, withLOS true, ignoreTransparent true), the call PlayerPuppet
-//     .ReevaluateLookAtTarget makes for V's own look-at target.
+//     .ReevaluateLookAtTarget makes for V's own look-at target. When it gives nothing, or nothing Minecraft can show,
+//     TargetingSystem.GetObjectClosestToCrosshair(V, out angle distance, TargetSearchQuery) is asked, as
+//     kiroshiHighlightEffector and HUDManager.LookAtNearestCroshairTarget do: query.maxDistance 48 m, the default
+//     testedSet (TargetingSet.Visible), and the hit is kept only within 4 degrees of the crosshair (|Yaw| and |Pitch|
+//     of the EulerAngles distance). The first query uses vanilla's quickhack filter TSF_Quickhackable(); its
+//     St_QuickHackable state follows IsQuickHackAble, which QuickhackModule.IsQuickhackBlockedByScene turns off for
+//     everything while V carries NoCombat's NoQuickHacks tag (Cyberblock Active, PlayerState.reds), so a second query
+//     takes any target but V (TSF_Not(TSFMV.Obj_Player)). The log names what refused: "nothing under the crosshair"
+//     or "not scannable: <class name>" (IScriptable.GetClassName).
 //   NPC name: the scanner's rules in NPCPuppet's scanner data (ScannerName chunk): alternative names when
 //     GamePuppetPS.HasAlternativeName; civilians use Character_Record.DisplayName; others FullDisplayName, then
 //     DisplayName; GameObject.GetDisplayName as the last resort. Loc keys resolve with GetLocalizedTextByKey and
@@ -32,23 +40,75 @@
 public abstract class CyberblockScan {
   public static func Scan(game: GameInstance, id: Int32, target: Uint64) -> Void {
     let player = GetPlayer(game);
-    let object: ref<GameObject>;
-    let why = "nothing";
+    let why = "no player";
     if IsDefined(player) {
       if target == 0ul {
-        object = GameInstance.GetTargetingSystem(game).GetLookAtObject(player, true, true);
+        let looked = GameInstance.GetTargetingSystem(game).GetLookAtObject(player, true, true);
+        if CyberblockScan.Try(game, id, player, looked) {
+          return;
+        }
+        let near = CyberblockScan.NearCrosshair(game, player);
+        if CyberblockScan.Try(game, id, player, near) {
+          return;
+        }
+        why = CyberblockScan.Refused(player, looked, near);
       } else {
-        object = GameInstance.FindEntityByID(game, EntityID.FromHash(target)) as GameObject;
-        if IsDefined(object) && !CyberblockScan.InSight(game, object) {
-          object = null;
-          why = "behind Night City";
+        let object = GameInstance.FindEntityByID(game, EntityID.FromHash(target)) as GameObject;
+        if !IsDefined(object) {
+          why = "target gone";
+        } else {
+          if !CyberblockScan.InSight(game, object) {
+            why = "behind Night City";
+          } else {
+            if CyberblockScan.Try(game, id, player, object) {
+              return;
+            }
+            why = CyberblockScan.Refused(player, object, null);
+          }
         }
       }
     }
-    if !IsDefined(object) || object == player || !CyberblockScan.Answer(game, id, object) {
-      Cyberblock_ScanResult(id, false, target, "", "", n"none", 0.0, false, new Vector4(0.0, 0.0, 0.0, 1.0), new Vector4(0.0, 0.0, 0.0, 0.0));
-      Cyberblock_Log(s"scan \(id): \(why) at \(target)");
+    Cyberblock_ScanResult(id, false, target, "", "", n"none", 0.0, false, new Vector4(0.0, 0.0, 0.0, 1.0), new Vector4(0.0, 0.0, 0.0, 0.0));
+    Cyberblock_Log(s"scan \(id): \(why) at \(target)");
+  }
+
+  // Answers the scan with object when it is something Minecraft can show (never V herself).
+  private static func Try(game: GameInstance, id: Int32, player: ref<PlayerPuppet>, object: ref<GameObject>) -> Bool {
+    return IsDefined(object) && object != player && CyberblockScan.Answer(game, id, object);
+  }
+
+  // The log's reason for a scan that found nothing to show.
+  private static func Refused(player: ref<PlayerPuppet>, first: ref<GameObject>, second: ref<GameObject>) -> String {
+    if IsDefined(first) && first != player {
+      return s"not scannable: \(NameToString(first.GetClassName()))";
     }
+    if IsDefined(second) && second != player {
+      return s"not scannable: \(NameToString(second.GetClassName()))";
+    }
+    return "nothing under the crosshair";
+  }
+
+  // The fallback when V's look-at target is missing or nothing Minecraft can show: the object closest to the crosshair
+  // within 48 m and 4 degrees (see the header), first among vanilla's quickhack targets, then among any target but V.
+  private static func NearCrosshair(game: GameInstance, player: ref<PlayerPuppet>) -> ref<GameObject> {
+    let query: TargetSearchQuery;
+    query.maxDistance = 48.0;
+    query.searchFilter = TSF_Quickhackable();
+    let found = CyberblockScan.ClosestInCone(game, player, query);
+    if IsDefined(found) {
+      return found;
+    }
+    query.searchFilter = TSF_Not(TSFMV.Obj_Player);
+    return CyberblockScan.ClosestInCone(game, player, query);
+  }
+
+  private static func ClosestInCone(game: GameInstance, player: ref<PlayerPuppet>, query: TargetSearchQuery) -> ref<GameObject> {
+    let angle: EulerAngles;
+    let object = GameInstance.GetTargetingSystem(game).GetObjectClosestToCrosshair(player, angle, query);
+    if IsDefined(object) && AbsF(angle.Yaw) < 4.0 && AbsF(angle.Pitch) < 4.0 {
+      return object;
+    }
+    return null;
   }
 
   // The camera sees the target's middle or its top past Night City (see the header).

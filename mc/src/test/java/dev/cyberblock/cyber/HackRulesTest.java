@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
 
 class HackRulesTest {
 	private static HackRules.Outcome npc(final Hack hack, final int ram) {
-		return HackRules.check(true, true, false, true, hack, ram, Ram.cost(hack, false));
+		return HackRules.check(true, true, false, hack, ram, Ram.cost(hack, false));
 	}
 
 	@Test
@@ -32,34 +32,55 @@ class HackRulesTest {
 		assertEquals(NO_RAM, npc(Hack.SHORT_CIRCUIT, 2));
 		assertEquals(NO_RAM, npc(Hack.CYBERPSYCHOSIS, 7));
 		// cheap_hacks makes 2 enough for a Redstone Charge
-		assertEquals(OK, HackRules.check(true, true, false, true, Hack.SHORT_CIRCUIT, 2, Ram.cost(Hack.SHORT_CIRCUIT, true)));
+		assertEquals(OK, HackRules.check(true, true, false, Hack.SHORT_CIRCUIT, 2, Ram.cost(Hack.SHORT_CIRCUIT, true)));
 	}
 
 	@Test
 	void theRulesInTheirOrder() {
 		// no deck beats everything, then no target, then the target kind, then RAM
-		assertEquals(NO_DECK, HackRules.check(false, false, false, false, Hack.PING, 0, 1));
-		assertEquals(NO_TARGET, HackRules.check(true, false, false, false, Hack.PING, 0, 1));
-		assertEquals(NEED_NPC, HackRules.check(true, true, true, false, Hack.PING, 0, 1));
-		assertEquals(NO_RAM, HackRules.check(true, true, false, true, Hack.PING, 0, 1));
+		assertEquals(NO_DECK, HackRules.check(false, false, false, Hack.PING, 0, 1));
+		assertEquals(NO_TARGET, HackRules.check(true, false, false, Hack.PING, 0, 1));
+		assertEquals(NEED_NPC, HackRules.check(true, true, true, Hack.PING, 0, 1));
+		assertEquals(NO_RAM, HackRules.check(true, true, false, Hack.PING, 0, 1));
 	}
 
 	@Test
 	void theLeverNeedsADevice() {
-		assertEquals(OK, HackRules.check(true, true, true, false, Hack.DEVICE, 1, 1));
-		assertEquals(NEED_DEVICE, HackRules.check(true, true, false, true, Hack.DEVICE, 1, 1));
-		assertEquals(NEED_DEVICE, HackRules.check(true, true, false, false, Hack.DEVICE, 1, 1));
+		assertEquals(OK, HackRules.check(true, true, true, Hack.DEVICE, 1, 1));
+		assertEquals(NEED_DEVICE, HackRules.check(true, true, false, Hack.DEVICE, 1, 1));
 	}
 
+	/**
+	 * Any target that is no device goes to Cyberpunk, proxy or not: people who are not proxies in Minecraft (V looked at them,
+	 * or Night City left them out of `npcs`) and cars, whose driver Cyberpunk hacks. Cyberpunk refuses what it cannot hack
+	 * and the RAM comes back (Hacking.onResult).
+	 */
 	@Test
-	void theOthersNeedAProxy() {
+	void theOthersNeedAnythingButADevice() {
 		for (Hack h : Hack.values()) {
 			if (!h.needsDevice()) {
-				assertEquals(NEED_NPC, HackRules.check(true, true, true, false, h, 20, h.ram()), h + " on a device");
-				assertEquals(NEED_NPC, HackRules.check(true, true, false, false, h, 20, h.ram()), h + " without a proxy");
-				assertEquals(OK, HackRules.check(true, true, false, true, h, 20, h.ram()), h.name());
+				assertEquals(NEED_NPC, HackRules.check(true, true, true, h, 20, h.ram()), h + " on a device");
+				assertEquals(OK, HackRules.check(true, true, false, h, 20, h.ram()), h.name());
 			}
 		}
+	}
+
+	/** A scan that finds the target locks it for 5 s; a scan that finds nothing drops the lock at once (netrun-6). */
+	@Test
+	void aScanOfNothingDropsTheLock() {
+		Hacking.lock(42L, false);
+		Hacking.Locked lock = Hacking.locked();
+		assertNotNull(lock);
+		assertEquals(42L, lock.target());
+		Hacking.unlock();
+		assertNull(Hacking.locked());
+	}
+
+	/** An unanswered hack is refunded after 10 s only with the host gone; a connected Cyberpunk may answer late (netrun-14). */
+	@Test
+	void unansweredHacksWaitLongerWhileConnected() {
+		assertEquals(10_000_000_000L, Hacking.answerTimeout(false));
+		assertEquals(60_000_000_000L, Hacking.answerTimeout(true));
 	}
 
 	@Test

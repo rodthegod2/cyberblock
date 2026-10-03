@@ -1,6 +1,5 @@
 package dev.cyberblock.cyber;
 
-import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -12,15 +11,21 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
 
 /** Server side of scanning and hacking: the locked target (task C4), quickhack use and its answer (task C5). Server thread unless noted. */
 public final class Hacking {
-	/** A scanned target stays locked this long. */
-	static final long LOCK_NANOS = 5_000_000_000L;
-	/** A hack Cyberpunk never answered counts as failed (and is refunded) after this long. */
+	/** A scanned target stays locked this long (the scan tooltip shows it as long). */
+	public static final long LOCK_NANOS = 5_000_000_000L;
+	/** A hack Cyberpunk never answered counts as failed (and is refunded) after this long once the host link is down. */
 	static final long ANSWER_NANOS = 10_000_000_000L;
+	/**
+	 * The same while the host is connected: Cyberpunk keeps a `hack` while it is paused or not Active and answers it later,
+	 * so a refund after 10 s would make that hack free.
+	 */
+	static final long CONNECTED_ANSWER_NANOS = 60_000_000_000L;
 	private static final AtomicInteger ids = new AtomicInteger();
 	private static final Map<Integer, Pending> pending = new HashMap<>();
 	private static @Nullable Locked locked;
@@ -46,19 +51,51 @@ public final class Hacking {
 		locked = new Locked(target, device, System.nanoTime() + LOCK_NANOS);
 	}
 
+	/** A `scaninfo` without ok: the hack key now points at nothing, so quickhacks no longer go to the earlier target. */
+	public static void unlock() {
+		locked = null;
+	}
+
 	/** The locked target, or null when none was scanned in the last 5 s. Wall time: a Sandevistan slowing the ticks does not stretch it. */
 	public static @Nullable Locked locked() {
 		Locked l = locked;
 		return l != null && System.nanoTime() - l.untilNanos() < 0 ? l : null;
 	}
 
+	/** The first stack of hack's chip anywhere in the player's inventory (hotbar, main inventory, offhand), else EMPTY. Either side. */
+	public static ItemStack findChip(final Player player, final Hack hack) {
+		for (ItemStack stack : player.getInventory()) {
+			if (stack.is(CyberItems.QUICKHACKS.get(hack))) {
+				return stack;
+			}
+		}
+
+		return ItemStack.EMPTY;
+	}
+
+	/**
+	 * The hack key's wheel fired a chip (HackWheel): the first one of that kind in the inventory is used as if it were in his
+	 * hand; one that recharges says so.
+	 */
+	public static void useChip(final ServerPlayer player, final Hack hack) {
+		ItemStack stack = findChip(player, hack);
+		if (stack.isEmpty()) {
+			return;
+		}
+
+		if (player.getCooldowns().isOnCooldown(stack)) {
+			player.sendOverlayMessage(Component.translatable("cyberblock.hack.cooldown"));
+		} else {
+			use(player, stack, hack);
+		}
+	}
+
 	/** A quickhack item used (QuickhackItem): the rules, then RAM, cooldown and the `hack` message. True when it was sent. */
 	static boolean use(final ServerPlayer player, final ItemStack stack, final Hack hack) {
 		Locked lock = locked();
-		boolean proxy = lock != null && !lock.device() && Bridge.proxyById.apply(lock.target()) != null;
 		int ram = CyberData.ram(player);
 		int cost = Ram.cost(hack, CyberData.has(player, Perk.CHEAP_HACKS));
-		HackRules.Outcome outcome = HackRules.check(CyberData.hasDeck(player), lock != null, lock != null && lock.device(), proxy, hack, ram, cost);
+		HackRules.Outcome outcome = HackRules.check(CyberData.hasDeck(player), lock != null, lock != null && lock.device(), hack, ram, cost);
 		if (outcome != HackRules.Outcome.OK) {
 			player.sendOverlayMessage(switch (outcome) {
 				case NO_DECK -> Component.translatable("cyberblock.hack.no_deck");
@@ -98,12 +135,18 @@ public final class Hacking {
 		CyberData.setRam(player, Math.min(CyberData.maxRam(player), CyberData.ram(player) + cost));
 	}
 
+	/** How long an unanswered hack waits for its `hackresult`: 10 s with the host link down, 60 s while it is up. */
+	static long answerTimeout(final boolean hostActive) {
+		return hostActive ? CONNECTED_ANSWER_NANOS : ANSWER_NANOS;
+	}
+
 	/** Every server tick: hacks Cyberpunk never answered (the link went away) are refunded. */
 	static void tick(final MinecraftServer server) {
 		long now = System.nanoTime();
+		long timeout = answerTimeout(Cyberblock.active);
 		for (Iterator<Pending> it = pending.values().iterator(); it.hasNext(); ) {
 			Pending p = it.next();
-			if (now - p.sentNanos() > ANSWER_NANOS) {
+			if (now - p.sentNanos() > timeout) {
 				it.remove();
 				ServerPlayer player = server.getPlayerList().getPlayer(p.player());
 				if (player != null) {

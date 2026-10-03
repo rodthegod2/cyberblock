@@ -122,7 +122,10 @@ public final class Kit {
 		return -1;
 	}
 
-	/** Gives the kit (see the class comment); a stack he already has is topped up, what does not fit drops at his feet. */
+	/**
+	 * Gives the kit (see the class comment); a stack he already has is topped up, what does not fit drops at his feet. RAM is
+	 * refilled to the maximum.
+	 */
 	public static void give(final ServerPlayer player) {
 		Inventory inventory = player.getInventory();
 		for (Entry e : ENTRIES) {
@@ -142,6 +145,8 @@ public final class Kit {
 		}
 
 		player.setAttached(CyberData.KIT_GIVEN, true);
+		// the kit's cyberdeck gives him RAM: start it full, so the chips can be tried at once instead of 24 s of regeneration
+		CyberData.setRam(player, CyberData.maxRam(player));
 	}
 
 	/** The host says Cyberblock is active: a survival player who never had the kit gets it now. */

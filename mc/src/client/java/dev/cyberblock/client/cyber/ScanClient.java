@@ -37,19 +37,24 @@ import org.jspecify.annotations.Nullable;
 /**
  * The hack key held (task C4): every 4 ticks the proxy under the crosshair (within 48 blocks, never past the Night City
  * surface the host aims at) is asked about with a `scan`; Cyberpunk's `scaninfo` is drawn as a tooltip beside the
- * crosshair and a glowing box around the target in the world, until a second after the key is released.
+ * crosshair and a glowing box around the target in the world. A target found stays locked (Hacking) and shown for 5 s
+ * after the last answer that found it, dimmed with a countdown once the key is up; an answer that finds nothing clears it.
  */
 final class ScanClient {
 	static final Identifier HUD_ID = Identifier.fromNamespaceAndPath(Cyberblock.ID, "scan_tooltip");
 	private static final double RANGE = 48.0;
 	private static final int PICK_EVERY = 4;
+	/** Answers to scans are taken while the key is held and this long after (a scan's answer is on its way). */
 	private static final long LINGER_MS = 1000L;
+	/** As long as the server keeps the lock. */
+	private static final long LOCK_MS = Hacking.LOCK_NANOS / 1_000_000L;
 	private static final ScanThrottle throttle = new ScanThrottle();
 	/** Which client entity a scanned Cyberpunk id is (filled on the server thread when a scan is sent): its box is the outline. */
 	private static final Map<Long, Integer> entityOf = new ConcurrentHashMap<>();
 	private static int ticks;
 	private static boolean held;
-	private static long visibleUntilMs;
+	private static long answersUntilMs;
+	private static long lockedUntilMs;
 	private static @Nullable ScanInfo shown;
 
 	private ScanClient() {
@@ -59,9 +64,15 @@ final class ScanClient {
 	static void tick(final Minecraft minecraft) {
 		LocalPlayer player = minecraft.player;
 		long now = Util.getMillis();
-		boolean down = player != null && CyberKeys.hack.isDown();
+		// a tap whose press and release both arrived between two ticks never shows as isDown: its click still scans once
+		boolean clicked = false;
+		while (CyberKeys.hack.consumeClick()) {
+			clicked = true;
+		}
+
+		boolean down = player != null && (CyberKeys.hack.isDown() || clicked);
 		if (down) {
-			visibleUntilMs = now + LINGER_MS;
+			answersUntilMs = now + LINGER_MS;
 			if (ticks++ % PICK_EVERY == 0) {
 				int entity = pick(minecraft, player);
 				if (throttle.shouldSend(now, entity)) {
@@ -74,7 +85,7 @@ final class ScanClient {
 		}
 
 		held = down;
-		if (shown != null && now > visibleUntilMs) {
+		if (shown != null && now > lockedUntilMs) {
 			shown = null;
 		}
 
@@ -114,13 +125,23 @@ final class ScanClient {
 		});
 	}
 
-	/** Link thread: a valid `scaninfo`. An answer that arrives after the key was let go (and the tooltip went) is ignored. */
+	/**
+	 * Link thread: a valid `scaninfo`. A target found is shown (and locked, CyberLink) for 5 s from now; nothing found clears
+	 * it, as the server's lock. An answer more than a second after the key was let go is ignored.
+	 */
 	static void onInfo(final ScanInfo info) {
 		Minecraft.getInstance().execute(() -> {
-			if (Util.getMillis() <= visibleUntilMs) {
+			long now = Util.getMillis();
+			if (now <= answersUntilMs) {
 				shown = info.ok() ? info : null;
+				lockedUntilMs = info.ok() ? now + LOCK_MS : 0L;
 			}
 		});
+	}
+
+	/** Whole seconds the shown target stays locked (at least 1 while it is shown). */
+	private static long lockSeconds() {
+		return Math.max(1L, (lockedUntilMs - Util.getMillis() + 999L) / 1000L);
 	}
 
 	/** The box drawn around the scanned target: the proxy's own box, or the reported base and size (devices). */
@@ -139,13 +160,18 @@ final class ScanClient {
 		return new AABB(info.x() - half, info.y(), info.z() - half, info.x() + half, info.y() + info.h(), info.z() + half);
 	}
 
-	/** A per-tick gizmo: drawn in the world pass, so the compositor puts it at the target's place in Night City (depth tested). */
+	/**
+	 * A per-tick gizmo: drawn in the world pass, so the compositor puts it at the target's place in Night City (depth tested).
+	 * Half as bright once the key is up and the target is only locked.
+	 */
 	private static void outline(final Minecraft minecraft) {
 		ScanInfo info = shown;
 		AABB box = info == null || minecraft.level == null ? null : box(minecraft, info);
 		if (box != null) {
-			int colour = threatColour(info);
-			Gizmos.cuboid(box.inflate(0.05), GizmoStyle.strokeAndFill(colour, 3.0F, colour & 0x00FFFFFF | 0x30000000));
+			int rgb = threatColour(info) & 0x00FFFFFF;
+			int stroke = rgb | (held ? 0xFF000000 : 0x80000000);
+			int fill = rgb | (held ? 0x30000000 : 0x18000000);
+			Gizmos.cuboid(box.inflate(0.05), GizmoStyle.strokeAndFill(stroke, 3.0F, fill));
 		}
 	}
 
@@ -163,49 +189,77 @@ final class ScanClient {
 		};
 	}
 
-	/** HUD element: the tooltip right of the crosshair (name, faction, threat, an HP bar for people and vehicles). */
+	/**
+	 * HUD element: the tooltip right of the crosshair (name, faction, threat, an HP bar for people and vehicles). Once the key
+	 * is up the locked target is drawn dimmed, with how long the lock lasts. While the key is held it also names the chip the
+	 * wheel has picked (HackWheel), with or without a target.
+	 */
 	static void draw(final GuiGraphicsExtractor graphics, final DeltaTracker deltaTracker) {
+		Minecraft minecraft = Minecraft.getInstance();
 		ScanInfo info = shown;
-		if (info == null) {
+		List<Component> head = new ArrayList<>();
+		List<Component> tail = new ArrayList<>();
+		boolean dim = !held;
+		if (info != null) {
+			int threatRgb = dim ? 0x707A8A : threatColour(info) & 0xFFFFFF;
+			head.add(Component.literal(info.name().isEmpty() ? "?" : info.name()).withStyle(dim ? ChatFormatting.GRAY : ChatFormatting.WHITE, ChatFormatting.BOLD));
+			if (!info.faction().isEmpty()) {
+				head.add(Component.literal(info.faction()).withStyle(dim ? ChatFormatting.DARK_GRAY : ChatFormatting.GRAY));
+			}
+
+			if (info.device()) {
+				head.add(Component.translatable("cyberblock.scan.device").withColor(threatRgb));
+			} else {
+				Component threat = Component.translatable("cyberblock.scan.threat." + info.threat().toLowerCase(Locale.ROOT));
+				head.add(Component.translatable("cyberblock.scan.threat", threat).withColor(threatRgb));
+			}
+
+			if (dim) {
+				tail.add(Component.translatable("cyberblock.scan.locked", lockSeconds()).withStyle(ChatFormatting.AQUA));
+			}
+		}
+
+		if (held && minecraft.player != null) {
+			tail.addAll(HackWheel.lines(minecraft.player));
+		}
+
+		if (head.isEmpty() && tail.isEmpty()) {
 			return;
 		}
 
-		Font font = Minecraft.getInstance().font;
-		List<Component> lines = new ArrayList<>();
-		lines.add(Component.literal(info.name().isEmpty() ? "?" : info.name()).withStyle(ChatFormatting.WHITE, ChatFormatting.BOLD));
-		if (!info.faction().isEmpty()) {
-			lines.add(Component.literal(info.faction()).withStyle(ChatFormatting.GRAY));
-		}
-
-		if (info.device()) {
-			lines.add(Component.translatable("cyberblock.scan.device").withColor(threatColour(info) & 0xFFFFFF));
-		} else {
-			Component threat = Component.translatable("cyberblock.scan.threat." + info.threat().toLowerCase(Locale.ROOT));
-			lines.add(Component.translatable("cyberblock.scan.threat", threat).withColor(threatColour(info) & 0xFFFFFF));
-		}
-
+		Font font = minecraft.font;
 		int width = 60;
-		for (Component line : lines) {
+		for (Component line : head) {
 			width = Math.max(width, font.width(line));
 		}
 
-		int barHeight = info.device() ? 0 : 5;
-		int height = lines.size() * 10 - 2 + barHeight;
+		for (Component line : tail) {
+			width = Math.max(width, font.width(line));
+		}
+
+		int barHeight = info == null || info.device() ? 0 : 5;
+		int height = (head.size() + tail.size()) * 10 - 2 + barHeight;
 		int x = graphics.guiWidth() / 2 + 16;
 		int y = graphics.guiHeight() / 2 - height / 2;
 		TooltipRenderUtil.extractTooltipBackground(graphics, x, y, width, height, null);
 		int lineY = y;
-		for (Component line : lines) {
+		for (Component line : head) {
 			graphics.text(font, line, x, lineY, 0xFFFFFFFF, true);
 			lineY += 10;
 		}
 
 		if (barHeight > 0) {
-			int barY = lineY;
-			graphics.fill(x, barY, x + width, barY + 3, 0xFF2A0F14);
+			int alpha = dim ? 0x80000000 : 0xFF000000;
+			graphics.fill(x, lineY, x + width, lineY + 3, alpha | 0x2A0F14);
 			int fill = Math.round(width * Math.clamp(info.hp(), 0.0F, 1.0F));
-			int hpColour = info.hp() > 0.5F ? 0xFF4DFF6A : info.hp() > 0.25F ? 0xFFFFD84D : 0xFFFF3B3B;
-			graphics.fill(x, barY, x + fill, barY + 3, hpColour);
+			int hpRgb = info.hp() > 0.5F ? 0x4DFF6A : info.hp() > 0.25F ? 0xFFD84D : 0xFF3B3B;
+			graphics.fill(x, lineY, x + fill, lineY + 3, alpha | hpRgb);
+			lineY += barHeight;
+		}
+
+		for (Component line : tail) {
+			graphics.text(font, line, x, lineY, 0xFFFFFFFF, true);
+			lineY += 10;
 		}
 	}
 }
