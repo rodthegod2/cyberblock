@@ -39,7 +39,6 @@ public class CyberblockPlayerState {
   private let own: array<TweakDBID>;
   private let applied: Bool;
   private let hudHidden: Bool;
-  private let hudWasVisible: Bool;
   private let hudDelay: Int32;
   // V's mesh components we switched off (first-person arms and body would otherwise show over Steve).
   private let hiddenMeshes: array<wref<IComponent>>;
@@ -122,13 +121,16 @@ public class CyberblockPlayerState {
     GameInstance.GetGodModeSystem(player.GetGame()).ClearGodMode(player.GetEntityID(), n"Cyberblock");
   }
 
+  // Always back to visible: the layer belongs to the global InkSystem, so a hidden one would outlast loads. Nothing but
+  // Cyberblock hides it for long; the game hides it again itself where it needs to (photo mode), so a visibility
+  // remembered at HideHud could be such a moment's and would hide the HUD for good.
   public func ShowHud() -> Void {
     if !this.hudHidden {
       return;
     }
     let hud = this.HudWindow();
     if IsDefined(hud) {
-      hud.SetVisible(this.hudWasVisible);
+      hud.SetVisible(true);
     }
     this.hudHidden = false;
   }
@@ -138,10 +140,7 @@ public class CyberblockPlayerState {
     if !IsDefined(hud) {
       return;
     }
-    if !this.hudHidden {
-      this.hudWasVisible = hud.IsVisible();
-      this.hudHidden = true;
-    }
+    this.hudHidden = true;
     // Re-asserted every tick in case the game shows the layer again (e.g. after photo mode).
     if hud.IsVisible() {
       hud.SetVisible(false);
