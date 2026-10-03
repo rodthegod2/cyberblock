@@ -33,6 +33,11 @@ public final class WorldBridge {
 	private static final BlockSync resync = new BlockSync();
 	/** A host said hello and has not gone: a world that starts now resyncs it. */
 	private static volatile boolean linked;
+	/**
+	 * A resync is owed (a hello, or a world started while linked): it starts on the first server tick that sees the host active, so
+	 * it is not sent while the host is still loading or paused and cannot drain it.
+	 */
+	private static volatile boolean resyncDue;
 	/** A block change the host never heard of (it was not active then): resync once it is again (server thread). */
 	private static boolean missed;
 	private static boolean wasActive;
@@ -45,7 +50,7 @@ public final class WorldBridge {
 		server = s;
 		placed = s.overworld().getDataStorage().computeIfAbsent(PlacedBlocks.TYPE);
 		if (linked) {
-			startResync(s);
+			resyncDue = true;
 		}
 	}
 
@@ -67,13 +72,10 @@ public final class WorldBridge {
 		}
 	}
 
-	/** Link thread: the host said hello (a new session, or a restart of either side): it gets every block again. */
+	/** Link thread: the host said hello (a new session, or a restart of either side): it gets every block again, once it is active. */
 	public static void hostHello() {
 		linked = true;
-		MinecraftServer s = server;
-		if (s != null) {
-			s.execute(() -> startResync(s));
-		}
+		resyncDue = true;
 	}
 
 	/** Link thread: the last host connection closed. */
@@ -266,7 +268,8 @@ public final class WorldBridge {
 		}
 
 		boolean active = Cyberblock.active;
-		if (active && !wasActive && missed && linked) {
+		if (active && linked && (resyncDue || !wasActive && missed)) {
+			resyncDue = false;
 			startResync(s);
 		}
 

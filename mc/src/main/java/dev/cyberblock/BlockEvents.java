@@ -28,10 +28,9 @@ public final class BlockEvents {
 	}
 
 	/**
-	 * At most this many events leave per server tick: 16 x 20 = 320 a second. The host's script (Events.reds) drains up to 64
-	 * events every 100 ms, so about 640 a second, and its queue holds 256 and drops the oldest when full. Staying at half that
-	 * rate leaves room for the hit and explosion events that share the queue and for a slow host tick, so a burst (a big
-	 * explosion, /fill) is spread over ticks instead of overflowing the queue and silently losing collision boxes.
+	 * At most this many events leave per server tick: 16 x 20 = 320 a second. The host keeps block changes per cell and never
+	 * drops one (Cyberblock.dll's EventQueue), and its script (Events.reds) applies up to 512 every 100 ms; this rate only keeps
+	 * a burst (a big explosion, /fill) from stalling the link, spread over ticks.
 	 */
 	static final int PER_TICK = 16;
 

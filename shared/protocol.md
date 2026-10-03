@@ -162,12 +162,15 @@ Rows marked **extends** add to a layer 1/2 message of the same `t`; the old fiel
   × vehicle mass).
 - **Pairing and order:**
   - Every `scan` is answered by exactly one `scaninfo` and every `hack` by exactly one `hackresult`, with the same `id`.
-  - After each host `hello` Minecraft sends `blocks` (first message `reset:true`), `perks`, `binds` and the current
-    `effect` set. Live `block` events keep their order after the resync starts.
+  - After each host `hello` Minecraft sends `perks` and `binds`, and once the host is active after it (its `cam` frames
+    arrive) `blocks` (first message `reset:true`) and the current `effect` set. Live `block` events keep their order
+    after the resync starts.
   - `mobs`, `proj` and `flight` are state streams: the latest message wins, and an empty `list` or `active:false` ends
     the state.
 - **Delivery in the DLL:** while the host is not Active it keeps `blocks`, `perks`, `scan` and `hack` and discards the
-  other new Minecraft → Cyberpunk messages, like explosions; a `hello` clears the queue.
+  other new Minecraft → Cyberpunk messages, like explosions; a `hello` clears the queue. Block changes are never dropped:
+  the DLL keeps the last change per cell (a `reset` forgets the earlier ones) and hands them to the script after the
+  other events.
 
 ### Layers 3–6 names
 - **Hack names** (`hack.hack`) — `short_circuit`, `overheat`, `reboot_optics`, `cripple_movement`, `contagion`, `synapse_burnout`, `ping`, `memory_wipe`, `cyberpsychosis`, `device`
