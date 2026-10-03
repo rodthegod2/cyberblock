@@ -8,8 +8,9 @@
 // entity lifecycle callbacks: Entity/AfterAttach and Entity/Detach (Codeware 1.20.3 EntityAttachHook /
 // EntityDetachHook), filtered natively with EntityTarget.Type, which matches subclasses (entity type IsA; any one
 // target matching is enough). Type names are RTTI names: n"NPCPuppet" (a script class) and n"vehicleBaseObject"
-// (the native name of VehicleObject, RED4ext.SDK vehicle/BaseObject.hpp). Handlers registered from a non-service
-// object live for the session (CallbackLifetime::Session) and hold the object weakly.
+// (the native name of VehicleObject, RED4ext.SDK vehicle/BaseObject.hpp). The registry is CyberblockTetherService's
+// (Tether.reds, Known): one set of handlers, owned by a Codeware service with CallbackLifetime.Forever and
+// re-registered whenever one is gone, so the list cannot go stale with a handler of an ended session.
 //
 // Left out: dead, defeated or destroyed ones (ScriptedPuppet.IsAlive + ScriptedPuppet.IsDefeated, the Defeated and
 // DefeatedWithRecover status effect types; VehicleObject.IsDestroyed), NPCs mounted in a vehicle (their vehicle's
@@ -25,31 +26,14 @@
 // EntityID hash: Codeware EntityID.ToHash (the full 64-bit id; EntityID.FromHash is the inverse).
 
 public class CyberblockNpcs {
-  private let known: array<wref<GameObject>>;
   private let sent: Bool;
   private let logDelay: Int32;
 
+  // Makes sure the shared registry listens (it also does from its own service load and every Tick).
   public func Register() -> Void {
-    let callbacks = GameInstance.GetCallbackSystem();
-    callbacks.RegisterCallback(n"Entity/AfterAttach", this, n"OnEntityAttach")
-      .AddTarget(EntityTarget.Type(n"NPCPuppet"))
-      .AddTarget(EntityTarget.Type(n"vehicleBaseObject"));
-    callbacks.RegisterCallback(n"Entity/Detach", this, n"OnEntityDetach")
-      .AddTarget(EntityTarget.Type(n"NPCPuppet"))
-      .AddTarget(EntityTarget.Type(n"vehicleBaseObject"));
-  }
-
-  private cb func OnEntityAttach(event: ref<EntityLifecycleEvent>) {
-    let object = event.GetEntity() as GameObject;
-    if IsDefined(object) && !ArrayContains(this.known, object) {
-      ArrayPush(this.known, object);
-    }
-  }
-
-  private cb func OnEntityDetach(event: ref<EntityLifecycleEvent>) {
-    let object = event.GetEntity() as GameObject;
-    if IsDefined(object) {
-      ArrayRemove(this.known, object);
+    let tether = CyberblockTetherService.Get();
+    if IsDefined(tether) {
+      tether.Listen();
     }
   }
 
@@ -72,6 +56,11 @@ public class CyberblockNpcs {
     let center = player.GetWorldPosition();
     let maxCount = 48;
     let maxDistance2 = 48.0 * 48.0;
+    let known: array<wref<GameObject>>;
+    let tether = CyberblockTetherService.Get();
+    if IsDefined(tether) {
+      known = tether.Known();
+    }
     // Nearest first: insertion into arrays kept sorted by squared distance, at most maxCount long.
     let picked: array<wref<GameObject>>;
     let pickedDistance2: array<Float>;
@@ -82,43 +71,36 @@ public class CyberblockNpcs {
     let far = 0;
     let overCap = 0;
     let rejected: array<CName>;
-    let i = ArraySize(this.known) - 1;
-    while i >= 0 {
-      let object = this.known[i];
-      if !IsDefined(object) {
-        ArrayErase(this.known, i);
+    for object in known {
+      if IsDefined(object as VehicleObject) {
+        cars += 1;
       } else {
-        if IsDefined(object as VehicleObject) {
-          cars += 1;
+        people += 1;
+      }
+      let distance2 = Vector4.DistanceSquared(object.GetWorldPosition(), center);
+      if distance2 >= maxDistance2 {
+        far += 1;
+      } else {
+        let reason = CyberblockNpcs.Reason(game, object);
+        if NotEquals(reason, n"") {
+          ArrayPush(rejected, reason);
         } else {
-          people += 1;
-        }
-        let distance2 = Vector4.DistanceSquared(object.GetWorldPosition(), center);
-        if distance2 >= maxDistance2 {
-          far += 1;
-        } else {
-          let reason = CyberblockNpcs.Reason(game, object);
-          if NotEquals(reason, n"") {
-            ArrayPush(rejected, reason);
-          } else {
-            let at = ArraySize(picked);
-            while at > 0 {
-              if pickedDistance2[at - 1] <= distance2 {
-                break;
-              }
-              at -= 1;
+          let at = ArraySize(picked);
+          while at > 0 {
+            if pickedDistance2[at - 1] <= distance2 {
+              break;
             }
-            ArrayInsert(picked, at, object);
-            ArrayInsert(pickedDistance2, at, distance2);
-            if ArraySize(picked) > maxCount {
-              ArrayResize(picked, maxCount);
-              ArrayResize(pickedDistance2, maxCount);
-              overCap += 1;
-            }
+            at -= 1;
+          }
+          ArrayInsert(picked, at, object);
+          ArrayInsert(pickedDistance2, at, distance2);
+          if ArraySize(picked) > maxCount {
+            ArrayResize(picked, maxCount);
+            ArrayResize(pickedDistance2, maxCount);
+            overCap += 1;
           }
         }
       }
-      i -= 1;
     }
 
     let sentCars = 0;

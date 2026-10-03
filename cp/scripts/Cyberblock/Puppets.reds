@@ -48,7 +48,8 @@ public abstract class CyberblockPuppets {
   // (DynamicEntitySystem.DeleteEntity only marks it deleted; RemoveEntityState drops the tag on the Despawn spawner
   // event), so IsTagged still names it after its slot is gone.
   public static func IsPuppet(game: GameInstance, id: EntityID) -> Bool {
-    if CyberblockPuppetsService.Get().Slot(id) >= 0 {
+    let service = CyberblockPuppetsService.Get();
+    if IsDefined(service) && service.Slot(id) >= 0 {
       return true;
     }
     let entities = GameInstance.GetDynamicEntitySystem();

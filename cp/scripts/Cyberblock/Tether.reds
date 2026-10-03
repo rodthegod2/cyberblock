@@ -12,10 +12,12 @@
 // Tick with live false drops them silently (contract); a target that no longer exists is unleaded on the next live
 // tick. A save keeps them: CyberblockSystem does not tick tethers while it is written (only ClearWorld's Clear runs).
 //
-// Which NPCs and vehicles exist: no 2.31 script query lists them (see Npcs.reds), so this service keeps its own
-// registry from Codeware's entity lifecycle callbacks Entity/AfterAttach and Entity/Detach, filtered with
-// EntityTarget.Type(n"NPCPuppet" | n"vehicleBaseObject") exactly as Npcs.reds, registered when the service loads
-// (Codeware ScriptableService OnLoad; callbacks registered by a service stay registered, Codeware wiki).
+// Which NPCs and vehicles exist: no 2.31 script query lists them (see Npcs.reds), so this service keeps the registry
+// (Known) from Codeware's entity lifecycle callbacks Entity/AfterAttach and Entity/Detach, filtered with
+// EntityTarget.Type(n"NPCPuppet" | n"vehicleBaseObject"), registered when the service loads (Codeware
+// ScriptableService OnLoad; callbacks registered by a service stay registered, Codeware wiki) with
+// CallbackLifetime.Forever, and re-registered whenever IsRegistered says a handler is gone. The NPC list sent to
+// Minecraft (Npcs.reds) reads the same registry.
 //
 // 2.31 + Codeware APIs (decompiled 2.31 scripts, Codeware.Global.reds; compile-checked): CallbackSystem.
 // RegisterCallback + CallbackSystemHandler.AddTarget/SetLifetime(CallbackLifetime.Forever)/IsRegistered,
@@ -138,26 +140,33 @@ public class CyberblockTetherService extends ScriptableService {
     }
     center = new Vector4(center.X, center.Y, center.Z, 1.0);
     let pushed = 0;
+    for object in this.Known() {
+      let middle = object.GetWorldPosition() + new Vector4(0.0, 0.0, 1.0, 0.0);
+      let d = Vector4.Distance(center, middle);
+      if d < radius && CyberblockTetherService.Pushable(game, object, player) {
+        let direction = CyberblockTetherService.Toward(center, middle);
+        if Vector4.IsZero(direction) {
+          direction = new Vector4(0.0, 0.0, 1.0, 0.0);
+        }
+        CyberblockEffects.Knock(object, middle, direction * (MinF(strength, 50.0) * (1.0 - d / radius)));
+        pushed += 1;
+      }
+    }
+    Cyberblock_Log(s"tether: knockback radius \(radius) strength \(strength), \(pushed) pushed");
+  }
+
+  // The NPCs and vehicles attached to the world now: the registry with the entities gone since dropped. CyberblockNpcs
+  // (Npcs.reds) reads it too, so there is one registry.
+  public func Known() -> array<wref<GameObject>> {
+    this.Listen();
     let i = ArraySize(this.known) - 1;
     while i >= 0 {
-      let object = this.known[i];
-      if !IsDefined(object) {
+      if !IsDefined(this.known[i]) {
         ArrayErase(this.known, i);
-      } else {
-        let middle = object.GetWorldPosition() + new Vector4(0.0, 0.0, 1.0, 0.0);
-        let d = Vector4.Distance(center, middle);
-        if d < radius && CyberblockTetherService.Pushable(game, object, player) {
-          let direction = CyberblockTetherService.Toward(center, middle);
-          if Vector4.IsZero(direction) {
-            direction = new Vector4(0.0, 0.0, 1.0, 0.0);
-          }
-          CyberblockEffects.Knock(object, middle, direction * (MinF(strength, 50.0) * (1.0 - d / radius)));
-          pushed += 1;
-        }
       }
       i -= 1;
     }
-    Cyberblock_Log(s"tether: knockback radius \(radius) strength \(strength), \(pushed) pushed");
+    return this.known;
   }
 
   private func Follow(game: GameInstance, player: ref<PlayerPuppet>, slot: Int32, now: Float) -> Void {
@@ -255,8 +264,8 @@ public class CyberblockTetherService extends ScriptableService {
     ArrayClear(this.lastTug);
   }
 
-  // Registered once when the service loads; re-registered if a handler is ever gone.
-  private func Listen() -> Void {
+  // Registered once when the service loads; re-registered if a handler is ever gone. Cheap to call again.
+  public func Listen() -> Void {
     let callbacks = GameInstance.GetCallbackSystem();
     if !IsDefined(callbacks) {
       return;
