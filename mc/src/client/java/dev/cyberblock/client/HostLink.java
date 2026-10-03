@@ -92,6 +92,7 @@ public final class HostLink extends WebSocketServer {
 					}
 				}
 				case "cam" -> HostState.update(m);
+				case "aim" -> HostState.updateAim(m);
 				case "ground" -> WorldBridge.solid(Ranges.decode(ints(m.getAsJsonArray("c"))));
 				case "unground" -> WorldBridge.unsolid(Ranges.decode(ints(m.getAsJsonArray("c"))));
 				case "clear" -> WorldBridge.clearSolid();

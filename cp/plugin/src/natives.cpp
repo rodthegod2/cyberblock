@@ -160,6 +160,24 @@ namespace
 			cb::link().send({{"t", "ground"}, {"c", delta.add}});
 	}
 
+	// Cyberblock_SetAim(distance: Float) -> Void: metres from the camera to the first Night City surface under the
+	// crosshair (negative: none in range). Minecraft won't target blocks beyond it, so nothing is built or broken
+	// through Night City walls and no selection outline shows through them. Sent only when it changes by 2 cm or more.
+	void SetAim(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		float distance = -1.0f;
+		RED4ext::GetParameter(frame, &distance);
+		++frame->code;
+		static float last = -2.0f;
+		if (!std::isfinite(distance))
+			distance = -1.0f;
+		const bool changed = (distance < 0.0f) != (last < 0.0f) || std::fabs(distance - last) >= 0.02f;
+		if (!changed)
+			return;
+		last = distance;
+		cb::link().send({{"t", "aim"}, {"d", distance < 0.0f ? -1.0 : std::round(double(distance) * 1000.0) / 1000.0}});
+	}
+
 	// Cyberblock_Log(msg: String) -> Void
 	void Log(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
@@ -204,6 +222,7 @@ namespace cb::natives
 		add(rtti, "Cyberblock_SetActive", &SetActive, nullptr, {{"Bool", "active"}, {"Bool", "inVehicle"}});
 		add(rtti, "Cyberblock_SubmitProbes", &SubmitProbes, nullptr,
 			{{"Vector4", "center"}, {"array:Vector4", "downHits"}, {"array:Vector4", "wallHits"}, {"Float", "radius"}});
+		add(rtti, "Cyberblock_SetAim", &SetAim, nullptr, {{"Float", "distance"}});
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});
 		log::info("redscript natives registered");
 	}

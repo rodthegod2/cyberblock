@@ -7,4 +7,5 @@ public native func Cyberblock_ConsumeToggle() -> Bool;         // true once per 
 public native func Cyberblock_SetActive(active: Bool, inVehicle: Bool) -> Void;  // sends state/hud/clear, gates cam + compositor + input
 public native func Cyberblock_SubmitProbes(center: Vector4, downHits: array<Vector4>, wallHits: array<Vector4>, radius: Float) -> Void;
                                                                // Cyberpunk-space hits; DLL converts, diffs, sends ground/unground
+public native func Cyberblock_SetAim(distance: Float) -> Void; // metres to the Night City surface under the crosshair, -1 if none
 public native func Cyberblock_Log(msg: String) -> Void;        // to red4ext/logs/Cyberblock.log

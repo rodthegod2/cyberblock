@@ -94,4 +94,25 @@ class HostStateTest {
 		assertThrows(IllegalArgumentException.class, () -> HostState.update(json(bad)));
 		assertEquals(1.0, HostState.live().x());
 	}
+
+	@Test
+	void aimLimitsReach() {
+		HostState.updateAim(json("{'t':'aim','d':2.5}"));
+		assertEquals(2.5, HostState.aimLimit(4.5));
+		assertEquals(1.0, HostState.aimLimit(1.0)); // a shorter reach stays as it is
+	}
+
+	@Test
+	void noSurfaceMeansFullReach() {
+		HostState.updateAim(json("{'t':'aim','d':-1}"));
+		assertEquals(4.5, HostState.aimLimit(4.5));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"{'d':'NaN'}", "{'d':'Infinity'}", "{'d':1e9}", "{}"})
+	void badAimIsRejectedAndKeepsTheLastOne(final String bad) {
+		HostState.updateAim(json("{'d':3.0}"));
+		assertThrows(RuntimeException.class, () -> HostState.updateAim(json(bad)));
+		assertEquals(3.0, HostState.aimLimit(4.5));
+	}
 }

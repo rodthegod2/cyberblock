@@ -18,6 +18,7 @@ Messages are JSON text frames, one object per frame, discriminated by `t`.
 | `clear` | — | on activate, deactivate, teleport > 64 m |
 | `state` | `active:bool, vehicle:bool` | on change |
 | `view` | `w, h` | on connect and when Cyberpunk's backbuffer size changes |
+| `aim` | `d` metres from the camera to the Night City surface under the crosshair, `-1` if none within 8 m | on change (2 cm), 10 Hz; Minecraft caps block targeting at `d` |
 | `hud` | `hidden:bool` | on change (hidden in vehicles) |
 | `key` | `k` ∈ `use, attack, pick, inventory, drop, swap, chat, command, escape`, `down:bool` | input |
 | `slot` | `n` 0–8 | number keys |
@@ -45,6 +46,7 @@ Cyberpunk → Minecraft:
 {"t":"clear"}
 {"t":"state","active":true,"vehicle":false}
 {"t":"view","w":2560,"h":1440}
+{"t":"aim","d":2.437}
 {"t":"hud","hidden":false}
 {"t":"key","k":"attack","down":true}
 {"t":"slot","n":2}

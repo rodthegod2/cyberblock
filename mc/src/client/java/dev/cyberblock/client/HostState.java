@@ -100,6 +100,24 @@ public final class HostState {
 		return (float) number(e, what, -Float.MAX_VALUE, Float.MAX_VALUE);
 	}
 
+	/** Metres from the host camera to the Night City surface under the crosshair; negative: none in range. */
+	private static volatile double aim = -1.0;
+
+	/** {"t":"aim","d":metres} — d &lt; 0 means no Night City surface within the host's ray. */
+	static void updateAim(final JsonObject m) {
+		double d = number(m.get("d"), "aim", -1.0, 64.0);
+		aim = d < 0.0 ? -1.0 : d;
+	}
+
+	/**
+	 * Reach limited to the Night City surface under the crosshair, so blocks behind a Cyberpunk wall are never targeted
+	 * (no outline through walls, no building or breaking through them).
+	 */
+	public static double aimLimit(final double reach) {
+		double d = aim;
+		return d < 0.0 ? reach : Math.min(reach, d);
+	}
+
 	public static boolean vehicle() {
 		return vehicle;
 	}

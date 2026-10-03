@@ -63,6 +63,27 @@ public class CyberblockProbes {
       }
     }
     Cyberblock_SubmitProbes(feet, downHits, wallHits, Cast<Float>(radius));
+    this.Aim(player, queries, filter);
+  }
+
+  // The Night City surface under the crosshair, so Minecraft never targets (or outlines, places, breaks) a block
+  // behind it. Minecraft reaches 4.5-5 blocks; 8 m covers that from Cyberpunk's camera with margin.
+  private func Aim(player: ref<PlayerPuppet>, queries: ref<SpatialQueriesSystem>, filter: QueryFilter) -> Void {
+    let cameras = GameInstance.GetCameraSystem(player.GetGame());
+    let view: Transform;
+    if !cameras.GetActiveCameraWorldTransform(view) {
+      Cyberblock_SetAim(-1.0);
+      return;
+    }
+    let from = Transform.GetPosition(view);
+    let forward = cameras.GetActiveCameraForward();
+    let to = new Vector4(from.X + forward.X * 8.0, from.Y + forward.Y * 8.0, from.Z + forward.Z * 8.0, 1.0);
+    let result: TraceResult;
+    if queries.SyncRaycastByQueryFilter(from, to, filter, result) {
+      Cyberblock_SetAim(Vector4.Distance(from, Cast<Vector4>(result.position)));
+    } else {
+      Cyberblock_SetAim(-1.0);
+    }
   }
 
   private func BuildColumns(radius: Int32) -> Void {
