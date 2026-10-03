@@ -4,6 +4,7 @@
 #include "test.hpp"
 #include <chrono>
 #include <cmath>
+#include <fstream>
 
 namespace
 {
@@ -263,4 +264,15 @@ TEST(look_deltas_that_cancel_out_send_nothing)
 	look.add(5, -3);
 	look.add(-5, 3);
 	CHECK(!look.take(Clock::time_point{} + 10s));
+}
+
+// shared/vectors.json `binds`: the keys Minecraft can name and which the DLL takes. Minecraft's VirtualKeys reads the same
+// set, so a binding Minecraft sends is one the DLL accepts, and every other one is sent as the default (G/K) instead.
+TEST(bindable_matches_the_shared_binds_vectors)
+{
+	std::ifstream file(CB_VECTORS);
+	const nlohmann::json vectors = nlohmann::json::parse(file);
+	CHECK(vectors.at("binds").size() == 48);
+	for (const auto &c : vectors.at("binds"))
+		CHECK(cb::keys::bindable(c.at("vk").get<uint32_t>()) == c.at("bindable").get<bool>());
 }

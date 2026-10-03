@@ -608,5 +608,199 @@
     71
    ]
   }
+ ],
+ "binds": [
+  {
+   "vk": 65,
+   "bindable": false
+  },
+  {
+   "vk": 66,
+   "bindable": true
+  },
+  {
+   "vk": 67,
+   "bindable": false
+  },
+  {
+   "vk": 68,
+   "bindable": false
+  },
+  {
+   "vk": 69,
+   "bindable": false
+  },
+  {
+   "vk": 70,
+   "bindable": true
+  },
+  {
+   "vk": 71,
+   "bindable": true
+  },
+  {
+   "vk": 72,
+   "bindable": true
+  },
+  {
+   "vk": 73,
+   "bindable": true
+  },
+  {
+   "vk": 74,
+   "bindable": true
+  },
+  {
+   "vk": 75,
+   "bindable": true
+  },
+  {
+   "vk": 76,
+   "bindable": true
+  },
+  {
+   "vk": 77,
+   "bindable": true
+  },
+  {
+   "vk": 78,
+   "bindable": true
+  },
+  {
+   "vk": 79,
+   "bindable": true
+  },
+  {
+   "vk": 80,
+   "bindable": true
+  },
+  {
+   "vk": 81,
+   "bindable": false
+  },
+  {
+   "vk": 82,
+   "bindable": true
+  },
+  {
+   "vk": 83,
+   "bindable": false
+  },
+  {
+   "vk": 84,
+   "bindable": false
+  },
+  {
+   "vk": 85,
+   "bindable": true
+  },
+  {
+   "vk": 86,
+   "bindable": true
+  },
+  {
+   "vk": 87,
+   "bindable": false
+  },
+  {
+   "vk": 88,
+   "bindable": true
+  },
+  {
+   "vk": 89,
+   "bindable": true
+  },
+  {
+   "vk": 90,
+   "bindable": true
+  },
+  {
+   "vk": 48,
+   "bindable": true
+  },
+  {
+   "vk": 49,
+   "bindable": false
+  },
+  {
+   "vk": 50,
+   "bindable": false
+  },
+  {
+   "vk": 51,
+   "bindable": false
+  },
+  {
+   "vk": 52,
+   "bindable": false
+  },
+  {
+   "vk": 53,
+   "bindable": false
+  },
+  {
+   "vk": 54,
+   "bindable": false
+  },
+  {
+   "vk": 55,
+   "bindable": false
+  },
+  {
+   "vk": 56,
+   "bindable": false
+  },
+  {
+   "vk": 57,
+   "bindable": false
+  },
+  {
+   "vk": 112,
+   "bindable": true
+  },
+  {
+   "vk": 113,
+   "bindable": true
+  },
+  {
+   "vk": 114,
+   "bindable": true
+  },
+  {
+   "vk": 115,
+   "bindable": true
+  },
+  {
+   "vk": 116,
+   "bindable": false
+  },
+  {
+   "vk": 117,
+   "bindable": true
+  },
+  {
+   "vk": 118,
+   "bindable": true
+  },
+  {
+   "vk": 119,
+   "bindable": true
+  },
+  {
+   "vk": 120,
+   "bindable": false
+  },
+  {
+   "vk": 121,
+   "bindable": true
+  },
+  {
+   "vk": 122,
+   "bindable": true
+  },
+  {
+   "vk": 123,
+   "bindable": true
+  }
  ]
 }

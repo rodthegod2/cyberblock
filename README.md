@@ -87,8 +87,8 @@ Cyberpunk from acting on it.
 | K | Skill tree |
 
 G and K are the defaults. Rebind them in Minecraft's Controls (category Cyberblock); Cyberpunk only forwards letters,
-digits and F-keys, so any other key falls back to G or K. Cyberblock refuses the keys it needs elsewhere (W A S D,
-Space, Shift, Ctrl, C, F9, Esc and the Minecraft keys above) and keeps the previous binding.
+digits and F-keys, and not the ones Cyberblock needs elsewhere (W A S D, C, F9 and the Minecraft keys above), so any
+other key works in Cyberpunk as G or K, and a chat message says so.
 
 While Cyberblock is active on foot, Cyberpunk's own guns, cyberware, scanner, quickhacks, healing, radial menus, quick
 melee, zoom, crafting (K), walk toggle (G) and quick save (F5) are off, and V has no dodge, air dash or double jump

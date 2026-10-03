@@ -49,7 +49,7 @@ public final class CyberKeys {
 		Cyberblock.events.accept(CyberWire.binds(sentHack, sentSkills));
 	}
 
-	/** The key whose binding Cyberpunk cannot forward, or null when both are letters, digits or F-keys. */
+	/** The key whose binding Cyberpunk cannot forward (VirtualKeys.of), or null when it forwards both. */
 	static @Nullable KeyMapping unforwardable() {
 		for (KeyMapping mapping : new KeyMapping[]{hack, skills}) {
 			InputConstants.Key key = KeyMappingHelper.getBoundKeyOf(mapping);

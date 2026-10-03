@@ -150,10 +150,10 @@ and Cyberpunk never sees the ones marked *swallowed*.
 they work as usual.
 
 **Rebinding the hack and skill-tree keys:** Minecraft → Options → Controls → Key Binds → category **Cyberblock**.
-- Cyberpunk can only forward letters, digits and F-keys. A binding on any other key works in Cyberpunk as the default
-  (G or K), and a chat message tells you so.
-- These keys are refused, and the previous binding is kept: W, A, S, D, Space, Shift, Ctrl, C, F9, Esc, and the
-  forwarded keys above (E, Q, T, 1–9, /, F5).
+- Cyberpunk can only forward letters, digits and F-keys, and not the ones Cyberblock needs itself: W, A, S, D and C
+  (movement and crouch), E, Q, T, 1–9 and F5 (already forwarded to Minecraft) and F9 (Cyberblock on/off).
+- A binding on any other key (including Space, Shift, Ctrl, Esc and /) works in Cyberpunk as the default (G or K),
+  and a chat message tells you so.
 
 ---
 

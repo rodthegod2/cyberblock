@@ -30,7 +30,7 @@
 	"key.category.cyberblock.cyberblock": "Cyberblock",
 	"key.cyberblock.hack": "Hack (hold to scan)",
 	"key.cyberblock.skills": "Skill Tree",
-	"cyberblock.binds.note": "Cyberpunk only forwards letters, digits and F-keys: %s works there as %s",
+	"cyberblock.binds.note": "Cyberpunk cannot forward %s for this (only letters, digits and F-keys it does not use itself): it works there as %s",
 
 	"cyberblock.hack.no_target": "Hold %s and look at a target",
 	"cyberblock.hack.no_deck": "You need a cyberdeck in your inventory",
