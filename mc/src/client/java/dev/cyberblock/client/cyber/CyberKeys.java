@@ -167,7 +167,9 @@ public final class CyberKeys {
 
 		boolean changed = false;
 		for (KeyMapping vanilla : minecraft.options.keyMappings) {
-			if (vanilla.getCategory() == CATEGORY || vanilla.isUnbound() || freed.contains(vanilla.getName())) {
+			// debug keys are F3 combinations (F3+G, F3+L): they never fire on our plain keys, so they keep theirs
+			if (vanilla.getCategory() == CATEGORY || vanilla.getCategory() == KeyMapping.Category.DEBUG || vanilla.isUnbound()
+				|| freed.contains(vanilla.getName())) {
 				continue;
 			}
 

@@ -34,6 +34,8 @@ public final class SandevistanFx {
 	private static final int HISTORY = GHOSTS * GHOST_STEP + 1;
 	/** The local player's positions, newest first (client thread). */
 	private static final List<Vec3> history = new ArrayList<>();
+	/** The post effect was requested last frame (render thread). */
+	private static boolean postOn;
 
 	private SandevistanFx() {
 	}
@@ -43,10 +45,16 @@ public final class SandevistanFx {
 		return CyberData.timer(player, Cyberware.SANDEVISTAN).active(player.level().getGameTime());
 	}
 
-	/** GameRendererCyberMixin: request the post effect this frame (standalone only). */
+	/** GameRendererCyberMixin: request the post effect this frame (standalone only). Logged when it starts and stops. */
 	public static boolean wantsPostEffect() {
 		LocalPlayer player = Minecraft.getInstance().player;
-		return !Cyberblock.active && player != null && running(player);
+		boolean wants = !Cyberblock.active && player != null && running(player);
+		if (wants != postOn) {
+			postOn = wants;
+			Cyberblock.LOG.info("sandevistan: post effect {}", wants ? "on" : "off");
+		}
+
+		return wants;
 	}
 
 	/** Every client tick: the position history (cleared when the Sandevistan is not running). */
