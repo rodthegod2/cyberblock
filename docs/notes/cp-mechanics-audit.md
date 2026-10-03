@@ -216,9 +216,51 @@ name [I].
 | Cripple Movement | `Items.LocomotionMalfunctionLvl2..`; `QuickHack.LocomotionMalfunctionHack`, `…Lvl2..4Hack` | `BaseStatusEffect.LocomotionMalfunction` (type QuickHackStaggerLocomotion), plus police notify | stops the NPC from moving | `hacks_locomotion_malfunction`; `quickhack_locomotion_malfunction` |
 | Contagion | `Items.ContagionLvl2..`; `QuickHack.ContagionHack`, `ContagionLvl2..4Hack` | `BaseStatusEffect.ContagionPoison` (Poisoned DoT); spread through `SpreadEffector` → `QuickHack.ContagionHackSpread` | `Attacks.ContagionPoisonAttack` (continuous) | `hacks_contagion`; `quickhack_contagion` |
 | Synapse Burnout | `Items.BrainMeltLvl2..` (no Lvl1); `QuickHack.BrainMeltLvl2Hack`… | `BaseStatusEffect.BrainMeltLevel2` (type BrainMelt) | `Attacks.BrainMeltHackAttackLevel2` at Head; `DismemberEffector`; `AndroidHeadRemovedBlind` | `hacks_brain_bolt`; `quickhack_synapse_burnout` |
-| Ping | `Items.PingLvl2..`; `QuickHack.PingHack`, `PingLvl2..4Hack` | `BaseStatusEffect.Ping` (`PingSquadEffector`) | reveals squad and network. This is UI, so it is invisible with the HUD hidden | `quickhack_ping` |
+| Ping | `Items.PingLvl2..`; `QuickHack.PingHack`, `PingLvl2..4Hack` | `BaseStatusEffect.Ping` (`PingSquadEffector`) | reveals squad and network. This is UI, so it is invisible with the HUD hidden (re-test 3: Minecraft draws the outlines, see B.2) | `quickhack_ping` |
 | Memory Wipe | `Items.MemoryWipeLvl2..` (Lvl2 and up only); `QuickHack.MemoryWipeLvl2Hack`… | `BaseStatusEffect.MemoryWipeLevel2` (type Blind; tags ClearThreats, Stealth) | the NPC forgets threats | `quickhack_memory_wipe` (no VFX record) |
 | Cyberpsychosis | `Items.MadnessLvl3..` (Lvl3 and up only); `QuickHack.MadnessLvl3Hack`… (UltimateHack) | `BaseStatusEffect.Madness` (`MadnessEffector`, `SuicideWithWeapon`), plus `Effectors.RewardPlayerWithCrimeScoreEffector` | the NPC attacks its squad, then kills itself | `quickhack_cyberpsychosis` |
+
+### B.2 Why every hack looked the same, and the crowd finding (re-test 3, F1)
+
+The user reported that quickhacks "all feel the same". The investigation found four causes; only the first is on the
+Minecraft side.
+
+1. **The wheel fired the first chip.** Minecraft's hack wheel preferred the remembered pick over the chip in the hand and
+   fell back to the first chip (Short Circuit): 13 of 15 `script: hack` lines of the 17:30-17:42 session were
+   `short_circuit`. Fixed in Minecraft: the chip in the main hand wins, then the wheel pick, then the first chip.
+2. **The mapping above is correct** (nine distinct `ObjectAction` records, applied by `ProcessRPGAction`), but **most
+   targets are crowd pedestrians, and vanilla never quickhacks crowd records**: a pedestrian from the crowd system has no
+   quickhack list, and the squad- and AI-driven effects (Madness, Ping, Memory Wipe, Blind, Locomotion Malfunction) have
+   nothing to act on, so nothing visible happens. Squad members (gangers, NCPD) show every effect.
+3. **Three effects were wired wrongly or not at all for a player:** Contagion's spread comes from the player's spread map
+   (`HackingDataDef.GetValuesFromSpreadMap`) and V has none, so it never spread; Ping was built as a plain `PuppetAction`
+   instead of the `PingSquad` object action vanilla uses; and the upload (`ScriptableDeviceAction.StartUpload`) lands 1-3 s
+   after Minecraft had already reacted, and carried no `GameplayRoleComponent`, so no queue mappin showed.
+4. **Minecraft showed nothing chip-specific:** only a beacon sound, the hack and the target were forgotten after the send,
+   and proxies are invisible, so nothing could be drawn on them.
+
+**What changed.** The DLL answers a hack with `upload` and `kind` (`squad`, `crowd`, `driver`, `camera`, `traffic`,
+`distract`, `device`) and reports extra people it touched as `hackspread` (`chain`, `spread`, `ping`, `frenzy`); Minecraft
+draws an upload beam, then a chip-specific impact when the upload completes. **The extras** run from the scripts at the
+end of the upload, on any NPC, and respect `IsProtected` and `Withheld` (quest characters and V's friends are spared); each
+is logged as `hackfx: <hack> <kind> <what>`:
+
+| Hack | Crowd pedestrian (extra) | Always (squad too) |
+|---|---|---|
+| Short Circuit | none: electrocution is visible, and kills pedestrians | - |
+| Overheat | set alight for 5 s (`CyberblockEffects.Ignite`) | - |
+| Reboot Optics | `BaseStatusEffect.Blind`, 5 s | - |
+| Cripple Movement | `BaseStatusEffect.Stun`, 4 s (the root) | - |
+| Contagion | - | upload `ContagionLvl2` with spread off to the 2 nearest valid NPCs within 6 m, each reported as `spread` |
+| Synapse Burnout | - | a heavy `StrikeBy` hit (35 % of health, impulse below 4 m/s, so no ragdoll) |
+| Ping | - | built as `PingSquad`; `SendForceRevealObjectEvent` on hostile NPCs within 30 m (at most 16), each reported as `ping` |
+| Memory Wipe | `Stun`, 2 s ("dazed") | - |
+| Cyberpsychosis | frenzy for 6 s: every 1.5 s the target hits the nearest NPC within 4 m (15 % of health), each victim reported as `frenzy` | - |
+| device hacks | none | - |
+
+**Ping is no longer invisible:** the row above says Ping "is UI, so it is invisible with the HUD hidden". With the
+Minecraft-drawn interface the reveal shows as a gold outline on every hostile proxy within 32 blocks (also through walls),
+drawn by Minecraft. All TweakDB records the extras use were checked present in `tweakdb.bin` and `tweakdb_ep1.bin`.
 
 **Most robust way to fire a hack without V's cyberdeck** [C, S; snippet `CyberblockAudit.Quickhack`, CC]:
 

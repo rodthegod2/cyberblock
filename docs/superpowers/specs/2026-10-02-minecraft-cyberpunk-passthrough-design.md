@@ -1,7 +1,9 @@
 # Cyberblock: Minecraft × Cyberpunk 2077 passthrough — design
 
 Date: 2026-10-02 · Status: approved in brainstorming, awaiting spec review · Amended 2026-10-03 after the second
-in-game re-test (ground alignment in §3.2, the flight drive and launches in §5 layer 4, cyberware in §5)
+in-game re-test (ground alignment in §3.2, the flight drive and launches in §5 layer 4, cyberware in §5) and after the
+third (re-test 3: Minecraft draws every piece of interface, vehicles keep Steve, third person, distinct quickhacks, six
+keys, release packaging: §4.3, §4.8, §5 layers 4 and 6)
 
 ## 1. What we are building
 
@@ -14,7 +16,7 @@ Night City through real Cyberpunk effects (explosions, damage, collision, telepo
 |---|---|
 | Approach | **True passthrough**: real Minecraft + Fabric mod, composited into Cyberpunk (like the viral videos and the universal-modder Minecraft × GTA V example). |
 | Who moves the body | **Cyberpunk moves, Steve acts.** Cyberpunk's movement on foot; Minecraft physics only during elytra flight. |
-| Cyberpunk combat on foot | **Minecraft only.** Cyberpunk guns, cyberware and hacking are disabled while the mashup is on. **Cars stay**: entering a vehicle hides Steve and restores the Cyberpunk HUD. |
+| Cyberpunk combat on foot | **Minecraft only.** Cyberpunk guns, cyberware and hacking are disabled while the mashup is on. **Cars stay**: V drives with Cyberpunk's controls and **Steve rides along** (re-test 3 reverses the first design, which hid Steve and restored the Cyberpunk HUD in a vehicle): the Minecraft hand and hotbar stay in a first-person vehicle camera, the whole seated Steve shows in a third-person one, and Cyberpunk's HUD never comes back (§4.3, §4.8). |
 | Game mode | **Both, switchable** with Minecraft's `/gamemode`. Survival spawns with a starter kit (`/cyberblock kit` refills); creative makes both Steve and V invincible. |
 | Priorities | Building + TNT/creepers → mobs vs Night City → elytra + ender pearls → interactive items (lead/lasso, fishing rod, …) → Cyberpunk-as-Minecraft (quickhack items, hack key, skill tree). Nether and day/night sync are out of scope. |
 
@@ -56,7 +58,7 @@ CYBERPUNK 2077 (DX12, has focus)                     MINECRAFT JAVA 26.3 + Fabri
 | `mc/` Fabric mod | Java 25 | Render from the host camera; export frames; turn probes into barrier blocks; turn NPCs into proxy entities; emit events; custom items, keys, screens. Forked from universal-modder's `examples/minecraft-gta5-passthrough/mc` (MIT, credited). | Fabric API, Java-WebSocket |
 | `cp/plugin/` Cyberblock.dll | C++20 (MSVC) | WebSocket client + message queue; per-frame camera publish; redscript natives; ReShade add-on registration and compositor (ported from the GTA example's `compositor.cpp`/`ws.cpp`). | RED4ext.SDK, ReShade add-on headers |
 | `cp/shaders/Cyberblock.fx` | ReShade FX | Reprojection, depth test, relight, overlay. | ReShade |
-| `cp/scripts/Cyberblock/` | redscript | Mashup state (on/off, V hidden, combat blocked, HUD swap, god mode); raycast probes; collision boxes; applying events as Cyberpunk effects; NPC list; quickhack and perk effects. | Codeware, RED4ext natives |
+| `cp/scripts/Cyberblock/` | redscript | Mashup state (on/off, V hidden, combat blocked, ink layers hidden and UI data streamed, god mode); raycast probes; collision boxes; applying events as Cyberpunk effects; NPC list; quickhack and perk effects. | Codeware, RED4ext natives |
 | `tools/` | Python | `install.py` (install/remove exactly our files, refuse to overwrite others, back up saves first), `play.py` (start Minecraft dev client then Cyberpunk), `fakehost.py` (oracle), `check_vectors.py`. | — |
 | `shared/vectors.json` | JSON | Coordinate and protocol test vectors read by Java, C++ and Python tests. | — |
 
@@ -142,9 +144,13 @@ explosions do not destroy; cells leaving the radius are cleared. Heights go thro
 nearest rounding (§3.2).
 
 ### 4.3 V's state while active
-V's body and weapons hidden, combat blocked by a gameplay restriction, Cyberpunk HUD hidden on foot,
-V invincible. Entering a vehicle: Steve hidden in Minecraft, Cyberpunk HUD restored; leaving: back.
-All state is applied at runtime and cleared before every save and on every load, so saves stay vanilla.
+V's body and weapons hidden, combat blocked by a gameplay restriction, Cyberpunk's 2D interface layers invisible
+(§4.8), V invincible. **Entering a vehicle (re-test 3):** V stays invincible and V's body stays hidden in both vehicle
+cameras, the interface stays invisible and **Steve rides along** in Minecraft: the hand and hotbar in a first-person
+camera, the whole seated Steve (at V's hips point, read from the vehicle's Hips slot) in a third-person camera; the DLL
+reports `cam.seat` and an honest `cam.fp`, and Minecraft hides only its survival bars and crosshair while seated. Leaving:
+back to the on-foot state. All state is applied at runtime and cleared before every save and on every load, so saves stay
+vanilla.
 
 ### 4.4 Input
 Cyberpunk keeps focus and keeps WASD/jump/crouch/sprint/camera. The DLL forwards mouse buttons, wheel,
@@ -176,6 +182,35 @@ drives Minecraft's cursor.
 **Layer 1 done when:** walking around Night City as Steve with hand and hotbar visible; placed blocks sit
 on Night City floors and are occluded correctly; F9 and watchdog restore normal V; install/remove are clean.
 
+### 4.8 Minecraft draws the interface (re-test 3)
+**The principle:** Cyberpunk keeps the game logic and its own input; **Minecraft draws every piece of UI.** The user's
+request was that the old Cyberpunk interface should not appear at all and that every UI element, prompts and dialogue
+choices included, should be Minecraft-themed.
+- **Hiding.** While Cyberblock is On (Active or in a vehicle) the scripts set the three 2D ink layers that carry the
+  game's interface (`inkHUDLayer`, `inkGameNotificationsLayer`, `inkWaitingSignLayer`) to opacity 0 while their controllers
+  keep running, so prompts and dialogue choices still take Cyberpunk's input (F, E/Q/1-4/wheel). World-space layers
+  (street signs, advertisements), the system notifications layer and photo mode are never touched. Everything is restored
+  on Off, Lost, session end, detach and before every save. Nothing re-shows the HUD for a prompt or a dialogue any more.
+  Two logged exceptions: a popup that pauses the game by itself (tutorials, shards) and the braindance timeline.
+- **Data over the wire.** Cyberpunk streams stats (eddies, wanted level, time, district, speed), the tracked quest and its
+  waypoint, map pins, interaction prompts, dialogue choices, subtitles, phone calls and every notification (`stats`,
+  `quest`, `pins`, `prompt`, `choices`, `sub`, `call`, `notify`); Minecraft renders them with its own font, sprites and
+  colours (radar, quest panel, waypoint on the locator bar, tooltip-styled prompt and choice list, toasts) taken from the
+  player's own Minecraft install at runtime, never copied.
+- **Menus.** The Cyberpunk menu keys are intercepted and the menu is replaced by a Minecraft screen (pause, atlas,
+  journal, phone, inventory, skills; journal, phone and atlas data come as `reply` messages). The Night City pause screen
+  pauses Cyberpunk through `status.pause`, level-triggered. A menu with no Minecraft equivalent (shops, ripperdoc, stash,
+  crafting benches, breach protocol, settings, save lists, death and loading screens, tutorial popups) is **passed
+  through**: the scripts tint its widget tree in Minecraft colours, Minecraft draws a title bar and a bevelled frame
+  around it (`screen.pass`), and the compositor (`cb_menu`) does not draw the Minecraft world over it. Limit: Minecraft's
+  font cannot be copied into Cyberpunk, and an original pixel font in an `.archive` needs WolvenKit, so the text of
+  pass-through menus stays in Cyberpunk's font. An escape hatch ("Night City Menu..." in the pause screen) opens the
+  vanilla Cyberpunk menu once, and with no link every Cyberpunk menu works as in vanilla.
+- **Third person (re-test 3).** F5 toggles an on-foot third-person view: Minecraft sends `persp`, and the DLL moves
+  Cyberpunk's first-person camera component back and up (distance about 3.2 m, shortened by raycasts against Night City
+  and the barrier blocks) while it is allowed (Active, on foot, not held, no menu, no braindance, no photo mode); `cam.fp`
+  is honest, Steve is drawn in full, and Minecraft draws a centre crosshair. Vehicle cameras stay Cyberpunk's own.
+
 ## 5. Layers 2–6
 
 Rule for all layers: **Steve's health is the only health.** While active, V is invincible and every
@@ -190,7 +225,9 @@ sent as `hit` and applied as real Cyberpunk damage, so heat, NCPD, ragdolls and 
 - `block` add/remove → invisible Cyberpunk collision box (1 m), streamed within 64 m, cap 1,000.
 - TNT, creepers, firework impacts → `explosion` → Cyberpunk explosion scaled by power.
 - Arrows, tridents, crossbow → `hit` on the proxy struck (projectiles also stop on Night City barrier cells).
-- Melee → `hit` with impulse: NPCs ragdoll, vehicles are shoved.
+- Melee → `hit` with impulse: vehicles are shoved, and people are pushed the way Minecraft pushes a mob (re-test 3:
+  `|impulse| = (0.4 + knockback) x 5` m/s); Cyberpunk turns the speed into a flinch, a stagger, a knockdown or, only at
+  10 m/s and more, a short ragdoll, instead of ragdolling everyone hit.
 - Fire charge, flint and steel, lava → `ignite`.
 - **Done when:** a wall stops a car and pedestrians; TNT under a car blows it up and draws NCPD.
 
@@ -207,6 +244,10 @@ sent as `hit` and applied as real Cyberpunk damage, so heat, NCPD, ragdolls and 
   rendered frame from RED4ext's update hook, playing the stream out a few milliseconds late and interpolating between
   samples; redscript only decides whether V may be moved and owns the fall-damage rules. The camera-only fallback
   of the first design was dropped, because the script loop it was meant to back up never ran per frame in 2.31.
+  **Steering (re-test 3):** the glide steers with the camera like the vanilla elytra. The DLL owns V's yaw while it
+  drives: it adds the relative mouse-X counts to the yaw it teleports V with (and strips the game's own horizontal mouse
+  turn meanwhile), so the camera yaw Minecraft reads from `cam` follows the mouse; before, V was teleported every frame with
+  the yaw read before that frame's mouse delta, which undid the turn.
 - **Launches (re-test 2):** a wind charge (Steve's own, another's or a breeze's) or a mace burst that throws Steve into
   the air starts the same flight pipeline with `kind:"launch"`: Minecraft physics move Steve, V follows every frame
   until the touchdown, and an elytra opened mid-air turns it into a glide.
@@ -229,7 +270,11 @@ sent as `hit` and applied as real Cyberpunk damage, so heat, NCPD, ragdolls and 
   tooltip (name, faction, threat).
 - **RAM bar** in the Minecraft HUD; regenerates over time.
 - **Quickhack items** (custom items, crafted or from the kit), each sending `hack` and firing the real
-  Cyberpunk quickhack with its VFX:
+  Cyberpunk quickhack with its VFX. **Re-test 3:** the chip in the main hand fires (then the wheel pick), and every chip is
+  unique in both games: its own Minecraft visuals and behaviour at the impact (lightning, flames, ink, real cobwebs, a
+  green cloud, wither trail, outlines through walls, swirls, a creeper face, per-device effects), played when the upload
+  completes (`hackresult.upload`, `hackspread`), and a distinct Cyberpunk effect, with a visible extra on crowd
+  pedestrians that vanilla does not quickhack (`hackresult.kind`):
 
   | Item | Cyberpunk quickhack |
   |---|---|
@@ -258,7 +303,8 @@ sent as `hit` and applied as real Cyberpunk damage, so heat, NCPD, ragdolls and 
 ### Cyberware (re-test 2)
 The stretch item of the first design became a feature of its own. **Cyberware** are items the player *installs* in
 custom ripperdoc slots (arms, legs, operating system, nervous system, integumentary, eyes, circulatory, frontal
-cortex; not armor slots), through a Cyberware screen on U and with one activation key on Y; 17 implants in all, listed in
+cortex; not armor slots), through a Cyberware screen on U and with activation keys (re-test 3: Y for the Operating System implant, L for the Arms
+implant, O for Optical Camo); 17 implants in all, listed in
 the player guide. Minecraft owns the whole state (what is installed, cooldowns, selection) and sends the installed set
 to Cyberpunk as `cyberware` and timed effects as `cyberfx`.
 - Every implant has a Minecraft effect with particles and sounds, and where it makes sense the real Cyberpunk effect on
@@ -270,6 +316,11 @@ to Cyberpunk as `cyberware` and timed effects as `cyberfx`.
 - Three perks became upgrades of implants (Double Jump, Sandevistan Sprint, Optical Camo), so one effect never comes from
   two sources. Cyberpunk's own cyberware stays disabled (§1); Cyberblock's implants replace it.
 - Items are craftable, in the creative tab and (a basic set) in the starter kit; in creative, installs are free.
+- **Re-test 3:** the Operating System slot has two places (the Cyberdeck, and Sandevistan or Berserk) so a netrunner can run
+  both; Mantis Blades, Gorilla Arms and Monowire became active implants on the Arms key with an ability each (a lunge, a
+  slam, a lash); the four arm implants have original 3D models in first and third person; the Sandevistan adds a ReShade
+  screen effect (chromatic split, tint, ghost trails, edge glow, strength slider) next to the Minecraft flourish; Optical
+  Camo makes Steve a translucent shimmer in third person; the mod has its own advancements.
 
 ## 6. Risks
 | Risk | Mitigation |
@@ -284,5 +335,6 @@ to Cyberpunk as `cyberware` and timed effects as `cyberfx`.
 ## 7. Rules
 - Single-player only; no anti-cheat involved (Cyberpunk has none).
 - Repository contains our code, our pixel art and converters only — never game files. Credit
-  universal-modder (MIT) for the forked Minecraft and compositor code.
+  universal-modder (MIT) for the forked Minecraft and compositor code. Minecraft's look in the interface comes from the
+  player's own install at runtime (its sprites and font), never from copies.
 - Downloads and installs of tools and frameworks are done with the user's approval.
