@@ -28,9 +28,10 @@
 // transition out of Active/Vehicle.
 //
 // While a save is written (Session/BeforeSave until Session/AfterSave) Minecraft's side is left as it is: its events
-// wait in the DLL's queue, the last NPC list stands (its proxies keep their leads) and the tethers stay (ClearWorld only
-// restarted their timers); all of it carries on after the save. The flag is also cleared on session ready and end, and
-// after 10 s of ticks without an AfterSave (a save that failed or was aborted), so it can never stay stuck.
+// wait in the DLL's queue and the tethers stay (ClearWorld only restarted their timers); all of it carries on after the
+// save. Minecraft's NPC proxies (and their leads) stay as long as Minecraft still gets cam frames, as through a save or a
+// Cyberpunk menu, and are removed only when the host goes inactive. The saving flag is also cleared on session ready and
+// end, and after 10 s of ticks without an AfterSave (a save that failed or was aborted), so it can never stay stuck.
 
 enum CyberblockState {
   Off = 0,
