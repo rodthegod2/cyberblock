@@ -1,7 +1,8 @@
 // Minecraft events applied as real Cyberpunk effects (layer 2 plan §1.4, S2.3). V is the instigator of everything, so
 // the game's own systems give NCPD heat, hostility, kill credit and quest protection (god modes) as for V's attacks;
 // V is never hit by them (the damage pipeline ignores self-damage without hitFlag.CanDamageSelf). Hit's push is not
-// part of that pipeline, so Hit withholds it itself from the same targets and from NPCs in workspots and scenes.
+// part of that pipeline, so Hit withholds it itself from the same targets and from NPCs in workspots, and says so in
+// the log (IsProtected, Withheld).
 //
 // 2.31 sources (decompiled 2.31 scripts, NativeDB, TweakDB read from r6/cache, archive index; compile-checked):
 //   Explode: the scripted-explosion pattern of ClaymoreMine.Explode / InitiateCyberwareExplosionEffector /
@@ -23,8 +24,9 @@
 //     (AIDeathReactionTask.TurnOnRagdoll) where ScriptedPuppet.CanRagdoll allows; vehicles: PhysicalImpulseEvent
 //     (MotorcycleComponent.OnKnockOverBikeEvent) with VehicleObject.GetTotalMass. Withheld from protected targets:
 //     GodModeSystem.HasGodMode (Invulnerable, Immortal; DamageSystem.ProcessVehicleTarget), GameObject
-//     .IsFriendlyTowardsPlayer, VehicleComponent.GetVehicle/GetDriver, WorkspotGameSystem.IsActorInWorkspot,
-//     SceneSystemInterface.IsEntityInScene (NPCPuppet death handling).
+//     .IsFriendlyTowardsPlayer, VehicleComponent.GetVehicle/GetDriver, WorkspotGameSystem.IsActorInWorkspot. Not
+//     SceneSystemInterface.IsEntityInScene: in game (2026-10-03) it was true for V in free open-world play, so it
+//     cannot tell who a scene holds.
 //   Ignite: StatusEffectSystem.ApplyStatusEffect(t"BaseStatusEffect.Burning", instigator V) +
 //     SetStatusEffectRemainingDuration.
 //   HitFrom (layers 3-6 plan §1.4, S2.3): Hit with the mob's puppet (Puppets.reds) as instigator and source; an
@@ -184,7 +186,7 @@ public abstract class CyberblockEffects {
       direction = Vector4.Normalize(object.GetWorldPosition() - attacker.GetWorldPosition());
     }
     // The damage pipeline protects its targets from the damage only; the push is ours to withhold.
-    if CyberblockEffects.IsProtected(game, object, player) {
+    if CyberblockEffects.Withheld(game, object, player) {
       impulse = new Vector4(0.0, 0.0, 0.0, 0.0);
     }
     if frac <= 0.0 {
@@ -243,26 +245,45 @@ public abstract class CyberblockEffects {
     }
   }
 
-  // Targets the push must leave alone: those the damage pipeline protects (V, V's car, god modes, friends of V), cars
-  // they drive, and anyone a quest is animating (workspot, scene), whom a forced ragdoll would pull out of it.
-  public static func IsProtected(game: GameInstance, object: ref<GameObject>, player: ref<PlayerPuppet>) -> Bool {
+  // Why the push must leave a target alone, n"" when it may be pushed: n"player" (V or V's car), n"godmode" (an
+  // Invulnerable or Immortal god mode on it, or on the driver of a car), n"friendly" (friendly towards V, or a car a
+  // friend of V drives), n"workspot" (a quest animates it; a forced ragdoll would pull it out). The first three are
+  // what the damage pipeline protects too.
+  public static func IsProtected(game: GameInstance, object: ref<GameObject>, player: ref<PlayerPuppet>) -> CName {
     let id = object.GetEntityID();
     let mounted: wref<GameObject>;
     if object == player || VehicleComponent.GetVehicle(game, player, mounted) && mounted == object {
-      return true;
+      return n"player";
     }
-    if CyberblockEffects.HasGodMode(game, id) || GameObject.IsFriendlyTowardsPlayer(object) {
-      return true;
+    if CyberblockEffects.HasGodMode(game, id) {
+      return n"godmode";
+    }
+    if GameObject.IsFriendlyTowardsPlayer(object) {
+      return n"friendly";
     }
     let vehicle = object as VehicleObject;
     if IsDefined(vehicle) {
       let driver = VehicleComponent.GetDriver(game, vehicle, id);
-      if IsDefined(driver) && (CyberblockEffects.HasGodMode(game, driver.GetEntityID()) || GameObject.IsFriendlyTowardsPlayer(driver)) {
-        return true;
+      if IsDefined(driver) {
+        if CyberblockEffects.HasGodMode(game, driver.GetEntityID()) {
+          return n"godmode";
+        }
+        if GameObject.IsFriendlyTowardsPlayer(driver) {
+          return n"friendly";
+        }
       }
     }
-    return GameInstance.GetWorkspotSystem(game).IsActorInWorkspot(object)
-      || GameInstance.GetSceneSystem(game).GetScriptInterface().IsEntityInScene(id);
+    return GameInstance.GetWorkspotSystem(game).IsActorInWorkspot(object) ? n"workspot" : n"";
+  }
+
+  // True when the push must leave object alone (IsProtected); each target is named in the log at most every 10 s.
+  public static func Withheld(game: GameInstance, object: ref<GameObject>, player: ref<PlayerPuppet>) -> Bool {
+    let reason = CyberblockEffects.IsProtected(game, object, player);
+    if Equals(reason, n"") {
+      return false;
+    }
+    CyberblockEffectsService.Get().LogWithheld(game, EntityID.ToHash(object.GetEntityID()), reason);
+    return true;
   }
 
   private static func HasGodMode(game: GameInstance, id: EntityID) -> Bool {
@@ -350,6 +371,9 @@ public class CyberblockEffectsService extends ScriptableService {
   // Falls are not reported until this simulation time (Teleport, and flight landings in Flight.reds).
   private let fallQuietUntil: Float;
   private let fallQuietFor: Float;
+  // Targets whose withheld push was logged in the last 10 s, and when (parallel arrays).
+  private let withheldTargets: array<Uint64>;
+  private let withheldAt: array<Float>;
 
   public static func Get() -> ref<CyberblockEffectsService> {
     return GameInstance.GetScriptableServiceContainer().GetService(n"CyberblockEffectsService") as CyberblockEffectsService;
@@ -368,6 +392,27 @@ public class CyberblockEffectsService extends ScriptableService {
   public func IsFallSuppressed(game: GameInstance) -> Bool {
     let left = this.fallQuietUntil - CyberblockEffectsService.Now(game);
     return left > 0.0 && left <= this.fallQuietFor;
+  }
+
+  // 'effects: push withheld from <hash> (<reason>)', once per target per 10 s. Entries older than that (or stamped in
+  // another session, whose simulation time lies ahead) are dropped first, so the list stays short.
+  public func LogWithheld(game: GameInstance, target: Uint64, reason: CName) -> Void {
+    let now = CyberblockEffectsService.Now(game);
+    let i = ArraySize(this.withheldTargets) - 1;
+    while i >= 0 {
+      let age = now - this.withheldAt[i];
+      if age >= 10.0 || age < 0.0 {
+        ArrayErase(this.withheldTargets, i);
+        ArrayErase(this.withheldAt, i);
+      }
+      i -= 1;
+    }
+    if ArrayContains(this.withheldTargets, target) {
+      return;
+    }
+    ArrayPush(this.withheldTargets, target);
+    ArrayPush(this.withheldAt, now);
+    Cyberblock_Log(s"effects: push withheld from \(target) (\(NameToString(reason)))");
   }
 
   public func Expect(hit: ref<gameHitEvent>, amount: Float, impulse: Vector4) -> Void {

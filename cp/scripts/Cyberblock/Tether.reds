@@ -1,7 +1,8 @@
 // Leads, fishing-rod pulls and wind-charge knockback on Night City (plan 2026-10-03 section 1.4, S2.5). All pushes
 // are CyberblockEffects.Knock impulses (m/s, Cyberpunk space): a person is knocked over into a ragdoll by 4 m/s and
 // more (ScriptedPuppet.CanRagdoll), a vehicle gets the impulse times its mass. Targets the effects leave alone (V,
-// V's car, god modes, V's friends, workspots, scenes: CyberblockEffects.IsProtected, as Hit) are never pushed.
+// V's car, god modes, V's friends, workspots: CyberblockEffects.IsProtected, as Hit) are never pushed; the log names
+// each of them at most every 10 s with the reason (CyberblockEffects.Withheld).
 //   Lead: every tick, a target farther than length from its anchor (the knot, or V when Steve holds the lead) is
 //     tugged toward it at min(12, 3 x excess) m/s, at most every 0.5 s per target (each tug is a velocity change; at
 //     10 Hz they would add up to a throw). More than length + 12 m for 2 s, or the target gone: Cyberblock_Unlead.
@@ -33,7 +34,7 @@ public abstract class CyberblockTether {
   public static func Pull(game: GameInstance, target: Uint64, toward: Vector4, strength: Float) -> Void {
     let object = CyberblockEffects.Find(game, target);
     let player = GetPlayer(game);
-    if !IsDefined(object) || !IsDefined(player) || strength <= 0.0 || CyberblockEffects.IsProtected(game, object, player) {
+    if !IsDefined(object) || !IsDefined(player) || strength <= 0.0 || CyberblockEffects.Withheld(game, object, player) {
       return;
     }
     let impulse = CyberblockTetherService.Toward(object.GetWorldPosition(), toward) * MinF(strength, 50.0);
@@ -186,7 +187,7 @@ public class CyberblockTetherService extends ScriptableService {
     if excess <= 0.0 || now - this.lastTug[slot] < 0.5 && now >= this.lastTug[slot] {
       return;
     }
-    if CyberblockEffects.IsProtected(game, object, player) {
+    if CyberblockEffects.Withheld(game, object, player) {
       return;
     }
     this.lastTug[slot] = now;
@@ -217,7 +218,7 @@ public class CyberblockTetherService extends ScriptableService {
         return false;
       }
     }
-    return !CyberblockEffects.IsProtected(game, object, player);
+    return !CyberblockEffects.Withheld(game, object, player);
   }
 
   // Unit direction from one point to another, w 0 (positions from the DLL and the game may differ in w).
