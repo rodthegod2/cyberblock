@@ -39,5 +39,16 @@ namespace cb
 		inline std::atomic<bool> lookCapture{false};
 		/// F9 went down: set by the window hook, read and cleared by Cyberblock_ConsumeToggle.
 		inline std::atomic<bool> togglePressed{false};
+
+		/// Re-test 3 (plan section 1.2, task D4): set by Cyberblock_SetSeat (10 Hz and on a camera switch while V sits in a
+		/// vehicle): V is seated, the vehicle camera is third person, and V's hips point in V's local axes (Y forward, Z up,
+		/// metres). The camera sends `cam.seat`, `cam.fp = !seatTpp` and `pl` = feet + the rotated hips point. Cleared by
+		/// Cyberblock_SetActive(false) and a link drop.
+		inline std::atomic<bool> seated{false};
+		inline std::atomic<bool> seatTpp{false};
+		inline std::atomic<float> hipsX{0.0f}, hipsY{0.0f}, hipsZ{0.0f};
+
+		/// The link to Minecraft dropped (main.cpp's drop handler, link thread): forgets the seat.
+		void on_link_dropped();
 	}
 }

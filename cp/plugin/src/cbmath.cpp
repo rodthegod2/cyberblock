@@ -96,4 +96,12 @@ namespace cb
 		const int b = floor_int(z - off);
 		return {floor_int(x), floor_int(-y), b, b};
 	}
+
+	Vec3 rotate(const Quat &q, Vec3 v)
+	{
+		// t = 2 (u x v); v' = v + r t + u x t, with u = (i, j, k)
+		const Vec3 t{2.0 * (q.j * v.z - q.k * v.y), 2.0 * (q.k * v.x - q.i * v.z), 2.0 * (q.i * v.y - q.j * v.x)};
+		return {v.x + q.r * t.x + (q.j * t.z - q.k * t.y), v.y + q.r * t.y + (q.k * t.x - q.i * t.z),
+				v.z + q.r * t.z + (q.i * t.y - q.j * t.x)};
+	}
 }

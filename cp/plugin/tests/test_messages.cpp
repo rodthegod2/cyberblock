@@ -302,25 +302,25 @@ TEST(hackspread_allows_16_per_id_and_counts_the_rest)
 
 TEST(cam_carries_the_stance_in_cr)
 {
-	const json standing = cb::world::make_cam(41, {1.5, 65.0, -2.5}, {150.0, 12.5}, 58.7, {1.5, 63.4, -2.5}, 140.0, {}, 0);
+	const json standing = cb::world::make_cam(41, {1.5, 65.0, -2.5}, {150.0, 12.5}, 58.7, {1.5, 63.4, -2.5}, 140.0, {}, true, false, 0);
 	CHECK(standing.at("t") == "cam" && standing.at("f") == 41 && standing.at("fp") == true);
 	CHECK(standing.at("cr") == false && standing.at("cr").is_boolean());
 	CHECK(standing.at("p") == json::array({1.5, 65.0, -2.5}) && standing.at("pl") == json::array({1.5, 63.4, -2.5}));
 	CHECK(standing.at("r") == json::array({150.0, 12.5, 0.0}) && approx(standing.at("fov"), 58.7) && approx(standing.at("h"), 140.0));
-	const json crouching = cb::world::make_cam(42, {}, {}, 70.0, {}, 0.0, {.crouched = true}, 0);
+	const json crouching = cb::world::make_cam(42, {}, {}, 70.0, {}, 0.0, {.crouched = true}, true, false, 0);
 	CHECK(crouching.at("cr") == true && crouching.at("cr").is_boolean());
 	CHECK(survives_the_wire(standing));
 }
 
 TEST(cam_carries_fly_menu_air_and_held_as_booleans)
 {
-	const json none = cb::world::make_cam(1, {}, {}, 70.0, {}, 0.0, {}, 0);
+	const json none = cb::world::make_cam(1, {}, {}, 70.0, {}, 0.0, {}, true, false, 0);
 	for (const char *flag : {"cr", "fly", "menu", "air", "held"})
 		CHECK(none.at(flag).is_boolean() && none.at(flag) == false);
-	CHECK(none.size() == 14); // t f p r fov fp pl h + the five flags + lv
+	CHECK(none.size() == 15); // t f p r fov fp seat pl h + the five flags + lv
 	const auto only = [](cb::world::CamFlags flags, const char *expected)
 	{
-		const json cam = cb::world::make_cam(2, {}, {}, 70.0, {}, 0.0, flags, 0);
+		const json cam = cb::world::make_cam(2, {}, {}, 70.0, {}, 0.0, flags, true, false, 0);
 		for (const char *flag : {"cr", "fly", "menu", "air", "held"})
 			if (cam.at(flag) != (std::string(flag) == expected))
 				return false;
@@ -328,17 +328,32 @@ TEST(cam_carries_fly_menu_air_and_held_as_booleans)
 	};
 	CHECK(only({.crouched = true}, "cr") && only({.flying = true}, "fly") && only({.menu = true}, "menu"));
 	CHECK(only({.air = true}, "air") && only({.held = true}, "held"));
-	const json all = cb::world::make_cam(3, {}, {}, 70.0, {}, 0.0, {true, true, true, true, true}, 0);
+	const json all = cb::world::make_cam(3, {}, {}, 70.0, {}, 0.0, {true, true, true, true, true}, true, false, 0);
 	CHECK(all.at("fly") == true && all.at("menu") == true && all.at("air") == true && all.at("held") == true);
 	CHECK(survives_the_wire(all));
+}
+
+// ---- re-test 3 (plan 2026-10-03-retest3-polish section 1.1): seat and an honest fp ----------------------------------
+
+TEST(cam_carries_an_honest_fp_and_the_seat_flag)
+{
+	const json onFoot = cb::world::make_cam(1, {}, {}, 70.0, {}, 0.0, {}, true, false, 0);
+	CHECK(onFoot.at("fp") == true && onFoot.at("seat") == false && onFoot.at("seat").is_boolean());
+	const json thirdPersonOnFoot = cb::world::make_cam(2, {}, {}, 70.0, {}, 0.0, {}, false, false, 0);
+	CHECK(thirdPersonOnFoot.at("fp") == false && thirdPersonOnFoot.at("seat") == false);
+	const json seatedFirst = cb::world::make_cam(3, {}, {}, 70.0, {1.0, 2.0, 3.0}, 0.0, {.held = true}, true, true, 0);
+	CHECK(seatedFirst.at("fp") == true && seatedFirst.at("seat") == true && seatedFirst.at("held") == true);
+	CHECK(seatedFirst.at("pl") == json::array({1.0, 2.0, 3.0})); // the hips point, as the camera computed it
+	const json seatedThird = cb::world::make_cam(4, {}, {}, 70.0, {}, 0.0, {.held = true}, false, true, 0);
+	CHECK(seatedThird.at("fp") == false && seatedThird.at("seat") == true && survives_the_wire(seatedThird));
 }
 
 // ---- re-test 2 (plan 2026-10-03-retest2 section 1.1): the ground alignment ---------------------------------------------
 
 TEST(cam_carries_the_alignment_it_was_converted_with_in_lv)
 {
-	CHECK(cb::world::make_cam(1, {}, {}, 70.0, {}, 0.0, {}, 0).at("lv") == 0);
-	const json cam = cb::world::make_cam(2, {1.0, 6.0, -2.0}, {10.0, 5.0}, 70.0, {1.0, 6.016, -2.0}, 0.0, {}, 57);
+	CHECK(cb::world::make_cam(1, {}, {}, 70.0, {}, 0.0, {}, true, false, 0).at("lv") == 0);
+	const json cam = cb::world::make_cam(2, {1.0, 6.0, -2.0}, {10.0, 5.0}, 70.0, {1.0, 6.016, -2.0}, 0.0, {}, true, false, 57);
 	CHECK(cam.at("lv") == 57 && cam.at("lv").is_number_integer());
 	CHECK(cam.at("pl") == json::array({1.0, 6.016, -2.0})); // make_cam does not convert: the camera already did
 	CHECK(survives_the_wire(cam));

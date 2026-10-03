@@ -239,10 +239,11 @@ namespace cb::world
 
 	/// {"t":"cam",...}: the camera and V, every Cyberpunk frame while active (Minecraft convention, so `position`, `feet`
 	/// and `look` are already converted, the positions with the offset of `levelK`). `r` is [yaw, pitch, 0]; `cr`, `fly`,
-	/// `menu`, `air` and `held` are `flags`; `lv` is `levelK`, the alignment the positions were converted with. Numbers
-	/// are not rounded.
+	/// `menu`, `air` and `held` are `flags`; `lv` is `levelK`, the alignment the positions were converted with. Re-test 3
+	/// (plan section 1.1): `fp` is `firstPerson` (false in a third-person vehicle camera and while the on-foot third-person
+	/// view is applied) and `seat` is `seat` (V sits in a vehicle; `feet` is then V's hips point). Numbers are not rounded.
 	nlohmann::json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, CamFlags flags,
-							int levelK);
+							bool firstPerson, bool seat, int levelK);
 
 	/// {"t":"look","d":[dyaw,dpitch]}: raw mouse movement as Minecraft look deltas in degrees (right and down are positive).
 	nlohmann::json make_look(double dyaw, double dpitch);

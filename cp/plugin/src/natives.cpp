@@ -48,7 +48,31 @@ namespace
 	void send_state()
 	{
 		cb::link().send({{"t", "state"}, {"active", g_mashup.active}, {"vehicle", g_mashup.vehicle}});
-		cb::link().send({{"t", "hud"}, {"hidden", g_mashup.vehicle}});
+		// kept for older Minecraft builds; since re-test 3 Minecraft's HUD (and first-person hand) stays in vehicles too
+		cb::link().send({{"t", "hud"}, {"hidden", false}});
+	}
+
+	/// Logs the seat when it changes ("seat: on (third person)", "seat: on (first person)", "seat: off").
+	void log_seat(bool seated, bool tpp)
+	{
+		static std::mutex lock;
+		static int last = -1; // 0 off, 1 first person, 2 third person
+		const int now = !seated ? 0 : tpp ? 2 : 1;
+		std::lock_guard<std::mutex> guard(lock);
+		if (std::exchange(last, now) == now)
+			return;
+		if (now == 0)
+			cb::log::info("seat: off");
+		else
+			cb::log::info("seat: on (%s)", now == 2 ? "third person" : "first person");
+	}
+
+	void clear_seat()
+	{
+		cb::natives::seated = false;
+		cb::natives::seatTpp = false;
+		cb::natives::hipsX = cb::natives::hipsY = cb::natives::hipsZ = 0.0f;
+		log_seat(false, false);
 	}
 
 	/// Minecraft drops all ground and is sent it again from the next probes.
@@ -163,7 +187,10 @@ namespace
 		cb::natives::active = active;
 		cb::natives::inVehicle = inVehicle;
 		if (!active)
+		{
 			cb::natives::flightAllowed = false; // the script allows flights again on its next tick while Active
+			clear_seat();
+		}
 		cb::world::events().set_active(active);
 		compositor::set_active(active);
 		if (changed)
@@ -784,6 +811,34 @@ namespace
 		cb::natives::lookCapture = on;
 	}
 
+	// ---- re-test 3 (plan 2026-10-03-retest3-polish section 1.2) -------------------------------------------------------
+
+	// Cyberblock_SetSeat(seated: Bool, tpp: Bool, hipsLocal: Vector4) -> Void: 10 Hz and on a camera switch from
+	// CyberblockSeat.Tick. hipsLocal is in V's local axes (Y forward, Z up), metres; a non-finite one counts as zero.
+	void SetSeat(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		bool seated = false;
+		bool tpp = false;
+		RED4ext::Vector4 hips{};
+		RED4ext::GetParameter(frame, &seated);
+		RED4ext::GetParameter(frame, &tpp);
+		RED4ext::GetParameter(frame, &hips);
+		++frame->code;
+
+		if (!seated)
+		{
+			clear_seat();
+			return;
+		}
+		const auto finite_or_0 = [](float v) { return std::isfinite(v) && std::abs(v) < 10.0f ? v : 0.0f; };
+		cb::natives::hipsX = finite_or_0(hips.X);
+		cb::natives::hipsY = finite_or_0(hips.Y);
+		cb::natives::hipsZ = finite_or_0(hips.Z);
+		cb::natives::seatTpp = tpp;
+		cb::natives::seated = true;
+		log_seat(true, tpp);
+	}
+
 	// Cyberblock_Log(msg: String) -> Void
 	void Log(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
@@ -817,6 +872,11 @@ namespace cb::natives
 {
 	void register_types()
 	{
+	}
+
+	void on_link_dropped()
+	{
+		clear_seat();
 	}
 
 	void post_register_types()
@@ -881,6 +941,7 @@ namespace cb::natives
 		add(rtti, "Cyberblock_SetMenu", &SetMenu, nullptr, {{"Bool", "open"}});
 		add(rtti, "Cyberblock_SetChoices", &SetChoices, nullptr, {{"Bool", "open"}});
 		add(rtti, "Cyberblock_SetLookCapture", &SetLookCapture, nullptr, {{"Bool", "on"}});
+		add(rtti, "Cyberblock_SetSeat", &SetSeat, nullptr, {{"Bool", "seated"}, {"Bool", "tpp"}, {"Vector4", "hipsLocal"}});
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});
 		log::info("redscript natives registered");
 	}

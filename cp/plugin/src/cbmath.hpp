@@ -20,6 +20,12 @@ namespace cb
 		double yaw, pitch; // Minecraft degrees
 	};
 
+	/// A rotation quaternion (i, j, k, r) as RED4ext's Quaternion stores it.
+	struct Quat
+	{
+		double i, j, k, r;
+	};
+
 	/// Axis-aligned box in Cyberpunk space (metres).
 	struct Aabb
 	{
@@ -52,4 +58,8 @@ namespace cb
 	Range down_hit_to_range(double x, double y, double z, double off);
 	/// A wall hit -> the one cell it is in: y = floor(z - off).
 	Range wall_hit_to_range(double x, double y, double z, double off);
+
+	/// `v` rotated by the unit quaternion `q` (q v q*). C++ only (re-test 3 task D4: V's hips point from V's local axes
+	/// into the world); it stays inside Cyberpunk space, so cbmath.py has no mirror. cp_quat_forward(q) == rotate(q, +Y).
+	Vec3 rotate(const Quat &q, Vec3 v);
 }

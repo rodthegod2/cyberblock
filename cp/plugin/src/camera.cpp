@@ -3,7 +3,8 @@
 //   gameCameraSystem.GetActiveCameraWorldTransform(transform: Transform) -> Bool  (fills `transform`)
 //   gameCameraSystem.GetActiveCameraFOV() -> Float, GetAspectRatio() -> Float, GetActiveCameraForward() -> Vector4
 //   GetPlayer;GameInstance(ScriptGameInstance) -> handle:PlayerPuppet
-//   entEntity.GetWorldPosition() -> Vector4, GetWorldForward() -> Vector4
+//   entEntity.GetWorldPosition() -> Vector4, GetWorldForward() -> Vector4, GetWorldOrientation() -> Quaternion (2.31
+//   script API core/entity/entity.swift)
 // Positions (camera, feet) take the ground alignment (plan 2026-10-03-retest2 section 1.1: Minecraft y = Cyberpunk z - k/64),
 // read once per publish and sent as `cam.lv`; directions (facing, forward, the look quaternion) never do.
 #include "camera.hpp"
@@ -133,6 +134,26 @@ namespace cb::camera
 			!call(player.GetPtr(), "entEntity", "GetWorldForward", &facing))
 			return warn_once("reading V's position failed");
 
+		// re-test 3 (task D4): seated in a vehicle, `pl` is V's hips point (V's orientation applied to the script's
+		// V-local hips offset) and `fp` says which vehicle camera is on
+		const bool seated = natives::seated;
+		Vec3 body{feet.X, feet.Y, feet.Z};
+		if (seated)
+		{
+			RED4ext::Quaternion orientation{0.0f, 0.0f, 0.0f, 0.0f};
+			if (call(player.GetPtr(), "entEntity", "GetWorldOrientation", &orientation))
+			{
+				const Quat o{orientation.i, orientation.j, orientation.k, orientation.r};
+				const double norm = o.i * o.i + o.j * o.j + o.k * o.k + o.r * o.r;
+				if (norm > 0.5 && norm < 1.5)
+				{
+					const Vec3 hips = rotate(o, {natives::hipsX.load(), natives::hipsY.load(), natives::hipsZ.load()});
+					body = {body.x + hips.x, body.y + hips.y, body.z + hips.z};
+				}
+			}
+		}
+		const bool firstPerson = seated ? !natives::seatTpp : true;
+
 		const int levelK = world::level_k(); // once per publish: the cam's positions and its `lv` agree
 		const double off = world::level_offset(levelK);
 		const RED4ext::Vector4 &c = transform.position;
@@ -141,7 +162,7 @@ namespace cb::camera
 		if (aspect <= 0.0f)
 			aspect = 16.0f / 9.0f;
 		const double vfov = fovIsHorizontal ? vfov_from_hfov(fov, aspect) : fov;
-		const Vec3 feetMc = cp_to_mc_pos(feet.X, feet.Y, feet.Z, off);
+		const Vec3 feetMc = cp_to_mc_pos(body.x, body.y, body.z, off);
 		const Vec3 facingMc = cp_dir_to_mc(facing.X, facing.Y, facing.Z);
 		const double bodyYaw = std::hypot(facingMc.x, facingMc.z) > 1e-6 ? mc_yaw_pitch(facingMc.x, 0.0, facingMc.z).yaw : look.yaw;
 
@@ -151,7 +172,7 @@ namespace cb::camera
 									 .menu = natives::menuOpen,
 									 .air = natives::inAir,
 									 .held = natives::held},
-									levelK));
+									firstPerson, seated, levelK));
 		compositor::set_host_pose(float(look.yaw), float(look.pitch), 0.0f, float(vfov), position.x, position.y, position.z);
 		compositor::set_host_planes(kNearClip, kFarClip);
 		learn_turn_rate(look.yaw, mouseX);

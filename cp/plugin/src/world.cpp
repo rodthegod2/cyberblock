@@ -603,14 +603,15 @@ namespace cb::world
 	}
 
 	json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, CamFlags flags,
-				  int levelK)
+				  bool firstPerson, bool seat, int levelK)
 	{
 		return {{"t", "cam"},
 				{"f", frame},
 				{"p", {position.x, position.y, position.z}},
 				{"r", {look.yaw, look.pitch, 0.0}},
 				{"fov", vfov},
-				{"fp", true},
+				{"fp", firstPerson},
+				{"seat", seat},
 				{"pl", {feet.x, feet.y, feet.z}},
 				{"h", bodyYaw},
 				{"cr", flags.crouched},
