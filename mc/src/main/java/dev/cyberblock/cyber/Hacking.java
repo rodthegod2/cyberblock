@@ -4,6 +4,7 @@ import dev.cyberblock.Cyberblock;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.network.chat.Component;
@@ -26,6 +27,10 @@ public final class Hacking {
 	 * so a refund after 10 s would make that hack free.
 	 */
 	static final long CONNECTED_ANSWER_NANOS = 60_000_000_000L;
+	static final double SCAN_RANGE = 48.0;
+	static final double KIROSHI_SCAN_RANGE = 80.0;
+	/** cyberblock.hack.no_deck_os, shown until the lang file has its line: the implant, then the cyberware screen's key. */
+	private static final String NO_DECK_OS_FALLBACK = "Your Operating System slot holds %s: swap in the cyberdeck with %s to hack";
 	private static final AtomicInteger ids = new AtomicInteger();
 	private static final Map<Integer, Pending> pending = new HashMap<>();
 	private static @Nullable Locked locked;
@@ -39,6 +44,11 @@ public final class Hacking {
 	}
 
 	private Hacking() {
+	}
+
+	/** How far the hack key's scan ray reaches (plan retest2 section 1.7): 80 blocks with Kiroshi optics installed, else 48. */
+	public static double scanRange(final Set<String> installedCyberware) {
+		return installedCyberware.contains("kiroshi_optics") ? KIROSHI_SCAN_RANGE : SCAN_RANGE;
 	}
 
 	/** A fresh request id for `scan` or `hack` (int >= 0, any thread). */
@@ -98,7 +108,7 @@ public final class Hacking {
 		HackRules.Outcome outcome = HackRules.check(CyberData.hasDeck(player), lock != null, lock != null && lock.device(), hack, ram, cost);
 		if (outcome != HackRules.Outcome.OK) {
 			player.sendOverlayMessage(switch (outcome) {
-				case NO_DECK -> Component.translatable("cyberblock.hack.no_deck");
+				case NO_DECK -> noDeck(player);
 				case NO_TARGET -> Component.translatable("cyberblock.hack.no_target", Component.keybind("key.cyberblock.hack"));
 				case NEED_DEVICE -> Component.translatable("cyberblock.hack.need_device");
 				case NEED_NPC -> Component.translatable("cyberblock.hack.need_npc");
@@ -113,6 +123,20 @@ public final class Hacking {
 		pending.put(id, new Pending(player.getUUID(), cost, System.nanoTime()));
 		Cyberblock.events.accept(CyberWire.hack(id, lock.target(), hack, CyberData.has(player, Perk.CHAIN_HACK)));
 		return true;
+	}
+
+	/**
+	 * Why there is no RAM (quickhacks, RAM shards). With Sandevistan or Berserk in the Operating System slot only an installed
+	 * deck counts, so the message names that implant instead of the plain one's "or carry one". Server side.
+	 */
+	static Component noDeck(final Player player) {
+		Cyberware os = CyberwareRules.osImplant(CyberData.slots(player));
+		if (os == null || os == Cyberware.CYBERDECK) {
+			return Component.translatable("cyberblock.hack.no_deck");
+		}
+
+		return Component.translatableWithFallback("cyberblock.hack.no_deck_os", NO_DECK_OS_FALLBACK, Ripperdoc.name(os),
+			Component.keybind("key.cyberblock.cyberware"));
 	}
 
 	/** A `hackresult`: a failure gives the RAM back and says why; a success plays the hack sound. */

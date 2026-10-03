@@ -21,11 +21,15 @@ import org.jspecify.annotations.Nullable;
  * The starter kit (task C8): everything the layers need to be tried, handed out once automatically on the first
  * activation in survival, and by `/cyberblock kit` at any time. The hotbar gets what is used first (sword, bow, blocks,
  * TNT, flint and steel, pearls, rockets, lead, fishing rod), the shield goes in the offhand and the elytra on the chest;
- * the cyberdeck, the quickhack chips and the rest go in the main inventory, so they never crowd the hotbar.
+ * the quickhack chips and the rest go in the main inventory, so they never crowd the hotbar. A basic set of cyberware is
+ * installed at once (cyberdeck, Kiroshi optics, reinforced tendons, biomonitor: plan retest2 C4) and three ACTIVE
+ * implants come as items to try installing.
  */
 public final class Kit {
 	/** {@link Entry#slot()}: the first free slot of the main inventory (9..35). */
 	static final int MAIN = -1;
+	/** {@link Entry#slot()}: a cyberware item installed when its slot has room, else given as for {@link #MAIN}. */
+	static final int INSTALL = -2;
 	/** {@link Entry#slot()}: the chest armour slot (Minecraft's inventory slot number: 36 + EquipmentSlot.CHEST's index). */
 	static final int CHEST = 38;
 	/** {@link Entry#slot()}: the offhand slot. */
@@ -35,7 +39,7 @@ public final class Kit {
 
 	/**
 	 * One kind of item: an item id, how many, a potion id for potions (else null), and where it goes: a hotbar slot 0..8,
-	 * {@link #CHEST}, {@link #OFFHAND} or {@link #MAIN}.
+	 * {@link #CHEST}, {@link #OFFHAND}, {@link #MAIN} or {@link #INSTALL}.
 	 */
 	public record Entry(String item, int count, @Nullable String potion, int slot) {
 		Entry(final String item, final int count, final int slot) {
@@ -71,14 +75,19 @@ public final class Kit {
 		e.add(new Entry("minecraft:zombie_spawn_egg", 4, MAIN));
 		e.add(new Entry("minecraft:skeleton_spawn_egg", 2, MAIN));
 		e.add(new Entry("minecraft:creeper_spawn_egg", 2, MAIN));
-		e.add(new Entry("cyberblock:cyberdeck", 1, MAIN));
 		e.add(new Entry("cyberblock:ram_shard", 2, MAIN));
 		for (Hack hack : Hack.values()) {
 			e.add(new Entry("cyberblock:" + hack.item(), 1, MAIN));
 		}
 
-		e.add(new Entry("cyberblock:mantis_blade", 1, MAIN));
-		e.add(new Entry("cyberblock:gorilla_gauntlet", 1, MAIN));
+		for (Cyberware c : List.of(Cyberware.CYBERDECK, Cyberware.KIROSHI_OPTICS, Cyberware.REINFORCED_TENDONS, Cyberware.BIOMONITOR)) {
+			e.add(new Entry("cyberblock:" + c.id(), 1, INSTALL));
+		}
+
+		for (Cyberware c : List.of(Cyberware.SANDEVISTAN, Cyberware.OPTICAL_CAMO, Cyberware.PROJECTILE_LAUNCH_SYSTEM)) {
+			e.add(new Entry("cyberblock:" + c.id(), 1, MAIN));
+		}
+
 		return List.copyOf(e);
 	}
 
@@ -109,7 +118,7 @@ public final class Kit {
 	 * at his feet).
 	 */
 	static int target(final int own, final IntPredicate empty) {
-		if (own != MAIN && empty.test(own)) {
+		if (own >= 0 && empty.test(own)) {
 			return own;
 		}
 
@@ -134,6 +143,10 @@ public final class Kit {
 				continue;
 			}
 
+			if (e.slot() == INSTALL && stack.getItem() instanceof CyberwareItem implant && Ripperdoc.installFree(player, implant.cyberware())) {
+				continue;
+			}
+
 			int slot = inventory.getSlotWithRemainingSpace(stack) >= 0 ? -1 : target(e.slot(), s -> inventory.getItem(s).isEmpty());
 			if (slot >= 0) {
 				inventory.setItem(slot, stack);
@@ -145,6 +158,7 @@ public final class Kit {
 		}
 
 		player.setAttached(CyberData.KIT_GIVEN, true);
+		Ripperdoc.changed(player);
 		// the kit's cyberdeck gives him RAM: start it full, so the chips can be tried at once instead of 24 s of regeneration
 		CyberData.setRam(player, CyberData.maxRam(player));
 	}

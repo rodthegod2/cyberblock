@@ -10,10 +10,12 @@ final class CyberServer {
 
 	static void tick(final MinecraftServer server) {
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+			Ripperdoc.migrate(player);
 			CyberData.setRam(player, Ram.tick(CyberData.ram(player), CyberData.maxRam(player), player.tickCount, CyberData.has(player, Perk.OVERCLOCK)));
 		}
 
 		Hacking.tick(server);
 		PerkEffects.tick(server);
+		CyberwareEffects.tick(server);
 	}
 }

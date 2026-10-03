@@ -19,13 +19,6 @@ class PerkRulesTest {
 	}
 
 	@Test
-	void sandevistanCooldown() {
-		assertTrue(PerkRules.sandevistanReady(0, Long.MIN_VALUE));
-		assertFalse(PerkRules.sandevistanReady(19_999, 0));
-		assertTrue(PerkRules.sandevistanReady(20_000, 0));
-	}
-
-	@Test
 	void camoAfterTwoStillSecondsThenEverySecond() {
 		PerkRules.Camo camo = new PerkRules.Camo();
 		assertFalse(camo.update(true, 0, 64, 0, 0));
@@ -79,12 +72,6 @@ class PerkRulesTest {
 		double[] close = PerkRules.steer(2, 0, 0, 10, 0.5, 0); // within 6 degrees: straight at it
 		assertEquals(Math.toDegrees(Math.atan2(0.5, 10)), Math.toDegrees(Math.atan2(close[1], close[0])), 1.0E-9);
 		assertArrayEquals(new double[]{0, 0, 0}, PerkRules.steer(0, 0, 0, 1, 0, 0));
-	}
-
-	@Test
-	void perkfxJson() {
-		assertEquals("{\"t\":\"perkfx\",\"id\":\"sandevistan\",\"seconds\":5.0}", CyberWire.perkfx("sandevistan", 5.0));
-		assertEquals("{\"t\":\"perkfx\",\"id\":\"sandevistan\",\"seconds\":30.0}", CyberWire.perkfx("sandevistan", 99.0));
 	}
 
 	@Test

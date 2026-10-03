@@ -21,10 +21,12 @@ import net.minecraft.world.item.Rarity;
 import net.minecraft.world.item.ToolMaterial;
 import net.minecraft.world.item.component.ItemAttributeModifiers;
 
-/** The cyber items (plan section 1.5 and task C1), registered at startup on both sides. */
+/** The cyber items (plan section 1.5 and task C1, plan retest2 C3), registered at startup on both sides. */
 public final class CyberItems {
 	public static final Map<Hack, QuickhackItem> QUICKHACKS = new EnumMap<>(Hack.class);
-	/** Needed in the inventory to have RAM, and so to hack. */
+	/** The 17 implants (plan retest2 section 1.7), item id `cyberblock:<id>`. */
+	public static final Map<Cyberware, CyberwareItem> CYBERWARE = new EnumMap<>(Cyberware.class);
+	/** The cyberdeck implant: installed in the Operating System slot (or carried while it is empty) it gives RAM, and so hacking. */
 	public static Item CYBERDECK;
 	/** Consumed for +4 RAM. */
 	public static Item RAM_SHARD;
@@ -41,7 +43,11 @@ public final class CyberItems {
 			QUICKHACKS.put(hack, register(hack.item(), p -> new QuickhackItem(hack, p), new Item.Properties().stacksTo(1).rarity(Rarity.UNCOMMON)));
 		}
 
-		CYBERDECK = register("cyberdeck", Item::new, new Item.Properties().stacksTo(1).rarity(Rarity.RARE));
+		for (Cyberware cyberware : Cyberware.values()) {
+			CYBERWARE.put(cyberware, register(cyberware.id(), p -> new CyberwareItem(cyberware, p), new Item.Properties().stacksTo(1).rarity(Rarity.RARE)));
+		}
+
+		CYBERDECK = CYBERWARE.get(Cyberware.CYBERDECK);
 		RAM_SHARD = register("ram_shard", RamShardItem::new, new Item.Properties().stacksTo(16));
 		// diamond's sword bonus is 3: 1 (hand) + 3 + 3 = 7 damage; 4 - 2.2 = 1.8 attacks per second
 		MANTIS_BLADE = register("mantis_blade", Item::new, new Item.Properties().sword(ToolMaterial.DIAMOND, 3.0F, -2.2F).rarity(Rarity.RARE));
@@ -61,6 +67,7 @@ public final class CyberItems {
 				output.accept(CYBERDECK);
 				output.accept(RAM_SHARD);
 				QUICKHACKS.values().forEach(output::accept);
+				CYBERWARE.values().stream().filter(item -> item != CYBERDECK).forEach(output::accept);
 				output.accept(MANTIS_BLADE);
 				output.accept(GORILLA_GAUNTLET);
 			})

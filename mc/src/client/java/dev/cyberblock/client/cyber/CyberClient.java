@@ -10,7 +10,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 
-/** Layer 6 (plan 2026-10-03, track C), client half: keys, the RAM bar, scanning, the skill tree. */
+/** Layer 6 (plan 2026-10-03, track C; plan retest2 package C), client half: keys, the RAM bar, scanning, the skill tree, cyberware. */
 public class CyberClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
@@ -21,13 +21,15 @@ public class CyberClient implements ClientModInitializer {
 		CyberKeys.register();
 		CyberLink.register();
 		HudElementRegistry.attachElementAfter(VanillaHudElements.HOTBAR, RamHud.ID, RamHud::draw);
+		HudElementRegistry.attachElementAfter(VanillaHudElements.HOTBAR, CyberwareHud.ID, CyberwareHud::draw);
 		HudElementRegistry.attachElementAfter(VanillaHudElements.CROSSHAIR, ScanClient.HUD_ID, ScanClient::draw);
 		ClientTickEvents.END_CLIENT_TICK.register(CyberClient::tick);
 	}
 
-	/** Every client tick (inside vanilla's per-tick gizmo collection, which the scan outline uses). */
+	/** Every client tick (inside vanilla's per-tick gizmo collection, which the scan and Kiroshi outlines use). */
 	private static void tick(final Minecraft minecraft) {
 		CyberKeys.tick(minecraft);
 		ScanClient.tick(minecraft);
+		CyberwareClient.tick(minecraft);
 	}
 }

@@ -20,8 +20,11 @@ public final class PerkShop {
 	private PerkShop() {
 	}
 
-	/** Pure: may this perk be bought with these ranks (perk id to rank) and this many levels? */
-	public static Outcome check(final Perk perk, final Map<String, Integer> ranks, final int levels) {
+	/**
+	 * Pure: may this perk be bought with these ranks (perk id to rank) and this many levels? Free perks (plan retest2 R3) skip
+	 * only the level cost: an owned perk stays owned and the tier order still holds.
+	 */
+	public static Outcome check(final Perk perk, final Map<String, Integer> ranks, final int levels, final boolean free) {
 		if (ranks.getOrDefault(perk.id(), 0) > 0) {
 			return Outcome.OWNED;
 		}
@@ -31,21 +34,25 @@ public final class PerkShop {
 			return Outcome.LOCKED;
 		}
 
-		return levels >= perk.cost() ? Outcome.OK : Outcome.TOO_POOR;
+		return free || levels >= perk.cost() ? Outcome.OK : Outcome.TOO_POOR;
 	}
 
 	/** Server thread (the skill tree screen hands its click over): buy it if the rules allow, and say how it went. */
 	public static void buy(final ServerPlayer player, final Perk perk) {
 		Map<String, Integer> ranks = player.getAttachedOrElse(CyberData.PERKS, Map.of());
-		Outcome outcome = check(perk, ranks, player.experienceLevel);
+		boolean free = CyberData.freePerks(player);
+		Outcome outcome = check(perk, ranks, player.experienceLevel, free);
 		Component name = Component.translatable("perk.cyberblock." + perk.id());
 		switch (outcome) {
 			case OK -> {
-				player.giveExperienceLevels(-perk.cost());
+				if (!free) {
+					player.giveExperienceLevels(-perk.cost());
+				}
+
 				CyberData.setRank(player, perk.id(), 1);
 				PerkEffects.apply(player);
 				player.level().playSound(null, player.getX(), player.getY(), player.getZ(), SoundEvents.PLAYER_LEVELUP, SoundSource.PLAYERS, 0.7F, 1.4F);
-				player.sendOverlayMessage(Component.translatable("cyberblock.skills.bought", name));
+				player.sendOverlayMessage(free ? Component.translatable("cyberblock.skills.bought_free", name) : Component.translatable("cyberblock.skills.bought", name));
 				sendPerks(player);
 			}
 			case OWNED -> player.sendOverlayMessage(Component.translatable("cyberblock.skills.already"));

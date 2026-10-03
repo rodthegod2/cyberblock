@@ -22,7 +22,7 @@ public class RamShardItem extends Item {
 		int ram = CyberData.ram(player);
 		if (max == 0 || ram >= max) {
 			if (!level.isClientSide()) {
-				player.sendOverlayMessage(Component.translatable(max == 0 ? "cyberblock.hack.no_deck" : "cyberblock.ram.full"));
+				player.sendOverlayMessage(max == 0 ? Hacking.noDeck(player) : Component.translatable("cyberblock.ram.full"));
 			}
 
 			return InteractionResult.FAIL;

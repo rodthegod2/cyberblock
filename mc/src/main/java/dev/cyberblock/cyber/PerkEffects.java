@@ -19,30 +19,33 @@ import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
 import net.minecraft.world.phys.Vec3;
-import org.jspecify.annotations.Nullable;
 
 /**
- * The perks' Minecraft effects that are not mixins (task C7): attribute modifiers, the Sandevistan, optical camo, cold
- * blood and smart arrows. Server thread.
+ * The perks' Minecraft effects that are not mixins (task C7): attribute modifiers, optical camo's re-cloak, cold blood and
+ * smart arrows. Plan retest2 section 1.7: the Sandevistan, double jump and optical camo perks now upgrade their implant
+ * (the Sandevistan itself is CyberwareEffects'). Server thread.
  */
 public final class PerkEffects {
 	private static final Identifier IRON_SKIN = Identifier.fromNamespaceAndPath(Cyberblock.ID, "iron_skin");
 	private static final Identifier JUGGERNAUT = Identifier.fromNamespaceAndPath(Cyberblock.ID, "juggernaut");
+	private static final Identifier DOUBLE_JUMP = Identifier.fromNamespaceAndPath(Cyberblock.ID, "double_jump");
+	/** double_jump with any legs implant: this much more safe fall distance. */
+	private static final double DOUBLE_JUMP_SAFE_FALL = 4.0;
 	private static final Map<UUID, PerkRules.Camo> camo = new HashMap<>();
-	private static long sandevistanFiredMs = Long.MIN_VALUE;
-	/** Wall time the slowed tick rate ends, or 0 when it is not slowed. */
-	private static long sandevistanEndsMs;
 
 	private PerkEffects() {
 	}
 
-	/** Every 20 ticks, on respawn and on purchase: the attribute modifiers match the perks (transient: never saved). */
+	/** Every 20 ticks, on respawn, on purchase and on every install: the attribute modifiers match the perks (transient: never saved). */
 	public static void apply(final ServerPlayer player) {
 		modifier(player, Attributes.MAX_HEALTH, IRON_SKIN, 8.0, CyberData.has(player, Perk.IRON_SKIN));
 		modifier(player, Attributes.KNOCKBACK_RESISTANCE, JUGGERNAUT, 1.0, CyberData.has(player, Perk.JUGGERNAUT));
+		boolean legs = CyberData.installed(player).stream().anyMatch(c -> c.slot() == CyberSlot.LEGS);
+		modifier(player, Attributes.SAFE_FALL_DISTANCE, DOUBLE_JUMP, DOUBLE_JUMP_SAFE_FALL, legs && CyberData.has(player, Perk.DOUBLE_JUMP));
 	}
 
-	private static void modifier(final ServerPlayer player, final Holder<Attribute> attribute, final Identifier id, final double amount, final boolean on) {
+	/** Adds or removes one transient modifier (max health is capped when it shrinks). */
+	static void modifier(final ServerPlayer player, final Holder<Attribute> attribute, final Identifier id, final double amount, final boolean on) {
 		AttributeInstance instance = player.getAttribute(attribute);
 		if (instance == null) {
 			return;
@@ -61,10 +64,6 @@ public final class PerkEffects {
 	/** Every server tick. */
 	static void tick(final MinecraftServer server) {
 		long now = System.currentTimeMillis();
-		if (sandevistanEndsMs != 0L && (now >= sandevistanEndsMs || !Cyberblock.active)) {
-			endSandevistan(server);
-		}
-
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 			if (player.tickCount % 20 == 0) {
 				apply(player);
@@ -74,32 +73,9 @@ public final class PerkEffects {
 		}
 	}
 
-	/** A double-tapped sprint (from the host's `key sprint`): Speed II and half-speed ticks for 5 s, `perkfx` for Cyberpunk's slow-mo. */
-	public static void sandevistan(final MinecraftServer server, final ServerPlayer player) {
-		long now = System.currentTimeMillis();
-		if (!CyberData.has(player, Perk.SANDEVISTAN) || !PerkRules.sandevistanReady(now, sandevistanFiredMs)) {
-			return;
-		}
-
-		sandevistanFiredMs = now;
-		sandevistanEndsMs = now + PerkRules.SANDEVISTAN_MS;
-		// the 5 s run at the slow tick rate: that many ticks
-		int ticks = Math.round(PerkRules.SANDEVISTAN_MS / 1000.0F * PerkRules.SLOW_TICK_RATE);
-		player.addEffect(new MobEffectInstance(MobEffects.SPEED, ticks, 1));
-		server.tickRateManager().setTickRate(PerkRules.SLOW_TICK_RATE);
-		Cyberblock.events.accept(CyberWire.perkfx("sandevistan", PerkRules.SANDEVISTAN_MS / 1000.0));
-	}
-
-	/** Back to normal ticks (the 5 s are over, the host went, the player left or the server stops). */
-	public static void endSandevistan(final MinecraftServer server) {
-		if (sandevistanEndsMs != 0L) {
-			sandevistanEndsMs = 0L;
-			server.tickRateManager().setTickRate(PerkRules.NORMAL_TICK_RATE);
-		}
-	}
-
+	/** The optical_camo perk re-cloaks after 2 s crouched and still, only with the optical camo implant installed. */
 	private static void opticalCamo(final ServerPlayer player, final long now) {
-		if (!CyberData.has(player, Perk.OPTICAL_CAMO)) {
+		if (!CyberData.has(player, Perk.OPTICAL_CAMO) || !CyberData.has(player, Cyberware.OPTICAL_CAMO)) {
 			camo.remove(player.getUUID());
 			return;
 		}
@@ -144,11 +120,8 @@ public final class PerkEffects {
 		return proxy.position().add(0.0, proxy.getBbHeight() / 2.0, 0.0);
 	}
 
-	/** The player left or the server stops: forget per-player state and restore the tick rate. */
-	static void reset(final @Nullable MinecraftServer server) {
+	/** The player left or the server stops: forget per-player state. */
+	static void reset() {
 		camo.clear();
-		if (server != null) {
-			endSandevistan(server);
-		}
 	}
 }

@@ -1,16 +1,35 @@
 package dev.cyberblock.cyber;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
 class RamTest {
 	@Test
 	void maxNeedsADeck() {
-		assertEquals(0, Ram.max(false, false));
-		assertEquals(0, Ram.max(false, true));
-		assertEquals(8, Ram.max(true, false));
-		assertEquals(12, Ram.max(true, true));
+		assertEquals(0, Ram.max(false, false, false));
+		assertEquals(0, Ram.max(false, true, true));
+		assertEquals(8, Ram.max(true, false, false));
+		assertEquals(12, Ram.max(true, true, false));
+	}
+
+	/** Plan retest2 section 1.7: the RAM upgrade implant adds 4, on top of the extra_ram perk's 4. */
+	@Test
+	void ramUpgradeAddsUpWithExtraRam() {
+		assertEquals(12, Ram.max(true, false, true));
+		assertEquals(16, Ram.max(true, true, true));
+	}
+
+	/** hasDeck: an installed cyberdeck, or one carried while the Operating System slot is empty. */
+	@Test
+	void deckFromTheOsSlotOrTheBag() {
+		assertTrue(Ram.hasDeck(true, false, false));
+		assertTrue(Ram.hasDeck(true, false, true));
+		assertTrue(Ram.hasDeck(false, true, true));
+		assertFalse(Ram.hasDeck(false, false, true)); // a Sandevistan in the OS slot: the bag's deck does not count
+		assertFalse(Ram.hasDeck(false, true, false));
 	}
 
 	@Test
