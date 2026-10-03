@@ -32,7 +32,7 @@ final class ProxyTargetGoal extends NearestAttackableTargetGoal<ProxyEntity> {
 			}
 
 			double distanceSq = proxy.distanceToSqr(this.mob.getX(), this.mob.getEyeY(), this.mob.getZ());
-			if (best == null || MobRules.preferred(proxy.isHostile(), distanceSq, best.isHostile(), bestDistanceSq)) {
+			if (best == null || MobRules.preferred(proxy.hostile(), distanceSq, best.hostile(), bestDistanceSq)) {
 				best = proxy;
 				bestDistanceSq = distanceSq;
 			}

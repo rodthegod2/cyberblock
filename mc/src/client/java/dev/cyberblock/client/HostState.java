@@ -52,17 +52,25 @@ public final class HostState {
 	 * checked before the pose is built, and a bad message throws IllegalArgumentException (the link logs it and carries on, the
 	 * previous pose stays): NaN or a position outside the world would reach player.setPos, whose move packet gets the player
 	 * kicked by the server (that ends the singleplayer session). Pitch is clamped to +-90: the host's asin(-dy) can round past it.
+	 *
+	 * <p>"lv" (plan retest2 section 1.2) is the ground alignment k (0..63) the host converted this cam with: Minecraft y = Cyberpunk
+	 * z - k/64. Until the host has applied a new k (an align is on its way), its y is off by (lv - k)/64, so both y values are
+	 * corrected to this world's k (Bridge.alignK). Absent (fakehost, an older host): taken to be this world's k.
 	 */
 	static void update(final JsonObject m) {
 		JsonArray p = m.getAsJsonArray("p");
 		JsonArray r = m.getAsJsonArray("r");
 		JsonArray pl = m.has("pl") ? m.getAsJsonArray("pl") : p;
-		double x = coordinate(p, 0, "p.x"), y = coordinate(p, 1, "p.y"), z = coordinate(p, 2, "p.z");
+		int k = Bridge.alignK;
+		int lv = m.has("lv") ? level(m.get("lv")) : k;
+		double dy = (lv - k) / LEVEL_STEPS;
+		double x = coordinate(p, 0, "p.x"), y = coordinate(p, 1, "p.y") + dy, z = coordinate(p, 2, "p.z");
 		float yaw = angle(r.get(0), "yaw");
 		float pitch = Math.clamp(angle(r.get(1), "pitch"), -90.0F, 90.0F);
 		float roll = r.size() > 2 ? angle(r.get(2), "roll") : 0.0F;
 		float fov = m.has("fov") ? (float) number(m.get("fov"), "fov", 1.0, 179.0) : 70.0F;
-		double px = coordinate(pl, 0, "pl.x"), py = coordinate(pl, 1, "pl.y"), pz = coordinate(pl, 2, "pl.z");
+		double px = coordinate(pl, 0, "pl.x"), rawPy = coordinate(pl, 1, "pl.y"), pz = coordinate(pl, 2, "pl.z");
+		double py = rawPy + dy;
 		float bodyYaw = m.has("h") ? angle(m.get("h"), "h") : yaw;
 		float lookYaw = yaw;
 		float lookPitch = pitch;
@@ -72,6 +80,7 @@ public final class HostState {
 			lookPitch = Math.clamp(angle(look.get(1), "look pitch"), -90.0F, 90.0F);
 		}
 
+		boolean fly = flag(m, "fly"), air = flag(m, "air"), held = flag(m, "held");
 		latest = new Pose(
 			m.has("f") ? m.get("f").getAsLong() : 0L,
 			x, y, z, yaw, pitch, roll, fov,
@@ -81,16 +90,33 @@ public final class HostState {
 			m.has("drive") && m.get("drive").getAsBoolean(),
 			lookYaw, lookPitch,
 			m.has("gun") && m.get("gun").getAsBoolean(),
-			flag(m, "fly"), flag(m, "menu"), flag(m, "air"), flag(m, "held")
+			fly, flag(m, "menu"), air, held
 		);
 		// V crouched (layers 3-6): Steve crouches too (KeyboardInputMixin), and the cyber track reads it for optical camo
 		Bridge.hostCrouching = flag(m, "cr");
 		// V cannot be moved: the server refuses ender pearl teleports (ThrownEnderpearlMixin)
-		Bridge.hostHeld = flag(m, "held");
+		Bridge.hostHeld = held;
+		// the ground alignment (GroundAlign) is chosen from V's feet in Cyberpunk z, while V stands (plan retest2 R4)
+		Bridge.hostFeetCpZ = rawPy + lv / LEVEL_STEPS;
+		Bridge.hostStands = !air && !held && !fly;
+		Bridge.hostAirborne = air;
 	}
 
 	private static boolean flag(final JsonObject m, final String name) {
 		return m.get(name) instanceof JsonPrimitive v && v.isBoolean() && v.getAsBoolean();
+	}
+
+	/** Steps per metre of the ground alignment: offset = k / 64 m (plan retest2 section 1.1). */
+	private static final double LEVEL_STEPS = 64.0;
+
+	/** cam.lv: an integer 0..63, else the cam is rejected like any other bad number. */
+	private static int level(final JsonElement e) {
+		double v = number(e, "lv", 0.0, 63.0);
+		if (v != Math.rint(v)) {
+			throw new IllegalArgumentException("lv is not an integer: " + v);
+		}
+
+		return (int) v;
 	}
 
 	/** The host's Space and Left Shift (key "jump"/"sprint"): Cyberpunk keeps them too, Minecraft only reads them. Client thread. */
@@ -100,7 +126,11 @@ public final class HostState {
 
 	static void setKey(final String k, final boolean down) {
 		if (k.equals("jump")) {
-			jumpPressed |= down && !jumpDown;
+			if (down && !jumpDown) {
+				jumpPressed = true;
+				Bridge.hostJumpPresses.incrementAndGet(); // the cyber track's legs VFX keep their own last value
+			}
+
 			jumpDown = down;
 		} else if (k.equals("sprint")) {
 			sprintDown = down;
@@ -124,11 +154,14 @@ public final class HostState {
 		return pressed;
 	}
 
-	/** The host went away: no key stays held, and V is neither crouching nor held. Client thread. */
+	/** The host went away: no key stays held, and V is neither crouching, held, standing nor in the air (nothing is known of V). Client thread. */
 	static void resetKeys() {
 		jumpDown = sprintDown = jumpPressed = false;
 		Bridge.hostCrouching = false;
 		Bridge.hostHeld = false;
+		Bridge.hostStands = false;
+		Bridge.hostAirborne = false;
+		Bridge.hostFeetCpZ = Double.NaN;
 	}
 
 	/**

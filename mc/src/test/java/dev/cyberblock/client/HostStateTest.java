@@ -171,6 +171,79 @@ class HostStateTest {
 		assertFalse(HostState.sprintDown());
 	}
 
+	/** Plan retest2 section 1.2: cam.lv is the k the host converted with; y is corrected to this world's k until the host has the new one. */
+	@Test
+	void camLevelIsCorrectedToTheWorldsAlignment() {
+		Bridge.alignK = 57;
+		try {
+			// the host still converts with k 0: its y is 57/64 m too high for this world
+			HostState.update(json("{'p':[1,70,3],'r':[0,0,0],'pl':[1,68.5,3],'lv':0}"));
+			HostState.Pose p = HostState.live();
+			assertEquals(70.0 - 57.0 / 64.0, p.y(), 1e-12);
+			assertEquals(68.5 - 57.0 / 64.0, p.py(), 1e-12);
+			assertEquals(1.0, p.px());
+			assertEquals(3.0, p.z());
+			assertEquals(68.5, Bridge.hostFeetCpZ, 1e-12, "V's feet in Cyberpunk z: pl.y + lv/64");
+			// the host has the new k: nothing to correct
+			HostState.update(json("{'p':[1,70,3],'r':[0,0,0],'pl':[1,68.5,3],'lv':57}"));
+			p = HostState.live();
+			assertEquals(70.0, p.y());
+			assertEquals(68.5, p.py());
+			assertEquals(68.5 + 57.0 / 64.0, Bridge.hostFeetCpZ, 1e-12);
+			// absent (fakehost, an older host): taken to be this world's k
+			HostState.update(json("{'p':[1,70,3],'r':[0,0,0],'pl':[1,68.5,3]}"));
+			assertEquals(68.5, HostState.live().py());
+			assertEquals(68.5 + 57.0 / 64.0, Bridge.hostFeetCpZ, 1e-12);
+		} finally {
+			Bridge.alignK = 0;
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"'lv':64", "'lv':-1", "'lv':1.5", "'lv':NaN", "'lv':'x'", "'lv':Infinity"})
+	void aBadCamLevelRejectsThePose(final String bad) {
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0]}"));
+		assertThrows(RuntimeException.class, () -> HostState.update(json("{'p':[9,2,3],'r':[0,0,0]," + bad + "}")));
+		assertEquals(1.0, HostState.live().x());
+	}
+
+	@Test
+	void standingAndAirborneFollowTheCam() {
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0]}"));
+		assertTrue(Bridge.hostStands);
+		assertFalse(Bridge.hostAirborne);
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'air':true}"));
+		assertFalse(Bridge.hostStands);
+		assertTrue(Bridge.hostAirborne);
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'held':true}"));
+		assertFalse(Bridge.hostStands, "held by a scene");
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'fly':true}"));
+		assertFalse(Bridge.hostStands, "following a flight");
+		assertFalse(Bridge.hostAirborne);
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0]}"));
+		HostState.resetKeys();
+		assertFalse(Bridge.hostStands, "the host went away: nothing is known of V");
+		assertTrue(Double.isNaN(Bridge.hostFeetCpZ));
+	}
+
+	@Test
+	void everyJumpKeyDownCountsOnce() {
+		HostState.resetKeys();
+		int before = Bridge.hostJumpPresses.get();
+		HostState.setKey("jump", true);
+		HostState.setKey("jump", true); // key repeat
+		assertEquals(before + 1, Bridge.hostJumpPresses.get());
+		HostState.takeJumpPress(); // taking the press does not consume the counter
+		assertEquals(before + 1, Bridge.hostJumpPresses.get());
+		HostState.setKey("jump", false);
+		assertEquals(before + 1, Bridge.hostJumpPresses.get());
+		HostState.setKey("jump", true);
+		assertEquals(before + 2, Bridge.hostJumpPresses.get());
+		HostState.setKey("sprint", true);
+		assertEquals(before + 2, Bridge.hostJumpPresses.get());
+		HostState.resetKeys();
+	}
+
 	@Test
 	void aimLimitsReach() {
 		HostState.updateAim(json("{'t':'aim','d':2.5}"));
