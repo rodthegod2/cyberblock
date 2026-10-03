@@ -806,7 +806,7 @@ Minecraft screen:
 | You press | You get |
 |---|---|
 | **Esc** or **H** | the **Night City pause screen** ("Night City (paused)"): Back to Night City, Save Game, Load Last Save, Map, Journal, Messages, Night City Menu..., Minecraft Options..., Quit to Cyberpunk Main Menu (it asks first). **Cyberpunk is paused while this screen is open.** Saving says "Saving is not possible right now" when Cyberpunk does not allow a save. |
-| **M** | the **Atlas**: a map of the pins around you in Minecraft style (select a pin to see what it is; quests are tracked from the Journal), with a centred **Fast travel to <place>** button on the fast-travel points when Cyberpunk allows it (otherwise it tells you to use the Night City map through *Night City Menu...*) |
+| **M** | the **Atlas**: a map of the pins around you in Minecraft style (select a pin to see what it is; quests are tracked from the Journal). **Fast travel is not offered from the Atlas in 1.0.0:** selecting a fast-travel point tells you to use the Night City map through *Night City Menu...* |
 | **J** | the **Journal**: Main Jobs, Side Jobs, Gigs and Other, each quest with its objectives (done ones ticked), a **Track** button and a "Tracked" mark |
 | **Messages / the phone** | the **Phone**: your contacts and message threads, with a Reply button that sends the choice you pick |
 | **I** (or Cyberpunk's crafting menu) | Minecraft's **inventory** |

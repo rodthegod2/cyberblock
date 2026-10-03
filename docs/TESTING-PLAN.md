@@ -816,8 +816,9 @@ lines and tuning hints. Where a package's check was overtaken by a later fix, th
   Afterwards the job tracker, Locator Bar waypoint, radar pins and eddies come back without needing a reconnect or a
   quest change.
 - [ ] F9 off (`state active:false`) or a new host session (`hello`): the HUD data and the waypoint clear right away.
-- [ ] Atlas (M): selecting a pin shows no Track button. A fast-travel pin shows a centred "Fast travel to X" button that
-  works.
+- [ ] Atlas (M): selecting a pin shows no Track button. A fast-travel pin shows no fast-travel button (fast travel from
+  the Atlas is off in 1.0.0, `CyberblockMenus.FastTravelEnabled`); instead the Atlas says "Fast travel: use the Night City
+  map (Night City Menu...)".
 - [ ] Phone on a mid-game save with more than 11 contacts: the mouse wheel over the contact column scrolls it, a scroll
   bar shows, threads with pending replies are at the top, and clicking a scrolled row opens the right thread.
 
