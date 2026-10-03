@@ -16,8 +16,8 @@ import org.jspecify.annotations.Nullable;
 
 /** Server side of scanning and hacking: the locked target (task C4), quickhack use and its answer (task C5). Server thread unless noted. */
 public final class Hacking {
-	/** A scanned target stays locked this long. */
-	static final long LOCK_NANOS = 5_000_000_000L;
+	/** A scanned target stays locked this long (the scan tooltip shows it as long). */
+	public static final long LOCK_NANOS = 5_000_000_000L;
 	/** A hack Cyberpunk never answered counts as failed (and is refunded) after this long once the host link is down. */
 	static final long ANSWER_NANOS = 10_000_000_000L;
 	/**

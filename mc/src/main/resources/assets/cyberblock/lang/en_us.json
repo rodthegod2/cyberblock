@@ -45,6 +45,7 @@
 	"cyberblock.ram.label": "RAM %s/%s",
 
 	"cyberblock.scan.device": "Device",
+	"cyberblock.scan.locked": "Locked %s s",
 	"cyberblock.scan.threat": "Threat: %s",
 	"cyberblock.scan.threat.none": "None",
 	"cyberblock.scan.threat.low": "Low",
