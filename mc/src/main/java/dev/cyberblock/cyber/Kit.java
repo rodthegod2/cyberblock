@@ -134,6 +134,8 @@ public final class Kit {
 			int slot = inventory.getSlotWithRemainingSpace(stack) >= 0 ? -1 : target(e.slot(), s -> inventory.getItem(s).isEmpty());
 			if (slot >= 0) {
 				inventory.setItem(slot, stack);
+				// as vanilla's placeItemBackInInventory: the client hears of the slot at once, whatever screen is open
+				player.connection.send(inventory.createInventoryUpdatePacket(slot));
 			} else {
 				inventory.placeItemBackInInventory(stack, Prediction.SERVER_ONLY);
 			}
