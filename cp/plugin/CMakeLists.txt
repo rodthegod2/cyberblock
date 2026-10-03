@@ -21,8 +21,8 @@ target_link_libraries(Cyberblock PRIVATE RED4ext::SDK nlohmann_json::nlohmann_js
 enable_testing()
 add_executable(cb_tests tests/test_main.cpp tests/test_cbmath.cpp tests/test_probes.cpp tests/test_world.cpp tests/test_events.cpp
 	tests/test_snapshots.cpp tests/test_messages.cpp tests/test_keys.cpp tests/test_iat.cpp tests/test_link.cpp tests/test_ws.cpp
-	tests/test_follow.cpp tests/test_view.cpp
-	src/cbmath.cpp src/follow.cpp src/iat.cpp src/keys.cpp src/link.cpp src/log.cpp src/probes.cpp src/snapshots.cpp src/wire.cpp
+	tests/test_follow.cpp tests/test_view.cpp tests/test_screenfx.cpp
+	src/cbmath.cpp src/screenfx.cpp src/follow.cpp src/iat.cpp src/keys.cpp src/link.cpp src/log.cpp src/probes.cpp src/snapshots.cpp src/wire.cpp
 	src/world.cpp src/ws.cpp)
 target_include_directories(cb_tests PRIVATE src)
 target_link_libraries(cb_tests PRIVATE nlohmann_json::nlohmann_json ws2_32)
@@ -32,6 +32,26 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui.cpp AND EXISTS ${CMAKE_CURRENT_SOUR
 endif()
 target_compile_definitions(cb_tests PRIVATE CB_VECTORS="${ROOT}/shared/vectors.json")
 add_test(NAME cb_tests COMMAND cb_tests)
+
+# fx_check (re-test 3 plan task D7): ReShade's own FX front end (third_party/reshade, BSD-3-Clause) compiles
+# cp/shaders/Cyberblock.fx with ReShade.fxh as ReShade does for D3D12; a shader error fails the build and ctest.
+set(RESHADE_FX ${ROOT}/third_party/reshade/source)
+add_executable(fx_check tests/fx_check.cpp ${RESHADE_FX}/effect_lexer.cpp ${RESHADE_FX}/effect_preprocessor.cpp
+	${RESHADE_FX}/effect_parser_exp.cpp ${RESHADE_FX}/effect_parser_stmt.cpp ${RESHADE_FX}/effect_symbol_table.cpp
+	${RESHADE_FX}/effect_expression.cpp ${RESHADE_FX}/effect_codegen_dxbc.cpp)
+target_include_directories(fx_check PRIVATE ${RESHADE_FX})
+set_target_properties(fx_check PROPERTIES CXX_STANDARD 17) # ReShade's sources are C++17 (u8string returns std::string)
+target_compile_definitions(fx_check PRIVATE _CRT_SECURE_NO_WARNINGS)
+target_link_libraries(fx_check PRIVATE d3dcompiler)
+set(CB_FX ${ROOT}/cp/shaders/Cyberblock.fx)
+set(CB_FX_INCLUDE ${ROOT}/cp/shaders/vendor)
+add_test(NAME fx_check COMMAND fx_check ${CB_FX} ${CB_FX_INCLUDE})
+add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/fx_check.stamp
+	COMMAND fx_check ${CB_FX} ${CB_FX_INCLUDE}
+	COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/fx_check.stamp
+	DEPENDS fx_check ${CB_FX} ${CB_FX_INCLUDE}/ReShade.fxh
+	COMMENT "fx_check: compiling Cyberblock.fx")
+add_custom_target(fx_checked ALL DEPENDS ${CMAKE_BINARY_DIR}/fx_check.stamp)
 
 # Manual link check against a running Minecraft (tests/link_smoke.cpp); built only when asked for.
 add_executable(link_smoke EXCLUDE_FROM_ALL tests/link_smoke.cpp src/link.cpp src/ws.cpp src/log.cpp)

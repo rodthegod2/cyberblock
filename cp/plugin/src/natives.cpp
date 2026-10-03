@@ -12,9 +12,11 @@
 #include "world.hpp"
 #include <RED4ext/RED4ext.hpp>
 #include <RED4ext/Scripting/Natives/Generated/Vector4.hpp>
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <string>
 #include <initializer_list>
 #include <mutex>
 #include <optional>
@@ -863,6 +865,38 @@ namespace
 			*out = to_vector4(cb::view::eye(), 1.0f);
 	}
 
+	// Cyberblock_SetSlowMoFx(id: CName, seconds: Float) -> Void: the Sandevistan (n"sandevistan") or Kerenzikov
+	// (n"kerenzikov") screen effect for `seconds` (0..30) from now; n"" or 0 ends it (it eases out).
+	void SetSlowMoFx(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		RED4ext::CName id;
+		float seconds = 0.0f;
+		RED4ext::GetParameter(frame, &id);
+		RED4ext::GetParameter(frame, &seconds);
+		++frame->code;
+
+		constexpr const char *kKinds[] = {"sandevistan", "kerenzikov"};
+		const std::string_view kind = known_name(id, kKinds);
+		if (!std::isfinite(seconds))
+			seconds = 0.0f;
+		if (kind.empty() || seconds <= 0.0f)
+		{
+			if (!id.IsNone() && kind.empty())
+			{
+				static bool warned = false;
+				if (!std::exchange(warned, true))
+					cb::log::warn("Cyberblock_SetSlowMoFx: %s is not sandevistan or kerenzikov; ending the effect (logged once)",
+								  id.ToString());
+			}
+			compositor::set_slowmo(0, 0.0f);
+			cb::log::info("screenfx: off");
+			return;
+		}
+		seconds = std::min(seconds, 30.0f);
+		compositor::set_slowmo(kind == "kerenzikov" ? 1 : 0, seconds);
+		cb::log::info("screenfx: %s %.1f s", std::string(kind).c_str(), seconds);
+	}
+
 	// Cyberblock_SetPhonePrompt(open: Bool) -> Void (declared in U's UiNatives.reds): a call rings or an actionable
 	// notification shows, so T goes to Cyberpunk (answer, reply) instead of opening Minecraft's chat.
 	void SetPhonePrompt(IScriptable *, CStackFrame *frame, void *, int64_t)
@@ -962,6 +996,7 @@ namespace cb::natives
 		add(rtti, "Cyberblock_SetSeat", &SetSeat, nullptr, {{"Bool", "seated"}, {"Bool", "tpp"}, {"Vector4", "hipsLocal"}});
 		add(rtti, "Cyberblock_SetViewAllowed", &SetViewAllowed, nullptr, {{"Bool", "allowed"}});
 		add(rtti, "Cyberblock_ViewEye", &ViewEye, "Vector4");
+		add(rtti, "Cyberblock_SetSlowMoFx", &SetSlowMoFx, nullptr, {{"CName", "id"}, {"Float", "seconds"}});
 		add(rtti, "Cyberblock_SetPhonePrompt", &SetPhonePrompt, nullptr, {{"Bool", "open"}});
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});
 		log::info("redscript natives registered");

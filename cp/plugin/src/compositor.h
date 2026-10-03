@@ -32,4 +32,7 @@ namespace compositor
 	/// effect's `cb_menu` makes the Composite pass skip Minecraft's world, and the Final pass still adds the overlay (now
 	/// only Minecraft's frame around the menu). Every frame from the game thread; a change is logged.
 	void set_menu_mode(bool menu);
+	/// The Sandevistan (kind 0) or Kerenzikov (kind 1) screen effect starts now for `seconds` (re-test 3 plan section
+	/// 1.10); seconds <= 0 ends it (it eases out over 0.4 s). set_active(false) clears it at once. Any thread.
+	void set_slowmo(int kind, float seconds);
 }
