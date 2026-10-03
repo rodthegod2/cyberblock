@@ -102,8 +102,11 @@ Rows marked **extends** add to a layer 1/2 message of the same `t`; the old fiel
 
 | `t` | fields | when |
 |---|---|---|
-| `cam` | **extends layer 1:** adds `cr:bool` (V is crouched) | every frame, from `Cyberblock_SetStance` (carried until it changes) |
-| `key` | **extends layer 1:** `k` also ∈ `jump`, `sprint` (forwarded, **not** swallowed: Cyberpunk keeps them), `perspective` (F5, swallowed), `hack`, `skills` (the keys from `binds`, swallowed); `down:bool` as before | input while forwarding |
+| `cam` | **extends layer 1:** adds `cr:bool` (V is crouched), `air:bool` (V jumps or falls), `held:bool` (V is in a vehicle, or held by a quest scene of tier 2–5, a workspot, a braindance or a moving elevator), all from `Cyberblock_SetStance`; `menu:bool` (a Cyberpunk menu is open: input forwarding pauses, `Cyberblock_SetMenu`); `fly:bool` (V follows Steve's glide, `Cyberblock_SetFlightFollowing`; Minecraft calls a glide off that is not followed within 0.5 s) | every frame (each flag carried until it changes) |
+| `key` | **extends layer 1:** `k` also ∈ `jump`, `sprint` (Space and either Shift: forwarded, **not** swallowed: Cyberpunk keeps them), `perspective` (F5, swallowed), `hack`, `skills` (the keys from `binds`, swallowed); `swap` is X; `down:bool` as before; adds `mods` (SDL keymod bits held: 1 Shift, 64 Ctrl; Ctrl+Q drops a whole stack) | input while forwarding |
+| `click` | **extends layer 1:** adds `mods` (as `key`: Shift-click quick-moves a stack) | only while `status.screen` |
+| `char` | `c` a Unicode code point (≥ 0x20, never 0x7F; UTF-16 surrogate pairs joined) | text typed while `status.screen` (chat, signs, anvil, book) |
+| `skey` | `sc` SDL scancode of an editing key (Enter 40, Backspace 42, Tab 43, Home 74, Page Up 75, Delete 76, End 77, Page Down 78, Right 79, Left 80, Down 81, Up 82), `mods` | each press and auto-repeat while `status.screen` |
 | `mobdmg` | `id` (the mob: Minecraft network entity id, int ≥ 0), `frac` 0..4 (fraction of the puppet's max health), `by:"<npc id>"` or `null` | a Cyberpunk NPC damaged a mob's puppet |
 | `pcells` | `c:[x,y,z, …]` integer block cells, at most 64 cells | Night City surfaces on predicted projectile paths: Minecraft makes them temporary barriers for 3 s |
 | `unlead` | `target:"<id>"` | Cyberpunk gave up a tether (target gone, or snapped: more than length + 12 m for 2 s) |
@@ -154,6 +157,11 @@ Rows marked **extends** add to a layer 1/2 message of the same `t`; the old fiel
   - `lead.length` is 1..32; `pull.strength` and `knock.strength` are 0..50; `knock.radius` is 0..16.
   - `effect.name` matches `[a-z_]{1,32}`, `effect.seconds` is 0..86400, `effect.amp` is 0..255; `perkfx.seconds` is 0..30.
   - `binds.keys` values are integers 1..254; `look.d` is two finite numbers.
+  - `char.c` is a valid code point (Minecraft drops anything else); `skey.sc` is an SDL scancode 1..511; `mods` is an
+    integer of SDL keymod bits.
+  - `binds`: both sides refuse W A S D C E Q T X F I M J H N B P V Z R, 1–9, F5, F9, Space, Shift, Ctrl and Esc for
+    `hack` and `skills` (allowed: G K L O U Y 0 F1–F4 F6–F8 F10–F12; `shared/vectors.json` `binds`). A refused key, or
+    both keys resolving to one, makes both fall back to G (71) and K (75).
   - `hack.hack` must be one of the hack names and every `perks[].id` one of the perk ids below; anything else drops the
     message (or the entry).
   - A receiver ignores every field of `scaninfo` except `id` and `ok` when `ok` is `false`.
@@ -187,8 +195,11 @@ show both of their forms.
 
 Layers 3–6 examples, Cyberpunk to Minecraft:
 ```jsonl
-{"t":"cam","f":1043,"p":[-1245.5,66.62,812.25],"r":[150.0,12.5,0.0],"fov":58.7,"fp":true,"pl":[-1245.5,64.9,812.25],"h":150.0,"cr":true}
-{"t":"key","k":"hack","down":true}
+{"t":"cam","f":1043,"p":[-1245.5,66.62,812.25],"r":[150.0,12.5,0.0],"fov":58.7,"fp":true,"pl":[-1245.5,64.9,812.25],"h":150.0,"cr":true,"air":false,"held":false,"menu":false,"fly":false}
+{"t":"key","k":"hack","down":true,"mods":0}
+{"t":"click","b":0,"down":true,"mods":1}
+{"t":"char","c":233}
+{"t":"skey","sc":42,"mods":0}
 {"t":"mobdmg","id":412,"frac":0.5,"by":"9007199254740993"}
 {"t":"pcells","c":[10,64,-21,11,64,-21,10,65,-21]}
 {"t":"unlead","target":"9007199254740993"}

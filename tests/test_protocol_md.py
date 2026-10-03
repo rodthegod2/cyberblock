@@ -102,9 +102,10 @@ def test_ignite_example():
 # ---- layers 3-6: new message types, the three extended ones, the limits and the name lists (plan section 1.2) ----
 L36_CP_TO_MC, L36_MC_TO_CP = "Layers 3–6: Cyberpunk → Minecraft", "Layers 3–6: Minecraft → Cyberpunk"
 L36_CP_EXAMPLES, L36_MC_EXAMPLES = "Layers 3–6 examples, Cyberpunk to Minecraft:", "Layers 3–6 examples, Minecraft to Cyberpunk:"
-L36_NEW_CP_TO_MC = {"mobdmg", "pcells", "unlead", "scaninfo", "hackresult", "killed", "look"}
+L36_NEW_CP_TO_MC = {"mobdmg", "pcells", "unlead", "scaninfo", "hackresult", "killed", "look", "char", "skey"}
 L36_NEW_MC_TO_CP = {"blocks", "mobs", "flight", "teleport", "proj", "lead", "pull", "knock", "effect", "scan", "hack", "perks", "perkfx", "binds"}
-L36_EXTENDED = {"cam", "key", "hit"}
+L36_EXTENDED = {"cam", "key", "click", "hit"}
+CAM_FLAGS = {"cr", "air", "held", "menu", "fly"}
 THREATS = {"none", "low", "medium", "high", "extreme"}
 NEW_KEYS = {"jump", "sprint", "perspective", "hack", "skills"}
 KIND_RE, EFFECT_RE = re.compile(r"[a-z0-9_]{1,32}"), re.compile(r"[a-z_]{1,32}")
@@ -179,10 +180,24 @@ def binds_ok(m) -> bool:
     return set(m["keys"]) == {"hack", "skills"} and all(whole(vk, 1, 254) for vk in m["keys"].values())
 
 
+def mods_ok(m) -> bool:
+    """`mods` (SDL keymod bits) is optional: an older host or the fake host sends none."""
+    return "mods" not in m or whole(m["mods"], 0, 0xFFFF)
+
+
+def cam_ok(m) -> bool:
+    """`cr` always; `air`, `held`, `menu` and `fly` are booleans when present (the fake host sends only `cr`)."""
+    return (isinstance(m["cr"], bool) and {"f", "p", "r", "fov", "fp", "pl", "h"} <= set(m)
+            and all(isinstance(m[f], bool) for f in CAM_FLAGS & set(m)))
+
+
 # Each validator applies the plan section 1.2 limits to a whole message (everything but `t` is checked).
 VALIDATORS = {
-    "cam": lambda m: isinstance(m["cr"], bool) and {"f", "p", "r", "fov", "fp", "pl", "h"} <= set(m),
-    "key": lambda m: m["k"] in NEW_KEYS and isinstance(m["down"], bool),
+    "cam": cam_ok,
+    "key": lambda m: m["k"] in NEW_KEYS and isinstance(m["down"], bool) and mods_ok(m),
+    "click": lambda m: m["b"] in (0, 1, 2) and not isinstance(m["b"], bool) and isinstance(m["down"], bool) and mods_ok(m),
+    "char": lambda m: whole(m["c"], 0x20, 0x10FFFF) and m["c"] != 0x7F and not 0xD800 <= m["c"] <= 0xDFFF,
+    "skey": lambda m: whole(m["sc"], 1, 511) and mods_ok(m),
     "mobdmg": lambda m: whole(m["id"]) and num(m["frac"], 0, 4) and (m["by"] is None or uint64_string(m["by"])),
     "pcells": lambda m: cells_ok(m["c"]),
     "unlead": lambda m: uint64_string(m["target"]),
@@ -218,9 +233,9 @@ def test_layer36_name_lists_have_the_plan_counts():
 
 
 def test_layer36_every_new_type_and_every_extended_type_is_in_its_table():
-    assert documented(L36_CP_TO_MC) == L36_NEW_CP_TO_MC | {"cam", "key"}
+    assert documented(L36_CP_TO_MC) == L36_NEW_CP_TO_MC | {"cam", "key", "click"}
     assert documented(L36_MC_TO_CP) == L36_NEW_MC_TO_CP | {"hit"}
-    for t, heading in (("cam", L36_CP_TO_MC), ("key", L36_CP_TO_MC), ("hit", L36_MC_TO_CP)):
+    for t, heading in (("cam", L36_CP_TO_MC), ("key", L36_CP_TO_MC), ("click", L36_CP_TO_MC), ("hit", L36_MC_TO_CP)):
         assert "**extends layer" in rows_by_type(heading)[t], f"{t} is not marked as an extension"
     assert len(re.findall(r"^\| `lead` \|", section(L36_MC_TO_CP), re.M)) == 2  # the leash and the release form
 
@@ -266,7 +281,9 @@ def test_layer36_examples_carry_the_exact_field_sets():
 
 def test_layer36_extended_examples_keep_their_layer1_and_layer2_fields():
     cam = next(m for t, m in L36_EXAMPLES if t == "cam")
-    assert set(cam) == set(example("Cyberpunk → Minecraft:", "cam")) | {"cr"}
+    assert set(cam) == set(example("Cyberpunk → Minecraft:", "cam")) | CAM_FLAGS
+    click = next(m for t, m in L36_EXAMPLES if t == "click")
+    assert set(click) == set(example("Cyberpunk → Minecraft:", "click")) | {"mods"}
     hit = next(m for t, m in L36_EXAMPLES if t == "hit")
     assert set(hit) == set(example("Minecraft → Cyberpunk:", "hit")) | {"mob"} and hit["kind"] in {"mob", "arrow"}
 
@@ -309,6 +326,9 @@ OUT_OF_LIMITS = [
     ("perks", many("perks", "list", 19)), ("perks", entry("perks", "list", rank=2)), ("perks", entry("perks", "list", id="iron_skin")),
     ("perkfx", with_("perkfx", seconds=31)), ("binds", with_("binds", keys={"hack": 0, "skills": 75})),
     ("binds", with_("binds", keys={"hack": 71, "skills": 255})), ("binds", with_("binds", keys={"hack": 71})),
+    ("cam", with_("cam", fly=1)), ("key", with_("key", mods=-1)), ("click", with_("click", b=3)), ("click", with_("click", mods="shift")),
+    ("char", with_("char", c=0x0D)), ("char", with_("char", c=0xD800)), ("char", with_("char", c=0x110000)),
+    ("skey", with_("skey", sc=0)), ("skey", with_("skey", sc=512)),
 ]
 
 
