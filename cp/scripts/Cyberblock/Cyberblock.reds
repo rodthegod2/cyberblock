@@ -67,6 +67,7 @@ public class CyberblockSystem extends ScriptableSystem {
   private let probes: ref<CyberblockProbes>;
   private let events: ref<CyberblockEvents>;
   private let npcs: ref<CyberblockNpcs>;
+  private let hud: ref<CyberblockHud>;
   private let saving: Bool;
   private let savingTicks: Int32;
   private let menuListener: ref<CallbackHandle>;
@@ -79,6 +80,7 @@ public class CyberblockSystem extends ScriptableSystem {
     this.events = new CyberblockEvents();
     this.npcs = new CyberblockNpcs();
     this.npcs.Register();
+    this.hud = new CyberblockHud();
     Cyberblock_SetActive(false, false);
     // A menu can pause the game (and with it this tick), so its opening is also taken straight from the blackboard.
     let ui = GameInstance.GetBlackboardSystem(this.GetGameInstance()).Get(GetAllBlackboardDefs().UI_System);
@@ -102,6 +104,7 @@ public class CyberblockSystem extends ScriptableSystem {
     Cyberblock_SetMenu(false);
     Cyberblock_SetChoices(false);
     CyberblockInk.RestoreFor(this.GetGameInstance(), "detach");
+    this.hud.Unregister();
     CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
@@ -145,12 +148,16 @@ public class CyberblockSystem extends ScriptableSystem {
     CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
+    this.hud.Unregister();
+    this.hud.Register(this.GetGameInstance());
     Cyberblock_Log("session ready: leftovers removed, Off");
   }
 
   private cb func OnSessionEnd(event: ref<GameSessionEvent>) {
     this.saving = false;
     CyberblockInk.RestoreFor(this.GetGameInstance(), "session end");
+    this.hud.ClearMinecraft();
+    this.hud.Unregister();
     this.playerState.Clear(GetPlayer(this.GetGameInstance()));
     this.creative.Clear(GetPlayer(this.GetGameInstance()));
     CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
@@ -170,6 +177,11 @@ public class CyberblockSystem extends ScriptableSystem {
   // Cyberblock is On and not writing a save: Minecraft is shown and draws the UI (CyberblockUi.Pump asks this).
   public func UiOn() -> Bool {
     return CyberblockSystem.IsOn(this.state) && !this.saving;
+  }
+
+  // The HUD data stream (Hud.reds); Notifications.reds tells it about actionable notifications.
+  public func Hud() -> ref<CyberblockHud> {
+    return this.hud;
   }
 
   public static func Get(game: GameInstance) -> ref<CyberblockSystem> {
@@ -235,6 +247,10 @@ public class CyberblockSystem extends ScriptableSystem {
     if !this.saving {
       this.npcs.Tick(player, active);
     }
+    // Minecraft draws Cyberpunk's HUD: stream its data (U3). Registered on session ready; also here after a script
+    // reload in the middle of a session.
+    this.hud.Register(game);
+    this.hud.Tick(player, live);
   }
 
   // Everything of ours in Night City (plan 2026-10-03 section 1.4 Clears). Perk ranks, installed cyberware and the
@@ -356,6 +372,8 @@ public class CyberblockSystem extends ScriptableSystem {
     this.state = next;
     let active = CyberblockSystem.IsOn(next);
     if wasOn && !active {
+      // Minecraft still listens: take down its prompt, choices and subtitles before it stops being shown.
+      this.hud.ClearMinecraft();
       CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
       CyberblockInk.RestoreFor(this.GetGameInstance(), Equals(next, CyberblockState.Lost) ? "lost" : "off");
     }
