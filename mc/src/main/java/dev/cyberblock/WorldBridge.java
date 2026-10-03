@@ -1,9 +1,7 @@
 // Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
 package dev.cyberblock;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.BlockPos;
@@ -15,15 +13,13 @@ import net.minecraft.world.level.block.state.BlockState;
 
 /** Server-side half: Night City's collision as invisible barrier blocks, commands, and block changes for the host. */
 public final class WorldBridge {
-	/** Layer 1 does not tell the host about block changes (layer 2 turns this on and turns them into collision boxes). */
-	private static final boolean REPORT_BLOCKS = false;
 	/** More than this in one message is a bug or an attack: it would stall the server thread. */
 	private static final long MAX_CELLS = 16_384L;
 	private static volatile MinecraftServer server;
 	/** Barriers we placed (so a reset only removes ours, never the player's builds). */
 	private static final Set<BlockPos> barriers = ConcurrentHashMap.newKeySet();
-	/** Block changes this tick (server thread only): true = now solid, false = gone. Sent at the end of the tick. */
-	private static final Map<BlockPos, Boolean> changes = new LinkedHashMap<>();
+	/** Block changes the host has yet to hear about (server thread only), a few per tick. */
+	private static final BlockEvents.Outbox blockEvents = new BlockEvents.Outbox();
 	/** While placing or removing the host's own ground: those changes aren't news to the host (server thread only). */
 	private static boolean placingGround;
 
@@ -38,6 +34,7 @@ public final class WorldBridge {
 	static void detach() {
 		MinecraftServer s = server;
 		server = null;
+		blockEvents.clear();
 		if (s != null) {
 			removeBarriers(s.overworld());
 		}
@@ -133,41 +130,30 @@ public final class WorldBridge {
 		});
 	}
 
-	private static boolean solidForHost(final ServerLevel level, final BlockPos pos, final BlockState state) {
-		return !state.isAir() && !state.is(Blocks.BARRIER) && !state.getCollisionShape(level, pos).isEmpty();
+	/** The server, or null before it started and after it stopped. */
+	public static MinecraftServer server() {
+		return server;
 	}
 
-	/** Every server tick: block changes for the host. */
+	/** Every server tick: a few block changes for the host. */
 	static void tick(final MinecraftServer s) {
-		flush();
-	}
-
-	/** Server thread, from Level.setBlock: remember the change; flushed once per tick. */
-	public static void onBlockChanged(final ServerLevel level, final BlockPos pos, final BlockState state) {
-		if (!REPORT_BLOCKS || !Cyberblock.active || level != level.getServer().overworld()) {
+		if (!Cyberblock.active) {
+			blockEvents.clear(); // nobody is listening: do not replay stale changes when the host comes back
 			return;
 		}
 
-		if (!placingGround) {
-			changes.put(pos.immutable(), solidForHost(level, pos, state));
-		}
+		blockEvents.drain(BlockEvents.PER_TICK, (pos, op) -> Cyberblock.events.accept(Wire.block(op, BlockPos.getX(pos), BlockPos.getY(pos), BlockPos.getZ(pos))));
 	}
 
-	/** End of each server tick: {"t":"blocks","set":[x,y,z,...],"clear":[x,y,z,...]}. */
-	private static void flush() {
-		if (changes.isEmpty()) {
+	/** Server thread, from LevelChunk.setBlockState: queue the change when the host's collision is affected. */
+	public static void onBlockChanged(final ServerLevel level, final BlockPos pos, final BlockState oldState, final BlockState newState) {
+		if (!Cyberblock.active || level != level.getServer().overworld()) {
 			return;
 		}
 
-		StringBuilder set = new StringBuilder();
-		StringBuilder clear = new StringBuilder();
-		for (Map.Entry<BlockPos, Boolean> e : changes.entrySet()) {
-			StringBuilder b = e.getValue() ? set : clear;
-			BlockPos p = e.getKey();
-			b.append(b.isEmpty() ? "" : ",").append(p.getX()).append(',').append(p.getY()).append(',').append(p.getZ());
+		BlockEvents.Op op = BlockEvents.change(oldState, newState, placingGround ? BlockEvents.Cause.HOST_GROUND : BlockEvents.Cause.WORLD);
+		if (op != null) {
+			blockEvents.put(pos.asLong(), op);
 		}
-
-		changes.clear();
-		Cyberblock.events.accept("{\"t\":\"blocks\",\"set\":[" + set + "],\"clear\":[" + clear + "]}");
 	}
 }

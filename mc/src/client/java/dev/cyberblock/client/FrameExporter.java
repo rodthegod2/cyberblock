@@ -35,7 +35,8 @@ import org.joml.Vector4f;
  * GPU buffers, published when the GPU fence passes (next frame at the latest).
  */
 public final class FrameExporter {
-	public static final String NAME = "Local\\CyberblockFrame";
+	/** Shared memory name; -Dcyberblock.frame overrides it so a test client never touches the real game's frame. */
+	public static final String NAME = System.getProperty("cyberblock.frame", "Local\\CyberblockFrame");
 	private static final int MAGIC = 0x52464243;
 	private static final int VERSION = 1;
 	private static final int HEADER = 4096;
