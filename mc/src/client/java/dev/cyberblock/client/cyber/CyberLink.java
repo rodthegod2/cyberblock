@@ -81,7 +81,7 @@ final class CyberLink {
 	}
 
 	private static void listen(final String type, final Consumer<JsonObject> listener) {
-		Bridge.listeners.put(type, listener);
+		Bridge.listen(type, listener);
 	}
 
 	private static void onClient(final Runnable task) {

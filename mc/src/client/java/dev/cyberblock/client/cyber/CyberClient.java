@@ -29,6 +29,7 @@ public class CyberClient implements ClientModInitializer {
 	/** Every client tick (inside vanilla's per-tick gizmo collection, which the scan and Kiroshi outlines use). */
 	private static void tick(final Minecraft minecraft) {
 		CyberKeys.tick(minecraft);
+		HackWheel.tick(minecraft);
 		ScanClient.tick(minecraft);
 		CyberwareClient.tick(minecraft);
 	}

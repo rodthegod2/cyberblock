@@ -122,6 +122,8 @@ public final class Hacking {
 		int id = nextId();
 		pending.put(id, new Pending(player.getUUID(), cost, System.nanoTime()));
 		Cyberblock.events.accept(CyberWire.hack(id, lock.target(), hack, CyberData.has(player, Perk.CHAIN_HACK)));
+		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.hack.fired", "Hack: %s", stack.getHoverName())
+			.withColor(HackFxRules.colour(hack)));
 		return true;
 	}
 

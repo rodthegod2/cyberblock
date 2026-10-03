@@ -21,13 +21,17 @@ import org.jspecify.annotations.Nullable;
 /**
  * Quickhack chips without the hotbar: while the hack key is held, the mouse wheel picks one of the chips anywhere in the
  * inventory and right-click fires it at the locked target, on the integrated server (Hacking.useChip, the same rules as a
- * chip used from the hand). Without the hack key both do what they always do. Client thread.
+ * chip used from the hand). A chip in the main hand always wins over the pick (plan retest3 section 1.6: the old order fired
+ * the remembered pick, usually the first chip, whatever he held). Without the hack key both do what they always do. Client
+ * thread.
  */
 public final class HackWheel {
 	/** The chip picked last; kept between holds while he still has one. */
 	private static @Nullable Hack selected;
 	/** The last use press was the wheel's, so its release is too (and keyUse never sees either). */
 	private static boolean usePressTaken;
+	/** The hotbar slot selected last tick (-1: no player). */
+	private static int lastSlot = -1;
 
 	private HackWheel() {
 	}
@@ -44,26 +48,60 @@ public final class HackWheel {
 		return chips;
 	}
 
-	/** The chip the wheel fires: the one picked, else the one in his hand, else the first he has; null without chips. */
-	private static @Nullable Hack current(final LocalPlayer player, final List<Hack> chips) {
-		if (selected != null && chips.contains(selected)) {
-			return selected;
+	/** The chip an item stack is, else null. */
+	private static @Nullable Hack chipOf(final ItemStack stack) {
+		return stack.getItem() instanceof QuickhackItem item ? item.hack() : null;
+	}
+
+	/**
+	 * Plan retest3 section 1.6, the wheel rule: the chip in the main hand wins, then the wheel's pick, then the first chip he
+	 * has; null without chips. Only chips he still has count.
+	 */
+	public static @Nullable Hack pick(final @Nullable Hack inHand, final @Nullable Hack picked, final List<Hack> chips) {
+		if (inHand != null && chips.contains(inHand)) {
+			return inHand;
 		}
 
-		if (player.getMainHandItem().getItem() instanceof QuickhackItem item && chips.contains(item.hack())) {
-			return item.hack();
+		if (picked != null && chips.contains(picked)) {
+			return picked;
 		}
 
 		return chips.isEmpty() ? null : chips.getFirst();
 	}
 
+	/** The wheel's pick after he selects another hotbar slot: a slot holding a chip clears it (that chip is what he wants). */
+	public static @Nullable Hack afterSlotChange(final @Nullable Hack picked, final @Nullable Hack inNewSlot) {
+		return inNewSlot != null ? null : picked;
+	}
+
+	private static @Nullable Hack current(final LocalPlayer player, final List<Hack> chips) {
+		return pick(chipOf(player.getMainHandItem()), selected, chips);
+	}
+
+	/** Every client tick: a hotbar slot change to a chip clears the pick (afterSlotChange). */
+	static void tick(final Minecraft minecraft) {
+		LocalPlayer player = minecraft.player;
+		if (player == null) {
+			lastSlot = -1;
+			return;
+		}
+
+		int slot = player.getInventory().getSelectedSlot();
+		if (lastSlot >= 0 && slot != lastSlot) {
+			selected = afterSlotChange(selected, chipOf(player.getMainHandItem()));
+		}
+
+		lastSlot = slot;
+	}
+
 	/**
 	 * Wheel notches with no screen open (+1 = up): while the hack key is held and he has chips, they pick the previous or next
-	 * chip, as the hotbar would scroll, and true is returned; otherwise they are the hotbar's.
+	 * chip, as the hotbar would scroll, and true is returned; otherwise they are the hotbar's. With a chip in his hand the
+	 * hand wins anyway, so the wheel scrolls the hotbar (the way to change the chip he holds).
 	 */
 	public static boolean scroll(final Minecraft minecraft, final int notches) {
 		LocalPlayer player = minecraft.player;
-		if (player == null || !CyberKeys.hack.isDown()) {
+		if (player == null || !CyberKeys.hack.isDown() || chipOf(player.getMainHandItem()) != null) {
 			return false;
 		}
 
