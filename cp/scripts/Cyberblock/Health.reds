@@ -22,8 +22,9 @@
 // Damage over time (burning, poison, shock) also reaches Steve: the IsImmune wrap below lets DoT debuffs land on V
 // while only our god mode protects V, and their ticks come through DealDamages like any hit.
 //
-// APIs: DamageSystem.InvulnerabilityCheck(ref<gameHitEvent>, ref<CacheData>) and DealDamages(ref<gameHitEvent>)
-// (private final, scripted), AttackData.HasFlag/RemoveFlag(hitFlag, CName)/GetAttackType/GetSource/GetInstigator/
+// APIs: DamageSystem.InvulnerabilityCheck(ref<gameHitEvent>, ref<CacheData>), DealDamages(ref<gameHitEvent>) and
+// ProcessInstantKill(ref<gameHitEvent>) (private final, scripted), gameHitEvent.projectionPipeline,
+// AttackData.HasFlag/AddFlag/RemoveFlag(hitFlag, CName)/GetAttackType/GetSource/GetInstigator/
 // GetAttackDefinition, IAttack.GetRecord() -> wref<Attack_Record>, gameAttackComputed.GetTotalAttackValue(
 // gamedataStatPoolType.Health)/GetDominatingDamageType, GodModeSystem.GetGodModeSources(EntityID, gameGodModeType)
 // -> array<CName>, StatsSystem.GetStatValue(StatsObjectID, gamedataStatType.Health | IsInvulnerable) (max health as in
@@ -47,6 +48,24 @@ private final func InvulnerabilityCheck(hitEvent: ref<gameHitEvent>, cache: ref<
 private final func DealDamages(hitEvent: ref<gameHitEvent>) -> Void {
   if CyberblockHealth.Covers(hitEvent.target) {
     CyberblockHealth.Report(hitEvent);
+    return;
+  }
+  wrappedMethod(hitEvent);
+}
+
+// Audit D gap 2 / G-9 (docs/notes/cp-mechanics-audit.md): for a hit flagged hitFlag.Kill (scripted kills, a vehicle
+// destroyed with its driver inside, ...), vanilla ProcessInstantKill (damageSystem.swift:439, private final, called from
+// ModifyHitData during PreProcess) sets the target's Health pool to its minimum directly
+// (StatPoolsSystem.RequestSettingStatPoolMinValue), whatever the god mode, and flags the hit DealNoDamage, so it never
+// reaches DealDamages. While Covers holds, V's pool is left alone: the hit is flagged DealNoDamage (source
+// n"instant_kill", as vanilla), so Process stops before DealDamages, and Steve gets 4 x his max health instead (unless
+// V's IsInvulnerable stat is set, which keeps Steve unharmed as in the InvulnerabilityCheck wrap). Projected hits (damage
+// previews) are left to vanilla, which ignores them too.
+@wrapMethod(DamageSystem)
+private final func ProcessInstantKill(hitEvent: ref<gameHitEvent>) -> Void {
+  if !hitEvent.projectionPipeline && hitEvent.attackData.HasFlag(hitFlag.Kill) && CyberblockHealth.Covers(hitEvent.target) {
+    hitEvent.attackData.AddFlag(hitFlag.DealNoDamage, n"instant_kill");
+    CyberblockHealth.ReportInstantKill(hitEvent);
     return;
   }
   wrappedMethod(hitEvent);
@@ -120,6 +139,19 @@ public abstract class CyberblockHealth {
     }
     Cyberblock_Damage(damage / maxHealth, kind, from, hasFrom);
     Cyberblock_Log(s"dmg \(NameToString(kind)) \(damage) of \(maxHealth) from \(hasFrom ? "known" : "unknown") (\(TDBID.ToStringDEBUG(CyberblockHealth.AttackID(hitEvent))))");
+  }
+
+  // An instant kill aimed at V (ProcessInstantKill wrap): Steve takes 4 x his max health, from where the hit came.
+  public static func ReportInstantKill(hitEvent: ref<gameHitEvent>) -> Void {
+    let attack = TDBID.ToStringDEBUG(CyberblockHealth.AttackID(hitEvent));
+    if CyberblockHealth.StatInvulnerable(hitEvent.target) {
+      Cyberblock_Log(s"dmg instant kill not reported: V's IsInvulnerable stat is set (\(attack))");
+      return;
+    }
+    let from: Vector4;
+    let hasFrom = CyberblockHealth.From(hitEvent, from);
+    Cyberblock_Damage(4.0, n"other", from, hasFrom);
+    Cyberblock_Log(s"dmg instant kill reported as other x4 from \(hasFrom ? "known" : "unknown"), V's health left alone (\(attack))");
   }
 
   // Where the hit came from: the attack's source (grenade, vehicle, shooter), else its instigator, unless that is V;
