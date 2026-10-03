@@ -130,12 +130,17 @@ public final class Flight {
 		Vec3 feet = player.position();
 		Cyberblock.events.accept(Wire.flight(false, feet.x, feet.y, feet.z, 0.0, 0.0, 0.0, player.getYRot(), player.getXRot()));
 		gravity(player, false);
+		// vanilla ends a glide only on the ground: when the host went away mid-air Steve would hover gliding with no gravity
+		player.stopFallFlying();
 		player.setDeltaMovement(Vec3.ZERO);
 		fall.reset();
 		Cyberblock.LOG.info("glide ended at {}", feet);
 	}
 
-	/** Gravity on (gliding) or off (hanging at V), on the client and on the integrated server, so neither resyncs the other. */
+	/**
+	 * Gravity on (gliding) or off (hanging at V), on the client and on the integrated server, so neither resyncs the other. Off
+	 * also ends the server's glide, which otherwise keeps taking elytra durability while Steve hangs in the air.
+	 */
 	private static void gravity(final LocalPlayer player, final boolean on) {
 		player.setNoGravity(!on);
 		IntegratedServer server = Minecraft.getInstance().getSingleplayerServer();
@@ -144,6 +149,9 @@ public final class Flight {
 				ServerPlayer serverPlayer = server.getPlayerList().getPlayer(player.getUUID());
 				if (serverPlayer != null) {
 					serverPlayer.setNoGravity(!on);
+					if (!on) {
+						serverPlayer.stopFallFlying();
+					}
 				}
 			});
 		}
