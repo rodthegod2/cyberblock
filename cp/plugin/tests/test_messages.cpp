@@ -36,7 +36,7 @@ namespace
 	std::optional<json> scan(bool ok, const std::string &name = "Officer Test", const std::string &faction = "NCPD",
 							 const std::string &threat = "high", double hp = 0.8)
 	{
-		return make_scaninfo(7, ok, 123456789012ull, name, faction, threat, hp, false, {1.0, 2.0, 3.0}, 0.6, 1.8);
+		return make_scaninfo(7, ok, 123456789012ull, name, faction, threat, hp, false, {1.0, 2.0, 3.0}, 0.6, 1.8, 0.0);
 	}
 
 	std::vector<cb::Vec3> distinct_hits(int count)
@@ -86,45 +86,45 @@ TEST(mobdmg_mob_id_must_not_be_negative)
 TEST(pcells_are_minecraft_block_cells_floored_per_axis_after_conversion)
 {
 	// Cyberpunk (10.5, 20.2, 64.7) -> Minecraft (10.5, 64.7, -20.2) -> cell (10, 64, -21)
-	const auto m = make_pcells(std::vector<cb::Vec3>{{10.5, 20.2, 64.7}});
+	const auto m = make_pcells(std::vector<cb::Vec3>{{10.5, 20.2, 64.7}}, 0.0);
 	CHECK(m.has_value() && m->at("t") == "pcells");
 	CHECK(m->at("c") == json::array({10, 64, -21}));
 	// negative coordinates floor away from zero: Cyberpunk (-0.5, -0.5, -0.5) -> Minecraft (-0.5, -0.5, 0.5) -> (-1, -1, 0)
-	CHECK(make_pcells(std::vector<cb::Vec3>{{-0.5, -0.5, -0.5}})->at("c") == json::array({-1, -1, 0}));
+	CHECK(make_pcells(std::vector<cb::Vec3>{{-0.5, -0.5, -0.5}}, 0.0)->at("c") == json::array({-1, -1, 0}));
 	// a point exactly on a cell corner belongs to the cell above it: Cyberpunk (3, -5, 7) -> Minecraft (3, 7, 5)
-	CHECK(make_pcells(std::vector<cb::Vec3>{{3.0, -5.0, 7.0}})->at("c") == json::array({3, 7, 5}));
+	CHECK(make_pcells(std::vector<cb::Vec3>{{3.0, -5.0, 7.0}}, 0.0)->at("c") == json::array({3, 7, 5}));
 	CHECK(survives_the_wire(*m));
 }
 
 TEST(pcells_repeated_cells_are_sent_once_in_first_seen_order)
 {
-	const auto m = make_pcells(std::vector<cb::Vec3>{{1.1, 1.1, 1.1}, {5.5, 5.5, 5.5}, {1.9, 1.9, 1.9}, {5.1, 5.9, 5.2}, {2.5, 1.1, 1.1}});
+	const auto m = make_pcells(std::vector<cb::Vec3>{{1.1, 1.1, 1.1}, {5.5, 5.5, 5.5}, {1.9, 1.9, 1.9}, {5.1, 5.9, 5.2}, {2.5, 1.1, 1.1}}, 0.0);
 	CHECK(m.has_value());
 	CHECK(m->at("c") == json::array({1, 1, -2, 5, 5, -6, 2, 1, -2}));
 }
 
 TEST(pcells_hold_at_most_64_cells_and_drop_the_rest)
 {
-	const auto m = make_pcells(distinct_hits(100));
+	const auto m = make_pcells(distinct_hits(100), 0.0);
 	CHECK(m.has_value() && m->at("c").size() == 192);
 	CHECK(m->at("c")[0] == 0 && m->at("c")[189] == 63); // the first 64 hits are kept
-	CHECK(make_pcells(distinct_hits(64))->at("c").size() == 192);
-	CHECK(make_pcells(distinct_hits(65))->at("c").size() == 192);
-	CHECK(make_pcells(distinct_hits(1))->at("c").size() == 3);
+	CHECK(make_pcells(distinct_hits(64), 0.0)->at("c").size() == 192);
+	CHECK(make_pcells(distinct_hits(65), 0.0)->at("c").size() == 192);
+	CHECK(make_pcells(distinct_hits(1), 0.0)->at("c").size() == 3);
 	// repeats do not use up the 64: 200 hits in three cells are three cells
 	std::vector<cb::Vec3> few;
 	for (int i = 0; i < 200; ++i)
 		few.push_back({i % 3 + 0.5, 0.5, 0.5});
-	CHECK(make_pcells(few)->at("c").size() == 9);
+	CHECK(make_pcells(few, 0.0)->at("c").size() == 9);
 }
 
 TEST(pcells_skip_bad_points_and_are_absent_without_cells)
 {
-	CHECK(!make_pcells(std::vector<cb::Vec3>{}));
-	CHECK(!make_pcells(std::vector<cb::Vec3>{{kNaN, 0, 0}, {0, kInf, 0}, {0, 0, -kInf}, {3e7, 0, 0}, {0, 0, 3e7}, {0, -3e7, 0}}));
-	const auto m = make_pcells(std::vector<cb::Vec3>{{kNaN, 0, 0}, {1.5, 1.5, 1.5}, {1e12, 0, 0}});
+	CHECK(!make_pcells(std::vector<cb::Vec3>{}, 0.0));
+	CHECK(!make_pcells(std::vector<cb::Vec3>{{kNaN, 0, 0}, {0, kInf, 0}, {0, 0, -kInf}, {3e7, 0, 0}, {0, 0, 3e7}, {0, -3e7, 0}}, 0.0));
+	const auto m = make_pcells(std::vector<cb::Vec3>{{kNaN, 0, 0}, {1.5, 1.5, 1.5}, {1e12, 0, 0}}, 0.0);
 	CHECK(m.has_value() && m->at("c") == json::array({1, 1, -2}));
-	CHECK(make_pcells(std::vector<cb::Vec3>{{29999999.5, 0, 0}}).has_value()); // |c| < 3e7
+	CHECK(make_pcells(std::vector<cb::Vec3>{{29999999.5, 0, 0}}, 0.0).has_value()); // |c| < 3e7
 }
 
 // ---- unlead and killed -------------------------------------------------------------------------------------------------
@@ -150,7 +150,7 @@ TEST(killed_reports_the_kind_and_whether_it_was_hostile)
 
 TEST(scaninfo_fills_every_field)
 {
-	const auto m = make_scaninfo(7, true, 18446744073709551615ull, "Officer Test", "NCPD", "high", 0.8, true, {1.0, 2.0, 3.0}, 0.6, 1.8);
+	const auto m = make_scaninfo(7, true, 18446744073709551615ull, "Officer Test", "NCPD", "high", 0.8, true, {1.0, 2.0, 3.0}, 0.6, 1.8, 0.0);
 	CHECK(m.has_value());
 	CHECK(m->at("t") == "scaninfo" && m->at("id") == 7 && m->at("ok") == true);
 	CHECK(m->at("target") == "18446744073709551615" && m->at("name") == "Officer Test" && m->at("faction") == "NCPD");
@@ -202,7 +202,7 @@ TEST(scaninfo_text_is_cut_to_64_bytes_on_a_character_boundary)
 
 TEST(a_failed_scan_is_the_empty_reply)
 {
-	const auto m = make_scaninfo(9, false, 55, "Leftover", "Leftover", "extreme", 0.5, true, {4, 5, 6}, 2.0, 2.0);
+	const auto m = make_scaninfo(9, false, 55, "Leftover", "Leftover", "extreme", 0.5, true, {4, 5, 6}, 2.0, 2.0, 0.0);
 	CHECK(m.has_value() && m->at("ok") == false && m->at("id") == 9);
 	CHECK(m->at("name") == "" && m->at("faction") == "" && m->at("threat") == "none");
 	CHECK(m->at("target") == "0" && approx(m->at("hp"), 0) && m->at("device") == false);
@@ -212,13 +212,13 @@ TEST(a_failed_scan_is_the_empty_reply)
 
 TEST(scaninfo_always_answers_unless_the_id_is_invalid)
 {
-	CHECK(!make_scaninfo(-1, true, 1, "x", "y", "low", 0.5, false, {}, 1, 1));
-	CHECK(make_scaninfo(0, false, 0, "", "", "", 0, false, {}, 0, 0).has_value());
+	CHECK(!make_scaninfo(-1, true, 1, "x", "y", "low", 0.5, false, {}, 1, 1, 0.0));
+	CHECK(make_scaninfo(0, false, 0, "", "", "", 0, false, {}, 0, 0, 0.0).has_value());
 	// a non-finite position or size cannot go on the wire: zeros, but the request is still answered
-	const auto m = make_scaninfo(3, true, 1, "x", "y", "low", 0.5, false, {kNaN, 1, 1}, kInf, kNaN);
+	const auto m = make_scaninfo(3, true, 1, "x", "y", "low", 0.5, false, {kNaN, 1, 1}, kInf, kNaN, 0.0);
 	CHECK(m.has_value() && survives_the_wire(*m));
 	CHECK(approx(m->at("p")[0], 0) && approx(m->at("p")[1], 0) && approx(m->at("size")[0], 0) && approx(m->at("size")[1], 0));
-	CHECK(approx(make_scaninfo(3, true, 1, "x", "y", "low", 0.5, false, {}, -2.0, 1.0)->at("size")[0], 0)); // never negative
+	CHECK(approx(make_scaninfo(3, true, 1, "x", "y", "low", 0.5, false, {}, -2.0, 1.0, 0.0)->at("size")[0], 0)); // never negative
 }
 
 // ---- hackresult --------------------------------------------------------------------------------------------------------
@@ -245,25 +245,25 @@ TEST(hackresult_reason_is_cut_to_64_bytes_and_the_id_must_not_be_negative)
 
 TEST(cam_carries_the_stance_in_cr)
 {
-	const json standing = cb::world::make_cam(41, {1.5, 65.0, -2.5}, {150.0, 12.5}, 58.7, {1.5, 63.4, -2.5}, 140.0, {});
+	const json standing = cb::world::make_cam(41, {1.5, 65.0, -2.5}, {150.0, 12.5}, 58.7, {1.5, 63.4, -2.5}, 140.0, {}, 0);
 	CHECK(standing.at("t") == "cam" && standing.at("f") == 41 && standing.at("fp") == true);
 	CHECK(standing.at("cr") == false && standing.at("cr").is_boolean());
 	CHECK(standing.at("p") == json::array({1.5, 65.0, -2.5}) && standing.at("pl") == json::array({1.5, 63.4, -2.5}));
 	CHECK(standing.at("r") == json::array({150.0, 12.5, 0.0}) && approx(standing.at("fov"), 58.7) && approx(standing.at("h"), 140.0));
-	const json crouching = cb::world::make_cam(42, {}, {}, 70.0, {}, 0.0, {.crouched = true});
+	const json crouching = cb::world::make_cam(42, {}, {}, 70.0, {}, 0.0, {.crouched = true}, 0);
 	CHECK(crouching.at("cr") == true && crouching.at("cr").is_boolean());
 	CHECK(survives_the_wire(standing));
 }
 
 TEST(cam_carries_fly_menu_air_and_held_as_booleans)
 {
-	const json none = cb::world::make_cam(1, {}, {}, 70.0, {}, 0.0, {});
+	const json none = cb::world::make_cam(1, {}, {}, 70.0, {}, 0.0, {}, 0);
 	for (const char *flag : {"cr", "fly", "menu", "air", "held"})
 		CHECK(none.at(flag).is_boolean() && none.at(flag) == false);
-	CHECK(none.size() == 13); // t f p r fov fp pl h + the five flags
+	CHECK(none.size() == 14); // t f p r fov fp pl h + the five flags + lv
 	const auto only = [](cb::world::CamFlags flags, const char *expected)
 	{
-		const json cam = cb::world::make_cam(2, {}, {}, 70.0, {}, 0.0, flags);
+		const json cam = cb::world::make_cam(2, {}, {}, 70.0, {}, 0.0, flags, 0);
 		for (const char *flag : {"cr", "fly", "menu", "air", "held"})
 			if (cam.at(flag) != (std::string(flag) == expected))
 				return false;
@@ -271,9 +271,41 @@ TEST(cam_carries_fly_menu_air_and_held_as_booleans)
 	};
 	CHECK(only({.crouched = true}, "cr") && only({.flying = true}, "fly") && only({.menu = true}, "menu"));
 	CHECK(only({.air = true}, "air") && only({.held = true}, "held"));
-	const json all = cb::world::make_cam(3, {}, {}, 70.0, {}, 0.0, {true, true, true, true, true});
+	const json all = cb::world::make_cam(3, {}, {}, 70.0, {}, 0.0, {true, true, true, true, true}, 0);
 	CHECK(all.at("fly") == true && all.at("menu") == true && all.at("air") == true && all.at("held") == true);
 	CHECK(survives_the_wire(all));
+}
+
+// ---- re-test 2 (plan 2026-10-03-retest2 section 1.1): the ground alignment ---------------------------------------------
+
+TEST(cam_carries_the_alignment_it_was_converted_with_in_lv)
+{
+	CHECK(cb::world::make_cam(1, {}, {}, 70.0, {}, 0.0, {}, 0).at("lv") == 0);
+	const json cam = cb::world::make_cam(2, {1.0, 6.0, -2.0}, {10.0, 5.0}, 70.0, {1.0, 6.016, -2.0}, 0.0, {}, 57);
+	CHECK(cam.at("lv") == 57 && cam.at("lv").is_number_integer());
+	CHECK(cam.at("pl") == json::array({1.0, 6.016, -2.0})); // make_cam does not convert: the camera already did
+	CHECK(survives_the_wire(cam));
+}
+
+TEST(positions_for_minecraft_take_minus_off)
+{
+	const double off = 57.0 / 64.0; // 0.890625
+	// pcells: the cell of y - off
+	CHECK(make_pcells(std::vector<cb::Vec3>{{10.5, 20.2, 64.7}}, off)->at("c") == json::array({10, 63, -21}));
+	CHECK(make_pcells(std::vector<cb::Vec3>{{10.5, 20.2, 64.95}}, off)->at("c") == json::array({10, 64, -21}));
+	// scaninfo.p
+	const auto s = make_scaninfo(7, true, 1, "x", "y", "low", 0.5, false, {1.0, 2.0, 3.0}, 0.6, 1.8, off);
+	CHECK(approx(s->at("p")[0], 1) && approx(s->at("p")[1], 2.109) && approx(s->at("p")[2], -2)); // rounded to mm
+	// dmg.from
+	const auto d = cb::world::make_dmg(0.5, "bullet", {1.0, 2.0, 3.0}, true, off);
+	CHECK(approx(d->at("from")[1], 2.109) && approx(d->at("from")[2], -2));
+	// npcs[].p (the yaw is a direction: unchanged)
+	const std::vector<uint64_t> ids{7};
+	const std::vector<cb::Vec3> feet{{10.0, 20.0, 5.0}};
+	const std::vector<double> yaws{90.0};
+	const std::vector<uint8_t> flags{0};
+	const json n = cb::world::make_npcs(ids, feet, yaws, flags, flags, off)->at("list")[0];
+	CHECK(approx(n.at("p")[0], 10) && approx(n.at("p")[1], 4.109) && approx(n.at("p")[2], -20) && approx(n.at("yaw"), 90));
 }
 
 // ---- look --------------------------------------------------------------------------------------------------------------

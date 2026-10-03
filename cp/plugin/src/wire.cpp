@@ -55,10 +55,16 @@ namespace cb::wire
 		return {v[0], v[1], v[2]};
 	}
 
-	Vec3 cp_triple(const json &m, const char *key)
+	Vec3 cp_triple(const json &m, const char *key, double off)
 	{
 		const Vec3 at = triple(m, key, false);
-		return mc_to_cp_pos(at.x, at.y, at.z);
+		return mc_to_cp_pos(at.x, at.y, at.z, off);
+	}
+
+	Vec3 cp_vector(const json &m, const char *key)
+	{
+		const Vec3 v = triple(m, key, false);
+		return mc_vel_to_cp(v.x, v.y, v.z);
 	}
 
 	uint64_t entity_id(const json &m, const char *key)

@@ -61,18 +61,21 @@ namespace cb::snap
 	inline constexpr size_t kMaxMobs = 12;
 	inline constexpr size_t kMaxProjectiles = 16;
 
+	// The parsers take the ground alignment `off` (plan 2026-10-03-retest2 section 1.1): positions get `+off`, velocities
+	// never do. The production caller (on_minecraft_message) passes the current level_offset; 0.0 is for tests.
+
 	/// {"t":"mobs","list":[{id, kind, p, yaw, w, h, hp, maxHp}]}: at most 12 entries. id is an int >= 0, kind matches
 	/// [a-z0-9_]{1,32}, p is finite with |c| < 3e7, yaw is finite, w and h are 0..16, hp and maxHp 0..2048. A bad entry or
 	/// one past the 12th is dropped and counted; a `list` that is not an array makes the message invalid.
-	ListParse<Mob> parse_mobs(const nlohmann::json &message);
+	ListParse<Mob> parse_mobs(const nlohmann::json &message, double off = 0.0);
 
 	/// {"t":"proj","list":[{id, p, v, g}]}: at most 16 entries. id is an int >= 0, p and v are finite (p with |c| < 3e7, v
 	/// with |v| <= 200 m/s), g is 0..40 m/s^2. Dropping works as in parse_mobs.
-	ListParse<Projectile> parse_proj(const nlohmann::json &message);
+	ListParse<Projectile> parse_proj(const nlohmann::json &message, double off = 0.0);
 
 	/// {"t":"flight","active","p","v","yaw","pitch"}: p is always needed; v, yaw and pitch only while `active` (|v| <= 200
 	/// m/s, yaw and pitch finite; the pitch is clamped to -90..90). nullopt when the message is malformed, with `reason`.
-	std::optional<FlightSample> parse_flight(const nlohmann::json &message, std::string &reason);
+	std::optional<FlightSample> parse_flight(const nlohmann::json &message, std::string &reason, double off = 0.0);
 
 	// ---- the state -------------------------------------------------------------------------------------------------
 

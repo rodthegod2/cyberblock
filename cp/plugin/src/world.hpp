@@ -3,7 +3,11 @@
 // `perkfx`) is validated, converted to Cyberpunk space and queued for redscript, and the messages for Minecraft are built
 // from what redscript submits. natives.cpp is the thin game-facing layer over this.
 // Wire formats: shared/protocol.md; plans: docs/superpowers/plans/2026-10-02-layer2-world-interaction.md section 1 and
-// docs/superpowers/plans/2026-10-03-layers3-6-complete-mod.md sections 1.2, 1.3 and 1.5.
+// docs/superpowers/plans/2026-10-03-layers3-6-complete-mod.md sections 1.2, 1.3 and 1.5, and
+// docs/superpowers/plans/2026-10-03-retest2-and-cyberware.md sections 1.1-1.3.
+//
+// Ground alignment (retest2 section 1.1): Minecraft owns k (0..63) and sends it as `align`; positions convert with
+// off = k / 64 m both ways (Minecraft y = Cyberpunk z - off). Every position conversion below takes `off` explicitly.
 #pragma once
 #include "cbmath.hpp"
 #include <array>
@@ -97,8 +101,10 @@ namespace cb::world
 	/// layers 3-6 limits of plan section 1.2: lead length 1..32, pull/knock strength 0..50, knock radius 0..16, effect
 	/// seconds 0..86400 and amplifier 0..255, perkfx seconds 0..30, at most 64 block cells per `blocks`, hack names and
 	/// perk ids from the lists above, effect names [a-z_]{1,32}. `hit` without `impulse` gets a zero impulse, and `hit`
-	/// without `mob` the mob id -1. Never throws.
-	Parsed parse_event(const nlohmann::json &message);
+	/// without `mob` the mob id -1. Positions (block AABBs, explosion, teleport, lead anchor, pull toward, knock centre)
+	/// get `+off`; the hit impulse does not. The production caller passes the current level_offset; the 0.0 default is
+	/// for tests. Never throws.
+	Parsed parse_event(const nlohmann::json &message, double off = 0.0);
 
 	struct QueueStats
 	{
@@ -156,9 +162,22 @@ namespace cb::world
 		return *instance;
 	}
 
+	// ---- the ground alignment (plan 2026-10-03-retest2 section 1.1) ----
+
+	/// k is a whole number of 1/64 m steps.
+	inline constexpr int kLevelSteps = 64;
+	/// The alignment k of the attached world: 0..63, from Minecraft's last `align`; 0 before any and after every `hello`.
+	int level_k();
+	/// off = k / 64 m, exact in float32, double and JSON.
+	inline double level_offset(int k)
+	{
+		return k / 64.0;
+	}
+
 	/// The link's observer (runs on the link thread for every message from Minecraft): queues the events of the valid
-	/// messages in events(), counts and logs invalid ones (the first 10 only: a misbehaving peer must not fill the log)
-	/// and forgets the old session's events on each `hello`.
+	/// messages in events() (converted with the current alignment), counts and logs invalid ones (the first 10 only: a
+	/// misbehaving peer must not fill the log), forgets the old session's events and resets k to 0 on each `hello`, and
+	/// takes k from `align` (an integer 0..63; a bad one is counted and the old k kept; a change is logged).
 	void on_minecraft_message(const nlohmann::json &message);
 	/// Counts `count` invalid messages or list entries (events().stats().rejected) and logs `reason` for the first 10 only.
 	void note_invalid(size_t count, const std::string &reason);
@@ -173,15 +192,15 @@ namespace cb::world
 	double cp_yaw_to_mc_yaw(double cpYaw);
 
 	/// {"t":"dmg","frac","kind","from"}: `frac` (fraction of V's max health) is clamped to 0..4; `from` (Cyberpunk
-	/// space, sent in Minecraft space) is null unless `hasFrom` and finite. nullopt when `frac` is not finite.
-	std::optional<nlohmann::json> make_dmg(double frac, std::string_view kind, Vec3 fromCp, bool hasFrom);
+	/// space, sent in Minecraft space with `-off`) is null unless `hasFrom` and finite. nullopt when `frac` is not finite.
+	std::optional<nlohmann::json> make_dmg(double frac, std::string_view kind, Vec3 fromCp, bool hasFrom, double off);
 
 	/// {"t":"npcs","list":[{"id","p","yaw","kind","hostile"}]} from the arrays redscript submits: Cyberpunk feet
-	/// positions and yaws, converted to Minecraft. nullopt unless all five arrays have the same length. An entry with a
-	/// non-finite position or yaw is left out.
+	/// positions (`-off`) and yaws, converted to Minecraft. nullopt unless all five arrays have the same length. An entry
+	/// with a non-finite position or yaw is left out.
 	std::optional<nlohmann::json> make_npcs(std::span<const uint64_t> ids, std::span<const Vec3> feetCp,
 											std::span<const double> yawsCp, std::span<const uint8_t> vehicles,
-											std::span<const uint8_t> hostile);
+											std::span<const uint8_t> hostile, double off);
 
 	// ---- layers 3-6 (plan 2026-10-03 section 1.2) ----
 
@@ -196,16 +215,18 @@ namespace cb::world
 	struct CamFlags
 	{
 		bool crouched = false; // `cr`: V is crouched
-		bool flying = false;   // `fly`: V follows Steve's glide (Cyberblock_SetFlightFollowing)
+		bool flying = false;   // `fly`: the DLL drive moves V after Steve's glide or launch (natives::flightFollowing)
 		bool menu = false;     // `menu`: a Cyberpunk menu is open
 		bool air = false;      // `air`: V is in the air (jump, fall, double jump, air dash, ...)
 		bool held = false;     // `held`: V is in a vehicle or held by a scene, workspot, braindance or moving elevator
 	};
 
 	/// {"t":"cam",...}: the camera and V, every Cyberpunk frame while active (Minecraft convention, so `position`, `feet`
-	/// and `look` are already converted). `r` is [yaw, pitch, 0]; `cr`, `fly`, `menu`, `air` and `held` are `flags`.
-	/// Numbers are not rounded.
-	nlohmann::json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, CamFlags flags);
+	/// and `look` are already converted, the positions with the offset of `levelK`). `r` is [yaw, pitch, 0]; `cr`, `fly`,
+	/// `menu`, `air` and `held` are `flags`; `lv` is `levelK`, the alignment the positions were converted with. Numbers
+	/// are not rounded.
+	nlohmann::json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, CamFlags flags,
+							int levelK);
 
 	/// {"t":"look","d":[dyaw,dpitch]}: raw mouse movement as Minecraft look deltas in degrees (right and down are positive).
 	nlohmann::json make_look(double dyaw, double dpitch);
@@ -215,21 +236,23 @@ namespace cb::world
 	/// is negative or `frac` is not finite.
 	std::optional<nlohmann::json> make_mobdmg(int32_t id, double frac, uint64_t by, bool hasBy);
 
-	/// {"t":"pcells","c":[x,y,z, ...]}: the Minecraft block cells (`floor` per axis, after converting from Cyberpunk space)
-	/// of Night City surface points hit by predicted projectiles. Points with a non-finite or out-of-range coordinate are
-	/// skipped, repeated cells are sent once, and past 64 cells the rest is dropped. nullopt when no cell is left.
-	std::optional<nlohmann::json> make_pcells(std::span<const Vec3> hitsCp);
+	/// {"t":"pcells","c":[x,y,z, ...]}: the Minecraft block cells (`floor` per axis, after converting from Cyberpunk space
+	/// with `-off`) of Night City surface points hit by predicted projectiles. Points with a non-finite or out-of-range
+	/// coordinate are skipped, repeated cells are sent once, and past 64 cells the rest is dropped. nullopt when no cell
+	/// is left.
+	std::optional<nlohmann::json> make_pcells(std::span<const Vec3> hitsCp, double off);
 
 	/// {"t":"unlead","target":"<id>"}: Cyberpunk gave up the tether on `target`.
 	nlohmann::json make_unlead(uint64_t target);
 
 	/// {"t":"scaninfo",...}: the reply to a `scan`. `name` and `faction` are cut to 64 UTF-8 bytes on a character
 	/// boundary, `threat` is one of kThreatLevels (else "none"), `hp` is clamped to 0..1, `feetCp` (Cyberpunk space) is
-	/// sent in Minecraft space and `width` x `height` as `size`. A non-finite number is sent as 0. `ok` false sends the
-	/// empty reply (empty strings, threat "none", hp 0, no target, no device, zeros). nullopt when `id` is negative.
+	/// sent in Minecraft space (`-off`) and `width` x `height` as `size`. A non-finite number is sent as 0. `ok` false
+	/// sends the empty reply (empty strings, threat "none", hp 0, no target, no device, zeros). nullopt when `id` is
+	/// negative.
 	std::optional<nlohmann::json> make_scaninfo(int32_t id, bool ok, uint64_t target, std::string_view name,
 												std::string_view faction, std::string_view threat, double hp, bool device,
-												Vec3 feetCp, double width, double height);
+												Vec3 feetCp, double width, double height, double off);
 
 	/// {"t":"hackresult","id","ok","reason"}: the reply to a `hack`; `reason` is cut to 64 UTF-8 bytes and is "" when `ok`.
 	/// nullopt when `id` is negative.

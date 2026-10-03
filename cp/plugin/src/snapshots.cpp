@@ -38,12 +38,12 @@ namespace
 		return mc_vel_to_cp(v.x, v.y, v.z);
 	}
 
-	snap::Mob parse_mob(const json &entry)
+	snap::Mob parse_mob(const json &entry, double off)
 	{
 		snap::Mob mob;
 		mob.id = wire::integer(entry, "id", 0.0, kMaxId);
 		mob.kind = wire::word(entry, "kind", kMaxKindLength, true);
-		mob.feet = wire::cp_triple(entry, "p");
+		mob.feet = wire::cp_triple(entry, "p", off);
 		mob.yaw = mc_yaw_to_cp_yaw(wire::number(entry, "yaw", -wire::kMaxCoord, wire::kMaxCoord));
 		mob.width = wire::number(entry, "w", 0.0, kMaxMobSize);
 		mob.height = wire::number(entry, "h", 0.0, kMaxMobSize);
@@ -52,11 +52,11 @@ namespace
 		return mob;
 	}
 
-	snap::Projectile parse_projectile(const json &entry)
+	snap::Projectile parse_projectile(const json &entry, double off)
 	{
 		snap::Projectile p;
 		p.id = wire::integer(entry, "id", 0.0, kMaxId);
-		p.pos = wire::cp_triple(entry, "p");
+		p.pos = wire::cp_triple(entry, "p", off);
 		p.velocity = velocity(entry, "v");
 		p.gravity = wire::number(entry, "g", 0.0, kMaxGravity);
 		return p;
@@ -109,17 +109,18 @@ namespace
 
 namespace cb::snap
 {
-	ListParse<Mob> parse_mobs(const json &message)
+	ListParse<Mob> parse_mobs(const json &message, double off)
 	{
-		return parse_list<Mob>(message, "mobs", kMaxMobs, parse_mob);
+		return parse_list<Mob>(message, "mobs", kMaxMobs, [off](const json &entry) { return parse_mob(entry, off); });
 	}
 
-	ListParse<Projectile> parse_proj(const json &message)
+	ListParse<Projectile> parse_proj(const json &message, double off)
 	{
-		return parse_list<Projectile>(message, "proj", kMaxProjectiles, parse_projectile);
+		return parse_list<Projectile>(message, "proj", kMaxProjectiles,
+									  [off](const json &entry) { return parse_projectile(entry, off); });
 	}
 
-	std::optional<FlightSample> parse_flight(const json &message, std::string &reason)
+	std::optional<FlightSample> parse_flight(const json &message, std::string &reason, double off)
 	{
 		try
 		{
@@ -128,7 +129,7 @@ namespace cb::snap
 			if (active == message.end() || !active->is_boolean())
 				throw Bad{"active is missing or not a bool"};
 			s.active = active->get<bool>();
-			s.pos = wire::cp_triple(message, "p");
+			s.pos = wire::cp_triple(message, "p", off);
 			// the touchdown message only needs the landing spot; what it carries must still be valid
 			if (s.active || message.contains("v"))
 				s.velocity = velocity(message, "v");
@@ -255,6 +256,8 @@ namespace cb::snap
 			return;
 		const std::string &t = type->get_ref<const std::string &>();
 		const Clock::time_point now = Clock::now();
+		// world::on_minecraft_message runs first (main.cpp), so an `align` already applies to the messages after it
+		const double off = world::level_offset(world::level_k());
 		if (t == "hello")
 		{
 			// a new Minecraft session: what the old one showed is stale
@@ -265,20 +268,20 @@ namespace cb::snap
 		}
 		else if (t == "mobs")
 		{
-			ListParse<Mob> parsed = parse_mobs(message);
+			ListParse<Mob> parsed = parse_mobs(message, off);
 			if (accept(parsed))
 				mobs().set(std::move(parsed.items), now);
 		}
 		else if (t == "proj")
 		{
-			ListParse<Projectile> parsed = parse_proj(message);
+			ListParse<Projectile> parsed = parse_proj(message, off);
 			if (accept(parsed))
 				projectiles().set(std::move(parsed.items), now);
 		}
 		else if (t == "flight")
 		{
 			std::string reason;
-			if (const std::optional<FlightSample> sample = parse_flight(message, reason))
+			if (const std::optional<FlightSample> sample = parse_flight(message, reason, off))
 			{
 				flight().update(*sample, now);
 				if (!sample->active)

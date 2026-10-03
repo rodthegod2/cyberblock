@@ -31,9 +31,16 @@ namespace
 		bool active = false;
 		bool vehicle = false;
 		int session = 0; // the link session the state below was sent to
+		int levelK = 0;  // the ground alignment `probes` was built with (plan retest2 section 1.1)
 		cb::ProbeSet probes;
 		std::optional<cb::Vec3> lastCenter;
 	};
+
+	/// The current ground alignment as an offset in metres (Minecraft y = Cyberpunk z - off).
+	double level_offset()
+	{
+		return cb::world::level_offset(cb::world::level_k());
+	}
 	std::mutex g_lock;
 	Mashup g_mashup;
 
@@ -190,6 +197,14 @@ namespace
 			send_state();
 			restart_ground();
 		}
+		// Minecraft re-aligned the ground (`align`): every range already sent sits at the old height, so start over
+		const int levelK = cb::world::level_k();
+		if (levelK != g_mashup.levelK)
+		{
+			cb::log::info("ground: alignment k %d -> %d, Minecraft gets the ground again", g_mashup.levelK, levelK);
+			g_mashup.levelK = levelK;
+			restart_ground();
+		}
 		const cb::Vec3 feet{center.X, center.Y, center.Z};
 		// the link's queue had to drop ground messages while Minecraft was not reading: its ground starts over
 		const bool groundLost = cb::link().take_ground_lost();
@@ -198,7 +213,8 @@ namespace
 			restart_ground();
 		g_mashup.lastCenter = feet;
 
-		const cb::Delta delta = g_mashup.probes.submit(feet, to_vec3(downHits), to_vec3(wallHits), radius);
+		const cb::Delta delta =
+			g_mashup.probes.submit(feet, to_vec3(downHits), to_vec3(wallHits), radius, cb::world::level_offset(levelK));
 		if (!delta.remove.empty())
 			cb::link().send({{"t", "unground"}, {"c", delta.remove}});
 		if (!delta.add.empty())
@@ -239,7 +255,8 @@ namespace
 
 		if (!cb::natives::active)
 			return;
-		const auto message = cb::world::make_dmg(frac, known_name(kind, cb::world::kDamageKinds), {from.X, from.Y, from.Z}, hasFrom);
+		const auto message =
+			cb::world::make_dmg(frac, known_name(kind, cb::world::kDamageKinds), {from.X, from.Y, from.Z}, hasFrom, level_offset());
 		if (message)
 			cb::link().send(*message);
 		else
@@ -274,7 +291,7 @@ namespace
 		const std::vector<double> yawList = to_vector<double>(yaws);
 		const std::vector<uint8_t> vehicleList = to_vector<uint8_t>(vehicles);
 		const std::vector<uint8_t> hostileList = to_vector<uint8_t>(hostile);
-		const auto message = cb::world::make_npcs(idList, feetList, yawList, vehicleList, hostileList);
+		const auto message = cb::world::make_npcs(idList, feetList, yawList, vehicleList, hostileList, level_offset());
 		if (message)
 			cb::link().send(*message);
 		else
@@ -561,7 +578,7 @@ namespace
 		if (!cb::natives::active)
 			return;
 		const std::vector<cb::Vec3> points = to_vec3(hits);
-		if (const auto message = cb::world::make_pcells(points))
+		if (const auto message = cb::world::make_pcells(points, level_offset()))
 			cb::link().send(*message);
 	}
 
@@ -604,7 +621,7 @@ namespace
 		static bool warned = false;
 		send_or_warn(cb::world::make_scaninfo(id, ok, target, name.c_str(), faction.c_str(),
 											  known_name(threat, cb::world::kThreatLevels), hp, device, {pos.X, pos.Y, pos.Z},
-											  size.X, size.Y),
+											  size.X, size.Y, level_offset()),
 					 warned, "Cyberblock_ScanResult", "the request id is negative");
 	}
 

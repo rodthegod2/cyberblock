@@ -563,3 +563,35 @@ TEST(a_hello_empties_mobs_and_projectiles)
 	on_minecraft_message(json::parse(R"({"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3"})"));
 	CHECK(mobs().snapshot(Clock::now()) == 0 && projectiles().snapshot(Clock::now()) == 0);
 }
+
+// ---- re-test 2 (plan 2026-10-03-retest2 section 1.1): positions take the ground alignment, velocities do not -------------
+
+TEST(snapshot_positions_take_plus_off_and_velocities_do_not)
+{
+	constexpr double off = 57.0 / 64.0; // 0.890625
+	const ListParse<Mob> mobsAt = parse_mobs(mobs_message({mob_entry()}), off);
+	CHECK(approx(mobsAt.items.at(0).feet, 10, 20, 64.890625) && approx(mobsAt.items[0].yaw, 180));
+	const ListParse<Projectile> projAt = parse_proj(json{{"t", "proj"}, {"list", json::array({proj_entry()})}}, off);
+	CHECK(approx(projAt.items.at(0).pos, 1, 2, 70.890625) && approx(projAt.items[0].velocity, 3, -5, 4));
+	std::string reason;
+	const auto s = parse_flight(flight_message(true), reason, off);
+	CHECK(s && approx(s->pos, 10, 20, 100.890625) && approx(s->velocity, 3, -4, -1) && approx(s->yaw, 180) && approx(s->pitch, 30));
+	const auto land = parse_flight(json::parse(R"({"t":"flight","active":false,"p":[1,64,-2]})"), reason, off);
+	CHECK(land && approx(land->pos, 1, 2, 64.890625)); // the landing spot too
+}
+
+TEST(the_observer_converts_snapshots_with_the_current_alignment)
+{
+	on_link_dropped();
+	cb::world::on_minecraft_message(json::parse(R"({"t":"align","k":57})")); // main.cpp: world first, then snap
+	on_minecraft_message(json::parse(R"({"t":"align","k":57})"));
+	on_minecraft_message(mobs_message({mob_entry()}));
+	CHECK(mobs().snapshot(Clock::now()) == 1 && approx(mobs().at(0)->feet, 10, 20, 64.890625));
+	on_minecraft_message(json::parse(R"({"t":"flight","active":false,"p":[1,64,-2]})"));
+	CHECK(approx(flight().pos(Clock::now()), 1, 2, 64.890625));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3"})"));
+	on_minecraft_message(json::parse(R"({"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3"})"));
+	on_minecraft_message(mobs_message({mob_entry()}));
+	CHECK(mobs().snapshot(Clock::now()) == 1 && approx(mobs().at(0)->feet, 10, 20, 64));
+	on_link_dropped();
+}

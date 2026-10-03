@@ -26,10 +26,10 @@ namespace cb
 		return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 	}
 
-	Delta ProbeSet::submit(Vec3 cpCenter, std::span<const Vec3> down, std::span<const Vec3> wall, double radius,
+	Delta ProbeSet::submit(Vec3 cpCenter, std::span<const Vec3> down, std::span<const Vec3> wall, double radius, double off,
 						   double now)
 	{
-		const Vec3 center = cp_to_mc_pos(cpCenter.x, cpCenter.y, cpCenter.z);
+		const Vec3 center = cp_to_mc_pos(cpCenter.x, cpCenter.y, cpCenter.z, off);
 		const auto in_radius = [&](int x, int z) {
 			const double dx = x + 0.5 - center.x, dz = z + 0.5 - center.z;
 			return dx * dx + dz * dz <= radius * radius;
@@ -57,9 +57,9 @@ namespace cb
 				it->second = now;
 		};
 		for (const Vec3 &h : down)
-			hit(down_hit_to_range(h.x, h.y, h.z));
+			hit(down_hit_to_range(h.x, h.y, h.z, off));
 		for (const Vec3 &h : wall)
-			hit(wall_hit_to_range(h.x, h.y, h.z));
+			hit(wall_hit_to_range(h.x, h.y, h.z, off));
 
 		for (auto it = m_ranges.begin(); it != m_ranges.end();)
 		{

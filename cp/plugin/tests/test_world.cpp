@@ -435,7 +435,7 @@ TEST(observer_forgets_the_old_session_on_hello)
 
 TEST(dmg_message_converts_from_to_minecraft)
 {
-	const auto m = cb::world::make_dmg(0.25, "bullet", {1.0, 2.0, 3.0}, true);
+	const auto m = cb::world::make_dmg(0.25, "bullet", {1.0, 2.0, 3.0}, true, 0.0);
 	CHECK(m.has_value());
 	CHECK(m->at("t") == "dmg" && m->at("kind") == "bullet");
 	CHECK(approx(m->at("frac"), 0.25));
@@ -445,35 +445,35 @@ TEST(dmg_message_converts_from_to_minecraft)
 
 TEST(dmg_from_is_null_without_a_source_or_with_a_bad_one)
 {
-	CHECK(cb::world::make_dmg(1.0, "melee", {1, 2, 3}, false)->at("from").is_null());
-	CHECK(cb::world::make_dmg(1.0, "melee", {kNaN, 2, 3}, true)->at("from").is_null());
-	CHECK(cb::world::make_dmg(1.0, "melee", {1, kInf, 3}, true)->at("from").is_null());
+	CHECK(cb::world::make_dmg(1.0, "melee", {1, 2, 3}, false, 0.0)->at("from").is_null());
+	CHECK(cb::world::make_dmg(1.0, "melee", {kNaN, 2, 3}, true, 0.0)->at("from").is_null());
+	CHECK(cb::world::make_dmg(1.0, "melee", {1, kInf, 3}, true, 0.0)->at("from").is_null());
 }
 
 TEST(dmg_frac_is_clamped_to_0_4_and_must_be_finite)
 {
-	CHECK(approx(cb::world::make_dmg(7.5, "fall", {}, false)->at("frac"), 4));
-	CHECK(approx(cb::world::make_dmg(4.0, "fall", {}, false)->at("frac"), 4));
-	CHECK(approx(cb::world::make_dmg(-1.0, "fall", {}, false)->at("frac"), 0));
-	CHECK(approx(cb::world::make_dmg(0.0, "fall", {}, false)->at("frac"), 0));
-	CHECK(!cb::world::make_dmg(kNaN, "fall", {}, false));
-	CHECK(!cb::world::make_dmg(kInf, "fall", {}, false));
-	CHECK(!cb::world::make_dmg(-kInf, "fall", {}, false));
+	CHECK(approx(cb::world::make_dmg(7.5, "fall", {}, false, 0.0)->at("frac"), 4));
+	CHECK(approx(cb::world::make_dmg(4.0, "fall", {}, false, 0.0)->at("frac"), 4));
+	CHECK(approx(cb::world::make_dmg(-1.0, "fall", {}, false, 0.0)->at("frac"), 0));
+	CHECK(approx(cb::world::make_dmg(0.0, "fall", {}, false, 0.0)->at("frac"), 0));
+	CHECK(!cb::world::make_dmg(kNaN, "fall", {}, false, 0.0));
+	CHECK(!cb::world::make_dmg(kInf, "fall", {}, false, 0.0));
+	CHECK(!cb::world::make_dmg(-kInf, "fall", {}, false, 0.0));
 }
 
 TEST(dmg_kind_is_one_of_the_known_seven_else_other)
 {
 	for (const char *kind : cb::world::kDamageKinds)
-		CHECK(cb::world::make_dmg(0.5, kind, {}, false)->at("kind") == kind);
-	CHECK(cb::world::make_dmg(0.5, "", {}, false)->at("kind") == "other");
-	CHECK(cb::world::make_dmg(0.5, "Bullet", {}, false)->at("kind") == "other"); // case matters
-	CHECK(cb::world::make_dmg(0.5, "laser", {}, false)->at("kind") == "other");
+		CHECK(cb::world::make_dmg(0.5, kind, {}, false, 0.0)->at("kind") == kind);
+	CHECK(cb::world::make_dmg(0.5, "", {}, false, 0.0)->at("kind") == "other");
+	CHECK(cb::world::make_dmg(0.5, "Bullet", {}, false, 0.0)->at("kind") == "other"); // case matters
+	CHECK(cb::world::make_dmg(0.5, "laser", {}, false, 0.0)->at("kind") == "other");
 }
 
 TEST(dmg_message_is_valid_json_text)
 {
 	// what actually goes on the wire: no NaN or null where a number belongs
-	const std::string text = cb::world::make_dmg(0.1, "bullet", {0.1, 0.2, 0.3}, true)->dump();
+	const std::string text = cb::world::make_dmg(0.1, "bullet", {0.1, 0.2, 0.3}, true, 0.0)->dump();
 	const json back = json::parse(text);
 	CHECK(back.at("frac").is_number() && back.at("from")[0].is_number());
 }
@@ -487,7 +487,7 @@ TEST(npcs_message_converts_positions_ids_and_yaw)
 	const std::vector<double> yaws{90.0, 0.0};
 	const std::vector<uint8_t> vehicles{0, 1};
 	const std::vector<uint8_t> hostile{1, 0};
-	const auto m = cb::world::make_npcs(ids, feet, yaws, vehicles, hostile);
+	const auto m = cb::world::make_npcs(ids, feet, yaws, vehicles, hostile, 0.0);
 	CHECK(m.has_value());
 	CHECK(m->at("t") == "npcs");
 	const json &list = m->at("list");
@@ -504,7 +504,7 @@ TEST(npcs_message_converts_positions_ids_and_yaw)
 
 TEST(npcs_empty_list_is_still_sent_so_proxies_despawn)
 {
-	const auto m = cb::world::make_npcs({}, {}, {}, {}, {});
+	const auto m = cb::world::make_npcs({}, {}, {}, {}, {}, 0.0);
 	CHECK(m.has_value());
 	CHECK(m->at("list").is_array() && m->at("list").empty());
 }
@@ -515,16 +515,16 @@ TEST(npcs_arrays_of_different_length_are_dropped)
 	const std::vector<cb::Vec3> feet{{0, 0, 0}, {1, 1, 1}};
 	const std::vector<double> yaws{0, 0};
 	const std::vector<uint8_t> flags{0, 0};
-	CHECK(cb::world::make_npcs(ids, feet, yaws, flags, flags).has_value());
+	CHECK(cb::world::make_npcs(ids, feet, yaws, flags, flags, 0.0).has_value());
 	const std::vector<uint64_t> oneId{1};
 	const std::vector<cb::Vec3> oneFoot{{0, 0, 0}};
 	const std::vector<double> oneYaw{0};
 	const std::vector<uint8_t> oneFlag{0};
-	CHECK(!cb::world::make_npcs(oneId, feet, yaws, flags, flags));
-	CHECK(!cb::world::make_npcs(ids, oneFoot, yaws, flags, flags));
-	CHECK(!cb::world::make_npcs(ids, feet, oneYaw, flags, flags));
-	CHECK(!cb::world::make_npcs(ids, feet, yaws, oneFlag, flags));
-	CHECK(!cb::world::make_npcs(ids, feet, yaws, flags, oneFlag));
+	CHECK(!cb::world::make_npcs(oneId, feet, yaws, flags, flags, 0.0));
+	CHECK(!cb::world::make_npcs(ids, oneFoot, yaws, flags, flags, 0.0));
+	CHECK(!cb::world::make_npcs(ids, feet, oneYaw, flags, flags, 0.0));
+	CHECK(!cb::world::make_npcs(ids, feet, yaws, oneFlag, flags, 0.0));
+	CHECK(!cb::world::make_npcs(ids, feet, yaws, flags, oneFlag, 0.0));
 }
 
 TEST(npcs_entries_with_non_finite_numbers_are_left_out)
@@ -533,9 +533,9 @@ TEST(npcs_entries_with_non_finite_numbers_are_left_out)
 	const std::vector<cb::Vec3> feet{{0, 0, 0}, {kNaN, 0, 0}, {5, 6, 7}};
 	const std::vector<double> yaws{0, 0, kInf};
 	const std::vector<uint8_t> flags{0, 0, 0};
-	const json list = cb::world::make_npcs(ids, feet, yaws, flags, flags)->at("list");
+	const json list = cb::world::make_npcs(ids, feet, yaws, flags, flags, 0.0)->at("list");
 	CHECK(list.size() == 1 && list[0].at("id") == "1");
-	CHECK(json::parse(cb::world::make_npcs(ids, feet, yaws, flags, flags)->dump()).at("list").size() == 1);
+	CHECK(json::parse(cb::world::make_npcs(ids, feet, yaws, flags, flags, 0.0)->dump()).at("list").size() == 1);
 }
 
 TEST(cp_yaw_to_mc_yaw_agrees_with_the_quaternion_conversion)
@@ -555,4 +555,82 @@ TEST(cp_yaw_to_mc_yaw_agrees_with_the_quaternion_conversion)
 	CHECK(approx(cb::world::cp_yaw_to_mc_yaw(90), 90));
 	CHECK(approx(cb::world::cp_yaw_to_mc_yaw(180), 0));
 	CHECK(approx(cb::world::cp_yaw_to_mc_yaw(-90), -90));
+}
+
+// ---- re-test 2 (plan 2026-10-03-retest2 sections 1.1 and 1.2): the ground alignment -------------------------------------
+
+namespace
+{
+	constexpr double kOff57 = 57.0 / 64.0; // 0.890625
+
+	cb::world::Parsed parse_at(const char *text, double off)
+	{
+		return cb::world::parse_event(json::parse(text), off);
+	}
+}
+
+TEST(block_events_sit_at_by_plus_off)
+{
+	const auto p = parse_at(R"({"t":"block","op":"add","pos":[10,4,-21]})", kOff57);
+	CHECK(approx(p.events.at(0).pos, 10, 20, 4.890625));
+	const auto b = parse_at(R"({"t":"blocks","reset":true,"c":[10,4,-21, 0,70,0]})", kOff57);
+	CHECK(b.events.size() == 3 && approx(b.events[1].pos, 10, 20, 4.890625) && approx(b.events[2].pos, 0, -1, 70.890625));
+	CHECK(approx(parse(R"({"t":"block","op":"add","pos":[10,4,-21]})").events.at(0).pos, 10, 20, 4)); // the test default is k 0
+}
+
+TEST(event_positions_take_plus_off_and_the_impulse_does_not)
+{
+	CHECK(approx(parse_at(R"({"t":"explosion","pos":[1.5,3,-2],"power":4})", kOff57).events.at(0).pos, 1.5, 2, 3.890625));
+	CHECK(approx(parse_at(R"({"t":"teleport","p":[10.5,64,-20.25],"yaw":0})", kOff57).events.at(0).pos, 10.5, 20.25, 64.890625));
+	CHECK(approx(parse_at(R"({"t":"lead","target":"5","anchor":[1,2,3],"length":8})", kOff57).events.at(0).pos, 1, -3, 2.890625));
+	CHECK(approx(parse_at(R"({"t":"pull","target":"5","toward":[4,70,-9],"strength":1})", kOff57).events.at(0).pos, 4, 9, 70.890625));
+	CHECK(approx(parse_at(R"({"t":"knock","pos":[1.5,3,-2],"radius":6,"strength":9})", kOff57).events.at(0).pos, 1.5, 2, 3.890625));
+	const auto hit = parse_at(R"({"t":"hit","target":"9","dmg":10,"impulse":[1,2,3]})", kOff57);
+	CHECK(approx(hit.events.at(0).vector, 1, -3, 2)); // a velocity: never offset
+	CHECK(approx(parse_at(R"({"t":"teleport","p":[0,0,0],"yaw":90})", kOff57).events.at(0).amount, 90)); // nor a yaw
+}
+
+TEST(align_sets_k_and_a_hello_resets_it)
+{
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3"})"));
+	CHECK(cb::world::level_k() == 0);
+	cb::world::on_minecraft_message(json::parse(R"({"t":"align","k":57})"));
+	CHECK(cb::world::level_k() == 57 && cb::world::level_offset(cb::world::level_k()) == 0.890625);
+	cb::world::on_minecraft_message(json::parse(R"({"t":"align","k":63.0})")); // a whole number written as a float
+	CHECK(cb::world::level_k() == 63);
+	cb::world::on_minecraft_message(json::parse(R"({"t":"align","k":0})"));
+	CHECK(cb::world::level_k() == 0);
+	cb::world::on_minecraft_message(json::parse(R"({"t":"align","k":12})"));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3"})"));
+	CHECK(cb::world::level_k() == 0); // a new Minecraft session sends its own align
+}
+
+TEST(a_bad_align_is_counted_and_keeps_the_old_k)
+{
+	cb::world::on_minecraft_message(json::parse(R"({"t":"align","k":32})"));
+	const uint64_t before = cb::world::events().stats().rejected;
+	for (const char *text : {R"({"t":"align","k":64})", R"({"t":"align","k":-1})", R"({"t":"align","k":1.5})",
+							 R"({"t":"align","k":"5"})", R"({"t":"align"})", R"({"t":"align","k":null})"})
+		cb::world::on_minecraft_message(json::parse(text));
+	CHECK(cb::world::events().stats().rejected == before + 6);
+	CHECK(cb::world::level_k() == 32);
+	json nan_k = {{"t", "align"}, {"k", kNaN}};
+	cb::world::on_minecraft_message(nan_k);
+	CHECK(cb::world::level_k() == 32);
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3"})"));
+}
+
+TEST(the_observer_converts_with_the_current_alignment)
+{
+	cb::world::EventQueue &q = cb::world::events();
+	q.clear();
+	q.set_active(false);
+	cb::world::on_minecraft_message(json::parse(R"({"t":"align","k":57})"));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"block","op":"add","pos":[0,70,0]})"));
+	CHECK(q.next() == EventKind::BlockAdd && approx(q.current().pos, 0, -1, 70.890625));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3"})"));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"block","op":"add","pos":[0,70,0]})"));
+	CHECK(q.next() == EventKind::BlockAdd && approx(q.current().pos, 0, -1, 70));
+	CHECK(cb::world::parse_event(json::parse(R"({"t":"align","k":5})")).status == Status::Ignored); // not an event
+	q.clear();
 }
