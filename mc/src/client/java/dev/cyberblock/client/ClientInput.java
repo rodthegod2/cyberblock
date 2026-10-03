@@ -47,11 +47,17 @@ final class ClientInput {
 			return;
 		}
 
-		// KeyEvent is (scancode, keycode, modifiers) as SDL reports them: the mapping holds the scancode. Passing it as the keycode too
-		// would make the default swap key (scancode 9) look like Tab (keycode 9) to the screen's focus navigation.
-		int scancode = bound.getValue();
+		keyPressed(screen, bound.getValue(), 0);
+	}
+
+	/**
+	 * A key press for the open screen as KeyboardHandler gives it: afterKeyboardAction, then keyPressed. KeyEvent is (scancode,
+	 * keycode, modifiers) as SDL reports them; passing the scancode as the keycode too would make the default swap key (scancode 9)
+	 * look like Tab (keycode 9) to the screen's focus navigation.
+	 */
+	private static void keyPressed(final Screen screen, final int scancode, final int mods) {
 		screen.afterKeyboardAction();
-		screen.keyPressed(new KeyEvent(scancode, SDLKeyboard.SDL_GetKeyFromScancode(scancode, (short)0, false), 0));
+		screen.keyPressed(new KeyEvent(scancode, SDLKeyboard.SDL_GetKeyFromScancode(scancode, (short)0, false), mods));
 	}
 
 	static void handle(final Minecraft minecraft, final JsonObject m) {
@@ -61,8 +67,10 @@ final class ClientInput {
 				String k = m.get("k").getAsString();
 				boolean down = !m.has("down") || m.get("down").getAsBoolean();
 				if (k.equals("escape")) {
-					if (down && minecraft.gui.screen() != null) {
-						minecraft.gui.screen().onClose();
+					// the screen's own Esc handling: it closes only when shouldCloseOnEsc (the death screen stays), chat drops its draft
+					Screen screen = minecraft.gui.screen();
+					if (down && screen != null) {
+						keyPressed(screen, InputConstants.KEY_ESCAPE, 0);
 					}
 
 					return;
