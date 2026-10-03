@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "equipment",
+	"ingredients": [
+		"minecraft:redstone",
+		"minecraft:copper_ingot",
+		"minecraft:clock",
+		"minecraft:feather"
+	],
+	"result": {
+		"id": "cyberblock:kerenzikov",
+		"count": 1
+	}
+}

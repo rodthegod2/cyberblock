@@ -1,0 +1,15 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "equipment",
+	"ingredients": [
+		"minecraft:redstone",
+		"minecraft:copper_ingot",
+		"minecraft:string",
+		"minecraft:lightning_rod",
+		"minecraft:iron_ingot"
+	],
+	"result": {
+		"id": "cyberblock:monowire",
+		"count": 1
+	}
+}

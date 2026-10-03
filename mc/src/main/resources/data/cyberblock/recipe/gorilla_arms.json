@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "equipment",
+	"ingredients": [
+		"minecraft:redstone",
+		"minecraft:copper_ingot",
+		"minecraft:iron_block",
+		"minecraft:piston"
+	],
+	"result": {
+		"id": "cyberblock:gorilla_arms",
+		"count": 1
+	}
+}

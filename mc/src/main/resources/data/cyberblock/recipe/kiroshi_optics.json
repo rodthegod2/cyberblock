@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "equipment",
+	"ingredients": [
+		"minecraft:redstone",
+		"minecraft:copper_ingot",
+		"minecraft:spyglass",
+		"minecraft:ender_eye"
+	],
+	"result": {
+		"id": "cyberblock:kiroshi_optics",
+		"count": 1
+	}
+}

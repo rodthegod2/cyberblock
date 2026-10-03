@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "equipment",
+	"ingredients": [
+		"minecraft:redstone",
+		"minecraft:copper_ingot",
+		"minecraft:fermented_spider_eye",
+		"minecraft:glass_pane"
+	],
+	"result": {
+		"id": "cyberblock:optical_camo",
+		"count": 1
+	}
+}

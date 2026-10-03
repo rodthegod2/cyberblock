@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "equipment",
+	"ingredients": [
+		"minecraft:redstone",
+		"minecraft:copper_ingot",
+		"minecraft:glistering_melon_slice",
+		"minecraft:glass_bottle"
+	],
+	"result": {
+		"id": "cyberblock:biomonitor",
+		"count": 1
+	}
+}
