@@ -16,6 +16,7 @@
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include "log.hpp"
+#include "world.hpp"
 
 using namespace reshade::api;
 
@@ -380,10 +381,14 @@ namespace
 		GlobalMemoryStatusEx(&mem);
 		const unsigned long long commit_used = (mem.ullTotalPageFile - mem.ullAvailPageFile) >> 20;
 		DXGI_QUERY_VIDEO_MEMORY_INFO info = {};
+		// Minecraft's events queued for redscript: a climbing "dropped" means the scripts are not draining them
+		const cb::world::QueueStats events = cb::world::events().stats();
 		if (SUCCEEDED(adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info)))
-			cb::log::info("memory: vram %llu of %llu MB budget, system commit %llu of %llu MB (frames %s)",
+			cb::log::info("memory: vram %llu of %llu MB budget, system commit %llu of %llu MB (frames %s); mc events: "
+				"%zu queued, %llu dropped, %llu rejected",
 				info.CurrentUsage >> 20, info.Budget >> 20, commit_used, mem.ullTotalPageFile >> 20,
-				g_hasFrame ? "arriving" : "none");
+				g_hasFrame ? "arriving" : "none", events.queued, static_cast<unsigned long long>(events.dropped),
+				static_cast<unsigned long long>(events.rejected));
 		if (commit_used * 100 > (mem.ullTotalPageFile >> 20) * 92)
 			cb::log::warn("memory: system commit above 92%% of the limit; Windows may start killing programs");
 	}

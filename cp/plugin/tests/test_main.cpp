@@ -1,5 +1,6 @@
 // Runs every TEST() and returns the number of failed CHECKs (0 = pass), so ctest reports failures.
 #include "test.hpp"
+#include <exception>
 #include <vector>
 
 namespace
@@ -36,7 +37,14 @@ int main()
 	for (const Entry &test : tests())
 	{
 		const int before = g_failures;
-		test.fn();
+		try
+		{
+			test.fn();
+		}
+		catch (const std::exception &e) // a test that throws fails, instead of killing the run before anything prints
+		{
+			cbtest::fail(test.name, 0, e.what());
+		}
 		std::printf("%s %s\n", g_failures == before ? "pass" : "FAIL", test.name);
 	}
 	std::printf("%zu tests, %d failed checks\n", tests().size(), g_failures);

@@ -122,6 +122,39 @@ TEST(mc_block_aabb_cases)
 	}
 }
 
+// Track P adds `mc_pos` ({mc, cp}) and `mc_block` ({block, min, max}) to shared/vectors.json. The literal cases above
+// stand alone; these run on the shared file as soon as P's cases are merged (until then they report a skip).
+TEST(mc_position_vectors)
+{
+	const nlohmann::json all = vectors();
+	if (!all.contains("mc_pos"))
+		return (void)std::puts("  (skipped: shared/vectors.json has no mc_pos cases yet)");
+	CHECK(!all.at("mc_pos").empty());
+	for (const auto &c : all.at("mc_pos"))
+	{
+		const auto &mc = c.at("mc");
+		const auto &cp = c.at("cp");
+		CHECK(same(cb::mc_to_cp_pos(mc.at(0), mc.at(1), mc.at(2)), {cp.at(0), cp.at(1), cp.at(2)}));
+	}
+}
+
+TEST(mc_block_vectors)
+{
+	const nlohmann::json all = vectors();
+	if (!all.contains("mc_block"))
+		return (void)std::puts("  (skipped: shared/vectors.json has no mc_block cases yet)");
+	CHECK(!all.at("mc_block").empty());
+	for (const auto &c : all.at("mc_block"))
+	{
+		const auto &b = c.at("block");
+		const auto &lo = c.at("min");
+		const auto &hi = c.at("max");
+		const cb::Aabb box = cb::mc_block_to_cp_aabb(b.at(0), b.at(1), b.at(2));
+		CHECK(same(box.min, {lo.at(0), lo.at(1), lo.at(2)}));
+		CHECK(same(box.max, {hi.at(0), hi.at(1), hi.at(2)}));
+	}
+}
+
 TEST(vfov_from_hfov)
 {
 	CHECK(std::abs(cb::vfov_from_hfov(90.0, 16.0 / 9.0) - 58.7155) <= 1e-3);
