@@ -6,7 +6,9 @@
 //     spot (hidden by PlayerState while Active), a vanilla free camera flies at the flight position + 1.6 m looking
 //     along Minecraft's yaw/pitch, and the mouse goes to Minecraft (Cyberblock_SetLookCapture).
 // On landing V is placed at the landing spot; falls are not reported while flying and for 2 s after a landing (or a
-// Teleport, Effects.reds). Clear stops everything and gives V back the view; if V was left in mid-air it is put on
+// Teleport, Effects.reds). When the samples stop without a landing (Cyberblock_FlightTimedOut: a hitch, or a
+// Cyberpunk menu paused the glide), V waits where it is for up to 1 s and follows again if they come back; only then
+// is it put on the ground below. Clear stops everything and gives V back the view; if V was left in mid-air it is put on
 // the ground below, so leaving Cyberblock in mid-glide does not drop V from the sky. No flight starts while V is in a
 // vehicle or held by the game (CyberblockEffects.PlayerLocked: a scene, workspot, braindance or moving elevator), and
 // one that is under way when that happens stops where V is, without the landing teleport.
@@ -23,7 +25,8 @@
 //   (gameFreeCamera: gameCameraComponent, dynamic sphere collider, editor box mesh), CameraComponent.Activate/
 //   Deactivate(0.0, true) (as devices take and return the view, deviceBase.swift), IComponent.IsA/Toggle,
 //   Entity.SetWorldTransform (Codeware), SpatialQueriesSystem.SyncRaycastByQueryFilter (Static + Terrain, as
-//   Probes.reds), VehicleComponent.IsMountedToVehicle. Cyberblock_SetFlightFollowing is the DLL's (Natives.reds).
+//   Probes.reds), VehicleComponent.IsMountedToVehicle. Cyberblock_SetFlightFollowing and Cyberblock_FlightTimedOut
+//   are the DLL's (Natives.reds).
 
 public abstract class CyberblockFlight {
   // 10 Hz; starts the per-frame loop when a flight starts. live false: stop following and restore.
@@ -79,6 +82,8 @@ public class CyberblockFlightService extends ScriptableService {
   private let startTime: Float; // sim time at 'flight: start'
   private let applied: Vector4; // primary: where V was put last
   private let clipLogged: Bool;
+  private let holding: Bool; // the samples timed out: V waits where it is
+  private let holdSince: Float;
   private let anchor: Vector4; // camera only: where V waits
   private let camera: EntityID;
   private let cameraActive: Bool;
@@ -169,15 +174,37 @@ public class CyberblockFlightService extends ScriptableService {
     }
     let teleport = GameInstance.GetTeleportationFacility(game);
     if !Cyberblock_FlightActive() {
-      this.Land(game, player);
+      if !Cyberblock_FlightTimedOut() {
+        this.Land(game, player); // Minecraft's own active:false
+        return;
+      }
+      // Minecraft went quiet without a landing (a hitch, or a Cyberpunk menu paused the glide and it has not heard the
+      // menu close yet): V waits where it is for up to 1 s in case the samples come back.
+      if !this.holding {
+        this.holding = true;
+        this.holdSince = this.lastFrame;
+        Cyberblock_Log("flight: no samples, holding V");
+      }
+      if this.lastFrame - this.holdSince < 1.0 {
+        if this.usingCamera {
+          this.KeepAnchor(player);
+        } else {
+          teleport.Teleport(player, this.applied, Vector4.ToRotation(player.GetWorldForward()));
+        }
+        this.Next(game, generation);
+      } else {
+        this.LandOnGround(game, player);
+      }
       return;
+    }
+    if this.holding {
+      this.holding = false;
+      Cyberblock_Log("flight: samples back, following again");
     }
     // Still following (cam.fly): Minecraft calls a glide off when this turns false.
     Cyberblock_SetFlightFollowing(true);
     if this.usingCamera {
-      if Vector4.DistanceSquared(player.GetWorldPosition(), this.anchor) > 0.0025 {
-        teleport.Teleport(player, this.anchor, Vector4.ToRotation(player.GetWorldForward()));
-      }
+      this.KeepAnchor(player);
       this.MoveCamera(game, Cyberblock_FlightPos());
     } else {
       this.applied = this.Clip(game, this.applied, Cyberblock_FlightPos());
@@ -207,6 +234,26 @@ public class CyberblockFlightService extends ScriptableService {
     return new Vector4(from.X + (to.X - from.X) * t, from.Y + (to.Y - from.Y) * t, from.Z + (to.Z - from.Z) * t, 1.0);
   }
 
+  // Camera only: V stays at the take-off spot (put back when it drifted more than 5 cm).
+  private func KeepAnchor(player: ref<PlayerPuppet>) -> Void {
+    if Vector4.DistanceSquared(player.GetWorldPosition(), this.anchor) > 0.0025 {
+      GameInstance.GetTeleportationFacility(player.GetGame()).Teleport(player, this.anchor, Vector4.ToRotation(player.GetWorldForward()));
+    }
+  }
+
+  // The samples did not come back within 1 s: V goes to the ground below where it was held (camera only: below the
+  // flight's last position), not left in mid-air.
+  private func LandOnGround(game: GameInstance, player: ref<PlayerPuppet>) -> Void {
+    let from = this.usingCamera ? Cyberblock_FlightPos() : this.applied;
+    let ground: Vector4;
+    if CyberblockFlightService.GroundBelow(game, from, ground) {
+      let facing = this.usingCamera ? CyberblockEffects.Facing(Cyberblock_FlightYaw()) : Vector4.ToRotation(player.GetWorldForward());
+      GameInstance.GetTeleportationFacility(game).Teleport(player, ground, facing);
+    }
+    this.Stop(game);
+    Cyberblock_Log("flight: no samples for 1 s, V put on the ground");
+  }
+
   // The flight is over: Cyberblock_FlightPos() is now the landing spot.
   private func Land(game: GameInstance, player: ref<PlayerPuppet>) -> Void {
     let spot = Cyberblock_FlightPos();
@@ -223,7 +270,7 @@ public class CyberblockFlightService extends ScriptableService {
     }
     // Minecraft's barriers round Night City's ground to whole blocks, so the spot can be a little under the real floor:
     // the first surface down from 1.5 m above the spot wins when it is higher. A spot more than 1 m above that surface
-    // means Minecraft went silent in mid-air: V goes down to it instead of falling from there.
+    // means the glide ended in mid-air (the elytra broke, the server stopped it): V goes down to it instead of falling.
     let ground: Vector4;
     if CyberblockFlightService.GroundBelow(game, new Vector4(spot.X, spot.Y, spot.Z + 1.0, 1.0), ground)
       && (ground.Z > spot.Z || spot.Z - ground.Z > 1.0) {
@@ -266,6 +313,7 @@ public class CyberblockFlightService extends ScriptableService {
     }
     this.flying = false;
     this.usingCamera = false;
+    this.holding = false;
     this.generation += 1;
     Cyberblock_SetFlightFollowing(false);
   }

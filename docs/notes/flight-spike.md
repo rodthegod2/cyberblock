@@ -19,15 +19,22 @@ the landing behaviour and the camera switch can only be judged in game: the chec
 
 ## Method (`cp/scripts/Cyberblock/Flight.reds`)
 
-1. **Start.** The 10 Hz `CyberblockFlight.Tick` sees `Cyberblock_FlightActive()` turn true (V on foot, live). It
-   remembers `Cyberblock_FlightSeq()`, bumps a loop generation and queues the first frame callback.
+1. **Start.** The 10 Hz `CyberblockFlight.Tick` sees `Cyberblock_FlightActive()` turn true (V on foot, live, not
+   held). It remembers the start time and V's position, calls `Cyberblock_SetFlightFollowing(true)` (Minecraft reads
+   it as `cam.fly`), bumps a loop generation and queues the first frame callback. `FlightSeq` is not used: the loop
+   runs until `Cyberblock_FlightActive()` is false. A refused start (vehicle, `PlayerLocked`) sets following false and
+   logs the lock reason; Minecraft then calls the glide off within 0.5 s and Steve goes back to V.
 2. **Every frame.** The callback stops as soon as its generation is stale (`DelayCallbackNextFrame` returns no id, so
    it cannot be cancelled), then:
-   - **landing:** if `Cyberblock_FlightActive()` is false (`FlightSeq` changed), V is placed at
-     `Cyberblock_FlightPos()` (the landing spot) and the loop ends. If that spot is more than 1 m above the
-     Static/Terrain ground below it, Minecraft went silent in mid-air (the DLL ends a flight whose samples are 0.5 s
-     old), so V is put on that ground instead;
-   - **primary:** otherwise `Teleport(V, Cyberblock_FlightPos(), Vector4.ToRotation(V.GetWorldForward()))`;
+   - **landing:** if `Cyberblock_FlightActive()` is false and the flight was not timed out (Minecraft sent
+     `active:false`), the loop ends at `Cyberblock_FlightPos()` (the landing spot): no teleport when the flight
+     lasted under 0.3 s or the spot is within 1.5 m of V; otherwise the ground is raycast from 1.5 m above the spot
+     and a higher surface wins (V never ends under the real floor), and a spot more than 1 m above the ground goes
+     down to it. In primary mode the spot is first clipped like a frame (below);
+   - **timed out** (`Cyberblock_FlightTimedOut()`: the samples stopped without `active:false`): V is held where it is
+     for up to 1 s and following resumes if the samples come back; after that V is put on the ground below;
+   - **primary:** otherwise V goes to `Cyberblock_FlightPos()`, stopped 0.3 m short of any Night City surface
+     (Static + Terrain, not our collision boxes) between the last position V was put at and it;
    - **camera only:** V is put back at the take-off spot if it drifted more than 5 cm. The camera entity is teleported
      to `FlightPos + (0, 0, 1.6)` looking along `(−sin a·cos p, cos a·cos p, −sin p)` for Cyberpunk yaw `a` and
      Minecraft pitch `p` (positive = down).
