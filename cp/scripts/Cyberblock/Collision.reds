@@ -29,8 +29,8 @@ public abstract class CyberblockCollision {
     CyberblockCollisionService.Get().Clear();
   }
 
-  // Not in plan §1.4 yet (integrator): forgets every registered box. For when the boxes may no longer match the
-  // Minecraft world: a new link session (another world or server) or blocks removed while the link was down.
+  // Plan 2026-10-03 §1.4 contract (block_reset): despawns all boxes and forgets every registered one, for when the
+  // boxes may no longer match the Minecraft world (a new link session; Minecraft then re-sends its blocks).
   public static func Reset(game: GameInstance) -> Void {
     CyberblockCollisionService.Get().Reset();
   }

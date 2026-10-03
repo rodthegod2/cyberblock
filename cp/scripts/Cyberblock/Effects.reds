@@ -27,6 +27,13 @@
 //     SceneSystemInterface.IsEntityInScene (NPCPuppet death handling).
 //   Ignite: StatusEffectSystem.ApplyStatusEffect(t"BaseStatusEffect.Burning", instigator V) +
 //     SetStatusEffectRemainingDuration.
+//   HitFrom (layers 3-6 plan §1.4, S2.3): Hit with the mob's puppet (Puppets.reds) as instigator and source; an
+//     aggressive NPC turns on whoever hits it (TargetTrackingExtension.OnHit), and V's friends, whom the pipeline
+//     spares from V's hits only (DamageSystem.CheckForQuickExit, FriendlyFireIgnored), are spared explicitly.
+//   Teleport: TeleportationFacility.Teleport(player, feet, Vector4.ToRotation(forward)) as vanilla teleports keep the
+//     look (worldMap.swift, roadBlockTrap.swift); the camera pitch lives in FPPCameraComponent, which fast travel
+//     resets explicitly (ResetPitch) before teleporting, so a plain teleport keeps it. Fall suppression on sim time
+//     (TimeSystem.GetSimTime).
 //   Targets: Codeware EntityID.FromHash (inverse of the EntityID hash S1 sends) + GameInstance.FindEntityByID.
 
 public abstract class CyberblockEffects {
@@ -76,9 +83,49 @@ public abstract class CyberblockEffects {
 
   // Damages the NPC or vehicle by frac of its max health and pushes it with impulse (m/s, Cyberpunk space).
   public static func Hit(game: GameInstance, target: Uint64, frac: Float, impulse: Vector4) -> Void {
+    CyberblockEffects.Strike(game, target, frac, impulse, GetPlayer(game));
+  }
+
+  // Hit by a Minecraft mob (mob -1: by Steve). The mob's puppet is the instigator and source when it exists, so the
+  // target turns on the puppet and V gets no heat for it; else V is, as Hit.
+  public static func HitFrom(game: GameInstance, target: Uint64, frac: Float, impulse: Vector4, mob: Int32) -> Void {
+    let puppet: ref<GameObject>;
+    if mob >= 0 {
+      puppet = CyberblockPuppets.Find(game, mob);
+    }
+    if !IsDefined(puppet) {
+      CyberblockEffects.Hit(game, target, frac, impulse);
+      return;
+    }
+    // The pipeline only spares V's friends from V's own hits (friendly fire), and a puppet is hostile to them: spare
+    // them here, so a mob hurts exactly whom Steve could.
+    let object = CyberblockEffects.Find(game, target);
+    if !IsDefined(object) || GameObject.IsFriendlyTowardsPlayer(object) || IsDefined(object as VehicleObject) && GameObject.IsFriendlyTowardsPlayer(VehicleComponent.GetDriverMounted(game, object.GetEntityID())) {
+      return;
+    }
+    CyberblockEffects.Strike(game, target, frac, impulse, puppet);
+  }
+
+  // Moves V to feet (an ender pearl landed), facing Cyberpunk yaw. Only the body turns: the camera pitch is the FPP
+  // camera's own and survives a teleport (fast travel calls FPPCameraComponent.ResetPitch explicitly before its
+  // TeleportToNode). Falls are not reported for 2 s after it.
+  public static func Teleport(game: GameInstance, feet: Vector4, yaw: Float) -> Void {
+    let player = GetPlayer(game);
+    if !IsDefined(player) {
+      return;
+    }
+    if VehicleComponent.IsMountedToVehicle(game, player) {
+      Cyberblock_Log("effects: teleport ignored, V is in a vehicle");
+      return;
+    }
+    CyberblockEffectsService.Get().SuppressFall(game, 2.0);
+    GameInstance.GetTeleportationFacility(game).Teleport(player, feet, CyberblockEffects.Facing(yaw));
+  }
+
+  private static func Strike(game: GameInstance, target: Uint64, frac: Float, impulse: Vector4, attacker: ref<GameObject>) -> Void {
     let object = CyberblockEffects.Find(game, target);
     let player = GetPlayer(game);
-    if !IsDefined(object) || !IsDefined(player) {
+    if !IsDefined(object) || !IsDefined(player) || !IsDefined(attacker) {
       return;
     }
     impulse = new Vector4(impulse.X, impulse.Y, impulse.Z, 0.0); // a direction: w must not count
@@ -86,7 +133,7 @@ public abstract class CyberblockEffects {
     let hitPosition = object.GetWorldPosition() + new Vector4(0.0, 0.0, 1.0, 0.0);
     let direction = Vector4.Normalize(impulse);
     if Vector4.IsZero(direction) {
-      direction = Vector4.Normalize(object.GetWorldPosition() - player.GetWorldPosition());
+      direction = Vector4.Normalize(object.GetWorldPosition() - attacker.GetWorldPosition());
     }
     // The damage pipeline protects its targets from the damage only; the push is ours to withhold.
     if CyberblockEffects.IsProtected(game, object, player) {
@@ -100,8 +147,8 @@ public abstract class CyberblockEffects {
     let amount = ClampF(frac, 0.0, 4.0) * GameInstance.GetStatsSystem(game).GetStatValue(Cast<StatsObjectID>(id), gamedataStatType.Health);
     let context: AttackInitContext;
     context.record = TweakDBInterface.GetAttackRecord(t"Attacks.Impact");
-    context.instigator = player;
-    context.source = player;
+    context.instigator = attacker;
+    context.source = attacker;
     let attack = IAttack.Create(context);
     // Keeps the attack value above zero, so the pipeline does not mark the hit DealNoDamage before DealDamages.
     attack.AddStatModifier(RPGManager.CreateStatModifier(gamedataStatType.PhysicalDamage, gameStatModifierType.Additive, amount));
@@ -114,8 +161,8 @@ public abstract class CyberblockEffects {
     hit.attackData.PreAttack();
     hit.attackData.SetAttackPosition(hitPosition - direction); // where the blow came from, 1 m back
     hit.attackData.SetAttackTime(EngineTime.ToFloat(GameInstance.GetTimeSystem(game).GetSimTime()));
-    hit.attackData.SetInstigator(player);
-    hit.attackData.SetSource(player);
+    hit.attackData.SetInstigator(attacker);
+    hit.attackData.SetSource(attacker);
     hit.attackData.AddFlag(hitFlag.ForceNoCrit, n"Cyberblock");
     hit.hitPosition = hitPosition;
     hit.hitDirection = direction;
@@ -150,7 +197,7 @@ public abstract class CyberblockEffects {
 
   // Targets the push must leave alone: those the damage pipeline protects (V, V's car, god modes, friends of V), cars
   // they drive, and anyone a quest is animating (workspot, scene), whom a forced ragdoll would pull out of it.
-  private static func IsProtected(game: GameInstance, object: ref<GameObject>, player: ref<PlayerPuppet>) -> Bool {
+  public static func IsProtected(game: GameInstance, object: ref<GameObject>, player: ref<PlayerPuppet>) -> Bool {
     let id = object.GetEntityID();
     let mounted: wref<GameObject>;
     if object == player || VehicleComponent.GetVehicle(game, player, mounted) && mounted == object {
@@ -189,8 +236,25 @@ public abstract class CyberblockEffects {
     effects.SetStatusEffectRemainingDuration(object.GetEntityID(), burning, seconds);
   }
 
-  private static func Find(game: GameInstance, target: Uint64) -> ref<GameObject> {
+  public static func Find(game: GameInstance, target: Uint64) -> ref<GameObject> {
     return GameInstance.FindEntityByID(game, EntityID.FromHash(target)) as GameObject;
+  }
+
+  // A hit Hit/HitFrom queued: it carries ForceNoCrit with source n"Cyberblock" (Attacks.Impact has no hit flags of
+  // its own, and AttackData.AddFlag keeps the first source of a flag), at every stage of the pipeline.
+  public static func IsOurHit(hitEvent: ref<gameHitEvent>) -> Bool {
+    for flag in hitEvent.attackData.GetFlags() {
+      if Equals(flag.source, n"Cyberblock") {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Orientation facing Cyberpunk yaw (degrees, 0 = +Y, counter-clockwise from above: forward = (-sin, cos)), built
+  // from the direction as vanilla teleports do (Vector4.ToRotation, worldMap.swift), so no Euler convention is assumed.
+  public static func Facing(yaw: Float) -> EulerAngles {
+    return Vector4.ToRotation(new Vector4(-SinF(Deg2Rad(yaw)), CosF(Deg2Rad(yaw)), 0.0, 0.0));
   }
 
   private static func StartExplosionAttack(player: ref<PlayerPuppet>, record: TweakDBID, pos: Vector4, radius: Float) -> Void {
@@ -235,9 +299,27 @@ public class CyberblockEffectsService extends ScriptableService {
   private let hits: array<wref<gameHitEvent>>;
   private let amounts: array<Float>;
   private let impulses: array<Vector4>;
+  // Falls are not reported until this simulation time (Teleport, and flight landings in Flight.reds).
+  private let fallQuietUntil: Float;
+  private let fallQuietFor: Float;
 
   public static func Get() -> ref<CyberblockEffectsService> {
     return GameInstance.GetScriptableServiceContainer().GetService(n"CyberblockEffectsService") as CyberblockEffectsService;
+  }
+
+  public static func Now(game: GameInstance) -> Float {
+    return EngineTime.ToFloat(GameInstance.GetTimeSystem(game).GetSimTime());
+  }
+
+  public func SuppressFall(game: GameInstance, seconds: Float) -> Void {
+    this.fallQuietFor = seconds;
+    this.fallQuietUntil = CyberblockEffectsService.Now(game) + seconds;
+  }
+
+  // A deadline further away than it was set (simulation time restarted with another session) does not count.
+  public func IsFallSuppressed(game: GameInstance) -> Bool {
+    let left = this.fallQuietUntil - CyberblockEffectsService.Now(game);
+    return left > 0.0 && left <= this.fallQuietFor;
   }
 
   public func Expect(hit: ref<gameHitEvent>, amount: Float, impulse: Vector4) -> Void {
