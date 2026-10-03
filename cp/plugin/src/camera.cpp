@@ -102,7 +102,12 @@ namespace cb::camera
 		const Vec3 facingMc = cp_to_mc_pos(facing.X, facing.Y, facing.Z);
 		const double bodyYaw = std::hypot(facingMc.x, facingMc.z) > 1e-6 ? mc_yaw_pitch(facingMc.x, 0.0, facingMc.z).yaw : look.yaw;
 
-		link().send(world::make_cam(g_frame++, position, look, vfov, feetMc, bodyYaw, natives::crouched));
+		link().send(world::make_cam(g_frame++, position, look, vfov, feetMc, bodyYaw,
+									{.crouched = natives::crouched,
+									 .flying = natives::flightFollowing,
+									 .menu = natives::menuOpen,
+									 .air = natives::inAir,
+									 .held = natives::held}));
 		compositor::set_host_pose(float(look.yaw), float(look.pitch), 0.0f, float(vfov), position.x, position.y, position.z);
 		compositor::set_host_planes(kNearClip, kFarClip);
 

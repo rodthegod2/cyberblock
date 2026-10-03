@@ -24,8 +24,8 @@ public native func Cyberblock_EventName() -> CName;     // effect name | hack na
 public native func Cyberblock_EventExtra() -> Float;    // knock strength | effect amplifier | (else 0)
 public native func Cyberblock_EventId() -> Int32;       // hit: mob id (-1 none) | hack/scan: request id
 // Stance, menus, game mode
-public native func Cyberblock_SetStance(crouched: Bool) -> Void;     // carried as cam.cr until changed
-public native func Cyberblock_SetMenu(open: Bool) -> Void;           // a Cyberpunk menu is open: input forwarding pauses
+public native func Cyberblock_SetStance(crouched: Bool, inAir: Bool, held: Bool) -> Void; // carried as cam.cr / cam.air / cam.held until changed
+public native func Cyberblock_SetMenu(open: Bool) -> Void;           // a Cyberpunk menu is open: input forwarding pauses; cam.menu
 public native func Cyberblock_SetChoices(open: Bool) -> Void;        // 2+ dialogue choices shown: E, Q, 1-4, wheel stay Cyberpunk's
 public native func Cyberblock_GameMode() -> CName;                   // last status.gm, n"" before any status
 // Layer 3 mobs: Cyberblock_MobCount takes a snapshot of the latest mobs list that the getters read (i in 0..count-1)
@@ -37,8 +37,11 @@ public native func Cyberblock_MobYaw(i: Int32) -> Float;             // Cyberpun
 public native func Cyberblock_MobSize(i: Int32) -> Vector4;          // X width, Y height, Z hp, W max hp
 public native func Cyberblock_MobDamage(id: Int32, frac: Float, by: Uint64, hasBy: Bool) -> Void;   // -> mobdmg
 // Layer 4 flight (latest flight message; position extrapolated by v * min(age, 0.1 s); the landing spot once inactive)
-public native func Cyberblock_FlightActive() -> Bool;
-public native func Cyberblock_FlightSeq() -> Int32;                 // +1 on every start and every landing
+public native func Cyberblock_FlightActive() -> Bool;              // a sample older than 0.5 s counts as ended
+public native func Cyberblock_FlightSeq() -> Int32;                 // +1 on every start and every end (landing, 0.5 s timeout, reset)
+public native func Cyberblock_FlightTimedOut() -> Bool;             // the last flight ended by the 0.5 s timeout, not a landing
+public native func Cyberblock_SetFlightFollowing(following: Bool) -> Void; // V follows Steve: cam.fly until set again (cleared by a
+                                                                    // landing, SetActive change, hello or link drop; not by a timeout)
 public native func Cyberblock_FlightPos() -> Vector4;               // feet, Cyberpunk space
 public native func Cyberblock_FlightVelocity() -> Vector4;          // m/s, Cyberpunk space
 public native func Cyberblock_FlightYaw() -> Float;                 // Cyberpunk yaw, degrees

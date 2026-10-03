@@ -139,6 +139,9 @@ namespace cb::snap
 		bool active(Clock::time_point now);
 		/// +1 on every change of `active`: every start and every landing (also a stale or reset end).
 		int32_t seq(Clock::time_point now);
+		/// The flight ended because its sample went stale (kMaxAge without a new one), not by a landing message; false again
+		/// after any new sample and after reset().
+		bool timed_out(Clock::time_point now);
 		/// Feet, Cyberpunk space: p + v * min(age, 0.1 s) while active, else the landing spot.
 		Vec3 pos(Clock::time_point now);
 		Vec3 velocity(Clock::time_point now);
@@ -155,6 +158,7 @@ namespace cb::snap
 		FlightSample m_sample;
 		Clock::time_point m_receivedAt{};
 		int32_t m_seq = 0;
+		bool m_timedOut = false;
 	};
 
 	inline ListState<Mob> &mobs()
@@ -176,8 +180,9 @@ namespace cb::snap
 	}
 
 	/// The link's observer for these types (link thread): keeps valid `mobs`, `flight` and `proj` messages, counts and
-	/// logs invalid ones like world::on_minecraft_message, and clears all three on `hello`.
+	/// logs invalid ones like world::on_minecraft_message, and clears all three on `hello`. A `hello` and a landing
+	/// (`flight` with active false) also end V's following (natives::flightFollowing).
 	void on_minecraft_message(const nlohmann::json &message);
-	/// The link dropped (link thread): the mobs, flight and projectiles of the old session are gone.
+	/// The link dropped (link thread): the mobs, flight and projectiles of the old session are gone, and V's following.
 	void on_link_dropped();
 }

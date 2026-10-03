@@ -1,4 +1,5 @@
 #include "snapshots.hpp"
+#include "natives.hpp"
 #include "wire.hpp"
 #include "world.hpp"
 #include <algorithm>
@@ -165,6 +166,7 @@ namespace cb::snap
 		m_sample.pos = extrapolated(now);
 		m_sample.velocity = {};
 		m_sample.active = false;
+		m_timedOut = true;
 		++m_seq;
 	}
 
@@ -172,6 +174,7 @@ namespace cb::snap
 	{
 		std::lock_guard<std::mutex> lock(m_lock);
 		expire(now);
+		m_timedOut = false;
 		if (sample.active != m_sample.active)
 			++m_seq;
 		const double yaw = std::isnan(sample.yaw) ? m_sample.yaw : sample.yaw;
@@ -185,6 +188,7 @@ namespace cb::snap
 	void Flight::reset(Clock::time_point now)
 	{
 		std::lock_guard<std::mutex> lock(m_lock);
+		m_timedOut = false;
 		if (!m_sample.active)
 			return;
 		m_sample.pos = extrapolated(now);
@@ -205,6 +209,13 @@ namespace cb::snap
 		std::lock_guard<std::mutex> lock(m_lock);
 		expire(now);
 		return m_seq;
+	}
+
+	bool Flight::timed_out(Clock::time_point now)
+	{
+		std::lock_guard<std::mutex> lock(m_lock);
+		expire(now);
+		return m_timedOut;
 	}
 
 	Vec3 Flight::pos(Clock::time_point now)
@@ -250,6 +261,7 @@ namespace cb::snap
 			mobs().clear();
 			projectiles().clear();
 			flight().reset(now);
+			natives::flightFollowing = false;
 		}
 		else if (t == "mobs")
 		{
@@ -267,7 +279,11 @@ namespace cb::snap
 		{
 			std::string reason;
 			if (const std::optional<FlightSample> sample = parse_flight(message, reason))
+			{
 				flight().update(*sample, now);
+				if (!sample->active)
+					natives::flightFollowing = false; // Steve landed: V stops following
+			}
 			else
 				world::note_invalid(1, reason);
 		}
@@ -278,5 +294,6 @@ namespace cb::snap
 		mobs().clear();
 		projectiles().clear();
 		flight().reset(Clock::now());
+		natives::flightFollowing = false;
 	}
 }

@@ -192,9 +192,20 @@ namespace cb::world
 	/// Most block cells one `pcells` message holds.
 	inline constexpr size_t kMaxPcells = 64;
 
+	/// What `cam` says about V besides the pose.
+	struct CamFlags
+	{
+		bool crouched = false; // `cr`: V is crouched
+		bool flying = false;   // `fly`: V follows Steve's glide (Cyberblock_SetFlightFollowing)
+		bool menu = false;     // `menu`: a Cyberpunk menu is open
+		bool air = false;      // `air`: V is in the air (jump, fall, double jump, air dash, ...)
+		bool held = false;     // `held`: V is in a vehicle or held by a scene, workspot, braindance or moving elevator
+	};
+
 	/// {"t":"cam",...}: the camera and V, every Cyberpunk frame while active (Minecraft convention, so `position`, `feet`
-	/// and `look` are already converted). `r` is [yaw, pitch, 0]; `cr` is whether V is crouched. Numbers are not rounded.
-	nlohmann::json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, bool crouched);
+	/// and `look` are already converted). `r` is [yaw, pitch, 0]; `cr`, `fly`, `menu`, `air` and `held` are `flags`.
+	/// Numbers are not rounded.
+	nlohmann::json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, CamFlags flags);
 
 	/// {"t":"look","d":[dyaw,dpitch]}: raw mouse movement as Minecraft look deltas in degrees (right and down are positive).
 	nlohmann::json make_look(double dyaw, double dpitch);

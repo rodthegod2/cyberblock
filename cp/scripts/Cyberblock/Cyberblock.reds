@@ -21,8 +21,8 @@
 //
 // Layers 3-6 wiring (plan 2026-10-03 S1.6, section 1.4): every tick with a player also runs CyberblockPuppets,
 // CyberblockFlight, CyberblockTether and CyberblockProjectiles (live: Active or Vehicle, not saving) and
-// CyberblockPerks and CyberblockBuffs (active: Active, not saving), reports whether V is crouched
-// (Cyberblock_SetStance), whether a Cyberpunk menu is open (Cyberblock_SetMenu) and whether a dialogue offers two or more
+// CyberblockPerks and CyberblockBuffs (active: Active, not saving), reports whether V is crouched, in the air or held by
+// a vehicle or the game (Cyberblock_SetStance), whether a Cyberpunk menu is open (Cyberblock_SetMenu) and whether a dialogue offers two or more
 // choices while Active (Cyberblock_SetChoices: E, Q, 1-4 and the wheel then stay Cyberpunk's). ClearWorld (every section 1.4
 // Clear plus CyberblockCollision.Clear) runs before every save, on session ready, at session end and on every
 // transition out of Active/Vehicle.
@@ -187,7 +187,9 @@ public class CyberblockSystem extends ScriptableSystem {
     }
     let live = on && !this.saving;
     let active = Equals(this.state, CyberblockState.Active) && !this.saving;
-    Cyberblock_SetStance(CyberblockSystem.Crouched(player));
+    // cam.cr / cam.air / cam.held: Minecraft keeps Steve crouched, airborne or still with V.
+    let held = VehicleComponent.IsMountedToVehicle(game, player) || CyberblockEffects.PlayerLocked(game, player);
+    Cyberblock_SetStance(CyberblockSystem.Crouched(player), CyberblockSystem.InAir(player), held);
     if !this.saving {
       this.events.Tick(game, live);
     }
@@ -226,6 +228,21 @@ public class CyberblockSystem extends ScriptableSystem {
     }
     let state = IntEnum<gamePSMLocomotionStates>(psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.Locomotion));
     return Equals(state, gamePSMLocomotionStates.Crouch) || Equals(state, gamePSMLocomotionStates.CrouchDodge) || Equals(state, gamePSMLocomotionStates.Slide);
+  }
+
+  // In the air as the detailed locomotion state has it (PlayerStateMachine.LocomotionDetailed, the blackboard Crouched
+  // reads; gamePSMDetailedLocomotionStates): falling, jumping, double or charged jumps, air thrusters/hover, air dash.
+  private static func InAir(player: ref<PlayerPuppet>) -> Bool {
+    let psm = player.GetPlayerStateMachineBlackboard();
+    if !IsDefined(psm) {
+      return false;
+    }
+    let state = IntEnum<gamePSMDetailedLocomotionStates>(psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.LocomotionDetailed));
+    return Equals(state, gamePSMDetailedLocomotionStates.SlideFall) || Equals(state, gamePSMDetailedLocomotionStates.Fall)
+      || Equals(state, gamePSMDetailedLocomotionStates.AirThrusters) || Equals(state, gamePSMDetailedLocomotionStates.AirHover)
+      || Equals(state, gamePSMDetailedLocomotionStates.SuperheroFall) || Equals(state, gamePSMDetailedLocomotionStates.Jump)
+      || Equals(state, gamePSMDetailedLocomotionStates.DoubleJump) || Equals(state, gamePSMDetailedLocomotionStates.ChargeJump)
+      || Equals(state, gamePSMDetailedLocomotionStates.HoverJump) || Equals(state, gamePSMDetailedLocomotionStates.DodgeAir);
   }
 
   // The choices on screen: every choice of every dialogue choice hub (UIInteractions.DialogChoiceHubs, as
