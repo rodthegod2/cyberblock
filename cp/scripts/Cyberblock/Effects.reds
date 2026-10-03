@@ -193,6 +193,12 @@ public abstract class CyberblockEffects {
     return GameInstance.FindEntityByID(game, EntityID.FromHash(target)) as GameObject;
   }
 
+  // Orientation facing Cyberpunk yaw (degrees, 0 = +Y, counter-clockwise from above: forward = (-sin, cos)), built
+  // from the direction as vanilla teleports do (Vector4.ToRotation, worldMap.swift), so no Euler convention is assumed.
+  public static func Facing(yaw: Float) -> EulerAngles {
+    return Vector4.ToRotation(new Vector4(-SinF(Deg2Rad(yaw)), CosF(Deg2Rad(yaw)), 0.0, 0.0));
+  }
+
   private static func StartExplosionAttack(player: ref<PlayerPuppet>, record: TweakDBID, pos: Vector4, radius: Float) -> Void {
     let context: AttackInitContext;
     context.record = TweakDBInterface.GetAttackRecord(record);
@@ -254,6 +260,16 @@ public class CyberblockEffectsService extends ScriptableService {
     ArrayPush(this.hits, hit);
     ArrayPush(this.amounts, amount);
     ArrayPush(this.impulses, impulse);
+  }
+
+  // One of our queued hits that has not reached DealDamages yet (e.g. while the pipeline pre-processes it).
+  public func IsPending(hitEvent: ref<gameHitEvent>) -> Bool {
+    for hit in this.hits {
+      if hit == hitEvent {
+        return true;
+      }
+    }
+    return false;
   }
 
   // Replaces the computed damage of one of our hits with the exact amount and pushes the target; any other hit is
