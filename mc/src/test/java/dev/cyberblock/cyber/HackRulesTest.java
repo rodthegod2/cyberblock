@@ -76,6 +76,13 @@ class HackRulesTest {
 		assertNull(Hacking.locked());
 	}
 
+	/** An unanswered hack is refunded after 10 s only with the host gone; a connected Cyberpunk may answer late (netrun-14). */
+	@Test
+	void unansweredHacksWaitLongerWhileConnected() {
+		assertEquals(10_000_000_000L, Hacking.answerTimeout(false));
+		assertEquals(60_000_000_000L, Hacking.answerTimeout(true));
+	}
+
 	@Test
 	void hackJson() {
 		assertEquals("{\"t\":\"hack\",\"id\":12,\"target\":\"9876543210\",\"hack\":\"short_circuit\",\"chain\":false}",

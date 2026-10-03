@@ -18,8 +18,13 @@ import org.jspecify.annotations.Nullable;
 public final class Hacking {
 	/** A scanned target stays locked this long. */
 	static final long LOCK_NANOS = 5_000_000_000L;
-	/** A hack Cyberpunk never answered counts as failed (and is refunded) after this long. */
+	/** A hack Cyberpunk never answered counts as failed (and is refunded) after this long once the host link is down. */
 	static final long ANSWER_NANOS = 10_000_000_000L;
+	/**
+	 * The same while the host is connected: Cyberpunk keeps a `hack` while it is paused or not Active and answers it later,
+	 * so a refund after 10 s would make that hack free.
+	 */
+	static final long CONNECTED_ANSWER_NANOS = 60_000_000_000L;
 	private static final AtomicInteger ids = new AtomicInteger();
 	private static final Map<Integer, Pending> pending = new HashMap<>();
 	private static @Nullable Locked locked;
@@ -101,12 +106,18 @@ public final class Hacking {
 		CyberData.setRam(player, Math.min(CyberData.maxRam(player), CyberData.ram(player) + cost));
 	}
 
+	/** How long an unanswered hack waits for its `hackresult`: 10 s with the host link down, 60 s while it is up. */
+	static long answerTimeout(final boolean hostActive) {
+		return hostActive ? CONNECTED_ANSWER_NANOS : ANSWER_NANOS;
+	}
+
 	/** Every server tick: hacks Cyberpunk never answered (the link went away) are refunded. */
 	static void tick(final MinecraftServer server) {
 		long now = System.nanoTime();
+		long timeout = answerTimeout(Cyberblock.active);
 		for (Iterator<Pending> it = pending.values().iterator(); it.hasNext(); ) {
 			Pending p = it.next();
-			if (now - p.sentNanos() > ANSWER_NANOS) {
+			if (now - p.sentNanos() > timeout) {
 				it.remove();
 				ServerPlayer player = server.getPlayerList().getPlayer(p.player());
 				if (player != null) {
