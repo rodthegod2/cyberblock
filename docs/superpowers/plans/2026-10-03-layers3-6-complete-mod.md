@@ -1054,7 +1054,9 @@ its reason; `needsInGame` has audit G-3…G-8 plus a check per hack and per buff
   - an invisibility potion → camo; a speed potion → V faster.
 - **Layer 6:**
   - G shows the tooltip and outline;
-  - a Redstone Charge short-circuits an NCPD officer;
+  - a Redstone Charge short-circuits an NCPD officer, and also works on a plain pedestrian (crowd NPC);
+  - refusals: a quest giver (e.g. a fixer standing in the open) and a Lizzie's Bar customer get `hackresult`
+    "not hackable" and no VFX; any hack during a cutscene (scene tier 3-5) is "not hackable";
   - the RAM bar drains and regenerates;
   - K → buy Double Jump → V double-jumps;
   - Sandevistan slows Night City;

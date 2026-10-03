@@ -280,8 +280,9 @@ no person or car, Cyberpunk scans whatever V looks at, which is how you target d
 To fire one: lock a target with G, hold the item, and right-click.
 - The RAM is spent and the item recharges, then the real Cyberpunk quickhack fires, with its VFX and its NCPD
   reaction.
-- If Cyberpunk refuses (the target died, or it is protected: quest characters, friends, people in scenes), your RAM
-  is refunded and the reason shows above the hotbar.
+- If Cyberpunk refuses (the target died; it is protected: quest characters, friends, people in scenes, anyone vanilla
+  Cyberpunk would never let you hack; or V is in a cutscene), your RAM is refunded and the reason shows above the
+  hotbar.
 
 | Item | Quickhack | RAM | Recharge | Recipe (shapeless) |
 |---|---|---|---|---|

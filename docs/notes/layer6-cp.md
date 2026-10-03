@@ -42,9 +42,11 @@ Reasons:
 - **"target gone"**: no player, no entity for the id, or the NPC is not active (`ScriptedPuppet.IsActive`: dead,
   defeated, unconscious or turned off).
 - **"not hackable"**: the entity is not a `ScriptedPuppet` (for `device`: not a `Device`), V's friend,
-  Invulnerable, or in a scene. These three guards keep quest characters out of reach. They are a deliberate
-  addition: vanilla's own UI check (`ScriptedPuppet.IsQuickHackAble`) cannot be used, because it needs a cyberdeck and
-  is blocked by `NoQuickHacks`, which `NoCombat` puts on V while Active.
+  Invulnerable or Immortal, in a scene, or a non-crowd NPC whose record offers no `PuppetQuickHack` ObjectAction (how
+  story NPCs are made unhackable); a crowd NPC whose record has a quest affiliation other than General; or V is in
+  scene tier 3-5. These guards keep quest characters out of reach. They are vanilla's own target gates
+  (`ScriptedPuppet.IsQuickHackAble`), which cannot be called as a whole: it needs a cyberdeck, refuses crowd NPCs
+  (whose records offer no quickhack at all) and is blocked by `NoQuickHacks`, which `NoCombat` puts on V while Active.
 
 **Chain** (`chain:true`, the `chain_hack` perk) fires the same hack at the nearest other active, hackable NPC within 8 m
 of the target (`GameObject.GetNPCsAroundObject`, the query `SpreadAreaEffector` uses). It only applies to puppet

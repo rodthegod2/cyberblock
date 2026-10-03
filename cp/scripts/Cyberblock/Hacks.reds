@@ -14,9 +14,18 @@
 //     ContagionLvl2Hack (no Lvl1), BrainMeltLvl2Hack (no Lvl1), PingLvl2Hack (no Lvl1), MemoryWipeLvl2Hack (no Lvl1),
 //     MadnessLvl3Hack (no Lvl1/Lvl2). Each is also looked up at run time (TweakDBInterface.GetObjectActionRecord).
 //   Living target: ScriptedPuppet.IsActive (alive, not defeated, unconscious or turned off), the test the game's own
-//     spread executor uses (EffectExecutor_Spread.Process). Not hackable: V's friends (GameObject
-//     .IsFriendlyTowardsPlayer), Invulnerable god mode (GodModeSystem.HasGodMode) and NPCs a scene is animating
-//     (SceneSystemInterface.IsEntityInScene), so quest characters are left alone.
+//     spread executor uses (EffectExecutor_Spread.Process). Hackable: vanilla's gates (ScriptedPuppet.IsQuickHackAble,
+//     scriptedPuppet.swift:3217) that concern the target, so quest characters are left alone: not V's friends
+//     (GameObject.IsFriendlyTowardsPlayer), no Invulnerable or Immortal god mode (GodModeSystem.HasGodMode; Immortal is
+//     how quest-essential NPCs are kept alive), not animated by a scene (SceneSystemInterface.IsEntityInScene), and a
+//     record that offers a PuppetQuickHack ObjectAction (Character_Record.ObjectActions, ObjectActionType().Type()),
+//     which is how story NPCs are made unhackable. Not taken over: the cyberdeck check (Minecraft owns it), the crowd
+//     and aggressiveness gates (Minecraft hacks pedestrians too), and QuickhackModule.IsQuickhackBlockedByScene, whose
+//     NoQuickHacks tag Cyberblock's own NoCombat puts on V while Active (PlayerState.reds); only its other half is
+//     kept: no hack while V is in scene tier 3-5 (PlayerPuppet.GetSceneTier). Crowd records offer no quickhack at all
+//     (Character.AsianMale has only GenericInteraction.Talk, TweakDB), so a crowd NPC (Character_Record.IsCrowd)
+//     counts unless its record has a quest affiliation other than General (Character_Record.Quest().Type();
+//     e.g. Character.lizzies_customer_female_high: MainQuest).
 //   Chain: GameObject.GetNPCsAroundObject(range) (TargetingSystem query, as SpreadAreaEffector), nearest other living NPC
 //     within 8 m of the target.
 //   Device hacks (audit B, device hacks): Device.GetDevicePS(), ScriptableDeviceComponentPS.GenerateContext(
@@ -89,6 +98,10 @@ public abstract class CyberblockHacks {
     if !IsDefined(player) || !IsDefined(object) {
       return "target gone";
     }
+    let tier = PlayerPuppet.GetSceneTier(player);
+    if tier >= 3 && tier <= 5 {
+      return "not hackable"; // V is in a scene that blocks quickhacks
+    }
     if isDevice {
       return CyberblockHacks.DeviceHack(player, object as Device);
     }
@@ -130,10 +143,29 @@ public abstract class CyberblockHacks {
       return false;
     }
     let id = puppet.GetEntityID();
-    if GameInstance.GetGodModeSystem(game).HasGodMode(id, gameGodModeType.Invulnerable) {
+    let godModes = GameInstance.GetGodModeSystem(game);
+    if godModes.HasGodMode(id, gameGodModeType.Invulnerable) || godModes.HasGodMode(id, gameGodModeType.Immortal) {
       return false;
     }
-    return !GameInstance.GetSceneSystem(game).GetScriptInterface().IsEntityInScene(id);
+    if GameInstance.GetSceneSystem(game).GetScriptInterface().IsEntityInScene(id) {
+      return false;
+    }
+    let record = puppet.GetRecord();
+    if !IsDefined(record) {
+      return false;
+    }
+    if record.IsCrowd() {
+      let quest = record.Quest();
+      return !IsDefined(quest) || Equals(quest.Type(), gamedataNPCQuestAffiliation.General);
+    }
+    let actions: array<wref<ObjectAction_Record>>;
+    record.ObjectActions(actions);
+    for action in actions {
+      if IsDefined(action) && IsDefined(action.ObjectActionType()) && Equals(action.ObjectActionType().Type(), gamedataObjectActionType.PuppetQuickHack) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // The nearest other living, hackable NPC within range metres of target, or null.
