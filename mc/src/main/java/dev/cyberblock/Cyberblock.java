@@ -18,10 +18,15 @@ public class Cyberblock implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
+		ProxyEntities.register();
 		ServerLifecycleEvents.SERVER_STARTED.register(WorldBridge::attach);
-		// before the world is saved, so Night City's barriers are never kept in the save
-		ServerLifecycleEvents.SERVER_STOPPING.register(server -> WorldBridge.detach());
+		// before the world is saved, so Night City's barriers and the proxies are never kept in the save
+		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+			ProxyManager.clear();
+			WorldBridge.detach();
+		});
 		ServerTickEvents.END_SERVER_TICK.register(WorldBridge::tick);
+		ServerTickEvents.END_SERVER_TICK.register(ProxyManager::tick);
 		LOG.info("cyberblock loaded");
 	}
 }

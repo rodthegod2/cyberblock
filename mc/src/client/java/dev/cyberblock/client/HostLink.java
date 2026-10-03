@@ -5,6 +5,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.ProxyManager;
 import dev.cyberblock.Ranges;
 import dev.cyberblock.WorldBridge;
 import java.net.InetSocketAddress;
@@ -25,6 +26,8 @@ import org.java_websocket.server.WebSocketServer;
  * ignored (pitch is clamped to +-90)</li>
  * <li>{"t":"ground","c":[x,z,yBottom,yTop, ...]}: solid ranges (barriers); "unground" takes the same ranges out again</li>
  * <li>{"t":"clear"}: remove the barriers placed so far</li>
+ * <li>{"t":"npcs","list":[{"id":"...","p":[x,y,z],"yaw":deg,"kind":"human|vehicle","hostile":bool}, ...]}: the Cyberpunk NPCs and
+ * vehicles around V, each an invisible proxy entity (see ProxyManager)</li>
  * <li>{"t":"cmd","c":"setblock 0 64 0 stone"}: a server command, for test tools (not part of protocol v1)</li>
  * <li>{"t":"key","k":"use|attack|pick|inventory|drop|swap|chat|command|escape","down":bool}, and "slot": while a screen is open
  * these are key presses for that screen (E closes the inventory, Q drops the hovered stack, 1-9 swap it into the hotbar) and
@@ -96,6 +99,7 @@ public final class HostLink extends WebSocketServer {
 				case "ground" -> WorldBridge.solid(Ranges.decode(ints(m.getAsJsonArray("c"))));
 				case "unground" -> WorldBridge.unsolid(Ranges.decode(ints(m.getAsJsonArray("c"))));
 				case "clear" -> WorldBridge.clearSolid();
+				case "npcs" -> ProxyManager.update(m);
 				case "cmd" -> WorldBridge.command(m.get("c").getAsString());
 				default -> {
 					Minecraft minecraft = Minecraft.getInstance();

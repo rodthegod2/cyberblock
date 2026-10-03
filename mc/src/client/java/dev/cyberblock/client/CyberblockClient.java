@@ -2,10 +2,12 @@
 package dev.cyberblock.client;
 
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.ProxyEntities;
 import dev.cyberblock.WorldBridge;
 import java.util.List;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.client.CloudStatus;
@@ -13,6 +15,7 @@ import net.minecraft.client.InactivityFpsLimit;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
 import net.minecraft.client.gui.screens.DeathScreen;
+import net.minecraft.client.renderer.entity.NoopRenderer;
 import net.minecraft.client.tutorial.TutorialSteps;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -52,6 +55,9 @@ public class CyberblockClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		HostLink.launch();
+		// proxies are never drawn: Cyberpunk shows the NPC or vehicle they stand for
+		EntityRendererRegistry.register(ProxyEntities.HUMAN, NoopRenderer::new);
+		EntityRendererRegistry.register(ProxyEntities.VEHICLE, NoopRenderer::new);
 		ClientTickEvents.END_CLIENT_TICK.register(CyberblockClient::tick);
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			ServerPlayer player = handler.player;
