@@ -77,6 +77,24 @@ public final class Wire {
 			active, fin(x), fin(y), fin(z), v[0], v[1], v[2], fin(yaw), fin(pitch));
 	}
 
+	/** {"t":"proj","list":[{"id":n,"p":[x,y,z],"v":[x,y,z] m/s (at most 200),"g":m/s^2}, ...]} in the given order. */
+	public static String proj(final List<Projectiles.Flying> list) {
+		StringBuilder b = new StringBuilder("{\"t\":\"proj\",\"list\":[");
+		for (int i = 0; i < list.size(); i++) {
+			Projectiles.Flying f = list.get(i);
+			double[] v = FlightRules.capSpeed(f.vx(), f.vy(), f.vz());
+			b.append(i == 0 ? "" : ",").append(String.format(Locale.ROOT, "{\"id\":%d,\"p\":[%.3f,%.3f,%.3f],\"v\":[%.3f,%.3f,%.3f],\"g\":%.3f}",
+				f.id(), fin(f.x()), fin(f.y()), fin(f.z()), v[0], v[1], v[2], Math.clamp(fin(f.g()), 0.0, Projectiles.MAX_GRAVITY)));
+		}
+
+		return b.append("]}").toString();
+	}
+
+	/** {"t":"teleport","p":[x,y,z] feet,"yaw":deg}: Steve's ender pearl landed; the host moves V there. */
+	public static String teleport(final double x, final double y, final double z, final double yaw) {
+		return String.format(Locale.ROOT, "{\"t\":\"teleport\",\"p\":[%.3f,%.3f,%.3f],\"yaw\":%.2f}", fin(x), fin(y), fin(z), fin(yaw));
+	}
+
 	/** {"t":"ignite","target":"id","seconds":s}: a proxy was set on fire. */
 	public static String ignite(final String target, final double seconds) {
 		return String.format(Locale.ROOT, "{\"t\":\"ignite\",\"target\":\"%s\",\"seconds\":%.2f}", target, fin(seconds));

@@ -23,6 +23,10 @@ public final class WorldBridge {
 	private static final BlockEvents.Outbox blockEvents = new BlockEvents.Outbox();
 	/** While placing or removing the host's own ground: those changes aren't news to the host (server thread only). */
 	private static boolean placingGround;
+	/** The protocol's limit for one pcells message. */
+	private static final int MAX_PROJECTILE_CELLS = 64;
+	/** Barriers on Night City surfaces in the way of Steve's projectiles, for 3 seconds (server thread only). */
+	private static final TempCells pcells = new TempCells();
 	/** The solid blocks of the world the host plays in (server thread; null while no world runs). */
 	private static PlacedBlocks placed;
 	/** The resync the host gets after its hello (server thread). */
@@ -145,6 +149,8 @@ public final class WorldBridge {
 							if (level.getBlockState(pos).isAir()) {
 								level.setBlock(pos, barrier, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
 								barriers.add(pos.immutable());
+							} else if (pcells.promote(pos.asLong()) && level.getBlockState(pos).is(Blocks.BARRIER)) {
+								barriers.add(pos.immutable()); // a projectile's barrier the probes now report as ground stays
 							}
 						} else if (barriers.remove(pos.immutable()) && level.getBlockState(pos).is(Blocks.BARRIER)) {
 							level.setBlock(pos, air, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
@@ -165,7 +171,7 @@ public final class WorldBridge {
 		}
 	}
 
-	/** Server thread only. */
+	/** Server thread only: the ground barriers and the projectiles' ones. */
 	private static void removeBarriers(final ServerLevel level) {
 		placingGround = true;
 		for (BlockPos pos : barriers) {
@@ -176,6 +182,63 @@ public final class WorldBridge {
 
 		placingGround = false;
 		barriers.clear();
+		removeTemp(level, pcells.clear());
+	}
+
+	/**
+	 * Link thread: {"t":"pcells","c":[x,y,z, ...]}: Night City surfaces on the paths of Steve's projectiles. Each becomes a barrier
+	 * (only into air) for 3 seconds, so the projectile hits it. Cells outside the world are skipped.
+	 */
+	public static void projectileCells(final int[] cells) {
+		MinecraftServer s = server;
+		if (s == null || cells.length / 3 > MAX_PROJECTILE_CELLS) {
+			return;
+		}
+
+		s.execute(() -> {
+			if (!Cyberblock.active) {
+				return;
+			}
+
+			ServerLevel level = s.overworld();
+			long now = s.getTickCount();
+			BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+			placingGround = true;
+			try {
+				for (int i = 0; i + 2 < cells.length; i += 3) {
+					pos.set(cells[i], cells[i + 1], cells[i + 2]);
+					if (!level.isInWorldBounds(pos)) {
+						continue;
+					}
+
+					long cell = pos.asLong();
+					if (pcells.contains(cell)) {
+						pcells.put(cell, now); // still on a path: it stays longer
+					} else if (level.getBlockState(pos).isAir()) {
+						level.setBlock(pos, Blocks.BARRIER.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+						pcells.put(cell, now);
+					}
+				}
+			} finally {
+				placingGround = false;
+			}
+		});
+	}
+
+	/** Server thread: takes the given projectile barriers out (unless something else replaced them meanwhile). */
+	private static void removeTemp(final ServerLevel level, final long[] cells) {
+		BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+		placingGround = true;
+		try {
+			for (long cell : cells) {
+				pos.set(BlockPos.getX(cell), BlockPos.getY(cell), BlockPos.getZ(cell));
+				if (level.getBlockState(pos).is(Blocks.BARRIER)) {
+					level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+				}
+			}
+		} finally {
+			placingGround = false;
+		}
 	}
 
 	/** Run a command as the server (op). Results go to the log, not to chat (send_command_feedback is off). */
@@ -196,8 +259,12 @@ public final class WorldBridge {
 		return server;
 	}
 
-	/** Every server tick: the resync's next message, then a few live block changes for the host (in that order). */
+	/** Every server tick: expired projectile barriers go; the resync's next message, then a few live block changes for the host. */
 	static void tick(final MinecraftServer s) {
+		if (pcells.size() > 0) {
+			removeTemp(s.overworld(), pcells.expire(s.getTickCount()));
+		}
+
 		boolean active = Cyberblock.active;
 		if (active && !wasActive && missed && linked) {
 			startResync(s);

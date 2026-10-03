@@ -33,6 +33,7 @@ public class Cyberblock implements ModInitializer {
 		ServerTickEvents.END_SERVER_TICK.register(WorldBridge::tick);
 		ServerTickEvents.END_SERVER_TICK.register(ProxyManager::tick);
 		ServerTickEvents.END_SERVER_TICK.register(MobWar::tick);
+		ServerTickEvents.END_SERVER_TICK.register(Projectiles::tick);
 		LOG.info("cyberblock loaded");
 	}
 }
