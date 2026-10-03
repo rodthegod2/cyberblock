@@ -510,16 +510,12 @@ namespace cb::input
 		}
 		g_bindHack = update->binds.hack;
 		g_bindSkills = update->binds.skills;
-		static std::atomic<bool> warnedHack{false};
-		static std::atomic<bool> warnedSkills{false};
-		if (update->hackRejected && !warnedHack.exchange(true))
-			log::warn("binds: Minecraft's hack key cannot be used (not 1..254, taken by a movement or swallowed key, or equal to "
-					  "the skills key); keeping virtual key 0x%x (logged once)",
-					  unsigned(update->binds.hack));
-		if (update->skillsRejected && !warnedSkills.exchange(true))
-			log::warn("binds: Minecraft's skills key cannot be used (not 1..254, taken by a movement or swallowed key, or equal "
-					  "to the hack key); keeping virtual key 0x%x (logged once)",
-					  unsigned(update->binds.skills));
+		static std::atomic<bool> warned{false};
+		if (update->fellBack() && !warned.exchange(true))
+			log::warn("binds: %s; hack and skills fall back to G and K (logged once)",
+					  update->clash ? "the hack and skills keys are the same key"
+									: "a key Minecraft sent cannot be used (not 1..254, or one of Cyberpunk's own or Minecraft's "
+									  "forwarded keys)");
 	}
 
 	void shutdown()

@@ -1,5 +1,6 @@
 #include "keys.hpp"
 #include <cmath>
+#include <string_view>
 
 namespace
 {
@@ -55,15 +56,11 @@ namespace cb::keys
 		case kControl:
 		case kLeftControl:
 		case kRightControl:
-		case kW:
-		case kA:
-		case kS:
-		case kD:
-		case kC:
 			return false;
-		default:
-			return true;
 		}
+		// Cyberpunk's own letters while V is on foot (movement, crouch, interact, menus, reload, holster, ...)
+		constexpr std::string_view kCyberpunkLetters = "WASDCFIMJHNBPVZR";
+		return !(vk >= 'A' && vk <= 'Z' && kCyberpunkLetters.find(char(vk)) != std::string_view::npos);
 	}
 
 	std::optional<BindsUpdate> apply_binds(const nlohmann::json &message, const Binds &current)
@@ -71,18 +68,12 @@ namespace cb::keys
 		const auto keys = message.find("keys");
 		if (keys == message.end() || !keys->is_object())
 			return std::nullopt;
-		BindsUpdate out{current};
+		BindsUpdate out;
 		Binds next = current;
 		read_bind(*keys, "hack", next.hack, out.hackRejected);
 		read_bind(*keys, "skills", next.skills, out.skillsRejected);
-		if (next.hack == next.skills)
-		{
-			// one key for both actions would fire both: keep the previous pair
-			out.hackRejected = out.hackRejected || next.hack != current.hack;
-			out.skillsRejected = out.skillsRejected || next.skills != current.skills;
-			return out;
-		}
-		out.binds = next;
+		out.clash = next.hack == next.skills; // one key for both actions would fire both
+		out.binds = out.fellBack() ? Binds{} : next;
 		return out;
 	}
 

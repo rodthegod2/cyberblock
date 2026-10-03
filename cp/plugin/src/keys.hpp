@@ -49,20 +49,24 @@ namespace cb::keys
 	/// toggle, which input.cpp keeps from Cyberpunk in every state, so its QuickLoad never fires).
 	bool is_swallowed(uint32_t vk, const Binds &binds);
 
-	/// May `vk` be bound to hack or skills: 1..254, and not F9, Esc, a key of the fixed swallow set above, W, A, S, D,
-	/// Space, Shift, Ctrl or C (those belong to Minecraft's movement or to Cyberpunk).
+	/// May `vk` be bound to hack or skills: 1..254, and not F9, Esc, Space, Shift, Ctrl, a key of the fixed swallow set
+	/// above (E Q T X 1-9 / F5), or one of Cyberpunk's own letters W A S D C F I M J H N B P V Z R. Of the keys Minecraft
+	/// can send (letters, digits, F-keys; shared/vectors.json `binds`) that leaves G K L O U Y 0 F1-F4 F6-F8 F10-F12.
 	bool bindable(uint32_t vk);
 
 	struct BindsUpdate
 	{
 		Binds binds;                 // the keys to use from now on
-		bool hackRejected = false;   // a hack key was given and is not usable: the previous one stays
+		bool hackRejected = false;   // a hack key was given and is not a whole number that bindable() takes
 		bool skillsRejected = false;
+		bool clash = false;          // both actions resolved to one key
+		/// Something was wrong: both actions went back to the defaults G/K.
+		bool fellBack() const { return hackRejected || skillsRejected || clash; }
 	};
 
-	/// Applies a `binds` message ({"keys":{"hack":<vk>,"skills":<vk>}}) to `current`. A key that is missing stays; a key that
-	/// is not a whole number, not bindable, or that would make both actions share one key keeps its previous value and is
-	/// reported as rejected. nullopt when `keys` is missing or not an object.
+	/// Applies a `binds` message ({"keys":{"hack":<vk>,"skills":<vk>}}) to `current`. A key that is missing stays. When a
+	/// given key is not a whole number or not bindable, or both actions resolve to one key, BOTH fall back to the defaults
+	/// G (hack) and K (skills), as Minecraft does. nullopt when `keys` is missing or not an object.
 	std::optional<BindsUpdate> apply_binds(const nlohmann::json &message, const Binds &current);
 
 	/// Decides, key by key, what Cyberpunk gets: a key that goes down while forwarding is swallowed (with its repeats and its

@@ -78,22 +78,26 @@ TEST(f9_never_reaches_cyberpunk)
 
 TEST(bindable_keys_are_1_to_254_and_not_reserved)
 {
-	CHECK(bindable('G') && bindable('K') && bindable('Z') && bindable('V') && bindable('R'));
-	CHECK(bindable(0x70) && bindable(0x7B));                  // F1, F12
-	CHECK(bindable(0x61) && bindable(0x09) && bindable(0x12)); // Numpad 1, Tab, Alt
+	// what is left of the keys Minecraft can send: G K L O U Y 0 F1-F4 F6-F8 F10-F12
+	for (uint32_t vk : {uint32_t('G'), uint32_t('K'), uint32_t('L'), uint32_t('O'), uint32_t('U'), uint32_t('Y'), uint32_t('0')})
+		CHECK(bindable(vk));
+	for (uint32_t vk : {0x70u, 0x71u, 0x72u, 0x73u, 0x75u, 0x76u, 0x77u, 0x79u, 0x7Au, 0x7Bu}) // F1-F4, F6-F8, F10-F12
+		CHECK(bindable(vk));
+	CHECK(bindable(0x61) && bindable(0x09) && bindable(0x12)); // Numpad 1, Tab, Alt (Minecraft never sends these)
 	CHECK(bindable(1) && bindable(254));
 	CHECK(!bindable(0) && !bindable(255) && !bindable(256) && !bindable(1000) && !bindable(0xFFFFFFFFu));
 }
 
 TEST(reserved_keys_cannot_be_bound)
 {
-	CHECK(!bindable(kF9) && !bindable(kEscape));
-	for (uint32_t vk : {uint32_t('E'), uint32_t('Q'), uint32_t('T'), uint32_t('X'), kOem2, kF5}) // the swallow set
+	CHECK(!bindable(kF9) && !bindable(kEscape) && !bindable(kF5));
+	for (uint32_t vk : {uint32_t('E'), uint32_t('Q'), uint32_t('T'), uint32_t('X'), kOem2}) // the swallow set
 		CHECK(!bindable(vk));
 	for (uint32_t vk = '1'; vk <= '9'; ++vk)
 		CHECK(!bindable(vk));
-	for (uint32_t vk : {uint32_t('W'), uint32_t('A'), uint32_t('S'), uint32_t('D'), kSpace, kShift, kLeftShift, kRightShift, kControl,
-						kLeftControl, kRightControl, uint32_t('C')})
+	for (char c : std::string("WASDCFIMJHNBPVZR")) // Cyberpunk's own letters while V is on foot
+		CHECK(!bindable(uint32_t(c)));
+	for (uint32_t vk : {kSpace, kShift, kLeftShift, kRightShift, kControl, kLeftControl, kRightControl})
 		CHECK(!bindable(vk));
 }
 
@@ -107,26 +111,28 @@ TEST(the_default_binds_are_bindable_and_distinct)
 
 TEST(a_binds_message_sets_both_keys)
 {
-	const auto update = apply_binds(binds_message(R"({"hack":90,"skills":79})"), Binds{});
-	CHECK(update.has_value() && update->binds == binds_of(90, 79) && !update->hackRejected && !update->skillsRejected);
+	const auto update = apply_binds(binds_message(R"({"hack":76,"skills":79})"), Binds{}); // L, O
+	CHECK(update.has_value() && update->binds == binds_of('L', 'O') && !update->fellBack());
 }
 
-TEST(a_missing_key_stays_and_an_unusable_one_keeps_its_previous_value)
+TEST(a_missing_key_stays_and_an_unusable_one_sends_both_back_to_g_and_k)
 {
-	const Binds current{'Z', 'O'};
-	const auto onlyHack = apply_binds(binds_message(R"({"hack":86})"), current); // V
-	CHECK(onlyHack && onlyHack->binds == binds_of('V', 'O') && !onlyHack->hackRejected && !onlyHack->skillsRejected);
-	const auto badHack = apply_binds(binds_message(R"({"hack":69,"skills":82})"), current); // hack = E (swallowed), skills = R
-	CHECK(badHack && badHack->binds == binds_of('Z', 'R') && badHack->hackRejected && !badHack->skillsRejected);
+	const Binds current{'L', 'O'};
+	const auto onlyHack = apply_binds(binds_message(R"({"hack":85})"), current); // U
+	CHECK(onlyHack && onlyHack->binds == binds_of('U', 'O') && !onlyHack->fellBack());
+	const auto badHack = apply_binds(binds_message(R"({"hack":69,"skills":89})"), current); // hack = E (swallowed), skills = Y
+	CHECK(badHack && badHack->binds == binds_of() && badHack->hackRejected && !badHack->skillsRejected && badHack->fellBack());
+	const auto badSkills = apply_binds(binds_message(R"({"skills":70})"), current); // F: Cyberpunk's interact
+	CHECK(badSkills && badSkills->binds == binds_of() && badSkills->skillsRejected);
 	const auto bothBad = apply_binds(binds_message(R"({"hack":0,"skills":120})"), current); // 0 and F9
-	CHECK(bothBad && bothBad->binds == current && bothBad->hackRejected && bothBad->skillsRejected);
-	for (const char *value : {R"("71")", "71.5", "-71", "300", "null", "true", "[71]", "255"})
+	CHECK(bothBad && bothBad->binds == binds_of() && bothBad->hackRejected && bothBad->skillsRejected);
+	for (const char *value : {R"("71")", "71.5", "-71", "300", "null", "true", "[71]", "255", "82" /*R*/, "86" /*V*/, "73" /*I*/})
 	{
 		const auto update = apply_binds(binds_message(std::string(R"({"hack":)") + value + "}"), current);
-		CHECK(update && update->binds == current && update->hackRejected);
+		CHECK(update && update->binds == binds_of() && update->hackRejected);
 	}
-	const auto whole = apply_binds(binds_message(R"({"hack":86.0})"), current); // a whole number written as a float
-	CHECK(whole && whole->binds.hack == 'V' && !whole->hackRejected);
+	const auto whole = apply_binds(binds_message(R"({"hack":85.0})"), current); // a whole number written as a float
+	CHECK(whole && whole->binds == binds_of('U', 'O') && !whole->fellBack());
 }
 
 TEST(a_binds_message_without_a_keys_object_is_malformed)
@@ -134,19 +140,21 @@ TEST(a_binds_message_without_a_keys_object_is_malformed)
 	CHECK(!apply_binds(json::parse(R"({"t":"binds"})"), binds_of()));
 	CHECK(!apply_binds(json::parse(R"({"t":"binds","keys":[71,75]})"), binds_of()));
 	CHECK(!apply_binds(json::parse(R"({"t":"binds","keys":"GK"})"), binds_of()));
-	const auto empty = apply_binds(binds_message("{}"), Binds{'Z', 'O'});
-	CHECK(empty && empty->binds == binds_of('Z', 'O') && !empty->hackRejected && !empty->skillsRejected);
+	const auto empty = apply_binds(binds_message("{}"), Binds{'L', 'O'});
+	CHECK(empty && empty->binds == binds_of('L', 'O') && !empty->fellBack());
 }
 
-TEST(one_key_for_both_actions_is_refused)
+TEST(one_key_for_both_actions_sends_both_back_to_g_and_k)
 {
-	const Binds current{'Z', 'O'};
-	const auto same = apply_binds(binds_message(R"({"hack":86,"skills":86})"), current);
-	CHECK(same && same->binds == current && same->hackRejected && same->skillsRejected);
+	const Binds current{'L', 'O'};
+	const auto same = apply_binds(binds_message(R"({"hack":85,"skills":85})"), current);
+	CHECK(same && same->binds == binds_of() && same->clash && !same->hackRejected && !same->skillsRejected);
 	const auto clash = apply_binds(binds_message(R"({"hack":79})"), current); // hack onto the current skills key
-	CHECK(clash && clash->binds == current && clash->hackRejected && !clash->skillsRejected);
-	const auto swap = apply_binds(binds_message(R"({"hack":79,"skills":90})"), current); // swapping is fine
-	CHECK(swap && swap->binds == binds_of('O', 'Z') && !swap->hackRejected && !swap->skillsRejected);
+	CHECK(clash && clash->binds == binds_of() && clash->clash);
+	const auto swap = apply_binds(binds_message(R"({"hack":79,"skills":76})"), current); // swapping is fine
+	CHECK(swap && swap->binds == binds_of('O', 'L') && !swap->fellBack());
+	const auto defaults = apply_binds(binds_message(R"({"hack":71,"skills":75})"), current); // G, K
+	CHECK(defaults && defaults->binds == binds_of() && !defaults->fellBack());
 }
 
 // ---- the key-up rule ---------------------------------------------------------------------------------------------------

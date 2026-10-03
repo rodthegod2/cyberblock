@@ -616,7 +616,7 @@
   },
   {
    "vk": 66,
-   "bindable": true
+   "bindable": false
   },
   {
    "vk": 67,
@@ -632,7 +632,7 @@
   },
   {
    "vk": 70,
-   "bindable": true
+   "bindable": false
   },
   {
    "vk": 71,
@@ -640,15 +640,15 @@
   },
   {
    "vk": 72,
-   "bindable": true
+   "bindable": false
   },
   {
    "vk": 73,
-   "bindable": true
+   "bindable": false
   },
   {
    "vk": 74,
-   "bindable": true
+   "bindable": false
   },
   {
    "vk": 75,
@@ -660,11 +660,11 @@
   },
   {
    "vk": 77,
-   "bindable": true
+   "bindable": false
   },
   {
    "vk": 78,
-   "bindable": true
+   "bindable": false
   },
   {
    "vk": 79,
@@ -672,7 +672,7 @@
   },
   {
    "vk": 80,
-   "bindable": true
+   "bindable": false
   },
   {
    "vk": 81,
@@ -680,7 +680,7 @@
   },
   {
    "vk": 82,
-   "bindable": true
+   "bindable": false
   },
   {
    "vk": 83,
@@ -696,7 +696,7 @@
   },
   {
    "vk": 86,
-   "bindable": true
+   "bindable": false
   },
   {
    "vk": 87,
@@ -712,7 +712,7 @@
   },
   {
    "vk": 90,
-   "bindable": true
+   "bindable": false
   },
   {
    "vk": 48,

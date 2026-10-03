@@ -23,10 +23,11 @@ mc_blocks = [(10, 4, -21), (0, 0, 0), (-1, -64, -1), (123456, 319, -98765), (-30
 mc_yaws = [0.0, 90.0, -90.0, 180.0, -180.0, 359.5]
 mc_vels = [(1.0, 2.0, 3.0), (0.0, -9.8, 0.5), (-30.5, 12.25, 7.0), (0.5, 0.0, 0.25), (200.0, -200.0, 0.5), (-0.01, 0.01, -4.5)]
 # The keys Minecraft can name in `binds` (letters, digits, F1-F12, as Windows virtual-key codes) and which of them the
-# DLL takes (plan 2026-10-03 D5: not W A S D C, not the forwarded E Q T 1-9 F5, not F9). The DLL's keys::bindable and
-# Minecraft's VirtualKeys.of are both checked against this set, so the two lists cannot drift apart.
+# DLL takes: not the forwarded E Q T X 1-9 F5, not F9, and not Cyberpunk's own on-foot letters W A S D C F I M J H N B P V
+# Z R, which leaves G K L O U Y 0 F1-F4 F6-F8 F10-F12. The DLL's keys::bindable and Minecraft's VirtualKeys.of are both
+# checked against this set, so the two lists cannot drift apart.
 bind_keys = list(range(0x41, 0x5B)) + list(range(0x30, 0x3A)) + list(range(0x70, 0x7C))
-bind_refused = {ord(c) for c in "WASDCEQTX123456789"} | {0x74, 0x78}
+bind_refused = {ord(c) for c in "WASDCEQTXFIMJHNBPVZR123456789"} | {0x74, 0x78}
 out = {
     "quat": [{"q": list(q), "yaw": y, "pitch": p} for q in qs for y, p in [cbmath.cp_quat_to_mc_yaw_pitch(*q)]],
     "down": [{"hit": list(h), "range": list(cbmath.down_hit_to_range(*h))} for h in hits],
