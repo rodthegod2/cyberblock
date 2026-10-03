@@ -22,6 +22,8 @@ public final class ExplosionEvents {
 	public static final double FIREWORK_POWER = 1.5;
 	/** The host accepts 0..20; commands and data packs can ask for more. */
 	static final double MAX_POWER = 20.0;
+	/** Cyberpunk metres of push radius per block of a wind burst's Minecraft radius (a wind charge's 1.2 pushes within 2.4 m: more than a hand's reach). */
+	static final double KNOCK_RADIUS_PER_POWER = 2.0;
 	/** The demolitions perk: Steve's explosions are this much bigger. */
 	static final float DEMOLITIONS = 1.5F;
 	/** Creepers Steve lit with flint and steel or a fire charge (server thread only; they are gone after their blast). */
@@ -42,7 +44,7 @@ public final class ExplosionEvents {
 		}
 
 		if (!isBlast(interaction)) {
-			return Wire.knock(x, y, z, power, Tethers.knockStrength(power));
+			return Wire.knock(x, y, z, Math.min(KNOCK_RADIUS_PER_POWER * power, Tethers.MAX_KNOCK_RADIUS), Tethers.knockStrength(power));
 		}
 
 		return Wire.explosion(x, y, z, Math.min(power, MAX_POWER), fire);
