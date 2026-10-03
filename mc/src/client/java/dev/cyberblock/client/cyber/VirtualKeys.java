@@ -4,9 +4,10 @@ import java.util.Set;
 
 /**
  * Minecraft key (26.3: SDL scancodes) to Windows virtual-key code, for the `binds` message. Cyberpunk only forwards
- * letters, digits and F1-F12, and Cyberblock.dll refuses the ones it needs itself (keys::bindable: W A S D C, the
- * forwarded E Q T 1-9 F5, and F9), so every other key (and any mouse button) stands for the mapping's default. The
- * shared/vectors.json `binds` set keeps this list and the DLL's the same.
+ * letters, digits and F1-F12, and Cyberblock.dll refuses the ones that already do something while Cyberblock is active
+ * (keys::bindable): movement and crouch (W A S D C), the keys forwarded to Minecraft (E Q T X 1-9 F5), Cyberpunk's own
+ * keys that pass through (F I M J H N B P V Z R) and F9. Every other key (and any mouse button) stands for the
+ * mapping's default. The shared/vectors.json `binds` set keeps this list and the DLL's the same.
  */
 public final class VirtualKeys {
 	public static final int VK_G = 0x47;
@@ -22,7 +23,9 @@ public final class VirtualKeys {
 	private static final int VK_F5 = 0x74;
 	private static final int VK_F9 = 0x78;
 	/** Virtual keys the DLL refuses as a bind: it would keep the previous one, while Minecraft showed the new key. */
-	private static final Set<Integer> REFUSED = Set.of((int) 'W', (int) 'A', (int) 'S', (int) 'D', (int) 'C', (int) 'E', (int) 'Q', (int) 'T',
+	private static final Set<Integer> REFUSED = Set.of(
+		(int) 'W', (int) 'A', (int) 'S', (int) 'D', (int) 'C', (int) 'E', (int) 'Q', (int) 'T', (int) 'X',
+		(int) 'F', (int) 'I', (int) 'M', (int) 'J', (int) 'H', (int) 'N', (int) 'B', (int) 'P', (int) 'V', (int) 'Z', (int) 'R',
 		(int) '1', (int) '2', (int) '3', (int) '4', (int) '5', (int) '6', (int) '7', (int) '8', (int) '9', VK_F5, VK_F9);
 
 	private VirtualKeys() {
