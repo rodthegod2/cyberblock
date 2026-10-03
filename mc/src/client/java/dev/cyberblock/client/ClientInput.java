@@ -38,16 +38,17 @@ final class ClientInput {
 
 	/**
 	 * Presses a key bound to the open screen, the way vanilla's KeyboardHandler does (the screen decides: the inventory key closes a
-	 * container screen, drop drops the hovered stack, number keys swap it into the hotbar; other screens ignore it). A mapping bound
-	 * to the mouse (use, attack and pick by default) is not a key press: the host sends "click" while a screen is open.
+	 * container screen, drop drops the hovered stack, Ctrl+drop the whole stack, number keys swap it into the hotbar; other screens
+	 * ignore it). A mapping bound to the mouse (use, attack and pick by default) is not a key press: the host sends "click" while a
+	 * screen is open.
 	 */
-	private static void pressOnScreen(final Screen screen, final KeyMapping mapping) {
+	private static void pressOnScreen(final Screen screen, final KeyMapping mapping, final int mods) {
 		InputConstants.Key bound = ((KeyMappingAccessor)mapping).cyberblock$getKey();
 		if (bound.getType() != InputConstants.Type.KEYBOARD || bound.equals(InputConstants.UNKNOWN)) {
 			return;
 		}
 
-		keyPressed(screen, bound.getValue(), 0);
+		keyPressed(screen, bound.getValue(), mods);
 	}
 
 	/**
@@ -58,6 +59,11 @@ final class ClientInput {
 	private static void keyPressed(final Screen screen, final int scancode, final int mods) {
 		screen.afterKeyboardAction();
 		screen.keyPressed(new KeyEvent(scancode, SDLKeyboard.SDL_GetKeyFromScancode(scancode, (short)0, false), mods));
+	}
+
+	/** The message's "mods": SDL modifier bits as Minecraft 26.3 reads them (InputConstants.MOD_SHIFT 3, MOD_CONTROL 192, MOD_ALT 768). */
+	private static int mods(final JsonObject m) {
+		return m.has("mods") ? m.get("mods").getAsInt() : 0;
 	}
 
 	static void handle(final Minecraft minecraft, final JsonObject m) {
@@ -105,11 +111,20 @@ final class ClientInput {
 					// vanilla gives a key to the open screen and never to the game (handleKeybinds does not run, and KeyMapping.releaseAll
 					// only runs when a screen opens): a click counted now would stay queued and fire as soon as the screen closes
 					if (down) {
-						pressOnScreen(screen, key);
+						pressOnScreen(screen, key, mods(m));
 					}
 				} else {
 					// right-click while the hack key is held fires the chip the wheel picked (HackWheel), never a use
 					if (key == minecraft.options.keyUse && HackWheel.use(minecraft, down)) {
+						return;
+					}
+
+					// Ctrl+Q drops the whole stack: vanilla asks the window whether Ctrl is down, and the host's window has the keyboard
+					if (key == minecraft.options.keyDrop && down && (mods(m) & InputConstants.MOD_CONTROL) != 0) {
+						if (player != null && minecraft.gameMode != null && !player.isSpectator()) {
+							minecraft.gameMode.dropItem(player, true);
+						}
+
 						return;
 					}
 
@@ -126,14 +141,14 @@ final class ClientInput {
 				Screen screen = minecraft.gui.screen();
 				if (screen != null) {
 					// in an inventory the number keys swap the hovered stack with that hotbar slot
-					pressOnScreen(screen, minecraft.options.keyHotbarSlots[n]);
+					pressOnScreen(screen, minecraft.options.keyHotbarSlots[n], mods(m));
 				} else if (player != null) {
 					player.getInventory().setSelectedSlot(n);
 				}
 			}
 			case "look" -> Flight.look(m);
 			case "cursor" -> HostCursor.move(minecraft, m.get("x").getAsDouble(), m.get("y").getAsDouble());
-			case "click" -> HostCursor.click(minecraft, m.get("b").getAsInt(), !m.has("down") || m.get("down").getAsBoolean());
+			case "click" -> HostCursor.click(minecraft, m.get("b").getAsInt(), !m.has("down") || m.get("down").getAsBoolean(), mods(m));
 			case "scroll" -> {
 				int notches = m.get("d").getAsInt();
 				if (minecraft.gui.screen() != null) {
