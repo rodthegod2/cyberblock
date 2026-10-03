@@ -41,12 +41,12 @@ import org.java_websocket.server.WebSocketServer;
  * <li>{"t":"key","k":"use|attack|pick|inventory|drop|swap|chat|command|escape","down":bool}, and "slot": while a screen is open
  * these are key presses for that screen (E closes the inventory, Q drops the hovered stack, 1-9 swap it into the hotbar) and
  * never reach the game, so nothing is replayed when the screen closes. "jump" and "sprint" are only stored (HostState), "perspective"
- * is ignored (the host drives the camera)</li>
+ * (F5) toggles first/third person and answers with {"t":"persp","mode":"first|back"} (also sent after every host hello)</li>
  * <li>{"t":"slot","n":0-8}, {"t":"scroll","d":+-1}, {"t":"hud","hidden":bool}, {"t":"view","w":px,"h":px}</li>
  * <li>{"t":"state","active":bool,"vehicle":bool}: in a vehicle Steve, his hand and the HUD are hidden</li>
  * </ul>
  * <p>Minecraft to host: {"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3","ver":"1.0.0"} on connect, {"t":"status",...} (see
- * StatusReporter). A host hello with another proto closes the link. Unknown "t" values are ignored. After its own handling every
+ * StatusReporter), {"t":"persp","mode":"first|back"} (ClientInput). A host hello with another proto closes the link. Unknown "t" values are ignored. After its own handling every
  * message also goes to Bridge.dispatch (the cyber track's listeners), on this thread.
  */
 public final class HostLink extends WebSocketServer {
@@ -139,6 +139,8 @@ public final class HostLink extends WebSocketServer {
 						// a new host session (or either side restarted): it knows none of our blocks nor Steve's effects
 						WorldBridge.hostHello();
 						PlayerEffects.hostHello();
+						// the host starts every session in first person: tell it the view F5 chose (plan retest3 M4)
+						ClientInput.sendPerspective();
 					}
 				}
 				case "cam" -> HostState.update(m);
