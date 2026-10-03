@@ -218,3 +218,15 @@ def test_the_installer_manifest_format_is_the_one_the_script_documents():
     for constant in (install.GAME_EXE, install.SHADER_HEADER, install.PRESET):  # the paths the script spells out itself
         assert constant in script
     assert install.PRESET_TEXT.strip() in script
+
+
+def test_nothing_tracked_by_git_is_game_content_or_a_source_unpack():
+    """The legal rule: no Minecraft or Cyberpunk assets, fonts or decompiled sources in the tree (the integrator checks the same)."""
+    import shutil
+    import subprocess
+
+    if not shutil.which("git") or not (REPO / ".git").exists():
+        pytest.skip("not a git checkout")
+    tracked = subprocess.run(["git", "ls-files"], cwd=REPO, capture_output=True, text=True, check=True).stdout.splitlines()
+    bad = [p for p in tracked if re.search(r"(^|/)assets/minecraft/|^net/|(^|/)com/mojang/|^META-INF/|\.(ttf|otf|archive|pdb)$|\.class$", p)]
+    assert not bad, f"game content or build debris is tracked: {bad[:10]}"

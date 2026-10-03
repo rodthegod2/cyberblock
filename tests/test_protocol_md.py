@@ -801,3 +801,60 @@ def test_r3_knockback_tiers_are_written_down():
 def test_r3_older_sections_point_at_the_new_keys_and_hud_rule():
     assert "Re-test 3 supersedes the tap and hold cycling" in section("Cyberware and keys (re-test 2)")
     assert "always sends `hidden:false`" in section(CP_TO_MC)
+
+
+# ---- the player documents agree with the protocol (re-test 3): keys, name lists and links ----
+GUIDE = Path("docs/HOW-TO-PLAY.md").read_text(encoding="utf-8")
+README = Path("README.md").read_text(encoding="utf-8")
+
+
+def slug(heading: str) -> str:
+    """GitHub's heading anchor: lower case, punctuation dropped, spaces to hyphens."""
+    return re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", heading.strip().lower()))
+
+
+def anchors(doc: str) -> set[str]:
+    return {slug(m.group(2)) for m in re.finditer(r"^(#{1,6}) (.+)$", doc, re.M)}
+
+
+def test_guide_anchor_links_resolve():
+    found = anchors(GUIDE)
+    for target in re.findall(r"\]\(#([^)]+)\)", GUIDE):
+        assert target in found, f"HOW-TO-PLAY.md links to a missing heading #{target}"
+
+
+def test_readme_links_into_the_guide_resolve():
+    found = anchors(GUIDE)
+    for target in re.findall(r"\]\(docs/HOW-TO-PLAY\.md#([^)]+)\)", README):
+        assert target in found, f"README.md links to a missing guide heading #{target}"
+    for rel in re.findall(r"\]\(((?:docs|shared)/[^)#]+)", README):
+        assert Path(rel).exists(), f"README.md links to a missing file {rel}"
+
+
+def test_guide_documents_the_six_keys_and_the_allowed_set_of_the_protocol():
+    text = " ".join(GUIDE.split())
+    for key in ("**Y**", "**L**", "**O**", "**F5**", "**U**", "**G**", "**K**"):
+        assert key in text
+    assert "G K L O U Y 0 F1-F4 F6-F8 F10-F12" in text and "all six go back to G, K, U, Y, L and O" in text
+    protocol = " ".join(TEXT.split())
+    assert "G K L O U Y 0 F1–F4 F6–F8 F10–F12" in protocol and "all six" in protocol  # the same set, spelled with en dashes there
+    assert "binds: hack G, skills K, cyberware U, activate Y, arms L, camo O" in GUIDE
+
+
+def test_guide_names_every_pass_through_menu_and_the_ui_actions_it_documents():
+    text = GUIDE.lower()
+    for menu in ("shops and vendors", "ripperdoc", "stash", "wardrobe", "crafting benches", "breach protocol", "arcade", "braindance editor",
+                 "tutorial and shard popups", "settings", "save and load lists", "death screen", "loading screens"):
+        assert menu in text, f"HOW-TO-PLAY.md does not mention the pass-through menu {menu!r}"
+    assert "font" in text and "wolvenkit" in text  # the documented limitation
+    for button in ("Back to Night City", "Save Game", "Load Last Save", "Night City Menu...", "Quit to Cyberpunk Main Menu"):
+        assert button in GUIDE
+
+
+def test_guide_quickhack_table_covers_all_ten_chips_with_their_extras():
+    table = GUIDE.split("#### What each chip does", 1)[1].split("**Other cyber items:**", 1)[0]
+    for chip in ("Redstone Charge", "Blaze Chip", "Ink Sac Daemon", "Cobweb Daemon", "Spider Eye Virus", "Wither Skull Daemon", "Compass Ping",
+                 "Bottle of Forgetting", "Creeper Brain", "Redstone Lever"):
+        assert f"**{chip}**" in table, chip
+    for fact in ("real cobwebs", "6 s", "5 s", "4 s", "2 nearest", "35 %", "32 blocks", "30 m", "2 s", "6 s", "creeper face"):
+        assert fact in table, fact
