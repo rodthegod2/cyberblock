@@ -18,6 +18,16 @@ namespace
 		return message.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 	}
 
+	/// A peer's string for the log: at most 64 bytes, printable ASCII only (anything else becomes '?').
+	std::string wire_text(const std::string &value)
+	{
+		std::string out = value.substr(0, 64);
+		for (char &c : out)
+			if (c < 0x20 || c > 0x7E)
+				c = '?';
+		return out;
+	}
+
 	/// Messages where only the newest counts: each one carries the whole current state.
 	bool is_state_stream(const std::string &type)
 	{
@@ -33,6 +43,21 @@ namespace
 
 namespace cb
 {
+	HelloNote describe_hello(const nlohmann::json &hello, const std::string &dllVersion)
+	{
+		const auto text = [&hello](const char *key, const char *otherwise) -> std::string
+		{
+			const auto it = hello.find(key);
+			return it != hello.end() && it->is_string() ? wire_text(it->get_ref<const std::string &>()) : otherwise;
+		};
+		const std::string ver = text("ver", "");
+		HelloNote note;
+		note.line = "Minecraft says hello: mod " + text("mod", "?") + (ver.empty() ? "" : " " + ver) + ", Minecraft " + text("mc", "?");
+		if (ver != dllVersion)
+			note.mismatch = "version mismatch: DLL " + dllVersion + ", mod " + (ver.empty() ? std::string("unknown") : ver);
+		return note;
+	}
+
 	void OutQueue::push(const nlohmann::json &message)
 	{
 		Entry entry{message.value("t", ""), {}};
@@ -221,8 +246,10 @@ namespace cb
 				const int proto = message.value("proto", 0);
 				if (proto == 1)
 				{
-					log::info("Minecraft says hello: mod %s, Minecraft %s", message.value("mod", "?").c_str(),
-							  message.value("mc", "?").c_str());
+					const HelloNote note = describe_hello(message, CB_VERSION);
+					log::info("%s", note.line.c_str());
+					if (!note.mismatch.empty())
+						log::warn("%s", note.mismatch.c_str());
 					++m_session;
 					m_gameMode = static_cast<int>(GameMode::None); // the new session has not reported yet
 					m_linked = true;

@@ -359,3 +359,40 @@ TEST(vector_file_has_the_alignment_cases)
 		CHECK(std::find(ks.begin(), ks.end(), k) != ks.end());
 	CHECK(all.at("align").size() == 7); // align_k is Minecraft's (not mirrored); the set is there for Java and Python
 }
+
+// ---- re-test 3 (plan 2026-10-03-retest3-polish task D4): rotate, for V's hips point in a seat ---------------------------
+
+TEST(rotate_by_the_identity_changes_nothing)
+{
+	const cb::Vec3 v = cb::rotate({0.0, 0.0, 0.0, 1.0}, {0.1, 0.4, 0.45});
+	CHECK(close(v.x, 0.1) && close(v.y, 0.4) && close(v.z, 0.45));
+}
+
+TEST(rotate_of_plus_y_is_the_quaternion_forward)
+{
+	// cp_quat_forward is the quaternion applied to local +Y: the two must agree for every vectors.json quaternion
+	for (const auto &c : vectors().at("quat"))
+	{
+		const auto &q = c.at("q");
+		const cb::Quat quat{q[0].get<double>(), q[1].get<double>(), q[2].get<double>(), q[3].get<double>()};
+		const cb::Vec3 r = cb::rotate(quat, {0.0, 1.0, 0.0});
+		const cb::Vec3 f = cb::cp_quat_forward(quat.i, quat.j, quat.k, quat.r);
+		CHECK(close(r.x, f.x) && close(r.y, f.y) && close(r.z, f.z));
+	}
+}
+
+TEST(rotate_about_z_by_90_turns_forward_to_the_left)
+{
+	// Cyberpunk yaw is counter-clockwise from above: 90 degrees about +Z takes +Y (forward) to -X and +X to +Y
+	const double h = std::sqrt(0.5);
+	const cb::Quat yaw90{0.0, 0.0, h, h};
+	const cb::Vec3 forward = cb::rotate(yaw90, {0.0, 1.0, 0.0});
+	CHECK(close(forward.x, -1.0) && close(forward.y, 0.0) && close(forward.z, 0.0));
+	const cb::Vec3 right = cb::rotate(yaw90, {1.0, 0.0, 0.0});
+	CHECK(close(right.x, 0.0) && close(right.y, 1.0) && close(right.z, 0.0));
+	const cb::Vec3 up = cb::rotate(yaw90, {0.0, 0.0, 0.45}); // the hips' height is untouched by a yaw
+	CHECK(close(up.x, 0.0) && close(up.y, 0.0) && close(up.z, 0.45));
+	// a rotation keeps lengths
+	const cb::Vec3 any = cb::rotate({0.1, -0.2, 0.3, std::sqrt(1.0 - 0.14)}, {0.3, -1.2, 0.7});
+	CHECK(close(std::hypot(any.x, any.y, any.z), std::hypot(0.3, -1.2, 0.7)));
+}

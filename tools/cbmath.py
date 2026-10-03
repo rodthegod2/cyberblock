@@ -87,3 +87,37 @@ def down_hit_to_range(x: float, y: float, z: float, off: float = 0.0) -> tuple[i
 def wall_hit_to_range(x: float, y: float, z: float, off: float = 0.0) -> tuple[int, int, int, int]:
     b = math.floor(z - off)
     return (math.floor(x), math.floor(-y), b, b)
+
+
+# ---- the six rebindable keys (plan 2026-10-03-retest3-polish section 1.7) -------------------------------------------
+# Not a conversion, but a rule the DLL (keys::bindable, keys::apply_binds) and Minecraft (VirtualKeys) must share: this is
+# its reference, and shared/vectors.json `binds` and `binds_apply` pin both mirrors to it.
+
+BIND_NAMES = ("hack", "skills", "cyberware", "activate", "arms", "camo")
+"""The `binds.keys` names, in the wire order."""
+BIND_DEFAULTS = {"hack": 0x47, "skills": 0x4B, "cyberware": 0x55, "activate": 0x59, "arms": 0x4C, "camo": 0x4F}
+"""G, K, U, Y, L, O as Windows virtual-key codes."""
+_BIND_REFUSED = ({ord(c) for c in "EQTX123456789"} | {0xBF, 0x74, 0x78}  # forwarded E Q T X 1-9 / F5, and F9
+                 | {0x1B, 0x20, 0x10, 0xA0, 0xA1, 0x11, 0xA2, 0xA3}         # Esc, Space, Shift, Ctrl
+                 | {ord(c) for c in "WASDCFIMJHNBPVZR"})                     # Cyberpunk's own on-foot letters
+
+
+def bindable(vk: int) -> bool:
+    """May `vk` be bound to an action: 1..254 and not a refused key (keys::bindable)."""
+    return 1 <= vk <= 254 and vk not in _BIND_REFUSED
+
+
+def apply_binds(given: dict, current: dict) -> tuple[dict, bool]:
+    """A `binds` message's keys applied to `current` (keys::apply_binds, VirtualKeys): a missing name keeps its current
+    key; a given key that is not a whole number bindable() takes falls back to its own default; then, if any two of the
+    six resolved keys are equal, all six go back to the defaults. Returns (binds, clash)."""
+    out = dict(current)
+    for name in BIND_NAMES:
+        if name not in given:
+            continue
+        v = given[name]
+        whole = isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v == math.floor(v)
+        out[name] = int(v) if whole and bindable(int(v)) else BIND_DEFAULTS[name]
+    keys = [out[n] for n in BIND_NAMES]
+    clash = len(set(keys)) != len(keys)
+    return (dict(BIND_DEFAULTS) if clash else out), clash

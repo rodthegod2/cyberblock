@@ -50,6 +50,16 @@ namespace
 	/// The ground alignment k of the attached world (plan 2026-10-03-retest2 section 1.1): Minecraft's `align`, back to 0
 	/// on every `hello`. Written on the link thread, read by the natives and the camera on the game's threads.
 	std::atomic<int> g_levelK{0};
+	/// Re-test 3: the last `persp` was "back" (link thread writes, the game's threads read).
+	std::atomic<bool> g_thirdPerson{false};
+	/// Re-test 3: the last `status.pause`.
+	std::atomic<bool> g_pause{false};
+
+	void set_pause(bool pause)
+	{
+		if (g_pause.exchange(pause) != pause)
+			cb::log::info("pause: Minecraft's Night City pause screen %s", pause ? "opened" : "closed");
+	}
 
 	void set_level_k(int k)
 	{
@@ -521,6 +531,25 @@ namespace cb::world
 			// a new Minecraft session: whatever the old one queued is stale, and its alignment comes again with `align`
 			events().clear();
 			set_level_k(0);
+			g_thirdPerson = false; // the new session sends `persp` again after its hello
+			set_pause(false);
+			return;
+		}
+		if (type != message.end() && *type == "status")
+		{
+			const auto pause = message.find("pause");
+			set_pause(pause != message.end() && pause->is_boolean() && pause->get<bool>());
+			return;
+		}
+		if (type != message.end() && *type == "persp")
+		{
+			if (const auto back = parse_persp(message))
+			{
+				if (g_thirdPerson.exchange(*back) != *back)
+					log::info("persp: Minecraft asks for %s", *back ? "the third-person view" : "first person");
+			}
+			else
+				note_invalid(1, "persp: mode is missing or not \"first\" or \"back\"");
 			return;
 		}
 		if (type != message.end() && *type == "align")
@@ -542,6 +571,34 @@ namespace cb::world
 		const size_t bad = parsed.status == Parsed::Status::Rejected ? 1 : parsed.droppedEntries;
 		if (bad > 0)
 			note_invalid(bad, parsed.reason);
+	}
+
+	std::optional<bool> parse_persp(const json &message)
+	{
+		const auto mode = message.find("mode");
+		if (mode == message.end() || !mode->is_string())
+			return std::nullopt;
+		if (*mode == "back")
+			return true;
+		if (*mode == "first")
+			return false;
+		return std::nullopt;
+	}
+
+	bool third_person_wanted()
+	{
+		return g_thirdPerson;
+	}
+
+	bool minecraft_pause()
+	{
+		return g_pause;
+	}
+
+	void on_link_dropped()
+	{
+		g_thirdPerson = false;
+		set_pause(false);
 	}
 
 	void note_invalid(size_t count, const std::string &reason)
@@ -603,14 +660,15 @@ namespace cb::world
 	}
 
 	json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, CamFlags flags,
-				  int levelK)
+				  bool firstPerson, bool seat, int levelK)
 	{
 		return {{"t", "cam"},
 				{"f", frame},
 				{"p", {position.x, position.y, position.z}},
 				{"r", {look.yaw, look.pitch, 0.0}},
 				{"fov", vfov},
-				{"fp", true},
+				{"fp", firstPerson},
+				{"seat", seat},
 				{"pl", {feet.x, feet.y, feet.z}},
 				{"h", bodyYaw},
 				{"cr", flags.crouched},
@@ -694,11 +752,50 @@ namespace cb::world
 					{"size", json::array({rounded(std::max(finiteOr0(width), 0.0), 1e3), rounded(std::max(finiteOr0(height), 0.0), 1e3)})}};
 	}
 
-	std::optional<json> make_hackresult(int32_t id, bool ok, std::string_view reason)
+	std::optional<json> make_hackresult(int32_t id, bool ok, std::string_view reason, double upload, std::string_view kind)
 	{
 		if (id < 0)
 			return std::nullopt;
-		return json{{"t", "hackresult"}, {"id", id}, {"ok", ok}, {"reason", ok ? std::string() : wire::truncate_utf8(reason, kMaxTextBytes)}};
+		json m{{"t", "hackresult"}, {"id", id}, {"ok", ok}, {"reason", ok ? std::string() : wire::truncate_utf8(reason, kMaxTextBytes)}};
+		if (!ok)
+			return m;
+		m["upload"] = std::isfinite(upload) ? rounded(std::clamp(upload, 0.0, kMaxUploadSeconds), 1e3) : 0.0;
+		if (std::find(std::begin(kHackKinds), std::end(kHackKinds), kind) != std::end(kHackKinds))
+			m["kind"] = std::string(kind);
+		return m;
+	}
+
+	std::optional<json> make_hackspread(int32_t id, uint64_t target, std::string_view why)
+	{
+		if (id < 0 || std::find(std::begin(kSpreadWhy), std::end(kSpreadWhy), why) == std::end(kSpreadWhy))
+			return std::nullopt;
+		return json{{"t", "hackspread"}, {"id", id}, {"target", std::to_string(target)}, {"why", std::string(why)}};
+	}
+
+	bool SpreadCounter::allow(int32_t id)
+	{
+		std::lock_guard<std::mutex> lock(m_lock);
+		auto it = std::ranges::find_if(m_counts, [id](const auto &entry) { return entry.first == id; });
+		if (it == m_counts.end())
+		{
+			if (m_counts.size() >= kRemembered)
+				m_counts.pop_front();
+			m_counts.emplace_back(id, 0);
+			it = std::prev(m_counts.end());
+		}
+		if (it->second >= kMaxSpreadPerId)
+		{
+			++m_dropped;
+			return false;
+		}
+		++it->second;
+		return true;
+	}
+
+	uint64_t SpreadCounter::dropped() const
+	{
+		std::lock_guard<std::mutex> lock(m_lock);
+		return m_dropped;
 	}
 
 	json make_killed(uint64_t target, bool vehicle, bool hostile)

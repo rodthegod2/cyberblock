@@ -198,6 +198,20 @@ namespace cb::world
 	/// Counts `count` invalid messages or list entries (events().stats().rejected) and logs `reason` for the first 10 only.
 	void note_invalid(size_t count, const std::string &reason);
 
+	// ---- re-test 3 (plan 2026-10-03-retest3-polish section 1.1): Minecraft -> Cyberpunk state ----
+
+	/// {"t":"persp","mode"}: true for "back", false for "first"; nullopt when `mode` is missing or anything else.
+	std::optional<bool> parse_persp(const nlohmann::json &message);
+	/// The last `persp` asked for the third-person view (on_minecraft_message keeps it; false before any, after every
+	/// `hello` and after a link drop). Any thread.
+	bool third_person_wanted();
+	/// The last `status.pause` (Minecraft's Night City pause screen is open: Cyberpunk must be paused). False before any
+	/// status, when a status has no boolean `pause` (older Minecraft builds), after every `hello` and after a link drop.
+	/// Any thread. The UI bridge turns it into pause/resume actions (plan section 1.1: level-triggered).
+	bool minecraft_pause();
+	/// A linked Minecraft went away (main.cpp's drop handler, link thread): forgets `persp` and the pause.
+	void on_link_dropped();
+
 	// ---- Cyberpunk -> Minecraft -------------------------------------------------------------------------------------
 
 	/// The damage kinds the `dmg` message knows; anything else is sent as "other".
@@ -239,10 +253,11 @@ namespace cb::world
 
 	/// {"t":"cam",...}: the camera and V, every Cyberpunk frame while active (Minecraft convention, so `position`, `feet`
 	/// and `look` are already converted, the positions with the offset of `levelK`). `r` is [yaw, pitch, 0]; `cr`, `fly`,
-	/// `menu`, `air` and `held` are `flags`; `lv` is `levelK`, the alignment the positions were converted with. Numbers
-	/// are not rounded.
+	/// `menu`, `air` and `held` are `flags`; `lv` is `levelK`, the alignment the positions were converted with. Re-test 3
+	/// (plan section 1.1): `fp` is `firstPerson` (false in a third-person vehicle camera and while the on-foot third-person
+	/// view is applied) and `seat` is `seat` (V sits in a vehicle; `feet` is then V's hips point). Numbers are not rounded.
 	nlohmann::json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, CamFlags flags,
-							int levelK);
+							bool firstPerson, bool seat, int levelK);
 
 	/// {"t":"look","d":[dyaw,dpitch]}: raw mouse movement as Minecraft look deltas in degrees (right and down are positive).
 	nlohmann::json make_look(double dyaw, double dpitch);
@@ -270,9 +285,43 @@ namespace cb::world
 												std::string_view faction, std::string_view threat, double hp, bool device,
 												Vec3 feetCp, double width, double height, double off);
 
-	/// {"t":"hackresult","id","ok","reason"}: the reply to a `hack`; `reason` is cut to 64 UTF-8 bytes and is "" when `ok`.
-	/// nullopt when `id` is negative.
-	std::optional<nlohmann::json> make_hackresult(int32_t id, bool ok, std::string_view reason);
+	// ---- re-test 3 (plan 2026-10-03-retest3-polish sections 1.1 and 1.6): distinct quickhacks ----
+
+	/// The target kinds `hackresult.kind` knows (anything else is left out).
+	inline constexpr const char *kHackKinds[] = {"squad", "crowd", "driver", "camera", "traffic", "distract", "device"};
+	/// Why `hackspread` touched an extra NPC.
+	inline constexpr const char *kSpreadWhy[] = {"chain", "spread", "ping", "frenzy"};
+	/// Most `hackspread` messages one hack request id may send; the 17th and later are dropped and counted.
+	inline constexpr int kMaxSpreadPerId = 16;
+	/// Longest upload a `hackresult` reports, seconds.
+	inline constexpr double kMaxUploadSeconds = 30.0;
+
+	/// {"t":"hackresult","id","ok","reason"[,"upload","kind"]}: the reply to a `hack`; `reason` is cut to 64 UTF-8 bytes and
+	/// is "" when `ok`. Only when `ok`: `upload` (seconds the upload takes, clamped to 0..30, a non-finite one is 0) and
+	/// `kind` (one of kHackKinds; left out when empty or unknown). nullopt when `id` is negative.
+	std::optional<nlohmann::json> make_hackresult(int32_t id, bool ok, std::string_view reason, double upload = 0.0,
+												  std::string_view kind = {});
+
+	/// {"t":"hackspread","id","target","why"}: hack request `id` also touched NPC `target` (sent as a decimal string).
+	/// nullopt when `id` is negative or `why` is not one of kSpreadWhy.
+	std::optional<nlohmann::json> make_hackspread(int32_t id, uint64_t target, std::string_view why);
+
+	/// Counts `hackspread` messages per hack request id (kMaxSpreadPerId each). Remembers the last kRemembered ids, so its
+	/// memory is bounded. Thread-safe.
+	class SpreadCounter
+	{
+	public:
+		static constexpr size_t kRemembered = 64;
+		/// Whether one more spread may be sent for `id`; false (and counted as dropped) past kMaxSpreadPerId.
+		bool allow(int32_t id);
+		/// Spreads refused so far.
+		uint64_t dropped() const;
+
+	private:
+		mutable std::mutex m_lock;
+		std::deque<std::pair<int32_t, int>> m_counts; // id -> spreads sent, oldest id first
+		uint64_t m_dropped = 0;
+	};
 
 	/// {"t":"killed","target","kind","hostile"}: an NPC or vehicle that V damaged died or was destroyed.
 	nlohmann::json make_killed(uint64_t target, bool vehicle, bool hostile);

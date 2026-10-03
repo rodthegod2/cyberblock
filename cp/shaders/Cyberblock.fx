@@ -41,6 +41,12 @@ uniform float cb_age_ms < hidden = true; > = 0.0;
 // screen height; z: roll, radians), and the nether portal's warp (0..1) while passing through.
 uniform float3 cb_shake < hidden = true; > = float3(0.0, 0.0, 0.0);
 uniform float cb_portal_warp < hidden = true; > = 0.0;
+// A Cyberpunk menu is open and passed through (no Minecraft screen replaced it): Minecraft's world is not drawn over it;
+// the overlay (Minecraft's frame around the menu) still is.
+uniform bool cb_menu < hidden = true; > = false;
+// The Sandevistan / Kerenzikov screen effect (re-test 3, F10): x intensity 0..1 (0.15 s ease-in, hold, 0.4 s ease-out;
+// 0 while a Cyberpunk menu is open), y kind (0 Sandevistan, 1 Kerenzikov), z seconds since it started, w 0.
+uniform float4 cb_slowmo < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
 
 uniform float DepthBias < ui_type = "drag"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.005; ui_label = "Depth bias (m)";
 	ui_tooltip = "How far behind Night City's surface Minecraft may still show (blocks resting on the ground)."; > = 0.04;
@@ -69,6 +75,8 @@ uniform float ContactRadius < ui_type = "drag"; ui_min = 0.1; ui_max = 3.0; ui_s
 uniform float BloomStrength < ui_type = "drag"; ui_min = 0.0; ui_max = 2.0; ui_step = 0.01; ui_label = "Minecraft glow";
 	ui_tooltip = "Bright Minecraft things (lava, fire, the portal) glow over Night City's picture, as its own lights do."; > = 0.55;
 uniform float BloomThreshold < ui_type = "drag"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.01; ui_label = "Glow threshold"; > = 0.62;
+uniform float SandevistanStrength < ui_type = "drag"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.01; ui_label = "Sandevistan effect strength";
+	ui_tooltip = "The screen effect while the Sandevistan (or Kerenzikov, at half strength) runs: colour split, afterimages, edge glow and a green tint. 0 turns it off (motion-sensitive players)."; > = 1.0;
 uniform float Timer < source = "timer"; >;
 uniform int DebugView < ui_type = "combo"; ui_items = "Composite\0Night City depth (1 m bands)\0Minecraft depth (1 m bands)\0Depth difference\0"; > = 0;
 uniform bool Reproject < ui_label = "Re-project to Cyberpunk's camera"; ui_tooltip = "Move Minecraft's (slightly older) frame onto Cyberpunk's current camera."; > = true;
@@ -89,6 +97,12 @@ sampler sMcInfo { Texture = McInfoTex; MinFilter = POINT; MagFilter = POINT; Add
 // Minecraft's bright parts at quarter size with mips (the glow).
 texture McBrightTex { Width = BUFFER_WIDTH / 4; Height = BUFFER_HEIGHT / 4; Format = RGBA16F; MipLevels = 6; };
 sampler sMcBright { Texture = McBrightTex; AddressU = CLAMP; AddressV = CLAMP; };
+// The Sandevistan's afterimages: the composited world faded over the last frames, at half size. GhostAccum mixes the new
+// frame into a copy (a pass cannot read the texture it writes), GhostStore keeps it for the next frame.
+texture GhostHistTex { Width = BUFFER_WIDTH / 2; Height = BUFFER_HEIGHT / 2; Format = RGBA8; };
+sampler sGhostHist { Texture = GhostHistTex; AddressU = CLAMP; AddressV = CLAMP; };
+texture GhostTmpTex { Width = BUFFER_WIDTH / 2; Height = BUFFER_HEIGHT / 2; Format = RGBA8; };
+sampler sGhostTmp { Texture = GhostTmpTex; AddressU = CLAMP; AddressV = CLAMP; };
 
 float luma(float3 c)
 {
@@ -187,7 +201,7 @@ void PS_Composite(float4 pos : SV_Position, float2 uv : TEXCOORD, out float4 out
 	const float3 host = tex2D(ReShade::BackBuffer, uv).rgb;
 	outInfo = 0.0;
 	outColor = float4(host, 1.0);
-	if (!cb_active)
+	if (!cb_active || cb_menu)
 		return;
 
 	// Where this Night City pixel's view ray lands in Minecraft's frame (screen-locked unless re-projected).
@@ -287,6 +301,70 @@ float4 PS_Bright(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
 	return float4(c * (cover * saturate((l - BloomThreshold) / max(1.0 - BloomThreshold, 1e-3)) / max(l, 1e-3)), 1.0);
 }
 
+/// How strong the Sandevistan look is this frame: the add-on's envelope times the player's slider; Kerenzikov at half.
+float slowmo_strength()
+{
+	return saturate(cb_slowmo.x) * SandevistanStrength * (cb_slowmo.y > 0.5 ? 0.5 : 1.0);
+}
+
+/// The afterimage history: the present mixed into the faded past while the effect runs; without it, just the present
+/// (so the next start has no stale trail).
+float4 PS_GhostAccum(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
+{
+	const float3 now = tex2D(sComposite, uv).rgb;
+	if (!cb_active || slowmo_strength() <= 0.0)
+		return float4(now, 1.0);
+	return float4(lerp(now, tex2D(sGhostHist, uv).rgb, 0.86), 1.0);
+}
+
+float4 PS_GhostStore(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
+{
+	return tex2D(sGhostTmp, uv);
+}
+
+/// Log depth of the composited scene: Minecraft where it covers the pixel, else Night City (for the edge glow).
+float scene_log_depth(float2 uv)
+{
+	const float4 info = tex2Dlod(sMcInfo, float4(uv, 0, 0));
+	return log2(max(info.x > 0.5 ? info.y : info.z, 0.05));
+}
+
+/// The Sandevistan look on the composited world (k > 0): red and blue split apart toward the edges, afterimages where
+/// things moved, a lime/cyan glow on depth edges (Night City and Minecraft alike), a green-teal tint and a pulsing
+/// vignette. Minecraft's hand and HUD are added after this and stay crisp.
+float3 sandevistan(float3 color, float2 wuv, float k)
+{
+	const float2 px = BUFFER_PIXEL_SIZE;
+	const float aspect = BUFFER_WIDTH * BUFFER_RCP_HEIGHT;
+	const float2 fromCentre = wuv - 0.5;
+	// chromatic split: 0.012 k of the screen at the edges, nothing in the middle
+	const float2 split = fromCentre * (0.024 * k);
+	const float3 base = tex2D(sComposite, wuv).rgb;
+	color += float3(tex2D(sComposite, wuv + split).r - base.r, 0.0, tex2D(sComposite, wuv - split).b - base.b);
+	// afterimages: only where the past differs from the present, tinted cyan-violet
+	const float3 ghost = tex2D(sGhostHist, wuv).rgb;
+	const float moved = saturate(length(ghost - base) * 4.0);
+	color = lerp(color, ghost * float3(0.7, 1.05, 1.2), 0.6 * k * moved);
+	// edge glow: a Sobel filter on the scene's log depth
+	const float2 o = px * 1.5;
+	const float d00 = scene_log_depth(wuv + float2(-o.x, -o.y)), d10 = scene_log_depth(wuv + float2(0.0, -o.y)), d20 = scene_log_depth(wuv + float2(o.x, -o.y));
+	const float d01 = scene_log_depth(wuv + float2(-o.x, 0.0)), d21 = scene_log_depth(wuv + float2(o.x, 0.0));
+	const float d02 = scene_log_depth(wuv + float2(-o.x, o.y)), d12 = scene_log_depth(wuv + float2(0.0, o.y)), d22 = scene_log_depth(wuv + float2(o.x, o.y));
+	const float gx = (d20 + 2.0 * d21 + d22) - (d00 + 2.0 * d01 + d02);
+	const float gy = (d02 + 2.0 * d12 + d22) - (d00 + 2.0 * d10 + d20);
+	const float edge = saturate(length(float2(gx, gy)) * 0.35 - 0.08);
+	const float3 glow = lerp(float3(0.55, 1.0, 0.2), float3(0.2, 1.0, 0.95), 0.5 + 0.5 * sin(cb_slowmo.z * 3.0 + wuv.y * 6.0));
+	color += glow * edge * k * 0.8;
+	// lime/teal tint and a vignette that pulses with the effect's clock
+	const float l = luma(color);
+	const float3 tinted = lerp(float3(l, l, l), color, 0.6) * float3(0.85, 1.08, 0.98) + float3(0.02, 0.05, 0.04);
+	color = lerp(color, tinted, 0.7 * k);
+	const float r = length(fromCentre * float2(aspect, 1.0));
+	const float pulse = 0.5 + 0.5 * sin(cb_slowmo.z * 5.0);
+	const float vignette = saturate((r - 0.35) * 1.6) * (0.55 + 0.25 * pulse);
+	return lerp(color, color * float3(0.25, 0.55, 0.45), vignette * k);
+}
+
 /// The finished picture: the world (shaken as one: Night City and Minecraft together), Minecraft's edges softened,
 /// contact shadows on Night City's surfaces next to Minecraft's, Minecraft's glow, the portal's warp, and Minecraft's
 /// hand and HUD on top (neither shaken nor warped).
@@ -362,6 +440,10 @@ float3 PS_Final(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
 		const float3 purple = color * float3(0.72, 0.38, 1.25) + float3(0.12, 0.0, 0.22) * (0.6 + 0.4 * sin(t * 3.0 + r * 9.0));
 		color = lerp(color, purple, saturate(cb_portal_warp * (0.55 + r * 0.6)));
 	}
+	// the Sandevistan (re-test 3, F10): on the world only
+	const float k = slowmo_strength();
+	if (k > 0.0)
+		color = sandevistan(color, wuv, k);
 	// hand and HUD are screen-space: never shaken
 	const float4 overlay = tex2D(sOverlay, mc_uv(float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0)));
 	return overlay.rgb + saturate(color) * (1.0 - overlay.a);
@@ -398,6 +480,18 @@ technique Cyberblock < ui_tooltip = "Minecraft in Night City: composites Minecra
 		VertexShader = PostProcessVS;
 		PixelShader = PS_Bright;
 		RenderTarget = McBrightTex;
+	}
+	pass GhostAccum
+	{
+		VertexShader = PostProcessVS;
+		PixelShader = PS_GhostAccum;
+		RenderTarget = GhostTmpTex;
+	}
+	pass GhostStore
+	{
+		VertexShader = PostProcessVS;
+		PixelShader = PS_GhostStore;
+		RenderTarget = GhostHistTex;
 	}
 	pass Final
 	{

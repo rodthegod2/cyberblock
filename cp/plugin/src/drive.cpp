@@ -7,8 +7,8 @@
 //     out result: TraceResult, opt staticOnly: Bool, opt dynamicOnly: Bool) -> Bool (orphans.swift 27647), groups
 //     n"Static" and n"Terrain" (Probes.reds uses both);
 //   entEntity.GetWorldPosition() -> Vector4, GetWorldForward() -> Vector4 (as camera.cpp);
-//   static Vector4.ToRotation(dir: Vector4) -> EulerAngles (core/math/vector.swift 108: vanilla teleports that keep the
-//     facing pass ToRotation(GetWorldForward()), worldMap.swift 949);
+//   static Vector4.ToRotation(dir: Vector4) -> EulerAngles (2.31 script API: vanilla teleports that keep the facing pass
+//     ToRotation(GetWorldForward())); read once at a flight's start, then the drive owns the yaw (drive.hpp, task D3);
 //   GetPlayer;GameInstance (as camera.cpp).
 // Every function's parameter types are logged once ("drive: ready ..."); if one is missing the drive logs
 // "drive: disabled: ... missing" and never moves V, so cam.fly stays false and Minecraft calls every flight off.
@@ -27,9 +27,11 @@
 #include <RED4ext/Scripting/Natives/Generated/Vector4.hpp>
 #include <RED4ext/Scripting/Natives/Generated/physics/TraceResult.hpp>
 #include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <utility>
@@ -253,17 +255,27 @@ namespace
 		return best;
 	}
 
-	/// Teleports V to `feet` keeping its current facing (ToRotation of the forward read just now).
-	bool teleport(Game &game, const Vec3 &feet)
+	/// V's facing now as EulerAngles (ToRotation of GetWorldForward, as vanilla teleports that keep the facing do).
+	std::optional<RED4ext::EulerAngles> facing(Game &game)
 	{
 		RED4ext::Vector4 forward{};
 		RED4ext::StackArgs_t none;
 		if (!RED4ext::ExecuteFunction(game.player.GetPtr(), g_api.forward, &forward, none))
-			return false;
+			return std::nullopt;
 		RED4ext::EulerAngles rotation{};
 		RED4ext::StackArgs_t direction{{nullptr, &forward}};
 		if (!RED4ext::ExecuteFunction(static_cast<void *>(nullptr), g_api.toRotation, &rotation, direction)) // a static: no context
-			return false;
+			return std::nullopt;
+		if (!std::isfinite(rotation.Yaw))
+			return std::nullopt;
+		return rotation;
+	}
+
+	/// Teleports V to `feet` facing `yaw` (Cyberpunk degrees): the drive owns V's yaw while it flies (re-test 3 task D3), so
+	/// the mouse-X turn the game never saw (input.cpp strips it) is applied here instead of being undone every frame.
+	bool teleport(Game &game, const Vec3 &feet, double yaw)
+	{
+		RED4ext::EulerAngles rotation{0.0f, 0.0f, float(yaw)};
 		RED4ext::Vector4 position = to_vector4(feet);
 		RED4ext::WeakHandle<RED4ext::IScriptable> weak(game.player);
 		RED4ext::StackArgs_t args;
@@ -280,13 +292,27 @@ namespace
 		return false;
 	}
 
+	/// The owned yaw of this flight (re-test 3 task D3). Main thread only.
+	struct Yaw
+	{
+		double now = 0.0;   // Cyberpunk degrees: what every teleport of this flight uses
+		double start = 0.0; // at the start of the flight
+		int64_t counts = 0; // raw mouse X counts turned in this flight
+		double rate = 0.0;  // degrees per count, the last one used
+		double pitchMin = INFINITY, pitchMax = -INFINITY; // the camera's Minecraft pitch while driving (camera.cpp)
+	};
+	Yaw g_yaw;
+
 	void summary()
 	{
 		const cb::snap::FlightStats samples = cb::snap::flight().stats();
 		const cb::follow::Summary frames = g_follower.summary();
-		cb::log::info("flight: %d frames, %d samples (median spacing %.1f ms, max gap %.1f ms), max step %.2f m, clipped %s",
+		const bool pitched = g_yaw.pitchMin <= g_yaw.pitchMax;
+		cb::log::info("flight: %d frames, %d samples (median spacing %.1f ms, max gap %.1f ms), max step %.2f m, clipped %s, "
+					  "yaw start %.1f end %.1f, mouse x %lld counts at %.4f deg/count, pitch %.1f..%.1f",
 					  frames.frames, samples.samples, samples.medianGapMs, samples.maxGapMs, frames.maxStep,
-					  g_clipped ? "yes" : "no");
+					  g_clipped ? "yes" : "no", g_yaw.start, g_yaw.now, static_cast<long long>(g_yaw.counts), g_yaw.rate,
+					  pitched ? g_yaw.pitchMin : 0.0, pitched ? g_yaw.pitchMax : 0.0);
 	}
 
 	void mirror(double now)
@@ -298,7 +324,7 @@ namespace
 
 namespace cb::drive
 {
-	void tick()
+	void tick(int64_t mouseX, double degreesPerCount)
 	{
 		if (g_api.state == Api::State::Disabled)
 			return;
@@ -329,6 +355,20 @@ namespace cb::drive
 		{
 			g_clipped = false;
 			g_teleportWarned = false;
+			// the owned yaw starts from V's facing now; this frame's counts belong to the time before the flight
+			const std::optional<RED4ext::EulerAngles> start = facing(game);
+			g_yaw = {};
+			g_yaw.now = g_yaw.start = start ? double(start->Yaw) : 0.0;
+			g_yaw.rate = degreesPerCount;
+			if (!start)
+				log::warn("drive: could not read V's facing at the start; the glide starts facing yaw 0");
+		}
+		else if (wasDriving && !in.menu)
+		{
+			// the mouse-X turn the game did not see (input.cpp strips it while driving in first person)
+			g_yaw.now = follow::turned_yaw(g_yaw.now, mouseX, degreesPerCount);
+			g_yaw.counts += mouseX;
+			g_yaw.rate = degreesPerCount;
 		}
 		if (!out.log.empty())
 			log::info("%s", out.log.c_str());
@@ -343,7 +383,7 @@ namespace cb::drive
 			const Vec3 to = clip(game, g_follower.last(), out.to, clipped);
 			if (clipped && !std::exchange(g_clipped, true))
 				log::info("flight: V stopped short of Night City geometry");
-			if (teleport(game, to))
+			if (teleport(game, to, g_yaw.now))
 			{
 				g_follower.applied(to);
 				natives::flightFollowing = true;
@@ -364,7 +404,7 @@ namespace cb::drive
 			}
 			else
 				feet = follow::snap_landing(out.to, ground_z(game, out.to, kLandProbeUp));
-			teleport(game, feet);
+			teleport(game, feet, g_yaw.now);
 			natives::flightFollowing = false;
 			summary();
 			break;
@@ -372,7 +412,7 @@ namespace cb::drive
 		case Act::Ground:
 		{
 			const std::optional<double> ground = ground_z(game, out.to, Follower::kBodyLift); // below where V was held
-			teleport(game, {out.to.x, out.to.y, ground ? *ground : out.to.z});
+			teleport(game, {out.to.x, out.to.y, ground ? *ground : out.to.z}, g_yaw.now);
 			natives::flightFollowing = false;
 			summary();
 			break;
@@ -388,6 +428,14 @@ namespace cb::drive
 	bool driving()
 	{
 		return g_driving;
+	}
+
+	void note_pitch(double mcPitch)
+	{
+		if (!g_follower.driving() || !std::isfinite(mcPitch))
+			return;
+		g_yaw.pitchMin = std::min(g_yaw.pitchMin, mcPitch);
+		g_yaw.pitchMax = std::max(g_yaw.pitchMax, mcPitch);
 	}
 
 	float seconds_since_end()

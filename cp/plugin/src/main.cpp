@@ -1,7 +1,7 @@
 // Cyberblock.dll: a RED4ext plugin (loaded from red4ext\plugins\Cyberblock\) that also registers itself as a ReShade
 // add-on (compositor.h). It links to the Minecraft mod (link.hpp), gives redscript its natives (natives.hpp),
-// moves V after Steve's flights every frame (drive.hpp), publishes Cyberpunk's camera every frame (camera.hpp) and
-// forwards input from Cyberpunk's window (input.hpp).
+// moves V after Steve's flights every frame (drive.hpp), applies the third-person view (view.hpp), publishes Cyberpunk's
+// camera every frame (camera.hpp), forwards input from Cyberpunk's window (input.hpp) and pumps the UI bridge (ui.hpp).
 #include <RED4ext/RED4ext.hpp>
 
 #include "camera.hpp"
@@ -12,6 +12,8 @@
 #include "log.hpp"
 #include "natives.hpp"
 #include "snapshots.hpp"
+#include "ui.hpp"
+#include "view.hpp"
 #include "world.hpp"
 
 namespace
@@ -43,9 +45,15 @@ namespace
 		int width = 0, height = 0;
 		compositor::backbuffer_size(width, height);
 		cb::link().set_view(width, height);
-		cb::drive::tick(); // before the camera: cam.fly is true on the first frame V is moved
-		cb::camera::publish();
+		// the mouse X of this frame: the drive turns V by it during a glide (it owns V's yaw), the camera learns the rate
+		const int64_t dx = cb::input::take_mouse_x();
+		cb::drive::tick(dx, cb::camera::degrees_per_count()); // before the camera: cam.fly is true on the first frame V is moved
+		cb::view::tick();                                     // before the camera: cam.fp says whether the view applied
+		cb::camera::publish(dx);
 		cb::input::tick();
+		cb::ui::pump(); // the UI bridge (ui_game.cpp) throttles itself to 30 Hz and runs while paused too
+		// a Cyberpunk menu passed through (no Minecraft screen replaced it): Minecraft's world is not drawn over it
+		compositor::set_menu_mode(cb::natives::active && cb::natives::menuOpen && !cb::link().screen_open());
 		return false;
 	}
 }
@@ -88,8 +96,15 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 				cb::world::on_minecraft_message(message);
 				cb::snap::on_minecraft_message(message);
 				cb::input::on_minecraft_message(message);
+				cb::ui::on_minecraft_message(message);
 			},
-			cb::snap::on_link_dropped);
+			[]
+			{
+				cb::snap::on_link_dropped();
+				cb::world::on_link_dropped();
+				cb::natives::on_link_dropped();
+				cb::ui::on_link_dropped();
+			});
 		break;
 	}
 	case RED4ext::v1::EMainReason::Unload:
@@ -111,7 +126,7 @@ RED4EXT_C_EXPORT void RED4EXT_CALL Query(RED4ext::v1::PluginInfo *aInfo)
 {
 	aInfo->name = L"Cyberblock";
 	aInfo->author = L"rodthegod2";
-	aInfo->version = RED4EXT_V1_SEMVER(0, 1, 0);
+	aInfo->version = RED4EXT_V1_SEMVER(CB_VERSION_MAJOR, CB_VERSION_MINOR, CB_VERSION_PATCH); // project(VERSION)
 	// the game version is gated in Main(), so RED4ext only acts as the loader
 	aInfo->runtime = RED4EXT_V1_RUNTIME_VERSION_INDEPENDENT;
 	aInfo->sdk = RED4EXT_V1_SDK_VERSION_CURRENT;

@@ -36,6 +36,16 @@ namespace cb::follow
 		return spot;
 	}
 
+	double turned_yaw(double cpYaw, int64_t counts, double degreesPerCount)
+	{
+		double yaw = std::fmod(cpYaw - double(counts) * degreesPerCount, 360.0);
+		if (yaw > 180.0)
+			yaw -= 360.0;
+		else if (yaw <= -180.0)
+			yaw += 360.0;
+		return yaw;
+	}
+
 	Out Follower::end(Act act, Vec3 to, std::string log, double now)
 	{
 		m_state = State::Idle;

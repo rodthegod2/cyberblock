@@ -4,14 +4,19 @@
 #include "drive.hpp"
 #include "link.hpp"
 #include "log.hpp"
+#include "native_reg.hpp"
 #include "probes.hpp"
 #include "snapshots.hpp"
+#include "ui.hpp"
+#include "view.hpp"
 #include "world.hpp"
 #include <RED4ext/RED4ext.hpp>
 #include <RED4ext/Scripting/Natives/Generated/Vector4.hpp>
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <string>
 #include <initializer_list>
 #include <mutex>
 #include <optional>
@@ -48,7 +53,31 @@ namespace
 	void send_state()
 	{
 		cb::link().send({{"t", "state"}, {"active", g_mashup.active}, {"vehicle", g_mashup.vehicle}});
-		cb::link().send({{"t", "hud"}, {"hidden", g_mashup.vehicle}});
+		// kept for older Minecraft builds; since re-test 3 Minecraft's HUD (and first-person hand) stays in vehicles too
+		cb::link().send({{"t", "hud"}, {"hidden", false}});
+	}
+
+	/// Logs the seat when it changes ("seat: on (third person)", "seat: on (first person)", "seat: off").
+	void log_seat(bool seated, bool tpp)
+	{
+		static std::mutex lock;
+		static int last = -1; // 0 off, 1 first person, 2 third person
+		const int now = !seated ? 0 : tpp ? 2 : 1;
+		std::lock_guard<std::mutex> guard(lock);
+		if (std::exchange(last, now) == now)
+			return;
+		if (now == 0)
+			cb::log::info("seat: off");
+		else
+			cb::log::info("seat: on (%s)", now == 2 ? "third person" : "first person");
+	}
+
+	void clear_seat()
+	{
+		cb::natives::seated = false;
+		cb::natives::seatTpp = false;
+		cb::natives::hipsX = cb::natives::hipsY = cb::natives::hipsZ = 0.0f;
+		log_seat(false, false);
 	}
 
 	/// Minecraft drops all ground and is sent it again from the next probes.
@@ -163,7 +192,12 @@ namespace
 		cb::natives::active = active;
 		cb::natives::inVehicle = inVehicle;
 		if (!active)
+		{
 			cb::natives::flightAllowed = false; // the script allows flights again on its next tick while Active
+			clear_seat();
+			cb::view::set_allowed(false); // the view comes off on the next frame
+			cb::natives::phonePrompt = false;
+		}
 		cb::world::events().set_active(active);
 		compositor::set_active(active);
 		if (changed)
@@ -651,21 +685,70 @@ namespace
 					 warned, "Cyberblock_ScanResult", "the request id is negative");
 	}
 
-	// Cyberblock_HackResult(id: Int32, ok: Bool, reason: String) -> Void: the reply to a `hack` request. Always sent (while
-	// linked). `reason` is "" on success.
+	// Cyberblock_HackResult(id: Int32, ok: Bool, reason: String, upload: Float, kind: CName) -> Void: the reply to a `hack`
+	// request. Always sent (while linked). `reason` is "" on success; `upload` (seconds, clamped 0..30) and `kind` (one of
+	// world::kHackKinds, n"" allowed when !ok) only go out when `ok` (plan 2026-10-03-retest3-polish section 1.2).
 	void HackResult(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
 		int32_t id = 0;
 		bool ok = false;
 		RED4ext::CString reason;
+		float upload = 0.0f;
+		RED4ext::CName kind;
 		RED4ext::GetParameter(frame, &id);
 		RED4ext::GetParameter(frame, &ok);
 		RED4ext::GetParameter(frame, &reason);
+		RED4ext::GetParameter(frame, &upload);
+		RED4ext::GetParameter(frame, &kind);
+		++frame->code;
+
+		const std::string_view kindName = known_name(kind, cb::world::kHackKinds);
+		if (ok && kindName.empty() && !kind.IsNone())
+		{
+			static bool kindWarned = false;
+			if (!std::exchange(kindWarned, true))
+				cb::log::warn("Cyberblock_HackResult: kind %s is not a known target kind; sent without one (logged once)",
+							  kind.ToString());
+		}
+		static bool warned = false;
+		send_or_warn(cb::world::make_hackresult(id, ok, reason.c_str(), upload, kindName), warned, "Cyberblock_HackResult",
+					 "the request id is negative");
+	}
+
+	/// The per-id cap of Cyberblock_HackSpread.
+	cb::world::SpreadCounter g_spreads;
+
+	// Cyberblock_HackSpread(id: Int32, target: Uint64, why: CName) -> Void: hack request `id` also touched NPC `target`
+	// (why: n"chain", n"spread", n"ping" or n"frenzy"). At most 16 per id; the 17th and later are dropped and counted.
+	void HackSpread(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		int32_t id = 0;
+		uint64_t target = 0;
+		RED4ext::CName why;
+		RED4ext::GetParameter(frame, &id);
+		RED4ext::GetParameter(frame, &target);
+		RED4ext::GetParameter(frame, &why);
 		++frame->code;
 
 		static bool warned = false;
-		send_or_warn(cb::world::make_hackresult(id, ok, reason.c_str()), warned, "Cyberblock_HackResult",
-					 "the request id is negative");
+		const auto message = cb::world::make_hackspread(id, target, known_name(why, cb::world::kSpreadWhy));
+		if (!message)
+		{
+			if (!std::exchange(warned, true))
+				cb::log::warn("Cyberblock_HackSpread: a negative id or an unknown why (%s); dropping it (logged once)",
+							  why.ToString());
+			return;
+		}
+		if (!g_spreads.allow(id))
+		{
+			static bool capWarned = false;
+			if (!std::exchange(capWarned, true))
+				cb::log::warn("Cyberblock_HackSpread: hack %d touched more than %d NPCs; the rest are not sent (logged once, "
+							  "%llu so far)",
+							  id, cb::world::kMaxSpreadPerId, static_cast<unsigned long long>(g_spreads.dropped()));
+			return;
+		}
+		cb::link().send(*message);
 	}
 
 	// Cyberblock_Killed(target: Uint64, vehicle: Bool, hostile: Bool) -> Void: an NPC or vehicle that V damaged died.
@@ -735,6 +818,96 @@ namespace
 		cb::natives::lookCapture = on;
 	}
 
+	// ---- re-test 3 (plan 2026-10-03-retest3-polish section 1.2) -------------------------------------------------------
+
+	// Cyberblock_SetSeat(seated: Bool, tpp: Bool, hipsLocal: Vector4) -> Void: 10 Hz and on a camera switch from
+	// CyberblockSeat.Tick. hipsLocal is in V's local axes (Y forward, Z up), metres; a non-finite one counts as zero.
+	void SetSeat(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		bool seated = false;
+		bool tpp = false;
+		RED4ext::Vector4 hips{};
+		RED4ext::GetParameter(frame, &seated);
+		RED4ext::GetParameter(frame, &tpp);
+		RED4ext::GetParameter(frame, &hips);
+		++frame->code;
+
+		if (!seated)
+		{
+			clear_seat();
+			return;
+		}
+		const auto finite_or_0 = [](float v) { return std::isfinite(v) && std::abs(v) < 10.0f ? v : 0.0f; };
+		cb::natives::hipsX = finite_or_0(hips.X);
+		cb::natives::hipsY = finite_or_0(hips.Y);
+		cb::natives::hipsZ = finite_or_0(hips.Z);
+		cb::natives::seatTpp = tpp;
+		cb::natives::seated = true;
+		log_seat(true, tpp);
+	}
+
+	// Cyberblock_SetViewAllowed(allowed: Bool) -> Void: the third-person view may be applied now (Active on foot, not held,
+	// no menu, no braindance, no photo mode; CyberblockView.Tick, 10 Hz). Cleared by Cyberblock_SetActive(false).
+	void SetViewAllowed(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		bool allowed = false;
+		RED4ext::GetParameter(frame, &allowed);
+		++frame->code;
+		cb::view::set_allowed(allowed);
+	}
+
+	// Cyberblock_ViewEye() -> Vector4: V's first-person eye in Cyberpunk space (w = 1): the active camera without the
+	// third-person offset, so aim rays start where they would in first person.
+	void ViewEye(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = to_vector4(cb::view::eye(), 1.0f);
+	}
+
+	// Cyberblock_SetSlowMoFx(id: CName, seconds: Float) -> Void: the Sandevistan (n"sandevistan") or Kerenzikov
+	// (n"kerenzikov") screen effect for `seconds` (0..30) from now; n"" or 0 ends it (it eases out).
+	void SetSlowMoFx(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		RED4ext::CName id;
+		float seconds = 0.0f;
+		RED4ext::GetParameter(frame, &id);
+		RED4ext::GetParameter(frame, &seconds);
+		++frame->code;
+
+		constexpr const char *kKinds[] = {"sandevistan", "kerenzikov"};
+		const std::string_view kind = known_name(id, kKinds);
+		if (!std::isfinite(seconds))
+			seconds = 0.0f;
+		if (kind.empty() || seconds <= 0.0f)
+		{
+			if (!id.IsNone() && kind.empty())
+			{
+				static bool warned = false;
+				if (!std::exchange(warned, true))
+					cb::log::warn("Cyberblock_SetSlowMoFx: %s is not sandevistan or kerenzikov; ending the effect (logged once)",
+								  id.ToString());
+			}
+			compositor::set_slowmo(0, 0.0f);
+			cb::log::info("screenfx: off");
+			return;
+		}
+		seconds = std::min(seconds, 30.0f);
+		compositor::set_slowmo(kind == "kerenzikov" ? 1 : 0, seconds);
+		cb::log::info("screenfx: %s %.1f s", std::string(kind).c_str(), seconds);
+	}
+
+	// Cyberblock_SetPhonePrompt(open: Bool) -> Void (declared in U's UiNatives.reds): a call rings or an actionable
+	// notification shows, so T goes to Cyberpunk (answer, reply) instead of opening Minecraft's chat.
+	void SetPhonePrompt(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		bool open = false;
+		RED4ext::GetParameter(frame, &open);
+		++frame->code;
+		if (cb::natives::phonePrompt.exchange(open) != open)
+			cb::log::info("phone: T goes to %s", open ? "Cyberpunk (a call or a message waits)" : "Minecraft again");
+	}
+
 	// Cyberblock_Log(msg: String) -> Void
 	void Log(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
@@ -744,30 +917,18 @@ namespace
 		cb::log::info("script: %s", message.c_str());
 	}
 
-	using Param = std::pair<const char *, const char *>; // RTTI type, name
-
-	template<typename T>
-	void add(RED4ext::CRTTISystem *rtti, const char *name, RED4ext::ScriptingFunction_t<T> fn, const char *returnType,
-			 std::initializer_list<Param> params = {})
-	{
-		RED4ext::CGlobalFunction *func = RED4ext::CGlobalFunction::Create(name, name, fn);
-		func->flags = {};
-		func->flags.isNative = true;
-		func->flags.isStatic = true;
-		// an unknown RTTI type name leaves the function without that parameter: say so, the script call would misbehave
-		for (const auto &[type, paramName] : params)
-			if (!func->AddParam(type, paramName))
-				cb::log::error("native %s: unknown parameter type %s (%s)", name, type, paramName);
-		if (returnType != nullptr && !func->SetReturnType(returnType))
-			cb::log::error("native %s: unknown return type %s", name, returnType);
-		rtti->RegisterFunction(func);
-	}
 }
 
 namespace cb::natives
 {
 	void register_types()
 	{
+	}
+
+	void on_link_dropped()
+	{
+		clear_seat();
+		phonePrompt = false;
 	}
 
 	void post_register_types()
@@ -823,14 +984,22 @@ namespace cb::natives
 		add(rtti, "Cyberblock_ScanResult", &ScanResult, nullptr,
 			{{"Int32", "id"}, {"Bool", "ok"}, {"Uint64", "target"}, {"String", "name"}, {"String", "faction"},
 			 {"CName", "threat"}, {"Float", "hp"}, {"Bool", "device"}, {"Vector4", "pos"}, {"Vector4", "size"}});
-		add(rtti, "Cyberblock_HackResult", &HackResult, nullptr, {{"Int32", "id"}, {"Bool", "ok"}, {"String", "reason"}});
+		add(rtti, "Cyberblock_HackResult", &HackResult, nullptr,
+			{{"Int32", "id"}, {"Bool", "ok"}, {"String", "reason"}, {"Float", "upload"}, {"CName", "kind"}});
+		add(rtti, "Cyberblock_HackSpread", &HackSpread, nullptr, {{"Int32", "id"}, {"Uint64", "target"}, {"CName", "why"}});
 		add(rtti, "Cyberblock_Killed", &Killed, nullptr, {{"Uint64", "target"}, {"Bool", "vehicle"}, {"Bool", "hostile"}});
 		add(rtti, "Cyberblock_SetStance", &SetStance, nullptr, {{"Bool", "crouched"}, {"Bool", "inAir"}, {"Bool", "held"}});
 		add(rtti, "Cyberblock_GameMode", &GameModeNative, "CName");
 		add(rtti, "Cyberblock_SetMenu", &SetMenu, nullptr, {{"Bool", "open"}});
 		add(rtti, "Cyberblock_SetChoices", &SetChoices, nullptr, {{"Bool", "open"}});
 		add(rtti, "Cyberblock_SetLookCapture", &SetLookCapture, nullptr, {{"Bool", "on"}});
+		add(rtti, "Cyberblock_SetSeat", &SetSeat, nullptr, {{"Bool", "seated"}, {"Bool", "tpp"}, {"Vector4", "hipsLocal"}});
+		add(rtti, "Cyberblock_SetViewAllowed", &SetViewAllowed, nullptr, {{"Bool", "allowed"}});
+		add(rtti, "Cyberblock_ViewEye", &ViewEye, "Vector4");
+		add(rtti, "Cyberblock_SetSlowMoFx", &SetSlowMoFx, nullptr, {{"CName", "id"}, {"Float", "seconds"}});
+		add(rtti, "Cyberblock_SetPhonePrompt", &SetPhonePrompt, nullptr, {{"Bool", "open"}});
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});
 		log::info("redscript natives registered");
+		ui::register_natives(rtti); // the UI bridge's natives (ui_game.cpp, re-test 3 plan section 1.3)
 	}
 }

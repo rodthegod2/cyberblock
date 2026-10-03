@@ -1,5 +1,5 @@
-// Input forwarding, the pure parts (plan 2026-10-03 task D5, re-test 2 task D6: four binds): the swallow set with the
-// rebindable keys, bind validation,
+// Input forwarding, the pure parts (plan 2026-10-03 task D5, re-test 2 task D6, re-test 3 task D2: six binds): the swallow
+// set with the rebindable keys, bind validation,
 // the key-up rule as a state machine, the mouse bits and the look deltas.
 #include "keys.hpp"
 #include "test.hpp"
@@ -53,8 +53,8 @@ TEST(the_default_binds_g_k_u_and_y_are_swallowed_too)
 
 TEST(rebinding_moves_the_swallowed_keys)
 {
-	const Binds moved{'L', 'O', 0x70, 0x71};
-	CHECK(is_swallowed('L', moved) && is_swallowed('O', moved));
+	const Binds moved{0x75, 0x76, 0x70, 0x71}; // F6, F7, F1, F2
+	CHECK(is_swallowed(0x75, moved) && is_swallowed(0x76, moved));
 	CHECK(!is_swallowed('G', moved) && !is_swallowed('K', moved)); // Cyberpunk gets its walk toggle and crafting back
 	CHECK(is_swallowed('E', moved) && is_swallowed(kF5, moved));   // the fixed set stays
 }
@@ -138,7 +138,7 @@ TEST(f9_never_reaches_cyberpunk)
 {
 	// Cyberblock's toggle; Cyberpunk's default F9 is QuickLoad, which loaded a save in the 2026-10-03 session
 	CHECK(is_swallowed(kF9, Binds{}));
-	CHECK(is_swallowed(kF9, binds_of('L', 'O')));
+	CHECK(is_swallowed(kF9, binds_of(0x75, 0x76)));
 }
 
 // ---- which keys may be bound -------------------------------------------------------------------------------------------
@@ -171,88 +171,118 @@ TEST(reserved_keys_cannot_be_bound)
 TEST(the_default_binds_are_bindable_and_distinct)
 {
 	const Binds defaults;
-	const uint32_t keys[] = {defaults.hack, defaults.skills, defaults.cyberware, defaults.activate};
-	for (size_t i = 0; i < 4; ++i)
+	const auto keys = defaults.keys();
+	for (size_t i = 0; i < keys.size(); ++i)
 	{
 		CHECK(bindable(keys[i]));
-		for (size_t j = i + 1; j < 4; ++j)
+		for (size_t j = i + 1; j < keys.size(); ++j)
 			CHECK(keys[i] != keys[j]);
 	}
 }
 
-// ---- the binds message (plan 2026-10-03-retest2 section 1.8: four keys) ---------------------------------------------------
+// ---- the binds message (plan 2026-10-03-retest3-polish section 1.7: six keys) -------------------------------------------
 
 namespace
 {
-	/// Four binds as a function call (see binds_of).
-	Binds four(uint32_t hack, uint32_t skills, uint32_t cyberware, uint32_t activate)
+	/// Six binds as a function call (see binds_of); arms and camo default to L and O.
+	Binds six(uint32_t hack, uint32_t skills, uint32_t cyberware, uint32_t activate, uint32_t arms = kL, uint32_t camo = kO)
 	{
-		return {hack, skills, cyberware, activate};
+		return {hack, skills, cyberware, activate, arms, camo};
 	}
 
-	constexpr uint32_t kL = 'L', kO = 'O', k0 = '0', kF1 = 0x70, kF2 = 0x71, kF4 = 0x73;
+	// custom keys that clash with no default: F6 = 117, F7 = 118, 0 = 48, F1 = 112, F2 = 113, F3 = 114, F4 = 115,
+	// F8 = 119, F10 = 121, F11 = 122
+	constexpr uint32_t kF6 = 0x75, kF7 = 0x76, k0 = '0', kF1 = 0x70, kF2 = 0x71, kF4 = 0x73, kF8 = 0x77, kF10 = 0x79,
+					   kF11 = 0x7A;
 }
 
-TEST(a_binds_message_sets_all_four_keys)
+TEST(the_default_binds_are_g_k_u_y_l_o)
 {
-	const auto update =
-		apply_binds(binds_message(R"({"hack":76,"skills":79,"cyberware":48,"activate":112})"), Binds{}); // L, O, 0, F1
-	CHECK(update.has_value() && update->binds == four(kL, kO, k0, kF1) && !update->fellBack());
+	const Binds defaults;
+	CHECK(defaults.arms == 0x4C && defaults.camo == 0x4F && kL == 0x4C && kO == 0x4F);
+	CHECK(defaults == six(kG, kK, kU, kY, kL, kO));
+	CHECK(is_swallowed('L', defaults) && is_swallowed('O', defaults));
+	const Binds moved = six(kG, kK, kU, kY, kF10, kF11);
+	CHECK(!is_swallowed('L', moved) && !is_swallowed('O', moved) && is_swallowed(kF10, moved) && is_swallowed(kF11, moved));
+}
+
+TEST(a_binds_message_sets_all_six_keys)
+{
+	const auto update = apply_binds(
+		binds_message(R"({"hack":117,"skills":118,"cyberware":48,"activate":112,"arms":121,"camo":122})"), Binds{});
+	CHECK(update.has_value() && update->binds == six(kF6, kF7, k0, kF1, kF10, kF11) && !update->fellBack());
 }
 
 TEST(a_missing_name_keeps_the_current_key)
 {
-	// an older Minecraft build sends only hack and skills: cyberware and activate stay as they are
-	const auto older = apply_binds(binds_message(R"({"hack":76,"skills":79})"), four(kG, kK, k0, kF1));
-	CHECK(older && older->binds == four(kL, kO, k0, kF1) && !older->fellBack());
-	const auto onlyActivate = apply_binds(binds_message(R"({"activate":115})"), four(kL, kO, k0, kF1)); // F4
-	CHECK(onlyActivate && onlyActivate->binds == four(kL, kO, k0, kF4) && !onlyActivate->fellBack());
-	const auto empty = apply_binds(binds_message("{}"), four(kL, kO, k0, kF1));
-	CHECK(empty && empty->binds == four(kL, kO, k0, kF1) && !empty->fellBack());
+	// an older Minecraft build sends only hack and skills: the other four stay as they are
+	const auto older = apply_binds(binds_message(R"({"hack":117,"skills":118})"), six(kG, kK, k0, kF1));
+	CHECK(older && older->binds == six(kF6, kF7, k0, kF1) && !older->fellBack());
+	const auto onlyActivate = apply_binds(binds_message(R"({"activate":115})"), six(kF6, kF7, k0, kF1)); // F4
+	CHECK(onlyActivate && onlyActivate->binds == six(kF6, kF7, k0, kF4) && !onlyActivate->fellBack());
+	const auto onlyCamo = apply_binds(binds_message(R"({"camo":119})"), six(kF6, kF7, k0, kF1)); // F8
+	CHECK(onlyCamo && onlyCamo->binds == six(kF6, kF7, k0, kF1, kL, kF8) && !onlyCamo->fellBack());
+	const auto empty = apply_binds(binds_message("{}"), six(kF6, kF7, k0, kF1));
+	CHECK(empty && empty->binds == six(kF6, kF7, k0, kF1) && !empty->fellBack());
 }
 
 TEST(an_unusable_key_falls_back_to_its_own_default)
 {
-	const Binds current = four(kL, kO, k0, kF1);
+	const Binds current = six(kF6, kF7, k0, kF1, kF10, kF11);
 	const auto badHack = apply_binds(binds_message(R"({"hack":69})"), current); // E: swallowed
-	CHECK(badHack && badHack->binds == four(kG, kO, k0, kF1) && badHack->hackRejected && badHack->fellBack());
-	CHECK(!badHack->skillsRejected && !badHack->cyberwareRejected && !badHack->activateRejected && !badHack->clash);
+	CHECK(badHack && badHack->binds == six(kG, kF7, k0, kF1, kF10, kF11) && badHack->hackRejected && badHack->fellBack());
+	CHECK(!badHack->skillsRejected && !badHack->cyberwareRejected && !badHack->activateRejected && !badHack->armsRejected &&
+		  !badHack->camoRejected && !badHack->clash);
 	const auto badSkills = apply_binds(binds_message(R"({"skills":70})"), current); // F: Cyberpunk's interact
-	CHECK(badSkills && badSkills->binds == four(kL, kK, k0, kF1) && badSkills->skillsRejected);
+	CHECK(badSkills && badSkills->binds == six(kF6, kK, k0, kF1, kF10, kF11) && badSkills->skillsRejected);
 	const auto badCyberware = apply_binds(binds_message(R"({"cyberware":120})"), current); // F9
-	CHECK(badCyberware && badCyberware->binds == four(kL, kO, kU, kF1) && badCyberware->cyberwareRejected);
+	CHECK(badCyberware && badCyberware->binds == six(kF6, kF7, kU, kF1, kF10, kF11) && badCyberware->cyberwareRejected);
 	const auto badActivate = apply_binds(binds_message(R"({"activate":87})"), current); // W
-	CHECK(badActivate && badActivate->binds == four(kL, kO, k0, kY) && badActivate->activateRejected);
+	CHECK(badActivate && badActivate->binds == six(kF6, kF7, k0, kY, kF10, kF11) && badActivate->activateRejected);
+	const auto badArms = apply_binds(binds_message(R"({"arms":77})"), current); // M: Cyberpunk's map
+	CHECK(badArms && badArms->binds == six(kF6, kF7, k0, kF1, kL, kF11) && badArms->armsRejected && !badArms->clash);
+	const auto badCamo = apply_binds(binds_message(R"({"camo":116})"), current); // F5: forwarded
+	CHECK(badCamo && badCamo->binds == six(kF6, kF7, k0, kF1, kF10, kO) && badCamo->camoRejected && !badCamo->clash);
 	for (const char *value : {R"("71")", "71.5", "-71", "300", "null", "true", "[71]", "255", "0", "82" /*R*/, "86" /*V*/, "73" /*I*/})
 	{
 		const auto update = apply_binds(binds_message(std::string(R"({"hack":)") + value + "}"), current);
-		CHECK(update && update->binds == four(kG, kO, k0, kF1) && update->hackRejected);
+		CHECK(update && update->binds == six(kG, kF7, k0, kF1, kF10, kF11) && update->hackRejected);
 	}
 	const auto whole = apply_binds(binds_message(R"({"hack":113.0})"), current); // F2, a whole number written as a float
-	CHECK(whole && whole->binds == four(kF2, kO, k0, kF1) && !whole->fellBack());
-	const auto allBad = apply_binds(binds_message(R"({"hack":0,"skills":120,"cyberware":32,"activate":16})"), current);
+	CHECK(whole && whole->binds == six(kF2, kF7, k0, kF1, kF10, kF11) && !whole->fellBack());
+	const auto allBad =
+		apply_binds(binds_message(R"({"hack":0,"skills":120,"cyberware":32,"activate":16,"arms":65,"camo":49})"), current);
 	CHECK(allBad && allBad->binds == Binds{} && allBad->hackRejected && allBad->skillsRejected && allBad->cyberwareRejected &&
-		  allBad->activateRejected && !allBad->clash);
+		  allBad->activateRejected && allBad->armsRejected && allBad->camoRejected && !allBad->clash);
 }
 
-TEST(any_two_equal_keys_send_all_four_back_to_g_k_u_y)
+TEST(any_two_equal_keys_send_all_six_back_to_g_k_u_y_l_o)
 {
-	const Binds current = four(kL, kO, k0, kF1);
+	const Binds current = six(kF6, kF7, k0, kF1, kF10, kF11);
 	const auto same = apply_binds(binds_message(R"({"hack":85,"skills":85})"), current);
 	CHECK(same && same->binds == Binds{} && same->clash && !same->hackRejected && !same->skillsRejected);
-	const auto ontoCurrent = apply_binds(binds_message(R"({"cyberware":76})"), current); // onto the current hack key
+	const auto ontoCurrent = apply_binds(binds_message(R"({"cyberware":117})"), current); // onto the current hack key
 	CHECK(ontoCurrent && ontoCurrent->binds == Binds{} && ontoCurrent->clash);
-	const auto lastTwo = apply_binds(binds_message(R"({"cyberware":114,"activate":114})"), current); // F3 twice
+	const auto lastTwo = apply_binds(binds_message(R"({"arms":114,"camo":114})"), current); // F3 twice
 	CHECK(lastTwo && lastTwo->binds == Binds{} && lastTwo->clash);
 	const auto ontoDefault = apply_binds(binds_message(R"({"activate":71})"), Binds{}); // Y -> G, the hack key
 	CHECK(ontoDefault && ontoDefault->binds == Binds{} && ontoDefault->clash);
+	// L and O were free custom keys before re-test 3; now they are the arms and camo defaults
+	const auto lAsHack = apply_binds(binds_message(R"({"hack":76})"), Binds{});
+	CHECK(lAsHack && lAsHack->binds == Binds{} && lAsHack->clash && !lAsHack->hackRejected);
+	const auto oAsSkills = apply_binds(binds_message(R"({"skills":79})"), Binds{});
+	CHECK(oAsSkills && oAsSkills->binds == Binds{} && oAsSkills->clash);
+	const auto lAsHackArmsMoved = apply_binds(binds_message(R"({"hack":76,"arms":121})"), Binds{});
+	CHECK(lAsHackArmsMoved && lAsHackArmsMoved->binds == six(kL, kK, kU, kY, kF10, kO) && !lAsHackArmsMoved->fellBack());
 	// a refused key falls back to its default, which another key may already use: that is a clash too
-	const auto refusedOntoAnother = apply_binds(binds_message(R"({"skills":69})"), four(kK, kL, k0, kF1));
+	const auto refusedOntoAnother = apply_binds(binds_message(R"({"skills":69})"), six(kK, kF6, k0, kF1));
 	CHECK(refusedOntoAnother && refusedOntoAnother->binds == Binds{} && refusedOntoAnother->skillsRejected &&
 		  refusedOntoAnother->clash);
-	const auto swap = apply_binds(binds_message(R"({"hack":79,"skills":76,"cyberware":112,"activate":48})"), current);
-	CHECK(swap && swap->binds == four(kO, kL, kF1, k0) && !swap->fellBack()); // a permutation is fine
-	const auto defaults = apply_binds(binds_message(R"({"hack":71,"skills":75,"cyberware":85,"activate":89})"), current);
+	const auto swap =
+		apply_binds(binds_message(R"({"hack":118,"skills":117,"cyberware":112,"activate":48,"arms":122,"camo":121})"), current);
+	CHECK(swap && swap->binds == six(kF7, kF6, kF1, k0, kF11, kF10) && !swap->fellBack()); // a permutation is fine
+	const auto defaults = apply_binds(
+		binds_message(R"({"hack":71,"skills":75,"cyberware":85,"activate":89,"arms":76,"camo":79})"), current);
 	CHECK(defaults && defaults->binds == Binds{} && !defaults->fellBack());
 }
 
@@ -268,10 +298,33 @@ TEST(the_cyberware_and_activate_keys_u_and_y_are_swallowed)
 	const Binds defaults;
 	CHECK(defaults.cyberware == 0x55 && defaults.activate == 0x59 && kU == 0x55 && kY == 0x59);
 	CHECK(is_swallowed('U', defaults) && is_swallowed('Y', defaults));
-	const Binds moved = four(kL, kO, kF2, kF4);
+	const Binds moved = six(kF6, kF7, kF2, kF4);
 	CHECK(is_swallowed(kF2, moved) && is_swallowed(kF4, moved));
 	CHECK(!is_swallowed('U', moved) && !is_swallowed('Y', moved)); // Cyberpunk gets them back
 	CHECK(is_swallowed('U', defaults, Context{.choices = true}));  // not a choice key
+	CHECK(is_swallowed('L', defaults, Context{.choices = true}) && is_swallowed('O', defaults, Context{.choices = true}));
+}
+
+// shared/vectors.json `binds_apply` (generated from tools/cbmath.py apply_binds; Minecraft's VirtualKeysTest runs it too)
+TEST(apply_binds_matches_the_shared_binds_apply_vectors)
+{
+	std::ifstream file(CB_VECTORS);
+	const nlohmann::json vectors = nlohmann::json::parse(file);
+	const auto binds_from = [](const json &o)
+	{
+		return six(o.at("hack").get<uint32_t>(), o.at("skills").get<uint32_t>(), o.at("cyberware").get<uint32_t>(),
+				   o.at("activate").get<uint32_t>(), o.at("arms").get<uint32_t>(), o.at("camo").get<uint32_t>());
+	};
+	const json &cases = vectors.at("binds_apply");
+	CHECK(cases.size() >= 54);
+	size_t clashes = 0;
+	for (const auto &c : cases)
+	{
+		const auto update = apply_binds(json{{"t", "binds"}, {"keys", c.at("given")}}, binds_from(c.at("current")));
+		CHECK(update.has_value() && update->binds == binds_from(c.at("expect")) && update->clash == c.at("clash").get<bool>());
+		clashes += c.at("clash").get<bool>() ? 1 : 0;
+	}
+	CHECK(clashes >= 5);
 }
 
 // ---- the key-up rule ---------------------------------------------------------------------------------------------------
@@ -429,4 +482,71 @@ TEST(bindable_matches_the_shared_binds_vectors)
 	CHECK(vectors.at("binds").size() == 48);
 	for (const auto &c : vectors.at("binds"))
 		CHECK(cb::keys::bindable(c.at("vk").get<uint32_t>()) == c.at("bindable").get<bool>());
+}
+
+// ---- re-test 3 (plan 2026-10-03-retest3-polish task D3): the turn rate --------------------------------------------------
+
+TEST(turn_rate_is_the_default_until_200_counts_were_seen)
+{
+	TurnRate rate;
+	CHECK(approx(rate.degrees_per_count(), 0.15));
+	for (int i = 0; i < 19; ++i)
+		rate.sample(0.5, 10); // 0.05 deg/count, 190 counts
+	CHECK(approx(rate.degrees_per_count(), 0.15) && approx(rate.counts(), 190.0));
+	rate.sample(0.5, 10);
+	CHECK(approx(rate.degrees_per_count(), 0.05));
+}
+
+TEST(turn_rate_ignores_tiny_moves_and_big_jumps)
+{
+	TurnRate rate;
+	for (int i = 0; i < 100; ++i)
+		rate.sample(0.3, 1); // under 2 counts: jitter
+	CHECK(approx(rate.counts(), 0.0));
+	rate.sample(45.0, 50); // 30 degrees or more in a frame: a teleport or a cut, not the mouse
+	rate.sample(-30.0, 50);
+	rate.sample(NAN, 50);
+	CHECK(approx(rate.counts(), 0.0));
+	for (int i = 0; i < 40; ++i)
+		rate.sample(i % 2 ? -1.0 : 1.0, i % 2 ? -10 : 10); // left and right count the same: magnitudes are summed
+	CHECK(approx(rate.degrees_per_count(), 0.1));
+}
+
+TEST(turn_rate_halves_its_window_and_follows_a_new_sensitivity)
+{
+	TurnRate rate;
+	for (int i = 0; i < 400; ++i)
+		rate.sample(1.0, 10); // 0.1
+	CHECK(rate.counts() <= TurnRate::kHalveAt && approx(rate.degrees_per_count(), 0.1));
+	for (int i = 0; i < 2000; ++i)
+		rate.sample(2.0, 10); // the player doubled the sensitivity: 0.2
+	CHECK(std::abs(rate.degrees_per_count() - 0.2) < 0.005);
+}
+
+TEST(turn_rate_is_clamped_to_0_002_and_1)
+{
+	TurnRate slow, fast;
+	for (int i = 0; i < 100; ++i)
+	{
+		slow.sample(0.001, 100);
+		fast.sample(29.0, 2);
+	}
+	CHECK(approx(slow.degrees_per_count(), 0.002) && approx(fast.degrees_per_count(), 1.0));
+}
+
+// ---- re-test 3 (plan 2026-10-03-retest3-polish task D6): T for a ringing call -------------------------------------------
+
+TEST(a_ringing_call_keeps_t_for_cyberpunk)
+{
+	const Context phone{.phone = true};
+	CHECK(is_phone_key('T') && !is_phone_key('E') && !is_phone_key('Y'));
+	CHECK(is_swallowed('T', Binds{}) && !is_swallowed('T', Binds{}, phone));
+	// everything else stays as it was: E, Q, the digits, the binds
+	for (uint32_t vk : {uint32_t('E'), uint32_t('Q'), uint32_t('1'), kG, kL, kO, kF9})
+		CHECK(is_swallowed(vk, Binds{}, phone));
+	// with choices too, both keep their keys
+	const Context both{.choices = true, .phone = true};
+	CHECK(!is_swallowed('T', Binds{}, both) && !is_swallowed('E', Binds{}, both) && is_swallowed('X', Binds{}, both));
+	// a Minecraft screen (chat) covers it: every key is Minecraft's again
+	CHECK(is_swallowed('T', Binds{}, Context{.screenOpen = true, .phone = true}));
 }

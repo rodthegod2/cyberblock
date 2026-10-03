@@ -1,4 +1,5 @@
 #include "keys.hpp"
+#include <algorithm>
 #include <cmath>
 #include <iterator>
 #include <string_view>
@@ -44,13 +45,23 @@ namespace cb::keys
 		return vk == kE || vk == kQ || (vk >= kDigit1 && vk <= kDigit4);
 	}
 
+	bool is_phone_key(uint32_t vk)
+	{
+		return vk == kT;
+	}
+
 	bool is_swallowed(uint32_t vk, const Binds &binds, Context context)
 	{
 		if (vk == kF9 || context.screenOpen)
 			return true;
 		if (context.choices && is_choice_key(vk))
 			return false;
-		return in_fixed_swallow_set(vk) || vk == binds.hack || vk == binds.skills || vk == binds.cyberware || vk == binds.activate;
+		if (context.phone && is_phone_key(vk))
+			return false;
+		if (in_fixed_swallow_set(vk))
+			return true;
+		const auto keys = binds.keys();
+		return std::find(keys.begin(), keys.end(), vk) != keys.end();
 	}
 
 	bool bindable(uint32_t vk)
@@ -89,8 +100,10 @@ namespace cb::keys
 		read_bind(*keys, "skills", next.skills, defaults.skills, out.skillsRejected);
 		read_bind(*keys, "cyberware", next.cyberware, defaults.cyberware, out.cyberwareRejected);
 		read_bind(*keys, "activate", next.activate, defaults.activate, out.activateRejected);
+		read_bind(*keys, "arms", next.arms, defaults.arms, out.armsRejected);
+		read_bind(*keys, "camo", next.camo, defaults.camo, out.camoRejected);
 		// one key for two actions would fire both: every action goes back to its default
-		const uint32_t resolved[] = {next.hack, next.skills, next.cyberware, next.activate};
+		const auto resolved = next.keys();
 		for (size_t i = 0; i < std::size(resolved); ++i)
 			for (size_t j = i + 1; j < std::size(resolved); ++j)
 				out.clash = out.clash || resolved[i] == resolved[j];
@@ -154,6 +167,28 @@ namespace cb::keys
 		const Verdict verdict = known->second == State::Eaten ? Verdict::Swallow : Verdict::Pass;
 		m_state.erase(known);
 		return verdict;
+	}
+
+	void TurnRate::sample(double yawDeltaDeg, int64_t counts)
+	{
+		const double turned = std::abs(yawDeltaDeg);
+		const double moved = std::abs(double(counts));
+		if (!std::isfinite(turned) || moved < double(kMinCounts) || turned >= kMaxFrameDegrees)
+			return;
+		m_degrees += turned;
+		m_counts += moved;
+		if (m_counts > kHalveAt)
+		{
+			m_degrees *= 0.5;
+			m_counts *= 0.5;
+		}
+	}
+
+	double TurnRate::degrees_per_count() const
+	{
+		if (m_counts < kWarmUpCounts)
+			return kDefault;
+		return std::clamp(m_degrees / m_counts, kMin, kMax);
 	}
 
 	std::optional<std::array<double, 2>> LookAccumulator::take(Clock::time_point now)

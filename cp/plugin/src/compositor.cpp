@@ -6,6 +6,7 @@
 #include "compositor.h"
 #include <windows.h>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -17,6 +18,8 @@
 #include <dxgi1_4.h>
 #include "link.hpp"
 #include "log.hpp"
+#include "natives.hpp"
+#include "screenfx.hpp"
 #include "world.hpp"
 
 using namespace reshade::api;
@@ -40,6 +43,15 @@ namespace
 	std::atomic<bool> g_cameraLocked{false};
 	std::atomic<float> g_lookLight{-1.0f}, g_lookBias{-1.0f}, g_lookSlope{-1.0f};
 	std::atomic<float> g_shakeX{0.0f}, g_shakeY{0.0f}, g_shakeRoll{0.0f}, g_portalWarp{0.0f};
+	std::atomic<bool> g_menu{false}; // re-test 3: a Cyberpunk menu is passed through (cb_menu)
+	// re-test 3: the Sandevistan / Kerenzikov screen effect (cb_slowmo)
+	std::mutex g_slowmoLock;
+	cb::screenfx::SlowMo g_slowmo;
+
+	double steady_seconds()
+	{
+		return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+	}
 	float g_savedLight = -1.0f, g_savedBias = -1.0f, g_savedSlope = -1.0f;
 
 	struct Pose
@@ -473,6 +485,17 @@ namespace
 			runtime->set_uniform_value_float(v, g_shakeX.load(), g_shakeY.load(), g_shakeRoll.load());
 		if (const effect_uniform_variable v = uniform("cb_portal_warp"); v.handle != 0)
 			runtime->set_uniform_value_float(v, g_portalWarp.load());
+		if (const effect_uniform_variable v = uniform("cb_menu"); v.handle != 0)
+			runtime->set_uniform_value_bool(v, g_menu.load() && !test);
+		if (const effect_uniform_variable v = uniform("cb_slowmo"); v.handle != 0)
+		{
+			std::array<float, 4> slowmo;
+			{
+				std::lock_guard<std::mutex> lock(g_slowmoLock);
+				slowmo = g_slowmo.uniform(steady_seconds(), cb::natives::menuOpen.load());
+			}
+			runtime->set_uniform_value_float(v, slowmo.data(), 4);
+		}
 
 		// Re-projection (done by the effect) from Minecraft's pose to Cyberpunk's latest, extrapolated by the effect's
 		// PosePrediction frames. Without a host pose, a locked camera or test frames, the host pose is Minecraft's own:
@@ -544,6 +567,17 @@ namespace compositor
 	void set_active(bool active)
 	{
 		g_active = active;
+		if (!active)
+		{
+			std::lock_guard<std::mutex> lock(g_slowmoLock);
+			g_slowmo.clear();
+		}
+	}
+
+	void set_slowmo(int kind, float seconds)
+	{
+		std::lock_guard<std::mutex> lock(g_slowmoLock);
+		g_slowmo.start(kind == 1 ? cb::screenfx::Kind::Kerenzikov : cb::screenfx::Kind::Sandevistan, seconds, steady_seconds());
 	}
 
 	void set_host_planes(float near_clip, float far_clip)
@@ -569,6 +603,12 @@ namespace compositor
 		g_shakeY = shake_y;
 		g_shakeRoll = shake_roll;
 		g_portalWarp = portal_warp;
+	}
+
+	void set_menu_mode(bool menu)
+	{
+		if (g_menu.exchange(menu) != menu)
+			cb::log::info("compositor: menu pass-through %s", menu ? "on" : "off");
 	}
 
 	void set_look(float light_match, float depth_bias, float slope_bias)

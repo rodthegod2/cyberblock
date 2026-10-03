@@ -1,9 +1,11 @@
 #include "input.hpp"
+#include "drive.hpp"
 #include "iat.hpp"
 #include "keys.hpp"
 #include "link.hpp"
 #include "log.hpp"
 #include "natives.hpp"
+#include "view.hpp"
 #include "world.hpp"
 #include <windows.h>
 #include <algorithm>
@@ -46,6 +48,8 @@ namespace
 	std::atomic<uint32_t> g_bindSkills{cb::keys::kK};
 	std::atomic<uint32_t> g_bindCyberware{cb::keys::kU};
 	std::atomic<uint32_t> g_bindActivate{cb::keys::kY};
+	std::atomic<uint32_t> g_bindArms{cb::keys::kL};
+	std::atomic<uint32_t> g_bindCamo{cb::keys::kO};
 	// One gate per input path, since each of WM_INPUT and WM_KEYDOWN sees every key event. Window thread only.
 	cb::keys::KeyGate g_rawGate;
 	cb::keys::KeyGate g_messageGate;
@@ -68,6 +72,9 @@ namespace
 	std::mutex g_lookLock;
 	cb::keys::LookAccumulator g_look;
 
+	// Raw mouse X counts since the game thread last took them (take_mouse_x), summed on the window thread.
+	std::atomic<int64_t> g_mouseX{0};
+
 	// USER32!GetRawInputData as the game's import table had it before the hook (null while not hooked). iat::patch sets it
 	// before the hook goes live; it is never cleared, because a game thread may be inside the hook while we unload.
 	using GetRawInputDataFn = UINT(WINAPI *)(HRAWINPUT, UINT, LPVOID, PUINT, UINT);
@@ -76,7 +83,7 @@ namespace
 
 	cb::keys::Binds binds()
 	{
-		return {g_bindHack, g_bindSkills, g_bindCyberware, g_bindActivate};
+		return {g_bindHack, g_bindSkills, g_bindCyberware, g_bindActivate, g_bindArms, g_bindCamo};
 	}
 
 	/// A bound key as a player reads it: the letter or digit, F1..F24, else the VK code.
@@ -112,7 +119,9 @@ namespace
 
 	cb::keys::Context context()
 	{
-		return {.screenOpen = screen_open(), .choices = choices_shown()};
+		return {.screenOpen = screen_open(),
+				.choices = choices_shown(),
+				.phone = cb::natives::phonePrompt && !cb::link().screen_open()};
 	}
 
 	/// Shift and Ctrl as the key state of the message being handled has them, in SDL bits.
@@ -210,6 +219,9 @@ namespace
 	{
 		if ((mouse.usFlags & MOUSE_MOVE_ABSOLUTE) != 0)
 			return;
+		// the drive's owned yaw (re-test 3 task D3): every relative X count while V is Cyberpunk's to turn
+		if (forwarding() && !cb::link().screen_open())
+			g_mouseX += mouse.lLastX;
 		if (screen_open())
 		{
 			std::lock_guard<std::mutex> lock(g_cursorLock);
@@ -279,6 +291,10 @@ namespace
 			return "cyberware";
 		if (vk == g_bindActivate)
 			return "activate";
+		if (vk == g_bindArms)
+			return "arms";
+		if (vk == g_bindCamo)
+			return "camo";
 		return nullptr;
 	}
 
@@ -311,7 +327,9 @@ namespace
 			(down ? g_messageGate.down(code, swallowable) : g_messageGate.up(code)) == cb::keys::KeyGate::Verdict::Swallow;
 
 		// a Cyberpunk choice list keeps E, Q and 1-4 (a release still goes out for a press Minecraft got before it showed)
-		const bool forward = forwarding() && !(now.choices && cb::keys::is_choice_key(code));
+		// and a ringing call or an actionable notification keeps T (answer, reply)
+		const bool forward = forwarding() && !(now.choices && cb::keys::is_choice_key(code)) &&
+							 !(now.phone && cb::keys::is_phone_key(code));
 		if (const char *name = key_name(vk))
 		{
 			const std::string id = std::string("key:") + name;
@@ -439,6 +457,11 @@ namespace
 			if (packet->header.dwType == RIM_TYPEMOUSE)
 			{
 				RAWMOUSE &mouse = packet->data.mouse;
+				// while the drive owns V's yaw (a glide in first person) the game must not turn V itself: the drive turns
+				// it by these counts (take_mouse_x) and every teleport would otherwise undo the game's turn. Pitch stays.
+				if (cb::drive::driving() && !cb::view::applied() && !cb::link().screen_open() &&
+					(mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0)
+					mouse.lLastX = 0;
 				if (choices_shown())
 					mouse.usButtonFlags = cb::keys::strip_down(mouse.usButtonFlags); // the wheel scrolls Cyberpunk's choices
 				else
@@ -598,14 +621,22 @@ namespace cb::input
 		g_bindSkills = next.skills;
 		g_bindCyberware = next.cyberware;
 		g_bindActivate = next.activate;
+		g_bindArms = next.arms;
+		g_bindCamo = next.camo;
 		static std::atomic<bool> warned{false};
 		if (update->fellBack() && !warned.exchange(true))
 			log::warn("binds: %s (logged once)",
-					  update->clash ? "two actions got the same key; all four fall back to G, K, U and Y"
+					  update->clash ? "two actions got the same key; all six fall back to G, K, U, Y, L and O"
 									: "a key Minecraft sent cannot be used (not 1..254, or one of Cyberpunk's own or Minecraft's "
 									  "forwarded keys); it falls back to its default");
-		log::info("binds: hack %s, skills %s, cyberware %s, activate %s", vk_name(next.hack).c_str(),
-				  vk_name(next.skills).c_str(), vk_name(next.cyberware).c_str(), vk_name(next.activate).c_str());
+		log::info("binds: hack %s, skills %s, cyberware %s, activate %s, arms %s, camo %s", vk_name(next.hack).c_str(),
+				  vk_name(next.skills).c_str(), vk_name(next.cyberware).c_str(), vk_name(next.activate).c_str(),
+				  vk_name(next.arms).c_str(), vk_name(next.camo).c_str());
+	}
+
+	int64_t take_mouse_x()
+	{
+		return g_mouseX.exchange(0);
 	}
 
 	void shutdown()
