@@ -1,7 +1,8 @@
 // Minecraft quickhack items fired at Night City (plan 2026-10-03 sections 1.4 and 1.5, task S3.1). Minecraft owns RAM and
 // cooldowns; Cyberpunk runs the hack through the game's own quickhack path with V as the executor, so the upload, the
 // status effect (damage, VFX, SFX, AI reaction), NCPD heat and kill credit are vanilla. Every request is answered once
-// with Cyberblock_HackResult(id, ok, reason); reasons: "target gone", "not hackable", "no driver", "no such hack".
+// with Cyberblock_HackResult(id, ok, reason); reasons: "target gone", "not hackable (<which gate>)", "no driver",
+// "no such hack" (at most 64 characters, protocol hackresult.reason).
 //
 // 2.31 sources (decompiled 2.31 scripts; TweakDB read from r6/cache/tweakdb.bin and tweakdb_ep1.bin; compile-checked):
 //   Puppet hacks: the PuppetAction pattern of ApplyObjectActionEffector.ActionOn / SpreadAreaEffector.ActionOn
@@ -17,10 +18,12 @@
 //     spread executor uses (EffectExecutor_Spread.Process). Hackable: vanilla's gates (ScriptedPuppet.IsQuickHackAble,
 //     scriptedPuppet.swift:3217) that concern the target, so quest characters are left alone: not V's friends
 //     (GameObject.IsFriendlyTowardsPlayer), no Invulnerable or Immortal god mode (GodModeSystem.HasGodMode; Immortal is
-//     how quest-essential NPCs are kept alive), not animated by a scene (SceneSystemInterface.IsEntityInScene), and a
-//     record that offers a PuppetQuickHack ObjectAction (Character_Record.ObjectActions, ObjectActionType().Type()),
-//     which is how story NPCs are made unhackable. Not taken over: the cyberdeck check (Minecraft owns it), the crowd
-//     and aggressiveness gates (Minecraft hacks pedestrians too), and QuickhackModule.IsQuickhackBlockedByScene, whose
+//     how quest-essential NPCs are kept alive), and a record that offers a PuppetQuickHack ObjectAction
+//     (Character_Record.ObjectActions, ObjectActionType().Type()), which is how story NPCs are made unhackable. Not a
+//     gate: SceneSystemInterface.IsEntityInScene, which the 2026-10-03 in-game test found true in free open-world play
+//     (for V; commit 641e99f), so it refused ordinary people too. Each refusal names its gate in the reason
+//     ("not hackable (god mode)", ...), which reaches Minecraft and the log. Not taken over: the cyberdeck check
+//     (Minecraft owns it), the crowd and aggressiveness gates (Minecraft hacks pedestrians too), and QuickhackModule.IsQuickhackBlockedByScene, whose
 //     NoQuickHacks tag Cyberblock's own NoCombat puts on V while Active (PlayerState.reds); only its other half is
 //     kept: no hack while V is in scene tier 3-5 (PlayerPuppet.GetSceneTier). Crowd records offer no quickhack at all
 //     (Character.AsianMale has only GenericInteraction.Talk, TweakDB), so a crowd NPC (Character_Record.IsCrowd)
@@ -102,7 +105,7 @@ public abstract class CyberblockHacks {
     }
     let tier = PlayerPuppet.GetSceneTier(player);
     if tier >= 3 && tier <= 5 {
-      return "not hackable"; // V is in a scene that blocks quickhacks
+      return "not hackable (V is in a scene)";
     }
     if isDevice {
       return CyberblockHacks.DeviceHack(player, object as Device);
@@ -117,13 +120,14 @@ public abstract class CyberblockHacks {
     }
     let puppet = object as ScriptedPuppet;
     if !IsDefined(puppet) {
-      return "not hackable";
+      return "not hackable (not a person)";
     }
     if !ScriptedPuppet.IsActive(puppet) {
       return "target gone";
     }
-    if !CyberblockHacks.Hackable(game, puppet) {
-      return "not hackable";
+    let refusal = CyberblockHacks.Refusal(game, puppet);
+    if StrLen(refusal) > 0 {
+      return s"not hackable (\(refusal))";
     }
     let spread = Equals(hack, n"contagion");
     CyberblockHacks.Upload(player, puppet, action, spread);
@@ -148,34 +152,32 @@ public abstract class CyberblockHacks {
     hack.ProcessRPGAction(target.GetGame());
   }
 
-  private static func Hackable(game: GameInstance, puppet: ref<ScriptedPuppet>) -> Bool {
+  // Which of the header's gates keeps puppet from being hacked ("" when none does).
+  private static func Refusal(game: GameInstance, puppet: ref<ScriptedPuppet>) -> String {
     if GameObject.IsFriendlyTowardsPlayer(puppet) {
-      return false;
+      return "friendly";
     }
     let id = puppet.GetEntityID();
     let godModes = GameInstance.GetGodModeSystem(game);
     if godModes.HasGodMode(id, gameGodModeType.Invulnerable) || godModes.HasGodMode(id, gameGodModeType.Immortal) {
-      return false;
-    }
-    if GameInstance.GetSceneSystem(game).GetScriptInterface().IsEntityInScene(id) {
-      return false;
+      return "god mode";
     }
     let record = puppet.GetRecord();
     if !IsDefined(record) {
-      return false;
+      return "no record";
     }
     if record.IsCrowd() {
       let quest = record.Quest();
-      return !IsDefined(quest) || Equals(quest.Type(), gamedataNPCQuestAffiliation.General);
+      return !IsDefined(quest) || Equals(quest.Type(), gamedataNPCQuestAffiliation.General) ? "" : "quest character";
     }
     let actions: array<wref<ObjectAction_Record>>;
     record.ObjectActions(actions);
     for action in actions {
       if IsDefined(action) && IsDefined(action.ObjectActionType()) && Equals(action.ObjectActionType().Type(), gamedataObjectActionType.PuppetQuickHack) {
-        return true;
+        return "";
       }
     }
-    return false;
+    return "no quickhack actions";
   }
 
   // The nearest other living, hackable NPC within range metres of target, or null.
@@ -184,7 +186,7 @@ public abstract class CyberblockHacks {
     let bestDistance2 = range * range;
     let center = target.GetWorldPosition();
     for npc in target.GetNPCsAroundObject(range) {
-      if IsDefined(npc) && npc != target && !npc.IsPlayer() && ScriptedPuppet.IsActive(npc) && CyberblockHacks.Hackable(game, npc) {
+      if IsDefined(npc) && npc != target && !npc.IsPlayer() && ScriptedPuppet.IsActive(npc) && StrLen(CyberblockHacks.Refusal(game, npc)) == 0 {
         let distance2 = Vector4.DistanceSquared(npc.GetWorldPosition(), center);
         if distance2 <= bestDistance2 {
           best = npc;
@@ -199,18 +201,18 @@ public abstract class CyberblockHacks {
   // distract, anything else runs its first quickhack the device allows.
   private static func DeviceHack(player: ref<PlayerPuppet>, device: ref<Device>) -> String {
     if !IsDefined(device) || !IsDefined(device.GetDevicePS()) {
-      return "not hackable";
+      return "not hackable (not a device)";
     }
     if IsDefined(device as TrafficLight) {
-      return CyberblockHacks.FlipIntersection(device) ? "" : "not hackable";
+      return CyberblockHacks.FlipIntersection(device) ? "" : "not hackable (no intersection)";
     }
     if IsDefined(device as SurveillanceCamera) {
-      return CyberblockHacks.DeviceAction(player, device, n"ForceIgnoreTargets") ? "" : "not hackable";
+      return CyberblockHacks.DeviceAction(player, device, n"ForceIgnoreTargets") ? "" : "not hackable (camera allows no hack)";
     }
     if CyberblockHacks.DeviceAction(player, device, n"QuickHackDistraction") {
       return "";
     }
-    return CyberblockHacks.DeviceAction(player, device, n"") ? "" : "not hackable";
+    return CyberblockHacks.DeviceAction(player, device, n"") ? "" : "not hackable (device allows no hack)";
   }
 
   // Runs the first remote action named name (any allowed one for n"") that the device allows. False if none.
