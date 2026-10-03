@@ -1,15 +1,23 @@
 package dev.cyberblock.client.cyber;
 
+import dev.cyberblock.cyber.CyberData;
+import dev.cyberblock.cyber.Perk;
+import dev.cyberblock.cyber.QuickhackItem;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 
 /** Layer 6 (plan 2026-10-03, track C), client half: keys, the RAM bar, scanning, the skill tree. */
 public class CyberClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
+		QuickhackItem.readerHasCheapHacks = () -> {
+			LocalPlayer player = Minecraft.getInstance().player;
+			return player != null && CyberData.has(player, Perk.CHEAP_HACKS);
+		};
 		CyberKeys.register();
 		CyberLink.register();
 		HudElementRegistry.attachElementAfter(VanillaHudElements.HOTBAR, RamHud.ID, RamHud::draw);

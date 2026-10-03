@@ -15,6 +15,7 @@
 	"item.cyberblock.mantis_blade": "Mantis Blade",
 	"item.cyberblock.gorilla_gauntlet": "Gorilla Gauntlet",
 	"item.cyberblock.quickhack.cost": "Costs %s RAM",
+	"item.cyberblock.quickhack.usage": "Hold [%1$s] on a target, then right-click (or hold [%1$s], wheel to pick, right-click)",
 
 	"hack.cyberblock.short_circuit": "Quickhack: Short Circuit",
 	"hack.cyberblock.overheat": "Quickhack: Overheat",

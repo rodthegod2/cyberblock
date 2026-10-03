@@ -1,5 +1,6 @@
 package dev.cyberblock.cyber;
 
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
@@ -15,9 +16,12 @@ import net.minecraft.world.level.Level;
 
 /**
  * One quickhack (plan section 1.5): reusable, used on the target locked by holding the hack key. The server decides (it
- * holds the lock): RAM, cooldown and the `hack` message, or an action-bar message saying what is missing.
+ * holds the lock): RAM, cooldown and the `hack` message, or an action-bar message saying what is missing (a use while the
+ * chip recharges is answered by CyberMod's UseItemCallback, since vanilla skips the item then).
  */
 public class QuickhackItem extends Item {
+	/** Whether the player reading a tooltip owns Cheap Hacks: the client half sets it (its own player's synced perks). */
+	public static volatile BooleanSupplier readerHasCheapHacks = () -> false;
 	private final Hack hack;
 
 	public QuickhackItem(final Hack hack, final Item.Properties properties) {
@@ -44,6 +48,8 @@ public class QuickhackItem extends Item {
 	public void appendHoverText(final ItemStack itemStack, final Item.TooltipContext context, final TooltipDisplay display,
 		final Consumer<Component> builder, final TooltipFlag tooltipFlag) {
 		builder.accept(Component.translatable("hack.cyberblock." + this.hack.wire()).withStyle(ChatFormatting.AQUA));
-		builder.accept(Component.translatable("item.cyberblock.quickhack.cost", this.hack.ram()).withStyle(ChatFormatting.GRAY));
+		int cost = Ram.cost(this.hack, readerHasCheapHacks.getAsBoolean());
+		builder.accept(Component.translatable("item.cyberblock.quickhack.cost", cost).withStyle(ChatFormatting.GRAY));
+		builder.accept(Component.translatable("item.cyberblock.quickhack.usage", Component.keybind("key.cyberblock.hack")).withStyle(ChatFormatting.DARK_GRAY));
 	}
 }
