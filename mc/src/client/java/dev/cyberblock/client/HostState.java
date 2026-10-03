@@ -39,7 +39,7 @@ public final class HostState {
 	private static final double XZ_LIMIT = 2.9E7;
 	private static final double Y_LIMIT = 20000.0;
 	private static volatile Pose latest;
-	/** Cyberpunk says V is in a vehicle: Steve, his hand and the HUD are hidden. */
+	/** Cyberpunk says V is in a vehicle: Steve sits where V sits (cam.seat), or is hidden until the host says where that is. */
 	private static volatile boolean vehicle;
 	/** The pose this frame renders with, taken once per frame so every hook agrees. Render thread only. */
 	private static Pose frame;

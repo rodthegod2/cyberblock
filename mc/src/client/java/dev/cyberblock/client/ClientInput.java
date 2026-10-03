@@ -18,7 +18,11 @@ import org.lwjgl.sdl.SDLVideo;
 
 /** Host input, applied on the client thread: the host window has the focus, so Minecraft never sees these itself. */
 final class ClientInput {
-	/** What the host asked for with "hud"; in a vehicle the HUD is hidden whatever it said. */
+	/**
+	 * What the host asked for with "hud" (a re-test 3 host always says false). A vehicle no longer hides the HUD (plan retest3 M2,
+	 * F3): hiding it would also hide the first-person hand (26.3 skips renderItemInHand while the HUD is hidden); the UI track trims
+	 * the vehicle HUD itself.
+	 */
 	private static boolean hudHidden;
 
 	private ClientInput() {
@@ -33,7 +37,7 @@ final class ClientInput {
 	}
 
 	private static void applyHud(final Minecraft minecraft) {
-		if (minecraft.gui.hud.isHidden() != (hudHidden || HostState.vehicle())) {
+		if (minecraft.gui.hud.isHidden() != hudHidden) {
 			minecraft.gui.hud.toggle();
 		}
 	}

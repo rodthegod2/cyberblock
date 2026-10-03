@@ -10,13 +10,21 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** The local player is placed every frame, so its own tick movement is ~0: animate the walk from the host's movement. */
+/**
+ * The local player is placed every frame, so its own tick movement is ~0: animate the walk from the host's movement. Seated in a
+ * vehicle (plan retest3 M2) the car moves him, not his legs: the walk stands still.
+ */
 @Mixin(LivingEntity.class)
 abstract class LivingEntityMixin {
 	@Inject(method = "updateWalkAnimation", at = @At("HEAD"), cancellable = true)
 	private void cyberblock$hostWalk(final float distance, final CallbackInfo ci) {
 		if ((Object) this instanceof LocalPlayer player && HostState.frame() != null) {
-			player.walkAnimation.update(Math.min(PlayerSync.tickDistance() * 4.0F, 1.0F), 0.4F, 1.0F);
+			if (HostState.vehicle()) {
+				player.walkAnimation.stop();
+			} else {
+				player.walkAnimation.update(Math.min(PlayerSync.tickDistance() * 4.0F, 1.0F), 0.4F, 1.0F);
+			}
+
 			ci.cancel();
 		}
 	}
