@@ -243,6 +243,15 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 				Tethers.leadLength(this.getType() == ProxyEntities.VEHICLE)));
 	}
 
+	/** Server thread, as ProxyManager removes the proxy: a leash the host was told of is reported released. */
+	void reportRemoved() {
+		Entity holder = this.reportedHolder;
+		this.reportedHolder = null;
+		if (holder != null && Cyberblock.active) {
+			Cyberblock.events.accept(Wire.leadRelease(Long.toUnsignedString(this.proxyId)));
+		}
+	}
+
 	/** Server thread: the host gave the tether up ({"t":"unlead"}): the leash drops with its item, and the host already knows. */
 	void unlead() {
 		this.reportedHolder = null;

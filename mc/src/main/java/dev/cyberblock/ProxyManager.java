@@ -112,8 +112,12 @@ public final class ProxyManager {
 		kinds.clear();
 	}
 
-	/** A proxy goes; a lead on it drops as an item, as vanilla's would. */
+	/**
+	 * A proxy goes; a lead on it drops as an item, as vanilla's would. The host hears of it (a gone proxy reports nothing
+	 * more), so it stops dragging the NPC: in a vehicle (an empty list), after the list timeout, out of the 48 m list.
+	 */
 	private static void remove(final ProxyEntity proxy) {
+		proxy.reportRemoved();
 		if (proxy.isLeashed()) {
 			proxy.dropLeash();
 		}
