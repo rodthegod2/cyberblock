@@ -129,14 +129,16 @@ public abstract class CyberblockHealth {
     if damage <= 0.0 || maxHealth <= 0.0 {
       return;
     }
-    let from: Vector4;
-    let hasFrom = CyberblockHealth.From(hitEvent, from);
     let kind = CyberblockHealth.Kind(hitEvent);
     // Minecraft owns the fall damage of a glide or an ender pearl teleport (plan 2026-10-03 S1.3, CyberblockFlight).
     if Equals(kind, n"fall") && CyberblockFlight.SuppressFall(target.GetGame()) {
       Cyberblock_Log(s"dmg fall \(damage) of \(maxHealth) not reported: flight or teleport landing");
       return;
     }
+    // A fall comes from nowhere: the landing attacks have V as instigator and source and a hit direction of their own,
+    // which Minecraft would take for a blow from the side (knockback, damage tilt).
+    let from: Vector4;
+    let hasFrom = NotEquals(kind, n"fall") && CyberblockHealth.From(hitEvent, from);
     Cyberblock_Damage(damage / maxHealth, kind, from, hasFrom);
     Cyberblock_Log(s"dmg \(NameToString(kind)) \(damage) of \(maxHealth) from \(hasFrom ? "known" : "unknown") (\(TDBID.ToStringDEBUG(CyberblockHealth.AttackID(hitEvent))))");
   }
