@@ -48,7 +48,10 @@ public enum Hack {
 		return this.cooldownSeconds * 20;
 	}
 
-	/** The Redstone Lever works on devices (cameras, traffic lights, vending machines); every other hack on an NPC or vehicle. */
+	/**
+	 * The Redstone Lever works on devices (cameras, traffic lights, vending machines); every other hack on a person, or on a car
+	 * through its driver (Cyberpunk answers "no driver" for an empty one).
+	 */
 	public boolean needsDevice() {
 		return this == DEVICE;
 	}

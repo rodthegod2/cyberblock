@@ -35,7 +35,7 @@
 	"cyberblock.hack.no_target": "Hold %s and look at a target",
 	"cyberblock.hack.no_deck": "You need a cyberdeck in your inventory",
 	"cyberblock.hack.need_device": "The Redstone Lever only works on devices",
-	"cyberblock.hack.need_npc": "This quickhack needs a person or a vehicle",
+	"cyberblock.hack.need_npc": "This quickhack needs a person or an occupied car",
 	"cyberblock.hack.no_ram": "Not enough RAM: %s of %s",
 	"cyberblock.hack.cooldown": "Still recharging",
 	"cyberblock.hack.failed": "Hack failed: %s",

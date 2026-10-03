@@ -1,7 +1,7 @@
 // Minecraft quickhack items fired at Night City (plan 2026-10-03 sections 1.4 and 1.5, task S3.1). Minecraft owns RAM and
 // cooldowns; Cyberpunk runs the hack through the game's own quickhack path with V as the executor, so the upload, the
 // status effect (damage, VFX, SFX, AI reaction), NCPD heat and kill credit are vanilla. Every request is answered once
-// with Cyberblock_HackResult(id, ok, reason); reasons: "target gone", "not hackable", "no such hack".
+// with Cyberblock_HackResult(id, ok, reason); reasons: "target gone", "not hackable", "no driver", "no such hack".
 //
 // 2.31 sources (decompiled 2.31 scripts; TweakDB read from r6/cache/tweakdb.bin and tweakdb_ep1.bin; compile-checked):
 //   Puppet hacks: the PuppetAction pattern of ApplyObjectActionEffector.ActionOn / SpreadAreaEffector.ActionOn
@@ -26,6 +26,8 @@
 //     (Character.AsianMale has only GenericInteraction.Talk, TweakDB), so a crowd NPC (Character_Record.IsCrowd)
 //     counts unless its record has a quest affiliation other than General (Character_Record.Quest().Type();
 //     e.g. Character.lizzies_customer_female_high: MainQuest).
+//   Cars: a vehicle is no ScriptedPuppet, so a person hack aimed at one goes to its driver
+//     (VehicleComponent.GetDriverMounted, the scanner's driver lookup); an empty car answers "no driver".
 //   Chain: GameObject.GetNPCsAroundObject(range) (TargetingSystem query, as SpreadAreaEffector), nearest other living NPC
 //     within 8 m of the target.
 //   Device hacks (audit B, device hacks): Device.GetDevicePS(), ScriptableDeviceComponentPS.GenerateContext(
@@ -104,6 +106,14 @@ public abstract class CyberblockHacks {
     }
     if isDevice {
       return CyberblockHacks.DeviceHack(player, object as Device);
+    }
+    // a car is hacked through its driver (the scanner's VehicleComponent.GetDriverMounted, as Scan.reds)
+    let vehicle = object as VehicleObject;
+    if IsDefined(vehicle) {
+      object = VehicleComponent.GetDriverMounted(game, vehicle.GetEntityID());
+      if !IsDefined(object) || object == player {
+        return "no driver";
+      }
     }
     let puppet = object as ScriptedPuppet;
     if !IsDefined(puppet) {

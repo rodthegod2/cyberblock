@@ -8,9 +8,9 @@ public final class HackRules {
 		NO_DECK,
 		/** Nothing scanned in the last 5 s. */
 		NO_TARGET,
-		/** The Redstone Lever on a person or vehicle. */
+		/** The Redstone Lever on a person or a car. */
 		NEED_DEVICE,
-		/** Any other quickhack on a device, or on something with no proxy in Minecraft. */
+		/** Any other quickhack (people, and cars through their driver) on a device, or on something with no proxy in Minecraft. */
 		NEED_NPC,
 		NO_RAM
 	}
