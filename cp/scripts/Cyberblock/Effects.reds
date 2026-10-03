@@ -34,9 +34,10 @@
 //     look (worldMap.swift, roadBlockTrap.swift); the camera pitch lives in FPPCameraComponent, which fast travel
 //     resets explicitly (ResetPitch) before teleporting, so a plain teleport keeps it. Fall suppression on sim time
 //     (TimeSystem.GetSimTime). Refused while V is in a vehicle or PlayerLocked: WorkspotGameSystem.IsActorInWorkspot,
-//     SceneSystemInterface.IsEntityInScene (as IsProtected does for NPCs), BraindanceSystem.GetIsInBraindance (fetched
-//     from the scriptable systems container as PlayerPuppet does), PlayerStateMachine.IsPlayerInsideMovingElevator
-//     (settingsMain.swift).
+//     PlayerStateMachine.HighLevel in gamePSMHighLevel.SceneTier2..SceneTier5 (vanilla IsInSafeSceneTier,
+//     defaultTransition.swift), BraindanceSystem.GetIsInBraindance (fetched from the scriptable systems container as
+//     PlayerPuppet does), PlayerStateMachine.IsPlayerInsideMovingElevator (settingsMain.swift). Minecraft blocks the
+//     pearl itself while V is held; the 'teleport ignored' log stays as the second line.
 //   Targets: Codeware EntityID.FromHash (inverse of the EntityID hash S1 sends) + GameInstance.FindEntityByID.
 
 public abstract class CyberblockEffects {
@@ -121,8 +122,9 @@ public abstract class CyberblockEffects {
       Cyberblock_Log("effects: teleport ignored, V is in a vehicle");
       return;
     }
-    if CyberblockEffects.PlayerLocked(game, player) {
-      Cyberblock_Log(s"effects: teleport ignored, V is held (\(NameToString(CyberblockEffects.LockReason(game, player))))");
+    let lock = CyberblockEffects.LockReason(game, player);
+    if NotEquals(lock, n"") {
+      Cyberblock_Log(s"effects: teleport ignored, V is held (\(NameToString(lock)), scene tier \(CyberblockEffects.SceneTier(player)))");
       return;
     }
     CyberblockEffectsService.Get().SuppressFall(game, 2.0);
@@ -138,7 +140,9 @@ public abstract class CyberblockEffects {
 
   // Why the game holds V (n"" when it does not). In-game test 2026-10-03: SceneSystem.IsEntityInScene(V) was true
   // during free open-world play and blocked every glide and pearl, so scenes are judged by the player state
-  // machine's high level instead: tiers 3-5 take movement from the player, tier 1-2 is gameplay.
+  // machine's high level instead, as vanilla IsInSafeSceneTier (defaultTransition.swift) does: tiers 2-5 are quest
+  // scenes (2 = restricted gameplay in a quest scene, 3-5 take movement from the player). Tier 0-1 is free gameplay
+  // and 6 is swimming (gamePSMHighLevel.Swimming), neither of them a scene.
   public static func LockReason(game: GameInstance, player: ref<PlayerPuppet>) -> CName {
     if GameInstance.GetWorkspotSystem(game).IsActorInWorkspot(player) {
       return n"workspot";
@@ -152,11 +156,18 @@ public abstract class CyberblockEffects {
       if psm.GetBool(GetAllBlackboardDefs().PlayerStateMachine.IsPlayerInsideMovingElevator) {
         return n"elevator";
       }
-      if psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.HighLevel) >= EnumInt(gamePSMHighLevel.SceneTier3) {
+      let tier = psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.HighLevel);
+      if tier >= EnumInt(gamePSMHighLevel.SceneTier2) && tier <= EnumInt(gamePSMHighLevel.SceneTier5) {
         return n"scene";
       }
     }
     return n"";
+  }
+
+  // The player state machine's high level (gamePSMHighLevel as Int32; -1 without a blackboard), for the logs.
+  public static func SceneTier(player: ref<PlayerPuppet>) -> Int32 {
+    let psm = player.GetPlayerStateMachineBlackboard();
+    return IsDefined(psm) ? psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.HighLevel) : -1;
   }
 
   private static func Strike(game: GameInstance, target: Uint64, frac: Float, impulse: Vector4, attacker: ref<GameObject>) -> Void {
