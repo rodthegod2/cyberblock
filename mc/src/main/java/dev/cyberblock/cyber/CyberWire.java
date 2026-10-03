@@ -37,6 +37,15 @@ public final class CyberWire {
 		return m.toString();
 	}
 
+	/** {"t":"perkfx","id":"sandevistan","seconds":s}: a perk's Cyberpunk effect fires now (seconds 0..30). */
+	public static String perkfx(final String id, final double seconds) {
+		JsonObject m = new JsonObject();
+		m.addProperty("t", "perkfx");
+		m.addProperty("id", id);
+		m.addProperty("seconds", Math.clamp(seconds, 0.0, 30.0));
+		return m.toString();
+	}
+
 	/** {"t":"hack","id":n,"target":"<id>","hack":"short_circuit","chain":bool}. */
 	public static String hack(final int id, final long target, final Hack hack, final boolean chain) {
 		JsonObject m = new JsonObject();

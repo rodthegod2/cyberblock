@@ -7,6 +7,8 @@ import dev.cyberblock.WorldBridge;
 import dev.cyberblock.cyber.CyberMod;
 import dev.cyberblock.cyber.HackResult;
 import dev.cyberblock.cyber.Hacking;
+import dev.cyberblock.cyber.PerkEffects;
+import dev.cyberblock.cyber.PerkRules;
 import dev.cyberblock.cyber.PerkShop;
 import dev.cyberblock.cyber.ScanInfo;
 import java.util.function.Consumer;
@@ -14,6 +16,7 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Util;
 
 /**
  * Track C's host message listeners (plan section 1.6): HostLink hands them every `hello`, `state`, `key`, `scaninfo`,
@@ -21,6 +24,8 @@ import net.minecraft.server.level.ServerPlayer;
  * integrated server thread.
  */
 final class CyberLink {
+	/** Sprint presses from the host (link thread only). */
+	private static final PerkRules.DoubleTap sprintTaps = new PerkRules.DoubleTap();
 	private static int bad;
 
 	private CyberLink() {
@@ -75,10 +80,26 @@ final class CyberLink {
 		}
 	}
 
-	/** {"t":"key","k":...,"down":bool}: track C handles hack and skills (sprint arrives with the Sandevistan, task C7). */
+	/**
+	 * {"t":"key","k":...,"down":bool}: track C handles hack and skills, and watches sprint (forwarded, Cyberpunk keeps it)
+	 * for the Sandevistan's double tap.
+	 */
 	private static void key(final JsonObject m) {
 		String k = m.get("k").getAsString();
 		boolean down = !m.has("down") || m.get("down").getAsBoolean();
+		if (k.equals("sprint")) {
+			if (down && sprintTaps.press(Util.getMillis())) {
+				onServer(() -> {
+					ServerPlayer player = CyberMod.localPlayer();
+					if (player != null) {
+						PerkEffects.sandevistan(player.level().getServer(), player);
+					}
+				});
+			}
+
+			return;
+		}
+
 		KeyMapping mapping = switch (k) {
 			case "hack" -> CyberKeys.hack;
 			case "skills" -> CyberKeys.skills;

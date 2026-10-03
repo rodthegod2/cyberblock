@@ -43,6 +43,7 @@ public final class PerkShop {
 			case OK -> {
 				player.giveExperienceLevels(-perk.cost());
 				CyberData.setRank(player, perk.id(), 1);
+				PerkEffects.apply(player);
 				player.level().playSound(null, player.getX(), player.getY(), player.getZ(), SoundEvents.PLAYER_LEVELUP, SoundSource.PLAYERS, 0.7F, 1.4F);
 				player.sendOverlayMessage(Component.translatable("cyberblock.skills.bought", name));
 				sendPerks(player);

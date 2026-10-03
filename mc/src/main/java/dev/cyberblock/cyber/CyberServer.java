@@ -14,5 +14,6 @@ final class CyberServer {
 		}
 
 		Hacking.tick(server);
+		PerkEffects.tick(server);
 	}
 }
