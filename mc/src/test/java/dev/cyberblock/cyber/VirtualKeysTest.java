@@ -1,5 +1,6 @@
 package dev.cyberblock.cyber;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -15,7 +16,7 @@ import org.junit.jupiter.api.Test;
 
 class VirtualKeysTest {
 	// SDL scancodes, as InputConstants.KEY_* in 26.3
-	private static final int SC_A = 4, SC_B = 5, SC_G = 10, SC_K = 14, SC_L = 15, SC_Y = 28, SC_1 = 30, SC_9 = 38, SC_0 = 39;
+	private static final int SC_A = 4, SC_B = 5, SC_G = 10, SC_K = 14, SC_L = 15, SC_U = 24, SC_Y = 28, SC_1 = 30, SC_9 = 38, SC_0 = 39;
 	private static final int SC_F1 = 58, SC_F5 = 62, SC_F9 = 66, SC_F12 = 69, SC_ENTER = 40, SC_ESCAPE = 41, SC_SPACE = 44, SC_F13 = 104;
 	private static final int SC_LCTRL = 224, SC_LSHIFT = 225, SC_RCTRL = 228, SC_RSHIFT = 229;
 	/** The keys the hack and skill-tree keys may be rebound to (the final key table): everything else stands for the default. */
@@ -94,6 +95,48 @@ class VirtualKeysTest {
 		assertTrue(!VirtualKeys.clash(-1, -1) && !VirtualKeys.clash(k, g) && !VirtualKeys.clash(-1, l));
 	}
 
+	private static String four(final int hack, final int skills, final int cyberware, final int activate) {
+		StringBuilder s = new StringBuilder();
+		for (int vk : VirtualKeys.binds(hack, skills, cyberware, activate)) {
+			s.append(VirtualKeys.name(vk));
+		}
+
+		return s.toString();
+	}
+
+	/**
+	 * Plan retest2 section 1.8, the same cases as the DLL's keys test: each key Cyberpunk cannot forward (-1) stands for its own
+	 * default (G K U Y); if any two of the four resolved keys are equal, all four go back to G K U Y.
+	 */
+	@Test
+	void fourKeysFallBackOneByOneAndAllOnAClash() {
+		int g = VirtualKeys.VK_G, k = VirtualKeys.VK_K, u = VirtualKeys.VK_U, y = VirtualKeys.VK_Y, l = 0x4C, o = 0x4F, zero = 0x30, f10 = 0x79;
+		assertEquals("GKUY", four(g, k, u, y));
+		assertEquals("GKUY", four(-1, -1, -1, -1));
+		assertEquals("LO0F10", four(l, o, zero, f10));
+		assertEquals("YUKG", four(y, u, k, g)); // a permutation of the defaults is still four keys
+		// every single refusal: that key alone becomes its default
+		assertEquals("GO0F10", four(-1, o, zero, f10));
+		assertEquals("LK0F10", four(l, -1, zero, f10));
+		assertEquals("LOUF10", four(l, o, -1, f10));
+		assertEquals("LO0Y", four(l, o, zero, -1));
+		// clashes: two equal keys, or a refused key whose default another key uses
+		assertEquals("GKUY", four(l, o, l, f10));
+		assertEquals("GKUY", four(l, o, zero, zero));
+		assertEquals("GKUY", four(y, k, u, -1)); // activate falls back to Y, which the hack key already is
+		assertEquals("GKUY", four(-1, g, u, y));
+		assertTrue(VirtualKeys.clash(l, o, l, f10) && VirtualKeys.clash(y, k, u, -1));
+		assertTrue(!VirtualKeys.clash(l, o, zero, f10) && !VirtualKeys.clash(-1, -1, -1, -1) && !VirtualKeys.clash(y, u, k, g));
+		assertArrayEquals(new int[]{g, k, u, y}, VirtualKeys.DEFAULTS);
+	}
+
+	/** U and Y are bindable (the DLL forwards them while Cyberblock is active). */
+	@Test
+	void theNewDefaultsAreForwardable() {
+		assertEquals(VirtualKeys.VK_U, VirtualKeys.of(true, SC_U));
+		assertEquals(VirtualKeys.VK_Y, VirtualKeys.of(true, SC_Y));
+	}
+
 	/** A..Z, 0..9 and F1..F12 as virtual keys. */
 	private static int[] named() {
 		int[] vks = new int[48];
@@ -162,6 +205,6 @@ class VirtualKeysTest {
 
 	@Test
 	void bindsJson() {
-		assertEquals("{\"t\":\"binds\",\"keys\":{\"hack\":71,\"skills\":75}}", CyberWire.binds(VirtualKeys.VK_G, VirtualKeys.VK_K));
+		assertEquals("{\"t\":\"binds\",\"keys\":{\"hack\":71,\"skills\":75,\"cyberware\":85,\"activate\":89}}", CyberWire.binds(VirtualKeys.DEFAULTS));
 	}
 }

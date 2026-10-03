@@ -1,5 +1,6 @@
 package dev.cyberblock.client.cyber;
 
+import java.util.Arrays;
 import java.util.Set;
 
 /**
@@ -12,6 +13,10 @@ import java.util.Set;
 public final class VirtualKeys {
 	public static final int VK_G = 0x47;
 	public static final int VK_K = 0x4B;
+	public static final int VK_U = 0x55;
+	public static final int VK_Y = 0x59;
+	/** The defaults of hack, skill tree, cyberware screen and activate implant, in the `binds` order (plan retest2 section 1.8). */
+	public static final int[] DEFAULTS = {VK_G, VK_K, VK_U, VK_Y};
 	// SDL scancodes (InputConstants.KEY_*): A..Z = 4..29, 1..9 = 30..38, 0 = 39, F1..F12 = 58..69
 	private static final int SC_A = 4;
 	private static final int SC_Z = 29;
@@ -58,17 +63,37 @@ public final class VirtualKeys {
 		return -1;
 	}
 
-	/**
-	 * Whether the hack and skill-tree keys (each as `of` gives it, -1: Cyberpunk cannot forward it) would be the same key in
-	 * Cyberpunk once a refused one stands for its default (G, K). The DLL refuses that pair and would keep the old one.
-	 */
-	public static boolean clash(final int hack, final int skills) {
-		return (hack < 0 ? VK_G : hack) == (skills < 0 ? VK_K : skills);
+	/** Each key as `of` gave it, a refused one (-1) as its default (DEFAULTS, by position). */
+	private static int[] resolved(final int[] keys) {
+		int[] out = new int[keys.length];
+		for (int i = 0; i < keys.length; i++) {
+			out[i] = keys[i] < 0 ? DEFAULTS[i] : keys[i];
+		}
+
+		return out;
 	}
 
-	/** The {hack, skills} pair `binds` sends: each key, a refused one as its default, and both defaults when they clash. */
-	public static int[] binds(final int hack, final int skills) {
-		return clash(hack, skills) ? new int[]{VK_G, VK_K} : new int[]{hack < 0 ? VK_G : hack, skills < 0 ? VK_K : skills};
+	/**
+	 * Whether any two of the keys (hack, skills, cyberware, activate, each as `of` gives it, -1: Cyberpunk cannot forward it)
+	 * would be the same key in Cyberpunk once a refused one stands for its default. The DLL's keys::apply_binds applies the
+	 * same rule.
+	 */
+	public static boolean clash(final int... keys) {
+		int[] r = resolved(keys);
+		for (int i = 0; i < r.length; i++) {
+			for (int j = i + 1; j < r.length; j++) {
+				if (r[i] == r[j]) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/** The keys `binds` sends: each key, a refused one as its default, and all the defaults when any two clash. */
+	public static int[] binds(final int... keys) {
+		return clash(keys) ? Arrays.copyOf(DEFAULTS, keys.length) : resolved(keys);
 	}
 
 	/** How a forwardable virtual key is written on the keyboard: "G", "0", "F10". */
