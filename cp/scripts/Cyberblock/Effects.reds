@@ -40,7 +40,8 @@
 //     defaultTransition.swift), BraindanceSystem.GetIsInBraindance (fetched from the scriptable systems container as
 //     PlayerPuppet does), PlayerStateMachine.IsPlayerInsideMovingElevator (settingsMain.swift). Minecraft blocks the
 //     pearl itself while V is held; the 'teleport ignored' log stays as the second line.
-//   Targets: Codeware EntityID.FromHash (inverse of the EntityID hash S1 sends) + GameInstance.FindEntityByID.
+//   Targets: Codeware EntityID.FromHash (inverse of the id hash CyberblockIds.Hash sends, Ids.reds) +
+//   GameInstance.FindEntityByID.
 
 public abstract class CyberblockEffects {
   // Minecraft explosion power (TNT 4, creeper 3, charged creeper 6, firework 1.5) -> Cyberpunk explosion of radius
@@ -287,7 +288,7 @@ public abstract class CyberblockEffects {
     if Equals(reason, n"") {
       return false;
     }
-    CyberblockEffectsService.Get().LogWithheld(game, EntityID.ToHash(object.GetEntityID()), reason);
+    CyberblockEffectsService.Get().LogWithheld(game, CyberblockIds.Hash(object), reason);
     return true;
   }
 

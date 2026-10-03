@@ -140,7 +140,7 @@ public abstract class CyberblockScan {
 
   // Sends the scan of object; false when it is nothing Minecraft can show (not an NPC, vehicle or device).
   private static func Answer(game: GameInstance, id: Int32, object: ref<GameObject>) -> Bool {
-    let hash = EntityID.ToHash(object.GetEntityID());
+    let hash = CyberblockIds.Hash(object);
     let pos = object.GetWorldPosition();
     let puppet = object as ScriptedPuppet;
     if IsDefined(puppet) {
