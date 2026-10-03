@@ -22,22 +22,45 @@
 //     2.31 (the only one, vehicleBoundingBox, lives in the native vehicle camera context), so the plan's fallback is
 //     used for every vehicle.
 //   Text limit: 64 characters (Codeware UTF8StrLeft, so a multi-byte letter is never cut in half).
+//   Line of sight for a requested target: Minecraft's pick only knows the Night City surface within 8 m of the crosshair
+//     (Probes.reds Aim, the aim message), so it can pick a proxy 8-48 m away behind a wall. Such a target is answered
+//     ok:false (and so never locked for a quickhack) when Night City (CyberblockProbes.Blocked: Static + Terrain, not
+//     Minecraft's blocks) cuts both lines from the active camera (CameraSystem.GetActiveCameraWorldTransform, as Probes
+//     .Aim) to the target's middle and to its top. The look-at path already asks GetLookAtObject for line of sight.
 
 public abstract class CyberblockScan {
   public static func Scan(game: GameInstance, id: Int32, target: Uint64) -> Void {
     let player = GetPlayer(game);
     let object: ref<GameObject>;
+    let why = "nothing";
     if IsDefined(player) {
       if target == 0ul {
         object = GameInstance.GetTargetingSystem(game).GetLookAtObject(player, true, true);
       } else {
         object = GameInstance.FindEntityByID(game, EntityID.FromHash(target)) as GameObject;
+        if IsDefined(object) && !CyberblockScan.InSight(game, object) {
+          object = null;
+          why = "behind Night City";
+        }
       }
     }
     if !IsDefined(object) || object == player || !CyberblockScan.Answer(game, id, object) {
       Cyberblock_ScanResult(id, false, target, "", "", n"none", 0.0, false, new Vector4(0.0, 0.0, 0.0, 1.0), new Vector4(0.0, 0.0, 0.0, 0.0));
-      Cyberblock_Log(s"scan \(id): nothing at \(target)");
+      Cyberblock_Log(s"scan \(id): \(why) at \(target)");
     }
+  }
+
+  // The camera sees the target's middle or its top past Night City (see the header).
+  private static func InSight(game: GameInstance, object: ref<GameObject>) -> Bool {
+    let view: Transform;
+    if !GameInstance.GetCameraSystem(game).GetActiveCameraWorldTransform(view) {
+      return true;
+    }
+    let eye = Transform.GetPosition(view);
+    let feet = object.GetWorldPosition();
+    let height = IsDefined(object as VehicleObject) ? 1.6 : 1.8;
+    return !CyberblockProbes.Blocked(game, eye, new Vector4(feet.X, feet.Y, feet.Z + 0.5 * height, 1.0))
+      || !CyberblockProbes.Blocked(game, eye, new Vector4(feet.X, feet.Y, feet.Z + 0.9 * height, 1.0));
   }
 
   // Sends the scan of object; false when it is nothing Minecraft can show (not an NPC, vehicle or device).

@@ -96,11 +96,29 @@ public class CyberblockProbes {
   // A raycast against Night City (Static + Terrain) that passes through our collision boxes: from just beyond the
   // box it hit, it casts again, up to 16 boxes deep. True with `result` on the first hit that is not ours.
   private func Trace(queries: ref<SpatialQueriesSystem>, filter: QueryFilter, from: Vector4, to: Vector4, out result: TraceResult) -> Bool {
+    let casts = 0;
+    let hit = CyberblockProbes.TraceNightCity(queries, filter, from, to, result, casts);
+    this.casts += casts;
+    return hit;
+  }
+
+  // Night City (Static + Terrain, not our collision boxes) lies between two points (Scan.reds' line of sight).
+  public static func Blocked(game: GameInstance, from: Vector4, to: Vector4) -> Bool {
+    let filter: QueryFilter;
+    QueryFilter.AddGroup(filter, n"Static");
+    QueryFilter.AddGroup(filter, n"Terrain");
+    let result: TraceResult;
+    let casts = 0;
+    return CyberblockProbes.TraceNightCity(GameInstance.GetSpatialQueriesSystem(game), filter, from, to, result, casts);
+  }
+
+  // Trace's raycast; `casts` counts the rays it took.
+  private static func TraceNightCity(queries: ref<SpatialQueriesSystem>, filter: QueryFilter, from: Vector4, to: Vector4, out result: TraceResult, out casts: Int32) -> Bool {
     let entities = GameInstance.GetStaticEntitySystem();
     let start = from;
     let boxes = 0;
     while boxes <= 16 {
-      this.casts += 1;
+      casts += 1;
       let hit: TraceResult;
       if !queries.SyncRaycastByQueryFilter(start, to, filter, hit) {
         return false;
