@@ -74,18 +74,56 @@ class ProxyDamageTest {
 		assertEquals(4.0F, ProxyDamage.afterCooldown(7.0F, 3.0F, true));
 	}
 
+	/** Vanilla's sword or fist hit pushes with strength 0.4: Cyberpunk gets 0.4 x 5 = 2 m/s, horizontally away from the attacker. */
 	@Test
-	void meleePushesAwayAtSixMetresPerSecondPlusSixPerKnockbackLevel() {
-		Vec3 v = ProxyDamage.melee(0.0, 2.0, 0.0);
+	void aPlainHitIsTwoMetresPerSecondHorizontally() {
+		Vec3 v = ProxyDamage.melee(0.0, 2.0, ProxyDamage.knockbackLevel(0.0, false));
 		assertEquals(0.0, v.x, 1e-9);
 		assertEquals(0.0, v.y, 1e-9);
-		assertEquals(6.0, v.z, 1e-9);
-		assertEquals(18.0, ProxyDamage.melee(0.0, 5.0, 2.0).z, 1e-9, "knockback II");
-		Vec3 diag = ProxyDamage.melee(3.0, 4.0, 1.0);
-		assertEquals(12.0, diag.length(), 1e-9);
-		assertEquals(7.2, diag.x, 1e-9);
-		assertEquals(9.6, diag.z, 1e-9);
-		assertEquals(6.0, ProxyDamage.melee(1.0, 0.0, -3.0).x, 1e-9, "negative knockback does not pull");
+		assertEquals(2.0, v.z, 1e-9);
+		Vec3 diag = ProxyDamage.melee(3.0, 4.0, 0.0);
+		assertEquals(2.0, diag.length(), 1e-9);
+		assertEquals(1.2, diag.x, 1e-9);
+		assertEquals(1.6, diag.z, 1e-9);
+		assertEquals(2.0, ProxyDamage.melee(1.0, 0.0, -3.0).x, 1e-9, "negative knockback does not pull");
+		assertEquals(0.4, ProxyDamage.BASE_KNOCKBACK);
+		assertEquals(5.0, ProxyDamage.PUSH_PER_STRENGTH);
+	}
+
+	/** Every result of plan retest3 section 1.9, as ProxyEntity works them out (attribute + enchantment, sprint, Gorilla Arms). */
+	@Test
+	void theKnockbackTiersOfThePlan() {
+		// (ATTACK_KNOCKBACK after Knockback, sprinting, Gorilla Arms) -> m/s on a person
+		assertEquals(2.0, person(0.0, false, false), 1e-9, "plain hit");
+		assertEquals(4.5, person(0.0, true, false), 1e-9, "sprint");
+		assertEquals(4.5, person(1.0, false, false), 1e-9, "Knockback I");
+		assertEquals(7.0, person(2.0, false, false), 1e-9, "Knockback II");
+		assertEquals(7.0, person(2.0, false, false), 1e-9, "the gorilla gauntlet (ATTACK_KNOCKBACK +2)");
+		assertEquals(7.0, person(0.0, false, true), 1e-9, "Gorilla Arms");
+		assertEquals(9.5, person(0.0, true, true), 1e-9, "Gorilla Arms + sprint");
+		assertEquals(12.0, person(2.0, false, true), 1e-9, "gauntlet + Gorilla Arms");
+		// the Gorilla Arms implant's own ATTACK_KNOCKBACK +2 (empty hand) is its strength: ProxyEntity adds no second one
+		assertEquals(7.0, person(2.0, false, false), 1e-9, "the Gorilla Arms implant through its attribute");
+	}
+
+	private static double person(final double modifiedKnockback, final boolean sprint, final boolean gorilla) {
+		return ProxyDamage.meleeOn(0.0, 1.0, ProxyDamage.knockbackLevel(modifiedKnockback, sprint), gorilla, false).length();
+	}
+
+	@Test
+	void mobsNeverGetTheSprintBonus() {
+		// ProxyEntity passes sprinting only for players
+		assertEquals(0.0, ProxyDamage.knockbackLevel(0.0, false));
+		assertEquals(0.5, ProxyDamage.knockbackLevel(0.0, true));
+		assertEquals(1.0, ProxyDamage.knockbackLevel(2.0, false), "a mob with a Knockback II sword");
+	}
+
+	@Test
+	void gorillaArmsTriplesThePushOnAVehicle() {
+		assertEquals(2.0, ProxyDamage.meleeOn(1.0, 0.0, 0.0, false, true).x, 1e-9);
+		assertEquals(6.0, ProxyDamage.meleeOn(1.0, 0.0, 0.0, true, true).x, 1e-9);
+		assertEquals(21.0, ProxyDamage.meleeOn(1.0, 0.0, 1.0, true, true).x, 1e-9);
+		assertEquals(ProxyDamage.MAX_IMPULSE, ProxyDamage.meleeOn(0.0, 1.0, 50.0, true, true).length(), 1e-9);
 	}
 
 	@Test
@@ -93,21 +131,35 @@ class ProxyDamageTest {
 		assertEquals(Vec3.ZERO, ProxyDamage.melee(0.0, 0.0, 1.0));
 		assertEquals(Vec3.ZERO, ProxyDamage.melee(Double.NaN, 1.0, 1.0));
 		assertEquals(Vec3.ZERO, ProxyDamage.melee(1.0, 0.0, Double.NaN));
+		assertEquals(Vec3.ZERO, ProxyDamage.melee(Double.POSITIVE_INFINITY, 1.0, 1.0));
+	}
+
+	/** Plan retest3 section 1.9: an arrow pushes (0.4 + 0.6 x Punch) x 5 m/s along its horizontal flight, not with its speed. */
+	@Test
+	void projectilesPushLikeVanillaWhateverTheirSpeed() {
+		// a full draw is 3 blocks per tick = 60 m/s: still 2 m/s without Punch
+		Vec3 v = ProxyDamage.projectile(new Vec3(0.0, 0.0, 3.0), 0.0);
+		assertEquals(new Vec3(0.0, 0.0, 2.0), v);
+		assertEquals(2.0, ProxyDamage.projectile(new Vec3(0.0, 0.0, 0.5), 0.0).z, 1e-9, "a weak shot pushes the same");
+		assertEquals(5.0, ProxyDamage.projectile(new Vec3(0.0, 0.0, 3.0), 1.0).z, 1e-9, "Punch I");
+		assertEquals(8.0, ProxyDamage.projectile(new Vec3(0.0, 0.0, 3.0), 2.0).z, 1e-9, "Punch II");
+		Vec3 down = ProxyDamage.projectile(new Vec3(0.3, -0.6, 0.0), 0.0);
+		assertEquals(2.0, down.x, 1e-9);
+		assertEquals(0.0, down.y, 1e-9, "horizontal only");
+		assertEquals(0.6, ProxyDamage.PUNCH_STRENGTH);
 	}
 
 	@Test
-	void arrowsPassOnHalfTheirSpeedInMetresPerSecond() {
-		// a full draw is 3 blocks per tick = 60 m/s
-		Vec3 v = ProxyDamage.projectile(new Vec3(0.0, 0.0, 3.0));
-		assertEquals(30.0, v.z, 1e-9);
-		Vec3 up = ProxyDamage.projectile(new Vec3(0.3, -0.6, 0.0));
-		assertEquals(3.0, up.x, 1e-9);
-		assertEquals(-6.0, up.y, 1e-9);
+	void aProjectileWithoutAHorizontalDirectionOrWithGarbageIsNoImpulse() {
+		assertEquals(Vec3.ZERO, ProxyDamage.projectile(new Vec3(0.0, -2.0, 0.0), 1.0));
+		assertEquals(Vec3.ZERO, ProxyDamage.projectile(new Vec3(Double.NaN, 0.0, 1.0), 0.0));
+		assertEquals(2.0, ProxyDamage.projectile(new Vec3(1.0, 0.0, 0.0), Double.NaN).x, 1e-9, "a broken punch counts as none");
+		assertEquals(2.0, ProxyDamage.projectile(new Vec3(1.0, 0.0, 0.0), -1.0).x, 1e-9);
 	}
 
 	@Test
 	void noImpulseIsBeyondTheCap() {
-		assertEquals(100.0, ProxyDamage.projectile(new Vec3(0.0, 0.0, 50.0)).length(), 1e-9);
-		assertEquals(Vec3.ZERO, ProxyDamage.projectile(new Vec3(Double.NaN, 0.0, 1.0)));
+		assertEquals(ProxyDamage.MAX_IMPULSE, ProxyDamage.melee(0.0, 1.0, 1000.0).length(), 1e-9);
+		assertEquals(ProxyDamage.MAX_IMPULSE, ProxyDamage.projectile(new Vec3(0.0, 0.0, 1.0), 1000.0).length(), 1e-9);
 	}
 }

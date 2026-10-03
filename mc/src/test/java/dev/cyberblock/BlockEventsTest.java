@@ -54,6 +54,18 @@ class BlockEventsTest {
 		assertFalse(BlockEvents.shouldReport(Blocks.SHORT_GRASS.defaultBlockState(), Cause.WORLD));
 	}
 
+	/**
+	 * Plan retest3 M6 (F1): the Cobweb Daemon puts real cobwebs round a hacked NPC and takes them away after 6 s. A cobweb has no
+	 * collision shape, so neither sends a {"t":"block"}: no invisible 1 m box traps V or the NPC in Night City.
+	 */
+	@Test
+	void cobwebsFromTheCobwebDaemonSendNoBlockEvent() {
+		BlockState web = Blocks.COBWEB.defaultBlockState();
+		assertFalse(BlockEvents.shouldReport(web, Cause.WORLD));
+		assertNull(BlockEvents.change(air(), web, Cause.WORLD), "placed into air");
+		assertNull(BlockEvents.change(web, air(), Cause.WORLD), "removed after 6 s");
+	}
+
 	@Test
 	void placingAndBreakingMapToAddAndRemove() {
 		assertEquals(Op.ADD, BlockEvents.change(air(), stone(), Cause.WORLD));

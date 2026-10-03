@@ -17,12 +17,18 @@ public final class ProxyDamage {
 		BODY, ARROW, TRIDENT, PROJECTILE
 	}
 
-	/** Impulse of a melee hit without knockback, in m/s; each knockback level adds one more of it. */
-	static final double MELEE_SPEED = 6.0;
-	/** An arrow or trident passes this fraction of its speed (m/s) on. */
-	static final double PROJECTILE_SHARE = 0.5;
-	/** Minecraft speeds are blocks per tick, the host wants m/s. */
-	private static final double TICKS_PER_SECOND = 20.0;
+	/**
+	 * Vanilla's knockback strength of every hit (LivingEntity.hurt pushes with 0.4) and how many m/s Cyberpunk gets per unit of
+	 * strength (plan retest3 section 1.9, F7): a plain hit is 2 m/s, sprint or Knockback I 4.5, Knockback II, the gauntlet or Gorilla
+	 * Arms 7, Gorilla Arms and sprint 9.5, gauntlet and Gorilla Arms 12. Cyberpunk only ragdolls the strongest of these.
+	 */
+	static final double BASE_KNOCKBACK = 0.4;
+	static final double PUSH_PER_STRENGTH = 5.0;
+	/** Gorilla Arms on a person: one more unit of strength. On a vehicle the push is tripled instead. */
+	static final double GORILLA_STRENGTH = 1.0;
+	static final double GORILLA_VEHICLE = 3.0;
+	/** Each Punch level of the bow adds this much strength to an arrow (vanilla AbstractArrow.doKnockback: punch x 0.6). */
+	static final double PUNCH_STRENGTH = 0.6;
 	/** No hit pushes harder than this. */
 	static final double MAX_IMPULSE = 100.0;
 
@@ -71,29 +77,53 @@ public final class ProxyDamage {
 		return cooling ? Math.max(0.0F, damage - lastDamage) : damage;
 	}
 
-	/** Away from the attacker along (dx, dz), 6 m/s plus 6 m/s per knockback level. */
+	/**
+	 * The extra knockback strength of a blow as vanilla's Player.attack works it out: (the weapon's ATTACK_KNOCKBACK after its
+	 * Knockback enchantment, plus 1 while sprinting) x 0.5. Mobs never get the sprint part.
+	 */
+	public static double knockbackLevel(final double modifiedKnockback, final boolean sprinting) {
+		return (modifiedKnockback + (sprinting ? 1.0 : 0.0)) * 0.5;
+	}
+
+	/** Away from the attacker along (dx, dz), horizontally: (0.4 + knockbackLevel) x 5 m/s. */
 	public static Vec3 melee(final double dx, final double dz, final double knockbackLevel) {
+		return push(dx, dz, BASE_KNOCKBACK + Math.max(0.0, knockbackLevel));
+	}
+
+	/**
+	 * A blow on a proxy: on a person Gorilla Arms adds GORILLA_STRENGTH to the strength, on a vehicle it triples the push (at most
+	 * MAX_IMPULSE either way).
+	 */
+	public static Vec3 meleeOn(final double dx, final double dz, final double knockbackLevel, final boolean gorillaArms, final boolean vehicle) {
+		if (vehicle) {
+			Vec3 push = melee(dx, dz, knockbackLevel);
+			return gorillaArms ? capped(push.scale(GORILLA_VEHICLE)) : push;
+		}
+
+		return melee(dx, dz, knockbackLevel + (gorillaArms ? GORILLA_STRENGTH : 0.0));
+	}
+
+	/**
+	 * An arrow, trident or other projectile: (0.4 + 0.6 x Punch level) x 5 m/s along its horizontal direction of flight, whatever its
+	 * speed (vanilla pushes the same way). A projectile falling straight down pushes nothing.
+	 */
+	public static Vec3 projectile(final Vec3 velocity, final double punch) {
+		return push(velocity.x, velocity.z, BASE_KNOCKBACK + PUNCH_STRENGTH * Math.max(0.0, Double.isFinite(punch) ? punch : 0.0));
+	}
+
+	/** strength x PUSH_PER_STRENGTH m/s along (dx, dz), horizontally; nothing without a direction or with a broken strength. */
+	private static Vec3 push(final double dx, final double dz, final double strength) {
 		double length = Math.hypot(dx, dz);
-		if (!(length > 1.0E-6) || !Double.isFinite(knockbackLevel)) {
+		if (!(length > 1.0E-6) || !Double.isFinite(strength) || !Double.isFinite(length)) {
 			return Vec3.ZERO;
 		}
 
-		return new Vec3(dx, 0.0, dz).scale(MELEE_SPEED * (1.0 + Math.max(0.0, knockbackLevel)) / length);
-	}
-
-	/** An arrow's or trident's velocity (blocks per tick) times its share, in m/s. */
-	public static Vec3 projectile(final Vec3 velocity) {
-		return capped(velocity.scale(TICKS_PER_SECOND * PROJECTILE_SHARE));
+		return capped(new Vec3(dx, 0.0, dz).scale(strength * PUSH_PER_STRENGTH / length));
 	}
 
 	/** The headhunter perk's multiplier, and how close to a pedestrian's top (m) the arrow must be. */
 	static final float HEADSHOT = 2.0F;
 	static final double HEAD_BAND = 0.35;
-
-	/** The gorilla_arms perk: a melee push twice as strong on a pedestrian, three times on a vehicle (at most MAX_IMPULSE). */
-	public static Vec3 gorillaArms(final Vec3 impulse, final boolean vehicle) {
-		return capped(impulse.scale(vehicle ? 3.0 : 2.0));
-	}
 
 	/** An arrow at arrowY (its position when it hits) is a head shot on a pedestrian standing at feetY this tall. */
 	public static boolean headshot(final double arrowY, final double feetY, final double height) {

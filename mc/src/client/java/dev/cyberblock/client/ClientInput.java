@@ -3,6 +3,7 @@ package dev.cyberblock.client;
 
 import com.google.gson.JsonObject;
 import com.mojang.blaze3d.platform.InputConstants;
+import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.cyber.HackWheel;
 import dev.cyberblock.client.mixin.KeyMappingAccessor;
 import net.minecraft.client.KeyMapping;
@@ -11,6 +12,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import org.lwjgl.sdl.SDLKeyboard;
 import org.lwjgl.sdl.SDLScancode;
@@ -18,10 +20,39 @@ import org.lwjgl.sdl.SDLVideo;
 
 /** Host input, applied on the client thread: the host window has the focus, so Minecraft never sees these itself. */
 final class ClientInput {
-	/** What the host asked for with "hud"; in a vehicle the HUD is hidden whatever it said. */
+	/**
+	 * What the host asked for with "hud" (a re-test 3 host always says false). A vehicle no longer hides the HUD (plan retest3 M2,
+	 * F3): hiding it would also hide the first-person hand (26.3 skips renderItemInHand while the HUD is hidden); the UI track trims
+	 * the vehicle HUD itself.
+	 */
 	private static boolean hudHidden;
 
 	private ClientInput() {
+	}
+
+	/** The view the player chose with F5 (plan retest3 M4): false first person, true third person behind V. Any thread reads it. */
+	private static volatile boolean thirdPerson;
+
+	/** {"t":"persp","mode":"first"|"back"} (plan retest3 section 1.1). */
+	static String perspMessage(final boolean back) {
+		return "{\"t\":\"persp\",\"mode\":\"" + (back ? "back" : "first") + "\"}";
+	}
+
+	/** The chosen view for the host: on F5 and after every host hello (the DLL starts each session in first person). */
+	static void sendPerspective() {
+		boolean back = thirdPerson;
+		Cyberblock.events.accept(perspMessage(back));
+		Cyberblock.LOG.info("persp: {}", back ? "back" : "first");
+	}
+
+	/** F5: first person and third person (behind V) by turns; the action bar says which. Client thread. */
+	private static void togglePerspective(final Minecraft minecraft) {
+		thirdPerson = !thirdPerson;
+		sendPerspective();
+		if (minecraft.player != null) {
+			minecraft.player.sendOverlayMessage(thirdPerson ? Component.translatableWithFallback("cyberblock.view.third", "Third person")
+				: Component.translatableWithFallback("cyberblock.view.first", "First person"));
+		}
 	}
 
 	/** The host went away: Steve, his hand and the HUD are back. */
@@ -33,7 +64,7 @@ final class ClientInput {
 	}
 
 	private static void applyHud(final Minecraft minecraft) {
-		if (minecraft.gui.hud.isHidden() != (hudHidden || HostState.vehicle())) {
+		if (minecraft.gui.hud.isHidden() != hudHidden) {
 			minecraft.gui.hud.toggle();
 		}
 	}
@@ -91,8 +122,17 @@ final class ClientInput {
 					return;
 				}
 
-				// F5 ("perspective"): the host drives the camera, Minecraft's own view toggle would only fight it. Other keys ("hack",
-				// "skills") belong to the cyber track's listener.
+				// F5 ("perspective", plan retest3 M4): Cyberpunk moves its camera behind V (persp) and says so with cam.fp, which
+				// PlayerSync follows; Minecraft's own view toggle would only fight it. Other keys ("hack", "skills") belong to the cyber
+				// track's listener.
+				if (k.equals("perspective")) {
+					if (down) {
+						togglePerspective(minecraft);
+					}
+
+					return;
+				}
+
 				KeyMapping key = switch (k) {
 					case "use" -> minecraft.options.keyUse;
 					case "attack" -> minecraft.options.keyAttack;

@@ -1,12 +1,15 @@
 package dev.cyberblock;
 
 import com.google.gson.JsonObject;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.LongFunction;
+import java.util.function.ObjIntConsumer;
 import java.util.function.Predicate;
 import java.util.function.ToIntFunction;
 import java.util.function.ToLongFunction;
@@ -16,7 +19,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Contract between the Minecraft world track (M, owns this file) and the cyber track (C). Plan 2026-10-03 section 1.6, with the
- * re-test 2 additions of plan 2026-10-03-retest2-and-cyberware section 1.6.
+ * re-test 2 additions of plan 2026-10-03-retest2-and-cyberware section 1.6 and the re-test 3 additions of plan
+ * 2026-10-03-retest3-polish section 1.5 (several listeners per type, ping).
  */
 public final class Bridge {
 	/** Scan pick from authoritative proxy positions (plan retest2 R2). M sets it (ProxyManager::aimedAt); call on the server thread only. */
@@ -40,8 +44,18 @@ public final class Bridge {
 	/** V stands still on the ground: cam !air && !held && !fly. M sets it. */
 	public static volatile boolean hostStands;
 
-	/** Host message listeners by "t": HostLink calls the one registered for a message's type after its own handling, on the link thread. */
-	public static final Map<String, Consumer<JsonObject>> listeners = new ConcurrentHashMap<>();
+	/** Host message listeners by "t" (link thread). Several listeners per type run in registration order; one that throws is logged and the rest still run. */
+	public static final Map<String, List<Consumer<JsonObject>>> listeners = new ConcurrentHashMap<>(); // values are CopyOnWriteArrayList
+
+	/** Adds a listener for host messages of this type (plan retest3 section 1.5); HostLink calls it after its own handling. */
+	public static void listen(final String type, final Consumer<JsonObject> listener) {
+		listeners.computeIfAbsent(type, t -> new CopyOnWriteArrayList<>()).add(listener);
+	}
+
+	/** The proxy is pinged (Compass Ping): synced entity data, valid on the client. M sets it. */
+	public static volatile Predicate<Entity> pingedProxy = e -> false;
+	/** Marks a proxy pinged for `ticks` (server thread; 0 clears). M sets it. */
+	public static volatile ObjIntConsumer<Entity> pingProxy = (e, ticks) -> {};
 	/** Perk rank (0 = not owned) of the local player by perk id (plan section 1.5). C sets it; M reads it on the server thread. */
 	public static volatile ToIntFunction<String> perkRank = id -> 0;
 	/** The live proxy entity for a Cyberpunk id, or null. M sets it; server thread only. */
@@ -60,8 +74,12 @@ public final class Bridge {
 
 	/** HostLink calls this for every host message (link thread). A listener that throws is logged, never fatal. */
 	public static void dispatch(final String type, final JsonObject message) {
-		Consumer<JsonObject> listener = listeners.get(type);
-		if (listener != null) {
+		List<Consumer<JsonObject>> list = listeners.get(type);
+		if (list == null) {
+			return;
+		}
+
+		for (Consumer<JsonObject> listener : list) {
 			try {
 				listener.accept(message);
 			} catch (RuntimeException e) {

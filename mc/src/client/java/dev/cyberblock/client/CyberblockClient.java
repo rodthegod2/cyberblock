@@ -8,6 +8,7 @@ import java.util.List;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
@@ -16,6 +17,7 @@ import net.minecraft.client.InactivityFpsLimit;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
 import net.minecraft.client.gui.screens.DeathScreen;
+import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.client.renderer.entity.NoopRenderer;
 import net.minecraft.client.tutorial.TutorialSteps;
 import net.minecraft.server.level.ServerPlayer;
@@ -51,6 +53,12 @@ public class CyberblockClient implements ClientModInitializer {
 		EntityRendererRegistry.register(ProxyEntities.HUMAN, NoopRenderer::new);
 		EntityRendererRegistry.register(ProxyEntities.VEHICLE, NoopRenderer::new);
 		ClientTickEvents.END_CLIENT_TICK.register(CyberblockClient::tick);
+		// launcher players (plan retest3 M5): a "Play Cyberblock" button on the title screen
+		ScreenEvents.AFTER_INIT.register((minecraft, screen, width, height) -> {
+			if (screen instanceof TitleScreen title) {
+				AutoWorld.addTitleButton(minecraft, title, width, height);
+			}
+		});
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			hang(handler.player);
 			setupIn = 10;

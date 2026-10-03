@@ -44,24 +44,53 @@ public final class PlayerSync {
 			return;
 		}
 
+		float pitch = pitch(p);
 		player.setYRot(p.yaw());
-		player.setXRot(p.pitch());
+		player.setXRot(pitch);
 		player.yRotO = p.yaw();
-		player.xRotO = p.pitch();
-		player.yHeadRot = player.yHeadRotO = p.yaw();
-		player.yBodyRot = player.yBodyRotO = p.firstPerson() ? p.yaw() : p.bodyYaw();
+		player.xRotO = pitch;
+		player.yHeadRot = player.yHeadRotO = headYaw(p);
+		player.yBodyRot = player.yBodyRotO = bodyYaw(p);
 		if (!Flight.followsCam()) {
 			return; // just landed: Steve waits at the landing spot until the host has placed V there
 		}
 
 		// the model stands exactly where the host's player is this frame (not a tick behind, interpolating)
-		double x = p.firstPerson() ? p.x() : p.px();
-		double y = p.firstPerson() ? p.y() - player.getEyeHeight() : p.py();
-		double z = p.firstPerson() ? p.z() : p.pz();
-		player.setPos(x, y, z);
-		player.xo = player.xOld = x;
-		player.yo = player.yOld = y;
-		player.zo = player.zOld = z;
+		Vec3 at = anchor(p, player.getEyeHeight());
+		player.setPos(at.x, at.y, at.z);
+		player.xo = player.xOld = at.x;
+		player.yo = player.yOld = at.y;
+		player.zo = player.zOld = at.z;
+	}
+
+	/** How far below V's hips (cam.pl while seated) Steve's feet go, so his riding pose sits on V's seat (plan retest3 M2). */
+	static final double SEAT_DROP = 0.70;
+
+	/**
+	 * Where Steve's feet go: seated in a vehicle (cam.seat) SEAT_DROP below V's hips whatever the camera; otherwise his eyes at the
+	 * host camera in first person, his feet at V's in third person.
+	 */
+	static Vec3 anchor(final HostState.Pose p, final double eyeHeight) {
+		if (p.seat()) {
+			return new Vec3(p.px(), p.py() - SEAT_DROP, p.pz());
+		}
+
+		return p.firstPerson() ? new Vec3(p.x(), p.y() - eyeHeight, p.z()) : new Vec3(p.px(), p.py(), p.pz());
+	}
+
+	/** Steve's body: V's in a seat and in third person; in first person it turns with the camera. */
+	static float bodyYaw(final HostState.Pose p) {
+		return p.seat() || !p.firstPerson() ? p.bodyYaw() : p.yaw();
+	}
+
+	/** Steve's head (plan retest3 M2): the camera's yaw in first person, the body's in third person (an orbiting camera is not his gaze). */
+	static float headYaw(final HostState.Pose p) {
+		return p.firstPerson() ? p.yaw() : p.bodyYaw();
+	}
+
+	/** Steve's pitch: the camera's, except seated under a third-person vehicle camera, where he looks straight ahead. */
+	static float pitch(final HostState.Pose p) {
+		return p.seat() && !p.firstPerson() ? 0.0F : p.pitch();
 	}
 
 	/**
@@ -76,9 +105,8 @@ public final class PlayerSync {
 			return;
 		}
 
-		double x = p.firstPerson() ? p.x() : p.px();
-		double y = p.firstPerson() ? p.y() - player.getEyeHeight() : p.py();
-		double z = p.firstPerson() ? p.z() : p.pz();
+		Vec3 at = anchor(p, player.getEyeHeight());
+		double x = at.x, y = at.y, z = at.z;
 		tickDistance = Double.isNaN(lastX) ? 0.0F : (float) Math.min(Math.hypot(x - lastX, z - lastZ), 1.0);
 		lastX = x;
 		lastZ = z;

@@ -23,6 +23,20 @@ class GroundAlignTest {
 		assertEquals(k, GroundAlign.kOf(z));
 	}
 
+	/**
+	 * Re-test 3 F5 ("ground alignment is perfect: keep it", plan retest3 M6): a regression pin of the whole R2 table, each case's k and
+	 * where its floor lands (1.95 to 17.6 mm above a whole block). Any change of the alignment maths breaks this.
+	 */
+	@ParameterizedTest
+	@CsvSource({"6.907, 57, 6", "6.001, 63, 5", "0.0, 63, -1", "-3.25, 47, -4", "312.999, 63, 312", "-0.0005, 63, -1", "64.5, 31, 64"})
+	void retest3KeepsTheR2Alignment(final double z, final int k, final int block) {
+		assertEquals(k, GroundAlign.kOf(z));
+		double y = z - GroundAlign.offset(k);
+		assertEquals(block, (int) Math.floor(y), "the floor stands on block " + block);
+		double above = y - block;
+		assertTrue(above >= 0.125 / 64.0 - 1e-9 && above < 1.125 / 64.0 + 1e-9, "z " + z + ": " + above + " m above the block");
+	}
+
 	/** The shared vectors (tools/gen_vectors.py) once they carry the align set; skipped before. */
 	@Test
 	void theSharedVectors() throws IOException {

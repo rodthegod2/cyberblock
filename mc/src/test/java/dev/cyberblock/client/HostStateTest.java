@@ -137,6 +137,22 @@ class HostStateTest {
 		assertFalse(p.fly() || p.menu() || p.air() || p.held(), "only a JSON boolean counts");
 	}
 
+	/** Plan retest3 section 1.1: cam.seat (V sits in a vehicle, pl is the hips); false when absent or not a boolean. */
+	@Test
+	void seatFollowsTheCam() {
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'fp':false,'pl':[1,1.2,3],'seat':true}"));
+		HostState.Pose p = HostState.live();
+		assertTrue(p.seat());
+		assertFalse(p.firstPerson());
+		assertEquals(1.2, p.py());
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0]}"));
+		assertFalse(HostState.live().seat(), "absent: an older host never sends it");
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'seat':'yes'}"));
+		assertFalse(HostState.live().seat(), "only a JSON boolean counts");
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'seat':false}"));
+		assertFalse(HostState.live().seat());
+	}
+
 	@Test
 	void theServerHearsWhenVIsInAVehicle() {
 		HostState.setVehicle(true);

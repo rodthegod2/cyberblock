@@ -57,6 +57,8 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	 * optics, plan retest2 R6), so it is synced entity data.
 	 */
 	private static final EntityDataAccessor<Boolean> DATA_HOSTILE = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.BOOLEAN);
+	/** Ticks left of a Compass Ping (plan retest3 section 1.5): the client outlines a pinged proxy, so it is synced entity data. */
+	private static final EntityDataAccessor<Integer> DATA_PINGED = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.INT);
 
 	public ProxyEntity(final EntityType<? extends ProxyEntity> type, final Level level) {
 		super(type, level);
@@ -68,6 +70,7 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	protected void defineSynchedData(final SynchedEntityData.Builder entityData) {
 		super.defineSynchedData(entityData);
 		entityData.define(DATA_HOSTILE, false);
+		entityData.define(DATA_PINGED, 0);
 	}
 
 	/** The Cyberpunk entity id hash this proxy stands for. */
@@ -86,6 +89,16 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	/** Hostile to V (the host's latest list); valid on the client too (Bridge.hostileProxy). */
 	public boolean hostile() {
 		return this.entityData.get(DATA_HOSTILE);
+	}
+
+	/** Server thread: pinged for this many ticks (0 or less clears it); Bridge.pingProxy. */
+	public void setPinged(final int ticks) {
+		this.entityData.set(DATA_PINGED, Math.max(0, ticks));
+	}
+
+	/** Pinged by a Compass Ping that has not run out; valid on the client too (Bridge.pingedProxy). */
+	public boolean pinged() {
+		return this.entityData.get(DATA_PINGED) > 0;
 	}
 
 	@Override
@@ -126,6 +139,10 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 
 		if (this.level() instanceof ServerLevel) {
 			this.reportLeash();
+			int ping = this.entityData.get(DATA_PINGED);
+			if (ping > 0) {
+				this.entityData.set(DATA_PINGED, ping - 1);
+			}
 		}
 	}
 
@@ -208,7 +225,7 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 		}
 
 		if (medium != ProxyDamage.Medium.BODY) {
-			return direct == null ? Vec3.ZERO : ProxyDamage.projectile(direct.getDeltaMovement());
+			return direct == null ? Vec3.ZERO : ProxyDamage.projectile(direct.getDeltaMovement(), this.punch(level, source, direct));
 		}
 
 		if (attacker == null) {
@@ -218,16 +235,27 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 		// vanilla pushes along the attacker's yaw; looking straight up or down there is no direction, then it is away from the attacker
 		Vec3 look = attacker.getLookAngle();
 		Vec3 along = Math.hypot(look.x, look.z) > 1.0E-3 ? look : this.position().subtract(attacker.position());
-		Vec3 melee = ProxyDamage.melee(along.x, along.z, attacker instanceof LivingEntity living ? this.knockbackLevel(level, source, living) : 0.0);
-		return attacker instanceof Player player && gorillaArms(player) ? ProxyDamage.gorillaArms(melee, this.getType() == ProxyEntities.VEHICLE) : melee;
+		double strength = attacker instanceof LivingEntity living ? this.knockbackLevel(level, source, living) : 0.0;
+		boolean vehicle = this.getType() == ProxyEntities.VEHICLE;
+		return ProxyDamage.meleeOn(along.x, along.z, strength, attacker instanceof Player player && gorillaArms(player, vehicle), vehicle);
 	}
 
 	/**
-	 * The gorilla_arms perk, or the gorilla_arms implant swung with an empty main hand (plan retest2 section 1.7): either way one
-	 * shove, never two.
+	 * Whether Gorilla Arms adds to this blow (plan retest3 section 1.9): the gorilla_arms perk, or the gorilla_arms implant swung with
+	 * an empty main hand (plan retest2 section 1.7), one shove, never two. On a person the implant's own ATTACK_KNOCKBACK modifier
+	 * (CyberwareEffects, empty hand) already is its extra strength, so only the perk without it adds; a vehicle's push is tripled by
+	 * either.
 	 */
-	private static boolean gorillaArms(final Player attacker) {
-		return perk("gorilla_arms") || Bridge.installedCyberware.contains("gorilla_arms") && attacker.getMainHandItem().isEmpty();
+	private static boolean gorillaArms(final Player attacker, final boolean vehicle) {
+		boolean implant = Bridge.installedCyberware.contains("gorilla_arms") && attacker.getMainHandItem().isEmpty();
+		boolean perk = perk("gorilla_arms");
+		return vehicle ? perk || implant : perk && !implant;
+	}
+
+	/** The Punch level of the bow an arrow came from (vanilla AbstractArrow.doKnockback asks the same), 0 for anything else. */
+	private float punch(final ServerLevel level, final DamageSource source, final Entity direct) {
+		ItemStack weapon = direct.getWeaponItem();
+		return weapon == null || weapon.isEmpty() ? 0.0F : EnchantmentHelper.modifyKnockback(level, weapon, this, source, 0.0F);
 	}
 
 	/** Server thread: Steve owns this perk (plan section 1.5; the cyber track keeps the ranks). */
@@ -307,9 +335,13 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 		return true;
 	}
 
-	/** What vanilla's LivingEntity.getKnockback (protected) works out for the attacker's weapon, plus the sprint bonus. */
-	private float knockbackLevel(final ServerLevel level, final DamageSource source, final LivingEntity attacker) {
+	/**
+	 * What vanilla's LivingEntity.getKnockback (protected) works out for the attacker's weapon, with a player's sprint bonus (plan
+	 * retest3 section 1.9: mobs get none).
+	 */
+	private double knockbackLevel(final ServerLevel level, final DamageSource source, final LivingEntity attacker) {
 		float base = (float) attacker.getAttributeValue(Attributes.ATTACK_KNOCKBACK);
-		return EnchantmentHelper.modifyKnockback(level, attacker.getWeaponItem(), this, source, base) / 2.0F + (attacker.isSprinting() ? 0.5F : 0.0F);
+		return ProxyDamage.knockbackLevel(EnchantmentHelper.modifyKnockback(level, attacker.getWeaponItem(), this, source, base),
+			attacker instanceof Player && attacker.isSprinting());
 	}
 }

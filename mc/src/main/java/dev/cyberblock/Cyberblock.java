@@ -34,6 +34,13 @@ public class Cyberblock implements ModInitializer {
 		Bridge.proxyIdOf = ProxyManager::idOf;
 		Bridge.hostileProxy = e -> e instanceof ProxyEntity p && p.hostile();
 		Bridge.proxyAimedAt = ProxyManager::aimedAt;
+		// Compass Ping (plan retest3 section 1.5)
+		Bridge.pingedProxy = e -> e instanceof ProxyEntity p && p.pinged();
+		Bridge.pingProxy = (e, ticks) -> {
+			if (e instanceof ProxyEntity p) {
+				p.setPinged(ticks);
+			}
+		};
 		ServerLifecycleEvents.SERVER_STARTED.register(WorldBridge::attach);
 		// before the world is saved, so Night City's barriers and the proxies are never kept in the save
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
