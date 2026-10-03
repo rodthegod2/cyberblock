@@ -79,8 +79,24 @@ target V; damage still lands on Steve through `Health.reds`.
 - **Capsule size.** No template lets a script resize an NPC capsule, so every puppet uses the record's human
   capsule (about 0.6 × 1.8 m). `MobSize` is only logged. A spider's puppet is taller than the spider, and NPCs aim
   at human height, but every hit on the puppet still counts.
-- **`Npcs.reds` (S1) must skip puppets.** Puppets are `NPCPuppet`s near V, so without a filter Minecraft gets a human
-  proxy for every mob. `CyberblockPuppets.IsPuppet(game, id)` is the test: one line in `CyberblockNpcs.Counts`.
+- **Merge gate for `l36/S2`: `Npcs.reds` (S1-owned) must skip puppets.** Puppets are attached, living `NPCPuppet`s
+  near V and friendly to V, so S1's registry (`Entity/AfterAttach` with `EntityTarget.Type(n"NPCPuppet")`) picks them
+  up. Without a filter, every mob gets a non-hostile human proxy standing on it in Minecraft, which Steve and the mobs
+  can target (those hits are swallowed). `l36/S1` 41f14f5 has no such filter. Apply this to `CyberblockNpcs.Counts`
+  when merging `l36/S2` (it runs before a candidate is inserted, so puppets never take one of the 48 slots):
+  ```diff
+       let npc = object as NPCPuppet;
+       if !IsDefined(npc) {
+         return false;
+       }
+  +    if CyberblockPuppets.IsPuppet(game, npc.GetEntityID()) {
+  +      return false;
+  +    }
+       if !ScriptedPuppet.IsAlive(npc) || npc.IsDead() {
+  ```
+  `IsPuppet` also covers a puppet that has been deleted but has not yet detached (its tag lives until Codeware's
+  despawn completes). Not covered: the moment `Clear` runs while V stays Active (only `SetEnabled(false)` from CET),
+  because `DeleteTagged` drops the tag set at once; at most the ticks until those puppets detach.
 - **Hits V causes are Minecraft's.** Explosions and other hits instigated by V land on the mob in Minecraft already,
   so the wrap neither reports nor applies them for puppet targets.
 - **AI versus teleport.** The puppet's AI keeps running. It may try to walk or take cover between two 100 ms

@@ -14,7 +14,8 @@
 //   friendly to the player), TransactionSystem.RemoveAllItems/GetItemInSlot, TeleportationFacility.Teleport,
 //   DamageSystem.InvulnerabilityCheck/DealDamages (private final, scripted), AttackData.AddFlag(DealNoDamage)/
 //   GetInstigator, gameAttackComputed.GetTotalAttackValue, StatsSystem.GetStatValue(Health) (max health, as
-//   Health.reds), EntityID.ToHash (Codeware).
+//   Health.reds), EntityID.ToHash (Codeware), DynamicEntitySystem.IsTagged (Codeware; tags live from CreateEntity
+//   until the Despawn spawner event, src/App/World/DynamicEntitySystem.cpp).
 //   Record Character.animals_grunt1_melee1_fists_mb: fists-only Animals grunt, no quest, loot only on death.
 
 public abstract class CyberblockPuppets {
@@ -42,9 +43,16 @@ public abstract class CyberblockPuppets {
     return CyberblockPuppetsService.Get().Find(mob);
   }
 
-  // Whether an entity is one of our puppets (for the NPC list sent to Minecraft, which must leave them out).
+  // Whether an entity is one of our puppets (for the NPC list sent to Minecraft, which must leave them out). A
+  // despawned puppet stays attached until Codeware's queued despawn completes, and keeps its tag until then
+  // (DynamicEntitySystem.DeleteEntity only marks it deleted; RemoveEntityState drops the tag on the Despawn spawner
+  // event), so IsTagged still names it after its slot is gone.
   public static func IsPuppet(game: GameInstance, id: EntityID) -> Bool {
-    return CyberblockPuppetsService.Get().Slot(id) >= 0;
+    if CyberblockPuppetsService.Get().Slot(id) >= 0 {
+      return true;
+    }
+    let entities = GameInstance.GetDynamicEntitySystem();
+    return IsDefined(entities) && entities.IsTagged(id, CyberblockPuppetsService.Tag());
   }
 }
 
