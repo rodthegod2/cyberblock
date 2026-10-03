@@ -280,7 +280,8 @@ no person or car, Cyberpunk scans whatever V looks at, which is how you target d
 - A **RAM Shard** (right mouse) restores 4 at once.
 
 #### Quickhacks
-To fire one: lock a target with G, hold the item, and right-click.
+To fire one: lock a target with G, hold the item, and right-click. The starter kit puts the chips in the main
+inventory: move one to the hotbar first (E, hover it, press a number key).
 - The RAM is spent and the item recharges, then the real Cyberpunk quickhack fires, with its VFX and its NCPD
   reaction.
 - If Cyberpunk refuses (the target died; it is protected: quest characters, friends, people in scenes, anyone vanilla
@@ -369,9 +370,16 @@ Switch modes with Minecraft's `/gamemode` (cheats are on in the `cyberblock` wor
 - **Adventure / spectator:** vanilla rules. In adventure you cannot place or break blocks. A spectator takes no
   damage.
 
-**Starter kit.** The first time you turn Cyberblock on in survival, Steve gets the kit (once per world). The elytra
-goes on his chest if that slot is empty. Whatever does not fit in the inventory drops at his feet. `/cyberblock kit`
-hands it out again at any time.
+**Starter kit.** The first time you turn Cyberblock on in survival, Steve gets the kit (once per world).
+`/cyberblock kit` hands it out again at any time.
+- **Hotbar**, keys 1–9: iron sword, bow, stone, TNT, flint and steel, ender pearls, firework rockets, leads, fishing
+  rod. The arrows are in the main inventory; the bow finds them there.
+- **Offhand:** the shield. Hold right mouse with the sword (or an empty hand) to raise it.
+- **Chest:** the elytra.
+- **Main inventory (E):** everything else, including the Cyberdeck and the quickhack chips. To use a chip, open the
+  inventory, hover it and press a number key to put it in that hotbar slot.
+- A slot that is already taken sends its kit item to the main inventory instead. A stack Steve already has is topped
+  up. Whatever does not fit drops at his feet.
 
 | Group | Items |
 |---|---|

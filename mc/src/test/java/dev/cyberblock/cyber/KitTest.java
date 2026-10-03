@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -47,6 +48,83 @@ class KitTest {
 		}
 
 		assertTrue(counts().get("minecraft:ender_pearl") <= 16);
+	}
+
+	@Test
+	void hotbarHoldsWhatIsUsedFirstAndNoCyberItems() {
+		Map<Integer, String> hotbar = new HashMap<>();
+		for (Kit.Entry e : Kit.ENTRIES) {
+			if (e.slot() >= 0 && e.slot() <= 8) {
+				assertNull(hotbar.put(e.slot(), e.item()), "two kit stacks for hotbar slot " + e.slot());
+				assertTrue(!e.item().startsWith("cyberblock:"), e.item() + " must stay off the hotbar");
+			}
+		}
+
+		assertEquals(Map.of(0, "minecraft:iron_sword", 1, "minecraft:bow", 2, "minecraft:stone", 3, "minecraft:tnt",
+			4, "minecraft:flint_and_steel", 5, "minecraft:ender_pearl", 6, "minecraft:firework_rocket", 7, "minecraft:lead",
+			8, "minecraft:fishing_rod"), hotbar);
+		assertEquals(Kit.OFFHAND, slotOf("minecraft:shield"));
+		assertEquals(Kit.CHEST, slotOf("minecraft:elytra"));
+		assertEquals(Kit.MAIN, slotOf("minecraft:arrow")); // the bow finds them anywhere in the inventory
+		assertEquals(Kit.MAIN, slotOf("cyberblock:cyberdeck"));
+		for (Kit.Entry e : Kit.ENTRIES) {
+			assertTrue(e.slot() == Kit.MAIN || e.slot() == Kit.CHEST || e.slot() == Kit.OFFHAND || e.slot() >= 0 && e.slot() <= 8, e.item());
+		}
+	}
+
+	private static int slotOf(final String item) {
+		return Kit.ENTRIES.stream().filter(e -> e.item().equals(item)).findFirst().orElseThrow().slot();
+	}
+
+	/** Where each kit stack lands with Kit.target, given the slots already taken (Minecraft's numbering: 0..35, 38 chest, 40 offhand). */
+	private static Map<String, Integer> place(final boolean[] taken) {
+		Map<String, Integer> placed = new HashMap<>();
+		for (Kit.Entry e : Kit.ENTRIES) {
+			int slot = Kit.target(e.slot(), s -> !taken[s]);
+			if (slot >= 0) {
+				taken[slot] = true;
+			}
+
+			placed.put(e.item() + (e.potion() == null ? "" : " " + e.potion()), slot);
+		}
+
+		return placed;
+	}
+
+	@Test
+	void aFreshInventoryTakesTheWholeKitInPlace() {
+		Map<String, Integer> placed = place(new boolean[41]);
+		for (Kit.Entry e : Kit.ENTRIES) {
+			int slot = placed.get(e.item() + (e.potion() == null ? "" : " " + e.potion()));
+			if (e.slot() == Kit.MAIN) {
+				assertTrue(slot >= 9 && slot < 36, e.item() + " went to " + slot);
+			} else {
+				assertEquals(e.slot(), slot, e.item());
+			}
+		}
+	}
+
+	@Test
+	void takenSlotsSendTheStackToTheMainInventoryThenToVanilla() {
+		boolean[] taken = new boolean[41];
+		for (int s = 0; s < 9; s++) {
+			taken[s] = true;
+		}
+
+		taken[Kit.OFFHAND] = true;
+		assertEquals(9, Kit.target(0, s -> !taken[s]));
+		assertEquals(9, Kit.target(Kit.OFFHAND, s -> !taken[s]));
+		assertEquals(9, Kit.target(Kit.MAIN, s -> !taken[s]));
+		for (int s = 9; s < 36; s++) {
+			taken[s] = true;
+		}
+
+		assertEquals(-1, Kit.target(4, s -> !taken[s]));
+		assertEquals(Kit.CHEST, Kit.target(Kit.CHEST, s -> !taken[s]));
+		// a main-inventory stack never takes a free hotbar slot itself (vanilla may, once the main inventory is full)
+		taken[3] = false;
+		assertEquals(-1, Kit.target(Kit.MAIN, s -> !taken[s]));
+		assertEquals(3, Kit.target(3, s -> !taken[s]));
 	}
 
 	private static JsonObject json(final String s) {

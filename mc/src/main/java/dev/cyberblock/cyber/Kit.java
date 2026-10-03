@@ -3,12 +3,13 @@ package dev.cyberblock.cyber;
 import dev.cyberblock.Cyberblock;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.IntPredicate;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Prediction;
-import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -18,13 +19,27 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The starter kit (task C8): everything the layers need to be tried, handed out once automatically on the first
- * activation in survival, and by `/cyberblock kit` at any time.
+ * activation in survival, and by `/cyberblock kit` at any time. The hotbar gets what is used first (sword, bow, blocks,
+ * TNT, flint and steel, pearls, rockets, lead, fishing rod), the shield goes in the offhand and the elytra on the chest;
+ * the cyberdeck, the quickhack chips and the rest go in the main inventory, so they never crowd the hotbar.
  */
 public final class Kit {
-	/** One kind of item: an item id, how many, and a potion id for potions (else null). */
-	public record Entry(String item, int count, @Nullable String potion) {
-		Entry(final String item, final int count) {
-			this(item, count, null);
+	/** {@link Entry#slot()}: the first free slot of the main inventory (9..35). */
+	static final int MAIN = -1;
+	/** {@link Entry#slot()}: the chest armour slot (Minecraft's inventory slot number: 36 + EquipmentSlot.CHEST's index). */
+	static final int CHEST = 38;
+	/** {@link Entry#slot()}: the offhand slot. */
+	static final int OFFHAND = Inventory.SLOT_OFFHAND;
+	private static final int MAIN_FIRST = 9;
+	private static final int MAIN_END = 36;
+
+	/**
+	 * One kind of item: an item id, how many, a potion id for potions (else null), and where it goes: a hotbar slot 0..8,
+	 * {@link #CHEST}, {@link #OFFHAND} or {@link #MAIN}.
+	 */
+	public record Entry(String item, int count, @Nullable String potion, int slot) {
+		Entry(final String item, final int count, final int slot) {
+			this(item, count, null, slot);
 		}
 	}
 
@@ -35,66 +50,92 @@ public final class Kit {
 
 	private static List<Entry> entries() {
 		List<Entry> e = new ArrayList<>();
-		e.add(new Entry("cyberblock:cyberdeck", 1));
-		e.add(new Entry("cyberblock:ram_shard", 2));
+		e.add(new Entry("minecraft:iron_sword", 1, 0));
+		e.add(new Entry("minecraft:bow", 1, 1));
+		e.add(new Entry("minecraft:stone", 64, 2));
+		e.add(new Entry("minecraft:tnt", 8, 3));
+		e.add(new Entry("minecraft:flint_and_steel", 1, 4));
+		e.add(new Entry("minecraft:ender_pearl", 8, 5));
+		e.add(new Entry("minecraft:firework_rocket", 16, 6));
+		e.add(new Entry("minecraft:lead", 2, 7));
+		e.add(new Entry("minecraft:fishing_rod", 1, 8));
+		e.add(new Entry("minecraft:shield", 1, OFFHAND));
+		e.add(new Entry("minecraft:elytra", 1, CHEST));
+
+		e.add(new Entry("minecraft:arrow", 32, MAIN));
+		e.add(new Entry("minecraft:glass", 64, MAIN));
+		e.add(new Entry("minecraft:wind_charge", 8, MAIN));
+		e.add(new Entry("minecraft:potion", 1, "minecraft:swiftness", MAIN));
+		e.add(new Entry("minecraft:potion", 1, "minecraft:invisibility", MAIN));
+		e.add(new Entry("minecraft:potion", 1, "minecraft:leaping", MAIN));
+		e.add(new Entry("minecraft:zombie_spawn_egg", 4, MAIN));
+		e.add(new Entry("minecraft:skeleton_spawn_egg", 2, MAIN));
+		e.add(new Entry("minecraft:creeper_spawn_egg", 2, MAIN));
+		e.add(new Entry("cyberblock:cyberdeck", 1, MAIN));
+		e.add(new Entry("cyberblock:ram_shard", 2, MAIN));
 		for (Hack hack : Hack.values()) {
-			e.add(new Entry("cyberblock:" + hack.item(), 1));
+			e.add(new Entry("cyberblock:" + hack.item(), 1, MAIN));
 		}
 
-		e.add(new Entry("minecraft:stone", 64));
-		e.add(new Entry("minecraft:glass", 64));
-		e.add(new Entry("minecraft:tnt", 8));
-		e.add(new Entry("minecraft:flint_and_steel", 1));
-		e.add(new Entry("minecraft:bow", 1));
-		e.add(new Entry("minecraft:arrow", 32));
-		e.add(new Entry("minecraft:shield", 1));
-		e.add(new Entry("minecraft:iron_sword", 1));
-		e.add(new Entry("minecraft:lead", 2));
-		e.add(new Entry("minecraft:fishing_rod", 1));
-		e.add(new Entry("minecraft:wind_charge", 8));
-		e.add(new Entry("minecraft:ender_pearl", 8));
-		e.add(new Entry("minecraft:elytra", 1));
-		e.add(new Entry("minecraft:firework_rocket", 16));
-		e.add(new Entry("minecraft:potion", 1, "minecraft:swiftness"));
-		e.add(new Entry("minecraft:potion", 1, "minecraft:invisibility"));
-		e.add(new Entry("minecraft:potion", 1, "minecraft:leaping"));
-		e.add(new Entry("minecraft:zombie_spawn_egg", 4));
-		e.add(new Entry("minecraft:skeleton_spawn_egg", 2));
-		e.add(new Entry("minecraft:creeper_spawn_egg", 2));
-		e.add(new Entry("cyberblock:mantis_blade", 1));
-		e.add(new Entry("cyberblock:gorilla_gauntlet", 1));
+		e.add(new Entry("cyberblock:mantis_blade", 1, MAIN));
+		e.add(new Entry("cyberblock:gorilla_gauntlet", 1, MAIN));
 		return List.copyOf(e);
 	}
 
-	/** The stacks of the kit; an id that does not resolve is logged and left out. */
-	static List<ItemStack> stacks() {
-		List<ItemStack> stacks = new ArrayList<>();
-		for (Entry e : ENTRIES) {
-			Item item = BuiltInRegistries.ITEM.getValue(Identifier.parse(e.item()));
-			if (item == Items.AIR) {
-				Cyberblock.LOG.warn("kit: no item {}", e.item());
-				continue;
-			}
+	/** The stack of one entry, or null (logged) when its id does not resolve. */
+	private static @Nullable ItemStack stack(final Entry e) {
+		Item item = BuiltInRegistries.ITEM.getValue(Identifier.parse(e.item()));
+		if (item == Items.AIR) {
+			Cyberblock.LOG.warn("kit: no item {}", e.item());
+			return null;
+		}
 
-			if (e.potion() == null) {
-				stacks.add(new ItemStack(item, e.count()));
-			} else {
-				BuiltInRegistries.POTION.get(Identifier.parse(e.potion())).ifPresentOrElse(
-					potion -> stacks.add(PotionContents.createItemStack(item, potion).copyWithCount(e.count())),
-					() -> Cyberblock.LOG.warn("kit: no potion {}", e.potion()));
+		if (e.potion() == null) {
+			return new ItemStack(item, e.count());
+		}
+
+		ItemStack potion = BuiltInRegistries.POTION.get(Identifier.parse(e.potion()))
+			.map(p -> PotionContents.createItemStack(item, p).copyWithCount(e.count())).orElse(null);
+		if (potion == null) {
+			Cyberblock.LOG.warn("kit: no potion {}", e.potion());
+		}
+
+		return potion;
+	}
+
+	/**
+	 * The empty slot a kit stack takes when it tops up no stack he already has: its own slot (hotbar, chest, offhand) when
+	 * that is empty, else the first empty main-inventory slot; -1 leaves it to vanilla (any free hotbar slot, else dropped
+	 * at his feet).
+	 */
+	static int target(final int own, final IntPredicate empty) {
+		if (own != MAIN && empty.test(own)) {
+			return own;
+		}
+
+		for (int slot = MAIN_FIRST; slot < MAIN_END; slot++) {
+			if (empty.test(slot)) {
+				return slot;
 			}
 		}
 
-		return stacks;
+		return -1;
 	}
 
-	/** Gives the kit: the elytra goes on when the chest slot is empty, the rest into the inventory, what does not fit drops at his feet. */
+	/** Gives the kit (see the class comment); a stack he already has is topped up, what does not fit drops at his feet. */
 	public static void give(final ServerPlayer player) {
-		for (ItemStack stack : stacks()) {
-			if (stack.is(Items.ELYTRA) && player.getItemBySlot(EquipmentSlot.CHEST).isEmpty()) {
-				player.setItemSlot(EquipmentSlot.CHEST, stack);
+		Inventory inventory = player.getInventory();
+		for (Entry e : ENTRIES) {
+			ItemStack stack = stack(e);
+			if (stack == null) {
+				continue;
+			}
+
+			int slot = inventory.getSlotWithRemainingSpace(stack) >= 0 ? -1 : target(e.slot(), s -> inventory.getItem(s).isEmpty());
+			if (slot >= 0) {
+				inventory.setItem(slot, stack);
 			} else {
-				player.getInventory().placeItemBackInInventory(stack, Prediction.SERVER_ONLY);
+				inventory.placeItemBackInInventory(stack, Prediction.SERVER_ONLY);
 			}
 		}
 
