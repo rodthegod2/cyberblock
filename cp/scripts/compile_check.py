@@ -6,6 +6,8 @@ The game folder is only read: scc_lib.dll, the vanilla r6/cache/final.redscripts
 copied into a fresh temp tree, and the compiler (redscript's scc_lib C API, the library behind
 engine/tools/scc.exe) runs with that tree as its r6 directory, so the cache, backup, timestamp and log files
 all land in the temp tree. The error popup is disabled. Exit code 0 means zero compile errors.
+
+Each run gets its own temp tree (removed afterwards), so checks from several worktrees can run at once.
 """
 import argparse
 import ctypes
@@ -23,8 +25,14 @@ def main() -> int:
     parser.add_argument("--game", default=DEFAULT_GAME)
     game = Path(parser.parse_args().game)
 
-    work = Path(tempfile.gettempdir()) / "cyberblock-scc"
-    shutil.rmtree(work, ignore_errors=True)
+    work = Path(tempfile.mkdtemp(prefix="cyberblock-scc-"))
+    try:
+        return compile_tree(game, work)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def compile_tree(game: Path, work: Path) -> int:
     r6 = work / "r6"
     for sub in ("cache", "logs", "scripts"):
         (r6 / sub).mkdir(parents=True)
@@ -58,6 +66,8 @@ def main() -> int:
         scc.scc_copy_error(result, buffer, len(buffer))
         print(buffer.value.decode(errors="replace"), file=sys.stderr)
     scc.scc_free_result(result)
+    # Unload scc_lib.dll so the temp tree (which holds it) can be removed.
+    ctypes.windll.kernel32.FreeLibrary(ctypes.c_void_p(scc._handle))
 
     print(f"compile_check: {'OK' if ok else 'FAILED'} (temp tree {work})")
     return 0 if ok else 1
