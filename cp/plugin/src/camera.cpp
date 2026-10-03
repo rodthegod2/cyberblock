@@ -10,6 +10,7 @@
 #include "link.hpp"
 #include "log.hpp"
 #include "natives.hpp"
+#include "world.hpp"
 #include <RED4ext/GameEngine.hpp>
 #include <RED4ext/RED4ext.hpp>
 #include <RED4ext/Scripting/Natives/Generated/Vector4.hpp>
@@ -57,11 +58,6 @@ namespace
 		RED4ext::CBaseFunction *fn = cls != nullptr ? cls->GetFunction(function) : nullptr;
 		return self != nullptr && fn != nullptr && RED4ext::ExecuteFunction(self, fn, out, args);
 	}
-
-	nlohmann::json triple(const cb::Vec3 &v)
-	{
-		return {v.x, v.y, v.z};
-	}
 }
 
 namespace cb::camera
@@ -106,14 +102,7 @@ namespace cb::camera
 		const Vec3 facingMc = cp_to_mc_pos(facing.X, facing.Y, facing.Z);
 		const double bodyYaw = std::hypot(facingMc.x, facingMc.z) > 1e-6 ? mc_yaw_pitch(facingMc.x, 0.0, facingMc.z).yaw : look.yaw;
 
-		link().send({{"t", "cam"},
-					  {"f", g_frame++},
-					  {"p", triple(position)},
-					  {"r", {look.yaw, look.pitch, 0.0}},
-					  {"fov", vfov},
-					  {"fp", true},
-					  {"pl", triple(feetMc)},
-					  {"h", bodyYaw}});
+		link().send(world::make_cam(g_frame++, position, look, vfov, feetMc, bodyYaw, natives::crouched));
 		compositor::set_host_pose(float(look.yaw), float(look.pitch), 0.0f, float(vfov), position.x, position.y, position.z);
 		compositor::set_host_planes(kNearClip, kFarClip);
 

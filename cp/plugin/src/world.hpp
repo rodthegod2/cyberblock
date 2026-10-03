@@ -1,7 +1,9 @@
-// Layer 2 (world interaction), the parts that need no game: what Minecraft sends (`block`, `explosion`, `hit`,
-// `ignite`) is validated, converted to Cyberpunk space and queued for redscript, and the `dmg` and `npcs` messages for
-// Minecraft are built from what redscript submits. natives.cpp is the thin game-facing layer over this.
-// Wire formats: shared/protocol.md; plan: docs/superpowers/plans/2026-10-02-layer2-world-interaction.md section 1.
+// Layers 2-6 (world interaction, mobs, flight, tethers, powers), the parts that need no game: what Minecraft sends
+// (`block`, `blocks`, `explosion`, `hit`, `ignite`, `teleport`, `lead`, `pull`, `knock`, `effect`, `hack`, `scan`, `perks`,
+// `perkfx`) is validated, converted to Cyberpunk space and queued for redscript, and the messages for Minecraft are built
+// from what redscript submits. natives.cpp is the thin game-facing layer over this.
+// Wire formats: shared/protocol.md; plans: docs/superpowers/plans/2026-10-02-layer2-world-interaction.md section 1 and
+// docs/superpowers/plans/2026-10-03-layers3-6-complete-mod.md sections 1.2, 1.3 and 1.5.
 #pragma once
 #include "cbmath.hpp"
 #include <cstddef>
@@ -13,6 +15,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace cb::world
 {
@@ -26,46 +29,80 @@ namespace cb::world
 		Ignite,
 		BlockAdd,
 		BlockRemove,
+		BlockReset,
+		Teleport,
+		Lead,
+		LeadRelease,
+		Pull,
+		Knock,
+		Effect,
+		Hack,
+		Scan,
+		Perk,
+		PerkFx,
 	};
 
-	/// The CName redscript sees from Cyberblock_NextEvent: "explosion", "hit", "ignite", "block_add", "block_remove";
+	/// The CName redscript sees from Cyberblock_NextEvent: "explosion", "hit", "ignite", "block_add", "block_remove",
+	/// "block_reset", "teleport", "lead", "lead_release", "pull", "knock", "effect", "hack", "scan", "perk", "perkfx";
 	/// "" (the empty CName) for None.
 	const char *event_name(EventKind kind);
 
-	/// One Minecraft event, already in Cyberpunk space.
+	/// One Minecraft event, already in Cyberpunk space. Which fields each kind fills is the event table of plan
+	/// 2026-10-03 section 1.3; the others are zero.
 	struct Event
 	{
 		EventKind kind = EventKind::None;
-		Vec3 pos{};          // explosion centre | block AABB min corner
-		uint64_t target = 0; // hit / ignite target: the EntityID hash
-		double amount = 0;   // explosion power | hit dmg / 20 (fraction of the target's max health) | ignite seconds
+		Vec3 pos{};          // explosion centre | block AABB min corner | teleport feet | lead anchor | pull toward | knock centre
+		uint64_t target = 0; // hit / ignite / lead / pull / hack / scan target: the EntityID hash (scan: 0 = look-at)
+		double amount = 0;   // explosion power | hit dmg / 20 (fraction of the target's max health) | ignite seconds |
+							 // teleport yaw (Cyberpunk degrees) | lead length | pull strength | knock radius |
+							 // effect seconds | perk rank | perkfx seconds
 		Vec3 vector{};       // hit impulse, m/s
-		bool flag = false;   // explosion fire
+		bool flag = false;   // explosion fire | lead has a fixed anchor | hack chains
+		std::string name;    // effect name | hack name | perk id | perkfx id
+		double extra = 0;    // knock strength | effect amplifier
+		int32_t id = 0;      // hit: the mob that dealt it (-1 none) | hack, scan: the request id
 	};
+
+	/// The ten hack names of plan section 1.5 (`hack.hack`) and the twenty perk ids (`perks[].id`, `perkfx.id`).
+	inline constexpr const char *kHackNames[] = {"short_circuit", "overheat",        "reboot_optics", "cripple_movement",
+												 "contagion",     "synapse_burnout", "ping",          "memory_wipe",
+												 "cyberpsychosis", "device"};
+	inline constexpr const char *kPerkIds[] = {"iron_skin",    "gorilla_arms", "painkiller", "juggernaut",   "double_jump",
+											   "sandevistan",  "quick_draw",   "dodge",      "tinkerer",     "smart_arrows",
+											   "field_medic",  "demolitions",  "extra_ram",  "cheap_hacks",  "chain_hack",
+											   "overclock",    "optical_camo", "headhunter", "cold_blood",   "silent_steps"};
 
 	struct Parsed
 	{
 		enum class Status
 		{
-			Ignored,  // not one of the four event types (or not an object): another layer's message, nothing to do
-			Event,    // `event` is valid
-			Rejected, // one of the four types, but a field is missing or invalid: `reason` says which
+			Ignored,  // not one of the handled types (or not an object): another layer's message, nothing to do
+			Event,    // `events` is valid
+			Rejected, // one of the handled types, but a field is missing or invalid: `reason` says which
 		};
 		Status status = Status::Ignored;
-		Event event;
+		/// Status::Event: what the message expands to, in order. Usually one event. `blocks` is a `block_reset` (when it
+		/// resets) followed by a `block_add` per cell, `perks` is a `perk` per entry; a `blocks` without cells has none.
+		std::vector<Event> events;
+		/// List entries (`perks` entries, `blocks` cells) that were invalid and left out; `reason` names the first one.
+		size_t droppedEntries = 0;
 		std::string reason;
 	};
 
 	/// Validates one message from Minecraft. Limits: coordinates finite with |v| < 3e7 (block coordinates whole
-	/// numbers), explosion power 0..20, hit dmg 0..1000, ignite seconds 0..120, ids decimal uint64 strings.
-	/// `hit` without `impulse` gets a zero impulse. Never throws.
+	/// numbers), explosion power 0..20, hit dmg 0..1000, ignite seconds 0..120, ids decimal uint64 strings, and the
+	/// layers 3-6 limits of plan section 1.2: lead length 1..32, pull/knock strength 0..50, knock radius 0..16, effect
+	/// seconds 0..86400 and amplifier 0..255, perkfx seconds 0..30, at most 64 block cells per `blocks`, hack names and
+	/// perk ids from the lists above, effect names [a-z_]{1,32}. `hit` without `impulse` gets a zero impulse, and `hit`
+	/// without `mob` the mob id -1. Never throws.
 	Parsed parse_event(const nlohmann::json &message);
 
 	struct QueueStats
 	{
 		size_t queued = 0;
 		uint64_t dropped = 0;  // oldest events dropped because the queue was full
-		uint64_t rejected = 0; // messages parse_event rejected
+		uint64_t rejected = 0; // messages parse_event rejected (and list entries it dropped)
 	};
 
 	/// Events for redscript: a mutex-guarded FIFO of at most kCapacity events (the oldest is dropped), and the "current"
@@ -75,13 +112,15 @@ namespace cb::world
 	public:
 		static constexpr size_t kCapacity = 256;
 
-		/// Whether the mashup is Active. While it is not, explosion / hit / ignite events are discarded (nothing can act
-		/// on them) and each change of state discards the ones already queued, so a stale blast never replays on the
-		/// next activation. Block events are always kept: redscript's block registry needs every one of them.
+		/// Whether the mashup is Active. While it is not, the transient events (explosion, hit, ignite, teleport, lead,
+		/// lead_release, pull, knock, effect, perkfx) are discarded (nothing can act on them), and each change of state
+		/// discards the ones already queued, so a stale blast never replays on the next activation. `block_add`,
+		/// `block_remove`, `block_reset`, `perk`, `scan` and `hack` are always kept: redscript's block registry and perk
+		/// ranks need every one of them, and a scan or a hack must be answered.
 		void set_active(bool active);
 		void push(const Event &event);
 		/// Counts a message parse_event rejected.
-		void note_rejected();
+		void note_rejected(size_t count = 1);
 		/// Pops the oldest event and makes it current; with none queued the current event becomes None.
 		EventKind next();
 		Event current() const;
@@ -105,10 +144,12 @@ namespace cb::world
 		return *instance;
 	}
 
-	/// The link's observer (runs on the link thread for every message from Minecraft): queues valid `block`,
-	/// `explosion`, `hit` and `ignite` events in events(), counts and logs invalid ones (the first 10 only: a
-	/// misbehaving peer must not fill the log) and forgets the old session's events on each `hello`.
+	/// The link's observer (runs on the link thread for every message from Minecraft): queues the events of the valid
+	/// messages in events(), counts and logs invalid ones (the first 10 only: a misbehaving peer must not fill the log)
+	/// and forgets the old session's events on each `hello`.
 	void on_minecraft_message(const nlohmann::json &message);
+	/// Counts `count` invalid messages or list entries (events().stats().rejected) and logs `reason` for the first 10 only.
+	void note_invalid(size_t count, const std::string &reason);
 
 	// ---- Cyberpunk -> Minecraft -------------------------------------------------------------------------------------
 
@@ -116,7 +157,7 @@ namespace cb::world
 	inline constexpr const char *kDamageKinds[] = {"bullet", "explosion", "melee", "fall", "vehicle", "fire", "other"};
 
 	/// Minecraft yaw (degrees, -180..180) of a Cyberpunk yaw (degrees, 0 = facing +Y, counter-clockwise from above, as
-	/// Entity.GetWorldYaw reports): Cyberpunk forward (-sin a, cos a) becomes Minecraft (-sin m, cos m) at m = 180 - a.
+	/// Entity.GetWorldYaw reports it): Cyberpunk forward (-sin a, cos a) becomes Minecraft (-sin m, cos m) at m = 180 - a.
 	double cp_yaw_to_mc_yaw(double cpYaw);
 
 	/// {"t":"dmg","frac","kind","from"}: `frac` (fraction of V's max health) is clamped to 0..4; `from` (Cyberpunk
@@ -129,4 +170,48 @@ namespace cb::world
 	std::optional<nlohmann::json> make_npcs(std::span<const uint64_t> ids, std::span<const Vec3> feetCp,
 											std::span<const double> yawsCp, std::span<const uint8_t> vehicles,
 											std::span<const uint8_t> hostile);
+
+	// ---- layers 3-6 (plan 2026-10-03 section 1.2) ----
+
+	/// The threat levels `scaninfo.threat` knows; anything else is sent as "none".
+	inline constexpr const char *kThreatLevels[] = {"none", "low", "medium", "high", "extreme"};
+	/// Longest `scaninfo.name`, `scaninfo.faction` and `hackresult.reason`, in UTF-8 bytes.
+	inline constexpr size_t kMaxTextBytes = 64;
+	/// Most block cells one `pcells` message holds.
+	inline constexpr size_t kMaxPcells = 64;
+
+	/// {"t":"cam",...}: the camera and V, every Cyberpunk frame while active (Minecraft convention, so `position`, `feet`
+	/// and `look` are already converted). `r` is [yaw, pitch, 0]; `cr` is whether V is crouched. Numbers are not rounded.
+	nlohmann::json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, bool crouched);
+
+	/// {"t":"look","d":[dyaw,dpitch]}: raw mouse movement as Minecraft look deltas in degrees (right and down are positive).
+	nlohmann::json make_look(double dyaw, double dpitch);
+
+	/// {"t":"mobdmg","id","frac","by"}: a Cyberpunk NPC damaged the puppet of mob `id`. `frac` (fraction of the puppet's
+	/// max health) is clamped to 0..4; `by` is the NPC's id as a decimal string, null unless `hasBy`. nullopt when `id`
+	/// is negative or `frac` is not finite.
+	std::optional<nlohmann::json> make_mobdmg(int32_t id, double frac, uint64_t by, bool hasBy);
+
+	/// {"t":"pcells","c":[x,y,z, ...]}: the Minecraft block cells (`floor` per axis, after converting from Cyberpunk space)
+	/// of Night City surface points hit by predicted projectiles. Points with a non-finite or out-of-range coordinate are
+	/// skipped, repeated cells are sent once, and past 64 cells the rest is dropped. nullopt when no cell is left.
+	std::optional<nlohmann::json> make_pcells(std::span<const Vec3> hitsCp);
+
+	/// {"t":"unlead","target":"<id>"}: Cyberpunk gave up the tether on `target`.
+	nlohmann::json make_unlead(uint64_t target);
+
+	/// {"t":"scaninfo",...}: the reply to a `scan`. `name` and `faction` are cut to 64 UTF-8 bytes on a character
+	/// boundary, `threat` is one of kThreatLevels (else "none"), `hp` is clamped to 0..1, `feetCp` (Cyberpunk space) is
+	/// sent in Minecraft space and `width` x `height` as `size`. A non-finite number is sent as 0. `ok` false sends the
+	/// empty reply (empty strings, threat "none", hp 0, no target, no device, zeros). nullopt when `id` is negative.
+	std::optional<nlohmann::json> make_scaninfo(int32_t id, bool ok, uint64_t target, std::string_view name,
+												std::string_view faction, std::string_view threat, double hp, bool device,
+												Vec3 feetCp, double width, double height);
+
+	/// {"t":"hackresult","id","ok","reason"}: the reply to a `hack`; `reason` is cut to 64 UTF-8 bytes and is "" when `ok`.
+	/// nullopt when `id` is negative.
+	std::optional<nlohmann::json> make_hackresult(int32_t id, bool ok, std::string_view reason);
+
+	/// {"t":"killed","target","kind","hostile"}: an NPC or vehicle that V damaged died or was destroyed.
+	nlohmann::json make_killed(uint64_t target, bool vehicle, bool hostile);
 }

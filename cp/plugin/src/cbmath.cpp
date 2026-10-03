@@ -35,6 +35,21 @@ namespace cb
 		return {x, -z, y};
 	}
 
+	Vec3 mc_vel_to_cp(double vx, double vy, double vz)
+	{
+		return mc_to_cp_pos(vx, vy, vz);
+	}
+
+	double mc_yaw_to_cp_yaw(double mcYaw)
+	{
+		double yaw = std::fmod(180.0 - mcYaw, 360.0);
+		if (yaw > 180.0)
+			yaw -= 360.0;
+		else if (yaw <= -180.0)
+			yaw += 360.0;
+		return yaw;
+	}
+
 	Aabb mc_block_to_cp_aabb(int bx, int by, int bz)
 	{
 		const double x = bx, y = by, z = bz; // doubles first: no int overflow at the extremes

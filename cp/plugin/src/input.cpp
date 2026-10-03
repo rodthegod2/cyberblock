@@ -1,7 +1,10 @@
 #include "input.hpp"
+#include "iat.hpp"
+#include "keys.hpp"
 #include "link.hpp"
 #include "log.hpp"
 #include "natives.hpp"
+#include "world.hpp"
 #include <windows.h>
 #include <algorithm>
 #include <atomic>
@@ -14,9 +17,20 @@
 
 namespace
 {
+	// keys.hpp spells the Windows values out so it needs no Windows headers; make sure they are the real ones
+	static_assert(cb::keys::kMouseLeftDown == RI_MOUSE_LEFT_BUTTON_DOWN && cb::keys::kMouseRightDown == RI_MOUSE_RIGHT_BUTTON_DOWN &&
+				  cb::keys::kMouseMiddleDown == RI_MOUSE_MIDDLE_BUTTON_DOWN && cb::keys::kMouseButton4Down == RI_MOUSE_BUTTON_4_DOWN &&
+				  cb::keys::kMouseButton5Down == RI_MOUSE_BUTTON_5_DOWN && cb::keys::kMouseWheel == RI_MOUSE_WHEEL &&
+				  cb::keys::kMouseHWheel == RI_MOUSE_HWHEEL);
+	static_assert(cb::keys::kEscape == VK_ESCAPE && cb::keys::kF5 == VK_F5 && cb::keys::kF9 == VK_F9 && cb::keys::kOem2 == VK_OEM_2 &&
+				  cb::keys::kSpace == VK_SPACE && cb::keys::kShift == VK_SHIFT && cb::keys::kControl == VK_CONTROL &&
+				  cb::keys::kLeftShift == VK_LSHIFT && cb::keys::kRightShift == VK_RSHIFT && cb::keys::kLeftControl == VK_LCONTROL &&
+				  cb::keys::kRightControl == VK_RCONTROL);
+
 	constexpr double kCursorCountsPerWindow = 800.0; // raw mouse counts to cross the whole window
 	constexpr auto kCursorInterval = std::chrono::microseconds(1'000'000 / 120);
 	constexpr char kEscape[] = "key:escape";
+	constexpr UINT kLeftShiftScanCode = 0x2A; // WM_KEYDOWN reports Shift as VK_SHIFT: the scan code tells left from right
 
 	std::atomic<HWND> g_window{nullptr};     // set once found (hooked or not), so the search stops
 	std::atomic<WNDPROC> g_original{nullptr}; // the window's own procedure, null unless hooked
@@ -25,6 +39,13 @@ namespace
 	// forwarding stops in between (vehicle, focus loss, mashup off). Window thread only.
 	std::map<std::string, nlohmann::json> g_held;
 	int g_wheel = 0; // wheel delta not yet worth a notch. Window thread only.
+
+	// The keys bound to the hack and skills actions: written on the link thread (`binds`), read on the window thread.
+	std::atomic<uint32_t> g_bindHack{cb::keys::kG};
+	std::atomic<uint32_t> g_bindSkills{cb::keys::kK};
+	// One gate per input path, since each of WM_INPUT and WM_KEYDOWN sees every key event. Window thread only.
+	cb::keys::KeyGate g_rawGate;
+	cb::keys::KeyGate g_messageGate;
 
 	// Minecraft's cursor while one of its screens is open, in 0..1 of the window: moved on the window thread, flushed
 	// from the game thread too.
@@ -38,10 +59,26 @@ namespace
 	std::mutex g_cursorLock;
 	Cursor g_cursor;
 
-	/// Forward to Minecraft right now: mashup on, on foot, linked, Cyberpunk's window in front.
+	// Raw mouse deltas for the camera-only flight fallback (Cyberblock_SetLookCapture), summed on the window thread and
+	// flushed from there and from the game thread.
+	std::mutex g_lookLock;
+	cb::keys::LookAccumulator g_look;
+
+	// USER32!GetRawInputData as the game's import table had it before the hook (null while not hooked). iat::patch sets it
+	// before the hook goes live; it is never cleared, because a game thread may be inside the hook while we unload.
+	using GetRawInputDataFn = UINT(WINAPI *)(HRAWINPUT, UINT, LPVOID, PUINT, UINT);
+	void *g_realGetRawInputData = nullptr;
+	std::atomic<bool> g_mouseHooked{false};
+
+	cb::keys::Binds binds()
+	{
+		return {g_bindHack, g_bindSkills};
+	}
+
+	/// Forward to Minecraft right now: mashup on, on foot, no Cyberpunk menu, linked, Cyberpunk's window in front.
 	bool forwarding()
 	{
-		return cb::natives::active && !cb::natives::inVehicle && cb::link().linked() &&
+		return cb::natives::active && !cb::natives::inVehicle && !cb::natives::menuOpen && cb::link().linked() &&
 			   GetForegroundWindow() == g_window;
 	}
 
@@ -87,19 +124,25 @@ namespace
 		return {{"t", "key"}, {"k", name}, {"down", down}};
 	}
 
-	/// b: 0 left, 1 right, 2 middle. A screen gets clicks, the world gets attack / use / pick.
-	void button(int b, bool down)
+	/// b: 0 left, 1 right, 2 middle. A screen gets clicks, the world gets attack / use / pick. A press goes to Minecraft
+	/// while forwarding, and then Cyberpunk must not see it: returns whether it was taken. A release is always passed on
+	/// (to both), so a button held from before forwarding started is released in Cyberpunk too.
+	bool button(int b, bool down)
 	{
 		static const char *const kKeys[] = {"attack", "use", "pick"};
 		const std::string id = "button:" + std::to_string(b);
 		if (!down)
-			return release(id);
+		{
+			release(id);
+			return false;
+		}
 		if (!forwarding())
-			return;
+			return false;
 		if (cb::link().screen_open())
 			press(id, {{"t", "click"}, {"b", b}, {"down", true}}, {{"t", "click"}, {"b", b}, {"down", false}});
 		else
 			press(id, key(kKeys[b], true), key(kKeys[b], false));
+		return true;
 	}
 
 	/// Locked: sends the cursor if it moved and the last send is at least 1/120 s old.
@@ -113,29 +156,88 @@ namespace
 		cursor.sentAt = now;
 	}
 
-	/// Raw input on the window: cursor motion, and whether this message is an Esc to keep from Cyberpunk.
+	/// Locked: sends the summed look deltas if there are any and the last send is at least 1/120 s old.
+	void flush_look()
+	{
+		if (const auto turn = g_look.take(std::chrono::steady_clock::now()))
+			cb::link().send(cb::world::make_look((*turn)[0], (*turn)[1]));
+	}
+
+	void on_raw_mouse(const RAWMOUSE &mouse)
+	{
+		if ((mouse.usFlags & MOUSE_MOVE_ABSOLUTE) != 0)
+			return;
+		if (screen_open())
+		{
+			std::lock_guard<std::mutex> lock(g_cursorLock);
+			g_cursor.x = std::clamp(g_cursor.x + mouse.lLastX / kCursorCountsPerWindow, 0.0, 1.0);
+			g_cursor.y = std::clamp(g_cursor.y + mouse.lLastY / kCursorCountsPerWindow, 0.0, 1.0);
+			g_cursor.dirty = true;
+			flush_cursor(g_cursor);
+		}
+		else if (cb::natives::lookCapture && forwarding())
+		{
+			std::lock_guard<std::mutex> lock(g_lookLock);
+			g_look.add(mouse.lLastX, mouse.lLastY);
+			flush_look();
+		}
+	}
+
+	/// Whether Cyberpunk must not see this raw keyboard packet: a key of the swallow set while forwarding (with its repeats
+	/// and its up), or an Esc that Minecraft takes.
+	bool swallow_raw_key(const RAWKEYBOARD &keyboard)
+	{
+		const uint32_t vk = keyboard.VKey;
+		const bool down = (keyboard.Flags & RI_KEY_BREAK) == 0;
+		if (vk == VK_ESCAPE)
+			return screen_open() || g_held.contains(kEscape);
+		if (vk == VK_F9)
+			return false;
+		const bool swallowable = forwarding() && cb::keys::is_swallowed(vk, binds());
+		return (down ? g_rawGate.down(vk, swallowable) : g_rawGate.up(vk)) == cb::keys::KeyGate::Verdict::Swallow;
+	}
+
+	/// Raw input on the window: cursor and look motion from the mouse, and whether this packet is a key to keep from
+	/// Cyberpunk. The packet is read with USER32's own GetRawInputData, which our hook of the game's import table does not
+	/// touch: this sees the mouse buttons and wheel unmodified.
 	bool on_raw_input(LPARAM lParam)
 	{
 		RAWINPUT raw;
 		UINT size = sizeof(raw);
-		if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, &raw, &size, sizeof(RAWINPUTHEADER)) ==
-			UINT(-1))
+		if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, &raw, &size, sizeof(RAWINPUTHEADER)) == UINT(-1))
 			return false; // not a mouse or keyboard packet (bigger HID data): not ours
-		if (raw.header.dwType == RIM_TYPEMOUSE && (raw.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0 && screen_open())
-		{
-			std::lock_guard<std::mutex> lock(g_cursorLock);
-			g_cursor.x = std::clamp(g_cursor.x + raw.data.mouse.lLastX / kCursorCountsPerWindow, 0.0, 1.0);
-			g_cursor.y = std::clamp(g_cursor.y + raw.data.mouse.lLastY / kCursorCountsPerWindow, 0.0, 1.0);
-			g_cursor.dirty = true;
-			flush_cursor(g_cursor);
-		}
-		return raw.header.dwType == RIM_TYPEKEYBOARD && raw.data.keyboard.VKey == VK_ESCAPE &&
-			   (screen_open() || g_held.contains(kEscape));
+		if (raw.header.dwType == RIM_TYPEMOUSE)
+			on_raw_mouse(raw.data.mouse);
+		return raw.header.dwType == RIM_TYPEKEYBOARD && swallow_raw_key(raw.data.keyboard);
 	}
 
-	/// Legacy key messages. Returns true for an Esc that Minecraft takes (Cyberpunk must not see it).
-	bool on_key(WPARAM vk, bool down, bool repeat)
+	/// The `key` name Minecraft knows `vk` by, or null when it is not forwarded. Left Shift (sprint) is told from the right
+	/// one by its scan code.
+	const char *key_name(WPARAM vk, LPARAM lParam)
 	{
+		switch (vk)
+		{
+		case 'E': return "inventory";
+		case 'Q': return "drop";
+		case 'T': return "chat";
+		case VK_OEM_2: return "command"; // the "/?" key on US layouts
+		case VK_F5: return "perspective";
+		case VK_SPACE: return "jump";
+		case VK_LSHIFT: return "sprint";
+		case VK_SHIFT: return ((lParam >> 16) & 0xFF) == kLeftShiftScanCode ? "sprint" : nullptr;
+		}
+		if (vk == g_bindHack)
+			return "hack";
+		if (vk == g_bindSkills)
+			return "skills";
+		return nullptr;
+	}
+
+	/// Legacy key messages. Returns true for a key that Cyberpunk must not see: a key of the swallow set while forwarding
+	/// (with its repeats and its up), or an Esc that Minecraft takes.
+	bool on_key(WPARAM vk, LPARAM lParam, bool down)
+	{
+		const bool repeat = down && (lParam & (1 << 30)) != 0;
 		if (vk == VK_F9)
 		{
 			if (down && !repeat)
@@ -152,15 +254,11 @@ namespace
 			return ours;
 		}
 
-		const char *name = nullptr;
-		switch (vk)
-		{
-		case 'E': name = "inventory"; break;
-		case 'Q': name = "drop"; break;
-		case 'T': name = "chat"; break;
-		case VK_OEM_2: name = "command"; break; // the "/?" key on US layouts
-		}
-		if (name != nullptr)
+		const bool swallowable = forwarding() && cb::keys::is_swallowed(static_cast<uint32_t>(vk), binds());
+		const bool swallow = (down ? g_messageGate.down(static_cast<uint32_t>(vk), swallowable)
+								   : g_messageGate.up(static_cast<uint32_t>(vk))) == cb::keys::KeyGate::Verdict::Swallow;
+
+		if (const char *name = key_name(vk, lParam))
 		{
 			const std::string id = std::string("key:") + name;
 			if (!down)
@@ -170,7 +268,20 @@ namespace
 		}
 		else if (vk >= '1' && vk <= '9' && down && !repeat && forwarding())
 			cb::link().send({{"t", "slot"}, {"n", int(vk - '1')}});
-		return false;
+		return swallow;
+	}
+
+	/// The wheel while forwarding: notches go to Minecraft and Cyberpunk does not see the message.
+	bool on_wheel(WPARAM wParam)
+	{
+		if (!forwarding())
+			return false;
+		g_wheel += GET_WHEEL_DELTA_WPARAM(wParam);
+		const int notches = g_wheel / WHEEL_DELTA; // + = away from the user = up
+		g_wheel -= notches * WHEEL_DELTA;
+		if (notches != 0)
+			cb::link().send({{"t", "scroll"}, {"d", notches}});
+		return true;
 	}
 
 	LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -182,44 +293,94 @@ namespace
 		{
 		case WM_INPUT:
 			if (on_raw_input(lParam))
-				return DefWindowProcW(hwnd, msg, wParam, lParam); // swallowed Esc: only the system's cleanup
+				return DefWindowProcW(hwnd, msg, wParam, lParam); // a swallowed key: only the system's cleanup
 			break;
 		case WM_KEYDOWN:
 		case WM_KEYUP:
-			if (on_key(wParam, msg == WM_KEYDOWN, (lParam & (1 << 30)) != 0 && msg == WM_KEYDOWN))
+		case WM_SYSKEYDOWN:
+		case WM_SYSKEYUP:
+			if (on_key(wParam, lParam, msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN))
 				return 0;
 			break;
 		case WM_LBUTTONDOWN:
 		case WM_LBUTTONDBLCLK:
+			if (button(0, true))
+				return 0;
+			break;
 		case WM_LBUTTONUP:
-			button(0, msg != WM_LBUTTONUP);
+			button(0, false);
 			break;
 		case WM_RBUTTONDOWN:
 		case WM_RBUTTONDBLCLK:
+			if (button(1, true))
+				return 0;
+			break;
 		case WM_RBUTTONUP:
-			button(1, msg != WM_RBUTTONUP);
+			button(1, false);
 			break;
 		case WM_MBUTTONDOWN:
 		case WM_MBUTTONDBLCLK:
+			if (button(2, true))
+				return 0;
+			break;
 		case WM_MBUTTONUP:
-			button(2, msg != WM_MBUTTONUP);
+			button(2, false);
+			break;
+		case WM_XBUTTONDOWN:
+		case WM_XBUTTONDBLCLK:
+			if (forwarding())
+				return TRUE; // not forwarded to Minecraft, but Cyberpunk has no use for it while Steve is active
 			break;
 		case WM_MOUSEWHEEL:
+			if (on_wheel(wParam))
+				return 0;
+			break;
+		case WM_MOUSEHWHEEL:
 			if (forwarding())
-			{
-				g_wheel += GET_WHEEL_DELTA_WPARAM(wParam);
-				const int notches = g_wheel / WHEEL_DELTA; // + = away from the user = up
-				g_wheel -= notches * WHEEL_DELTA;
-				if (notches != 0)
-					cb::link().send({{"t", "scroll"}, {"d", notches}});
-			}
+				return 0;
 			break;
 		case WM_KILLFOCUS: // key-ups now go elsewhere
 			release_all_but_escape();
 			release(kEscape);
+			g_rawGate.reset();
+			g_messageGate.reset();
 			break;
 		}
 		return CallWindowProcW(g_original.load(), hwnd, msg, wParam, lParam);
+	}
+
+	/// The game's own GetRawInputData: while forwarding, the mouse packets it gets lose their button-down and wheel bits
+	/// (those go to Minecraft instead), but keep the motion that turns the camera and the button-up bits.
+	UINT WINAPI get_raw_input_data(HRAWINPUT raw, UINT command, LPVOID data, PUINT size, UINT headerSize)
+	{
+		const UINT copied = reinterpret_cast<GetRawInputDataFn>(g_realGetRawInputData)(raw, command, data, size, headerSize);
+		constexpr UINT kMouseBytes = sizeof(RAWINPUTHEADER) + sizeof(RAWMOUSE);
+		if (copied != UINT(-1) && command == RID_INPUT && data != nullptr && copied >= kMouseBytes && forwarding())
+		{
+			auto *packet = static_cast<RAWINPUT *>(data);
+			if (packet->header.dwType == RIM_TYPEMOUSE)
+			{
+				RAWMOUSE &mouse = packet->data.mouse;
+				if ((mouse.usButtonFlags & cb::keys::kMouseWheel) != 0 || (mouse.usButtonFlags & cb::keys::kMouseHWheel) != 0)
+					mouse.usButtonData = 0; // the wheel delta goes with the wheel bit
+				mouse.usButtonFlags = cb::keys::strip_down_and_wheel(mouse.usButtonFlags);
+			}
+		}
+		return copied;
+	}
+
+	void hook_mouse_buttons()
+	{
+		if (cb::iat::patch(GetModuleHandleW(nullptr), "USER32.dll", "GetRawInputData", reinterpret_cast<void *>(&get_raw_input_data),
+						   &g_realGetRawInputData))
+		{
+			g_mouseHooked = true;
+			cb::log::info("hooked GetRawInputData in the game's import table: mouse buttons and wheel go to Minecraft");
+		}
+		else
+			cb::log::error("could not hook GetRawInputData in the game's import table (%lu): mouse buttons and wheel also reach "
+						   "Cyberpunk",
+						   GetLastError());
 	}
 
 	BOOL CALLBACK find_window(HWND hwnd, LPARAM out)
@@ -238,16 +399,21 @@ namespace
 		return FALSE;
 	}
 
-	/// The game registers raw mouse input itself (its WM_INPUT reaches this window); registering again would replace
-	/// its flags, so only register when nobody has.
-	void ensure_raw_mouse(HWND hwnd)
+	std::vector<RAWINPUTDEVICE> registered_raw_devices()
 	{
 		UINT count = 0;
 		GetRegisteredRawInputDevices(nullptr, &count, sizeof(RAWINPUTDEVICE));
 		std::vector<RAWINPUTDEVICE> devices(count);
 		if (count > 0 && GetRegisteredRawInputDevices(devices.data(), &count, sizeof(RAWINPUTDEVICE)) == UINT(-1))
 			devices.clear();
-		for (const RAWINPUTDEVICE &d : devices)
+		return devices;
+	}
+
+	/// The game registers raw mouse input itself (its WM_INPUT reaches this window); registering again would replace
+	/// its flags, so only register when nobody has.
+	void ensure_raw_mouse(HWND hwnd)
+	{
+		for (const RAWINPUTDEVICE &d : registered_raw_devices())
 			if (d.usUsagePage == 0x01 && d.usUsage == 0x02)
 			{
 				cb::log::info("raw mouse input already registered (flags 0x%lx)", d.dwFlags);
@@ -258,6 +424,21 @@ namespace
 			cb::log::info("registered raw mouse input");
 		else
 			cb::log::error("RegisterRawInputDevices failed (%lu): no cursor in Minecraft screens", GetLastError());
+	}
+
+	/// Audit G-1: does the game read the keyboard as raw input (usage page 1, usage 6) or as WM_KEYDOWN? Logged the first
+	/// time forwarding starts, when the game has certainly registered whatever it registers.
+	void log_keyboard_path()
+	{
+		for (const RAWINPUTDEVICE &d : registered_raw_devices())
+			if (d.usUsagePage == 0x01 && d.usUsage == 0x06)
+			{
+				cb::log::info("raw keyboard input is registered (flags 0x%lx%s): keys reach the game as WM_INPUT%s", d.dwFlags,
+							  (d.dwFlags & RIDEV_NOLEGACY) != 0 ? ", no legacy messages" : "",
+							  (d.dwFlags & RIDEV_NOLEGACY) != 0 ? " only" : " and as WM_KEYDOWN");
+				return;
+			}
+		cb::log::info("raw keyboard input is not registered: keys reach the game as WM_KEYDOWN/WM_KEYUP");
 	}
 
 	void hook()
@@ -280,6 +461,7 @@ namespace
 		g_original = previous;
 		cb::log::info("hooked Cyberpunk's window");
 		ensure_raw_mouse(hwnd);
+		hook_mouse_buttons();
 	}
 }
 
@@ -289,6 +471,21 @@ namespace cb::input
 	{
 		if (g_window == nullptr)
 			hook();
+
+		static bool loggedKeyboard = false;
+		if (!loggedKeyboard && forwarding())
+		{
+			loggedKeyboard = true;
+			log_keyboard_path();
+		}
+
+		{
+			std::lock_guard<std::mutex> lock(g_lookLock);
+			if (cb::natives::lookCapture && forwarding())
+				flush_look();
+			else
+				g_look.clear();
+		}
 
 		std::lock_guard<std::mutex> lock(g_cursorLock);
 		const bool open = screen_open();
@@ -302,8 +499,36 @@ namespace cb::input
 			flush_cursor(g_cursor);
 	}
 
+	void on_minecraft_message(const nlohmann::json &message)
+	{
+		const auto type = message.find("t");
+		if (type == message.end() || *type != "binds")
+			return;
+		const auto update = keys::apply_binds(message, binds());
+		if (!update)
+		{
+			world::note_invalid(1, "binds: keys is missing or not an object");
+			return;
+		}
+		g_bindHack = update->binds.hack;
+		g_bindSkills = update->binds.skills;
+		static std::atomic<bool> warnedHack{false};
+		static std::atomic<bool> warnedSkills{false};
+		if (update->hackRejected && !warnedHack.exchange(true))
+			log::warn("binds: Minecraft's hack key cannot be used (not 1..254, taken by a movement or swallowed key, or equal to "
+					  "the skills key); keeping virtual key 0x%x (logged once)",
+					  unsigned(update->binds.hack));
+		if (update->skillsRejected && !warnedSkills.exchange(true))
+			log::warn("binds: Minecraft's skills key cannot be used (not 1..254, taken by a movement or swallowed key, or equal "
+					  "to the hack key); keeping virtual key 0x%x (logged once)",
+					  unsigned(update->binds.skills));
+	}
+
 	void shutdown()
 	{
+		if (g_mouseHooked.exchange(false))
+			iat::restore(GetModuleHandleW(nullptr), "USER32.dll", "GetRawInputData", reinterpret_cast<void *>(&get_raw_input_data),
+						 g_realGetRawInputData);
 		if (g_original.load() == nullptr)
 			return;
 		if (GetWindowLongPtrW(g_window, GWLP_WNDPROC) == reinterpret_cast<LONG_PTR>(&wnd_proc))

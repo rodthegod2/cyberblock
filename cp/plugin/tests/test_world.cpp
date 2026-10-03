@@ -65,48 +65,48 @@ TEST(block_add_becomes_the_cyberpunk_aabb_min_corner)
 {
 	const auto p = parse(R"({"t":"block","op":"add","pos":[10,4,-21]})");
 	CHECK(p.status == Status::Event);
-	CHECK(p.event.kind == EventKind::BlockAdd);
-	CHECK(approx(p.event.pos, 10, 20, 4)); // plan 1.1: block (10,4,-21) -> AABB min (10,20,4)
+	CHECK(p.events.at(0).kind == EventKind::BlockAdd);
+	CHECK(approx(p.events.at(0).pos, 10, 20, 4)); // plan 1.1: block (10,4,-21) -> AABB min (10,20,4)
 }
 
 TEST(block_remove_and_whole_numbers_written_as_floats)
 {
 	const auto p = parse(R"({"t":"block","op":"remove","pos":[-1.0,-1,-1.0]})");
 	CHECK(p.status == Status::Event);
-	CHECK(p.event.kind == EventKind::BlockRemove);
-	CHECK(approx(p.event.pos, -1, 0, -1)); // block (-1,-1,-1) -> min (-1, -(-1+1), -1)
+	CHECK(p.events.at(0).kind == EventKind::BlockRemove);
+	CHECK(approx(p.events.at(0).pos, -1, 0, -1)); // block (-1,-1,-1) -> min (-1, -(-1+1), -1)
 }
 
 TEST(explosion_converts_position_and_keeps_power_and_fire)
 {
 	const auto p = parse(R"({"t":"explosion","pos":[1.5,3,-2],"power":4,"fire":true})");
 	CHECK(p.status == Status::Event);
-	CHECK(p.event.kind == EventKind::Explosion);
-	CHECK(approx(p.event.pos, 1.5, 2, 3));
-	CHECK(approx(p.event.amount, 4));
-	CHECK(p.event.flag);
-	CHECK(!parse(R"({"t":"explosion","pos":[0,0,0],"power":1.5})").event.flag); // fire defaults to false
+	CHECK(p.events.at(0).kind == EventKind::Explosion);
+	CHECK(approx(p.events.at(0).pos, 1.5, 2, 3));
+	CHECK(approx(p.events.at(0).amount, 4));
+	CHECK(p.events.at(0).flag);
+	CHECK(!parse(R"({"t":"explosion","pos":[0,0,0],"power":1.5})").events.at(0).flag); // fire defaults to false
 }
 
 TEST(hit_converts_impulse_and_scales_damage_to_a_fraction)
 {
 	const auto p = parse(R"({"t":"hit","target":"18446744073709551615","dmg":10,"kind":"melee","impulse":[1,2,3]})");
 	CHECK(p.status == Status::Event);
-	CHECK(p.event.kind == EventKind::Hit);
-	CHECK(p.event.target == 18446744073709551615ull);
-	CHECK(approx(p.event.amount, 0.5)); // dmg / 20
-	CHECK(approx(p.event.vector, 1, -3, 2));
+	CHECK(p.events.at(0).kind == EventKind::Hit);
+	CHECK(p.events.at(0).target == 18446744073709551615ull);
+	CHECK(approx(p.events.at(0).amount, 0.5)); // dmg / 20
+	CHECK(approx(p.events.at(0).vector, 1, -3, 2));
 	const auto bare = parse(R"({"t":"hit","target":"7","dmg":3})");
 	CHECK(bare.status == Status::Event);
-	CHECK(approx(bare.event.vector, 0, 0, 0));
+	CHECK(approx(bare.events.at(0).vector, 0, 0, 0));
 }
 
 TEST(ignite_keeps_target_and_seconds)
 {
 	const auto p = parse(R"({"t":"ignite","target":"42","seconds":5})");
 	CHECK(p.status == Status::Event);
-	CHECK(p.event.kind == EventKind::Ignite);
-	CHECK(p.event.target == 42 && approx(p.event.amount, 5));
+	CHECK(p.events.at(0).kind == EventKind::Ignite);
+	CHECK(p.events.at(0).target == 42 && approx(p.events.at(0).amount, 5));
 }
 
 TEST(limits_are_inclusive)
@@ -201,7 +201,7 @@ TEST(bad_ids_are_rejected)
 	}
 	CHECK(rejected(R"({"t":"hit","target":5,"dmg":1})"));   // numbers lose precision; the wire uses strings
 	CHECK(rejected(R"({"t":"hit","target":null,"dmg":1})"));
-	CHECK(parse(R"({"t":"hit","target":"0042","dmg":1})").event.target == 42); // leading zeros are still decimal
+	CHECK(parse(R"({"t":"hit","target":"0042","dmg":1})").events.at(0).target == 42); // leading zeros are still decimal
 }
 
 TEST(bad_ignites_are_rejected)

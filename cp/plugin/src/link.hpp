@@ -2,6 +2,7 @@
 // (shared/protocol.md). A background thread connects, reconnects every second, parses what Minecraft sends and does
 // all the socket writes, so the game's threads only queue messages and never wait on the socket.
 #pragma once
+#include "gamemode.hpp"
 #include "ws.h"
 #include <atomic>
 #include <condition_variable>
@@ -19,10 +20,14 @@ namespace cb
 	{
 	public:
 		using Observer = std::function<void(const nlohmann::json &)>;
+		using DropHandler = std::function<void()>;
+
+		static constexpr int kDefaultPort = 25600;
 
 		/// Starts the background thread. `observer`, if given, sees every message Minecraft sends (on that thread,
-		/// after the link's own handling).
-		void start(Observer observer = {});
+		/// after the link's own handling); `onDrop`, if given, runs on that thread each time a linked Minecraft goes away
+		/// (disconnect or reconnect), so state kept from its messages can be forgotten. `port` is Minecraft's.
+		void start(Observer observer = {}, DropHandler onDrop = {}, int port = kDefaultPort);
 		void stop();
 
 		/// Connected and Minecraft's `hello` with proto 1 received.
@@ -31,6 +36,9 @@ namespace cb
 		int session() const { return m_session; }
 		/// The last `status.screen`: a Minecraft screen (inventory, chat, ...) is open.
 		bool screen_open() const { return m_screenOpen; }
+		/// The last `status.gm`; None before any status of this session (and after a drop), and when the value was not one of
+		/// the four modes.
+		GameMode game_mode() const { return static_cast<GameMode>(m_gameMode.load()); }
 		/// Seconds since the last `status`; 999 if there was none yet.
 		float seconds_since_status() const;
 
@@ -48,14 +56,19 @@ namespace cb
 
 		void run();
 		void handle(const std::string &text);
+		/// A linked Minecraft is gone: forget its game mode and run the drop handler.
+		void dropped();
 
 		WsClient m_ws;
 		Observer m_observer;
+		DropHandler m_onDrop;
 		std::thread m_thread;
 		std::atomic<bool> m_stop{false};
 		std::atomic<bool> m_linked{false};
 		std::atomic<bool> m_screenOpen{false};
+		int m_port = kDefaultPort;
 		std::atomic<int> m_session{0};
+		std::atomic<int> m_gameMode{static_cast<int>(GameMode::None)};
 		std::atomic<int64_t> m_lastStatus{0}; // steady_clock ticks, 0 = never
 		std::atomic<uint32_t> m_view{0};      // width << 16 | height
 		std::mutex m_lock;

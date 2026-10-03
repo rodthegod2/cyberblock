@@ -4,6 +4,7 @@
 #include "link.hpp"
 #include "log.hpp"
 #include "probes.hpp"
+#include "snapshots.hpp"
 #include "world.hpp"
 #include <RED4ext/RED4ext.hpp>
 #include <RED4ext/Scripting/Natives/Generated/Vector4.hpp>
@@ -70,14 +71,23 @@ namespace
 		return out;
 	}
 
-	/// The `dmg` kind `name` spells ("" when it is none of cb::world::kDamageKinds, which make_dmg sends as "other").
-	/// Compares hashes, so no game name pool is needed.
-	std::string_view damage_kind(RED4ext::CName name)
+	/// The entry of `names` that `name` spells ("" when it is none of them). Compares hashes, so no game name pool is needed.
+	template<size_t N>
+	std::string_view known_name(RED4ext::CName name, const char *const (&names)[N])
 	{
-		for (const char *kind : cb::world::kDamageKinds)
-			if (RED4ext::CName(kind) == name)
-				return kind;
+		for (const char *candidate : names)
+			if (RED4ext::CName(candidate) == name)
+				return candidate;
 		return {};
+	}
+
+	/// Sends `message`; without one (a bad argument) says so once per `warned` flag.
+	void send_or_warn(const std::optional<nlohmann::json> &message, bool &warned, const char *native, const char *why)
+	{
+		if (message)
+			cb::link().send(*message);
+		else if (!std::exchange(warned, true))
+			cb::log::warn("%s: %s; dropping it (logged once)", native, why);
 	}
 
 	RED4ext::Vector4 to_vector4(const cb::Vec3 &v, float w)
@@ -225,7 +235,7 @@ namespace
 
 		if (!cb::natives::active)
 			return;
-		const auto message = cb::world::make_dmg(frac, damage_kind(kind), {from.X, from.Y, from.Z}, hasFrom);
+		const auto message = cb::world::make_dmg(frac, known_name(kind, cb::world::kDamageKinds), {from.X, from.Y, from.Z}, hasFrom);
 		if (message)
 			cb::link().send(*message);
 		else
@@ -274,7 +284,8 @@ namespace
 	}
 
 	// Cyberblock_NextEvent() -> CName: pops the oldest Minecraft event and makes it current: n"explosion", n"hit",
-	// n"ignite", n"block_add" or n"block_remove"; n"" (the empty CName, hash 0) when there is none.
+	// n"ignite", n"block_add", n"block_remove", n"block_reset", n"teleport", n"lead", n"lead_release", n"pull", n"knock",
+	// n"effect", n"hack", n"scan", n"perk" or n"perkfx"; n"" (the empty CName, hash 0) when there is none.
 	void NextEvent(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
 	{
 		++frame->code;
@@ -322,6 +333,323 @@ namespace
 		++frame->code;
 		if (out)
 			*out = cb::world::events().current().flag;
+	}
+
+	// Cyberblock_EventName() -> CName: the effect name | hack name | perk id | perkfx id; n"" for the other kinds.
+	void EventName(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = RED4ext::CName(cb::world::events().current().name.c_str());
+	}
+
+	// Cyberblock_EventExtra() -> Float: the knock strength | effect amplifier; 0 for the other kinds.
+	void EventExtra(IScriptable *, CStackFrame *frame, float *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = float(cb::world::events().current().extra);
+	}
+
+	// Cyberblock_EventId() -> Int32: a hit's mob id (-1 when no mob dealt it) | a hack or scan request id; 0 otherwise.
+	void EventId(IScriptable *, CStackFrame *frame, int32_t *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = cb::world::events().current().id;
+	}
+
+	// ---- layer 3: mobs ----------------------------------------------------------------------------------------------
+
+	/// The index parameter `i: Int32` of the snapshot getters.
+	int32_t index_parameter(CStackFrame *frame)
+	{
+		int32_t i = 0;
+		RED4ext::GetParameter(frame, &i);
+		++frame->code;
+		return i;
+	}
+
+	// Cyberblock_MobCount() -> Int32: takes a snapshot of the latest `mobs` list (empty once it is 2 s old, after a link
+	// drop or a hello) that the getters read.
+	void MobCount(IScriptable *, CStackFrame *frame, int32_t *out, int64_t)
+	{
+		++frame->code;
+		const size_t count = cb::snap::mobs().snapshot(cb::snap::Clock::now());
+		if (out)
+			*out = int32_t(count);
+	}
+
+	// Cyberblock_MobId(i: Int32) -> Int32: the Minecraft entity id; 0 for an index out of range (the getters below too).
+	void MobId(IScriptable *, CStackFrame *frame, int32_t *out, int64_t)
+	{
+		const auto mob = cb::snap::mobs().at(index_parameter(frame));
+		if (out)
+			*out = mob ? mob->id : 0;
+	}
+
+	// Cyberblock_MobKind(i: Int32) -> CName: n"zombie", n"skeleton", ...
+	void MobKind(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
+	{
+		const auto mob = cb::snap::mobs().at(index_parameter(frame));
+		if (out)
+			*out = mob ? RED4ext::CName(mob->kind.c_str()) : RED4ext::CName();
+	}
+
+	// Cyberblock_MobPos(i: Int32) -> Vector4: feet, Cyberpunk space (w = 1).
+	void MobPos(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
+	{
+		const auto mob = cb::snap::mobs().at(index_parameter(frame));
+		if (out)
+			*out = mob ? to_vector4(mob->feet, 1.0f) : to_vector4({}, 0.0f);
+	}
+
+	// Cyberblock_MobYaw(i: Int32) -> Float: Cyberpunk yaw, degrees.
+	void MobYaw(IScriptable *, CStackFrame *frame, float *out, int64_t)
+	{
+		const auto mob = cb::snap::mobs().at(index_parameter(frame));
+		if (out)
+			*out = mob ? float(mob->yaw) : 0.0f;
+	}
+
+	// Cyberblock_MobSize(i: Int32) -> Vector4: X width, Y height, Z hp, W max hp.
+	void MobSize(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
+	{
+		const auto mob = cb::snap::mobs().at(index_parameter(frame));
+		if (out)
+			*out = mob ? RED4ext::Vector4{float(mob->width), float(mob->height), float(mob->hp), float(mob->maxHp)}
+					   : to_vector4({}, 0.0f);
+	}
+
+	// ---- layer 4: flight and projectiles ----------------------------------------------------------------------------
+
+	// Cyberblock_FlightActive() -> Bool: Minecraft says Steve glides (a sample older than 0.5 s counts as not).
+	void FlightActive(IScriptable *, CStackFrame *frame, bool *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = cb::snap::flight().active(cb::snap::Clock::now());
+	}
+
+	// Cyberblock_FlightSeq() -> Int32: +1 on every start and every landing.
+	void FlightSeq(IScriptable *, CStackFrame *frame, int32_t *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = cb::snap::flight().seq(cb::snap::Clock::now());
+	}
+
+	// Cyberblock_FlightPos() -> Vector4: feet, Cyberpunk space, p + v * min(age, 0.1 s) while flying, else the landing spot.
+	void FlightPos(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = to_vector4(cb::snap::flight().pos(cb::snap::Clock::now()), 1.0f);
+	}
+
+	// Cyberblock_FlightVelocity() -> Vector4: m/s, Cyberpunk space (w = 0).
+	void FlightVelocity(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = to_vector4(cb::snap::flight().velocity(cb::snap::Clock::now()), 0.0f);
+	}
+
+	// Cyberblock_FlightYaw() -> Float: Cyberpunk yaw, degrees.
+	void FlightYaw(IScriptable *, CStackFrame *frame, float *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = float(cb::snap::flight().yaw(cb::snap::Clock::now()));
+	}
+
+	// Cyberblock_FlightPitch() -> Float: Minecraft pitch, degrees (positive = down).
+	void FlightPitch(IScriptable *, CStackFrame *frame, float *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = float(cb::snap::flight().pitch(cb::snap::Clock::now()));
+	}
+
+	// Cyberblock_ProjCount() -> Int32: takes a snapshot of the latest `proj` list (empty once it is 0.5 s old).
+	void ProjCount(IScriptable *, CStackFrame *frame, int32_t *out, int64_t)
+	{
+		++frame->code;
+		const size_t count = cb::snap::projectiles().snapshot(cb::snap::Clock::now());
+		if (out)
+			*out = int32_t(count);
+	}
+
+	// Cyberblock_ProjPos(i: Int32) -> Vector4: Cyberpunk space (w = 1); zeros for an index out of range.
+	void ProjPos(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
+	{
+		const auto p = cb::snap::projectiles().at(index_parameter(frame));
+		if (out)
+			*out = p ? to_vector4(p->pos, 1.0f) : to_vector4({}, 0.0f);
+	}
+
+	// Cyberblock_ProjVelocity(i: Int32) -> Vector4: m/s, Cyberpunk space (w = 0).
+	void ProjVelocity(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
+	{
+		const auto p = cb::snap::projectiles().at(index_parameter(frame));
+		if (out)
+			*out = to_vector4(p ? p->velocity : cb::Vec3{}, 0.0f);
+	}
+
+	// Cyberblock_ProjGravity(i: Int32) -> Float: m/s^2 along -Z.
+	void ProjGravity(IScriptable *, CStackFrame *frame, float *out, int64_t)
+	{
+		const auto p = cb::snap::projectiles().at(index_parameter(frame));
+		if (out)
+			*out = p ? float(p->gravity) : 0.0f;
+	}
+
+	// ---- messages to Minecraft: layers 3-6 --------------------------------------------------------------------------
+
+	// Cyberblock_MobDamage(id: Int32, frac: Float, by: Uint64, hasBy: Bool) -> Void: a Cyberpunk NPC (`by`, when `hasBy`)
+	// damaged the puppet of Minecraft mob `id` by `frac` of its max health. Dropped while the mashup is not Active.
+	void MobDamage(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		int32_t id = 0;
+		float frac = 0.0f;
+		uint64_t by = 0;
+		bool hasBy = false;
+		RED4ext::GetParameter(frame, &id);
+		RED4ext::GetParameter(frame, &frac);
+		RED4ext::GetParameter(frame, &by);
+		RED4ext::GetParameter(frame, &hasBy);
+		++frame->code;
+
+		if (!cb::natives::active)
+			return;
+		static bool warned = false;
+		send_or_warn(cb::world::make_mobdmg(id, frac, by, hasBy), warned, "Cyberblock_MobDamage",
+					 "the mob id is negative or frac is not a finite number");
+	}
+
+	// Cyberblock_SubmitProjectileHits(hits: array<Vector4>) -> Void: Cyberpunk-space surface points on predicted projectile
+	// paths; Minecraft makes the block cells around them temporary barriers. Dropped while the mashup is not Active.
+	void SubmitProjectileHits(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		RED4ext::DynArray<RED4ext::Vector4> hits;
+		RED4ext::GetParameter(frame, &hits);
+		++frame->code;
+
+		if (!cb::natives::active)
+			return;
+		const std::vector<cb::Vec3> points = to_vec3(hits);
+		if (const auto message = cb::world::make_pcells(points))
+			cb::link().send(*message);
+	}
+
+	// Cyberblock_Unlead(target: Uint64) -> Void: Cyberpunk gave up the tether on `target` (gone, or snapped).
+	void Unlead(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		uint64_t target = 0;
+		RED4ext::GetParameter(frame, &target);
+		++frame->code;
+		cb::link().send(cb::world::make_unlead(target));
+	}
+
+	// Cyberblock_ScanResult(id: Int32, ok: Bool, target: Uint64, name: String, faction: String, threat: CName, hp: Float,
+	// device: Bool, pos: Vector4, size: Vector4) -> Void: the reply to a `scan` request. Always sent (while linked): a
+	// request must be answered. `pos` is feet in Cyberpunk space, `size` is X width, Y height.
+	void ScanResult(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		int32_t id = 0;
+		bool ok = false;
+		uint64_t target = 0;
+		RED4ext::CString name;
+		RED4ext::CString faction;
+		RED4ext::CName threat;
+		float hp = 0.0f;
+		bool device = false;
+		RED4ext::Vector4 pos;
+		RED4ext::Vector4 size;
+		RED4ext::GetParameter(frame, &id);
+		RED4ext::GetParameter(frame, &ok);
+		RED4ext::GetParameter(frame, &target);
+		RED4ext::GetParameter(frame, &name);
+		RED4ext::GetParameter(frame, &faction);
+		RED4ext::GetParameter(frame, &threat);
+		RED4ext::GetParameter(frame, &hp);
+		RED4ext::GetParameter(frame, &device);
+		RED4ext::GetParameter(frame, &pos);
+		RED4ext::GetParameter(frame, &size);
+		++frame->code;
+
+		static bool warned = false;
+		send_or_warn(cb::world::make_scaninfo(id, ok, target, name.c_str(), faction.c_str(),
+											  known_name(threat, cb::world::kThreatLevels), hp, device, {pos.X, pos.Y, pos.Z},
+											  size.X, size.Y),
+					 warned, "Cyberblock_ScanResult", "the request id is negative");
+	}
+
+	// Cyberblock_HackResult(id: Int32, ok: Bool, reason: String) -> Void: the reply to a `hack` request. Always sent (while
+	// linked). `reason` is "" on success.
+	void HackResult(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		int32_t id = 0;
+		bool ok = false;
+		RED4ext::CString reason;
+		RED4ext::GetParameter(frame, &id);
+		RED4ext::GetParameter(frame, &ok);
+		RED4ext::GetParameter(frame, &reason);
+		++frame->code;
+
+		static bool warned = false;
+		send_or_warn(cb::world::make_hackresult(id, ok, reason.c_str()), warned, "Cyberblock_HackResult",
+					 "the request id is negative");
+	}
+
+	// Cyberblock_Killed(target: Uint64, vehicle: Bool, hostile: Bool) -> Void: an NPC or vehicle that V damaged died.
+	void Killed(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		uint64_t target = 0;
+		bool vehicle = false;
+		bool hostile = false;
+		RED4ext::GetParameter(frame, &target);
+		RED4ext::GetParameter(frame, &vehicle);
+		RED4ext::GetParameter(frame, &hostile);
+		++frame->code;
+		cb::link().send(cb::world::make_killed(target, vehicle, hostile));
+	}
+
+	// Cyberblock_SetStance(crouched: Bool) -> Void: V is crouched; carried as `cam.cr` until it changes.
+	void SetStance(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		bool crouched = false;
+		RED4ext::GetParameter(frame, &crouched);
+		++frame->code;
+		cb::natives::crouched = crouched;
+	}
+
+	// Cyberblock_GameMode() -> CName: Minecraft's last `status.gm` (n"survival", n"creative", n"adventure", n"spectator"),
+	// n"" before any status in this session.
+	void GameModeNative(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = RED4ext::CName(cb::game_mode_name(cb::link().game_mode()));
+	}
+
+	// Cyberblock_SetMenu(open: Bool) -> Void: a Cyberpunk menu is open; input forwarding pauses until it closes.
+	void SetMenu(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		bool open = false;
+		RED4ext::GetParameter(frame, &open);
+		++frame->code;
+		cb::natives::menuOpen = open;
+	}
+
+	// Cyberblock_SetLookCapture(on: Bool) -> Void: the camera-only flight fallback: while on, raw mouse movement goes to
+	// Minecraft as `look` deltas.
+	void SetLookCapture(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		bool on = false;
+		RED4ext::GetParameter(frame, &on);
+		++frame->code;
+		cb::natives::lookCapture = on;
 	}
 
 	// Cyberblock_Log(msg: String) -> Void
@@ -382,6 +710,38 @@ namespace cb::natives
 		add(rtti, "Cyberblock_EventAmount", &EventAmount, "Float");
 		add(rtti, "Cyberblock_EventVector", &EventVector, "Vector4");
 		add(rtti, "Cyberblock_EventFlag", &EventFlag, "Bool");
+		add(rtti, "Cyberblock_EventName", &EventName, "CName");
+		add(rtti, "Cyberblock_EventExtra", &EventExtra, "Float");
+		add(rtti, "Cyberblock_EventId", &EventId, "Int32");
+		add(rtti, "Cyberblock_MobCount", &MobCount, "Int32");
+		add(rtti, "Cyberblock_MobId", &MobId, "Int32", {{"Int32", "i"}});
+		add(rtti, "Cyberblock_MobKind", &MobKind, "CName", {{"Int32", "i"}});
+		add(rtti, "Cyberblock_MobPos", &MobPos, "Vector4", {{"Int32", "i"}});
+		add(rtti, "Cyberblock_MobYaw", &MobYaw, "Float", {{"Int32", "i"}});
+		add(rtti, "Cyberblock_MobSize", &MobSize, "Vector4", {{"Int32", "i"}});
+		add(rtti, "Cyberblock_FlightActive", &FlightActive, "Bool");
+		add(rtti, "Cyberblock_FlightSeq", &FlightSeq, "Int32");
+		add(rtti, "Cyberblock_FlightPos", &FlightPos, "Vector4");
+		add(rtti, "Cyberblock_FlightVelocity", &FlightVelocity, "Vector4");
+		add(rtti, "Cyberblock_FlightYaw", &FlightYaw, "Float");
+		add(rtti, "Cyberblock_FlightPitch", &FlightPitch, "Float");
+		add(rtti, "Cyberblock_ProjCount", &ProjCount, "Int32");
+		add(rtti, "Cyberblock_ProjPos", &ProjPos, "Vector4", {{"Int32", "i"}});
+		add(rtti, "Cyberblock_ProjVelocity", &ProjVelocity, "Vector4", {{"Int32", "i"}});
+		add(rtti, "Cyberblock_ProjGravity", &ProjGravity, "Float", {{"Int32", "i"}});
+		add(rtti, "Cyberblock_MobDamage", &MobDamage, nullptr,
+			{{"Int32", "id"}, {"Float", "frac"}, {"Uint64", "by"}, {"Bool", "hasBy"}});
+		add(rtti, "Cyberblock_SubmitProjectileHits", &SubmitProjectileHits, nullptr, {{"array:Vector4", "hits"}});
+		add(rtti, "Cyberblock_Unlead", &Unlead, nullptr, {{"Uint64", "target"}});
+		add(rtti, "Cyberblock_ScanResult", &ScanResult, nullptr,
+			{{"Int32", "id"}, {"Bool", "ok"}, {"Uint64", "target"}, {"String", "name"}, {"String", "faction"},
+			 {"CName", "threat"}, {"Float", "hp"}, {"Bool", "device"}, {"Vector4", "pos"}, {"Vector4", "size"}});
+		add(rtti, "Cyberblock_HackResult", &HackResult, nullptr, {{"Int32", "id"}, {"Bool", "ok"}, {"String", "reason"}});
+		add(rtti, "Cyberblock_Killed", &Killed, nullptr, {{"Uint64", "target"}, {"Bool", "vehicle"}, {"Bool", "hostile"}});
+		add(rtti, "Cyberblock_SetStance", &SetStance, nullptr, {{"Bool", "crouched"}});
+		add(rtti, "Cyberblock_GameMode", &GameModeNative, "CName");
+		add(rtti, "Cyberblock_SetMenu", &SetMenu, nullptr, {{"Bool", "open"}});
+		add(rtti, "Cyberblock_SetLookCapture", &SetLookCapture, nullptr, {{"Bool", "on"}});
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});
 		log::info("redscript natives registered");
 	}

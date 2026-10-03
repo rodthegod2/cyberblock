@@ -1,6 +1,7 @@
 // Checks the C++ mirror against tools/cbmath.py through shared/vectors.json (CB_VECTORS, set by CMake).
 #include "cbmath.hpp"
 #include "test.hpp"
+#include "world.hpp"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -152,6 +153,92 @@ TEST(mc_block_vectors)
 		const cb::Aabb box = cb::mc_block_to_cp_aabb(b.at(0), b.at(1), b.at(2));
 		CHECK(same(box.min, {lo.at(0), lo.at(1), lo.at(2)}));
 		CHECK(same(box.max, {hi.at(0), hi.at(1), hi.at(2)}));
+	}
+}
+
+// ---- layers 3-6 (plan 2026-10-03 section 1.1): yaw and velocity ---------------------------------------------------------
+
+namespace
+{
+	// Minecraft yaw m -> Cyberpunk yaw a = 180 - m, normalised to (-180, 180]; computed by hand from the section 1.1 formula.
+	struct YawCase
+	{
+		double mc, cp;
+	};
+	const YawCase kYawCases[] = {
+		{0.0, 180.0}, {90.0, 90.0}, {-90.0, -90.0}, {180.0, 0.0}, {-180.0, 0.0}, {359.5, -179.5},
+		{45.0, 135.0}, {-45.0, -135.0}, {1.0, 179.0}, {-1.0, -179.0}, {179.0, 1.0}, {-179.0, -1.0},
+		{360.0, 180.0}, {-360.0, 180.0}, {720.0, 180.0},
+	};
+}
+
+TEST(mc_yaw_cases)
+{
+	for (const YawCase &c : kYawCases)
+	{
+		const double got = cb::mc_yaw_to_cp_yaw(c.mc);
+		CHECK(close(got, c.cp));
+		CHECK(got > -180.0 && got <= 180.0); // (-180, 180]: a half-turn is +180, never -180
+	}
+}
+
+TEST(mc_yaw_round_trips_with_cp_yaw_to_mc_yaw)
+{
+	// m = 180 - a is its own inverse: layer 2's cp_yaw_to_mc_yaw undoes mc_yaw_to_cp_yaw (same turn, so compare modulo 360)
+	for (double m = -360.0; m <= 360.0; m += 22.5)
+	{
+		const double back = cb::world::cp_yaw_to_mc_yaw(cb::mc_yaw_to_cp_yaw(m));
+		CHECK(same_yaw(back, m));
+	}
+}
+
+TEST(mc_yaw_agrees_with_the_quaternion_conversion)
+{
+	// Minecraft yaw m faces (-sin m, cos m) in Minecraft, so a Cyberpunk entity with yaw a = mc_yaw_to_cp_yaw(m) (a turn of
+	// a degrees about +Z: quaternion (0, 0, sin(a/2), cos(a/2))) has the forward vector cbmath turns back into yaw m
+	for (double m = -180.0; m <= 180.0; m += 15.0)
+	{
+		const double h = cb::mc_yaw_to_cp_yaw(m) * 3.14159265358979323846 / 360.0;
+		CHECK(same_yaw(cb::cp_quat_to_mc_yaw_pitch(0, 0, std::sin(h), std::cos(h)).yaw, m));
+	}
+}
+
+TEST(mc_vel_cases)
+{
+	const cb::Vec3 v = cb::mc_vel_to_cp(1.0, 2.0, 3.0);
+	CHECK(v.x == 1.0 && v.y == -3.0 && v.z == 2.0); // (x, -z, y): up (+Y) is up (+Z), south (+Z) is -Y
+	CHECK(same(cb::mc_vel_to_cp(0.0, 0.0, 0.0), {0.0, 0.0, 0.0}));
+	CHECK(same(cb::mc_vel_to_cp(0.0, -1.5, 0.0), {0.0, 0.0, -1.5})); // falling stays falling
+	CHECK(same(cb::mc_vel_to_cp(-200.0, 200.0, -200.0), {-200.0, 200.0, 200.0}));
+	CHECK(same(cb::mc_vel_to_cp(12.25, -3.5, -7.75), {12.25, 7.75, -3.5}));
+	// no offset (unlike a block corner), and the same map as a position
+	const cb::Vec3 p = cb::mc_to_cp_pos(4.0, 5.0, 6.0);
+	CHECK(same(cb::mc_vel_to_cp(4.0, 5.0, 6.0), p));
+}
+
+// P adds `mc_yaw` ({mc, cp}) and `mc_vel` ({mc, cp}) to shared/vectors.json (plan section 1.7). The literal cases above stand
+// alone; these run on the shared file as soon as P's cases are merged (until then they report a skip).
+TEST(mc_yaw_vectors)
+{
+	const nlohmann::json all = vectors();
+	if (!all.contains("mc_yaw"))
+		return (void)std::puts("  (skipped: shared/vectors.json has no mc_yaw cases yet)");
+	CHECK(all.at("mc_yaw").size() >= 6);
+	for (const auto &c : all.at("mc_yaw"))
+		CHECK(same_yaw(cb::mc_yaw_to_cp_yaw(c.at("mc")), c.at("cp")));
+}
+
+TEST(mc_vel_vectors)
+{
+	const nlohmann::json all = vectors();
+	if (!all.contains("mc_vel"))
+		return (void)std::puts("  (skipped: shared/vectors.json has no mc_vel cases yet)");
+	CHECK(all.at("mc_vel").size() >= 6);
+	for (const auto &c : all.at("mc_vel"))
+	{
+		const auto &mc = c.at("mc");
+		const auto &cp = c.at("cp");
+		CHECK(same(cb::mc_vel_to_cp(mc.at(0), mc.at(1), mc.at(2)), {cp.at(0), cp.at(1), cp.at(2)}));
 	}
 }
 
