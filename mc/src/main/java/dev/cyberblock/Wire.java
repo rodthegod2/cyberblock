@@ -1,9 +1,10 @@
 package dev.cyberblock;
 
 import java.util.Locale;
+import net.minecraft.core.BlockPos;
 
 /**
- * Minecraft to Cyberpunk messages of layer 2 (see shared/protocol.md), one JSON object each. Everything is already in
+ * Minecraft to Cyberpunk messages of layers 2-5 (see shared/protocol.md), one JSON object each. Everything is already in
  * Minecraft convention: the host converts to Cyberpunk space. Numbers are never NaN or infinite: a non-finite value
  * would make the line invalid JSON, so it is sent as 0 (the callers have validated their inputs; this is the last guard).
  */
@@ -18,6 +19,17 @@ public final class Wire {
 	/** {"t":"block","op":"add"|"remove","pos":[bx,by,bz]}: a solid non-barrier block appeared or went. */
 	public static String block(final BlockEvents.Op op, final int x, final int y, final int z) {
 		return String.format(Locale.ROOT, "{\"t\":\"block\",\"op\":\"%s\",\"pos\":[%d,%d,%d]}", op == BlockEvents.Op.ADD ? "add" : "remove", x, y, z);
+	}
+
+	/** {"t":"blocks","reset":bool,"c":[x,y,z, ...]}: solid blocks (packed BlockPos), the resync after a host hello. */
+	public static String blocks(final boolean reset, final long[] cells) {
+		StringBuilder b = new StringBuilder(32 + cells.length * 24).append("{\"t\":\"blocks\",\"reset\":").append(reset).append(",\"c\":[");
+		for (int i = 0; i < cells.length; i++) {
+			long c = cells[i];
+			b.append(i == 0 ? "" : ",").append(BlockPos.getX(c)).append(',').append(BlockPos.getY(c)).append(',').append(BlockPos.getZ(c));
+		}
+
+		return b.append("]}").toString();
 	}
 
 	/** {"t":"explosion","pos":[x,y,z],"power":radius,"fire":bool}. */

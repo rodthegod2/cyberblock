@@ -83,6 +83,7 @@ public final class HostLink extends WebSocketServer {
 	public void onClose(final WebSocket conn, final int code, final String reason, final boolean remote) {
 		Cyberblock.LOG.info("host disconnected ({} {})", code, reason);
 		if (this.getConnections().isEmpty()) {
+			WorldBridge.hostGone();
 			Minecraft minecraft = Minecraft.getInstance();
 			minecraft.execute(() -> ClientInput.reset(minecraft));
 		}
@@ -113,6 +114,9 @@ public final class HostLink extends WebSocketServer {
 					if (proto != PROTOCOL) {
 						Cyberblock.LOG.warn("host speaks protocol {}, this mod speaks {}: closing the link", proto, PROTOCOL);
 						conn.close(CloseFrame.PROTOCOL_ERROR, "protocol " + proto + " not supported");
+					} else {
+						// a new host session (or either side restarted): it knows none of our blocks
+						WorldBridge.hostHello();
 					}
 				}
 				case "cam" -> HostState.update(m);

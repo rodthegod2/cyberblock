@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -22,12 +23,26 @@ public final class WorldBridge {
 	private static final BlockEvents.Outbox blockEvents = new BlockEvents.Outbox();
 	/** While placing or removing the host's own ground: those changes aren't news to the host (server thread only). */
 	private static boolean placingGround;
+	/** The solid blocks of the world the host plays in (server thread; null while no world runs). */
+	private static PlacedBlocks placed;
+	/** The resync the host gets after its hello (server thread). */
+	private static final BlockSync resync = new BlockSync();
+	/** A host said hello and has not gone: a world that starts now resyncs it. */
+	private static volatile boolean linked;
+	/** A block change the host never heard of (it was not active then): resync once it is again (server thread). */
+	private static boolean missed;
+	private static boolean wasActive;
 
 	private WorldBridge() {
 	}
 
+	/** Server thread, when the world has started. */
 	static void attach(final MinecraftServer s) {
 		server = s;
+		placed = s.overworld().getDataStorage().computeIfAbsent(PlacedBlocks.TYPE);
+		if (linked) {
+			startResync(s);
+		}
 	}
 
 	/** Server thread, before the world is saved: take our barriers out so the save is vanilla. */
@@ -35,9 +50,55 @@ public final class WorldBridge {
 		MinecraftServer s = server;
 		server = null;
 		blockEvents.clear();
+		resync.clear();
+		placed = null;
+		missed = wasActive = false;
+		if (linked) {
+			// this world's blocks are leaving Night City with it
+			Cyberblock.events.accept(Wire.blocks(true, new long[0]));
+		}
+
 		if (s != null) {
 			removeBarriers(s.overworld());
 		}
+	}
+
+	/** Link thread: the host said hello (a new session, or a restart of either side): it gets every block again. */
+	public static void hostHello() {
+		linked = true;
+		MinecraftServer s = server;
+		if (s != null) {
+			s.execute(() -> startResync(s));
+		}
+	}
+
+	/** Link thread: the last host connection closed. */
+	public static void hostGone() {
+		linked = false;
+		MinecraftServer s = server;
+		if (s != null) {
+			s.execute(resync::clear);
+		}
+	}
+
+	/** Server thread: start sending every block again, nearest to Steve first. Pending live events are in the snapshot already. */
+	private static void startResync(final MinecraftServer s) {
+		PlacedBlocks p = placed;
+		if (p == null || server != s) {
+			return;
+		}
+
+		long[] cells = p.snapshot();
+		List<ServerPlayer> players = s.getPlayerList().getPlayers();
+		if (!players.isEmpty()) {
+			BlockPos at = players.get(0).blockPosition();
+			BlockSync.nearestFirst(cells, at.getX(), at.getY(), at.getZ());
+		}
+
+		blockEvents.clear();
+		missed = false;
+		resync.start(cells);
+		Cyberblock.LOG.info("block resync: {} cells", cells.length);
 	}
 
 	/** Night City ground from the host: barriers, only into air. */
@@ -135,9 +196,20 @@ public final class WorldBridge {
 		return server;
 	}
 
-	/** Every server tick: a few block changes for the host. */
+	/** Every server tick: the resync's next message, then a few live block changes for the host (in that order). */
 	static void tick(final MinecraftServer s) {
-		if (!Cyberblock.active) {
+		boolean active = Cyberblock.active;
+		if (active && !wasActive && missed && linked) {
+			startResync(s);
+		}
+
+		wasActive = active;
+		String blocks = resync.next();
+		if (blocks != null) {
+			Cyberblock.events.accept(blocks);
+		}
+
+		if (!active) {
 			blockEvents.clear(); // nobody is listening: do not replay stale changes when the host comes back
 			return;
 		}
@@ -150,15 +222,28 @@ public final class WorldBridge {
 		return Cyberblock.active && level == level.getServer().overworld();
 	}
 
-	/** Server thread, from LevelChunk.setBlockState: queue the change when the host's collision is affected. */
+	/**
+	 * Server thread, from LevelChunk.setBlockState: when the host's collision is affected, record the change (PlacedBlocks, always)
+	 * and queue it for the host (while it is active; otherwise it gets a resync when it is again).
+	 */
 	public static void onBlockChanged(final ServerLevel level, final BlockPos pos, final BlockState oldState, final BlockState newState) {
-		if (!hostSees(level)) {
+		PlacedBlocks p = placed;
+		if (p == null || level != level.getServer().overworld()) {
 			return;
 		}
 
 		BlockEvents.Op op = BlockEvents.change(oldState, newState, placingGround ? BlockEvents.Cause.HOST_GROUND : BlockEvents.Cause.WORLD);
-		if (op != null) {
-			blockEvents.put(pos.asLong(), op);
+		if (op == null) {
+			return;
+		}
+
+		long cell = pos.asLong();
+		p.apply(cell, op);
+		resync.forget(cell);
+		if (Cyberblock.active) {
+			blockEvents.put(cell, op);
+		} else {
+			missed = true;
 		}
 	}
 }
