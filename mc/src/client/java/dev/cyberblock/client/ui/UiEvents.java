@@ -54,14 +54,19 @@ final class UiEvents {
 
 	/** {@code notify}: a Minecraft toast. */
 	static void notify(final UiModel.Notify notify) {
+		Cyberblock.LOG.debug("ui: notify {}", notify.kind());
+		CyberToast.notify(Minecraft.getInstance().gui.toastManager(), notify);
 	}
 
 	/** {@code call}: the call toast. */
 	static void call(final UiModel.Call call) {
+		CyberToast.call(Minecraft.getInstance().gui.toastManager(), call);
 	}
 
 	/** The UI data was dropped (new host session, Cyberblock off, link gone). */
 	static void reset() {
-		Waypoints.clear(Minecraft.getInstance());
+		Minecraft minecraft = Minecraft.getInstance();
+		Waypoints.clear(minecraft);
+		CyberToast.hideCall(minecraft.gui.toastManager());
 	}
 }
