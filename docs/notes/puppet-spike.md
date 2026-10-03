@@ -79,7 +79,8 @@ target V; damage still lands on Steve through `Health.reds`.
 - **Capsule size.** No template lets a script resize an NPC capsule, so every puppet uses the record's human
   capsule (about 0.6 × 1.8 m). `MobSize` is only logged. A spider's puppet is taller than the spider, and NPCs aim
   at human height, but every hit on the puppet still counts.
-- **Merge gate for `l36/S2`: `Npcs.reds` (S1-owned) must skip puppets.** Puppets are attached, living `NPCPuppet`s
+- **Merge gate for `l36/S2`: `Npcs.reds` (S1-owned) must skip puppets** (applied on main after the merge, in
+  `CyberblockNpcs.Counts`). Puppets are attached, living `NPCPuppet`s
   near V and friendly to V, so S1's registry (`Entity/AfterAttach` with `EntityTarget.Type(n"NPCPuppet")`) picks them
   up. Without a filter, every mob gets a non-hostile human proxy standing on it in Minecraft, which Steve and the mobs
   can target (those hits are swallowed). `l36/S1` 41f14f5 has no such filter. Apply this to `CyberblockNpcs.Counts`

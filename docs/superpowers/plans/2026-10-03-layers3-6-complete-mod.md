@@ -1037,6 +1037,9 @@ its reason; `needsInGame` has audit G-3…G-8 plus a check per hack and per buff
   - flint and steel ignites an NPC.
 - **Layer 3:**
   - spawn eggs from the kit next to pedestrians: a zombie kills a pedestrian;
+  - puppets get no proxy: with a zombie and a creeper next to Steve and pedestrians, the log's `npcs: N sent` count
+    does not grow by one per mob, the creeper walks to a pedestrian before it fuses, and Steve's sword damages the
+    zombie on the first swing (no invisible human proxy standing on the mob);
   - with heat 2, an NCPD officer kills a skeleton (puppets). If not, `CyberblockPuppets.SetEnabled(false)` and confirm
     the fallback.
 - **Layer 4:**

@@ -11,8 +11,9 @@
 // (the native name of VehicleObject, RED4ext.SDK vehicle/BaseObject.hpp). Handlers registered from a non-service
 // object live for the session (CallbackLifetime::Session) and hold the object weakly.
 //
-// Left out: dead or destroyed ones (ScriptedPuppet.IsAlive + NPCPuppet.IsDead, VehicleObject.IsDestroyed) and NPCs
-// mounted in a vehicle (their vehicle's proxy stands for them, VehicleComponent.IsMountedToVehicle).
+// Left out: dead or destroyed ones (ScriptedPuppet.IsAlive + NPCPuppet.IsDead, VehicleObject.IsDestroyed), NPCs
+// mounted in a vehicle (their vehicle's proxy stands for them, VehicleComponent.IsMountedToVehicle) and Cyberblock's
+// own mob puppets (CyberblockPuppets.IsPuppet).
 //
 // Yaw: degrees counter-clockwise from +Y about +Z, from Entity.GetWorldForward (0 = facing +Y, 90 = facing -X), the
 // EulerAngles yaw convention the DLL's cp_yaw_to_mc_yaw (180 - yaw) expects. AtanF(a, b) is atan2(a, b) (as used in
@@ -140,6 +141,10 @@ public class CyberblockNpcs {
     }
     let npc = object as NPCPuppet;
     if !IsDefined(npc) {
+      return false;
+    }
+    // Our own mob stand-ins (Puppets.reds): a proxy on every mob would draw the mobs' and Steve's attacks.
+    if CyberblockPuppets.IsPuppet(game, npc.GetEntityID()) {
       return false;
     }
     if !ScriptedPuppet.IsAlive(npc) || npc.IsDead() {
