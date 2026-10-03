@@ -1,6 +1,7 @@
 // Steve's health is the only health. While Active, V is Invulnerable through our god mode (source n"Cyberblock",
-// PlayerState.reds), yet every hit the game aims at V still runs through the damage pipeline to its would-be damage,
-// which goes to Minecraft (Cyberblock_Damage -> dmg {frac, kind, from}) instead of to V.
+// PlayerState.reds), and in the Vehicle state through n"CyberblockVehicle" (CyberblockCreative below), yet every hit
+// the game aims at V still runs through the damage pipeline to its would-be damage, which goes to Minecraft
+// (Cyberblock_Damage -> dmg {frac, kind, from}) instead of to V.
 //
 // 2.31 damage pipeline (decompiled scripts, DamageSystem): ProcessPipeline -> PreProcess -> InvulnerabilityCheck adds
 // hitFlag.DealNoDamage (source n"invulnerable") for an Invulnerable target, and Process returns early on that flag, so
@@ -79,8 +80,8 @@ private final func IsImmune(target: ref<GameObject>, statusEffectID: TweakDBID, 
 }
 
 public abstract class CyberblockHealth {
-  // True while V's invulnerability comes from Cyberblock alone, i.e. Cyberblock is Active and nothing else in the game
-  // made V invulnerable.
+  // True while V's invulnerability comes from Cyberblock alone, i.e. Cyberblock is Active (n"Cyberblock") or in the
+  // Vehicle state (n"CyberblockVehicle", CyberblockCreative) and nothing else in the game made V invulnerable.
   public static func Covers(target: wref<GameObject>) -> Bool {
     let player = target as PlayerPuppet;
     if !IsDefined(player) {
@@ -91,7 +92,7 @@ public abstract class CyberblockHealth {
       return false;
     }
     for source in sources {
-      if NotEquals(source, n"Cyberblock") {
+      if NotEquals(source, n"Cyberblock") && NotEquals(source, n"CyberblockVehicle") {
         return false;
       }
     }
@@ -177,27 +178,28 @@ public abstract class CyberblockHealth {
   }
 }
 
-// Creative (plan 2026-10-03 S1.3): in Minecraft's creative mode Steve cannot be hurt, so neither can V where Steve's
-// health does not cover V: in the Vehicle state (on foot, Active already makes V invulnerable through the report
-// above). The source is n"CyberblockCreative", not n"Cyberblock", so Covers stays false (nothing is reported) and the
-// Active-gated wraps (Disable.reds, IsImmune above) stay off. Removed in every other state or game mode, before
-// saves, on load and at Off. GodModeSystem.AddGodMode/ClearGodMode as PlayerState.reds.
+// Vehicle state (spec: Steve's health is the only health, V never dies while Cyberblock is on). On foot, Active makes
+// V invulnerable through PlayerState's god mode; in a vehicle this one does, in every Minecraft game mode, with the
+// source n"CyberblockVehicle". Covers accepts it, so hits on V in a car (crashes, gunfire, the car exploding) go to
+// Steve exactly as on foot (in creative Minecraft ignores them). The Active-only wraps (Disable.reds, Kills.reds) test
+// n"Cyberblock" alone and stay off in a vehicle. Removed in every other state (the next tick after leaving Vehicle,
+// for Active, Lost or Off), before saves, on load and at session end. GodModeSystem.AddGodMode/ClearGodMode as
+// PlayerState.reds. The class keeps its first name (it was creative-only), which Cyberblock.reds calls.
 public class CyberblockCreative {
   private let applied: Bool;
 
   public static func Source() -> CName {
-    return n"CyberblockCreative";
+    return n"CyberblockVehicle";
   }
 
   // Every tick, except while a save is written. vehicle: the Cyberblock state is Vehicle.
   public func Update(player: ref<PlayerPuppet>, vehicle: Bool) -> Void {
-    let on = vehicle && Equals(Cyberblock_GameMode(), n"creative");
-    if on && !this.applied {
+    if vehicle && !this.applied {
       GameInstance.GetGodModeSystem(player.GetGame()).AddGodMode(player.GetEntityID(), gameGodModeType.Invulnerable, CyberblockCreative.Source());
       this.applied = true;
-      Cyberblock_Log("creative: V invulnerable in the vehicle");
+      Cyberblock_Log("vehicle: V invulnerable in the vehicle, hits go to Steve");
     } else {
-      if !on {
+      if !vehicle {
         this.Clear(player);
       }
     }
@@ -209,11 +211,13 @@ public class CyberblockCreative {
     }
     GameInstance.GetGodModeSystem(player.GetGame()).ClearGodMode(player.GetEntityID(), CyberblockCreative.Source());
     this.applied = false;
-    Cyberblock_Log("creative: V vulnerable again");
+    Cyberblock_Log("vehicle: V's own god mode removed");
   }
 
-  // On load: a save may still carry it.
+  // On load: a save may still carry it (or the creative-only source of earlier versions).
   public static func ClearLeftovers(player: ref<PlayerPuppet>) -> Void {
-    GameInstance.GetGodModeSystem(player.GetGame()).ClearGodMode(player.GetEntityID(), CyberblockCreative.Source());
+    let godModes = GameInstance.GetGodModeSystem(player.GetGame());
+    godModes.ClearGodMode(player.GetEntityID(), CyberblockCreative.Source());
+    godModes.ClearGodMode(player.GetEntityID(), n"CyberblockCreative");
   }
 }
