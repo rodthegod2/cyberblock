@@ -202,7 +202,9 @@ sent as `hit` and applied as real Cyberpunk damage, so heat, NCPD, ragdolls and 
 - **Fishing rod:** hook a proxy and reel it in (`pull`).
 - **Wind charge:** `knock` blast.
 - **Shield:** while raised and facing the shooter, Cyberpunk gunfire damage to Steve is blocked.
-- **Potions:** invisibility → optical camo, speed → sprint boost, others → closest Cyberpunk status effect.
+- **Potions:** invisibility → optical camo, speed → sprint boost, others → closest Cyberpunk status effect. As built
+  (plan 2026-10-03 §1.5), only invisibility, speed, slowness, jump boost, nausea, blindness and darkness are mapped;
+  every other effect is ignored on V (logged once), and damage-over-time effects are never mapped.
 - **Done when:** drag a pedestrian with a lead and reel a car with a fishing rod.
 
 ### Layer 6: Cyberpunk in Minecraft form
