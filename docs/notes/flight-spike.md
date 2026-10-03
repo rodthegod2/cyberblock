@@ -117,7 +117,7 @@ States Idle, Following, Holding. Constants: hold 1.0 s, quick landing 0.3 s, nea
 
 | Fact | Source |
 |---|---|
-| `DelaySystem.DelayCallbackNextFrame(delayCallback: ref<DelayCallback>) -> Void` exists and vanilla uses it once per request; re-queueing it from inside its own callback **never fired** in 2.31 (R1-a, table above) | decompiled 2.31 scripts `orphans.swift` 11826, `cyberpunk/player/psm/equipment.swift` 524; `Cyberblock.log` 2026-10-03 15:07-15:16 |
+| `DelaySystem.DelayCallbackNextFrame(delayCallback: ref<DelayCallback>) -> Void` exists and vanilla uses it once per request; re-queueing it from inside its own callback **never fired** in 2.31 (R1-a, table above) | the 2.31 script API (NativeDB, redscript) `orphans.swift` 11826, `cyberpunk/player/psm/equipment.swift` 524; `Cyberblock.log` 2026-10-03 15:07-15:16 |
 | `gameTeleportationFacility::Teleport(objectToTeleport, position: Vector4, orientation: EulerAngles)`; scripts reach it through `TeleportationFacility.Teleport(GameObject, Vector4, EulerAngles)` | NativeDB; `orphans.swift` 31935 |
 | `gameSpatialQueriesSystem::SyncRaycastByCollisionGroup(start, end, collisionGroup: CName, out result: physicsTraceResult, staticOnly, dynamicOnly) -> Bool` for the clip and ground rays | NativeDB |
 | Vanilla player teleports that keep the facing pass `Vector4.ToRotation(player.GetWorldForward())` | `cyberpunk/UI/fullscreen/map/worldMap.swift` 949, `cyberpunk/devices/roadBlock/roadBlockTrap.swift` 74 |
@@ -125,6 +125,44 @@ States Idle, Following, Holding. Constants: hold 1.0 s, quick landing 0.3 s, nea
 | Locomotion in the air: `FallDecisions` → `LocomotionAirEvents.OnUpdate`. The landing type (Regular / Hard / VeryHard / Death) is chosen from `GetVerticalSpeed` = `physicsStateValue.LinearVelocity.Z`. Hard, very hard and death landings start `Attacks.HardLanding` / `VeryHardLanding` / `DeathLanding`, which `Health.reds` reports as `fall` | `cyberpunk/player/psm/locomotionTransitions.swift` 214-226, 3617-3754, 3813-3850, 99-103; `defaultTransition.swift` 553-557 |
 | The landing transitions the wraps cover are `LocomotionAirDecisions.ToHardLand`, `ToVeryHardLand`, `ToDeathLand`, `ToSuperheroLand` (protected const) | the 2.31 scripts and `cp/scripts/compile_check.py` |
 | RED4ext calls the Running state's `OnUpdate` once per rendered frame; the camera publisher already runs there (`on_running_update` calls `cb::camera::publish()`) | `third_party/RED4ext.SDK` `GameStates.hpp` (`CRunningState::OnUpdate`), `cp/plugin/src/main.cpp` |
+
+## Owned yaw: the glide steers with the camera (re-test 3, F4)
+
+**Report.** After re-test 2 the glide was smooth, but "you cannot change direction: you stay locked to the start
+direction". Minecraft's log of 2026-10-03 17:36:40-45 shows a 108 m glide on an exact diagonal, with the mouse in use.
+
+**Cause.** Minecraft steers its glide with the camera yaw and pitch that arrive in `cam`, and `cam.r` is read from V. The
+per-frame drive teleported V **every frame** with the yaw it had read from `GetWorldForward` **before** that frame's mouse
+delta had been applied by the game, so the game's horizontal mouse turn was written to V's body and then overwritten by the
+next teleport. The camera yaw never changed, and neither did the glide.
+
+**Method (all in the DLL, `cp/plugin/src`; the pure parts are unit-tested in `cb_tests`):**
+1. **Count the mouse.** `input.cpp` adds the relative raw-mouse X counts (`lLastX`, only while forwarding and no Minecraft
+   screen is open) into an atomic; the main loop takes it once per frame (`take_mouse_x()`).
+2. **Strip the game's own turn.** While the drive is moving V (and the camera is first person), the `GetRawInputData` hook
+   sets the game's `lLastX` to zero, so the game does not turn V's body a second time. Pitch (`lLastY`) is untouched: the
+   look up and down is still the game's.
+3. **Learn the scale.** The game's degrees per mouse count depend on the player's sensitivity setting, so `TurnRate`
+   (pure) learns it from frames **outside** a flight: it sums `|dyaw|` and `|counts|` over frames with `|counts| >= 2` and
+   `|dyaw| < 30`, halves both sums past about 4000 counts (a moving window), returns 0.15 until 200 counts were seen and
+   clamps to [0.002, 1.0]. The DLL logs `look: R deg per mouse count` once it has settled or when it moves by more than
+   10 %.
+4. **Turn the glide.** `follow::turned_yaw(cpYaw, counts, degreesPerCount) = cpYaw - counts * rate`, normalised to
+   (-180, 180]. Cyberpunk's yaw is counter-clockwise, so moving the mouse right lowers it.
+5. **Drive with an owned yaw.** On the idle-to-driving transition `g_yaw` is taken from the forward read the drive already
+   did (that frame's counts are discarded); every later frame that is not behind a menu applies `turned_yaw`; the
+   `Teleport` gets `EulerAngles{0, 0, g_yaw}` for the move, the landing and the ground put-down, so there is no per-frame
+   `GetWorldForward` / `ToRotation` any more. The camera publishes V's yaw, so Minecraft steers the glide with it.
+6. **Third person.** The strip applies only to the first-person view (`!view::applied()`), because the third-person
+   camera is Cyberpunk's own first-person component moved back.
+
+**Evidence.** Unit tests (`test_follow.cpp`, `test_keys.cpp`): `turned_yaw` sign, wrap and zero counts, `TurnRate` warm-up,
+window and clamps. The flight summary line now ends with `yaw start A end B, mouse x N counts at R deg/count, pitch
+min..max`.
+
+**Still to confirm in game** (TESTING-PLAN F4): a mid-glide mouse swing turns the glide at once, `A` and `B` differ by about
+the turn made, `N` is not 0, and the first-person camera stays smooth; no sticky or snapping yaw on fast turns (the risk
+named above, now handled by owning the yaw instead of re-reading it).
 
 ## What locomotion is expected to do (to verify in game)
 
@@ -136,8 +174,8 @@ States Idle, Following, Holding. Constants: hold 1.0 s, quick landing 0.3 s, nea
   attacks are not reported. `ToRegularLand` still runs: if V hangs in the Fall pose on the ground, the follow-up is
   `wrappedMethod(...) || SuppressFall && IsTouchingGround` in a `ToRegularLand` wrap (the name Flight.reds gives).
 - **The risks of the drive:** `Teleport` called from `OnUpdate` (not from a game-thread script), a static call to
-  `Vector4::ToRotation` with a null context, and yaw "stickiness" on fast mouse turns (the fix would be to read
-  `GetWorldOrientation` just before the call).
+  `Vector4::ToRotation` with a null context, and yaw "stickiness" on fast mouse turns (re-test 3 removed the cause: the DLL now owns the yaw, see
+  [Owned yaw](#owned-yaw-the-glide-steers-with-the-camera-re-test-3-f4)).
 
 ## In-game checks (needsInGame)
 

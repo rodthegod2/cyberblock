@@ -478,3 +478,383 @@ def test_delivery_rules_keep_cyberware_and_drop_cyberfx_while_not_active():
     text = section("Layers 3–6 semantics and limits")
     delivery = re.search(r"\*\*Delivery in the DLL:\*\*.*?(?=\n- \*\*)", text, re.S).group(0)
     assert "`cyberware`" in delivery and "`cyberfx`" in delivery
+
+
+# ---- re-test 3 (plan 2026-10-03-retest3-polish section 1.1): Minecraft-drawn UI, hack kinds and spreads, seat, six binds ----
+R3_CP_TO_MC, R3_MC_TO_CP = "Re-test 3: Cyberpunk → Minecraft", "Re-test 3: Minecraft → Cyberpunk"
+R3_CP_EXAMPLES, R3_MC_EXAMPLES = "Re-test 3 examples, Cyberpunk to Minecraft:", "Re-test 3 examples, Minecraft to Cyberpunk:"
+R3_KEYS_SECTION = "Re-test 3: keys (six binds)"
+R3_NEW_CP = {"hackspread", "stats", "quest", "pins", "prompt", "choices", "sub", "call", "notify", "screen", "reply"}
+R3_EXT_CP = {"hackresult", "cam", "hud", "key"}
+R3_NEW_MC, R3_EXT_MC = {"uiact", "persp"}, {"binds", "hello", "status"}
+R3_EXTENDED = R3_EXT_CP | R3_EXT_MC
+R3_OLD_EXAMPLE_OF = {"hackresult": L36_CP_EXAMPLES, "cam": L36_CP_EXAMPLES, "hud": "Cyberpunk → Minecraft:", "key": L36_CP_EXAMPLES,
+                     "binds": L36_MC_EXAMPLES, "hello": "Minecraft → Cyberpunk:", "status": "Minecraft → Cyberpunk:"}  # where the old fields are shown
+
+HACK_KINDS, SPREAD_WHY = names("Hack kinds"), names("Spread reasons")
+QUEST_KINDS, PIN_KINDS = names("Quest kinds"), names("Pin kinds")
+CHOICE_FLAGS, CALL_PHASES, NOTIFY_KINDS = names("Choice flags"), names("Call phases"), names("Notify kinds")
+SCREEN_OPEN, PASS_NAMES, REPLY_KINDS = names("Screen open names"), names("Pass-through names"), names("Reply kinds")
+UI_ACTIONS, PERSP_MODES = names("UI actions"), names("Perspective modes")
+SIX_BINDS = {"hack": 0x47, "skills": 0x4B, "cyberware": 0x55, "activate": 0x59, "arms": 0x4C, "camo": 0x4F}
+R3_KEYS = NEW_KEYS | {"arms", "camo"}
+REPLY_BYTES = 256 * 1024
+
+
+def ctext(s, limit) -> bool:
+    """A wire string: UTF-8 bytes within the limit, no control characters (the DLL strips them)."""
+    return isinstance(s, str) and len(s.encode("utf-8")) <= limit and not any(ord(c) < 0x20 or ord(c) == 0x7F for c in s)
+
+
+def uint32(x) -> bool:
+    return whole(x, 0, 2**32 - 1)
+
+
+def fields_are(m, fields) -> bool:
+    return isinstance(m, dict) and set(m) == fields
+
+
+def hackresult3_ok(m) -> bool:
+    base = whole(m["id"]) and isinstance(m["ok"], bool) and text_ok(m["reason"]) and (not m["ok"] or m["reason"] == "")
+    if not m["ok"]:
+        return base and not ({"upload", "kind"} & set(m))  # both only matter (and are only sent) when ok
+    return base and ("upload" not in m or num(m["upload"], 0, 30)) and ("kind" not in m or m["kind"] in HACK_KINDS)
+
+
+def stats_ok(m) -> bool:
+    return (whole(m["money"], 0) and whole(m["wanted"], 0, 5) and ctext(m["district"], 64)
+            and isinstance(m["time"], list) and len(m["time"]) == 2 and whole(m["time"][0], 0, 23) and whole(m["time"][1], 0, 59)
+            and (m["speed"] == -1 or num(m["speed"], 0, 1e4)))
+
+
+def objective_ok(e) -> bool:
+    return (fields_are(e, {"text", "cur", "tot", "opt", "on"}) and ctext(e["text"], 256) and whole(e["cur"], 0) and whole(e["tot"], 0)
+            and isinstance(e["opt"], bool) and isinstance(e["on"], bool))
+
+
+def quest_ok(m) -> bool:
+    return ctext(m["title"], 128) and m["kind"] in QUEST_KINDS and list_ok(m, "obj", 12, objective_ok) and (m["wp"] is None or vec3(m["wp"]))
+
+
+def pin_ok(e) -> bool:
+    return fields_are(e, {"p", "kind", "tr"}) and vec3(e["p"]) and e["kind"] in PIN_KINDS and isinstance(e["tr"], bool)
+
+
+def prompt_entry_ok(e) -> bool:
+    return (fields_are(e, {"text", "key", "hold", "inactive"}) and ctext(e["text"], 128) and isinstance(e["key"], str) and len(e["key"]) <= 3
+            and ctext(e["key"], 12) and isinstance(e["hold"], bool) and isinstance(e["inactive"], bool))
+
+
+def choice_entry_ok(e) -> bool:
+    return fields_are(e, {"text", "f"}) and ctext(e["text"], 256) and isinstance(e["f"], list) and all(f in CHOICE_FLAGS for f in e["f"])
+
+
+def hub_ok(h) -> bool:
+    return (fields_are(h, {"id", "title", "list"}) and whole(h["id"]) and ctext(h["title"], 128)
+            and isinstance(h["list"], list) and all(choice_entry_ok(e) for e in h["list"]))
+
+
+def choices_ok(m) -> bool:
+    return (list_ok(m, "hubs", 4, hub_ok) and sum(len(h["list"]) for h in m["hubs"]) <= 12 and whole(m["active"], -1)
+            and whole(m["sel"], -1) and (m["left"] == -1 or num(m["left"], 0, 3600)))
+
+
+def reply_line_ok(e) -> bool:
+    return fields_are(e, {"hash", "text", "state"}) and uint32(e["hash"]) and ctext(e["text"], 256) and e["state"] in (0, 1, 2) and not isinstance(e["state"], bool)
+
+
+def reply_group_ok(g) -> bool:
+    return (fields_are(g, {"hash", "title", "kind", "tracked", "done", "lines"}) and uint32(g["hash"]) and ctext(g["title"], 128)
+            and g["kind"] in QUEST_KINDS + ["sms"] and isinstance(g["tracked"], bool) and isinstance(g["done"], bool)
+            and isinstance(g["lines"], list) and all(reply_line_ok(e) for e in g["lines"]))
+
+
+def reply_pin_ok(e) -> bool:
+    return fields_are(e, {"p", "kind", "name", "i"}) and vec3(e["p"]) and e["kind"] in PIN_KINDS and ctext(e["name"], 64) and whole(e["i"], -1)
+
+
+def reply_ok(m) -> bool:
+    return (m["kind"] in REPLY_KINDS and whole(m["id"]) and list_ok(m, "groups", 128, reply_group_ok) and list_ok(m, "pins", 256, reply_pin_ok)
+            and sum(len(g["lines"]) for g in m["groups"]) <= 512 and len(json.dumps(m).encode("utf-8")) <= REPLY_BYTES)
+
+
+def screen_ok(m) -> bool:
+    forms = {"open", "pass"} & set(m)
+    return len(forms) == 1 and set(m) == {"t", *forms} and (m["open"] in SCREEN_OPEN if "open" in m else m["pass"] in PASS_NAMES + [""])
+
+
+def binds6_ok(m) -> bool:
+    """Minecraft always sends all six names; a receiver also tolerates a missing one (an older Minecraft build)."""
+    return isinstance(m["keys"], dict) and set(m["keys"]) == set(SIX_BINDS) and all(whole(vk, 1, 254) for vk in m["keys"].values())
+
+
+R3_VALIDATORS = {
+    "hackresult": hackresult3_ok,
+    "hackspread": lambda m: whole(m["id"]) and uint64_string(m["target"]) and m["why"] in SPREAD_WHY,
+    "cam": lambda m: cam_ok(m) and ("seat" not in m or isinstance(m["seat"], bool)),
+    "hud": lambda m: m["hidden"] is False,  # the DLL always sends hidden:false now
+    "key": lambda m: m["k"] in R3_KEYS and isinstance(m["down"], bool) and mods_ok(m),
+    "stats": stats_ok,
+    "quest": quest_ok,
+    "pins": lambda m: list_ok(m, "list", 32, pin_ok),
+    "prompt": lambda m: ctext(m["title"], 128) and list_ok(m, "list", 6, prompt_entry_ok),
+    "choices": choices_ok,
+    "sub": lambda m: isinstance(m["show"], bool) and ctext(m["key"], 64) and ctext(m["who"], 64) and ctext(m["text"], 256) and num(m["secs"], 0, 30),
+    "call": lambda m: m["phase"] in CALL_PHASES and ctext(m["who"], 64) and isinstance(m["audio"], bool) and isinstance(m["reject"], bool),
+    "notify": lambda m: m["kind"] in NOTIFY_KINDS and ctext(m["title"], 128) and ctext(m["text"], 256) and num(m["secs"], 0, 30),
+    "screen": screen_ok,
+    "reply": reply_ok,
+    "binds": binds6_ok,
+    "hello": lambda m: m["proto"] == 1 and ctext(m["ver"], 32) and 0 < len(m["ver"]),
+    "status": lambda m: isinstance(m["pause"], bool) and isinstance(m["screen"], bool),
+    "uiact": lambda m: m["a"] in UI_ACTIONS and ctext(m.get("arg", ""), 64) and uint32(m.get("hash", 0)) and whole(m.get("id", 0)),
+    "persp": lambda m: m["mode"] in PERSP_MODES,
+}
+R3_EXAMPLES = [(m["t"], m) for first in (R3_CP_EXAMPLES, R3_MC_EXAMPLES) for m in examples(first)]
+
+
+def r3_example(t, **changes):
+    m = copy.deepcopy(next(m for u, m in R3_EXAMPLES if u == t))
+    m.update(changes)
+    return m
+
+
+def r3_nested(t, field, index, **changes):
+    m = copy.deepcopy(next(m for u, m in R3_EXAMPLES if u == t))
+    m[field][index] = {**m[field][index], **changes}
+    return m
+
+
+def r3_wide(t, key, n):
+    m = copy.deepcopy(next(m for u, m in R3_EXAMPLES if u == t))
+    m[key] = [m[key][0]] * n
+    return m
+
+
+def test_r3_name_lists_have_the_plan_counts():
+    assert HACK_KINDS == ["squad", "crowd", "driver", "camera", "traffic", "distract", "device"]
+    assert SPREAD_WHY == ["chain", "spread", "ping", "frenzy"] and QUEST_KINDS == ["main", "side", "gig", "other"]
+    assert len(PIN_KINDS) == 9 and len(CHOICE_FLAGS) == 6 and len(CALL_PHASES) == 4 and len(NOTIFY_KINDS) == 12
+    assert len(SCREEN_OPEN) == 7 and len(PASS_NAMES) == 14 and len(set(PASS_NAMES)) == 14
+    assert len(UI_ACTIONS) == 10 and REPLY_KINDS == ["journal", "phone", "atlas"] and PERSP_MODES == ["first", "back"]
+    assert set(SCREEN_OPEN) == {"pause", "map", "journal", "phone", "inventory", "skills", "cyberware"}
+    assert set(PASS_NAMES) == {"vendor", "ripperdoc", "stash", "wardrobe", "crafting", "breach", "arcade", "braindance", "tutorial",
+                               "settings", "saves", "death", "loading", "other"}
+
+
+def test_r3_every_type_of_both_tables_has_an_example_and_a_validator():
+    for heading, first, new, ext in ((R3_CP_TO_MC, R3_CP_EXAMPLES, R3_NEW_CP, R3_EXT_CP), (R3_MC_TO_CP, R3_MC_EXAMPLES, R3_NEW_MC, R3_EXT_MC)):
+        assert documented(heading) == new | ext
+        assert {m["t"] for m in examples(first)} == new | ext
+        for t in ext:
+            assert "**extends layer" in rows_by_type(heading)[t], f"{t} is not marked as an extension"
+    assert {t for t, _ in R3_EXAMPLES} == set(R3_VALIDATORS)
+
+
+def test_r3_every_example_field_is_named_in_its_table_row():
+    for heading, first in ((R3_CP_TO_MC, R3_CP_EXAMPLES), (R3_MC_TO_CP, R3_MC_EXAMPLES)):
+        rows = rows_by_type(heading)
+        for m in examples(first):
+            inherited = set(example(R3_OLD_EXAMPLE_OF[m["t"]], m["t"])) if m["t"] in R3_EXTENDED else set()  # an extension row names what it adds
+            for key in set(m) - {"t"} - inherited:
+                assert re.search(rf"\b{key}\b", rows[m["t"]]), f"{m['t']}.{key} is not described in its re-test 3 row"
+
+
+@pytest.mark.parametrize("t, m", R3_EXAMPLES, ids=[f"{t}-{i}" for i, (t, _) in enumerate(R3_EXAMPLES)])
+def test_r3_example_obeys_the_documented_limits(t, m):
+    assert R3_VALIDATORS[t](m)
+
+
+def test_r3_screen_key_and_reply_show_all_their_forms():
+    screens = [m for t, m in R3_EXAMPLES if t == "screen"]
+    assert [("open" in m, "pass" in m) for m in screens] == [(True, False), (False, True)]
+    assert {m["k"] for t, m in R3_EXAMPLES if t == "key"} == {"arms", "camo"}
+    assert {m["kind"] for t, m in R3_EXAMPLES if t == "reply"} == set(REPLY_KINDS)
+
+
+def test_r3_extended_examples_keep_their_old_fields():
+    cam = next(m for t, m in R3_EXAMPLES if t == "cam")
+    assert set(cam) == set(example("Cyberpunk → Minecraft:", "cam")) | CAM_ADDED | {"seat"} and cam["fp"] is False and cam["seat"] is True
+    result = next(m for t, m in R3_EXAMPLES if t == "hackresult")
+    assert set(result) == set(next(m for t, m in L36_EXAMPLES if t == "hackresult")) | {"upload", "kind"}
+    hello = next(m for t, m in R3_EXAMPLES if t == "hello")
+    assert set(hello) == set(example("Minecraft → Cyberpunk:", "hello")) | {"ver"}
+    status = next(m for t, m in R3_EXAMPLES if t == "status")
+    assert set(status) == set(example("Minecraft → Cyberpunk:", "status")) | {"pause"}
+
+
+def test_r3_binds_example_carries_the_six_default_keys():
+    assert next(m for t, m in R3_EXAMPLES if t == "binds")["keys"] == SIX_BINDS
+
+
+def test_r3_choices_example_has_a_timed_entry_and_a_listed_active_hub():
+    m = next(m for t, m in R3_EXAMPLES if t == "choices")
+    flags = {f for h in m["hubs"] for e in h["list"] for f in e["f"]}
+    assert "timed" in flags and m["active"] in {h["id"] for h in m["hubs"]} and 0 <= m["sel"] < sum(len(h["list"]) for h in m["hubs"])
+
+
+def test_r3_journal_example_shows_a_hash_above_the_signed_32_bit_range():
+    """Hashes are uint32 JSON numbers: a value above 2**31 is legal and must not be read as a signed int."""
+    journal = next(m for t, m in R3_EXAMPLES if t == "reply" and m["kind"] == "journal")
+    assert journal["groups"][0]["hash"] > 2**31
+
+
+R3_OUT_OF_LIMITS = [
+    ("hackresult", r3_example("hackresult", upload=31)), ("hackresult", r3_example("hackresult", upload=-1)),
+    ("hackresult", r3_example("hackresult", upload=float("nan"))), ("hackresult", r3_example("hackresult", kind="swarm")),
+    ("hackresult", r3_example("hackresult", ok=False, reason="no driver")), ("hackresult", r3_example("hackresult", ok=False, reason="")),
+    ("hackspread", r3_example("hackspread", why="explode")), ("hackspread", r3_example("hackspread", target=5)),
+    ("hackspread", r3_example("hackspread", id=-1)),
+    ("cam", r3_example("cam", seat="yes")), ("cam", r3_example("cam", lv=64)),
+    ("hud", r3_example("hud", hidden=True)),
+    ("key", r3_example("key", k="tab")),
+    ("stats", r3_example("stats", money=-1)), ("stats", r3_example("stats", wanted=6)), ("stats", r3_example("stats", district="d" * 65)),
+    ("stats", r3_example("stats", time=[24, 0])), ("stats", r3_example("stats", time=[12, 60])), ("stats", r3_example("stats", time=[12])),
+    ("stats", r3_example("stats", speed=-2)), ("stats", r3_example("stats", district="bad\x07")),
+    ("quest", r3_example("quest", title="t" * 129)), ("quest", r3_example("quest", kind="epic")), ("quest", r3_example("quest", wp=[1, 2])),
+    ("quest", r3_example("quest", obj=[r3_nested("quest", "obj", 0)["obj"][0]] * 13)),
+    ("quest", r3_nested("quest", "obj", 0, text="x" * 257)), ("quest", r3_nested("quest", "obj", 0, cur=-1)),
+    ("quest", r3_nested("quest", "obj", 0, on="yes")),
+    ("pins", r3_wide("pins", "list", 33)), ("pins", r3_nested("pins", "list", 0, kind="shop")), ("pins", r3_nested("pins", "list", 0, p=[0, 0])),
+    ("prompt", r3_example("prompt", title="t" * 129)), ("prompt", r3_wide("prompt", "list", 7)),
+    ("prompt", r3_nested("prompt", "list", 0, key="Enter")), ("prompt", r3_nested("prompt", "list", 0, text="t" * 129)),
+    ("choices", r3_example("choices", sel=-2)), ("choices", r3_example("choices", left=-2)),
+    ("choices", r3_example("choices", hubs=[r3_example("choices")["hubs"][0]] * 5)),
+    ("choices", r3_example("choices", hubs=[{"id": 1, "title": "t", "list": [{"text": "x", "f": []}] * 13}])),
+    ("choices", r3_example("choices", hubs=[{"id": 1, "title": "t", "list": [{"text": "x", "f": ["secret"]}]}])),
+    ("choices", r3_example("choices", hubs=[{"id": 1, "title": "t", "list": [{"text": "x" * 257, "f": []}]}])),
+    ("sub", r3_example("sub", secs=31)), ("sub", r3_example("sub", key="k" * 65)), ("sub", r3_example("sub", text="t" * 257)),
+    ("sub", r3_example("sub", who="w" * 65)), ("sub", r3_example("sub", show=1)),
+    ("call", r3_example("call", phase="ring")), ("call", r3_example("call", who="w" * 65)), ("call", r3_example("call", reject=0)),
+    ("notify", r3_example("notify", kind="badge")), ("notify", r3_example("notify", secs=31)), ("notify", r3_example("notify", title="t" * 129)),
+    ("notify", r3_example("notify", text="é" * 129)),  # 258 bytes: the limits are UTF-8 bytes, not characters
+    ("screen", {"t": "screen", "open": "settings"}), ("screen", {"t": "screen", "pass": "shop"}), ("screen", {"t": "screen"}),
+    ("screen", {"t": "screen", "open": "pause", "pass": "vendor"}),
+    ("reply", r3_example("reply", kind="mail")), ("reply", r3_example("reply", id=-1)),
+    ("reply", r3_example("reply", kind="atlas", groups=[{"hash": 1, "title": "g", "kind": "main", "tracked": False, "done": False, "lines": []}] * 129)),
+    ("reply", r3_nested("reply", "groups", 0, kind="epic")), ("reply", r3_nested("reply", "groups", 0, hash=2**32)),
+    ("reply", r3_nested("reply", "groups", 0, lines=[{"hash": 1, "text": "x", "state": 3}])),
+    ("reply", r3_nested("reply", "groups", 0, lines=[{"hash": 1, "text": "x", "state": 0}] * 513)),
+    ("reply", r3_nested("reply", "groups", 0, lines=[{"hash": 1, "text": "x" * 257, "state": 0}])),
+    ("reply", r3_example("reply", pins=[{"p": [0, 0, 0], "kind": "quest", "name": "n", "i": -1}] * 257)),
+    ("reply", r3_example("reply", pins=[{"p": [0, 0, 0], "kind": "quest", "name": "n" * 65, "i": -1}])),
+    ("reply", r3_example("reply", pins=[{"p": [0, 0, 0], "kind": "shop", "name": "n", "i": -1}])),
+    ("reply", r3_example("reply", groups=[{"hash": 1, "title": "g", "kind": "main", "tracked": False, "done": False,
+                                            "lines": [{"hash": 1, "text": "x" * 256, "state": 0}] * 300}] * 2)),  # 600 lines, over 512
+    ("binds", r3_example("binds", keys={**SIX_BINDS, "arms": 0})), ("binds", r3_example("binds", keys={**SIX_BINDS, "camo": 255})),
+    ("binds", r3_example("binds", keys={"hack": 71, "skills": 75, "cyberware": 85, "activate": 89})),
+    ("binds", r3_example("binds", keys={**SIX_BINDS, "wheel": 80})),
+    ("hello", r3_example("hello", ver="")), ("hello", r3_example("hello", ver="v" * 33)), ("hello", r3_example("hello", proto=2)),
+    ("status", r3_example("status", pause="yes")),
+    ("uiact", r3_example("uiact", a="quit")), ("uiact", r3_example("uiact", arg="a" * 65)), ("uiact", r3_example("uiact", hash=-1)),
+    ("uiact", r3_example("uiact", hash=2**32)), ("uiact", r3_example("uiact", id=-1)),
+    ("persp", r3_example("persp", mode="front")), ("persp", r3_example("persp", mode=None)),
+]
+
+
+@pytest.mark.parametrize("t, m", R3_OUT_OF_LIMITS, ids=[f"{t}-{i}" for i, (t, _) in enumerate(R3_OUT_OF_LIMITS)])
+def test_r3_validators_reject_out_of_limit_messages(t, m):
+    try:
+        ok = R3_VALIDATORS[t](m)
+    except (KeyError, TypeError):
+        ok = False
+    assert not ok
+
+
+def test_r3_validators_accept_the_limits_themselves():
+    assert R3_VALIDATORS["hackresult"](r3_example("hackresult", upload=0)) and R3_VALIDATORS["hackresult"](r3_example("hackresult", upload=30))
+    assert R3_VALIDATORS["hackresult"]({"t": "hackresult", "id": 1, "ok": True, "reason": ""})  # upload and kind are optional
+    assert R3_VALIDATORS["hackresult"]({"t": "hackresult", "id": 1, "ok": False, "reason": "target gone"})
+    assert R3_VALIDATORS["stats"](r3_example("stats", wanted=5, time=[23, 59], speed=0, money=0, district="é" * 32))
+    assert R3_VALIDATORS["prompt"](r3_example("prompt", title="", list=[]))  # an empty list clears
+    assert R3_VALIDATORS["choices"](r3_example("choices", hubs=[], active=-1, sel=-1, left=-1))
+    assert R3_VALIDATORS["choices"](r3_example("choices", hubs=[{"id": 1, "title": "t", "list": [{"text": "x", "f": []}] * 12}]))
+    assert R3_VALIDATORS["sub"](r3_example("sub", secs=0, text="é" * 128)) and R3_VALIDATORS["sub"](r3_example("sub", secs=30))
+    assert R3_VALIDATORS["screen"]({"t": "screen", "pass": ""})  # the pass-through ended
+    assert R3_VALIDATORS["uiact"]({"t": "uiact", "a": "save"}) and R3_VALIDATORS["uiact"](r3_example("uiact", hash=2**32 - 1))
+    assert R3_VALIDATORS["quest"](r3_example("quest", wp=None))
+
+
+def test_r3_limits_and_rules_are_stated_in_the_document():
+    text = " ".join((section("Re-test 3 semantics and limits") + section(R3_CP_TO_MC) + section(R3_MC_TO_CP) + section(R3_KEYS_SECTION)).split())
+    for phrase in ("0..30", "0..5", "[0..23, 0..59]", "≤ 12", "≤ 16", "≤ 32", "≤ 128", "≤ 256 KB", "≤ 512", "≤ 6", "≤ 4", "≤ 64", "150 m",
+                   "UTF-8 bytes", "uint32", "level-triggered", "status.pause", "hidden:false", "cam.seat", "all six", "last 32 request ids",
+                   "unknown id is dropped", "`other`", "invalid for"):
+        assert phrase in text, f"{phrase!r} is not stated"
+
+
+def test_r3_keys_section_lists_six_binds_with_vk_codes_and_the_clash_rule():
+    body = section(R3_KEYS_SECTION)
+    rows = {name: (key, int(vk)) for key, vk, name in re.findall(r"^\| [A-Za-z ]+ \| (\w) \| (\d+) \| `(\w+)` \|$", body, re.M)}
+    assert rows == {name: (chr(vk), vk) for name, vk in SIX_BINDS.items()}
+    text = " ".join(body.replace("**", "").split())
+    for phrase in ("all six go back to G K U Y L O", "its own default", "binds_apply", "key arms", "key camo", "unbound once", "no tap and hold cycling"):
+        assert phrase in text, f"{phrase!r} is missing"
+
+
+def test_r3_knockback_tiers_are_written_down():
+    text = " ".join(section("Re-test 3 semantics and limits").split())
+    for phrase in ("(0.4 + extra) × 5", "plain hit is 2 m/s", "4.5", "9.5", "12", "s < 4.0", "6.5", "10.0", "knockdown"):
+        assert phrase in text, f"{phrase!r} is missing from the knockback rule"
+
+
+def test_r3_older_sections_point_at_the_new_keys_and_hud_rule():
+    assert "Re-test 3 supersedes the tap and hold cycling" in section("Cyberware and keys (re-test 2)")
+    assert "always sends `hidden:false`" in section(CP_TO_MC)
+
+
+# ---- the player documents agree with the protocol (re-test 3): keys, name lists and links ----
+GUIDE = Path("docs/HOW-TO-PLAY.md").read_text(encoding="utf-8")
+README = Path("README.md").read_text(encoding="utf-8")
+
+
+def slug(heading: str) -> str:
+    """GitHub's heading anchor: lower case, punctuation dropped, spaces to hyphens."""
+    return re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", heading.strip().lower()))
+
+
+def anchors(doc: str) -> set[str]:
+    return {slug(m.group(2)) for m in re.finditer(r"^(#{1,6}) (.+)$", doc, re.M)}
+
+
+def test_guide_anchor_links_resolve():
+    found = anchors(GUIDE)
+    for target in re.findall(r"\]\(#([^)]+)\)", GUIDE):
+        assert target in found, f"HOW-TO-PLAY.md links to a missing heading #{target}"
+
+
+def test_readme_links_into_the_guide_resolve():
+    found = anchors(GUIDE)
+    for target in re.findall(r"\]\(docs/HOW-TO-PLAY\.md#([^)]+)\)", README):
+        assert target in found, f"README.md links to a missing guide heading #{target}"
+    for rel in re.findall(r"\]\(((?:docs|shared)/[^)#]+)", README):
+        assert Path(rel).exists(), f"README.md links to a missing file {rel}"
+
+
+def test_guide_documents_the_six_keys_and_the_allowed_set_of_the_protocol():
+    text = " ".join(GUIDE.split())
+    for key in ("**Y**", "**L**", "**O**", "**F5**", "**U**", "**G**", "**K**"):
+        assert key in text
+    assert "G K L O U Y 0 F1-F4 F6-F8 F10-F12" in text and "all six go back to G, K, U, Y, L and O" in text
+    protocol = " ".join(TEXT.split())
+    assert "G K L O U Y 0 F1–F4 F6–F8 F10–F12" in protocol and "all six" in protocol  # the same set, spelled with en dashes there
+    assert "binds: hack G, skills K, cyberware U, activate Y, arms L, camo O" in GUIDE
+
+
+def test_guide_names_every_pass_through_menu_and_the_ui_actions_it_documents():
+    text = GUIDE.lower()
+    for menu in ("shops and vendors", "ripperdoc", "stash", "wardrobe", "crafting benches", "breach protocol", "arcade", "braindance editor",
+                 "tutorial and shard popups", "settings", "save and load lists", "death screen", "loading screens"):
+        assert menu in text, f"HOW-TO-PLAY.md does not mention the pass-through menu {menu!r}"
+    assert "font" in text and "wolvenkit" in text  # the documented limitation
+    for button in ("Back to Night City", "Save Game", "Load Last Save", "Night City Menu...", "Quit to Cyberpunk Main Menu"):
+        assert button in GUIDE
+
+
+def test_guide_quickhack_table_covers_all_ten_chips_with_their_extras():
+    table = GUIDE.split("#### What each chip does", 1)[1].split("**Other cyber items:**", 1)[0]
+    for chip in ("Redstone Charge", "Blaze Chip", "Ink Sac Daemon", "Cobweb Daemon", "Spider Eye Virus", "Wither Skull Daemon", "Compass Ping",
+                 "Bottle of Forgetting", "Creeper Brain", "Redstone Lever"):
+        assert f"**{chip}**" in table, chip
+    for fact in ("real cobwebs", "6 s", "5 s", "4 s", "2 nearest", "35 %", "32 blocks", "30 m", "2 s", "6 s", "creeper face"):
+        assert fact in table, fact

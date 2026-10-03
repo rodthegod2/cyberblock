@@ -212,3 +212,56 @@ def test_find_game_reads_steam_libraries(tmp_path):
     assert install.find_game(steam) == library / "steamapps/common/Cyberpunk 2077"
     with pytest.raises(install.InstallError):
         install.find_game(tmp_path / "NoSteam")
+
+
+# ---- release 1.0.0 (plan 2026-10-03-retest3-polish section 1.13): an existing ReShade.fxh is accepted and skipped ----
+HEADER = "bin/x64/reshade-shaders/Shaders/ReShade.fxh"
+
+
+def test_existing_reshade_header_is_accepted_skipped_and_never_recorded(world, capsys):
+    header = world.game / HEADER
+    header.parent.mkdir(parents=True)
+    header.write_text("the user's own ReShade.fxh")
+    assert world.run() == 0
+    assert header.read_text() == "the user's own ReShade.fxh"  # not overwritten
+    m = world.manifest()
+    assert HEADER not in m["files"] and sorted(m["files"]) == sorted(e for e in EXPECTED if e != HEADER)
+    assert "ReShade.fxh" in capsys.readouterr().out  # said so
+    assert (world.game / "bin/x64/reshade-shaders/Shaders/Cyberblock.fx").read_text() == "shader"  # the rest was installed
+    assert world.run("--remove") == 0
+    assert header.read_text() == "the user's own ReShade.fxh"  # and removal leaves it too
+    assert not (world.game / "red4ext/plugins/Cyberblock/Cyberblock.dll").exists()
+
+
+def test_a_reshade_header_we_installed_is_updated_like_any_owned_file(world):
+    world.run()
+    (world.source / "cp/shaders/vendor/ReShade.fxh").write_text("reshade header v2")
+    assert world.run() == 0
+    assert (world.game / HEADER).read_text() == "reshade header v2" and world.manifest()["files"][HEADER] == sha(b"reshade header v2")
+
+
+def test_other_foreign_files_are_still_refused_when_the_reshade_header_exists(world, capsys):
+    header = world.game / HEADER
+    header.parent.mkdir(parents=True)
+    header.write_text("user header")
+    foreign = world.game / "r6/scripts/Cyberblock/Natives.reds"
+    foreign.parent.mkdir(parents=True)
+    foreign.write_text("someone else's file")
+    assert world.run() == 2
+    err = capsys.readouterr().err
+    assert "Natives.reds" in err and "ReShade.fxh" not in err
+    assert not (world.game / MANIFEST).exists() and header.read_text() == "user header"
+
+
+def test_a_second_backup_in_the_same_second_never_overwrites_the_first(world, monkeypatch):
+    class FrozenNow(install.datetime.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 10, 3, 12, 0, 0, tzinfo=tz)
+
+    monkeypatch.setattr(install.datetime, "datetime", FrozenNow)
+    world.run()
+    world.run("--remove")
+    world.run()
+    names = [p.name for p in world.zips()]
+    assert names == ["saves-20261003T120000Z-2.zip", "saves-20261003T120000Z.zip"]

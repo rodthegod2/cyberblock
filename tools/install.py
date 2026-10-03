@@ -4,8 +4,10 @@
     uv run tools/install.py --remove   # delete exactly what was installed (files that changed since are left)
 
 Every installed file is listed with its sha256 in <game>\\red4ext\\plugins\\Cyberblock\\install-manifest.json. An install
-refuses (exit 2, nothing written) to overwrite a file that is not in that manifest. Before the very first install (no
-manifest) the Cyberpunk saves folder is zipped into %LOCALAPPDATA%\\Cyberblock\\save-backups.
+refuses (exit 2, nothing written) to overwrite a file that is not in that manifest, except an existing ReShade.fxh, which
+other ReShade effects share: it is kept as it is and not recorded. Before the very first install (no manifest) the
+Cyberpunk saves folder is zipped into %LOCALAPPDATA%\\Cyberblock\\save-backups.
+The release installer release/install.ps1 writes the same manifest, so either one can remove what the other installed.
 Stdlib only, so it also runs as a plain script.
 """
 import argparse
@@ -125,8 +127,13 @@ def backup_saves(saves: Path, backups: Path) -> None:
         return
     backups.mkdir(parents=True, exist_ok=True)
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    name = f"saves-{stamp}"
+    for n in range(2, 1000):  # never overwrite an earlier backup (an install, a removal and an install within one second)
+        if not (backups / f"{name}.zip").exists():
+            break
+        name = f"saves-{stamp}-{n}"
     print(f"backing up {saves} ...")
-    print("saves backed up to", shutil.make_archive(str(backups / f"saves-{stamp}"), "zip", saves))
+    print("saves backed up to", shutil.make_archive(str(backups / name), "zip", saves))
 
 
 def install(game: Path, build: Path, source: Path, saves: Path, backups: Path) -> None:
@@ -135,6 +142,9 @@ def install(game: Path, build: Path, source: Path, saves: Path, backups: Path) -
     files = payload(build, source)
     old = load_manifest(game)
     owned = old["files"] if old else {}
+    if SHADER_HEADER not in owned and (game / SHADER_HEADER).exists():  # ReShade.fxh is shared with other ReShade effects: keep theirs
+        print(f"kept the existing {SHADER_HEADER} (not ours: not touched, not recorded)")
+        files = {rel: src for rel, src in files.items() if rel != SHADER_HEADER}
     if foreign := [rel for rel in files if (game / rel).exists() and rel not in owned]:
         raise Refused("refusing to overwrite files Cyberblock did not install, nothing changed:\n  " + "\n  ".join(foreign))
     if old is None:

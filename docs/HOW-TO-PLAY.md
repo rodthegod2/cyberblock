@@ -3,70 +3,112 @@
 Cyberblock puts real Minecraft into Night City. Minecraft Java (26.3, with the Cyberblock Fabric mod) runs next to
 Cyberpunk 2077 (2.31). Every frame, its picture is drawn into Cyberpunk at the right camera and depth.
 
-The split is simple: **Cyberpunk moves V, Steve acts.** You walk, run, jump and drive with Cyberpunk's controls. You
-place blocks, fight, throw, glide and hack with Minecraft's items, and those act on Night City's real people, cars and
-devices.
+The split is simple: **Cyberpunk moves V, Steve acts, and Minecraft draws the interface.** You walk, run, jump and drive
+with Cyberpunk's controls. You place blocks, fight, throw, glide and hack with Minecraft's items, and those act on Night
+City's real people, cars and devices. Everything you read on screen (radar, quest, prompts, dialogue choices, phone,
+journal, map, pause) is drawn by Minecraft in Minecraft's style: Cyberpunk's own interface stays invisible while
+Cyberblock is on.
 
-> **Status (2026-10-03).** Layer 1 (the passthrough itself) has been verified in game. The first in-game session of
-> layers 2 to 6 found bugs, and the second one (the re-test) found more: the elytra stuttered, hacks said "target lost",
-> placed blocks floated a block above the street, a wind charge could not launch you, and there was no infinite skill
-> points option. This version fixes all of them and adds **cyberware** (implants you install in ripperdoc slots). It
-> passes every automated test, but none of it has been re-played in game yet: `docs/TESTING-PLAN.md` starts with the
-> "Re-test 2" list. The fallback switches under [Troubleshooting](#8-troubleshooting) are still there for rough edges.
+> **Status (2026-10-03).** Layer 1 (the passthrough itself) has been verified in game. The first two in-game sessions found
+> bugs that are fixed (elytra, hacks, ground alignment, wind charges). The third session (the "Re-test 3" list) asked for
+> more, and this version adds it: every quickhack is unique in both games, a Minecraft-drawn interface everywhere (radar,
+> quest and waypoint, prompts, choices, phone, journal, map, pause), a third-person view, Steve visible in vehicles, a glide
+> that steers with the camera, vanilla-like knockback, separate keys for the Operating System implant (**Y**), the Arms
+> implant (**L**) and Optical Camo (**O**), two Operating System slots, 3D arm implants, a Sandevistan screen effect and a
+> release package with an installer. It passes every automated test, but none of it has been re-played in game yet:
+> `docs/TESTING-PLAN.md` starts with the "Re-test 3" list. The fallback switches under
+> [Troubleshooting](#8-troubleshooting) are still there for rough edges.
 >
-> **Quick links:** [the key table](#3-controls), [netrunning, step by step](#netrunning-step-by-step),
-> [cyberware](#cyberware-u-and-y) and [free perks and `/cyberblock level`](#6-game-modes-and-the-starter-kit).
+> **Quick links:** [release install](#1-setup), [the key table](#3-controls), [the Minecraft interface](#the-minecraft-interface),
+> [netrunning, step by step](#netrunning-step-by-step), [what each chip does](#what-each-chip-does),
+> [cyberware](#cyberware-u-y-l-and-o), [vehicles](#vehicles-and-third-person) and
+> [free perks and `/cyberblock level`](#6-game-modes-and-the-starter-kit).
 
 ---
 
 ## 1. Setup
 
+There are two ways to get Cyberblock: the **release package** (for players: a zip with an installer, no programming tools)
+and **building from source** (for developers). Both end in the same installed files.
+
 ### What you need
-- **Cyberpunk 2077 2.31** on Steam (Phantom Liberty is fine). These mods must be installed:
-  - **RED4ext**: loads `Cyberblock.dll`;
-  - **redscript**: compiles the scripts;
-  - **Codeware**;
-  - **Cyber Engine Tweaks (CET)**: needed only for its console, which the fallback switches use.
-- **ReShade 6.x with add-on support** (the "with full add-on support" installer from reshade.me), installed for
+- **Cyberpunk 2077 2.31** on Steam (Phantom Liberty is fine). Install these mods first:
+  - [RED4ext](https://github.com/WopsS/RED4ext): loads `Cyberblock.dll`;
+  - [redscript](https://github.com/jac3km4/redscript): compiles the scripts;
+  - [Codeware](https://github.com/psiberx/cp2077-codeware);
+  - [Cyber Engine Tweaks (CET)](https://github.com/maximegmd/CyberEngineTweaks): needed only for its console, which the
+    fallback switches use.
+- **[ReShade](https://reshade.me) 6.x with add-on support** (the "with full add-on support" installer), installed for
   `bin\x64\Cyberpunk2077.exe` with the **DirectX 10/11/12** API.
-- **To build:**
-  - JDK 25;
-  - Visual Studio 2022 Build Tools (C++ x64 and the Windows SDK) and CMake;
-  - Python 3.12 with `uv`;
-  - git (the repository uses submodules: `git submodule update --init`).
+- **Minecraft: Java Edition 26.3** from the official launcher (you must own it), plus:
+  - the [Fabric Installer](https://fabricmc.net/use/installer/) (Fabric Loader 0.19.5 or newer for 26.3);
+  - [Fabric API](https://modrinth.com/mod/fabric-api) **0.161.0 or newer** for 26.3.
 - **RAM:** about 64 GB, and a page file big enough for both games (see
   [Memory and the page file](#memory-and-the-page-file)).
+- Windows 10 or 11. The release installer needs only Windows PowerShell 5.1 (it is part of Windows), not Python.
 
-### Build
+### Release install (players)
+1. **Download** `Cyberblock-1.0.0.zip` from the project's releases page and unzip it anywhere. It contains `install.bat`,
+   `uninstall.bat`, `install.ps1`, this guide, the licence texts, a `game\` folder (the plugin, the scripts and the ReShade
+   shader) and `minecraft\mods\cyberblock-1.0.0.jar`.
+2. **Close Cyberpunk**, then double-click **`install.bat`**. (If it cannot find your game, drag your Cyberpunk 2077 folder
+   onto `install.bat`, or run `install.ps1 -Game "<your Cyberpunk 2077 folder>"` in PowerShell.) The installer:
+   - finds the game through Steam's libraries and **refuses to run while Cyberpunk is running**;
+   - **never overwrites a file it did not write itself**, and records every file it wrote, with a checksum, in
+     `red4ext\plugins\Cyberblock\install-manifest.json`;
+   - **backs up your saves** once, before the first install, into `%LOCALAPPDATA%\Cyberblock\save-backups`;
+   - writes a `ReShadePreset.ini` that turns the Cyberblock effect on **only if you have no preset yet**, and keeps a
+     `ReShade.fxh` you already have;
+   - warns (but continues) when it does not see RED4ext, redscript, Codeware or ReShade.
+3. **Minecraft, once:**
+   1. Run the Fabric Installer, pick Minecraft **26.3**, loader 0.19.5 or newer, and tick *Create profile*. This adds a
+      Fabric installation to the Minecraft Launcher.
+   2. In the launcher open **Installations**, edit the Fabric 26.3 installation (or duplicate it and name it
+      "Cyberblock") and click **More options**:
+      - **Game directory:** `%APPDATA%\.minecraft-cyberblock`. Use this dedicated folder: Cyberblock rewrites
+        `options.txt` (window size, frame rate cap, controls) and must not touch your normal Minecraft.
+      - **JVM arguments:** **replace** the whole field with
+        `-Xmx2G -XX:+UseZGC --enable-native-access=ALL-UNNAMED -Dcyberblock.autostart=true`. Replace it, do not append:
+        the default arguments contain a larger heap and another garbage collector that fight with Cyberpunk for memory.
+   3. Copy `minecraft\mods\cyberblock-1.0.0.jar` **and the Fabric API jar** into `%APPDATA%\.minecraft-cyberblock\mods`
+      (create the folder if it is missing).
+4. **Play:** start the Cyberblock installation from the launcher. The title screen has a **Play Cyberblock** button that
+   opens (or, the first time, creates) the Night City world; with `-Dcyberblock.autostart=true` it opens the world by
+   itself. Leave the Minecraft window open behind Cyberpunk, start Cyberpunk, load a save and press **F9**.
+   The Minecraft side listens on `127.0.0.1:25600`; that is only reachable from your own computer.
+
+**Updating:** unzip the new release, close Cyberpunk, run `install.bat` again (it replaces its own files and removes files
+a newer version no longer ships), replace the jar in the `mods` folder, and restart Minecraft. A Minecraft that was
+already running keeps the old mod. If Cyberblock.log says `version mismatch: DLL 1.0.0, mod X`, the two halves are from
+different releases.
+
+### From source (developers)
+Needs:
+- JDK 25;
+- Visual Studio 2022 Build Tools (C++ x64 and the Windows SDK) and CMake;
+- Python 3.12 with `uv`;
+- git (the repository uses submodules: `git submodule update --init`).
+
 From the repository root:
 ```
 cmake -S cp/plugin -B cp/plugin/build -G "Visual Studio 17 2022" -A x64
 cmake --build cp/plugin/build --config Release
-```
-This produces `cp/plugin/build/Release/Cyberblock.dll`. You do not build the Minecraft mod by hand: `tools/play.py`
-builds and starts it through Gradle.
-
-### Install into Cyberpunk
-Close Cyberpunk first, then run:
-```
 uv run tools/install.py
 ```
-The installer copies these files into the game folder:
+The build produces `cp/plugin/build/Release/Cyberblock.dll`. You do not build the Minecraft mod by hand: `tools/play.py`
+builds and starts it through Gradle (see [Launching](#2-launching)). To build the release zip yourself:
+`uv run python -m tools.package` writes `dist/Cyberblock-1.0.0.zip`.
+
+`tools/install.py` copies the same files as the release installer and writes the **same manifest**, so the two installers
+and both uninstallers are interchangeable:
 - `red4ext/plugins/Cyberblock/Cyberblock.dll`;
 - the scripts, into `r6/scripts/Cyberblock/`;
-- `Cyberblock.fx` and `ReShade.fxh`, into `bin/x64/reshade-shaders/Shaders/`;
-- a `bin/x64/ReShadePreset.ini` that turns the `Cyberblock` effect on. It writes this file **only if you have no preset
-  yet**.
+- `Cyberblock.fx` and `ReShade.fxh`, into `bin/x64/reshade-shaders/Shaders/` (an existing `ReShade.fxh` is kept);
+- a `bin/x64/ReShadePreset.ini` that turns the `Cyberblock` effect on, **only if you have no preset yet**.
 
-What the installer guarantees:
-- **No overwriting:** it records every file it wrote, with a checksum, in
-  `red4ext/plugins/Cyberblock/install-manifest.json`. It refuses to overwrite any file it did not write itself.
-- **Save backup:** before the very first install, it zips your saves folder
-  (`%USERPROFILE%\Saved Games\CD Projekt Red\Cyberpunk 2077`) into `%LOCALAPPDATA%\Cyberblock\save-backups`. Use
-  `--backups <folder>` to put the zip somewhere else.
-- **Updating:** after you pull a new version, close Cyberpunk, rebuild the DLL and run the same command again. It
-  replaces its own files. Then restart Minecraft (`tools/play.py` rebuilds the mod): a Minecraft that was already
-  running keeps the old mod.
+It refuses to overwrite any file it did not write itself, backs up your saves before the very first install
+(`--backups <folder>` puts the zip somewhere else) and, when you pull a new version, replaces its own files when you run it
+again (close Cyberpunk first).
 
 ### ReShade: one-time settings
 1. Start Cyberpunk and open the ReShade overlay (**Home**).
@@ -83,11 +125,18 @@ What the installer guarantees:
 5. **In Cyberpunk's graphics settings, turn off frame generation** (DLSS Frame Generation, FSR Frame Generation and
    similar). Generated frames have no matching Minecraft frame, so Minecraft would tear and swim. DLSS Super
    Resolution, Ray Reconstruction and path tracing all work.
+6. **Sandevistan screen effect strength:** the Cyberblock effect has a slider **SandevistanStrength** (0 to 1, default 1).
+   While the Sandevistan runs the picture gets a chromatic split, a lime and teal tint, ghost trails and edge glow. Set
+   the slider to **0** if you are sensitive to motion effects; Kerenzikov uses half of the strength.
 
 ---
 
 ## 2. Launching
 
+**Release players:** start the Cyberblock installation from the Minecraft Launcher (see [Release install](#1-setup)), start
+Cyberpunk from Steam, load a save and press **F9**.
+
+**From source:**
 ```
 uv run tools/play.py
 ```
@@ -114,11 +163,11 @@ fires. If you want a QuickLoad key, bind one in Cyberpunk's own key settings.
 | You see | Meaning |
 |---|---|
 | "Cyberblock on" | Active on foot. V is hidden and invincible, and Steve's hand and hotbar appear. |
-| "Start Minecraft first" | Minecraft is not running, or not linked yet. Start it and press F9 again. |
-| "Cyberblock: in vehicle" / "Cyberblock: on foot" | You got into or out of a car. |
-| "Minecraft lost — V restored" | No Minecraft frame for 2 s (it closed or hung). V is back to normal. |
+| "Start Minecraft first" | Minecraft is not running, or not linked yet. Start it and press F9 again. (This one and "Minecraft lost" are the only messages Cyberpunk still draws itself, because Minecraft is not there to draw them.) |
+| "Cyberblock: in vehicle" / "Cyberblock: on foot" | You got into or out of a car. Steve rides along (see [Vehicles](#vehicles-and-third-person)). |
+| "Minecraft lost — V restored" | No Minecraft frame for 2 s (it closed or hung). V is back to normal and Cyberpunk's own interface is back. |
 | "Minecraft back — Cyberblock on" | Minecraft came back. Cyberblock resumes by itself. |
-| "Cyberblock off" | You pressed F9 again. Everything is back to vanilla. |
+| "Cyberblock off" | You pressed F9 again. Everything is back to vanilla, interface included. |
 
 ---
 
@@ -137,36 +186,40 @@ in every situation, so nothing fires twice.
 | **Space** | jump / double jump (the double jump needs the Reinforced Tendons implant) | "jump" signal: opens the elytra only while falling with >= 3 blocks of air below (with Reinforced Tendons installed: the 2nd airborne press); also steers a wind-charge launch into a glide | shared on purpose |
 | **Left/Right Shift** | sprint | "sprint" signal: double-tap either Shift fires the Sandevistan implant, when you also own the Sandevistan Sprint perk | shared |
 | **C**, **RCtrl** | crouch | Steve crouches with V | - |
-| **LCtrl**, **Mouse4**, **Mouse5** | Cyberpunk's own (dodge/dash, scanner hold etc.; dodge works with Steve's Dodge perk) | - | no longer swallowed |
-| **F** | interact / talk / dialogue choice 1 / exit vehicle | - | never bindable |
+| **LCtrl**, **Mouse4**, **Mouse5** | Cyberpunk's own (dodge/dash, scanner hold etc.; dodge works with Steve's Dodge perk) | - | not swallowed |
+| **F** | interact / talk / dialogue choice 1 / exit vehicle (the prompt itself is drawn by Minecraft) | - | never bindable |
 | **LMB / RMB / MMB** | (blocked combat) | attack / use / pick block | Shift/Ctrl held are passed as modifiers in Minecraft screens (Shift-click quick-move) |
 | **Wheel** | - | hotbar scroll; while G held: choose quickhack chip | goes to Cyberpunk while a dialogue or interaction list with 2+ choices is shown |
 | **1-9** | - | hotbar slots (in inventories: swap hovered stack) | 1-4 go to Cyberpunk while a dialogue or interaction list with 2+ choices is shown |
 | **E** | - | inventory | goes to Cyberpunk (scroll choices) while 2+ choices are shown |
 | **Q** | - | drop item (Ctrl+Q: whole stack) | goes to Cyberpunk while 2+ choices are shown |
-| **T** | - (phone answer unavailable while Active: press F9 to take a call) | chat (real typing: letters, Enter, Backspace, arrows reach Minecraft while a screen is open) | - |
+| **T** | **phone**: answers a ringing call, hold to reject (see [Calls](#the-minecraft-interface)) | chat (real typing: letters, Enter, Backspace, arrows reach Minecraft while a screen is open) | goes to Cyberpunk only while a call rings or an actionable notification shows |
 | **/** | - | command line | - |
-| **X** | (healing hotkey, already blocked while Active) | swap item to offhand (NEW) | - |
+| **X** | (healing hotkey, already blocked while Active) | swap item to offhand | - |
 | **G** (hold) | (walk toggle, suppressed) | scan / lock target 5 s; while held: wheel = pick chip, right-click = fire chip | Minecraft's own Quick Actions (also G in 26.3) is unbound automatically |
 | **K** | (crafting, swallowed) | skill tree | - |
-| **U** (NEW) | (swallowed) | Cyberware screen (install and remove implants); U again closes it | rebindable, like G and K |
-| **Y** (NEW) | (swallowed; Cyberpunk's own Y, scene fast-forward and camera pitch reset, works again with F9 off) | tap: fires the selected implant (Sandevistan, Optical Camo, Projectile Launch System, Berserk); hold 0.4 s: switches the selected implant | rebindable. Tap = released within 8 client ticks (0.4 s) |
-| **F5** | (QuickSave, swallowed) | ignored | dead key while Active |
-| **Esc** | pause menu when no Minecraft screen is open | closes the open Minecraft screen (respects screens that refuse Esc) | - |
-| **Tab, CapsLock, Alt, R, B, I, M, J, H, N, P, V, Z** | Cyberpunk's own (scanner/radial/reload/holster are blocked while Active; menus open and pause forwarding) | - | passed through |
+| **U** | (swallowed) | Cyberware screen (install and remove implants); U again closes it | rebindable |
+| **Y** | (swallowed; Cyberpunk's own Y, scene fast-forward and camera pitch reset, works again with F9 off) | fires the **Operating System** implant: Sandevistan or Berserk | rebindable |
+| **L** | (swallowed) | fires the **Arms** implant: Mantis Blades lunge, Gorilla Arms slam, Monowire lash, Projectile Launch System | rebindable. Minecraft's own Advancements key was L: it is unbound (see Vanilla clashes below) |
+| **O** | (swallowed) | fires **Optical Camo** (Integumentary) | rebindable. Minecraft's own Friends key was O, it is unbound |
+| **F5** | (QuickSave, swallowed) | toggles **third person** on foot ("Third person" / "First person" above the hotbar) | see [Third person](#vehicles-and-third-person); never quick-saves |
+| **Esc, M, J, I, P, H** | Cyberpunk's pause menu, map, journal, inventory, perks and hub | the menu is **replaced by a Minecraft screen** (pause, atlas, journal, inventory, skills, pause) | see [the Minecraft interface](#the-minecraft-interface); menus Cyberblock cannot replace stay Cyberpunk's, restyled |
+| **Tab, CapsLock, Alt, R, B, N, V, Z** | Cyberpunk's own (scanner/radial/reload/holster are blocked while Active) | - | passed through |
 
 ### Context rules
 - **A Cyberpunk dialogue or interaction list with 2 or more choices** (a conversation, or several prompts on one object such as "Pick up" / "Loot"): E, Q, 1-4 and the wheel go to Cyberpunk only, so
-  you scroll and pick choices as usual (F picks the highlighted one). The mouse buttons and the other keys (5-9, G, T,
-  ...) still go to Minecraft. A single-choice prompt ("[F] Talk") does not count: E still opens Steve's inventory.
-- **A Minecraft screen is open** (inventory, chest, chat, skill tree, death screen): every key except F9 goes to
-  Minecraft: the named keys plus typed text, Enter, Backspace, Tab, the arrows, Home/End, PgUp/PgDn and Delete. V
-  stands still, the camera is frozen, and the mouse moves Minecraft's cursor.
-- **A Cyberpunk menu is open** (pause menu, map, journal, Cyberpunk inventory), **V is in a vehicle**, or **Cyberblock
-  is off:** nothing is forwarded except F9. The menus work exactly as in vanilla.
+  you scroll and pick choices as usual (F picks the highlighted one). The list itself is drawn by Minecraft. The mouse
+  buttons and the other keys (5-9, G, T, ...) still go to Minecraft. A single-choice prompt ("[F] Talk") does not count: E
+  still opens Steve's inventory.
+- **A Minecraft screen is open** (inventory, chest, chat, skill tree, the Night City screens, death screen): every key
+  except F9 goes to Minecraft: the named keys plus typed text, Enter, Backspace, Tab, the arrows, Home/End, PgUp/PgDn and
+  Delete. V stands still, the camera is frozen, and the mouse moves Minecraft's cursor.
+- **A Cyberpunk menu is open that Minecraft does not replace** (shops, ripperdoc, stash, settings and similar, see
+  [pass-through menus](#menus-cyberblock-cannot-replace)), or **Cyberblock is off:** nothing is forwarded except F9. The
+  menus work exactly as in vanilla.
+- **V is in a vehicle:** the driving keys are Cyberpunk's; Minecraft shows only Steve's hand or the seated Steve, no hotbar (see [Vehicles](#vehicles-and-third-person)).
 - Minecraft's own key settings do not matter for the keys above: Cyberpunk sends Minecraft the action (inventory,
-  drop, swap, ...), not the key. Only the four Cyberblock keys below (Hack, Skill tree, Cyberware, Activate implant) are
-  rebindable.
+  drop, swap, ...), not the key. Only the six Cyberblock keys below are rebindable.
 
 ### In a Minecraft screen
 - **Esc** closes it (the death screen stays: click Respawn). **E** also closes the inventory and containers, and
@@ -178,17 +231,21 @@ in every situation, so nothing fires twice.
 - Closing a screen with E and holding W at once: if W goes down before Minecraft has reported the screen closed (about
   50-100 ms), V does not walk until you press W again. That is the rule that keeps keys from sticking in Cyberpunk.
 
-### Rebinding the four Cyberblock keys: Hack (G), Skill tree (K), Cyberware (U), Activate implant (Y)
+### Rebinding the six Cyberblock keys: Hack (G), Skill tree (K), Cyberware (U), Operating System implant (Y), Arms implant (L), Optical Camo (O)
 Minecraft → Options → Controls → Key Binds → category **Cyberblock**. The binding is sent to Cyberpunk at once.
 - **Refused** (both sides; `shared/vectors.json`): W A S D C E Q T X F I M J H N B P V Z R, 1-9, F5, F9, Space, Shift,
   Ctrl, Esc. These are Cyberpunk's own keys or keys Cyberblock already forwards.
 - **Allowed:** G K L O U Y 0 F1-F4 F6-F8 F10-F12.
-- **A refused key** goes back to its own default (G, K, U or Y). **If any two of the four keys end up the same, all
-  four go back to G, K, U and Y** (nothing is half-applied). Minecraft says so in chat (also after every reconnect).
-  Cyberblock.log logs it once, and its binds line reads `binds: hack G, skills K, cyberware U, activate Y`.
-- The keys the four actions use are taken from Cyberpunk. Move Skill tree off K and K opens Cyberpunk's crafting menu
-  again; move Activate off Y and Y is Cyberpunk's own again (scene fast-forward, camera pitch reset); move Cyberware off U
-  and U goes back to Cyberpunk too. Cyberpunk's walk toggle stays off while Active whichever key Hack uses.
+- **A refused key** goes back to its own default (G, K, U, Y, L or O). **If any two of the six keys end up the same, all
+  six go back to G, K, U, Y, L and O** (nothing is half-applied). Minecraft says so in chat (also after every reconnect).
+  Cyberblock.log logs it once, and its binds line reads `binds: hack G, skills K, cyberware U, activate Y, arms L, camo O`.
+- **Vanilla clashes:** on the first start, Cyberblock unbinds the vanilla Minecraft keys that sit on one of its six keys
+  (Advancements on L, Friends on O, Quick Actions on G), saves the options and tells you in chat ("Cyberblock took L from
+  Advancements (rebind it in Controls)"). The pause screen has no Advancements button, so to open the advancements screen
+  bind **Advancements** to a free key (Esc, **Minecraft Options...**, Controls).
+- The keys the six actions use are taken from Cyberpunk. Move Skill tree off K and K opens Cyberpunk's crafting menu
+  again; move Activate off Y and Y is Cyberpunk's own again (scene fast-forward, camera pitch reset); the same goes for U,
+  L and O. Cyberpunk's walk toggle stays off while Active whichever key Hack uses.
 
 ---
 
@@ -207,7 +264,7 @@ Minecraft → Options → Controls → Key Binds → category **Cyberblock**. Th
 - Cyberpunk never shows a game over. If Steve dies, the Minecraft death screen appears: click **Respawn** with the
   mouse.
 - The world keeps your inventory when you die (`keepInventory` is on).
-- Implants can help (see [Cyberware](#cyberware-u-and-y)): Subdermal Armor makes Night City hits go through Steve's
+- Implants can help (see [Cyberware](#cyberware-u-y-l-and-o)): Subdermal Armor makes Night City hits go through Steve's
   armor, Biomonitor heals him at 30 % health, and Second Heart restarts him once instead of dying (5 minute recharge).
 
 ---
@@ -244,8 +301,8 @@ the Minecraft log how many proxies exist ("proxies: H people, C cars").
   - the radius is 24 m on foot, and grows to 64 m while gliding;
   - Steve, mobs and arrows stand on them and bump into them;
   - you cannot break them.
-- **In a car:** Steve and the Minecraft HUD are hidden, Cyberpunk's HUD and controls come back, and everything below
-  is restored. Getting out switches back.
+- **In a car:** Steve rides along: Minecraft shows his hand or the whole seated Steve, and hides the hotbar. Details under
+  [Vehicles and third person](#vehicles-and-third-person).
 
 ### Layer 2: building, explosions, weapons
 - **Placed blocks are solid in Night City too.** They stop pedestrians, traffic and V:
@@ -258,8 +315,22 @@ the Minecraft log how many proxies exist ("proxies: H people, C cars").
 - **Explosions** become Cyberpunk explosions scaled by their power (TNT, creepers, firework rockets). Cars blow up
   and NCPD comes. An NPC is hurt once, by the Cyberpunk blast. NPCs hear it: within 10 m of V it reveals V, at 10-30 m
   it alerts them without giving V away, and further away it does not draw them to V.
-- **Weapons:** melee weapons (swords, axes…), arrows, tridents and crossbows hurt people and cars. People ragdoll,
-  and melee shoves cars. A kill drops its XP at Steve, however far away it happened.
+- **Weapons:** melee weapons (swords, axes…), arrows, tridents and crossbows hurt people and cars. A kill drops its XP
+  at Steve, however far away it happened.
+- **Knockback is vanilla-like.** A hit pushes a person the way Minecraft pushes a mob, and only strong hits knock them
+  down:
+
+  | Hit | Push | What Cyberpunk does |
+  |---|---|---|
+  | plain hit | 2 m/s | the person flinches (impact reaction) |
+  | sprint hit, Knockback I | 4.5 m/s | a stagger |
+  | Knockback II, gauntlet, Gorilla Arms | 7 m/s | a knockdown (they fall) |
+  | Gorilla Arms plus sprint | 9.5 m/s | a knockdown |
+  | gauntlet plus Gorilla Arms | 12 m/s | a knockdown plus a short ragdoll |
+
+  Arrows push by the Punch enchantment instead of by their speed. Cars are shoved ×3 by Gorilla Arms as before.
+  Cyberblock.log has a `knock: <id> s=<speed> tier=<tier> impulse=<...>` line per hit, which says which tier a hit
+  became.
 - **Fire:** flint and steel, fire charges, lava, Fire Aspect and flaming arrows set people alight. Flint and steel or
   a fire charge on a car does nothing and is not used up. A person standing in lava is set alight once every 15 s.
 
@@ -291,9 +362,12 @@ the Minecraft log how many proxies exist ("proxies: H people, C cars").
   - A fall faster than 12 m/s for 0.3 s opens it on its own (same 3-block rule).
 - **While gliding:** Minecraft physics fly Steve and V follows **every rendered frame**. The Cyberblock DLL moves V
   itself, a few milliseconds behind Minecraft's positions and smoothed between them, so the flight no longer steps once
-  a second and the camera no longer jumps. Steer with the mouse as usual; **firework rockets** (right mouse) boost
-  you. Collision mapping reaches further ahead the faster you fly.
-- **Wind-charge launches** (new): a **wind charge** thrown at your own feet (look down and throw), another player's or a
+  a second and the camera no longer jumps. **You steer with the mouse exactly like the vanilla elytra:** move the mouse
+  and the glide turns with the camera, left, right, up and down (the mouse turn is applied to the glide's own heading,
+  not to V's body, so it is no longer locked to the direction you started in). **Firework rockets** (right mouse) boost
+  you. Collision mapping reaches further ahead the faster you fly. Cyberblock.log's flight summary shows the turn: `yaw
+  start A end B, mouse x N counts at R deg/count`.
+- **Wind-charge launches:** a **wind charge** thrown at your own feet (look down and throw), another player's or a
   breeze's charge that bursts next to you, and the wind burst of a **mace** smash all throw Steve into the air with
   Minecraft physics, in survival and in creative (creative flying is switched off for the launch).
   - V follows every frame exactly as in a glide. The Minecraft log says `launch started at ... with ... m/s`, and
@@ -333,8 +407,6 @@ the Minecraft log how many proxies exist ("proxies: H people, C cars").
   "flight: cleared in mid-flight, V put on the ground").
 - Thrown things (pearls, arrows, tridents, potions, wind charges, the fishing hook) also stop on Night City walls,
   because the walls on their predicted paths are filled in ahead of time.
-- There is **no camera-only fallback** any more (`CyberblockFlight.SetCameraOnly` is gone): V is moved by the DLL, and
-  Troubleshooting covers what to read when it does not move.
 
 ### Layer 5: interactive items
 - **Lead (lasso):**
@@ -367,6 +439,25 @@ the Minecraft log how many proxies exist ("proxies: H people, C cars").
   Infinite effects (for example `/effect give @s speed infinite`) come back on V after every save, quick or auto;
   leaving Active forgets them.
 
+### Vehicles and third person
+**Steve rides along.** Getting into a car, bike or any other vehicle no longer hides Steve or Minecraft:
+- **First-person vehicle camera:** you see Steve's hand, drawn over the dashboard. The hotbar is hidden.
+- **Third-person vehicle camera:** you see the **whole of Steve, seated** at V's seat. Switching Cyberpunk's vehicle camera
+  switches between the two at once.
+- Minecraft hides its hotbar, survival bars (health, food, armour, experience level) and the crosshair while you are in a
+  vehicle and shows them again when you get out. Only the hand (first person) or the seated Steve (third person) is drawn.
+- V's own body stays hidden in both vehicle cameras, and **Cyberpunk's HUD never appears in a vehicle**: the speed and the
+  district are drawn by Minecraft (see [the interface](#the-minecraft-interface)).
+- The health rule, the driving, the radio and the quickhack ban in cars are as before. Minecraft's items, hacks and
+  implants that need V on foot do nothing while you drive.
+
+**Third person on foot (F5).** Press **F5** to see Steve from behind: the camera moves back (about 3 m), is shortened by
+walls and blocks so it never ends up inside them, and F5 again returns to the first-person view. The DLL moves
+Cyberpunk's own first-person camera component, so V still moves and turns normally and the crosshair is drawn at the
+screen centre. It switches itself off (back to first person) in vehicles, scenes, workspots, menus, braindances and
+photo mode, and whenever Cyberblock goes off. A "Third person" or "First person" message confirms it. Cyberblock.log says
+`view: third person on (distance D m)` or `view: first person (<reason>)`.
+
 ### Layer 6: Cyberpunk in Minecraft form
 
 #### Netrunning, step by step
@@ -376,19 +467,17 @@ recharge; Cyberpunk runs the real quickhack (upload, VFX, damage, AI reaction, N
 **Step 0: be ready.** Cyberblock Active on foot ("Cyberblock on" after F9). It works in survival and creative (RAM
 costs apply in both), not in spectator, and not from a car (nothing is forwarded in a vehicle).
 
-**Step 1: get a cyberdeck.** The Cyberdeck is an implant: it lives in the **Operating System** slot (see
-[Cyberware](#cyberware-u-and-y)).
+**Step 1: get a cyberdeck.** The Cyberdeck is an implant: it lives in the **Operating System** slot, which now has **two
+places** (see [Cyberware](#cyberware-u-y-l-and-o)): the Cyberdeck takes the first, Sandevistan or Berserk the second, so
+you can run both.
 - In survival, the starter kit arrives by itself the first time you press F9 in a world ("Cyberblock starter kit
-  received"). It **installs the Cyberdeck for you**, and it holds 2 **RAM Shards** and one of each of the 10
-  **quickhack chips** in the main inventory (open it with **E**). It starts your RAM full (8/8).
+  received"). It **installs the Cyberdeck for you** (and Sandevistan next to it), and it holds 2 **RAM Shards** and one of
+  each of the 10 **quickhack chips** in the main inventory (open it with **E**). It starts your RAM full (8/8).
 - At any time: **T** (or **/**), type `/cyberblock kit`, Enter. Or craft a Cyberdeck (recipe below), or take one from
   the **Cyberblock** creative tab, then install it with **U**.
-- **The deck counts** when it is installed in the Operating System slot, **or** when that slot is empty and a Cyberdeck
-  is anywhere in your inventory (hotbar or main inventory). If the slot holds another implant (Sandevistan or Berserk)
-  and the deck is not installed, you have no deck, even with one in the bag: chips and RAM Shards say "Your Operating
-  System slot holds Sandevistan: swap in the cyberdeck with U to hack" (the name of whatever is installed there, and
-  your Cyberware key). With no deck at all your maximum RAM is 0 and every chip says "No cyberdeck: install one in the
-  Operating System slot (U) or carry one".
+- **The deck counts** when it is installed, **or** when a Cyberdeck is anywhere in your inventory (hotbar or main
+  inventory). Sandevistan or Berserk no longer get in its way. With no deck at all your maximum RAM is 0 and every chip
+  says "No cyberdeck: install one in the Operating System slot (U) or carry one".
 
 **Step 2: watch your RAM.** The cyan bar left of the hotbar, level with the experience bar, is labelled "RAM n/m".
 - The maximum is 8 with a deck, plus 4 with the Extra RAM perk and plus 4 with the RAM Upgrade implant (up to 16). It
@@ -417,48 +506,58 @@ Cheap Hacks) and how to use it. You can still put a favourite on the hotbar (E, 
 **Step 5: lock.** The last target a scan found stays **locked for 5 s**. Let go of G and the tooltip dims and counts
 down "Locked 5..1 s". A scan that finds nothing (crosshair on the sky or a bare wall while G is held) drops the lock.
 
-**Step 6: pick a chip and fire.** Two ways:
-- **The hack wheel (easiest):** keep **G** held, roll the **mouse wheel** to pick a chip (the hotbar does not move
-  while G is held; the tooltip shows "Chip: <name> (<n> RAM)" or "(recharging)"), then **right-click**. The wheel
-  starts at the chip in your hand, else the first one you own, and remembers your pick.
+**Step 6: pick a chip and fire.** **The chip in your main hand always wins.** The rule is:
+1. the chip you **hold** in your main hand;
+2. else the chip you picked with the **wheel**;
+3. else the first chip you own.
+
+Selecting a hotbar slot that holds a chip clears the wheel pick, so the hand and the wheel never disagree. Two ways to
+use it:
 - **From the hand:** hold a chip on the hotbar, scan with G (you may let go: the lock lasts 5 s) and right-click.
+- **The hack wheel (easiest):** keep **G** held, roll the **mouse wheel** to pick a chip (the hotbar does not move
+  while G is held; the tooltip shows "Chip: <name> (<n> RAM)" or "(recharging)"), then **right-click**.
+
+When you fire, the action bar says "Hack: <chip name>" in the chip's colour, so you can see which chip actually went out.
 
 Minecraft then checks, in this order: a cyberdeck, a lock from the last 5 s, the right kind of target (the Redstone
-Lever wants a device, every other chip a person or a car), and enough RAM. If all pass, it spends the RAM, starts the
-chip's recharge (2 s; 10 s for Synapse Burnout and Cyberpsychosis) and Cyberpunk runs the hack:
+Lever wants a device, every other chip a person or a car), that the target is not still uploading a hack, and enough RAM.
+If all pass, it spends the RAM, starts the chip's recharge (2 s; 10 s for Synapse Burnout and Cyberpsychosis) and
+Cyberpunk runs the hack:
 - on a **person**: the quickhack itself, after its upload;
 - on a **car**: the hack goes to its driver; an empty car fails with "no driver";
 - with **Chain Hack**: the nearest other hackable living person within 8 m of the target gets the same hack.
 
-A success plays a short beacon sound and Cyberblock.log says "hack <name> on <id>: ok". That answer comes when the
-upload **starts**, not when the effect lands: Cyberpunk's upload bar is on the HUD that Cyberblock hides, so watch the
-target instead. Long uploads (Synapse Burnout, Cyberpsychosis) take a few seconds, and if the target dies, despawns
-or leaves first, the hack is lost and its RAM is not given back.
+**An upload beam runs from Steve to the target** (in the chip's colour) while Cyberpunk uploads the hack. Cyberblock.log
+says `hack <name> on <id>: ok (<kind>, upload <s>s, +<n> spread)` when the upload **starts**; the effect lands when the
+upload completes, and that is when Minecraft plays the chip's **impact** (see [what each chip does](#what-each-chip-does)).
+Long uploads (Synapse Burnout, Cyberpsychosis) take a few seconds, and if the target dies, despawns or leaves first, the
+hack is lost and its RAM is not given back. A target that is still uploading refuses a second hack ("<name> is still
+uploading a hack", no RAM spent).
 
 **Step 7: read the answer.** Messages appear above the hotbar. Every failure Cyberpunk reports gives the RAM back.
 
 | Message | What to do |
 |---|---|
 | Hold G and look at a target | nothing is locked: scan first (the lock lasts 5 s) |
-| No cyberdeck: install one in the Operating System slot (U) or carry one | install the deck with **U**, or empty the slot and carry one (step 1) |
-| Your Operating System slot holds Sandevistan: swap in the cyberdeck with U to hack | another implant (Sandevistan or Berserk) is in the deck's slot: press **U** and click the Cyberdeck to swap it back in |
+| No cyberdeck: install one in the Operating System slot (U) or carry one | install the deck with **U**, or carry one in your inventory (step 1) |
 | Not enough RAM: n of m | wait for it to regenerate, or use a RAM Shard |
 | Still recharging | that chip is on its 2 s (or 10 s) recharge: pick another with the wheel |
+| <name> is still uploading a hack | wait for the upload beam to end |
 | The Redstone Lever only works on devices | you locked a person or a car |
 | This quickhack needs a person or an occupied car | you locked a device: use the Redstone Lever |
 | Hack failed: no driver | the car is empty |
 | Hack failed: not hackable (friendly / god mode / quest character / no quickhack actions / not a person) | Cyberpunk protects this one (friends, quest characters, story NPCs) |
 | Hack failed: not hackable (V is in a scene) | finish the scene first |
-| Hack failed: target gone | it really died or despawned (this used to appear for live targets because of an id bug, fixed in re-test 2: if you still get it on someone alive, check the scan line in Cyberblock.log, see Troubleshooting) |
+| Hack failed: target gone | it really died or despawned (if you still get it on someone alive, check the scan line in Cyberblock.log, see Troubleshooting) |
 | Hack failed: not hackable (no intersection / camera allows no hack / device allows no hack / not a device) | that device offers nothing to hack |
 | Night City is not connected | Cyberpunk never answered (60 s, or 10 s with the link down) |
 
 **Step 8: devices.** The **Redstone Lever** (1 RAM) is the device chip. Aim at the device itself, not at a person in
 front of it, scan, and fire:
-- a traffic light flips its whole intersection;
-- a camera stops seeing V (it never takes over the view);
-- vending machines, TVs, radios and arcades make a distraction;
-- any other device runs the first quickhack it allows.
+- a traffic light flips its whole intersection (red and green dust, a bell);
+- a camera stops seeing V (it never takes over the view; black smoke);
+- vending machines, TVs, radios and arcades make a distraction (music notes and chimes);
+- any other device runs the first quickhack it allows (a lever click and redstone dust).
 
 **Step 9: perks.** Press **K** and buy the **Intelligence** branch in order (XP levels: 3, 5, 8, 12): **Extra RAM**
 (+4 maximum RAM), **Cheap Hacks** (every chip costs 1 RAM less, at least 1), **Chain Hack** (step 6) and **Overclock**
@@ -466,7 +565,7 @@ front of it, scan, and fire:
 `/cyberblock perks free on`, perks cost nothing (see [free perks](#6-game-modes-and-the-starter-kit)).
 
 **A quick run:** F9 (the kit arrives) → hold G on a ganger → roll the wheel to "Redstone Charge" → right-click → let
-go of G. The ganger is electrocuted and your RAM drops by 3.
+go of G. A lightning bolt strikes, the ganger is electrocuted and your RAM drops by 3.
 
 #### The chips
 
@@ -483,13 +582,30 @@ go of G. The ganger is electrocuted and your RAM drops by 3.
 | Creeper Brain | Cyberpsychosis | 8 | 10 s | gunpowder, rotten flesh, redstone, copper ingot |
 | Redstone Lever | Device hack | 1 | 2 s | lever, redstone, copper ingot |
 
-The Redstone Lever works only on devices. What it does depends on the device:
-- traffic lights flip the intersection;
-- cameras stop seeing you;
-- vending machines, TVs, radios and arcades make a distraction;
-- anything else runs its first available quickhack.
+Every other quickhack than the Redstone Lever needs a person or a car; the Lever needs a device.
 
-Every other quickhack needs a person or a car.
+#### What each chip does
+Every chip is unique in **both** games: a Minecraft effect that matches the chip, and a different Cyberpunk quickhack.
+A person who walks around the street as part of the **crowd** (a pedestrian) is not an AI-driven character, and Cyberpunk
+does not run quickhacks on crowd characters at all. A **ganger or NCPD officer** (a squad member) gets the vanilla
+quickhack. So that a pedestrian shows the effect too, Cyberblock adds a visible extra on pedestrians, listed in the last
+column. Cyberblock.log's `hackfx:` lines say which extra ran.
+
+| Chip | In Minecraft (at the impact) | In Cyberpunk, on a ganger | On a pedestrian (extra added by Cyberblock) |
+|---|---|---|---|
+| **Redstone Charge** | a visual-only lightning bolt, an electric spark burst and red sparks | Overload: electrocutes (kills pedestrians outright) | nothing extra: the vanilla effect is already visible |
+| **Blaze Chip** | blaze shot, a rising spiral of flames, lava pops and smoke (no fire blocks) | Overheat: burns | set alight for 5 s |
+| **Ink Sac Daemon** | squid ink bursts at the head and leaves an ink halo | Reboot Optics: blinds | blinded for 5 s |
+| **Cobweb Daemon** | **real cobwebs** appear in the target's cell, the four cells around it and the head cell (only in air, never within 1.5 blocks of you), and vanish after 6 s | Cripple Movement: cannot walk | stunned (rooted) for 4 s |
+| **Spider Eye Virus** | a green poison cloud spreads, and a green arc jumps to each person it reaches | Contagion: spreads to others | always uploads a mild contagion to the 2 nearest people within 6 m |
+| **Wither Skull Daemon** | a wither-skull trail to the target, then soul and smoke particles | Synapse Burnout: heavy brain damage | a heavy hit (35 % of health), no ragdoll |
+| **Compass Ping** | a gold ring and light column, and **every hostile within 32 blocks glows through walls** (gold outline, also Minecraft's own hostile mobs) for 10 s | Ping: reveals the squad and enemies | reveals hostile NPCs within 30 m (up to 16) |
+| **Bottle of Forgetting** | a swirl of enchantment particles round the head; mobs that targeted that person drop it | Memory Wipe: the person forgets V | dazed for 2 s |
+| **Creeper Brain** | a green creeper face floats above the head; angry-villager marks on every victim | Cyberpsychosis: the person attacks its friends | frenzy for 6 s: every 1.5 s it hits the nearest person within 4 m |
+| **Redstone Lever** | depends on the device: a camera (lever click, black smoke), a traffic light (bell, red and green dust), a distraction device (music notes, chimes) or any other (lever click, redstone dust) | the device's own action | - |
+
+Pedestrians that are quest characters or V's friends are spared the extras. The extras happen when the upload completes,
+about 1-3 s after the beam starts.
 
 **Other cyber items:**
 
@@ -502,66 +618,84 @@ Every other quickhack needs a person or a car.
 
 All of them, and every implant below, are also in the **Cyberblock** creative tab.
 
-#### Cyberware (U and Y)
+#### Cyberware (U, Y, L and O)
 Cyberware are implants you **install** instead of carrying. Each one goes into a ripperdoc slot of its own (custom
-slots, not armor slots) and then works by itself, or when you press **Y**. Every implant has a Minecraft effect, with
+slots, not armor slots) and then works by itself, or when you press its key. Every implant has a Minecraft effect, with
 particles and sounds, and where it makes sense the real Cyberpunk effect on V (time dilation, optical camo, a double
 jump, an explosion).
 
 **The screen (U).** Press **U** to open the Cyberware screen. **U** again or **Esc** closes it.
-- **Left:** the eight slots, as boxes with one frame per place: Arms 1, Legs 1, Operating System 1, Nervous System 1,
-  Integumentary 2, Eyes 1, Circulatory 2, Frontal Cortex 1.
+- **Left:** the slots, as boxes with one frame per place: Arms 1, Legs 1, **Operating System 2** (a Cyberdeck place and a
+  Sandevistan-or-Berserk place), Nervous System 1, Integumentary 2, Eyes 1, Circulatory 2, Frontal Cortex 1.
 - **Right:** the implants you can install. These are the ones in your inventory (in creative, all of them), 24 to a page.
-- **Left-click** an implant on the right to install it, or an installed one on the left to take it out. **Right-click**
-  an active implant to make it the one Y fires (a yellow Y marks it). Hover for its slot, what it does in Minecraft and
-  in Night City, its cooldown and how to install it. You can also install by right-clicking the item in your hand.
+- **Left-click** an implant on the right to install it, or an installed one on the left to take it out. Hover for its
+  slot, what it does in Minecraft and in Night City, its cooldown, **which key fires it** ("Fire: Y") and how to install it.
+  You can also install by right-clicking the item in your hand.
 - A full slot is replaced: the new implant goes in and the old one comes back to your inventory ("Installed <new>
-  (returned <old>)").
+  (returned <old>)"). In the two Operating System places the Cyberdeck always goes to the first and Sandevistan or Berserk
+  to the second, so installing Berserk replaces Sandevistan, **never the deck**.
 - In survival, installing uses the item up and removing gives it back. In **creative**, installs are free and the
   screen lists every implant; cooldowns still apply.
+- A character saved before this version that has Sandevistan or Berserk in the first Operating System place is moved to
+  the second place by itself, once, on joining.
 
-**Firing (Y).** An implant is always on, fired with Y, or automatic.
-- **Tap Y** (let go within 0.4 s) to fire the selected active implant. **Hold Y for 0.4 s** to switch to the next one
-  ("Y fires <implant>"). With none installed Y says "No active implant installed"; a recharging one says "<implant> is
-  cooling down (n s)".
+**Firing: three keys.** An implant is always on, fired with its key, or automatic.
+- **Y** fires the **Operating System** implant (Sandevistan or Berserk).
+- **L** fires the **Arms** implant (Mantis Blades, Gorilla Arms, Monowire, Projectile Launch System).
+- **O** fires **Optical Camo**.
+- With nothing fireable in that slot, the key says so ("No Operating System implant to fire (Y)", "No active Arms
+  implant to fire (L)", "No Optical Camo installed (O)"); a recharging one says "<implant> is cooling down (n s)".
+- There is no selection or cycling any more: each key fires exactly its own slot, so a Sandevistan and a Mantis lunge are
+  never on the same key. All three keys are rebindable (see [Controls](#3-controls)).
 - **The HUD** shows each active or automatic implant right of the hotbar as a 16-pixel icon with a thin bar under it:
-  grey filling to cyan while it recharges, magenta while it runs, and a yellow frame on the one Y fires.
+  grey filling to cyan while it recharges and magenta while it runs. While the Sandevistan runs the HUD says
+  "SANDEVISTAN".
 - Cooldowns count game time, are saved with the world, and still apply in creative.
-- Cyberpunk's own Y (scene fast-forward, camera pitch reset) is swallowed while Cyberblock is active, and works again
-  with F9 off.
+- Cyberpunk's own Y, L and O (scene fast-forward, camera pitch reset and the others) are swallowed while Cyberblock is
+  active, and work again with F9 off.
 
-**The 17 implants.** "Slot" is where it goes, "Kind" is always on / **Y** / automatic.
+**The 17 implants.** "Slot" is where it goes, "Kind" is always on / the key that fires it / automatic.
 
 | Implant | Slot | Kind | In Minecraft | In Night City (V) |
 |---|---|---|---|---|
-| **Mantis Blades** | Arms | on | empty main hand: +6 attack damage, slower swings; red dust, a sweep and a strong-hit sound on every hit. **L**: lunge at the aimed target up to 10 blocks away for 1.5x damage, 6 s cooldown (with Cyberpunk running it strikes at once along a red trail and V stays where she is; a lunge that misses gives the cooldown back) | your hits hurt people and cars as melee, as always; the lunge lands as a `hit` |
-| **Gorilla Arms** | Arms | on | empty hand: +4 damage, +2 knockback, slower swings; a gust and smash sounds | shoves people and cars hard (the same shove as the Gorilla Arms perk, never doubled) |
-| **Monowire** | Arms | on | empty hand: +3 damage, +3 reach, slower swings; a line of electric sparks to the target | your hits land as melee |
-| **Projectile Launch System** | Arms | **Y**, 8 s cooldown | fires along the crosshair up to 64 blocks (closer than 4 blocks: "Too close to fire", no cooldown): smoke and flames, crossbow and fire-charge sounds, a power 2.5 explosion | a real Cyberpunk explosion there: cars blow up, NCPD comes |
+| **Mantis Blades** | Arms | on, **L**: lunge, 6 s cooldown | empty main hand: +6 attack damage, slower swings; red dust, a sweep and a strong-hit sound on every hit. **L**: lunge at the entity you aim at (up to 10 blocks) for a 1.5× hit (with Cyberpunk running it strikes at once along a red trail and V stays where she is; a lunge that misses gives the cooldown back) | your hits hurt people and cars as melee, as always; the lunge lands as a `hit` |
+| **Gorilla Arms** | Arms | on, **L**: ground slam, 8 s cooldown | empty hand: +4 damage, +2 knockback, slower swings; a gust and smash sounds. **L**: a slam that knocks back everything within 4 blocks, with a dust ring and a smash | shoves people and cars hard (the same shove as the Gorilla Arms perk, never doubled); the slam knocks people down at most |
+| **Monowire** | Arms | on, **L**: lash, 5 s cooldown | empty hand: +3 damage, +3 reach, slower swings; a line of electric sparks to the target. **L**: a 120° lash up to 5 blocks, 4 damage and Slowness II for 3 s | your hits land as melee; the lash hits each person in reach |
+| **Projectile Launch System** | Arms | **L**, 8 s cooldown | fires along the crosshair up to 64 blocks (closer than 4 blocks: "Too close to fire", no cooldown): smoke and flames, crossbow and fire-charge sounds, a power 2.5 explosion | a real Cyberpunk explosion there: cars blow up, NCPD comes |
 | **Reinforced Tendons** | Legs | on | 2 more blocks of safe fall; a jump in mid-air makes a ring of cloud and a gust | V's **double jump** |
 | **Fortified Ankles** | Legs | on | 4 more blocks of safe fall; a charged jump (hold Space about half a second, then let go) throws dust and a gust | V's **charge jump** |
 | **Lynx Paws** | Legs | on | Steve makes no step vibrations, and mobs notice you from half as far | people notice V from half as far (one effect, shared with the Silent Steps perk) |
-| **Sandevistan** | Operating System | **Y**, 6 s on, 25 s cooldown (8 s and 18 s with the Sandevistan Sprint perk) | Speed II and the Minecraft world at half speed; cyan and magenta afterimages, beacon sounds | Night City slows to 20 %, V does not |
-| **Berserk** | Operating System | **Y**, 8 s on, 40 s cooldown | Strength I, Resistance I and Jump Boost I; a ring of dust, an angry burst, a smash sound; hostile mobs within 3 blocks are knocked back | the jump boost reaches V. Cyberpunk's own Berserk status is **not** used (it would give V a superhero landing and a ground slam on falls): Cyberblock.log says "berserk: Minecraft side only" |
-| **Cyberdeck** | Operating System | on | your netrunning RAM (8 at most, see [netrunning](#netrunning-step-by-step)) | quickhacks run as before |
-| **Kerenzikov** | Nervous System | automatic, 2 s on, 10 s cooldown | fires by itself when you draw a bow, crossbow or trident while V is in the air: the Minecraft world at half speed, a ring of sparks, a rising chime | Night City slows to 30 % |
-| **Optical Camo** | Integumentary | **Y**, 10 s on, 30 s cooldown | Invisibility without particles (the icon shows), a portal-like shimmer; it breaks when you attack or fire the Launch System | V's optical camo, as with the Invisibility potion |
+| **Sandevistan** | Operating System (2nd place) | **Y**, 6 s on, 25 s cooldown (8 s and 18 s with the Sandevistan Sprint perk) | Speed II and the Minecraft world at half speed; cyan and magenta afterimages, beacon sounds, a "SANDEVISTAN" label | Night City slows to 20 %, V does not, and **ReShade draws the Sandevistan screen effect** (below) |
+| **Berserk** | Operating System (2nd place) | **Y**, 8 s on, 40 s cooldown | Strength I, Resistance I and Jump Boost I; a ring of dust, an angry burst, a smash sound; hostile mobs within 3 blocks are knocked back | the jump boost reaches V. Cyberpunk's own Berserk status is **not** used (it would give V a superhero landing and a ground slam on falls): Cyberblock.log says "berserk: Minecraft side only" |
+| **Cyberdeck** | Operating System (1st place) | on | your netrunning RAM (8 at most, see [netrunning](#netrunning-step-by-step)) | quickhacks run as before |
+| **Kerenzikov** | Nervous System | automatic, 2 s on, 10 s cooldown | fires by itself when you draw a bow, crossbow or trident while V is in the air: the Minecraft world at half speed, a ring of sparks, a rising chime | Night City slows to 30 %, with half the screen effect |
+| **Optical Camo** | Integumentary | **O**, 10 s on, 30 s cooldown | Steve turns translucent and cyan in third person (a shimmer) instead of vanishing, mobs get plain Invisibility; it breaks when you attack or fire the Launch System | V's optical camo, as with the Invisibility potion |
 | **Subdermal Armor** | Integumentary | on | +6 armor and +2 toughness; a netherite-armor sound on install | protects against Night City damage, which goes through Steve's armor |
 | **Kiroshi Optics** | Eyes | on | the scan reaches 80 m instead of 48; hostile proxies and hostile mobs within 32 blocks get a red outline | the scan range |
 | **Biomonitor** | Circulatory | automatic, 90 s cooldown | at 30 % health or less: heals 8 (4 hearts) and Regeneration I for 6 s; hearts, a chime and "Biomonitor: emergency heal" | - |
 | **Second Heart** | Circulatory | automatic, 5 minute cooldown | instead of dying: full health, Regeneration II for 5 s, Absorption I for 30 s and the totem animation ("Second Heart restarted you"). It does not save you from `/kill` or the void. The cooldown is saved | - |
 | **RAM Upgrade** | Frontal Cortex | on | +4 maximum RAM (adds to the Extra RAM perk) | - |
 
+**Arm implants are visible.** Mantis Blades, Gorilla Arms, Monowire and the Projectile Launch System have 3D models: when
+installed you see them on your arm in first person, and on Steve's arms in third person (F5). The model changes to the
+deployed version while the implant is out (blades extended, the launcher open). Kiroshi Optics, Subdermal Armor and
+Reinforced Tendons also show on Steve (glowing eyes, plating, tendons) in third person.
+
+**The Sandevistan screen effect.** While the Sandevistan runs (and, at half strength, Kerenzikov) ReShade adds a chromatic
+split, a lime and teal tint, ghost trails behind moving things, an edge glow and a pulsing vignette. It fades in over
+0.15 s and out over 0.4 s, and is off while a Cyberpunk menu is open. Your HUD and your hand stay sharp. The strength slider
+is in the Cyberblock effect (**SandevistanStrength**, 0 turns it off). Cyberblock.log says `screenfx: sandevistan S s`.
+
 **Slot rules worth knowing:**
-- **One Operating System implant.** Sandevistan, Berserk and the Cyberdeck share one slot. Installing Sandevistan over
-  the deck sends the deck back to your bag, but then your RAM is 0 until the deck is back in (or the slot is empty and
-  the deck is in your inventory).
+- **Two Operating System places.** The Cyberdeck takes the first; Sandevistan or Berserk the second. You can run a deck
+  and a Sandevistan together. (The kit installs both.)
 - One arm implant at a time. Integumentary (Optical Camo and Subdermal Armor fit together) and Circulatory (Biomonitor
   and Second Heart) hold two each.
-- Arm implants work only while your main hand is **empty**.
+- Arm implants' passive bonuses work only while your main hand is **empty**; their **L** ability works with anything in
+  the hand.
 
 **Perks that upgrade implants** (the skill tree, K):
-- **Double Jump** adds 4 blocks of safe fall to any legs implant. V's double jump itself now comes from Reinforced
+- **Double Jump** adds 4 blocks of safe fall to any legs implant. V's double jump itself comes from Reinforced
   Tendons only.
 - **Sandevistan Sprint** makes the Sandevistan implant run 8 s with an 18 s cooldown (6 s and 25 s without it), and
   lets a double-tap of Shift fire it. It needs the implant.
@@ -571,6 +705,11 @@ jump, an explosion).
 - **Migration:** a character that already owns the Double Jump, Sandevistan Sprint or Optical Camo perks receives
   the matching implant items once, never installed for you: "Your perks now need cyberware: you received <items>.
   Install them with U".
+
+**Advancements.** Cyberblock has its own advancement tab (the pause screen has no button for it: bind **Advancements** to a free key in Esc, **Minecraft Options...**, Controls, then press it): *Cyberblock*
+(root), *Chromed Up* (install your first cyberware), *Two Brains* (run a cyberdeck and a Sandevistan or Berserk at once),
+*Netrunner* (land your first quickhack), *Script Kiddie No More* (land every quickhack chip) and *Time Is on My Side*
+(defeat an enemy while the Sandevistan runs).
 
 **Getting implants:**
 - **Craft** them (all shapeless; every recipe also needs 1 redstone and 1 copper ingot). The Cyberdeck recipe is in
@@ -595,8 +734,8 @@ jump, an explosion).
   | Second Heart | golden apple, redstone block, iron ingot |
   | RAM Upgrade | 2 RAM Shards, gold ingot |
 
-- **The starter kit** (survival, once per world; `/cyberblock kit` again): it installs the Cyberdeck, Kiroshi Optics,
-  Reinforced Tendons and Biomonitor, and puts Sandevistan, Optical Camo and the Projectile Launch System in the main
+- **The starter kit** (survival, once per world; `/cyberblock kit` again): it installs the Cyberdeck, Sandevistan, Kiroshi
+  Optics, Reinforced Tendons and Biomonitor, and puts Optical Camo and the Projectile Launch System in the main
   inventory for you to install with **U**. An implant whose slot is already full goes to the main inventory instead.
 - **Creative:** the **Cyberblock** creative tab has every implant, and the screen installs any of them for free.
 
@@ -636,6 +775,62 @@ Press **K** to open the skill tree: five branches of four perks.
 Perks are stored on Steve in the Minecraft world. They survive death and are sent to Cyberpunk every time the two
 connect.
 
+### The Minecraft interface
+**Cyberpunk's own interface stays invisible while Cyberblock is on; Minecraft draws every part of it** in Minecraft's own
+font, panels and colours (from your own Minecraft install: nothing is copied). Cyberpunk keeps doing the work and keeps its
+input (F, E/Q/1-4/wheel in dialogues); it only sends the information to Minecraft.
+
+**What is on the screen** (it scales with Minecraft's GUI scale and never covers the hotbar, effect icons, boss bars or
+chat):
+
+| Where | What |
+|---|---|
+| **Top left** | the **radar**: an 80 × 80 map in the style of a Minecraft map item. It shows terrain shading around you (24 m), people as dots (red hostile, white neutral), cars as grey squares, Minecraft mobs, map pins with Minecraft's own map markers, an arrow for Steve and an arrow at the edge that points to your quest objective. It rotates with where you look. |
+| **Under the radar** | **eddies** with a gold nugget (`€$ 12450`), the **wanted level** as up to five stars, the **time** and **district**, and the **speed** in km/h in a vehicle |
+| **Top right** | the **tracked quest**: its title in yellow, its objectives with a box or a tick, counters ("2/3"), "(optional)" and the **distance to the waypoint** in metres |
+| **Waypoint** | the objective also shows on Minecraft's **locator bar** (the strip near the hotbar), so you can follow it in any direction; if the bar is not shown, the arrow on the radar and the quest panel still point to it |
+| **Right of the crosshair** | the **interaction prompt**: a Minecraft tooltip box with `[F] Talk`, `[F] Open`, `[F] Pick up` (the key in yellow). Hold actions show a fill bar and inactive ones are grey. It replaces Cyberpunk's own "F ..." prompt for doors, people, items and getting into cars. |
+| **Bottom centre** | the **dialogue choice list**: a tooltip-style list above the subtitle. The selected line starts with `>` in yellow, quest-important lines are gold, unavailable ones grey; payment and skill-check suffixes show; a **timed** choice gets a timer bar like a boss bar. Pick as before: E/Q or the wheel scroll, 1-4 pick, F confirms. |
+| **Above the hotbar** | **subtitles**: the speaker's name in aqua and the line in white, fading after its time |
+| **Toast area** (top right) | **notifications** as Minecraft toasts with an icon: job updates, new items, eddies, experience, level ups, messages, shards, zones, wanted level, warnings and saves ("Saving Night City...", "Saved"). **Phone calls** stay on the toast while they ring: `[T] Answer / hold [T] Reject`. |
+| **Whole screen** | in a pass-through menu (below): a Minecraft title bar with the menu's name and a grey and white bevelled border |
+
+**Phone calls.** When someone calls, a toast says "Incoming call: <name>" with `[T] Answer / hold [T] Reject`. Press **T** to
+answer, hold **T** to reject (if the call can be rejected). During the call the toast says "On call: <name>", and ends with
+"Call ended". T is Cyberpunk's only while a call rings or an actionable notification shows; the rest of the time it is
+Minecraft's chat key.
+
+**Menus replaced by Minecraft screens.** The Cyberpunk key still does what it always did, but the menu that opens is a
+Minecraft screen:
+
+| You press | You get |
+|---|---|
+| **Esc** or **H** | the **Night City pause screen** ("Night City (paused)"): Back to Night City, Save Game, Load Last Save, Map, Journal, Messages, Night City Menu..., Minecraft Options..., Quit to Cyberpunk Main Menu (it asks first). **Cyberpunk is paused while this screen is open.** Saving says "Saving is not possible right now" when Cyberpunk does not allow a save. |
+| **M** | the **Atlas**: a map of the pins around you in Minecraft style, with **Track** on a pin and **Fast travel to <place>** on the fast-travel points when Cyberpunk allows it (otherwise it tells you to use the Night City map through *Night City Menu...*) |
+| **J** | the **Journal**: Main Jobs, Side Jobs, Gigs and Other, each quest with its objectives (done ones ticked), a **Track** button and a "Tracked" mark |
+| **Messages / the phone** | the **Phone**: your contacts and message threads, with a Reply button that sends the choice you pick |
+| **I** (or Cyberpunk's crafting menu) | Minecraft's **inventory** |
+| **P** | the **skill tree** (the same screen as K) |
+| **U** | the Cyberware screen (as before) |
+
+Crafting benches in the world are different: they are pass-through menus (below).
+
+#### Menus Cyberblock cannot replace
+Some Cyberpunk menus have no Minecraft equivalent that could do the same job: **shops and vendors, the ripperdoc, the
+stash, the wardrobe, crafting benches, breach protocol, arcade machines, the braindance editor, tutorial and shard popups,
+settings, save and load lists, the death screen and loading screens.** These stay Cyberpunk's own menus, but **restyled**:
+Cyberblock tints them with Minecraft's colours and puts a Minecraft frame (a title bar with the menu's name and a bevelled
+border) around them, and Minecraft's own world is not drawn over them. When the menu closes, everything is back.
+- **Limitation: the font.** Minecraft's font cannot be copied into Cyberpunk, and making an original pixel font for Cyberpunk
+  needs WolvenKit, which this project does not use. So **text inside these pass-through menus stays in Cyberpunk's font**.
+  Colours and panels are Minecraft's.
+- A tutorial or shard popup that waits for input (the game is paused by Cyberpunk itself) and the braindance timeline are
+  shown the same way.
+- Loading screens during quest teleports show "Loading Night City..." drawn by Minecraft as a cover.
+- **Escape hatch:** if you ever want Cyberpunk's own pause menu, open the Minecraft pause screen and click **Night City
+  Menu...**. It opens the real Cyberpunk menu once. If Minecraft is not running or not linked, every Cyberpunk menu works
+  as in vanilla.
+
 ---
 
 ## 6. Game modes and the starter kit
@@ -671,17 +866,17 @@ Switch modes with Minecraft's `/gamemode` (cheats are on in the `cyberblock` wor
 - **Offhand:** the shield. Hold right mouse with the sword (or an empty hand) to raise it.
 - **Chest:** the elytra.
 - **Main inventory (E):** everything else, including the quickhack chips and the implants that were not installed
-  (Sandevistan, Optical Camo, the Projectile Launch System). Chips work from there with the hack wheel (hold G, wheel,
+  (Optical Camo, the Projectile Launch System). Chips work from there with the hack wheel (hold G, wheel,
   right-click); see [netrunning](#netrunning-step-by-step).
-- **Installed for you** (U shows them): the Cyberdeck, Kiroshi Optics, Reinforced Tendons and Biomonitor; see
-  [Cyberware](#cyberware-u-and-y).
+- **Installed for you** (U shows them): the Cyberdeck, Sandevistan, Kiroshi Optics, Reinforced Tendons and Biomonitor; see
+  [Cyberware](#cyberware-u-y-l-and-o).
 - RAM is filled to the maximum whenever the kit is handed out.
 - A slot that is already taken sends its kit item to the main inventory instead. A stack Steve already has is topped
   up. Whatever does not fit drops at his feet.
 
 | Group | Items |
 |---|---|
-| Cyber | 2 RAM Shards, one of each of the 10 quickhack items; implants: Cyberdeck, Kiroshi Optics, Reinforced Tendons, Biomonitor (installed, else in the bag) and Sandevistan, Optical Camo, Projectile Launch System (in the bag) |
+| Cyber | 2 RAM Shards, one of each of the 10 quickhack items; implants: Cyberdeck, Sandevistan, Kiroshi Optics, Reinforced Tendons, Biomonitor (installed, else in the bag) and Optical Camo, Projectile Launch System (in the bag) |
 | Building | 64 stone, 64 glass, 8 TNT, flint and steel |
 | Weapons | bow, 32 arrows, shield, iron sword |
 | Layer 5 items | 2 leads, fishing rod, 8 wind charges, 8 ender pearls |
@@ -703,19 +898,24 @@ Useful commands: `/cyberblock kit`, `/cyberblock level` (re-align the ground to 
 
 ## 7. What Cyberpunk stops doing while Cyberblock is active
 
-All of this applies **on foot, while active**. Getting into a car (where only V's invincibility stays), pressing F9,
-or "Minecraft lost" restores everything. Before every save, all of it is taken off and put back afterwards, so your saves stay vanilla.
+All of this applies **on foot, while active**. Getting into a car (where only V's invincibility, the hidden body and the
+hidden interface stay), pressing F9, or "Minecraft lost" restores everything else. Before every save, all of it is taken
+off and put back afterwards, so your saves stay vanilla.
 
 **V:**
-- V is invincible (Steve takes the damage) and invisible: the body meshes are hidden, and Steve stands there instead.
+- V is invincible (Steve takes the damage) and invisible: the body meshes are hidden (also in both vehicle cameras), and
+  Steve stands or sits there instead.
 - Weapons are holstered.
-- The Cyberpunk HUD is hidden on foot, except while an interaction prompt (F: doors, talking, getting out of a car) or
-  a dialogue choice list is up; it hides again once they are gone. The 2 s transition notifications still show.
+- **Cyberpunk's interface is invisible, always:** the HUD, the notifications, interaction prompts, dialogue choices,
+  subtitles and the waiting sign are hidden (they keep running underneath, so F, E/Q/1-4 and the wheel still work) and
+  Minecraft draws them instead. It does **not** come back for prompts or dialogues any more. The only times Cyberpunk's own
+  interface shows are the pass-through menus (restyled), a popup that pauses the game by itself, the braindance timeline,
+  and the two messages "Start Minecraft first" and "Minecraft lost".
 
 **Blocked:**
 - combat: guns, melee, Cyberpunk's own cyberware arms, grenades and gadgets (Cyberblock's own implants replace them:
-  see [Cyberware](#cyberware-u-and-y));
-- Cyberpunk's own quickhacks, the phone, healing items (X), the scanner (Tab) and the weapon/radial wheel (Alt);
+  see [Cyberware](#cyberware-u-y-l-and-o));
+- Cyberpunk's own quickhacks, healing items (X), the scanner (Tab) and the weapon/radial wheel (Alt);
 - quick melee, zoom, and picking up or carrying bodies.
 
 **Movement abilities, switched off:**
@@ -725,18 +925,20 @@ or "Minecraft lost" restores everything. Before every save, all of it is taken o
 
 **Exceptions:** the **Reinforced Tendons** implant gives V the double jump back, **Fortified Ankles** the charge
 jump, and Steve's **Dodge** perk the dash and air dash. Sandevistan, Kerenzikov and Optical Camo run only through
-Cyberblock's own implants, which slow Night City or cloak V when you fire them. (Steve's Double Jump perk no longer
-gives V a double jump: it upgrades the legs implants.)
+Cyberblock's own implants, which slow Night City or cloak V when you fire them. (Steve's Double Jump perk does not
+give V a double jump: it upgrades the legs implants.)
 
 **Keys** (the full table is in [Controls](#3-controls)):
-- F5 does not quick-save. Save from the pause menu or turn Cyberblock off first. F9 never quick-loads, in any state.
+- F5 does not quick-save: it is the third-person key. Save from the pause screen or turn Cyberblock off first. F9 never
+  quick-loads, in any state.
 - G does not toggle walking. K does not open crafting while it is the skill-tree key (the default): rebind the skill
   tree to another key and K opens Cyberpunk's crafting menu again.
-- U (Cyberware screen) and Y (activate implant) never reach Cyberpunk while Active. Cyberpunk's Y (scene fast-forward,
-  camera pitch reset) works with Cyberblock off, or once Activate is rebound.
-- 1–9, E, Q, T, X, /, the left/right/middle mouse buttons and the wheel go only to Minecraft, except that E, Q, 1–4
+- U, Y, L and O (Cyberware screen, Operating System, Arms, Optical Camo) never reach Cyberpunk while Active. Cyberpunk's
+  own use of those keys works with Cyberblock off, or once the action is rebound.
+- Esc, M, J, I, P and H open Minecraft screens instead of Cyberpunk's menus (see [the interface](#the-minecraft-interface)).
+- 1–9, E, Q, X, /, the left/right/middle mouse buttons and the wheel go only to Minecraft, except that E, Q, 1–4
   and the wheel go to Cyberpunk while a dialogue offers 2 or more choices.
-- T cannot answer the phone while Active: press F9 to take a call, then F9 again.
+- T goes to Minecraft's chat, except while a call rings or an actionable notification shows: then it answers (hold: rejects).
 - Mouse 4 and 5 and Left Ctrl stay Cyberpunk's (dodge, scanner hold, whatever you bound there).
 
 **Camera:** it is frozen while a Minecraft screen is open.
@@ -751,11 +953,23 @@ gives V a double jump: it upgrades the legs implants.)
   - **Home:** the Cyberblock effect is ticked.
   - If Cyberblock is missing, ReShade was installed without add-on support. Reinstall it with the add-on
     installer.
-- Is Minecraft running and in the `cyberblock` world? Press F9 and watch for "Start Minecraft first".
+- Is Minecraft running and in the Night City world (`cyberblock`)? Press F9 and watch for "Start Minecraft first".
 - Is the Minecraft window minimized? Restore it, and leave it behind Cyberpunk.
+- **Port 25600 is already in use:** the Minecraft side listens on `127.0.0.1:25600`. If another program (or a second
+  Minecraft with the mod) holds it, Minecraft logs that it could not listen and Cyberpunk says "Start Minecraft first".
+  Close the other program or the second Minecraft and restart Cyberblock's Minecraft.
+- **The mod does not load / "Fabric API missing":** the Minecraft log (or the launcher's crash screen) names the missing
+  dependency. Put the Fabric API jar (0.161.0 or newer for 26.3) next to the Cyberblock jar in the `mods` folder.
+- **The JVM arguments were appended instead of replaced:** if Minecraft starts with a big heap, stutters, or fights with
+  Cyberpunk for memory, open the launcher installation again (More options) and make the JVM arguments field contain
+  **only** `-Xmx2G -XX:+UseZGC --enable-native-access=ALL-UNNAMED -Dcyberblock.autostart=true`.
+- **No "Play Cyberblock" button:** the mod is not loaded (see the line above), or the installation does not use the Fabric
+  26.3 profile.
+- **`version mismatch: DLL 1.0.0, mod X`** in Cyberblock.log: the plugin and the mod jar come from different versions. Install
+  both from the same release zip and restart Minecraft.
 - **Logs:**
   - `<Cyberpunk 2077>\red4ext\logs\Cyberblock.log` for the DLL and the scripts;
-  - `mc\run\logs\latest.log` for Minecraft.
+  - `mc\run\logs\latest.log` (from source) or `%APPDATA%\.minecraft-cyberblock\logs\latest.log` (release) for Minecraft.
 
 ### Blocks show through walls, or vanish on the ground (ReShade depth)
 Cyberblock reads Night City's depth buffer through ReShade's depth support.
@@ -773,6 +987,22 @@ Cyberblock reads Night City's depth buffer through ReShade's depth support.
   - **Depth bias per grazing slope** helps far ground;
   - **Debug view** shows the depth difference.
 - **Frame generation must stay off.** With it on, Minecraft lags behind and swims.
+
+### The ReShade effect is off, or the Sandevistan effect does nothing
+Open the ReShade overlay (**Home**) and tick the **Cyberblock** effect (the installer does not change a preset you already
+had; `fx` lines in Cyberblock.log say whether the effect loaded). The Sandevistan look needs the effect on and
+**SandevistanStrength** above 0.
+
+### A Cyberpunk HUD element appears while Cyberblock is on
+That should never happen (apart from the exceptions in [section 7](#7-what-cyberpunk-stops-doing-while-cyberblock-is-active)).
+If you see one, note what it was and when, and send the lines of Cyberblock.log that start with `ui:` around that time
+(`ui: ink layers ...`, `ui: hidden (on)`, `ui: restored (<reason>)`, `ui: shown for <reason>`). Pressing F9 twice restores and
+re-hides everything.
+
+### Night City stays paused
+Cyberpunk is paused only while the Minecraft **Night City pause screen** is open. If the world looks frozen, press **Esc**
+in Minecraft's pause screen (or **F9** to turn Cyberblock off): leaving the screen, Cyberblock off, a lost link and a
+Minecraft restart all un-pause Cyberpunk. Cyberblock.log says `ui: unpaused (<reason>)`.
 
 ### Stutter, swimming or lag
 - Turn frame generation off. Keep "Re-project to Cyberpunk's camera" on in the effect.
@@ -797,6 +1027,10 @@ Running both games needs a lot of **Windows commit** (RAM plus page file), not j
   `flight: stopped, V is held, in a vehicle or Cyberblock is off` and `flight: ignored ... (<reason>)` mean the game
   holds V. The `flight: N frames, M samples (median spacing ... ms ...)` line after each flight shows how smooth it
   was: a median spacing around 16 ms is a frame per sample.
+- **The glide does not turn with the mouse:** the flight summary line shows `yaw start A end B, mouse x N counts`; if N
+  is 0 the mouse is not reaching the DLL (a Minecraft screen is open, or Cyberblock lost the focus).
+- **Third person (F5) does nothing:** it works only on foot while Active, not held by a scene, workspot or braindance and
+  with no menu open; `view: first person (<reason>)` in Cyberblock.log names the reason.
 - **Blocks sit a little above or below the floor somewhere else:** stand on that floor and run `/cyberblock level`.
   Blocks everywhere one block above the street means the alignment never ran: check Cyberblock.log for
   `ground alignment: Minecraft y = Cyberpunk z - ...` and the Minecraft log for `ground alignment: k ... -> ...`, and
@@ -816,38 +1050,44 @@ Running both games needs a lot of **Windows commit** (RAM plus page file), not j
 - **Weapons, leads and mobs ignore people:** look at the 5 s lines "npcs: sent H people + C cars; ... left out: ..."
   in Cyberblock.log and "proxies: H people, C cars" in the Minecraft log. The left-out reasons (dead, defeated,
   mounted, puppet, detached, not_npc, over_cap) say why. Scanning and quickhacks on people do not need proxies.
-- **The hack, skill-tree, Cyberware or Activate key does nothing:** rebind it in Minecraft's Controls to an allowed key
-  (G K L O U Y 0 F1-F4 F6-F8 F10-F12). A refused key goes back to its default, and if any two of the four clash all four
-  go back to G K U Y; chat says so, and Cyberblock.log's `binds: hack G, skills K, cyberware U, activate Y` line shows
-  what is in force.
-- **A hack says "Not enough RAM" or "No cyberdeck":** install the Cyberdeck in the Operating System slot (U), or empty
-  that slot and carry the deck. RAM refills over time, or use a RAM Shard. More messages:
-  [netrunning step 7](#netrunning-step-by-step).
+- **A hotkey (hack, skills, Cyberware, Y, L or O) does nothing:** rebind it in Minecraft's Controls to an allowed key
+  (G K L O U Y 0 F1-F4 F6-F8 F10-F12). A refused key goes back to its default, and if any two of the six clash all six
+  go back to G K U Y L O; chat says so, and Cyberblock.log's `binds: hack G, skills K, cyberware U, activate Y, arms L,
+  camo O` line shows what is in force.
+- **A hack says "Not enough RAM" or "No cyberdeck":** install the Cyberdeck in the Operating System slot (U), or carry
+  one. RAM refills over time, or use a RAM Shard. More messages: [netrunning step 7](#netrunning-step-by-step).
+- **Every hack looks the same:** the chip **in your hand** is the one that fires, and the action bar says "Hack: <chip>".
+  Check the `script: hack <name>` and `hack <name> on <id>: ok (<kind>, ...)` lines in the logs.
 - **A hack says "target gone" on someone alive:** read the scan line in Cyberblock.log, `scan N: ok <class> <id>
   (...)`. A real id has about 8 digits (for example 10019101). A much longer id (such as 2668059858640) or 0 means the
-  scripts hashed the wrong thing, which re-test 2 fixed; send the log. "Target gone" now only means dead or despawned.
-- **Y says "No active implant installed" or does nothing:** open the Cyberware screen (U), install a Y implant
-  (Sandevistan, Berserk, Optical Camo, Projectile Launch System) and right-click it to select it. Only one Operating
-  System implant fits at a time.
+  scripts hashed the wrong thing; send the log. "Target gone" only means dead or despawned.
+- **Y, L or O says "No ... implant":** open the Cyberware screen (U) and install one for that slot (Sandevistan or
+  Berserk for Y; Mantis Blades, Gorilla Arms, Monowire or the Projectile Launch System for L; Optical Camo for O).
 - **"Hold G and look at a target":** scan first. The lock lasts 5 s.
 
 ---
 
 ## 9. Uninstall
 
+**Release install:**
 1. Close Cyberpunk.
-2. Run:
-   ```
-   uv run tools/install.py --remove
-   ```
-   This deletes exactly the files the installer wrote: the DLL, the scripts, the shader, its header, and the ReShade
+2. Double-click **`uninstall.bat`** in the unzipped release folder (it runs `install.ps1 -Remove`). It deletes exactly the
+   files the installer wrote: the DLL, the scripts, the shader, its header (if the installer wrote it), and the ReShade
    preset if the installer created it.
    - A file you changed since the install is left in place, with a message.
    - Folders the installer created are removed if they are empty.
-3. **Your saves** stay loadable without the mod. Cyberblock never stores anything in them, because everything is
-   removed before each save. The backup zip from the first install is still in `%LOCALAPPDATA%\Cyberblock\save-backups`
-   (or the `--backups` folder you used).
-4. **The Minecraft world** lives in `mc\run\saves\cyberblock`. Delete that folder for a fresh world: a new starter kit,
-   and no perks.
-5. **ReShade** and the other frameworks (RED4ext, redscript, Codeware, CET) are separate installs. Remove them with
-   their own uninstallers if you no longer want them.
+3. In `%APPDATA%\.minecraft-cyberblock\mods`, delete the Cyberblock jar (and, if nothing else needs them, the Fabric API
+   jar). Delete the whole `.minecraft-cyberblock` folder to remove the Night City world too, and remove the launcher
+   installation from the launcher.
+
+**From source:** `uv run tools/install.py --remove` does the same (the two installers share one manifest, so either can
+remove what the other installed).
+
+Afterwards:
+- **Your saves** stay loadable without the mod. Cyberblock never stores anything in them, because everything is
+  removed before each save. The backup zip from the first install is still in `%LOCALAPPDATA%\Cyberblock\save-backups`
+  (or the `--backups` folder you used).
+- **The Minecraft world** (release: `%APPDATA%\.minecraft-cyberblock\saves\cyberblock`; source: `mc\run\saves\cyberblock`).
+  Delete that folder for a fresh world: a new starter kit, and no perks.
+- **ReShade** and the other frameworks (RED4ext, redscript, Codeware, CET) are separate installs. Remove them with
+  their own uninstallers if you no longer want them.
