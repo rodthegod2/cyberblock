@@ -32,12 +32,14 @@
 // wait in the DLL's queue and the tethers stay (ClearWorld only restarted their timers); all of it carries on after the
 // save. Minecraft's NPC proxies (and their leads) stay as long as Minecraft still gets cam frames, as through a save or a
 // Cyberpunk menu, and are removed only when the host goes inactive. The saving flag is also cleared on session ready and
-// end, and after 10 s of ticks without an AfterSave (a save that failed or was aborted), so it can never stay stuck.
+// end, and after 10 s without an AfterSave (a save that failed or was aborted; counted by the tick and by the UI pump,
+// which also runs while the game is paused), so it can never stay stuck.
 //
 // Re-test 3 (plan 2026-10-03-retest3-polish task U1, sections 1.4 and 1.11): while On (Active or Vehicle, not saving)
 // every tick runs CyberblockInk.Apply, which keeps Cyberpunk's HUD, game-notification and waiting-sign layers invisible
-// (Minecraft draws the UI); every Clear path (Off, Lost, before saves, session ready and end, detach) runs
-// CyberblockInk.Restore. The Vehicle state only hides V's meshes (CyberblockPlayerState). Our own messages go to
+// (Minecraft draws the UI); every Clear path but the save (Off, Lost, session ready and end, detach) runs
+// CyberblockInk.Restore. Through a save the layers stay hidden (ink opacity is not saved; F12: Cyberpunk's HUD never
+// flashes up over Minecraft): CyberblockUi.Pump keeps applying them with InkOn, which ignores the saving flag. The Vehicle state only hides V's meshes (CyberblockPlayerState). Our own messages go to
 // Minecraft as toasts (Cyberblock_Notify) while it is shown; "Start Minecraft first", "Minecraft lost" and the switch
 // back to Off stay Cyberpunk warnings, since Minecraft is not drawn then. Each tick also runs package S's
 // CyberblockSeat.Tick and CyberblockView.Tick (10 Hz), and every Clear path their Clear.
@@ -70,6 +72,7 @@ public class CyberblockSystem extends ScriptableSystem {
   private let hud: ref<CyberblockHud>;
   private let saving: Bool;
   private let savingTicks: Int32;
+  private let savingPumps: Int32;
   private let menuListener: ref<CallbackHandle>;
 
   private func OnAttach() -> Void {
@@ -112,7 +115,7 @@ public class CyberblockSystem extends ScriptableSystem {
 
   // Saves stay vanilla: status effects, stat modifiers, god modes, puppets, tethers, perk and potion effects are
   // removed before the save; after it V's state comes back if still Active and the rest on the next live tick (the HUD
-  // layer is not saved). The collision boxes stay: the save never holds them, and V may be standing on one. Ticks leave
+  // layers are not saved, so they stay hidden). The collision boxes stay: the save never holds them, and V may be standing on one. Ticks leave
   // V and Night City alone while the save is written.
   private cb func OnBeforeSave(event: ref<GameSessionEvent>) {
     if CyberblockSystem.IsOn(this.state) {
@@ -120,7 +123,7 @@ public class CyberblockSystem extends ScriptableSystem {
     }
     this.saving = true;
     this.savingTicks = 0;
-    CyberblockInk.RestoreFor(this.GetGameInstance(), "saving");
+    this.savingPumps = 0;
     this.playerState.ClearSaved(GetPlayer(this.GetGameInstance()));
     this.creative.Clear(GetPlayer(this.GetGameInstance()));
     CyberblockSystem.ClearWorld(this.GetGameInstance(), false);
@@ -183,6 +186,22 @@ public class CyberblockSystem extends ScriptableSystem {
   // Cyberblock is On and not writing a save: Minecraft is shown and draws the UI (CyberblockUi.Pump asks this).
   public func UiOn() -> Bool {
     return CyberblockSystem.IsOn(this.state) && !this.saving;
+  }
+
+  // Cyberblock is On, saves included: Cyberpunk's ink layers stay hidden and its notifications go to Minecraft.
+  public func InkOn() -> Bool {
+    return CyberblockSystem.IsOn(this.state);
+  }
+
+  // From CyberblockUi.Pump (at most 30 Hz, also while paused, when the DelaySystem tick stands still): a save without
+  // an AfterSave ends after 300 passes (at least 10 s).
+  public func PumpSave() -> Void {
+    if this.saving {
+      this.savingPumps += 1;
+      if this.savingPumps >= 300 {
+        this.EndSave("save: no AfterSave within 10 s (pump), carrying on");
+      }
+    }
   }
 
   // The HUD data stream (Hud.reds); Notifications.reds tells it about actionable notifications.
@@ -257,8 +276,8 @@ public class CyberblockSystem extends ScriptableSystem {
     // reload in the middle of a session.
     this.hud.Register(game);
     this.hud.Tick(player, live);
-    // Notifications shown while Off are dropped here; while On CyberblockUi.Pump reports them at once.
-    CyberblockNotifications.Poll(game, live);
+    // Notifications shown while Off are dropped here; while On (saves included) CyberblockUi.Pump reports them at once.
+    CyberblockNotifications.Poll(game, on);
   }
 
   // Everything of ours in Night City (plan 2026-10-03 section 1.4 Clears). Perk ranks, installed cyberware and the

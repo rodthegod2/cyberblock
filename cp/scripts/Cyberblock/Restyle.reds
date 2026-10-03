@@ -11,8 +11,8 @@
 //     font cannot be copied, and cooking an original pixel font needs WolvenKit, which is not in the toolchain).
 // The walk visits at most 3000 widgets and tints at most 600 per pass, five passes a second, rotating where it starts
 // so that big menus are covered over a few passes. Menu widgets go away with their menu; the persistent layers (game
-// notifications during a foreign pause, the HUD during a braindance) are tinted at their controllers' root widgets
-// only, and those tints are remembered and put back when the exception ends.
+// notifications during a menu, a blocking popup or a foreign pause, the HUD during a braindance) are tinted at their
+// controllers' root widgets only, and those tints are remembered and put back when the exception ends.
 //
 // Which menu: the classes of the game controllers on inkMenuLayer (Codeware inkLayerWrapper.GetGameControllers) while
 // UI_System.IsInMenu, checked with IScriptable.IsA against the 2.31 script classes FullscreenVendorGameController,
@@ -20,9 +20,11 @@
 // HackingMinigameGameController, MinigameController(Advanced), TutorialPopupGameController, TutorialMainController,
 // CodexPopupGameController, PhoneMessagePopupGameController, SettingsMainGameController,
 // BrightnessSettingsGameController, LoadGameMenuGameController, SaveGameMenuGameController, DeathMenuGameController;
-// a game paused by something else than Cyberblock (popups waiting for input) is `tutorial`, a braindance `braindance`,
-// any game controller with a visible root on inkLoadingLayer `loading` (logged once with its class, as the in-game
-// check of that guess), any other menu `other`.
+// a blocking popup on the game-notifications layer (CyberblockUiService.BlockingPopup, Ui.reds) is `tutorial` or
+// `other`, a game paused by something else than Cyberblock (popups waiting for input) `tutorial`, a braindance
+// `braindance`, any game controller with a visible root on inkLoadingLayer `loading` (logged once with its class, as
+// the in-game check of that guess), any other menu `other`. While a menu is open its own popups (quantity pickers,
+// confirmations) show on the game-notifications layer and are root-tinted.
 //
 // 2.31 script API: inkWidget GetState/GetSize/GetName/GetTintColor/SetTintColor/IsVisible, inkCompoundWidget
 // GetNumChildren/GetWidgetByIndex (abstractWidgets.swift), inkGameController.GetRootWidget (widgetController.swift),
@@ -36,9 +38,9 @@ public abstract class CyberblockRestyle {
     if !IsDefined(s) {
       return;
     }
-    let roots: array<wref<inkWidget>>;
-    let layerOnly = false;
-    let name = on ? CyberblockRestyle.Detect(game, s, roots, layerOnly) : n"";
+    let walk: array<wref<inkWidget>>;
+    let tint: array<wref<inkWidget>>;
+    let name = on ? CyberblockRestyle.Detect(game, s, walk, tint) : n"";
     if NotEquals(name, s.pass) {
       if Equals(name, n"") {
         Cyberblock_Log(s"ui: pass-through ended (\(NameToString(s.pass)))");
@@ -56,17 +58,17 @@ public abstract class CyberblockRestyle {
     if s.restylePass % 6 != 0 {
       return;
     }
-    if layerOnly {
-      for root in roots {
-        CyberblockRestyle.TintRoot(s, root);
-      }
-    } else {
-      CyberblockRestyle.Walk(s, roots);
+    if ArraySize(walk) > 0 {
+      CyberblockRestyle.Walk(s, walk);
+    }
+    for root in tint {
+      CyberblockRestyle.TintRoot(s, root);
     }
   }
 
-  // The section 1.11 pass-through name of what Cyberpunk shows now (n"" for nothing), and the root widgets to tint.
-  private static func Detect(game: GameInstance, s: ref<CyberblockUiService>, out roots: array<wref<inkWidget>>, out layerOnly: Bool) -> CName {
+  // The section 1.11 pass-through name of what Cyberpunk shows now (n"" for nothing), the root widgets whose trees are
+  // walked (menus, loading screens) and the persistent-layer roots that are only tinted.
+  private static func Detect(game: GameInstance, s: ref<CyberblockUiService>, out walk: array<wref<inkWidget>>, out tint: array<wref<inkWidget>>) -> CName {
     let ink = GameInstance.GetInkSystem();
     let loading = ink.GetLayer(n"inkLoadingLayer");
     if IsDefined(loading) {
@@ -76,7 +78,7 @@ public abstract class CyberblockRestyle {
             s.loadingLogged = true;
             Cyberblock_Log(s"ui: loading screen controller \(NameToString(controller.GetClassName()))");
           }
-          ArrayPush(roots, controller.GetRootWidget());
+          ArrayPush(walk, controller.GetRootWidget());
           return n"loading";
         }
       }
@@ -92,21 +94,27 @@ public abstract class CyberblockRestyle {
               found = kind;
             }
             if IsDefined(controller.GetRootWidget()) {
-              ArrayPush(roots, controller.GetRootWidget());
+              ArrayPush(walk, controller.GetRootWidget());
             }
           }
         }
       }
+      // The menu's own popups (quantity pickers, confirmations) are on the game-notifications layer, shown by Ui.reds.
+      CyberblockRestyle.Roots(n"inkGameNotificationsLayer", tint);
       return Equals(found, n"") ? n"other" : found;
     }
+    let cls: CName;
+    let popup = s.BlockingPopup(game, cls);
+    if NotEquals(popup, n"") {
+      CyberblockRestyle.Roots(n"inkGameNotificationsLayer", tint);
+      return popup;
+    }
     if s.ForeignPause() {
-      layerOnly = true;
-      CyberblockRestyle.Roots(n"inkGameNotificationsLayer", roots);
+      CyberblockRestyle.Roots(n"inkGameNotificationsLayer", tint);
       return n"tutorial";
     }
     if CyberblockInk.InBraindance(game) {
-      layerOnly = true;
-      CyberblockRestyle.Roots(n"inkHUDLayer", roots);
+      CyberblockRestyle.Roots(n"inkHUDLayer", tint);
       return n"braindance";
     }
     return n"";

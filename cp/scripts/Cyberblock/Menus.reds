@@ -24,7 +24,16 @@
 // GetEntry/GetEntryHash/GetEntryState/GetTrackedEntry/TrackEntry/GetContacts/GetFlattenedMessagesAndChoices/
 // GetMessagesAndChoices/SetEntryVisited/ChangeEntryStateByHash (journalManager.swift; the SMS reply logic of
 // messengerDialogView.swift ActivateReply), JournalPhoneMessage GetText/GetSender, JournalPhoneChoiceEntry GetText;
-// MappinSystem.GetMappins(gamemappinsMappinTargetType.Map), IMappin GetDisplayName.
+// MappinSystem.GetMappins(gamemappinsMappinTargetType.Map)/GetMappin(NewMappinID), IMappin GetDisplayName/
+// GetNewMappinID/GetVariant, QuestMappin and PointOfInterestMappin GetJournalPathHash, MappinUtils.GetMappinsGroup and
+// MappinsGroup_Record.GroupName (orphans.swift, mappinUtils.swift).
+//
+// `uiact track`: arg "quest" (or anything but "pin") tracks the journal entry `hash` (a job: its first active
+// objective). arg "pin" tracks the pin at index `id` of the last `reply atlas` as the world map does for quest pins
+// (worldMap.swift CanQuestTrackMappin/TrackQuestMappin: a pin with a journal entry in the Quest or SecondaryQuest
+// mappin group, not a race pin, has that entry tracked). Other pins are tracked on the world map by its native
+// TrackMappin, which needs the map's own pin controller and cannot be called from here: the player is told to use the
+// Night City map, and the log says `ui: track pin <i> unresolved (...)`.
 
 public abstract class CyberblockMenus {
   // Fast travel from the Minecraft atlas stays off until it is verified in game (plan U5); the atlas then points the
@@ -157,7 +166,11 @@ public abstract class CyberblockMenus {
         CyberblockMenus.OpenVanilla(s, requests, Cyberblock_UiActionArg());
         break;
       case n"track":
-        CyberblockMenus.Track(game, Cyberblock_UiActionHash());
+        if Equals(Cyberblock_UiActionArg(), "pin") {
+          CyberblockMenus.TrackPin(game, s, Cyberblock_UiActionId());
+        } else {
+          CyberblockMenus.Track(game, Cyberblock_UiActionHash());
+        }
         break;
       case n"smsreply":
         CyberblockMenus.SmsReply(game, Cyberblock_UiActionHash());
@@ -219,6 +232,7 @@ public abstract class CyberblockMenus {
     let journal = GameInstance.GetJournalManager(game);
     let entry = journal.GetEntry(hash);
     if !IsDefined(entry) {
+      Cyberblock_Log(s"ui: track \(hash) unresolved (no journal entry)");
       return;
     }
     let objective = entry as JournalQuestObjective;
@@ -240,7 +254,44 @@ public abstract class CyberblockMenus {
     if IsDefined(objective) {
       journal.TrackEntry(objective);
       Cyberblock_Log(s"ui: tracked \(hash)");
+    } else {
+      Cyberblock_Log(s"ui: track \(hash) unresolved (no active objective)");
     }
+  }
+
+  // A pin of the last atlas reply, by its index there (see the header).
+  private static func TrackPin(game: GameInstance, s: ref<CyberblockUiService>, index: Int32) -> Void {
+    if index < 0 || index >= ArraySize(s.atlasPins) {
+      Cyberblock_Log(s"ui: track pin \(index) unresolved (not in the last atlas reply)");
+      return;
+    }
+    let mappin = GameInstance.GetMappinSystem(game).GetMappin(s.atlasPins[index]);
+    if !IsDefined(mappin) {
+      Cyberblock_Log(s"ui: track pin \(index) unresolved (pin gone)");
+      return;
+    }
+    let hash = 0u;
+    let quest = mappin as QuestMappin;
+    let poi = mappin as PointOfInterestMappin;
+    if IsDefined(quest) {
+      hash = quest.GetJournalPathHash();
+    } else {
+      if IsDefined(poi) {
+        hash = poi.GetJournalPathHash();
+      }
+    }
+    let journal = GameInstance.GetJournalManager(game);
+    let entry = hash != 0u ? journal.GetEntry(hash) : null;
+    let variant = mappin.GetVariant();
+    let group = MappinUtils.GetMappinsGroup(variant);
+    let questGroup = IsDefined(group) && (Equals(group.GroupName(), n"Quest") || Equals(group.GroupName(), n"SecondaryQuest"));
+    if IsDefined(entry) && questGroup && NotEquals(variant, gamedataMappinVariant.Zzz18_RacingVariant) {
+      journal.TrackEntry(entry);
+      Cyberblock_Log(s"ui: tracked pin \(index)");
+      return;
+    }
+    Cyberblock_Log(s"ui: track pin \(index) unresolved (not a quest pin)");
+    Cyberblock_Notify(n"info", "Track", "Set a waypoint on the Night City map (Night City Menu...)", 4.0);
   }
 
   // Picks an SMS reply as messengerDialogView.swift ActivateReply does: the other current replies become inactive, the
@@ -355,14 +406,24 @@ public abstract class CyberblockMenus {
     Cyberblock_ReplyEnd();
   }
 
-  // `reply atlas`: every visible Map-target mappin (fast-travel points included; index -1 while fast travel is off).
+  // `reply atlas`: every visible Map-target mappin (fast-travel points included; index -1 while fast travel is off), at
+  // most 256 (the DLL's cap). Their IDs are kept in reply order for `track pin`.
   private static func ReplyAtlas(game: GameInstance, id: Int32) -> Void {
+    let s = CyberblockUiService.Get();
+    if IsDefined(s) {
+      ArrayClear(s.atlasPins);
+    }
     Cyberblock_ReplyBegin(n"atlas", id);
     let mappins: array<ref<IMappin>>;
     GameInstance.GetMappinSystem(game).GetMappins(gamemappinsMappinTargetType.Map, mappins);
+    let sent = 0;
     for m in mappins {
-      if IsDefined(m) && m.IsVisible() {
+      if IsDefined(m) && m.IsVisible() && sent < 256 {
         Cyberblock_ReplyPin(m.GetWorldPosition(), CyberblockHud.PinKind(m), GetLocalizedText(m.GetDisplayName()), -1);
+        if IsDefined(s) {
+          ArrayPush(s.atlasPins, m.GetNewMappinID());
+        }
+        sent += 1;
       }
     }
     Cyberblock_ReplyEnd();
