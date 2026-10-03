@@ -68,8 +68,17 @@ public final class CyberKeys {
 		return Component.translatable("cyberblock.binds.note", bad.getTranslatedKeyMessage(), fallback);
 	}
 
-	/** Every client tick: a changed binding is sent to Cyberpunk at once (and noted when it cannot be forwarded). */
+	/**
+	 * Every client tick: a skill key press opens the skill tree; a changed binding is sent to Cyberpunk at once (and noted
+	 * when it cannot be forwarded).
+	 */
 	static void tick(final Minecraft minecraft) {
+		while (skills.consumeClick()) {
+			if (minecraft.player != null && minecraft.gui.screen() == null) {
+				minecraft.gui.setScreen(new SkillTreeScreen());
+			}
+		}
+
 		InputConstants.Key hackKey = KeyMappingHelper.getBoundKeyOf(hack);
 		InputConstants.Key skillsKey = KeyMappingHelper.getBoundKeyOf(skills);
 		if (lastHackKey == null) {
@@ -94,10 +103,16 @@ public final class CyberKeys {
 
 	/**
 	 * {"t":"key","k":"hack"|"skills","down":bool} from the host, on the client thread: pressed and released as vanilla's
-	 * keyboard handler would (a press counts a click). With a screen open the game never sees a key, as in ClientInput.
+	 * keyboard handler would (a press counts a click). With a screen open the game never sees a key, as in ClientInput;
+	 * the skill key still closes the skill tree.
 	 */
 	static void onHostKey(final Minecraft minecraft, final KeyMapping mapping, final boolean down) {
 		if (minecraft.gui.screen() != null) {
+			// the skill key closes the skill tree, as the inventory key closes the inventory
+			if (down && mapping == skills && minecraft.gui.screen() instanceof SkillTreeScreen screen) {
+				screen.onClose();
+			}
+
 			return;
 		}
 

@@ -4,13 +4,16 @@ import com.google.gson.JsonObject;
 import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.WorldBridge;
+import dev.cyberblock.cyber.CyberMod;
 import dev.cyberblock.cyber.HackResult;
 import dev.cyberblock.cyber.Hacking;
+import dev.cyberblock.cyber.PerkShop;
 import dev.cyberblock.cyber.ScanInfo;
 import java.util.function.Consumer;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 
 /**
  * Track C's host message listeners (plan section 1.6): HostLink hands them every `hello`, `state`, `key`, `scaninfo`,
@@ -24,7 +27,15 @@ final class CyberLink {
 	}
 
 	static void register() {
-		listen("hello", m -> onClient(CyberKeys::sendBinds));
+		listen("hello", m -> {
+			onClient(CyberKeys::sendBinds);
+			onServer(() -> {
+				ServerPlayer player = CyberMod.localPlayer();
+				if (player != null) {
+					PerkShop.sendPerks(player);
+				}
+			});
+		});
 		listen("key", CyberLink::key);
 		listen("scaninfo", CyberLink::scanInfo);
 		listen("hackresult", CyberLink::hackResult);

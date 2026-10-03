@@ -1,7 +1,9 @@
 package dev.cyberblock.cyber;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
+import java.util.Map;
 
 /** Minecraft to Cyberpunk messages of layer 6 (plan 2026-10-03 section 1.2), one JSON object each. */
 public final class CyberWire {
@@ -16,6 +18,22 @@ public final class CyberWire {
 		JsonObject m = new JsonObject();
 		m.addProperty("t", "binds");
 		m.add("keys", keys);
+		return m.toString();
+	}
+
+	/** {"t":"perks","list":[{"id":"iron_skin","rank":0|1}, ...]}: all 20 perks in branch order. */
+	public static String perks(final Map<String, Integer> ranks) {
+		JsonArray list = new JsonArray();
+		for (Perk perk : Perk.values()) {
+			JsonObject entry = new JsonObject();
+			entry.addProperty("id", perk.id());
+			entry.addProperty("rank", ranks.getOrDefault(perk.id(), 0) > 0 ? 1 : 0);
+			list.add(entry);
+		}
+
+		JsonObject m = new JsonObject();
+		m.addProperty("t", "perks");
+		m.add("list", list);
 		return m.toString();
 	}
 
