@@ -2,6 +2,9 @@
 
 Usage: uv run python cp/scripts/compile_check.py [--game "<Cyberpunk 2077 dir>"]
 
+Without --game the game folder is the one tools/install.py finds in Steam's libraries (install.find_game), the same
+lookup the installer uses.
+
 The game folder is only read: scc_lib.dll, the vanilla r6/cache/final.redscripts and Codeware's scripts are
 copied into a fresh temp tree, and the compiler (redscript's scc_lib C API, the library behind
 engine/tools/scc.exe) runs with that tree as its r6 directory, so the cache, backup, timestamp and log files
@@ -16,14 +19,28 @@ import sys
 import tempfile
 from pathlib import Path
 
-DEFAULT_GAME = r"D:\SteamLibrary\steamapps\common\Cyberpunk 2077"
+ROOT = Path(__file__).resolve().parents[2]
 OURS = Path(__file__).resolve().parent / "Cyberblock"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from tools import install  # noqa: E402  (the repo root is on sys.path only from the line above when run as a script)
+
+
+def default_game() -> Path:
+    """Cyberpunk 2077's folder as the installer finds it (raises install.InstallError when it cannot)."""
+    return install.find_game()
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--game", default=DEFAULT_GAME)
-    game = Path(parser.parse_args().game)
+    parser.add_argument("--game", type=Path)
+    game = parser.parse_args().game
+    if game is None:
+        try:
+            game = default_game()
+        except install.InstallError as e:
+            print(f"compile_check: {e}", file=sys.stderr)
+            return 2
 
     work = Path(tempfile.mkdtemp(prefix="cyberblock-scc-"))
     try:

@@ -9,7 +9,9 @@
 //   lynx_paws          -> V's Visibility x0.5, one modifier shared with Steve's silent_steps perk;
 //   kiroshi_optics     -> Scan.reds looks for targets out to 80 m instead of 48 m (Has);
 //   cyberfx sandevistan -> world slow-mo x0.2 with V at normal speed; kerenzikov -> x0.3. A newer one replaces the factor
-//                          and the end; 0 s ends the running one;
+//                          and the end; 0 s ends the running one. Each start and end also drives the DLL's
+//                          Sandevistan screen effect (Cyberblock_SetSlowMoFx; re-test 3 plan
+//                          2026-10-03-retest3-polish task S6, F10);
 //   cyberfx berserk    -> Minecraft side only (S6 below).
 // The other implants act through messages that already reach Night City (mantis blades, gorilla arms and monowire hits,
 // the projectile launcher's explosion, optical camo's invisibility effect) or are Minecraft-side only. Tick(active
@@ -119,6 +121,7 @@ public abstract class CyberblockCyberware {
     let time = GameInstance.GetTimeSystem(game);
     time.SetIgnoreTimeDilationOnLocalPlayerZero(true);
     time.SetTimeDilation(n"cyberblockSlowMo", dilation, seconds + 1.0);
+    Cyberblock_SetSlowMoFx(id, seconds); // the DLL's screen effect (ReShade cb_slowmo)
     cw.slowMo = true;
     cw.slowMoId = id;
     cw.slowMoUntil = CyberblockCyberware.Now(game) + seconds;
@@ -205,6 +208,7 @@ public abstract class CyberblockCyberware {
     let time = GameInstance.GetTimeSystem(game);
     time.UnsetTimeDilation(n"cyberblockSlowMo", n"SandevistanEaseOut");
     time.SetIgnoreTimeDilationOnLocalPlayerZero(false);
+    Cyberblock_SetSlowMoFx(n"", 0.0);
     cw.slowMo = false;
     Cyberblock_Log(s"cyberfx: \(NameToString(cw.slowMoId)) slow-mo ended");
   }

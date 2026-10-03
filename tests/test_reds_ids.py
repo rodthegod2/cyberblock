@@ -7,7 +7,9 @@ EntityID.ToHash argument in our scripts must be a bare identifier (a local copy)
 Natives rule (plan 2026-10-03-retest3-polish sections 0 and 1.2): every native is declared exactly once, and the ones
 package S calls are declared in Natives.reds with the contract's signature.
 """
+import importlib.util
 import re
+import sys
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "cp" / "scripts" / "Cyberblock"
@@ -81,6 +83,33 @@ def test_hack_results_carry_upload_and_kind():
             depth -= ch in ")]"
             commas += ch == "," and depth == 0
         assert commas == 4, f"{file}: Cyberblock_HackResult({args})"
+
+
+def load_compile_check():
+    spec = importlib.util.spec_from_file_location("compile_check", SCRIPTS.parent / "compile_check.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_compile_check_finds_the_game_like_the_installer(monkeypatch, tmp_path):
+    # Plan 2026-10-03-retest3-polish S6 (F11): no hard-coded D:\SteamLibrary; the installer's Steam lookup decides.
+    from tools import install
+    monkeypatch.setattr(install, "find_game", lambda: tmp_path)
+    check = load_compile_check()
+    assert check.default_game() == tmp_path
+    assert "SteamLibrary" not in (SCRIPTS.parent / "compile_check.py").read_text(encoding="utf-8")
+
+
+def test_compile_check_says_why_without_a_game(monkeypatch, capsys):
+    from tools import install
+
+    def missing():
+        raise install.InstallError("Steam not found in the registry; pass --game")
+    monkeypatch.setattr(install, "find_game", missing)
+    monkeypatch.setattr(sys, "argv", ["compile_check.py"])
+    assert load_compile_check().main() == 2
+    assert "pass --game" in capsys.readouterr().err
 
 
 def test_the_guard_catches_call_results():
