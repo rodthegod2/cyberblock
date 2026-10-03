@@ -10,7 +10,6 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageType;
@@ -114,7 +113,8 @@ public final class HostDamage {
 
 		// every bullet counts: vanilla's damage cooldown would swallow all but the strongest hit in half a second
 		steve.damageCooldownTime = 0;
-		steve.hurtServer(steve.level(), source(steve.level(), hit), hit.frac() * steve.getMaxHealth());
+		Holder<DamageType> type = steve.level().registryAccess().lookupOrThrow(Registries.DAMAGE_TYPE).getOrThrow(type(hit.kind()));
+		steve.hurtServer(steve.level(), source(type, hit), hit.frac() * steve.getMaxHealth());
 	}
 
 	/** V's fall damage does not reach Steve with Slow Falling, nor around his own glide (until fallFreeUntil). */
@@ -122,13 +122,20 @@ public final class HostDamage {
 		return kind.equals("fall") && (slowFalling || fallFreeUntil != Long.MIN_VALUE && now - fallFreeUntil < 0L);
 	}
 
-	private static DamageSource source(final ServerLevel level, final Hit hit) {
-		Holder<DamageType> type = level.registryAccess().lookupOrThrow(Registries.DAMAGE_TYPE).getOrThrow(type(hit.kind()));
+	/**
+	 * The damage source for a hit. A fall or a fire has no direction: with the host's position on it vanilla would knock Steve back
+	 * from where V's fall or fire was reported.
+	 */
+	static DamageSource source(final Holder<DamageType> type, final Hit hit) {
 		String verb = switch (hit.kind()) {
 			case "bullet" -> " was shot";
 			case "melee" -> " was slain";
 			default -> null;
 		};
+		if (hit.kind().equals("fall") || hit.kind().equals("fire")) {
+			return new DamageSource(type);
+		}
+
 		if (verb == null) {
 			return new DamageSource(type, hit.from());
 		}
