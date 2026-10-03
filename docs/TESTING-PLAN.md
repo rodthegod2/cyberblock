@@ -30,7 +30,9 @@ says what should happen. Tell Claude "step N: what you saw" and it reads `red4ex
 11. `/gamemode creative` (Alt+Tab, type in Minecraft, Alt+Tab back): nothing hurts Steve or V.
 
 ## 4. Layer 2 — blocks, explosions, weapons, fire (10 min)
-12. `/cyberblock kit` (or in survival the kit arrives on first activation).
+12. `/cyberblock kit` (or in survival the kit arrives on first activation). Hotbar 1-9: iron sword, bow, stone, TNT,
+    flint & steel, ender pearls, firework rockets, leads, fishing rod; shield in the offhand; elytra on the chest; the
+    cyberdeck, quickhack chips, arrows, glass, potions, spawn eggs and the rest in the main inventory (E).
 13. Build a 3-block-high wall across a sidewalk and a road: pedestrians and cars stop at it; V can stand on it.
 14. Place TNT under a parked car and light it: real Cyberpunk explosion, car destroyed, NCPD heat.
 15. Sword a pedestrian, shoot one with the bow: they take damage/ragdoll, heat appears.
@@ -53,17 +55,23 @@ says what should happen. Tell Claude "step N: what you saw" and it reads `red4ex
 ## 8. Layer 6 — Cyberpunk in Minecraft form (10 min)
 23. RAM bar on the Minecraft HUD; it regenerates.
 24. Hold **G** on a ganger: glowing outline + tooltip (name, faction, threat). On a vending machine: device info.
+    A person behind a wall more than 8 m away gets no tooltip (log `scan N: behind Night City at <id>`); a parked car in
+    the open does get one.
 25. Use each quickhack item on gangers: Redstone Charge (short circuit), Blaze Chip (overheat), Ink Sac Daemon
     (blind), Cobweb Daemon (cripple), Spider Eye Virus (contagion), Wither Skull Daemon (synapse burnout), Compass Ping,
     Bottle of Forgetting (memory wipe), Creeper Brain (cyberpsychosis). Redstone Lever on a vending machine, a camera,
     a traffic light.
 26. **K** skill tree: `/xp add @s 30 levels`, buy Double Jump (V double-jumps), Sandevistan Sprint (double-tap Shift
-    → slow-mo 5 s), Iron Skin (+4 hearts), Silent Steps, Chain Hack; check each does what its tooltip says.
+    → slow-mo 5 s), Iron Skin (+4 hearts), Silent Steps, Chain Hack; check each does what its tooltip says. Buy Dodge
+    (best on a save where V lacks Cyberpunk's own Dash/Air Dash): V dashes, and air dashes off a jump. While Active,
+    open Cyberpunk's perk screen (Esc → Character): the Reflexes milestones show V's real levels.
 27. Mantis blade / gorilla gauntlet items (stretch).
 
 ## 9. Safety pass (3 min)
 28. F9 off/on 10 times; drive; save and load while active: V always comes back normal (HUD, weapons, no god mode,
-    visible body, normal time speed).
+    visible body, normal time speed). Hold a pedestrian on a lead and save from the pause menu, then wait for an
+    autosave: the lead stays in Minecraft and the pedestrian is still dragged afterwards. Get in a car while leading
+    one: Minecraft drops the lead and Cyberpunk stops dragging (log `tether: released <id>`).
 29. Optional: `uv run python -m tools.install --remove` then reinstall — the game folder is left exactly as before.
 
 ---
@@ -111,7 +119,7 @@ says what should happen. Tell Claude "step N: what you saw" and it reads `red4ex
 - [ ] IAT hook: the log should show 'hooked GetRawInputData in the game's import table' at startup. While Active, left/right/middle click and scroll: Cyberpunk shows no weapon wheel or weapon switching, no Tag/scanner zoom, and V's camera still turns with the mouse. After F9 off, the mouse buttons work again. If the log says 'could not hook GetRawInputData', mouse buttons also reach Cyberpunk.
 - [ ] Key-up rule: hold E, press F9 (Active), release E: Cyberpunk must have no stuck E (interaction does not repeat). Hold the left mouse button, press F9, release: no stuck fire or attack in Cyberpunk.
 - [ ] Space and Left Shift while Active: V still jumps and sprints in Cyberpunk, and Minecraft receives key jump and key sprint (cp\scripts or fakehost output) with no auto-repeat.
-- [ ] Binds: rebind the hack key in Minecraft's controls to Z: Z is swallowed and G reaches Cyberpunk again. Bind it to W or E: the log shows one 'binds: Minecraft's hack key cannot be used' warning and the previous key keeps working.
+- [ ] Binds: rebind the hack key in Minecraft's controls to Z: Z is swallowed and G reaches Cyberpunk again. Bind it to W or E: Minecraft's chat says it works in Cyberpunk as G, and G is the hack key there (Minecraft now sends the default for the keys the DLL refuses).
 - [ ] Menus (needs S1 calling Cyberblock_SetMenu): open Cyberpunk's pause or inventory menu while Active: E/Q/T/1-9 and mouse clicks behave normally in the menu, and forwarding resumes when it closes.
 - [ ] Look capture, from the CET console: Cyberblock_SetLookCapture(true), move the mouse, and fakehost/Minecraft log shows look {d:[dyaw,dpitch]} (right = positive yaw, down = positive pitch, 0.15 degrees per count, at most 120/s). Cyberblock_SetLookCapture(false) stops it.
 - [ ] Stance: Cyberblock_SetStance(true) from CET, and fakehost shows cam.cr true on every cam message; false clears it.
