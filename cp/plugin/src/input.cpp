@@ -5,6 +5,7 @@
 #include "link.hpp"
 #include "log.hpp"
 #include "natives.hpp"
+#include "view.hpp"
 #include "world.hpp"
 #include <windows.h>
 #include <algorithm>
@@ -454,7 +455,8 @@ namespace
 				RAWMOUSE &mouse = packet->data.mouse;
 				// while the drive owns V's yaw (a glide in first person) the game must not turn V itself: the drive turns
 				// it by these counts (take_mouse_x) and every teleport would otherwise undo the game's turn. Pitch stays.
-				if (cb::drive::driving() && !cb::link().screen_open() && (mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0)
+				if (cb::drive::driving() && !cb::view::applied() && !cb::link().screen_open() &&
+					(mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0)
 					mouse.lLastX = 0;
 				if (choices_shown())
 					mouse.usButtonFlags = cb::keys::strip_down(mouse.usButtonFlags); // the wheel scrolls Cyberpunk's choices

@@ -50,6 +50,8 @@ namespace
 	/// The ground alignment k of the attached world (plan 2026-10-03-retest2 section 1.1): Minecraft's `align`, back to 0
 	/// on every `hello`. Written on the link thread, read by the natives and the camera on the game's threads.
 	std::atomic<int> g_levelK{0};
+	/// Re-test 3: the last `persp` was "back" (link thread writes, the game's threads read).
+	std::atomic<bool> g_thirdPerson{false};
 
 	void set_level_k(int k)
 	{
@@ -521,6 +523,18 @@ namespace cb::world
 			// a new Minecraft session: whatever the old one queued is stale, and its alignment comes again with `align`
 			events().clear();
 			set_level_k(0);
+			g_thirdPerson = false; // the new session sends `persp` again after its hello
+			return;
+		}
+		if (type != message.end() && *type == "persp")
+		{
+			if (const auto back = parse_persp(message))
+			{
+				if (g_thirdPerson.exchange(*back) != *back)
+					log::info("persp: Minecraft asks for %s", *back ? "the third-person view" : "first person");
+			}
+			else
+				note_invalid(1, "persp: mode is missing or not \"first\" or \"back\"");
 			return;
 		}
 		if (type != message.end() && *type == "align")
@@ -542,6 +556,28 @@ namespace cb::world
 		const size_t bad = parsed.status == Parsed::Status::Rejected ? 1 : parsed.droppedEntries;
 		if (bad > 0)
 			note_invalid(bad, parsed.reason);
+	}
+
+	std::optional<bool> parse_persp(const json &message)
+	{
+		const auto mode = message.find("mode");
+		if (mode == message.end() || !mode->is_string())
+			return std::nullopt;
+		if (*mode == "back")
+			return true;
+		if (*mode == "first")
+			return false;
+		return std::nullopt;
+	}
+
+	bool third_person_wanted()
+	{
+		return g_thirdPerson;
+	}
+
+	void on_link_dropped()
+	{
+		g_thirdPerson = false;
 	}
 
 	void note_invalid(size_t count, const std::string &reason)

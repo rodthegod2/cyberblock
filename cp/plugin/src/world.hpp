@@ -198,6 +198,16 @@ namespace cb::world
 	/// Counts `count` invalid messages or list entries (events().stats().rejected) and logs `reason` for the first 10 only.
 	void note_invalid(size_t count, const std::string &reason);
 
+	// ---- re-test 3 (plan 2026-10-03-retest3-polish section 1.1): Minecraft -> Cyberpunk state ----
+
+	/// {"t":"persp","mode"}: true for "back", false for "first"; nullopt when `mode` is missing or anything else.
+	std::optional<bool> parse_persp(const nlohmann::json &message);
+	/// The last `persp` asked for the third-person view (on_minecraft_message keeps it; false before any, after every
+	/// `hello` and after a link drop). Any thread.
+	bool third_person_wanted();
+	/// A linked Minecraft went away (main.cpp's drop handler, link thread): forgets `persp` and the pause.
+	void on_link_dropped();
+
 	// ---- Cyberpunk -> Minecraft -------------------------------------------------------------------------------------
 
 	/// The damage kinds the `dmg` message knows; anything else is sent as "other".

@@ -15,6 +15,7 @@
 #include "link.hpp"
 #include "log.hpp"
 #include "natives.hpp"
+#include "view.hpp"
 #include "world.hpp"
 #include <RED4ext/GameEngine.hpp>
 #include <RED4ext/RED4ext.hpp>
@@ -152,7 +153,7 @@ namespace cb::camera
 				}
 			}
 		}
-		const bool firstPerson = seated ? !natives::seatTpp : true;
+		const bool firstPerson = seated ? !natives::seatTpp : !view::applied();
 
 		const int levelK = world::level_k(); // once per publish: the cam's positions and its `lv` agree
 		const double off = world::level_offset(levelK);

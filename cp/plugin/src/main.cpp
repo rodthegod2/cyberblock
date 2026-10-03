@@ -12,6 +12,7 @@
 #include "log.hpp"
 #include "natives.hpp"
 #include "snapshots.hpp"
+#include "view.hpp"
 #include "world.hpp"
 
 namespace
@@ -46,6 +47,7 @@ namespace
 		// the mouse X of this frame: the drive turns V by it during a glide (it owns V's yaw), the camera learns the rate
 		const int64_t dx = cb::input::take_mouse_x();
 		cb::drive::tick(dx, cb::camera::degrees_per_count()); // before the camera: cam.fly is true on the first frame V is moved
+		cb::view::tick();                                     // before the camera: cam.fp says whether the view applied
 		cb::camera::publish(dx);
 		cb::input::tick();
 		return false;
@@ -94,6 +96,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 			[]
 			{
 				cb::snap::on_link_dropped();
+				cb::world::on_link_dropped();
 				cb::natives::on_link_dropped();
 			});
 		break;

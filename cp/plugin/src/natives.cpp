@@ -6,6 +6,7 @@
 #include "log.hpp"
 #include "probes.hpp"
 #include "snapshots.hpp"
+#include "view.hpp"
 #include "world.hpp"
 #include <RED4ext/RED4ext.hpp>
 #include <RED4ext/Scripting/Natives/Generated/Vector4.hpp>
@@ -190,6 +191,7 @@ namespace
 		{
 			cb::natives::flightAllowed = false; // the script allows flights again on its next tick while Active
 			clear_seat();
+			cb::view::set_allowed(false); // the view comes off on the next frame
 		}
 		cb::world::events().set_active(active);
 		compositor::set_active(active);
@@ -839,6 +841,25 @@ namespace
 		log_seat(true, tpp);
 	}
 
+	// Cyberblock_SetViewAllowed(allowed: Bool) -> Void: the third-person view may be applied now (Active on foot, not held,
+	// no menu, no braindance, no photo mode; CyberblockView.Tick, 10 Hz). Cleared by Cyberblock_SetActive(false).
+	void SetViewAllowed(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		bool allowed = false;
+		RED4ext::GetParameter(frame, &allowed);
+		++frame->code;
+		cb::view::set_allowed(allowed);
+	}
+
+	// Cyberblock_ViewEye() -> Vector4: V's first-person eye in Cyberpunk space (w = 1): the active camera without the
+	// third-person offset, so aim rays start where they would in first person.
+	void ViewEye(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = to_vector4(cb::view::eye(), 1.0f);
+	}
+
 	// Cyberblock_Log(msg: String) -> Void
 	void Log(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
@@ -942,6 +963,8 @@ namespace cb::natives
 		add(rtti, "Cyberblock_SetChoices", &SetChoices, nullptr, {{"Bool", "open"}});
 		add(rtti, "Cyberblock_SetLookCapture", &SetLookCapture, nullptr, {{"Bool", "on"}});
 		add(rtti, "Cyberblock_SetSeat", &SetSeat, nullptr, {{"Bool", "seated"}, {"Bool", "tpp"}, {"Vector4", "hipsLocal"}});
+		add(rtti, "Cyberblock_SetViewAllowed", &SetViewAllowed, nullptr, {{"Bool", "allowed"}});
+		add(rtti, "Cyberblock_ViewEye", &ViewEye, "Vector4");
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});
 		log::info("redscript natives registered");
 	}
