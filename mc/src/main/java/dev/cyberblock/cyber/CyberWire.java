@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import java.util.Map;
+import java.util.Set;
 
 /** Minecraft to Cyberpunk messages of layer 6 (plan 2026-10-03 section 1.2), one JSON object each. */
 public final class CyberWire {
@@ -33,6 +34,25 @@ public final class CyberWire {
 
 		JsonObject m = new JsonObject();
 		m.addProperty("t", "perks");
+		m.add("list", list);
+		return m.toString();
+	}
+
+	/**
+	 * {"t":"cyberware","list":[{"id":"mantis_blades","on":0|1}, ...]}: all 17 implants in catalogue order (plan retest2 section
+	 * 1.2), on for the installed ones (ids not in the catalogue are ignored).
+	 */
+	public static String cyberware(final Set<String> installed) {
+		JsonArray list = new JsonArray();
+		for (Cyberware c : Cyberware.values()) {
+			JsonObject entry = new JsonObject();
+			entry.addProperty("id", c.id());
+			entry.addProperty("on", installed.contains(c.id()) ? 1 : 0);
+			list.add(entry);
+		}
+
+		JsonObject m = new JsonObject();
+		m.addProperty("t", "cyberware");
 		m.add("list", list);
 		return m.toString();
 	}

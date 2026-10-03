@@ -1,9 +1,9 @@
 package dev.cyberblock.cyber;
 
-/** RAM rules (task C2), pure: the server applies them to the player's RAM attachment. */
+/** RAM rules (task C2, plan retest2 section 1.7), pure: the server applies them to the player's RAM attachment. */
 public final class Ram {
 	public static final int BASE_MAX = 8;
-	/** extra_ram adds this much maximum. */
+	/** extra_ram (perk) and ram_upgrade (implant) each add this much maximum. */
 	public static final int EXTRA = 4;
 	/** A RAM shard restores this much. */
 	public static final int SHARD = 4;
@@ -13,9 +13,14 @@ public final class Ram {
 	private Ram() {
 	}
 
-	/** Maximum RAM: none at all without a cyberdeck in the inventory. */
-	public static int max(final boolean hasDeck, final boolean extraRam) {
-		return hasDeck ? BASE_MAX + (extraRam ? EXTRA : 0) : 0;
+	/** Maximum RAM: none at all without a cyberdeck; extra_ram and ram_upgrade add up. */
+	public static int max(final boolean hasDeck, final boolean extraRam, final boolean ramUpgrade) {
+		return hasDeck ? BASE_MAX + (extraRam ? EXTRA : 0) + (ramUpgrade ? EXTRA : 0) : 0;
+	}
+
+	/** A cyberdeck counts when it is installed, or carried while the Operating System slot is empty. */
+	public static boolean hasDeck(final boolean installed, final boolean osSlotEmpty, final boolean carried) {
+		return installed || osSlotEmpty && carried;
 	}
 
 	public static int regenTicks(final boolean overclock) {
