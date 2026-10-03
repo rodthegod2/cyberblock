@@ -33,7 +33,10 @@ public class CyberMod implements ModInitializer {
 		CyberData.register();
 		CyberItems.register();
 		ServerTickEvents.END_SERVER_TICK.register(CyberServer::tick);
+		// cobwebs from a Cobweb Daemon the game was closed on go on the next load (and on the way out)
+		ServerLifecycleEvents.SERVER_STARTED.register(HackWebs::cleanAll);
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+			HackWebs.cleanAll(server);
 			Hacking.clear();
 			PerkEffects.reset();
 			CyberwareEffects.reset(server);

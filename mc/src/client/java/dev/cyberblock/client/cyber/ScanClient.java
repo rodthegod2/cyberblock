@@ -137,7 +137,7 @@ final class ScanClient {
 
 			shown = info.ok() ? info : null;
 			lockedUntilMs = info.ok() ? now + LOCK_MS : 0L;
-			CyberLink.onServer(info.ok() ? () -> Hacking.lock(info.target(), info.device()) : Hacking::unlock);
+			CyberLink.onServer(info.ok() ? () -> Hacking.lock(info.target(), info.device(), info.x(), info.y(), info.z(), info.h(), info.name()) : Hacking::unlock);
 		});
 	}
 

@@ -6,7 +6,9 @@ import dev.cyberblock.Cyberblock;
 import dev.cyberblock.WorldBridge;
 import dev.cyberblock.cyber.CyberMod;
 import dev.cyberblock.cyber.CyberwareEffects;
+import dev.cyberblock.cyber.HackFx;
 import dev.cyberblock.cyber.HackResult;
+import dev.cyberblock.cyber.HackSpread;
 import dev.cyberblock.cyber.Hacking;
 import dev.cyberblock.cyber.Kills;
 import dev.cyberblock.cyber.Kit;
@@ -23,7 +25,7 @@ import net.minecraft.util.Util;
 
 /**
  * Track C's host message listeners (plan section 1.6): HostLink hands them every `hello`, `state`, `key`, `scaninfo`,
- * `hackresult` and `killed` on the link thread, after its own handling. Each moves its work to the client or the
+ * `hackresult`, `hackspread` and `killed` on the link thread, after its own handling. Each moves its work to the client or the
  * integrated server thread.
  */
 final class CyberLink {
@@ -44,6 +46,7 @@ final class CyberLink {
 		listen("key", CyberLink::key);
 		listen("scaninfo", CyberLink::scanInfo);
 		listen("hackresult", CyberLink::hackResult);
+		listen("hackspread", CyberLink::hackSpread);
 		listen("state", m -> {
 			if (!m.has("active") || m.get("active").getAsBoolean()) {
 				onLocalPlayer(Kit::onActive);
@@ -77,6 +80,17 @@ final class CyberLink {
 			warn("bad hackresult dropped");
 		} else if (server != null) {
 			server.execute(() -> Hacking.onResult(server, result));
+		}
+	}
+
+	/** {"t":"hackspread",...}: one more NPC a hack touched; its effect plays on the server (HackFx). */
+	private static void hackSpread(final JsonObject m) {
+		HackSpread spread = HackSpread.parse(m);
+		MinecraftServer server = WorldBridge.server();
+		if (spread == null) {
+			warn("bad hackspread dropped");
+		} else if (server != null) {
+			server.execute(() -> HackFx.onSpread(server, spread));
 		}
 	}
 
