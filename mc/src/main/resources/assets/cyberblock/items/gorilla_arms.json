@@ -1,6 +1,26 @@
 {
 	"model": {
-		"type": "minecraft:model",
-		"model": "cyberblock:item/gorilla_arms"
+		"type": "minecraft:select",
+		"property": "minecraft:custom_model_data",
+		"cases": [
+			{
+				"when": "arm",
+				"model": {
+					"type": "minecraft:model",
+					"model": "cyberblock:item/gorilla_arms_arm"
+				}
+			},
+			{
+				"when": "arm_out",
+				"model": {
+					"type": "minecraft:model",
+					"model": "cyberblock:item/gorilla_arms_arm_out"
+				}
+			}
+		],
+		"fallback": {
+			"type": "minecraft:model",
+			"model": "cyberblock:item/gorilla_arms"
+		}
 	}
 }
