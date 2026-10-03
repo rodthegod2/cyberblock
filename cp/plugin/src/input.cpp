@@ -13,6 +13,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -30,7 +31,6 @@ namespace
 	constexpr double kCursorCountsPerWindow = 800.0; // raw mouse counts to cross the whole window
 	constexpr auto kCursorInterval = std::chrono::microseconds(1'000'000 / 120);
 	constexpr char kEscape[] = "key:escape";
-	constexpr UINT kLeftShiftScanCode = 0x2A; // WM_KEYDOWN reports Shift as VK_SHIFT: the scan code tells left from right
 
 	std::atomic<HWND> g_window{nullptr};     // set once found (hooked or not), so the search stops
 	std::atomic<WNDPROC> g_original{nullptr}; // the window's own procedure, null unless hooked
@@ -46,6 +46,7 @@ namespace
 	// One gate per input path, since each of WM_INPUT and WM_KEYDOWN sees every key event. Window thread only.
 	cb::keys::KeyGate g_rawGate;
 	cb::keys::KeyGate g_messageGate;
+	cb::keys::CharJoiner g_chars; // WM_CHAR surrogate pairs. Window thread only.
 
 	// Minecraft's cursor while one of its screens is open, in 0..1 of the window: moved on the window thread, flushed
 	// from the game thread too.
@@ -87,12 +88,29 @@ namespace
 		return forwarding() && cb::link().screen_open();
 	}
 
-	void press(const std::string &id, nlohmann::json down, nlohmann::json up)
+	/// A Cyberpunk choice list with two or more choices is shown and no Minecraft screen covers it: E, Q, 1-4 and the wheel
+	/// are Cyberpunk's.
+	bool choices_shown()
 	{
-		if (g_held.contains(id))
-			return; // already down (key repeat)
-		cb::link().send(down);
-		g_held[id] = std::move(up);
+		return cb::natives::choicesOpen && !cb::link().screen_open();
+	}
+
+	cb::keys::Context context()
+	{
+		return {.screenOpen = screen_open(), .choices = choices_shown()};
+	}
+
+	/// Shift and Ctrl as the key state of the message being handled has them, in SDL bits.
+	int mods()
+	{
+		return cb::keys::sdl_mods(GetKeyState(VK_SHIFT) < 0, GetKeyState(VK_CONTROL) < 0);
+	}
+
+	/// Sends `message` with the modifiers held now.
+	void send_with_mods(nlohmann::json message)
+	{
+		message["mods"] = mods();
+		cb::link().send(message);
 	}
 
 	void release(const std::string &id)
@@ -100,8 +118,17 @@ namespace
 		const auto it = g_held.find(id);
 		if (it == g_held.end())
 			return;
-		cb::link().send(it->second);
+		send_with_mods(std::move(it->second));
 		g_held.erase(it);
+	}
+
+	/// Sends `down` (a `key` or `click`, with the modifiers held now) and keeps `up` until the release.
+	void press(const std::string &id, nlohmann::json down, nlohmann::json up)
+	{
+		if (g_held.contains(id))
+			return; // already down (key repeat)
+		send_with_mods(std::move(down));
+		g_held[id] = std::move(up);
 	}
 
 	/// Releases everything but a swallowed Esc, whose own key-up must still be kept from Cyberpunk.
@@ -114,11 +141,12 @@ namespace
 				++it;
 				continue;
 			}
-			cb::link().send(it->second);
+			send_with_mods(std::move(it->second));
 			it = g_held.erase(it);
 		}
 	}
 
+	/// A `key` message; press() and release() add its `mods`.
 	nlohmann::json key(const char *name, bool down)
 	{
 		return {{"t", "key"}, {"k", name}, {"down", down}};
@@ -184,7 +212,7 @@ namespace
 	}
 
 	/// Whether Cyberpunk must not see this raw keyboard packet: a key of the swallow set while forwarding (with its repeats
-	/// and its up), or an Esc that Minecraft takes.
+	/// and its up; every key while a Minecraft screen is open), F9, or an Esc that Minecraft takes.
 	bool swallow_raw_key(const RAWKEYBOARD &keyboard)
 	{
 		const uint32_t vk = keyboard.VKey;
@@ -192,8 +220,8 @@ namespace
 		if (vk == VK_ESCAPE)
 			return screen_open() || g_held.contains(kEscape);
 		if (vk == VK_F9)
-			return false;
-		const bool swallowable = forwarding() && cb::keys::is_swallowed(vk, binds());
+			return true; // Cyberblock's toggle: Cyberpunk's own F9 (QuickLoad) never fires while its window is in front
+		const bool swallowable = forwarding() && cb::keys::is_swallowed(vk, binds(), context());
 		return (down ? g_rawGate.down(vk, swallowable) : g_rawGate.up(vk)) == cb::keys::KeyGate::Verdict::Swallow;
 	}
 
@@ -211,20 +239,22 @@ namespace
 		return raw.header.dwType == RIM_TYPEKEYBOARD && swallow_raw_key(raw.data.keyboard);
 	}
 
-	/// The `key` name Minecraft knows `vk` by, or null when it is not forwarded. Left Shift (sprint) is told from the right
-	/// one by its scan code.
-	const char *key_name(WPARAM vk, LPARAM lParam)
+	/// The `key` name Minecraft knows `vk` by, or null when it is not forwarded. Either Shift is sprint (a double tap is
+	/// Steve's Sandevistan); Cyberpunk keeps both.
+	const char *key_name(WPARAM vk)
 	{
 		switch (vk)
 		{
 		case 'E': return "inventory";
 		case 'Q': return "drop";
 		case 'T': return "chat";
+		case 'X': return "swap"; // main hand <-> offhand (Minecraft's F, which is Cyberpunk's interact key)
 		case VK_OEM_2: return "command"; // the "/?" key on US layouts
 		case VK_F5: return "perspective";
 		case VK_SPACE: return "jump";
-		case VK_LSHIFT: return "sprint";
-		case VK_SHIFT: return ((lParam >> 16) & 0xFF) == kLeftShiftScanCode ? "sprint" : nullptr;
+		case VK_SHIFT:
+		case VK_LSHIFT:
+		case VK_RSHIFT: return "sprint";
 		}
 		if (vk == g_bindHack)
 			return "hack";
@@ -234,15 +264,16 @@ namespace
 	}
 
 	/// Legacy key messages. Returns true for a key that Cyberpunk must not see: a key of the swallow set while forwarding
-	/// (with its repeats and its up), or an Esc that Minecraft takes.
+	/// (with its repeats and its up; every key while a Minecraft screen is open), F9, or an Esc that Minecraft takes.
 	bool on_key(WPARAM vk, LPARAM lParam, bool down)
 	{
 		const bool repeat = down && (lParam & (1 << 30)) != 0;
 		if (vk == VK_F9)
 		{
+			// the toggle, in every state; Cyberpunk never sees F9 (its default QuickLoad would load a save)
 			if (down && !repeat)
 				cb::natives::togglePressed = true;
-			return false;
+			return true;
 		}
 		if (vk == VK_ESCAPE)
 		{
@@ -254,27 +285,54 @@ namespace
 			return ours;
 		}
 
-		const bool swallowable = forwarding() && cb::keys::is_swallowed(static_cast<uint32_t>(vk), binds());
-		const bool swallow = (down ? g_messageGate.down(static_cast<uint32_t>(vk), swallowable)
-								   : g_messageGate.up(static_cast<uint32_t>(vk))) == cb::keys::KeyGate::Verdict::Swallow;
+		const auto code = static_cast<uint32_t>(vk);
+		const cb::keys::Context now = context();
+		const bool swallowable = forwarding() && cb::keys::is_swallowed(code, binds(), now);
+		const bool swallow =
+			(down ? g_messageGate.down(code, swallowable) : g_messageGate.up(code)) == cb::keys::KeyGate::Verdict::Swallow;
 
-		if (const char *name = key_name(vk, lParam))
+		// a Cyberpunk choice list keeps E, Q and 1-4 (a release still goes out for a press Minecraft got before it showed)
+		const bool forward = forwarding() && !(now.choices && cb::keys::is_choice_key(code));
+		if (const char *name = key_name(vk))
 		{
 			const std::string id = std::string("key:") + name;
 			if (!down)
 				release(id);
-			else if (forwarding())
+			else if (forward)
 				press(id, key(name, true), key(name, false));
 		}
-		else if (vk >= '1' && vk <= '9' && down && !repeat && forwarding())
+		else if (vk >= '1' && vk <= '9' && down && !repeat && forward)
 			cb::link().send({{"t", "slot"}, {"n", int(vk - '1')}});
+
+		// the editing keys of a Minecraft screen (text fields, recipe book, sign edit), with their auto-repeat
+		if (down && now.screenOpen)
+			if (const auto scancode = cb::keys::editing_scancode(code))
+				send_with_mods({{"t", "skey"}, {"sc", *scancode}});
 		return swallow;
 	}
 
-	/// The wheel while forwarding: notches go to Minecraft and Cyberpunk does not see the message.
+	/// Typed text (WM_CHAR, which the game's own TranslateMessage makes from the key-down even when we swallow it): goes to
+	/// an open Minecraft screen as `char` and Cyberpunk does not see it. Returns whether it was taken.
+	bool on_char(WPARAM unit)
+	{
+		if (!screen_open())
+		{
+			g_chars.reset();
+			return false;
+		}
+		static bool logged = false;
+		if (!std::exchange(logged, true))
+			cb::log::info("typing reaches Minecraft's screens (first WM_CHAR while a screen is open)");
+		if (const auto codepoint = g_chars.feed(static_cast<uint16_t>(unit)))
+			cb::link().send({{"t", "char"}, {"c", uint32_t(*codepoint)}});
+		return true;
+	}
+
+	/// The wheel while forwarding: notches go to Minecraft and Cyberpunk does not see the message. A Cyberpunk choice list
+	/// keeps the wheel.
 	bool on_wheel(WPARAM wParam)
 	{
-		if (!forwarding())
+		if (!forwarding() || choices_shown())
 			return false;
 		g_wheel += GET_WHEEL_DELTA_WPARAM(wParam);
 		const int notches = g_wheel / WHEEL_DELTA; // + = away from the user = up
@@ -302,6 +360,10 @@ namespace
 			if (on_key(wParam, lParam, msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN))
 				return 0;
 			break;
+		case WM_CHAR:
+			if (on_char(wParam))
+				return 0;
+			break;
 		case WM_LBUTTONDOWN:
 		case WM_LBUTTONDBLCLK:
 			if (button(0, true))
@@ -326,11 +388,6 @@ namespace
 		case WM_MBUTTONUP:
 			button(2, false);
 			break;
-		case WM_XBUTTONDOWN:
-		case WM_XBUTTONDBLCLK:
-			if (forwarding())
-				return TRUE; // not forwarded to Minecraft, but Cyberpunk has no use for it while Steve is active
-			break;
 		case WM_MOUSEWHEEL:
 			if (on_wheel(wParam))
 				return 0;
@@ -344,13 +401,15 @@ namespace
 			release(kEscape);
 			g_rawGate.reset();
 			g_messageGate.reset();
+			g_chars.reset();
 			break;
 		}
 		return CallWindowProcW(g_original.load(), hwnd, msg, wParam, lParam);
 	}
 
-	/// The game's own GetRawInputData: while forwarding, the mouse packets it gets lose their button-down and wheel bits
-	/// (those go to Minecraft instead), but keep the motion that turns the camera and the button-up bits.
+	/// The game's own GetRawInputData: while forwarding, the mouse packets it gets lose their left/right/middle button-down
+	/// and wheel bits (those go to Minecraft instead), but keep the motion that turns the camera, the button-up bits and
+	/// mouse 4/5.
 	UINT WINAPI get_raw_input_data(HRAWINPUT raw, UINT command, LPVOID data, PUINT size, UINT headerSize)
 	{
 		const UINT copied = reinterpret_cast<GetRawInputDataFn>(g_realGetRawInputData)(raw, command, data, size, headerSize);
@@ -361,9 +420,14 @@ namespace
 			if (packet->header.dwType == RIM_TYPEMOUSE)
 			{
 				RAWMOUSE &mouse = packet->data.mouse;
-				if ((mouse.usButtonFlags & cb::keys::kMouseWheel) != 0 || (mouse.usButtonFlags & cb::keys::kMouseHWheel) != 0)
-					mouse.usButtonData = 0; // the wheel delta goes with the wheel bit
-				mouse.usButtonFlags = cb::keys::strip_down_and_wheel(mouse.usButtonFlags);
+				if (choices_shown())
+					mouse.usButtonFlags = cb::keys::strip_down(mouse.usButtonFlags); // the wheel scrolls Cyberpunk's choices
+				else
+				{
+					if ((mouse.usButtonFlags & cb::keys::kMouseWheel) != 0 || (mouse.usButtonFlags & cb::keys::kMouseHWheel) != 0)
+						mouse.usButtonData = 0; // the wheel delta goes with the wheel bit
+					mouse.usButtonFlags = cb::keys::strip_down_and_wheel(mouse.usButtonFlags);
+				}
 			}
 		}
 		return copied;
@@ -512,16 +576,12 @@ namespace cb::input
 		}
 		g_bindHack = update->binds.hack;
 		g_bindSkills = update->binds.skills;
-		static std::atomic<bool> warnedHack{false};
-		static std::atomic<bool> warnedSkills{false};
-		if (update->hackRejected && !warnedHack.exchange(true))
-			log::warn("binds: Minecraft's hack key cannot be used (not 1..254, taken by a movement or swallowed key, or equal to "
-					  "the skills key); keeping virtual key 0x%x (logged once)",
-					  unsigned(update->binds.hack));
-		if (update->skillsRejected && !warnedSkills.exchange(true))
-			log::warn("binds: Minecraft's skills key cannot be used (not 1..254, taken by a movement or swallowed key, or equal "
-					  "to the hack key); keeping virtual key 0x%x (logged once)",
-					  unsigned(update->binds.skills));
+		static std::atomic<bool> warned{false};
+		if (update->fellBack() && !warned.exchange(true))
+			log::warn("binds: %s; hack and skills fall back to G and K (logged once)",
+					  update->clash ? "the hack and skills keys are the same key"
+									: "a key Minecraft sent cannot be used (not 1..254, or one of Cyberpunk's own or Minecraft's "
+									  "forwarded keys)");
 	}
 
 	void shutdown()

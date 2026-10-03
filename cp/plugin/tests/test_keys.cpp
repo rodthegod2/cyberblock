@@ -33,10 +33,10 @@ namespace
 
 // ---- the swallow set ---------------------------------------------------------------------------------------------------
 
-TEST(the_fixed_swallow_set_is_e_q_t_digits_slash_and_f5)
+TEST(the_fixed_swallow_set_is_e_q_t_x_digits_slash_and_f5)
 {
 	const Binds defaults;
-	for (uint32_t vk : {uint32_t('E'), uint32_t('Q'), uint32_t('T'), kOem2, kF5})
+	for (uint32_t vk : {uint32_t('E'), uint32_t('Q'), uint32_t('T'), uint32_t('X'), kOem2, kF5})
 		CHECK(is_swallowed(vk, defaults));
 	for (uint32_t vk = '1'; vk <= '9'; ++vk)
 		CHECK(is_swallowed(vk, defaults));
@@ -52,8 +52,8 @@ TEST(the_default_binds_g_and_k_are_swallowed_too)
 
 TEST(rebinding_moves_the_swallowed_keys)
 {
-	const Binds moved{'Z', 'X'};
-	CHECK(is_swallowed('Z', moved) && is_swallowed('X', moved));
+	const Binds moved{'L', 'O'};
+	CHECK(is_swallowed('L', moved) && is_swallowed('O', moved));
 	CHECK(!is_swallowed('G', moved) && !is_swallowed('K', moved)); // Cyberpunk gets its walk toggle and crafting back
 	CHECK(is_swallowed('E', moved) && is_swallowed(kF5, moved));   // the fixed set stays
 }
@@ -61,32 +61,109 @@ TEST(rebinding_moves_the_swallowed_keys)
 TEST(everything_else_reaches_cyberpunk)
 {
 	const Binds defaults;
-	for (uint32_t vk : {uint32_t('W'), uint32_t('A'), uint32_t('S'), uint32_t('D'), kSpace, kShift, kLeftShift, kControl, kLeftControl,
-						uint32_t('C'), kF9, kEscape, uint32_t('X'), uint32_t('R'), uint32_t('F'), uint32_t('V'), uint32_t(0x09) /*Tab*/,
+	for (uint32_t vk : {uint32_t('W'), uint32_t('A'), uint32_t('S'), uint32_t('D'), kSpace, kShift, kLeftShift, kRightShift, kControl,
+						kLeftControl, uint32_t('C'), kEscape, uint32_t('R'), uint32_t('F'), uint32_t('V'), uint32_t(0x09) /*Tab*/,
 						uint32_t(0x70) /*F1*/, uint32_t(0x61) /*Numpad 1*/, uint32_t(0x12) /*Alt*/})
 		CHECK(!is_swallowed(vk, defaults));
+}
+
+TEST(a_cyberpunk_choice_list_keeps_e_q_and_1_to_4)
+{
+	const Context choices{.choices = true};
+	for (uint32_t vk : {uint32_t('E'), uint32_t('Q'), uint32_t('1'), uint32_t('2'), uint32_t('3'), uint32_t('4')})
+	{
+		CHECK(is_choice_key(vk));
+		CHECK(is_swallowed(vk, Binds{}) && !is_swallowed(vk, Binds{}, choices));
+	}
+	// everything else Minecraft takes stays Minecraft's: 5-9, T, X, /, F5, the bound keys, and F9
+	for (uint32_t vk : {uint32_t('5'), uint32_t('9'), uint32_t('T'), uint32_t('X'), kOem2, kF5, kG, kK, kF9})
+	{
+		CHECK(!is_choice_key(vk));
+		CHECK(is_swallowed(vk, Binds{}, choices));
+	}
+	for (uint32_t vk : {uint32_t('W'), uint32_t('F'), kSpace, kShift})
+		CHECK(!is_swallowed(vk, Binds{}, choices));
+}
+
+TEST(an_open_minecraft_screen_keeps_every_key_from_cyberpunk)
+{
+	const Context screen{.screenOpen = true};
+	for (uint32_t vk = 1; vk <= 254; ++vk)
+		CHECK(is_swallowed(vk, Binds{}, screen)); // W A S D too: V stands still while Steve's inventory or chat is open
+	// a screen covers a Cyberpunk choice list: its keys are Minecraft's again
+	CHECK(is_swallowed('E', Binds{}, Context{.screenOpen = true, .choices = true}));
+}
+
+TEST(a_key_held_from_before_a_screen_opened_still_gets_its_up)
+{
+	KeyGate gate;
+	CHECK(gate.down('W', is_swallowed('W', Binds{})) == Verdict::Pass); // walking when the inventory opens
+	const bool swallowable = is_swallowed('W', Binds{}, Context{.screenOpen = true});
+	CHECK(gate.down('W', swallowable) == Verdict::Pass); // the repeat follows the first down
+	CHECK(gate.up('W') == Verdict::Pass);                // so Cyberpunk sees the release and V stops
+	CHECK(gate.down('W', swallowable) == Verdict::Swallow);
+	CHECK(gate.up('W') == Verdict::Swallow);
+}
+
+TEST(editing_keys_have_minecraft_26_3_scancodes)
+{
+	// Windows VK -> SDL scancode (InputConstants.KEY_*)
+	const std::pair<uint32_t, int> cases[] = {{0x0D, 40} /*Enter*/, {0x08, 42} /*Backspace*/, {0x09, 43} /*Tab*/,
+											  {0x2E, 76} /*Delete*/,  {0x24, 74} /*Home*/,      {0x23, 77} /*End*/,
+											  {0x21, 75} /*PgUp*/,    {0x22, 78} /*PgDn*/,      {0x27, 79} /*Right*/,
+											  {0x25, 80} /*Left*/,    {0x28, 81} /*Down*/,      {0x26, 82} /*Up*/};
+	for (const auto &[vk, scancode] : cases)
+		CHECK(editing_scancode(vk) == scancode);
+	for (uint32_t vk : {uint32_t('A'), uint32_t('1'), kSpace, kEscape, kShift, kF5, uint32_t(0x2D) /*Insert*/})
+		CHECK(!editing_scancode(vk));
+}
+
+TEST(typed_characters_are_joined_into_code_points)
+{
+	CharJoiner chars;
+	CHECK(chars.feed(u'a') == U'a' && chars.feed(0x00E9) == char32_t(0x00E9) && chars.feed(u' ') == U' '); // e acute
+	CHECK(!chars.feed(0xD83D));                          // a high surrogate waits
+	CHECK(chars.feed(0xDE00) == char32_t(0x1F600));      // U+1F600 from D83D DE00
+	CHECK(!chars.feed(0xDE00));                          // a low surrogate on its own
+	CHECK(!chars.feed(0xD83D) && chars.feed(u'b') == U'b'); // an unpaired high one is dropped, the next char kept
+	for (uint16_t control : {uint16_t(0x08), uint16_t(0x09), uint16_t(0x0D), uint16_t(0x1B), uint16_t(0x01), uint16_t(0x7F)})
+		CHECK(!chars.feed(control));                     // Backspace, Tab, Enter, Esc, Ctrl+A, DEL
+	CHECK(!chars.feed(0xD83D));
+	chars.reset();
+	CHECK(!chars.feed(0xDE00));                          // reset forgot the waiting high surrogate
+}
+
+TEST(f9_never_reaches_cyberpunk)
+{
+	// Cyberblock's toggle; Cyberpunk's default F9 is QuickLoad, which loaded a save in the 2026-10-03 session
+	CHECK(is_swallowed(kF9, Binds{}));
+	CHECK(is_swallowed(kF9, binds_of('L', 'O')));
 }
 
 // ---- which keys may be bound -------------------------------------------------------------------------------------------
 
 TEST(bindable_keys_are_1_to_254_and_not_reserved)
 {
-	CHECK(bindable('G') && bindable('K') && bindable('Z') && bindable('V') && bindable('R'));
-	CHECK(bindable(0x70) && bindable(0x7B));                  // F1, F12
-	CHECK(bindable(0x61) && bindable(0x09) && bindable(0x12)); // Numpad 1, Tab, Alt
+	// what is left of the keys Minecraft can send: G K L O U Y 0 F1-F4 F6-F8 F10-F12
+	for (uint32_t vk : {uint32_t('G'), uint32_t('K'), uint32_t('L'), uint32_t('O'), uint32_t('U'), uint32_t('Y'), uint32_t('0')})
+		CHECK(bindable(vk));
+	for (uint32_t vk : {0x70u, 0x71u, 0x72u, 0x73u, 0x75u, 0x76u, 0x77u, 0x79u, 0x7Au, 0x7Bu}) // F1-F4, F6-F8, F10-F12
+		CHECK(bindable(vk));
+	CHECK(bindable(0x61) && bindable(0x09) && bindable(0x12)); // Numpad 1, Tab, Alt (Minecraft never sends these)
 	CHECK(bindable(1) && bindable(254));
 	CHECK(!bindable(0) && !bindable(255) && !bindable(256) && !bindable(1000) && !bindable(0xFFFFFFFFu));
 }
 
 TEST(reserved_keys_cannot_be_bound)
 {
-	CHECK(!bindable(kF9) && !bindable(kEscape));
-	for (uint32_t vk : {uint32_t('E'), uint32_t('Q'), uint32_t('T'), kOem2, kF5}) // the swallow set
+	CHECK(!bindable(kF9) && !bindable(kEscape) && !bindable(kF5));
+	for (uint32_t vk : {uint32_t('E'), uint32_t('Q'), uint32_t('T'), uint32_t('X'), kOem2}) // the swallow set
 		CHECK(!bindable(vk));
 	for (uint32_t vk = '1'; vk <= '9'; ++vk)
 		CHECK(!bindable(vk));
-	for (uint32_t vk : {uint32_t('W'), uint32_t('A'), uint32_t('S'), uint32_t('D'), kSpace, kShift, kLeftShift, kRightShift, kControl,
-						kLeftControl, kRightControl, uint32_t('C')})
+	for (char c : std::string("WASDCFIMJHNBPVZR")) // Cyberpunk's own letters while V is on foot
+		CHECK(!bindable(uint32_t(c)));
+	for (uint32_t vk : {kSpace, kShift, kLeftShift, kRightShift, kControl, kLeftControl, kRightControl})
 		CHECK(!bindable(vk));
 }
 
@@ -100,26 +177,28 @@ TEST(the_default_binds_are_bindable_and_distinct)
 
 TEST(a_binds_message_sets_both_keys)
 {
-	const auto update = apply_binds(binds_message(R"({"hack":90,"skills":88})"), Binds{});
-	CHECK(update.has_value() && update->binds == binds_of(90, 88) && !update->hackRejected && !update->skillsRejected);
+	const auto update = apply_binds(binds_message(R"({"hack":76,"skills":79})"), Binds{}); // L, O
+	CHECK(update.has_value() && update->binds == binds_of('L', 'O') && !update->fellBack());
 }
 
-TEST(a_missing_key_stays_and_an_unusable_one_keeps_its_previous_value)
+TEST(a_missing_key_stays_and_an_unusable_one_sends_both_back_to_g_and_k)
 {
-	const Binds current{'Z', 'X'};
-	const auto onlyHack = apply_binds(binds_message(R"({"hack":86})"), current); // V
-	CHECK(onlyHack && onlyHack->binds == binds_of('V', 'X') && !onlyHack->hackRejected && !onlyHack->skillsRejected);
-	const auto badHack = apply_binds(binds_message(R"({"hack":69,"skills":82})"), current); // hack = E (swallowed), skills = R
-	CHECK(badHack && badHack->binds == binds_of('Z', 'R') && badHack->hackRejected && !badHack->skillsRejected);
+	const Binds current{'L', 'O'};
+	const auto onlyHack = apply_binds(binds_message(R"({"hack":85})"), current); // U
+	CHECK(onlyHack && onlyHack->binds == binds_of('U', 'O') && !onlyHack->fellBack());
+	const auto badHack = apply_binds(binds_message(R"({"hack":69,"skills":89})"), current); // hack = E (swallowed), skills = Y
+	CHECK(badHack && badHack->binds == binds_of() && badHack->hackRejected && !badHack->skillsRejected && badHack->fellBack());
+	const auto badSkills = apply_binds(binds_message(R"({"skills":70})"), current); // F: Cyberpunk's interact
+	CHECK(badSkills && badSkills->binds == binds_of() && badSkills->skillsRejected);
 	const auto bothBad = apply_binds(binds_message(R"({"hack":0,"skills":120})"), current); // 0 and F9
-	CHECK(bothBad && bothBad->binds == current && bothBad->hackRejected && bothBad->skillsRejected);
-	for (const char *value : {R"("71")", "71.5", "-71", "300", "null", "true", "[71]", "255"})
+	CHECK(bothBad && bothBad->binds == binds_of() && bothBad->hackRejected && bothBad->skillsRejected);
+	for (const char *value : {R"("71")", "71.5", "-71", "300", "null", "true", "[71]", "255", "82" /*R*/, "86" /*V*/, "73" /*I*/})
 	{
 		const auto update = apply_binds(binds_message(std::string(R"({"hack":)") + value + "}"), current);
-		CHECK(update && update->binds == current && update->hackRejected);
+		CHECK(update && update->binds == binds_of() && update->hackRejected);
 	}
-	const auto whole = apply_binds(binds_message(R"({"hack":86.0})"), current); // a whole number written as a float
-	CHECK(whole && whole->binds.hack == 'V' && !whole->hackRejected);
+	const auto whole = apply_binds(binds_message(R"({"hack":85.0})"), current); // a whole number written as a float
+	CHECK(whole && whole->binds == binds_of('U', 'O') && !whole->fellBack());
 }
 
 TEST(a_binds_message_without_a_keys_object_is_malformed)
@@ -127,19 +206,21 @@ TEST(a_binds_message_without_a_keys_object_is_malformed)
 	CHECK(!apply_binds(json::parse(R"({"t":"binds"})"), binds_of()));
 	CHECK(!apply_binds(json::parse(R"({"t":"binds","keys":[71,75]})"), binds_of()));
 	CHECK(!apply_binds(json::parse(R"({"t":"binds","keys":"GK"})"), binds_of()));
-	const auto empty = apply_binds(binds_message("{}"), Binds{'Z', 'X'});
-	CHECK(empty && empty->binds == binds_of('Z', 'X') && !empty->hackRejected && !empty->skillsRejected);
+	const auto empty = apply_binds(binds_message("{}"), Binds{'L', 'O'});
+	CHECK(empty && empty->binds == binds_of('L', 'O') && !empty->fellBack());
 }
 
-TEST(one_key_for_both_actions_is_refused)
+TEST(one_key_for_both_actions_sends_both_back_to_g_and_k)
 {
-	const Binds current{'Z', 'X'};
-	const auto same = apply_binds(binds_message(R"({"hack":86,"skills":86})"), current);
-	CHECK(same && same->binds == current && same->hackRejected && same->skillsRejected);
-	const auto clash = apply_binds(binds_message(R"({"hack":88})"), current); // hack onto the current skills key
-	CHECK(clash && clash->binds == current && clash->hackRejected && !clash->skillsRejected);
-	const auto swap = apply_binds(binds_message(R"({"hack":88,"skills":90})"), current); // swapping is fine
-	CHECK(swap && swap->binds == binds_of('X', 'Z') && !swap->hackRejected && !swap->skillsRejected);
+	const Binds current{'L', 'O'};
+	const auto same = apply_binds(binds_message(R"({"hack":85,"skills":85})"), current);
+	CHECK(same && same->binds == binds_of() && same->clash && !same->hackRejected && !same->skillsRejected);
+	const auto clash = apply_binds(binds_message(R"({"hack":79})"), current); // hack onto the current skills key
+	CHECK(clash && clash->binds == binds_of() && clash->clash);
+	const auto swap = apply_binds(binds_message(R"({"hack":79,"skills":76})"), current); // swapping is fine
+	CHECK(swap && swap->binds == binds_of('O', 'L') && !swap->fellBack());
+	const auto defaults = apply_binds(binds_message(R"({"hack":71,"skills":75})"), current); // G, K
+	CHECK(defaults && defaults->binds == binds_of() && !defaults->fellBack());
 }
 
 // ---- the key-up rule ---------------------------------------------------------------------------------------------------
@@ -211,14 +292,21 @@ TEST(losing_focus_forgets_every_key)
 	CHECK(gate.up('R') == Verdict::Pass);
 }
 
+// ---- modifiers ---------------------------------------------------------------------------------------------------------
+
+TEST(mods_are_sdl_left_shift_and_left_ctrl_bits)
+{
+	static_assert(sdl_mods(false, false) == 0 && sdl_mods(true, false) == 1 && sdl_mods(false, true) == 64);
+	CHECK(sdl_mods(true, true) == (kModShift | kModCtrl) && kModShift == 0x0001 && kModCtrl == 0x0040);
+}
+
 // ---- mouse bits and look deltas ----------------------------------------------------------------------------------------
 
-TEST(strip_removes_every_button_down_and_wheel_bit_and_keeps_the_up_bits)
+TEST(strip_removes_the_left_right_middle_down_and_wheel_bits_and_keeps_the_up_bits)
 {
-	static_assert(strip_down_and_wheel(0x0001 | 0x0004 | 0x0010 | 0x0040 | 0x0100 | 0x0400 | 0x0800) == 0);
+	static_assert(strip_down_and_wheel(0x0001 | 0x0004 | 0x0010 | 0x0400 | 0x0800) == 0);
 	CHECK(strip_down_and_wheel(kMouseLeftDown) == 0 && strip_down_and_wheel(kMouseRightDown) == 0);
-	CHECK(strip_down_and_wheel(kMouseMiddleDown) == 0 && strip_down_and_wheel(kMouseButton4Down) == 0);
-	CHECK(strip_down_and_wheel(kMouseButton5Down) == 0 && strip_down_and_wheel(kMouseWheel) == 0 && strip_down_and_wheel(kMouseHWheel) == 0);
+	CHECK(strip_down_and_wheel(kMouseMiddleDown) == 0 && strip_down_and_wheel(kMouseWheel) == 0 && strip_down_and_wheel(kMouseHWheel) == 0);
 	// RI_MOUSE_LEFT_BUTTON_UP 0x2, RIGHT 0x8, MIDDLE 0x20, BUTTON_4 0x80, BUTTON_5 0x200: a release is never lost
 	for (uint16_t up : {uint16_t(0x0002), uint16_t(0x0008), uint16_t(0x0020), uint16_t(0x0080), uint16_t(0x0200)})
 	{
@@ -226,7 +314,22 @@ TEST(strip_removes_every_button_down_and_wheel_bit_and_keeps_the_up_bits)
 		CHECK(strip_down_and_wheel(uint16_t(up | kMouseLeftDown | kMouseWheel)) == up);
 	}
 	CHECK(strip_down_and_wheel(0) == 0);
-	CHECK(strip_down_and_wheel(0xFFFF) == 0xF2AA); // 0xFFFF without 0x0D55 (the seven down and wheel bits): the rest is left alone
+	CHECK(strip_down_and_wheel(0xFFFF) == 0xF3EA); // 0xFFFF without 0x0C15 (the five down and wheel bits): the rest is left alone
+}
+
+TEST(strip_down_keeps_the_wheels_for_a_cyberpunk_choice_list)
+{
+	CHECK(strip_down(kMouseWheel) == kMouseWheel && strip_down(kMouseHWheel) == kMouseHWheel);
+	CHECK(strip_down(uint16_t(kMouseLeftDown | kMouseRightDown | kMouseMiddleDown)) == 0);
+	CHECK(strip_down(uint16_t(kMouseLeftDown | kMouseWheel | kMouseButton4Down | 0x0002)) == (kMouseWheel | kMouseButton4Down | 0x0002));
+}
+
+TEST(mouse_4_and_5_stay_with_cyberpunk)
+{
+	// the side buttons are this player's dodge and scanner: Cyberpunk gets their down bits while forwarding too
+	CHECK(strip_down_and_wheel(kMouseButton4Down) == kMouseButton4Down);
+	CHECK(strip_down_and_wheel(kMouseButton5Down) == kMouseButton5Down);
+	CHECK(strip_down_and_wheel(uint16_t(kMouseButton4Down | kMouseLeftDown | kMouseWheel)) == kMouseButton4Down);
 }
 
 TEST(the_look_deltas_are_summed_scaled_and_sent_at_most_120_times_a_second)

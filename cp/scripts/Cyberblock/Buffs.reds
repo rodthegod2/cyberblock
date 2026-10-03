@@ -11,8 +11,9 @@
 // second time through Health.reds. The caps on speed and jump keep /effect amplifiers up to 255 from flinging V.
 //
 // Lifetime: Tick(active false) takes everything off V but keeps the entries (their expiry keeps running), so a potion
-// comes back after a vehicle ride; Clear (saves, loads, leaving Active/Vehicle) does the same and also forgets infinite
-// entries, whose removal could otherwise be missed while Cyberblock is off (S1 drops effect events then). Stat modifiers
+// comes back after a vehicle ride or a save; Clear does the same, and when leaving Active/Vehicle, on loads and at session
+// end (Clear(game, true)) it also forgets infinite entries, whose removal could otherwise be missed while Cyberblock is
+// off (S1 drops effect events then). Before a save (Clear(game, false)) every entry stays. Stat modifiers
 // are removed exactly (the same objects, from the entity they were added to); status effects are removed only when we
 // applied them (one V already had, e.g. from a drink, is left alone).
 //
@@ -115,7 +116,9 @@ public abstract class CyberblockBuffs {
     }
   }
 
-  public static func Clear(game: GameInstance) -> Void {
+  // Takes everything off V. forgetInfinite: also forget the infinite entries (leaving Active/Vehicle, loads, session
+  // end); false before a save, which keeps every entry so an infinite potion comes back after it.
+  public static func Clear(game: GameInstance, forgetInfinite: Bool) -> Void {
     let buffs = CyberblockBuffsService.Get();
     if !IsDefined(buffs) {
       return;
@@ -126,6 +129,9 @@ public abstract class CyberblockBuffs {
     let player = GetPlayer(game);
     if IsDefined(player) {
       StatusEffectHelper.RemoveStatusEffectsByInstigatorID(player, t"Cyberblock.Buffs");
+    }
+    if !forgetInfinite {
+      return;
     }
     let now = CyberblockBuffs.Now(game);
     let i = ArraySize(buffs.names) - 1;

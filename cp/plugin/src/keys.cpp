@@ -1,5 +1,7 @@
 #include "keys.hpp"
 #include <cmath>
+#include <string_view>
+#include <utility>
 
 namespace
 {
@@ -10,10 +12,10 @@ namespace
 		return vk >= kDigit1 && vk <= kDigit9;
 	}
 
-	/// The keys of the swallow set that never change: E, Q, T, 1-9, "/" and F5.
+	/// The keys of the swallow set that never change: E, Q, T, X, 1-9, "/" and F5.
 	bool in_fixed_swallow_set(uint32_t vk)
 	{
-		return vk == kE || vk == kQ || vk == kT || vk == kOem2 || vk == kF5 || is_digit(vk);
+		return vk == kE || vk == kQ || vk == kT || vk == kX || vk == kOem2 || vk == kF5 || is_digit(vk);
 	}
 
 	/// Reads `keys[name]`: leaves `slot` alone when it is missing, sets it when it is usable, and flags `rejected` when
@@ -33,8 +35,17 @@ namespace
 
 namespace cb::keys
 {
-	bool is_swallowed(uint32_t vk, const Binds &binds)
+	bool is_choice_key(uint32_t vk)
 	{
+		return vk == kE || vk == kQ || (vk >= kDigit1 && vk <= kDigit4);
+	}
+
+	bool is_swallowed(uint32_t vk, const Binds &binds, Context context)
+	{
+		if (vk == kF9 || context.screenOpen)
+			return true;
+		if (context.choices && is_choice_key(vk))
+			return false;
 		return in_fixed_swallow_set(vk) || vk == binds.hack || vk == binds.skills;
 	}
 
@@ -55,15 +66,11 @@ namespace cb::keys
 		case kControl:
 		case kLeftControl:
 		case kRightControl:
-		case kW:
-		case kA:
-		case kS:
-		case kD:
-		case kC:
 			return false;
-		default:
-			return true;
 		}
+		// Cyberpunk's own letters while V is on foot (movement, crouch, interact, menus, reload, holster, ...)
+		constexpr std::string_view kCyberpunkLetters = "WASDCFIMJHNBPVZR";
+		return !(vk >= 'A' && vk <= 'Z' && kCyberpunkLetters.find(char(vk)) != std::string_view::npos);
 	}
 
 	std::optional<BindsUpdate> apply_binds(const nlohmann::json &message, const Binds &current)
@@ -71,19 +78,52 @@ namespace cb::keys
 		const auto keys = message.find("keys");
 		if (keys == message.end() || !keys->is_object())
 			return std::nullopt;
-		BindsUpdate out{current};
+		BindsUpdate out;
 		Binds next = current;
 		read_bind(*keys, "hack", next.hack, out.hackRejected);
 		read_bind(*keys, "skills", next.skills, out.skillsRejected);
-		if (next.hack == next.skills)
-		{
-			// one key for both actions would fire both: keep the previous pair
-			out.hackRejected = out.hackRejected || next.hack != current.hack;
-			out.skillsRejected = out.skillsRejected || next.skills != current.skills;
-			return out;
-		}
-		out.binds = next;
+		out.clash = next.hack == next.skills; // one key for both actions would fire both
+		out.binds = out.fellBack() ? Binds{} : next;
 		return out;
+	}
+
+	std::optional<int> editing_scancode(uint32_t vk)
+	{
+		switch (vk)
+		{
+		case 0x0D: return 40; // VK_RETURN (also numpad Enter) -> KEY_RETURN
+		case 0x08: return 42; // VK_BACK -> KEY_BACKSPACE
+		case 0x09: return 43; // VK_TAB -> KEY_TAB
+		case 0x2E: return 76; // VK_DELETE -> KEY_DELETE
+		case 0x24: return 74; // VK_HOME -> KEY_HOME
+		case 0x23: return 77; // VK_END -> KEY_END
+		case 0x21: return 75; // VK_PRIOR -> KEY_PAGEUP
+		case 0x22: return 78; // VK_NEXT -> KEY_PAGEDOWN
+		case 0x27: return 79; // VK_RIGHT -> KEY_RIGHT
+		case 0x25: return 80; // VK_LEFT -> KEY_LEFT
+		case 0x28: return 81; // VK_DOWN -> KEY_DOWN
+		case 0x26: return 82; // VK_UP -> KEY_UP
+		default: return std::nullopt;
+		}
+	}
+
+	std::optional<char32_t> CharJoiner::feed(uint16_t unit)
+	{
+		if (unit >= 0xD800 && unit <= 0xDBFF)
+		{
+			m_high = unit; // an earlier unpaired one is dropped
+			return std::nullopt;
+		}
+		const uint16_t high = std::exchange(m_high, uint16_t(0));
+		if (unit >= 0xDC00 && unit <= 0xDFFF)
+		{
+			if (high == 0)
+				return std::nullopt; // a low surrogate on its own
+			return char32_t(0x10000 + ((high - 0xD800) << 10) + (unit - 0xDC00));
+		}
+		if (unit < 0x20 || unit == 0x7F)
+			return std::nullopt;
+		return char32_t(unit);
 	}
 
 	KeyGate::Verdict KeyGate::down(uint32_t vk, bool swallowable)

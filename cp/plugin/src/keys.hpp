@@ -17,6 +17,7 @@ namespace cb::keys
 	inline constexpr uint32_t kControl = 0x11;
 	inline constexpr uint32_t kSpace = 0x20;
 	inline constexpr uint32_t kDigit1 = 0x31; // '1'..'9' are 0x31..0x39
+	inline constexpr uint32_t kDigit4 = 0x34;
 	inline constexpr uint32_t kDigit9 = 0x39;
 	inline constexpr uint32_t kA = 0x41;
 	inline constexpr uint32_t kC = 0x43;
@@ -28,6 +29,7 @@ namespace cb::keys
 	inline constexpr uint32_t kS = 0x53;
 	inline constexpr uint32_t kT = 0x54;
 	inline constexpr uint32_t kW = 0x57;
+	inline constexpr uint32_t kX = 0x58;
 	inline constexpr uint32_t kF5 = 0x74;
 	inline constexpr uint32_t kF9 = 0x78;
 	inline constexpr uint32_t kLeftShift = 0xA0;
@@ -44,23 +46,61 @@ namespace cb::keys
 		bool operator==(const Binds &) const = default;
 	};
 
-	/// Keys Cyberpunk never sees while forwarding: E, Q, T, 1-9, "/", F5 and the two bound keys.
-	bool is_swallowed(uint32_t vk, const Binds &binds);
+	/// What is on screen besides the world.
+	struct Context
+	{
+		/// A Minecraft screen (inventory, chest, chat, skill tree) is open: it has the whole keyboard, so V stands still.
+		bool screenOpen = false;
+		/// A Cyberpunk dialogue or choice list offers two or more choices (Cyberblock_SetChoices) and no Minecraft screen
+		/// covers it: E, Q, 1-4 and the wheel pick them, so they stay Cyberpunk's.
+		bool choices = false;
+	};
 
-	/// May `vk` be bound to hack or skills: 1..254, and not F9, Esc, a key of the fixed swallow set above, W, A, S, D,
-	/// Space, Shift, Ctrl or C (those belong to Minecraft's movement or to Cyberpunk).
+	/// E, Q and 1-4: the keys a Cyberpunk choice list needs while Context::choices.
+	bool is_choice_key(uint32_t vk);
+
+	/// Keys Cyberpunk never sees while forwarding: E, Q, T, X, 1-9, "/", F5 and the two bound keys (but not E, Q and 1-4
+	/// while `context.choices`), every key while `context.screenOpen`, and F9 (Cyberblock's toggle, which input.cpp keeps
+	/// from Cyberpunk in every state, so its QuickLoad never fires). Esc is decided by input.cpp.
+	bool is_swallowed(uint32_t vk, const Binds &binds, Context context = {});
+
+	// ---- typing into a Minecraft screen ---------------------------------------------------------------------------------
+
+	/// The SDL scancode (Minecraft 26.3 InputConstants.KEY_*) of an editing key that a Minecraft screen gets as `skey`:
+	/// Enter, Backspace, Delete, Tab, the arrows, Home, End, Page Up and Page Down. nullopt for any other key.
+	std::optional<int> editing_scancode(uint32_t vk);
+
+	/// Joins the UTF-16 units of WM_CHAR into code points for `char`: a surrogate pair becomes one code point, an unpaired
+	/// surrogate is dropped, and control characters (below 0x20, and 0x7F) give nothing (Enter, Backspace and Tab go as
+	/// `skey`). Window thread only.
+	class CharJoiner
+	{
+	public:
+		std::optional<char32_t> feed(uint16_t unit);
+		void reset() { m_high = 0; }
+
+	private:
+		uint16_t m_high = 0; // a high surrogate waiting for its low one
+	};
+
+	/// May `vk` be bound to hack or skills: 1..254, and not F9, Esc, Space, Shift, Ctrl, a key of the fixed swallow set
+	/// above (E Q T X 1-9 / F5), or one of Cyberpunk's own letters W A S D C F I M J H N B P V Z R. Of the keys Minecraft
+	/// can send (letters, digits, F-keys; shared/vectors.json `binds`) that leaves G K L O U Y 0 F1-F4 F6-F8 F10-F12.
 	bool bindable(uint32_t vk);
 
 	struct BindsUpdate
 	{
 		Binds binds;                 // the keys to use from now on
-		bool hackRejected = false;   // a hack key was given and is not usable: the previous one stays
+		bool hackRejected = false;   // a hack key was given and is not a whole number that bindable() takes
 		bool skillsRejected = false;
+		bool clash = false;          // both actions resolved to one key
+		/// Something was wrong: both actions went back to the defaults G/K.
+		bool fellBack() const { return hackRejected || skillsRejected || clash; }
 	};
 
-	/// Applies a `binds` message ({"keys":{"hack":<vk>,"skills":<vk>}}) to `current`. A key that is missing stays; a key that
-	/// is not a whole number, not bindable, or that would make both actions share one key keeps its previous value and is
-	/// reported as rejected. nullopt when `keys` is missing or not an object.
+	/// Applies a `binds` message ({"keys":{"hack":<vk>,"skills":<vk>}}) to `current`. A key that is missing stays. When a
+	/// given key is not a whole number or not bindable, or both actions resolve to one key, BOTH fall back to the defaults
+	/// G (hack) and K (skills), as Minecraft does. nullopt when `keys` is missing or not an object.
 	std::optional<BindsUpdate> apply_binds(const nlohmann::json &message, const Binds &current);
 
 	/// Decides, key by key, what Cyberpunk gets: a key that goes down while forwarding is swallowed (with its repeats and its
@@ -91,6 +131,18 @@ namespace cb::keys
 		std::map<uint32_t, State> m_state;
 	};
 
+	// ---- modifiers -----------------------------------------------------------------------------------------------------
+
+	// SDL keymod bits (SDL_KMOD_LSHIFT, SDL_KMOD_LCTRL), as Minecraft 26.3 reads modifiers
+	inline constexpr int kModShift = 0x0001;
+	inline constexpr int kModCtrl = 0x0040;
+
+	/// The `mods` of a `key`, `click` or `skey` message: Shift-click quick-moves a stack, Ctrl+Q drops a whole stack.
+	constexpr int sdl_mods(bool shift, bool ctrl)
+	{
+		return (shift ? kModShift : 0) | (ctrl ? kModCtrl : 0);
+	}
+
 	// ---- mouse ---------------------------------------------------------------------------------------------------------
 
 	// RAWMOUSE.usButtonFlags bits (winuser.h RI_MOUSE_*)
@@ -101,14 +153,21 @@ namespace cb::keys
 	inline constexpr uint16_t kMouseButton5Down = 0x0100;
 	inline constexpr uint16_t kMouseWheel = 0x0400;
 	inline constexpr uint16_t kMouseHWheel = 0x0800;
-	inline constexpr uint16_t kMouseDownAndWheelBits = kMouseLeftDown | kMouseRightDown | kMouseMiddleDown | kMouseButton4Down |
-													   kMouseButton5Down | kMouseWheel | kMouseHWheel;
+	/// The bits Minecraft takes: left, right and middle down and both wheels. Mouse 4 and 5 are not among them: Cyberpunk
+	/// keeps the side buttons (players bind dodge, the scanner and the like to them).
+	inline constexpr uint16_t kMouseDownAndWheelBits = kMouseLeftDown | kMouseRightDown | kMouseMiddleDown | kMouseWheel | kMouseHWheel;
 
-	/// `usButtonFlags` without the button-down and wheel bits; the button-up bits stay, so a button held before forwarding
-	/// started is still released in Cyberpunk.
+	/// `usButtonFlags` without the left/right/middle button-down and wheel bits; the button-up bits stay, so a button held
+	/// before forwarding started is still released in Cyberpunk, and the side buttons pass untouched.
 	constexpr uint16_t strip_down_and_wheel(uint16_t buttonFlags)
 	{
 		return static_cast<uint16_t>(buttonFlags & ~kMouseDownAndWheelBits);
+	}
+
+	/// As strip_down_and_wheel, but the wheels stay too: while a Cyberpunk choice list is shown the wheel scrolls it.
+	constexpr uint16_t strip_down(uint16_t buttonFlags)
+	{
+		return static_cast<uint16_t>(buttonFlags & ~(kMouseLeftDown | kMouseRightDown | kMouseMiddleDown));
 	}
 
 	/// Minecraft turns 0.15 degrees per raw mouse count at sensitivity 100 %.

@@ -522,7 +522,7 @@ namespace cb::world
 		return json{{"t", "npcs"}, {"list", std::move(list)}};
 	}
 
-	json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, bool crouched)
+	json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, CamFlags flags)
 	{
 		return {{"t", "cam"},
 				{"f", frame},
@@ -532,7 +532,11 @@ namespace cb::world
 				{"fp", true},
 				{"pl", {feet.x, feet.y, feet.z}},
 				{"h", bodyYaw},
-				{"cr", crouched}};
+				{"cr", flags.crouched},
+				{"fly", flags.flying},
+				{"menu", flags.menu},
+				{"air", flags.air},
+				{"held", flags.held}};
 	}
 
 	json make_look(double dyaw, double dpitch)

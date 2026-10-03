@@ -1,6 +1,7 @@
 // Layers 3-4 in the DLL: the `mobs`, `flight` and `proj` messages kept as state (plan 2026-10-03 section 1.3): parsing and
 // conversion, staleness, flight extrapolation, and the snapshots that natives index into.
 #include "snapshots.hpp"
+#include "natives.hpp"
 #include "test.hpp"
 #include "world.hpp"
 #include <chrono>
@@ -362,16 +363,17 @@ TEST(flight_starts_inactive)
 	CHECK(approx(f.pos(t0), 0, 0, 0) && approx(f.velocity(t0), 0, 0, 0));
 }
 
-TEST(flight_position_is_extrapolated_by_velocity_times_the_age_up_to_a_tenth_of_a_second)
+TEST(flight_position_is_extrapolated_by_velocity_times_the_age_up_to_one_minecraft_tick)
 {
 	Flight f;
 	const Clock::time_point t0 = Clock::now();
 	f.update(sample(true, {0, 0, 100}, {10, 0, -5}, 30, 12), t0);
 	CHECK(f.active(t0) && f.seq(t0) == 1);
 	CHECK(approx(f.pos(t0), 0, 0, 100));
+	CHECK(approx(f.pos(t0 + 20ms), 0.2, 0, 99.9));
 	CHECK(approx(f.pos(t0 + 50ms), 0.5, 0, 99.75));
-	CHECK(approx(f.pos(t0 + 100ms), 1.0, 0, 99.5));
-	CHECK(approx(f.pos(t0 + 300ms), 1.0, 0, 99.5)); // clamped: no further than 0.1 s of travel
+	CHECK(approx(f.pos(t0 + 100ms), 0.5, 0, 99.75)); // clamped: no further than 0.05 s (one tick) of travel
+	CHECK(approx(f.pos(t0 + 300ms), 0.5, 0, 99.75));
 	CHECK(approx(f.pos(t0 - 50ms), 0, 0, 100));     // a query before the sample never extrapolates backwards
 	CHECK(approx(f.velocity(t0 + 300ms), 10, 0, -5) && approx(f.yaw(t0), 30) && approx(f.pitch(t0), 12));
 }
@@ -395,7 +397,7 @@ TEST(a_sample_older_than_half_a_second_ends_the_flight)
 	CHECK(f.active(t0 + 500ms) && f.seq(t0 + 500ms) == 1); // exactly 0.5 s old: still flying
 	CHECK(!f.active(t0 + 501ms));                           // older: Minecraft vanished mid-flight
 	CHECK(f.seq(t0 + 501ms) == 2);                          // a landing: FlightSeq moved
-	CHECK(approx(f.pos(t0 + 2s), 1.0, 0, 99.5));            // V ends where the flight was last seen (clamped extrapolation)
+	CHECK(approx(f.pos(t0 + 2s), 0.5, 0, 99.75));           // V ends where the flight was last seen (clamped extrapolation)
 	CHECK(approx(f.velocity(t0 + 2s), 0, 0, 0));
 	CHECK(f.seq(t0 + 10s) == 2);                            // and it is counted once
 }
@@ -405,7 +407,7 @@ TEST(staleness_is_noticed_by_any_query_and_counted_before_the_next_start)
 	Flight f;
 	const Clock::time_point t0 = Clock::now();
 	f.update(sample(true, {0, 0, 100}, {10, 0, 0}), t0);
-	CHECK(approx(f.pos(t0 + 1s).x, 1.0)); // the first query after the gap ends the flight
+	CHECK(approx(f.pos(t0 + 1s).x, 0.5)); // the first query after the gap ends the flight
 	CHECK(f.seq(t0 + 1s) == 2);
 	f.update(sample(true, {50, 0, 90}, {10, 0, 0}), t0 + 2s);
 	CHECK(f.active(t0 + 2s) && f.seq(t0 + 2s) == 3);
@@ -448,7 +450,63 @@ TEST(reset_ends_a_flight_in_progress_once)
 	CHECK(f.seq(t0 + 60ms) == 2);
 }
 
+TEST(a_flight_that_goes_stale_is_timed_out_until_the_next_sample)
+{
+	Flight f;
+	const Clock::time_point t0 = Clock::now();
+	CHECK(!f.timed_out(t0));
+	f.update(sample(true, {0, 0, 100}, {10, 0, 0}), t0);
+	CHECK(!f.timed_out(t0 + 500ms));
+	CHECK(f.timed_out(t0 + 501ms) && !f.active(t0 + 501ms)); // Minecraft went silent mid-flight
+	CHECK(f.timed_out(t0 + 5s));                             // stays until something new arrives
+	f.update(sample(true, {50, 0, 90}, {10, 0, 0}), t0 + 6s);
+	CHECK(!f.timed_out(t0 + 6s) && f.active(t0 + 6s));       // a new sample
+	f.update(sample(false, {7, 8, 60}), t0 + 6s + 40ms);
+	CHECK(!f.timed_out(t0 + 7s));                            // a real landing is not a timeout
+	f.update(sample(true, {0, 0, 100}, {10, 0, 0}), t0 + 8s);
+	CHECK(f.timed_out(t0 + 9s));
+	f.reset(t0 + 9s);
+	CHECK(!f.timed_out(t0 + 9s));                            // a reset clears it
+	f.update(sample(true, {0, 0, 100}, {10, 0, 0}), t0 + 10s);
+	f.reset(t0 + 10s + 10ms);
+	CHECK(!f.timed_out(t0 + 20s));                           // a reset end is not a timeout either
+}
+
 // ---- the link observer (the plugin's global state) ----------------------------------------------------------------------
+
+TEST(following_ends_on_a_landing_a_hello_or_a_drop_but_not_on_a_timeout)
+{
+	using cb::natives::flightFollowing;
+	on_link_dropped();
+	on_minecraft_message(flight_message(true));
+	flightFollowing = true; // what Cyberblock_SetFlightFollowing(true) does
+	on_minecraft_message(flight_message(true));
+	CHECK(flightFollowing); // more samples leave it alone
+	CHECK(!flight().timed_out(Clock::now()));
+	on_minecraft_message(json::parse(R"({"t":"flight","active":false,"p":[10,64,-20]})"));
+	CHECK(!flightFollowing); // Steve landed
+	flightFollowing = true;
+	on_minecraft_message(json::parse(R"({"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3"})"));
+	CHECK(!flightFollowing); // a new Minecraft session
+	flightFollowing = true;
+	on_link_dropped();
+	CHECK(!flightFollowing); // the link dropped
+	// a flight that times out (no samples for 0.5 s) leaves it set: Cyberblock_FlightTimedOut tells the script
+	Flight f;
+	const Clock::time_point t0 = Clock::now();
+	f.update(sample(true, {0, 0, 100}), t0);
+	flightFollowing = true;
+	CHECK(!f.active(t0 + 1s) && f.timed_out(t0 + 1s) && flightFollowing);
+	flightFollowing = false;
+}
+
+TEST(a_bad_flight_message_does_not_end_following)
+{
+	cb::natives::flightFollowing = true;
+	on_minecraft_message(json::parse(R"({"t":"flight","active":false})")); // no p: rejected
+	CHECK(cb::natives::flightFollowing);
+	cb::natives::flightFollowing = false;
+}
 
 TEST(observer_keeps_mobs_and_projectiles_for_the_natives)
 {

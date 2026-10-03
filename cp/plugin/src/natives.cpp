@@ -159,6 +159,8 @@ namespace
 		if (changed)
 		{
 			cb::log::info("mashup %s%s", active ? "on" : "off", inVehicle ? " (in a vehicle)" : "");
+			cb::natives::choicesOpen = false; // the script sets it again on its next tick
+			cb::natives::flightFollowing = false;
 			send_state();
 		}
 		if (activeChanged)
@@ -433,7 +435,7 @@ namespace
 			*out = cb::snap::flight().active(cb::snap::Clock::now());
 	}
 
-	// Cyberblock_FlightSeq() -> Int32: +1 on every start and every landing.
+	// Cyberblock_FlightSeq() -> Int32: +1 on every start and every end (a landing, a 0.5 s timeout or a reset).
 	void FlightSeq(IScriptable *, CStackFrame *frame, int32_t *out, int64_t)
 	{
 		++frame->code;
@@ -441,7 +443,26 @@ namespace
 			*out = cb::snap::flight().seq(cb::snap::Clock::now());
 	}
 
-	// Cyberblock_FlightPos() -> Vector4: feet, Cyberpunk space, p + v * min(age, 0.1 s) while flying, else the landing spot.
+	// Cyberblock_FlightTimedOut() -> Bool: the last flight ended because its samples stopped for 0.5 s (Minecraft went
+	// silent, not a landing); false again after any new sample, a landing or a reset.
+	void FlightTimedOut(IScriptable *, CStackFrame *frame, bool *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = cb::snap::flight().timed_out(cb::snap::Clock::now());
+	}
+
+	// Cyberblock_SetFlightFollowing(following: Bool) -> Void: V follows Steve's glide; carried as `cam.fly` until set again
+	// (natives.hpp says what else clears it).
+	void SetFlightFollowing(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		bool following = false;
+		RED4ext::GetParameter(frame, &following);
+		++frame->code;
+		cb::natives::flightFollowing = following;
+	}
+
+	// Cyberblock_FlightPos() -> Vector4: feet, Cyberpunk space, p + v * min(age, 0.05 s) while flying, else the landing spot.
 	void FlightPos(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
 	{
 		++frame->code;
@@ -617,13 +638,20 @@ namespace
 		cb::link().send(cb::world::make_killed(target, vehicle, hostile));
 	}
 
-	// Cyberblock_SetStance(crouched: Bool) -> Void: V is crouched; carried as `cam.cr` until it changes.
+	// Cyberblock_SetStance(crouched: Bool, inAir: Bool, held: Bool) -> Void: V is crouched / in the air / held by a vehicle
+	// or the game; carried as `cam.cr`, `cam.air` and `cam.held` until they change.
 	void SetStance(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
 		bool crouched = false;
+		bool inAir = false;
+		bool held = false;
 		RED4ext::GetParameter(frame, &crouched);
+		RED4ext::GetParameter(frame, &inAir);
+		RED4ext::GetParameter(frame, &held);
 		++frame->code;
 		cb::natives::crouched = crouched;
+		cb::natives::inAir = inAir;
+		cb::natives::held = held;
 	}
 
 	// Cyberblock_GameMode() -> CName: Minecraft's last `status.gm` (n"survival", n"creative", n"adventure", n"spectator"),
@@ -642,6 +670,16 @@ namespace
 		RED4ext::GetParameter(frame, &open);
 		++frame->code;
 		cb::natives::menuOpen = open;
+	}
+
+	// Cyberblock_SetChoices(open: Bool) -> Void: a Cyberpunk dialogue or choice list shows two or more choices; E, Q, 1-4
+	// and the wheel go to Cyberpunk (to pick one) instead of Minecraft until it is false again.
+	void SetChoices(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		bool open = false;
+		RED4ext::GetParameter(frame, &open);
+		++frame->code;
+		cb::natives::choicesOpen = open;
 	}
 
 	// Cyberblock_SetLookCapture(on: Bool) -> Void: the camera-only flight fallback: while on, raw mouse movement goes to
@@ -723,6 +761,8 @@ namespace cb::natives
 		add(rtti, "Cyberblock_MobSize", &MobSize, "Vector4", {{"Int32", "i"}});
 		add(rtti, "Cyberblock_FlightActive", &FlightActive, "Bool");
 		add(rtti, "Cyberblock_FlightSeq", &FlightSeq, "Int32");
+		add(rtti, "Cyberblock_FlightTimedOut", &FlightTimedOut, "Bool");
+		add(rtti, "Cyberblock_SetFlightFollowing", &SetFlightFollowing, nullptr, {{"Bool", "following"}});
 		add(rtti, "Cyberblock_FlightPos", &FlightPos, "Vector4");
 		add(rtti, "Cyberblock_FlightVelocity", &FlightVelocity, "Vector4");
 		add(rtti, "Cyberblock_FlightYaw", &FlightYaw, "Float");
@@ -740,9 +780,10 @@ namespace cb::natives
 			 {"CName", "threat"}, {"Float", "hp"}, {"Bool", "device"}, {"Vector4", "pos"}, {"Vector4", "size"}});
 		add(rtti, "Cyberblock_HackResult", &HackResult, nullptr, {{"Int32", "id"}, {"Bool", "ok"}, {"String", "reason"}});
 		add(rtti, "Cyberblock_Killed", &Killed, nullptr, {{"Uint64", "target"}, {"Bool", "vehicle"}, {"Bool", "hostile"}});
-		add(rtti, "Cyberblock_SetStance", &SetStance, nullptr, {{"Bool", "crouched"}});
+		add(rtti, "Cyberblock_SetStance", &SetStance, nullptr, {{"Bool", "crouched"}, {"Bool", "inAir"}, {"Bool", "held"}});
 		add(rtti, "Cyberblock_GameMode", &GameModeNative, "CName");
 		add(rtti, "Cyberblock_SetMenu", &SetMenu, nullptr, {{"Bool", "open"}});
+		add(rtti, "Cyberblock_SetChoices", &SetChoices, nullptr, {{"Bool", "open"}});
 		add(rtti, "Cyberblock_SetLookCapture", &SetLookCapture, nullptr, {{"Bool", "on"}});
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});
 		log::info("redscript natives registered");

@@ -21,15 +21,17 @@
 //
 // Layers 3-6 wiring (plan 2026-10-03 S1.6, section 1.4): every tick with a player also runs CyberblockPuppets,
 // CyberblockFlight, CyberblockTether and CyberblockProjectiles (live: Active or Vehicle, not saving) and
-// CyberblockPerks and CyberblockBuffs (active: Active, not saving), reports whether V is crouched
-// (Cyberblock_SetStance) and whether a Cyberpunk menu is open (Cyberblock_SetMenu). ClearWorld (every section 1.4
+// CyberblockPerks and CyberblockBuffs (active: Active, not saving), reports whether V is crouched, in the air or held by
+// a vehicle or the game (Cyberblock_SetStance), whether a Cyberpunk menu is open (Cyberblock_SetMenu) and whether a dialogue offers two or more
+// choices while Active (Cyberblock_SetChoices: E, Q, 1-4 and the wheel then stay Cyberpunk's). ClearWorld (every section 1.4
 // Clear plus CyberblockCollision.Clear) runs before every save, on session ready, at session end and on every
 // transition out of Active/Vehicle.
 //
 // While a save is written (Session/BeforeSave until Session/AfterSave) Minecraft's side is left as it is: its events
-// wait in the DLL's queue, the last NPC list stands (its proxies keep their leads) and the tethers stay (ClearWorld only
-// restarted their timers); all of it carries on after the save. The flag is also cleared on session ready and end, and
-// after 10 s of ticks without an AfterSave (a save that failed or was aborted), so it can never stay stuck.
+// wait in the DLL's queue and the tethers stay (ClearWorld only restarted their timers); all of it carries on after the
+// save. Minecraft's NPC proxies (and their leads) stay as long as Minecraft still gets cam frames, as through a save or a
+// Cyberpunk menu, and are removed only when the host goes inactive. The saving flag is also cleared on session ready and
+// end, and after 10 s of ticks without an AfterSave (a save that failed or was aborted), so it can never stay stuck.
 
 enum CyberblockState {
   Off = 0,
@@ -89,8 +91,9 @@ public class CyberblockSystem extends ScriptableSystem {
       ui.UnregisterListenerBool(GetAllBlackboardDefs().UI_System.IsInMenu, this.menuListener);
     }
     Cyberblock_SetMenu(false);
+    Cyberblock_SetChoices(false);
     this.playerState.ShowHud();
-    CyberblockSystem.ClearWorld(this.GetGameInstance());
+    CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
   }
@@ -103,7 +106,7 @@ public class CyberblockSystem extends ScriptableSystem {
     this.savingTicks = 0;
     this.playerState.ClearSaved(GetPlayer(this.GetGameInstance()));
     this.creative.Clear(GetPlayer(this.GetGameInstance()));
-    CyberblockSystem.ClearWorld(this.GetGameInstance());
+    CyberblockSystem.ClearWorld(this.GetGameInstance(), false);
     Cyberblock_Log("before save: effects, god modes and world objects removed");
   }
 
@@ -127,7 +130,7 @@ public class CyberblockSystem extends ScriptableSystem {
       CyberblockPlayerState.ClearLeftovers(player);
       CyberblockCreative.ClearLeftovers(player);
     }
-    CyberblockSystem.ClearWorld(this.GetGameInstance());
+    CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
     Cyberblock_Log("session ready: leftovers removed, Off");
@@ -137,7 +140,7 @@ public class CyberblockSystem extends ScriptableSystem {
     this.saving = false;
     this.playerState.Clear(GetPlayer(this.GetGameInstance()));
     this.creative.Clear(GetPlayer(this.GetGameInstance()));
-    CyberblockSystem.ClearWorld(this.GetGameInstance());
+    CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
     Cyberblock_Log("session end: V restored, world objects removed, Off");
@@ -170,11 +173,14 @@ public class CyberblockSystem extends ScriptableSystem {
     }
     let player = GetPlayer(game);
     if !IsDefined(player) {
+      Cyberblock_SetChoices(false);
       // No world to act on: Minecraft block changes still update the collision registry, the other events are dropped.
       this.events.Tick(game, false);
       return;
     }
     this.Step(player, toggle);
+    // A dialogue or choice list with two or more choices keeps E, Q, 1-4 and the wheel for Cyberpunk (the DLL).
+    Cyberblock_SetChoices(Equals(this.state, CyberblockState.Active) && CyberblockSystem.ChoiceCount(game) >= 2);
     this.UpdatePlayer(player);
     let on = CyberblockSystem.IsOn(this.state);
     if on {
@@ -182,12 +188,15 @@ public class CyberblockSystem extends ScriptableSystem {
     }
     let live = on && !this.saving;
     let active = Equals(this.state, CyberblockState.Active) && !this.saving;
-    Cyberblock_SetStance(CyberblockSystem.Crouched(player));
+    // cam.cr / cam.air / cam.held: Minecraft keeps Steve crouched, airborne or still with V.
+    let held = VehicleComponent.IsMountedToVehicle(game, player) || CyberblockEffects.PlayerLocked(game, player);
+    Cyberblock_SetStance(CyberblockSystem.Crouched(player), CyberblockSystem.InAir(player), held);
     if !this.saving {
       this.events.Tick(game, live);
     }
     if live {
-      CyberblockCollision.Stream(game, player.GetWorldPosition());
+      // Around the flight while V waits at the take-off spot in the camera-only fallback, else around V.
+      CyberblockCollision.Stream(game, CyberblockFlight.Center(game, player));
     }
     CyberblockPuppets.Tick(game, player, live);
     CyberblockFlight.Tick(game, player, live);
@@ -203,13 +212,15 @@ public class CyberblockSystem extends ScriptableSystem {
   }
 
   // Everything of ours in Night City (plan 2026-10-03 section 1.4 Clears). Perk ranks and the collision registry stay.
-  private static func ClearWorld(game: GameInstance) -> Void {
+  // leaving: Night City stops being live (Off, Lost, load, session end, detach), so Steve's infinite potions are
+  // forgotten too; false before a save, after which they come back.
+  private static func ClearWorld(game: GameInstance, leaving: Bool) -> Void {
     CyberblockCollision.Clear(game);
     CyberblockPuppets.Clear(game);
     CyberblockFlight.Clear(game);
     CyberblockTether.Clear(game);
     CyberblockPerks.Clear(game);
-    CyberblockBuffs.Clear(game);
+    CyberblockBuffs.Clear(game, leaving);
   }
 
   // Crouched as the game's own crouch indicator counts it: Crouch, CrouchDodge or Slide
@@ -221,6 +232,37 @@ public class CyberblockSystem extends ScriptableSystem {
     }
     let state = IntEnum<gamePSMLocomotionStates>(psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.Locomotion));
     return Equals(state, gamePSMLocomotionStates.Crouch) || Equals(state, gamePSMLocomotionStates.CrouchDodge) || Equals(state, gamePSMLocomotionStates.Slide);
+  }
+
+  // In the air as the detailed locomotion state has it (PlayerStateMachine.LocomotionDetailed, the blackboard Crouched
+  // reads; gamePSMDetailedLocomotionStates): falling, jumping, double or charged jumps, air thrusters/hover, air dash.
+  private static func InAir(player: ref<PlayerPuppet>) -> Bool {
+    let psm = player.GetPlayerStateMachineBlackboard();
+    if !IsDefined(psm) {
+      return false;
+    }
+    let state = IntEnum<gamePSMDetailedLocomotionStates>(psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.LocomotionDetailed));
+    return Equals(state, gamePSMDetailedLocomotionStates.SlideFall) || Equals(state, gamePSMDetailedLocomotionStates.Fall)
+      || Equals(state, gamePSMDetailedLocomotionStates.AirThrusters) || Equals(state, gamePSMDetailedLocomotionStates.AirHover)
+      || Equals(state, gamePSMDetailedLocomotionStates.SuperheroFall) || Equals(state, gamePSMDetailedLocomotionStates.Jump)
+      || Equals(state, gamePSMDetailedLocomotionStates.DoubleJump) || Equals(state, gamePSMDetailedLocomotionStates.ChargeJump)
+      || Equals(state, gamePSMDetailedLocomotionStates.HoverJump) || Equals(state, gamePSMDetailedLocomotionStates.DodgeAir);
+  }
+
+  // The choices on screen: every choice of every dialogue choice hub (UIInteractions.DialogChoiceHubs, as
+  // DefaultTransition.AreChoiceHubsActive reads it, defaultTransition.swift:1586; DialogChoiceHubs.choiceHubs and
+  // ListChoiceHubData.choices, orphans.swift).
+  private static func ChoiceCount(game: GameInstance) -> Int32 {
+    let interactions = GameInstance.GetBlackboardSystem(game).Get(GetAllBlackboardDefs().UIInteractions);
+    if !IsDefined(interactions) {
+      return 0;
+    }
+    let hubs = FromVariant<DialogChoiceHubs>(interactions.GetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs));
+    let count = 0;
+    for hub in hubs.choiceHubs {
+      count += ArraySize(hub.choices);
+    }
+    return count;
   }
 
   private cb func OnMenuChanged(inMenu: Bool) -> Bool {
@@ -273,7 +315,7 @@ public class CyberblockSystem extends ScriptableSystem {
     this.state = next;
     let active = CyberblockSystem.IsOn(next);
     if wasOn && !active {
-      CyberblockSystem.ClearWorld(this.GetGameInstance());
+      CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     }
     Cyberblock_SetActive(active, mounted);
     this.Notify(message);

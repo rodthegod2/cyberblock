@@ -241,18 +241,39 @@ TEST(hackresult_reason_is_cut_to_64_bytes_and_the_id_must_not_be_negative)
 	CHECK(!make_hackresult(-1, false, "no"));
 }
 
-// ---- cam.cr ------------------------------------------------------------------------------------------------------------
+// ---- cam flags ---------------------------------------------------------------------------------------------------------
 
 TEST(cam_carries_the_stance_in_cr)
 {
-	const json standing = cb::world::make_cam(41, {1.5, 65.0, -2.5}, {150.0, 12.5}, 58.7, {1.5, 63.4, -2.5}, 140.0, false);
+	const json standing = cb::world::make_cam(41, {1.5, 65.0, -2.5}, {150.0, 12.5}, 58.7, {1.5, 63.4, -2.5}, 140.0, {});
 	CHECK(standing.at("t") == "cam" && standing.at("f") == 41 && standing.at("fp") == true);
 	CHECK(standing.at("cr") == false && standing.at("cr").is_boolean());
 	CHECK(standing.at("p") == json::array({1.5, 65.0, -2.5}) && standing.at("pl") == json::array({1.5, 63.4, -2.5}));
 	CHECK(standing.at("r") == json::array({150.0, 12.5, 0.0}) && approx(standing.at("fov"), 58.7) && approx(standing.at("h"), 140.0));
-	const json crouching = cb::world::make_cam(42, {}, {}, 70.0, {}, 0.0, true);
+	const json crouching = cb::world::make_cam(42, {}, {}, 70.0, {}, 0.0, {.crouched = true});
 	CHECK(crouching.at("cr") == true && crouching.at("cr").is_boolean());
 	CHECK(survives_the_wire(standing));
+}
+
+TEST(cam_carries_fly_menu_air_and_held_as_booleans)
+{
+	const json none = cb::world::make_cam(1, {}, {}, 70.0, {}, 0.0, {});
+	for (const char *flag : {"cr", "fly", "menu", "air", "held"})
+		CHECK(none.at(flag).is_boolean() && none.at(flag) == false);
+	CHECK(none.size() == 13); // t f p r fov fp pl h + the five flags
+	const auto only = [](cb::world::CamFlags flags, const char *expected)
+	{
+		const json cam = cb::world::make_cam(2, {}, {}, 70.0, {}, 0.0, flags);
+		for (const char *flag : {"cr", "fly", "menu", "air", "held"})
+			if (cam.at(flag) != (std::string(flag) == expected))
+				return false;
+		return true;
+	};
+	CHECK(only({.crouched = true}, "cr") && only({.flying = true}, "fly") && only({.menu = true}, "menu"));
+	CHECK(only({.air = true}, "air") && only({.held = true}, "held"));
+	const json all = cb::world::make_cam(3, {}, {}, 70.0, {}, 0.0, {true, true, true, true, true});
+	CHECK(all.at("fly") == true && all.at("menu") == true && all.at("air") == true && all.at("held") == true);
+	CHECK(survives_the_wire(all));
 }
 
 // ---- look --------------------------------------------------------------------------------------------------------------
