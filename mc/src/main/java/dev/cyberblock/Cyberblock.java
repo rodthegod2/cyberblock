@@ -21,6 +21,11 @@ public class Cyberblock implements ModInitializer {
 	public static volatile boolean active;
 	/** Where events for the host go (JSON lines); the client's HostLink sets it. */
 	public static volatile Consumer<String> events = message -> {};
+	/**
+	 * Steve is launched (plan retest2 R5): Minecraft's physics move him, so he collides with blocks (PlayerMixin) as while gliding.
+	 * The client's Flight sets it for the length of a launch; the integrated server shares this JVM.
+	 */
+	public static volatile boolean launching;
 
 	@Override
 	public void onInitialize() {

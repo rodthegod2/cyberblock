@@ -255,6 +255,7 @@ public final class Flight {
 		player.zo = player.zOld = at.z;
 		player.setDeltaMovement(kick);
 		gravity(player, true, false);
+		Cyberblock.launching = true; // collisions, as while gliding (PlayerMixin)
 		driving = true;
 		mode = Mode.LAUNCH;
 		landed = false;
@@ -417,6 +418,7 @@ public final class Flight {
 		pausedAt = pausedVelocity = null;
 		fall.reset();
 		mode = Mode.GLIDE;
+		Cyberblock.launching = false;
 	}
 
 	/**
