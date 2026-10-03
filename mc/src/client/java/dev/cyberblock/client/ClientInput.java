@@ -8,10 +8,12 @@ import dev.cyberblock.client.mixin.KeyMappingAccessor;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import org.lwjgl.sdl.SDLKeyboard;
+import org.lwjgl.sdl.SDLScancode;
 import org.lwjgl.sdl.SDLVideo;
 
 /** Host input, applied on the client thread: the host window has the focus, so Minecraft never sees these itself. */
@@ -149,6 +151,22 @@ final class ClientInput {
 			case "look" -> Flight.look(m);
 			case "cursor" -> HostCursor.move(minecraft, m.get("x").getAsDouble(), m.get("y").getAsDouble());
 			case "click" -> HostCursor.click(minecraft, m.get("b").getAsInt(), !m.has("down") || m.get("down").getAsBoolean(), mods(m));
+			case "char" -> {
+				// {"t":"char","c":codepoint}: text typed while a screen is open (chat, sign, anvil...), as SDL's text input gives it
+				int c = m.get("c").getAsInt();
+				Screen screen = minecraft.gui.screen();
+				if (screen != null && Character.isValidCodePoint(c)) {
+					screen.charTyped(new CharacterEvent(c));
+				}
+			}
+			case "skey" -> {
+				// {"t":"skey","sc":SDL scancode,"mods":bits}: a named key for the open screen (Enter, Backspace, arrows, Tab, Home...)
+				int scancode = m.get("sc").getAsInt();
+				Screen screen = minecraft.gui.screen();
+				if (screen != null && scancode > 0 && scancode < SDLScancode.SDL_SCANCODE_COUNT) {
+					keyPressed(screen, scancode, mods(m));
+				}
+			}
 			case "scroll" -> {
 				int notches = m.get("d").getAsInt();
 				if (minecraft.gui.screen() != null) {
