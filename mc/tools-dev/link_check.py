@@ -78,15 +78,18 @@ class Game:
         end = time.monotonic() + 5.0
         while time.monotonic() < end:
             text = self.log.read_text(encoding="utf-8", errors="replace")
-            if f"{tag} yes" in text:
+            # the mod also logs every command it runs ("command: ... say TAG yes"): only the server's own chat line is the answer
+            if f"[Server] {tag} yes" in text:
                 return True
-            if f"{tag} no" in text:
+            if f"[Server] {tag} no" in text:
                 return False
             await asyncio.sleep(0.1)
         return None
 
 
-async def main(log: Path | None, wait_s: float) -> int:
+async def main(log: Path | None, wait_s: float, port: int) -> int:
+    global URL
+    URL = f"ws://127.0.0.1:{port}"
     print(f"connecting to {URL} (waiting up to {wait_s:.0f} s for Minecraft)")
     ws = None
     end = time.monotonic() + wait_s
@@ -95,7 +98,7 @@ async def main(log: Path | None, wait_s: float) -> int:
             ws = await connect(URL, max_size=None)
         except OSError:
             if time.monotonic() > end:
-                print("no Minecraft on 25600: start the dev client first", file=sys.stderr)
+                print(f"no Minecraft on {port}: start the dev client first", file=sys.stderr)
                 return 2
             await asyncio.sleep(1)
     link = Link(ws)
@@ -239,5 +242,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--log", type=Path, help="the dev client's latest.log (mc/run/logs/latest.log), to read blocks back")
     ap.add_argument("--wait", type=float, default=90.0, help="seconds to wait for Minecraft and its first status (default 90)")
+    ap.add_argument("--port", type=int, default=25600, help="the dev client's -Dcyberblock.port (default 25600)")
     args = ap.parse_args()
-    sys.exit(asyncio.run(main(args.log, args.wait)))
+    sys.exit(asyncio.run(main(args.log, args.wait, args.port)))

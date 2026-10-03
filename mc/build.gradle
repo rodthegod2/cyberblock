@@ -20,6 +20,8 @@ loom {
 			programArgs "--width", "1920", "--height", "1080"
 			// a void world needs little heap; uncapped, the client grew to 4.4 GB of commit next to Cyberpunk
 			vmArgs "--enable-native-access=ALL-UNNAMED", "-Xmx2G", "-XX:+UseZGC"
+			// a test client beside the real game: gradlew runClient -Pcyberblock.port=25702 "-Pcyberblock.frame=Local\CyberblockFrameTestM"
+			["cyberblock.port", "cyberblock.frame"].each { if (project.hasProperty(it)) vmArg "-D${it}=${project.property(it)}" }
 		}
 	}
 }
