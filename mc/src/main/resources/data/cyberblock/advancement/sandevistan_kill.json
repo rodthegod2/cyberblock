@@ -1,0 +1,25 @@
+{
+	"display": {
+		"icon": {
+			"id": "cyberblock:berserk"
+		},
+		"title": {
+			"translate": "advancements.cyberblock.sandevistan_kill.title"
+		},
+		"description": {
+			"translate": "advancements.cyberblock.sandevistan_kill.description"
+		},
+		"frame": "challenge"
+	},
+	"parent": "cyberblock:dual_os",
+	"criteria": {
+		"kill": {
+			"trigger": "minecraft:impossible"
+		}
+	},
+	"requirements": [
+		[
+			"kill"
+		]
+	]
+}

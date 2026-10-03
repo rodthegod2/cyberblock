@@ -1,0 +1,25 @@
+{
+	"display": {
+		"icon": {
+			"id": "cyberblock:sandevistan"
+		},
+		"title": {
+			"translate": "advancements.cyberblock.dual_os.title"
+		},
+		"description": {
+			"translate": "advancements.cyberblock.dual_os.description"
+		},
+		"frame": "goal"
+	},
+	"parent": "cyberblock:first_implant",
+	"criteria": {
+		"installed": {
+			"trigger": "minecraft:impossible"
+		}
+	},
+	"requirements": [
+		[
+			"installed"
+		]
+	]
+}

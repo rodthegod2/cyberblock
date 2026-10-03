@@ -1,0 +1,25 @@
+{
+	"display": {
+		"icon": {
+			"id": "cyberblock:redstone_charge"
+		},
+		"title": {
+			"translate": "advancements.cyberblock.first_quickhack.title"
+		},
+		"description": {
+			"translate": "advancements.cyberblock.first_quickhack.description"
+		},
+		"frame": "task"
+	},
+	"parent": "cyberblock:root",
+	"criteria": {
+		"hacked": {
+			"trigger": "minecraft:impossible"
+		}
+	},
+	"requirements": [
+		[
+			"hacked"
+		]
+	]
+}

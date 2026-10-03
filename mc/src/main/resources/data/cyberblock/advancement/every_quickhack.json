@@ -1,0 +1,79 @@
+{
+	"display": {
+		"icon": {
+			"id": "cyberblock:creeper_brain"
+		},
+		"title": {
+			"translate": "advancements.cyberblock.every_quickhack.title"
+		},
+		"description": {
+			"translate": "advancements.cyberblock.every_quickhack.description"
+		},
+		"frame": "challenge"
+	},
+	"parent": "cyberblock:first_quickhack",
+	"criteria": {
+		"short_circuit": {
+			"trigger": "minecraft:impossible"
+		},
+		"overheat": {
+			"trigger": "minecraft:impossible"
+		},
+		"reboot_optics": {
+			"trigger": "minecraft:impossible"
+		},
+		"cripple_movement": {
+			"trigger": "minecraft:impossible"
+		},
+		"contagion": {
+			"trigger": "minecraft:impossible"
+		},
+		"synapse_burnout": {
+			"trigger": "minecraft:impossible"
+		},
+		"ping": {
+			"trigger": "minecraft:impossible"
+		},
+		"memory_wipe": {
+			"trigger": "minecraft:impossible"
+		},
+		"cyberpsychosis": {
+			"trigger": "minecraft:impossible"
+		},
+		"device": {
+			"trigger": "minecraft:impossible"
+		}
+	},
+	"requirements": [
+		[
+			"short_circuit"
+		],
+		[
+			"overheat"
+		],
+		[
+			"reboot_optics"
+		],
+		[
+			"cripple_movement"
+		],
+		[
+			"contagion"
+		],
+		[
+			"synapse_burnout"
+		],
+		[
+			"ping"
+		],
+		[
+			"memory_wipe"
+		],
+		[
+			"cyberpsychosis"
+		],
+		[
+			"device"
+		]
+	]
+}
