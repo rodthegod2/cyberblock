@@ -91,6 +91,21 @@ public final class CyberKeys {
 		return note;
 	}
 
+	/**
+	 * Minecraft 26.3's Quick Actions key (Options.keyQuickActions) is G by default too, so both fired on G and the Controls
+	 * screen showed a conflict. On the first tick (the options are loaded by then) it is unbound when it shares the hack key,
+	 * and the options are saved; the player may bind it to another key.
+	 */
+	private static void freeQuickActions(final Minecraft minecraft) {
+		KeyMapping quickActions = minecraft.options.keyQuickActions;
+		if (!quickActions.isUnbound() && quickActions.same(hack)) {
+			quickActions.setKey(InputConstants.UNKNOWN);
+			KeyMapping.resetMapping();
+			minecraft.options.save();
+			Cyberblock.LOG.info("unbound Minecraft's Quick Actions key ({}): the Cyberblock hack key uses it", hack.saveString());
+		}
+	}
+
 	private static void showNote(final Minecraft minecraft) {
 		Component note = note();
 		if (note != null && minecraft.player != null) {
@@ -100,7 +115,8 @@ public final class CyberKeys {
 
 	/**
 	 * Every client tick: a skill key press opens the skill tree; keys the host held are let go once it stopped driving; a
-	 * changed binding is sent to Cyberpunk at once (and noted when it cannot be forwarded).
+	 * changed binding is sent to Cyberpunk at once (and noted when it cannot be forwarded). The first tick frees G from
+	 * Minecraft's Quick Actions.
 	 */
 	static void tick(final Minecraft minecraft) {
 		while (skills.consumeClick()) {
@@ -122,6 +138,7 @@ public final class CyberKeys {
 		InputConstants.Key hackKey = KeyMappingHelper.getBoundKeyOf(hack);
 		InputConstants.Key skillsKey = KeyMappingHelper.getBoundKeyOf(skills);
 		if (lastHackKey == null) {
+			freeQuickActions(minecraft);
 			lastHackKey = hackKey;
 			lastSkillsKey = skillsKey;
 			return;
