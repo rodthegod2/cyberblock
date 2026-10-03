@@ -112,26 +112,6 @@ public final class Ripperdoc {
 		changed(player);
 	}
 
-	/** A right-click on an installed ACTIVE implant in the screen: the activate key fires it from now on. */
-	public static void select(final ServerPlayer player, final Cyberware cyberware) {
-		if (cyberware.kind() == Cyberware.Kind.ACTIVE && CyberData.has(player, cyberware)) {
-			player.setAttached(CyberData.CYBER_SELECTED, cyberware.id());
-			player.sendOverlayMessage(Component.translatable("cyberblock.cyberware.selected", name(cyberware)));
-		}
-	}
-
-	/** The activate key held: the next ACTIVE implant is selected (CyberwareRules.next). */
-	public static void cycle(final ServerPlayer player) {
-		Cyberware next = CyberwareRules.next(CyberData.installed(player), CyberData.selected(player));
-		if (next == null) {
-			player.sendOverlayMessage(Component.translatable("cyberblock.cyberware.none"));
-			return;
-		}
-
-		player.setAttached(CyberData.CYBER_SELECTED, next.id());
-		player.sendOverlayMessage(Component.translatable("cyberblock.cyberware.selected", name(next)));
-	}
-
 	/**
 	 * {"t":"cyberware"} with the installed implants, and Bridge.installedCyberware: after each host hello, on join and respawn,
 	 * and after every install or remove.

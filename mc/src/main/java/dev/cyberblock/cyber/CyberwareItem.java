@@ -48,6 +48,12 @@ public class CyberwareItem extends Item {
 		builder.accept(Component.translatable("cyberblock.cyberware.tooltip.slot", Component.translatable(this.cyberware.slot().langKey())).withStyle(ChatFormatting.AQUA));
 		builder.accept(Component.translatable("cyberblock.skills.minecraft", Component.translatable(key + ".mc")).withStyle(ChatFormatting.WHITE));
 		builder.accept(Component.translatable("cyberblock.skills.cyberpunk", Component.translatable(key + ".cp")).withStyle(ChatFormatting.LIGHT_PURPLE));
+		CyberwareRules.Trigger trigger = CyberwareRules.Trigger.of(this.cyberware);
+		if (trigger != null) {
+			builder.accept(Component.translatableWithFallback("cyberblock.cyberware.tooltip.key", "Fire: %s", Component.keybind(trigger.keyName()))
+				.withStyle(ChatFormatting.YELLOW));
+		}
+
 		if (this.cyberware.cooldownTicks() > 0) {
 			builder.accept(Component.translatable("cyberblock.cyberware.tooltip.cooldown", this.cyberware.cooldownTicks() / 20).withStyle(ChatFormatting.GRAY));
 		}

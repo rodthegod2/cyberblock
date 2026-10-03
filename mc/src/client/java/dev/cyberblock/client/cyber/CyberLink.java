@@ -118,7 +118,7 @@ final class CyberLink {
 	}
 
 	/**
-	 * {"t":"key","k":...,"down":bool}: track C handles hack, skills, cyberware and activate, and watches sprint (forwarded,
+	 * {"t":"key","k":...,"down":bool}: track C handles hack, skills, cyberware, activate, arms and camo, and watches sprint (forwarded,
 	 * Cyberpunk keeps it) for the Sandevistan's double tap.
 	 */
 	private static void key(final JsonObject m) {
@@ -137,6 +137,8 @@ final class CyberLink {
 			case "skills" -> CyberKeys.skills;
 			case "cyberware" -> CyberKeys.cyberware;
 			case "activate" -> CyberKeys.activate;
+			case "arms" -> CyberKeys.arms;
+			case "camo" -> CyberKeys.camo;
 			default -> null;
 		};
 		if (mapping != null) {

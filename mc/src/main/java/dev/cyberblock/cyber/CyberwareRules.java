@@ -5,12 +5,13 @@ import java.util.Collection;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 import org.jspecify.annotations.Nullable;
 
-/** The pure rules of the cyberware (plan retest2 section 1.7): slots, the Y selection, perk-adjusted times, triggers. */
+/** The pure rules of the cyberware (plan retest2 section 1.7, retest3 section 1.8): slots, the three fire keys, perk-adjusted times. */
 public final class CyberwareRules {
 	/** The server's tick rate while a Sandevistan or Kerenzikov slows time, and the normal one. */
 	public static final float SLOW_TICK_RATE = 10.0F;
@@ -23,11 +24,52 @@ public final class CyberwareRules {
 	/** Fortified ankles: the jump key held this long on the ground, and V off the ground at most this long after the release. */
 	public static final int CHARGE_HOLD_TICKS = 10;
 	public static final int CHARGE_TAKEOFF_TICKS = 4;
-	/** The activate key (Y): released within this many client ticks it fires, held this long it cycles the selection. */
-	public static final int TAP_TICKS = 8;
 	/** Projectile launch system: hitscan reach, and the closest it fires. */
 	public static final double PLS_RANGE = 64.0;
 	public static final double PLS_MIN = 4.0;
+
+	/**
+	 * The three fire keys (plan retest3 section 1.7): the Operating System implant (Y), the Arms implant (L) and the Optical Camo
+	 * (O). Each fires the ACTIVE implant of its own place, so no implant waits behind another one's key.
+	 */
+	public enum Trigger {
+		OS("key.cyberblock.activate"),
+		ARMS("key.cyberblock.arms"),
+		CAMO("key.cyberblock.camo");
+
+		private final String keyName;
+
+		Trigger(final String keyName) {
+			this.keyName = keyName;
+		}
+
+		/** The key mapping's name, for Component.keybind. */
+		public String keyName() {
+			return this.keyName;
+		}
+
+		/** "os", "arms", "camo" (logs and lang keys). */
+		public String id() {
+			return this.name().toLowerCase(Locale.ROOT);
+		}
+
+		/** The key that fires this implant, or null when it is not ACTIVE (passive and automatic implants have none). */
+		public static @Nullable Trigger of(final Cyberware cyberware) {
+			if (cyberware.kind() != Cyberware.Kind.ACTIVE) {
+				return null;
+			}
+
+			if (cyberware == Cyberware.OPTICAL_CAMO) {
+				return CAMO;
+			}
+
+			return switch (cyberware.slot()) {
+				case OPERATING_SYSTEM -> OS;
+				case ARMS -> ARMS;
+				default -> null;
+			};
+		}
+	}
 
 	/** What an install did. */
 	public enum Install {
@@ -154,29 +196,15 @@ public final class CyberwareRules {
 		return order;
 	}
 
-	private static List<Cyberware> selectable(final Collection<Cyberware> installed) {
-		return activeOrder(installed).stream().filter(c -> c.kind() == Cyberware.Kind.ACTIVE).toList();
-	}
-
-	/** What Y fires: the selected implant while it is installed and ACTIVE, else the first ACTIVE one; null without any. */
-	public static @Nullable Cyberware defaultSelected(final Collection<Cyberware> installed, final @Nullable Cyberware selected) {
-		List<Cyberware> list = selectable(installed);
-		if (selected != null && list.contains(selected)) {
-			return selected;
+	/** What a fire key fires: the installed ACTIVE implant of its place (Trigger.of), the first in catalogue order; null without one. */
+	public static @Nullable Cyberware forTrigger(final Collection<Cyberware> installed, final Trigger trigger) {
+		for (Cyberware c : Cyberware.values()) {
+			if (installed.contains(c) && Trigger.of(c) == trigger) {
+				return c;
+			}
 		}
 
-		return list.isEmpty() ? null : list.getFirst();
-	}
-
-	/** The ACTIVE implant after `current` (wrapping round), the first one when `current` is none of them; null without any. */
-	public static @Nullable Cyberware next(final Collection<Cyberware> installed, final @Nullable Cyberware current) {
-		List<Cyberware> list = selectable(installed);
-		if (list.isEmpty()) {
-			return null;
-		}
-
-		int at = list.indexOf(current);
-		return at < 0 ? list.getFirst() : list.get((at + 1) % list.size());
+		return null;
 	}
 
 	/** The duration with the perks (the Sandevistan perk upgrades the Sandevistan implant). */

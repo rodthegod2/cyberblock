@@ -7,6 +7,7 @@ import dev.cyberblock.cyber.CyberMod;
 import dev.cyberblock.cyber.CyberSlot;
 import dev.cyberblock.cyber.Cyberware;
 import dev.cyberblock.cyber.CyberwareItem;
+import dev.cyberblock.cyber.CyberwareRules;
 import dev.cyberblock.cyber.Ripperdoc;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -29,9 +30,9 @@ import net.minecraft.world.item.ItemStack;
 /**
  * The ripperdoc (plan retest2 section 1.7, key U): on art/gui/cyberware_bg.png, the eight body slots on the left (a frame
  * per place) and the implants he could install on the right (the ones in his inventory; every one in creative). A
- * left-click installs an available implant or takes out an installed one; a right-click on an installed ACTIVE implant
- * makes it the one the activate key fires (the yellow Y). Driven by the host's cursor and clicks like every screen; the
- * game keeps running behind it. The integrated server does the work (singleplayer only, as the skill tree).
+ * left-click installs an available implant or takes out an installed one. Each installed ACTIVE implant shows the key that
+ * fires it (Y Operating System, L Arms, O camo: plan retest3 section 1.7), and the three keys are listed under the
+ * implants. Driven by the host's cursor and clicks like every screen; the game keeps running behind it. The integrated server does the work (singleplayer only, as the skill tree).
  */
 public final class CyberwareScreen extends Screen {
 	private static final Identifier BACKGROUND = Identifier.fromNamespaceAndPath(Cyberblock.ID, "textures/gui/cyberware_bg.png");
@@ -47,7 +48,7 @@ public final class CyberwareScreen extends Screen {
 	private static final int PAGE = 24;
 	private static final int INSTALLED = 0xFF5FF4FF;
 	private static final int EMPTY = 0xFF4A5478;
-	private static final int SELECTED = 0xFFFFE14D;
+	private static final int KEY = 0xFFFFE14D;
 
 	public CyberwareScreen() {
 		super(Component.translatable("cyberblock.cyberware.title"));
@@ -124,7 +125,6 @@ public final class CyberwareScreen extends Screen {
 		graphics.blit(RenderPipelines.GUI_TEXTURED, BACKGROUND, left, top, 0.0F, 0.0F, PANEL_W, PANEL_H, PANEL_W, PANEL_H);
 		graphics.centeredText(this.font, this.title, left + PANEL_W / 2, top + 6, 0xFFFFFFFF);
 		Map<String, String> slots = CyberData.slots(player);
-		Cyberware selected = CyberData.selected(player);
 		ItemStack hovered = ItemStack.EMPTY;
 		for (CyberSlot slot : CyberSlot.values()) {
 			int x = this.boxX(slot), y = this.boxY(slot);
@@ -142,12 +142,14 @@ public final class CyberwareScreen extends Screen {
 				Cyberware in = Cyberware.byId(slots.get(slot.key(n)));
 				int fx = this.frameX(slot, n), fy = this.frameY(slot);
 				graphics.fill(fx, fy, fx + FRAME, fy + FRAME, 0xFF141826);
-				graphics.outline(fx, fy, FRAME, FRAME, in == null ? EMPTY : in == selected ? SELECTED : INSTALLED);
+				graphics.outline(fx, fy, FRAME, FRAME, in == null ? EMPTY : INSTALLED);
 				if (in != null) {
 					ItemStack stack = new ItemStack(in.item());
 					graphics.item(stack, fx + 1, fy + 1);
-					if (in == selected) {
-						graphics.text(this.font, "Y", fx + FRAME - 5, fy - 3, SELECTED, true);
+					CyberwareRules.Trigger trigger = CyberwareRules.Trigger.of(in);
+					if (trigger != null) {
+						Component key = CyberKeys.of(trigger).getTranslatedKeyMessage();
+						graphics.text(this.font, key, fx + FRAME - this.font.width(key) + 1, fy - 3, KEY, true);
 					}
 
 					if (inside(mouseX, mouseY, fx, fy, FRAME)) {
@@ -181,8 +183,16 @@ public final class CyberwareScreen extends Screen {
 			graphics.textWithWordWrap(this.font, Component.translatable("cyberblock.cyberware.screen.empty"), textX, this.cellY(0), textWidth, 0xFF9AA6C8);
 		}
 
-		graphics.textWithWordWrap(this.font, selected == null ? Component.translatable("cyberblock.cyberware.none")
-			: Component.translatable("cyberblock.cyberware.selected", Ripperdoc.name(selected)), textX, this.cellY(PAGE), textWidth, SELECTED);
+		Set<Cyberware> installed = CyberwareRules.installed(slots);
+		// under the last row of implants (17 implants: 5 rows at most), or the empty note
+		int keyY = this.cellY((Math.max(1, available.size()) + COLUMNS - 1) / COLUMNS * COLUMNS) + (available.isEmpty() ? 12 : 2);
+		for (CyberwareRules.Trigger trigger : CyberwareRules.Trigger.values()) {
+			Cyberware fires = CyberwareRules.forTrigger(installed, trigger);
+			Component line = Component.empty().append(CyberKeys.of(trigger).getTranslatedKeyMessage()).append(": ")
+				.append(fires == null ? Component.literal("-") : Ripperdoc.name(fires));
+			graphics.text(this.font, line, textX, keyY, KEY, false);
+			keyY += 10;
+		}
 		Component note = CyberKeys.note();
 		if (note != null) {
 			graphics.centeredText(this.font, note, this.width / 2, Math.min(this.height - 10, top + PANEL_H + 4), 0xFFFF8A2B);
@@ -208,7 +218,10 @@ public final class CyberwareScreen extends Screen {
 				String key = slot.key(n);
 				Cyberware in = Cyberware.byId(slots.get(key));
 				if (in != null && inside(event.x(), event.y(), this.frameX(slot, n), this.frameY(slot), FRAME)) {
-					this.onServer(left ? p -> Ripperdoc.remove(p, key) : p -> Ripperdoc.select(p, in));
+					if (left) {
+						this.onServer(p -> Ripperdoc.remove(p, key));
+					}
+
 					return true;
 				}
 			}

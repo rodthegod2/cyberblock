@@ -3,6 +3,7 @@ package dev.cyberblock.cyber;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -11,17 +12,17 @@ public final class CyberWire {
 	private CyberWire() {
 	}
 
-	/** The `binds` names in VirtualKeys order (plan retest2 section 1.8). */
-	private static final String[] BIND_NAMES = {"hack", "skills", "cyberware", "activate"};
+	/** The `binds` names in VirtualKeys order (plan retest3 section 1.7). */
+	public static final List<String> BIND_NAMES = List.of("hack", "skills", "cyberware", "activate", "arms", "camo");
 
 	/**
-	 * {"t":"binds","keys":{"hack":vk,"skills":vk,"cyberware":vk,"activate":vk}}: Windows virtual-key codes 1..254, in that order
-	 * (VirtualKeys.binds gives all four).
+	 * {"t":"binds","keys":{"hack":vk,"skills":vk,"cyberware":vk,"activate":vk,"arms":vk,"camo":vk}}: Windows virtual-key codes
+	 * 1..254, in that order (VirtualKeys.binds gives all six).
 	 */
 	public static String binds(final int... vks) {
 		JsonObject keys = new JsonObject();
-		for (int i = 0; i < Math.min(vks.length, BIND_NAMES.length); i++) {
-			keys.addProperty(BIND_NAMES[i], vks[i]);
+		for (int i = 0; i < Math.min(vks.length, BIND_NAMES.size()); i++) {
+			keys.addProperty(BIND_NAMES.get(i), vks[i]);
 		}
 
 		JsonObject m = new JsonObject();

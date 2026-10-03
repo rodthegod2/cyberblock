@@ -36,7 +36,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * What the implants do in Minecraft (plan retest2 section 1.7, task C4), with their particles and sounds, and the
  * `cyberfx` that gives V the Cyberpunk side where there is one. Server thread. Passive implants are attribute modifiers
- * (checked every tick: the arms only count with an empty main hand); ACTIVE ones fire from the activate key (activate);
+ * (checked every tick: the arms only count with an empty main hand);
+ * ACTIVE ones fire from their key (fire: Y the Operating System implant, L the Arms implant, O the camo);
  * AUTO ones fire by themselves (Kerenzikov on drawing a bow in the air, the Biomonitor at low health, the Second Heart
  * instead of death). Firing times are kept in CyberData.CYBER_READY (level game time, saved and synced for the HUD).
  */
@@ -124,16 +125,27 @@ public final class CyberwareEffects {
 		}
 	}
 
-	// ---- the activate key ------------------------------------------------------------------------------------------------
+	// ---- the fire keys ---------------------------------------------------------------------------------------------------
+
+	/** "No ... to fire (%s)" for a key whose place holds no ACTIVE implant, until the lang file has its line. */
+	private static String noneFallback(final CyberwareRules.Trigger trigger) {
+		return switch (trigger) {
+			case OS -> "No Operating System implant to fire (%s)";
+			case ARMS -> "No active Arms implant to fire (%s)";
+			case CAMO -> "No Optical Camo installed (%s)";
+		};
+	}
 
 	/**
-	 * The activate key tapped (CyberKeys): fires the selected ACTIVE implant, or says why not (none installed, cooling down,
-	 * too close). `aim`: where the camera ray hits (64 blocks at most, the Night City surface included), for the launcher.
+	 * A fire key pressed (CyberKeys, plan retest3 section 1.7): fires the ACTIVE implant of its place (CyberwareRules.forTrigger),
+	 * or says why not (none installed, cooling down, too close). `aim`: where the camera ray hits (64 blocks at most, the Night
+	 * City surface included), for the launcher and the Mantis lunge.
 	 */
-	public static void activate(final ServerPlayer player, final @Nullable Vec3 aim) {
-		Cyberware cyberware = CyberData.selected(player);
+	public static void fire(final ServerPlayer player, final CyberwareRules.Trigger trigger, final @Nullable Vec3 aim) {
+		Cyberware cyberware = CyberwareRules.forTrigger(CyberData.installed(player), trigger);
 		if (cyberware == null) {
-			player.sendOverlayMessage(Component.translatable("cyberblock.cyberware.none"));
+			player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.cyberware.none." + trigger.id(), noneFallback(trigger),
+				Component.keybind(trigger.keyName())));
 			return;
 		}
 
@@ -152,7 +164,7 @@ public final class CyberwareEffects {
 			default -> false;
 		};
 		if (fired) {
-			Cyberblock.LOG.info("cyberware: activate {}", cyberware.id());
+			Cyberblock.LOG.info("cyberware: fire {} ({})", cyberware.id(), trigger.id());
 		}
 	}
 

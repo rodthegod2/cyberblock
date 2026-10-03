@@ -130,24 +130,35 @@ class CyberwareRulesTest {
 	}
 
 	@Test
-	void activeOrderSelectionAndCycling() {
+	void activeOrderIsTheHudRow() {
 		Set<Cyberware> set = EnumSet.of(Cyberware.OPTICAL_CAMO, Cyberware.PROJECTILE_LAUNCH_SYSTEM, Cyberware.SANDEVISTAN,
 			Cyberware.BIOMONITOR, Cyberware.KERENZIKOV, Cyberware.KIROSHI_OPTICS);
 		// the HUD: every ACTIVE or AUTO implant in catalogue order
 		assertEquals(List.of(Cyberware.PROJECTILE_LAUNCH_SYSTEM, Cyberware.SANDEVISTAN, Cyberware.KERENZIKOV, Cyberware.OPTICAL_CAMO,
 			Cyberware.BIOMONITOR), CyberwareRules.activeOrder(set));
-		// Y: only ACTIVE ones; the default is the first
-		assertSame(Cyberware.PROJECTILE_LAUNCH_SYSTEM, CyberwareRules.defaultSelected(set, null));
-		assertSame(Cyberware.OPTICAL_CAMO, CyberwareRules.defaultSelected(set, Cyberware.OPTICAL_CAMO));
-		assertSame(Cyberware.PROJECTILE_LAUNCH_SYSTEM, CyberwareRules.defaultSelected(set, Cyberware.BIOMONITOR)); // AUTO is never selected
-		assertSame(Cyberware.PROJECTILE_LAUNCH_SYSTEM, CyberwareRules.defaultSelected(set, Cyberware.BERSERK)); // not installed
-		assertSame(Cyberware.SANDEVISTAN, CyberwareRules.next(set, Cyberware.PROJECTILE_LAUNCH_SYSTEM));
-		assertSame(Cyberware.OPTICAL_CAMO, CyberwareRules.next(set, Cyberware.SANDEVISTAN));
-		assertSame(Cyberware.PROJECTILE_LAUNCH_SYSTEM, CyberwareRules.next(set, Cyberware.OPTICAL_CAMO)); // wraps
-		assertSame(Cyberware.PROJECTILE_LAUNCH_SYSTEM, CyberwareRules.next(set, null));
-		assertNull(CyberwareRules.defaultSelected(EnumSet.of(Cyberware.BIOMONITOR), null));
-		assertNull(CyberwareRules.next(EnumSet.noneOf(Cyberware.class), null));
-		assertSame(Cyberware.BERSERK, CyberwareRules.next(EnumSet.of(Cyberware.BERSERK), Cyberware.BERSERK));
+	}
+
+	/** Plan retest3 section 1.7: Y fires the Operating System implant, L the Arms implant, O the camo; nothing else has a key. */
+	@Test
+	void eachFireKeyFiresItsOwnPlace() {
+		Set<Cyberware> set = EnumSet.of(Cyberware.OPTICAL_CAMO, Cyberware.PROJECTILE_LAUNCH_SYSTEM, Cyberware.SANDEVISTAN,
+			Cyberware.CYBERDECK, Cyberware.BIOMONITOR, Cyberware.KERENZIKOV);
+		assertSame(Cyberware.SANDEVISTAN, CyberwareRules.forTrigger(set, CyberwareRules.Trigger.OS));
+		assertSame(Cyberware.PROJECTILE_LAUNCH_SYSTEM, CyberwareRules.forTrigger(set, CyberwareRules.Trigger.ARMS));
+		assertSame(Cyberware.OPTICAL_CAMO, CyberwareRules.forTrigger(set, CyberwareRules.Trigger.CAMO));
+		assertSame(Cyberware.BERSERK, CyberwareRules.forTrigger(EnumSet.of(Cyberware.BERSERK, Cyberware.CYBERDECK), CyberwareRules.Trigger.OS));
+		// the deck is passive: alone it gives Y nothing to fire
+		assertNull(CyberwareRules.forTrigger(EnumSet.of(Cyberware.CYBERDECK), CyberwareRules.Trigger.OS));
+		assertNull(CyberwareRules.forTrigger(EnumSet.noneOf(Cyberware.class), CyberwareRules.Trigger.CAMO));
+		for (Cyberware c : Cyberware.values()) {
+			CyberwareRules.Trigger t = CyberwareRules.Trigger.of(c);
+			assertEquals(c.kind() == Cyberware.Kind.ACTIVE, t != null, c.id());
+		}
+
+		assertEquals("key.cyberblock.activate", CyberwareRules.Trigger.OS.keyName());
+		assertEquals("key.cyberblock.arms", CyberwareRules.Trigger.ARMS.keyName());
+		assertEquals("key.cyberblock.camo", CyberwareRules.Trigger.CAMO.keyName());
+		assertEquals("arms", CyberwareRules.Trigger.ARMS.id());
 	}
 
 	@Test

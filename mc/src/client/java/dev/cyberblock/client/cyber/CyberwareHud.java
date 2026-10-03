@@ -15,8 +15,9 @@ import net.minecraft.world.item.ItemStack;
 
 /**
  * The implants' row right of the hotbar (plan retest2 section 1.7): one icon per installed ACTIVE or AUTO implant, a bar
- * under each (grey filling up cyan while it recharges, full cyan when ready, magenta draining while its effect runs) and a
- * yellow frame around the one the activate key fires. A HUD element, so it lands in the overlay Cyberpunk composites.
+ * under each (grey filling up cyan while it recharges, full cyan when ready, magenta draining while its effect runs) and, on
+ * each ACTIVE one, the key that fires it (Y, L or O as bound: plan retest3 section 1.7). A HUD element, so it lands in the
+ * overlay Cyberpunk composites.
  */
 final class CyberwareHud {
 	static final Identifier ID = Identifier.fromNamespaceAndPath(Cyberblock.ID, "cyberware_bar");
@@ -24,7 +25,7 @@ final class CyberwareHud {
 	private static final int BAR_EMPTY = 0xFF3A3F4F;
 	private static final int BAR_READY = 0xFF33E6FF;
 	private static final int BAR_ACTIVE = 0xFFFF3DF2;
-	private static final int SELECTED = 0xFFFFE14D;
+	private static final int KEY = 0xFFFFE14D;
 
 	private CyberwareHud() {
 	}
@@ -41,7 +42,6 @@ final class CyberwareHud {
 			return;
 		}
 
-		Cyberware selected = CyberData.selected(player);
 		long now = player.level().getGameTime();
 		// the hotbar is 182 wide, centred, its top 22 above the bottom edge
 		int x0 = graphics.guiWidth() / 2 + 99;
@@ -64,8 +64,14 @@ final class CyberwareHud {
 				graphics.fill(x + 1, y + 19, x + 1 + Math.round(16 * (1.0F - timer.remainingFraction(now))), y + 21, BAR_READY);
 			}
 
-			if (c == selected) {
-				graphics.outline(x, y, STEP - 2, 22, SELECTED);
+			CyberwareRules.Trigger trigger = CyberwareRules.Trigger.of(c);
+			if (trigger != null) {
+				graphics.pose().pushMatrix();
+				graphics.pose().translate(x + STEP - 3, y + 1);
+				graphics.pose().scale(0.5F, 0.5F);
+				Component key = CyberKeys.of(trigger).getTranslatedKeyMessage();
+				graphics.text(minecraft.font, key, -minecraft.font.width(key), 0, KEY, true);
+				graphics.pose().popMatrix();
 			}
 		}
 	}
