@@ -44,5 +44,6 @@ public final class Kills {
 	public static void onKilled(final ServerPlayer player, final Killed killed) {
 		ExperienceOrb.award(player.level(), player.position(), xp(killed.hostile()));
 		PerkEffects.coldBlood(player);
+		CyberAdvancements.killed(player);
 	}
 }

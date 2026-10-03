@@ -14,7 +14,6 @@ import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Player;
-import org.jspecify.annotations.Nullable;
 
 /**
  * The cyber state kept on the player (Fabric data attachments): saved with the world, kept through death, and synced to
@@ -75,13 +74,6 @@ public final class CyberData {
 		.syncWith(ByteBufCodecs.<ByteBuf, String, CyberwareRules.Timer, Map<String, CyberwareRules.Timer>>map(HashMap::new, ByteBufCodecs.STRING_UTF8, TIMER_STREAM_CODEC),
 			AttachmentSyncPredicate.targetOnly())
 		.buildAndRegister(id("cyber_ready"));
-	/** The implant the activate key (Y) fires, by id ("" or one no longer installed: the first ACTIVE one). */
-	public static final AttachmentType<String> CYBER_SELECTED = AttachmentRegistry.<String>builder()
-		.persistent(Codec.STRING)
-		.copyOnDeath()
-		.initializer(() -> "")
-		.syncWith(ByteBufCodecs.STRING_UTF8, AttachmentSyncPredicate.targetOnly())
-		.buildAndRegister(id("cyber_selected"));
 	/** The once-per-player hand-out of implant items to owners of the perks that now need one (Ripperdoc.migrate) is done. */
 	public static final AttachmentType<Boolean> CYBER_MIGRATED = AttachmentRegistry.<Boolean>builder()
 		.persistent(Codec.BOOL)
@@ -125,10 +117,9 @@ public final class CyberData {
 		return player.getAttachedOrElse(RAM, 0);
 	}
 
-	/** An installed cyberdeck, or one carried while the Operating System slot is empty (plan retest2 section 1.7). Either side. */
+	/** An installed or a carried cyberdeck (Ram.hasDeck). Either side. */
 	public static boolean hasDeck(final Player player) {
-		boolean osSlotEmpty = CyberwareRules.osImplant(slots(player)) == null;
-		return Ram.hasDeck(has(player, Cyberware.CYBERDECK), osSlotEmpty, osSlotEmpty && player.getInventory().contains(stack -> stack.is(CyberItems.CYBERDECK)));
+		return Ram.hasDeck(has(player, Cyberware.CYBERDECK), player.getInventory().contains(stack -> stack.is(CyberItems.CYBERDECK)));
 	}
 
 	/** Either side (the inventory, the perks and the cyberware are synced to the client). */
@@ -169,11 +160,6 @@ public final class CyberData {
 	/** The implant may fire again (level game time). */
 	public static boolean ready(final Player player, final Cyberware cyberware) {
 		return timer(player, cyberware).ready(player.level().getGameTime());
-	}
-
-	/** What the activate key fires now (CyberwareRules.defaultSelected), or null without an ACTIVE implant. Either side. */
-	public static @Nullable Cyberware selected(final Player player) {
-		return CyberwareRules.defaultSelected(installed(player), Cyberware.byId(player.getAttachedOrElse(CYBER_SELECTED, "")));
 	}
 
 	/** Server side. */

@@ -22,14 +22,13 @@ class RamTest {
 		assertEquals(16, Ram.max(true, true, true));
 	}
 
-	/** hasDeck: an installed cyberdeck, or one carried while the Operating System slot is empty. */
+	/** hasDeck (plan retest3 section 1.8): an installed cyberdeck or a carried one; the Sandevistan no longer pushes it out. */
 	@Test
 	void deckFromTheOsSlotOrTheBag() {
-		assertTrue(Ram.hasDeck(true, false, false));
-		assertTrue(Ram.hasDeck(true, false, true));
-		assertTrue(Ram.hasDeck(false, true, true));
-		assertFalse(Ram.hasDeck(false, false, true)); // a Sandevistan in the OS slot: the bag's deck does not count
-		assertFalse(Ram.hasDeck(false, true, false));
+		assertTrue(Ram.hasDeck(true, false));
+		assertTrue(Ram.hasDeck(true, true));
+		assertTrue(Ram.hasDeck(false, true));
+		assertFalse(Ram.hasDeck(false, false));
 	}
 
 	@Test

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -127,7 +128,76 @@ class VirtualKeysTest {
 		assertEquals("GKUY", four(-1, g, u, y));
 		assertTrue(VirtualKeys.clash(l, o, l, f10) && VirtualKeys.clash(y, k, u, -1));
 		assertTrue(!VirtualKeys.clash(l, o, zero, f10) && !VirtualKeys.clash(-1, -1, -1, -1) && !VirtualKeys.clash(y, u, k, g));
-		assertArrayEquals(new int[]{g, k, u, y}, VirtualKeys.DEFAULTS);
+	}
+
+	private static String six(final int... keys) {
+		StringBuilder s = new StringBuilder();
+		for (int vk : VirtualKeys.binds(keys)) {
+			s.append(VirtualKeys.name(vk));
+		}
+
+		return s.toString();
+	}
+
+	/** Plan retest3 section 1.7: six keys G K U Y L O; the same fallback and the all-or-nothing clash over all six. */
+	@Test
+	void sixKeysFallBackOneByOneAndAllOnAClash() {
+		int g = VirtualKeys.VK_G, k = VirtualKeys.VK_K, u = VirtualKeys.VK_U, y = VirtualKeys.VK_Y, l = VirtualKeys.VK_L, o = VirtualKeys.VK_O;
+		int zero = 0x30, f10 = 0x79, f11 = 0x7A;
+		assertArrayEquals(new int[]{g, k, u, y, l, o}, VirtualKeys.DEFAULTS);
+		assertEquals("GKUYLO", six(g, k, u, y, l, o));
+		assertEquals("GKUYLO", six(-1, -1, -1, -1, -1, -1));
+		assertEquals("GKUY0F10", six(g, k, u, y, zero, f10)); // arms and camo moved
+		assertEquals("GKUYF11O", six(g, k, u, y, f11, -1)); // camo refused: its own default
+		// L and O used to be free for the hack and skill keys: now they clash with the arms and camo keys
+		assertEquals("GKUYLO", six(l, o, u, y, l, o));
+		assertTrue(VirtualKeys.clash(l, k, u, y, l, o));
+		assertEquals("GKUYLO", six(g, k, u, y, -1, l)); // refused arms falls back to L, which camo already is
+	}
+
+	/** One `binds_apply` case: a name missing from `given` keeps the current key. */
+	@Test
+	void applyKeepsTheCurrentKeyForAMissingName() {
+		int[] current = {0x30, VirtualKeys.VK_K, VirtualKeys.VK_U, VirtualKeys.VK_Y, VirtualKeys.VK_L, VirtualKeys.VK_O};
+		VirtualKeys.Applied a = VirtualKeys.apply(new Integer[]{null, null, null, null, 0x79, null}, current);
+		assertArrayEquals(new int[]{0x30, VirtualKeys.VK_K, VirtualKeys.VK_U, VirtualKeys.VK_Y, 0x79, VirtualKeys.VK_O}, a.keys());
+		assertTrue(!a.clash());
+		VirtualKeys.Applied refused = VirtualKeys.apply(new Integer[]{(int) 'W'}, current);
+		assertEquals(VirtualKeys.VK_G, refused.keys()[0]);
+		VirtualKeys.Applied clash = VirtualKeys.apply(new Integer[]{null, null, null, null, null, 0x30}, current);
+		assertTrue(clash.clash());
+		assertArrayEquals(VirtualKeys.DEFAULTS, clash.keys());
+	}
+
+	/** shared/vectors.json `binds_apply` (D2): the DLL's keys::apply_binds and VirtualKeys.apply agree on every case. */
+	@Test
+	void bindsApplyMatchesTheSharedVectors() throws IOException {
+		JsonObject vectors = JsonParser.parseString(Files.readString(Path.of("..", "shared", "vectors.json"))).getAsJsonObject();
+		JsonArray cases = vectors.getAsJsonArray("binds_apply");
+		assertTrue(cases != null && cases.size() >= 8, "the vectors have a binds_apply set");
+		for (JsonElement c : cases) {
+			JsonObject o = c.getAsJsonObject();
+			JsonObject given = o.getAsJsonObject("given");
+			Integer[] g = new Integer[CyberWire.BIND_NAMES.size()];
+			for (int i = 0; i < g.length; i++) {
+				JsonElement e = given.get(CyberWire.BIND_NAMES.get(i));
+				g[i] = e == null || e.isJsonNull() ? null : e.getAsInt();
+			}
+
+			VirtualKeys.Applied applied = VirtualKeys.apply(g, six(o.get("current")));
+			assertArrayEquals(six(o.get("expect")), applied.keys(), o.toString());
+			assertEquals(o.get("clash").getAsBoolean(), applied.clash(), o.toString());
+		}
+	}
+
+	/** Six keys in `binds` order, from {"hack":vk,...} or [vk, ...]. */
+	private static int[] six(final JsonElement e) {
+		int[] out = new int[CyberWire.BIND_NAMES.size()];
+		for (int i = 0; i < out.length; i++) {
+			out[i] = e.isJsonArray() ? e.getAsJsonArray().get(i).getAsInt() : e.getAsJsonObject().get(CyberWire.BIND_NAMES.get(i)).getAsInt();
+		}
+
+		return out;
 	}
 
 	/** U and Y are bindable (the DLL forwards them while Cyberblock is active). */
@@ -205,6 +275,7 @@ class VirtualKeysTest {
 
 	@Test
 	void bindsJson() {
-		assertEquals("{\"t\":\"binds\",\"keys\":{\"hack\":71,\"skills\":75,\"cyberware\":85,\"activate\":89}}", CyberWire.binds(VirtualKeys.DEFAULTS));
+		assertEquals("{\"t\":\"binds\",\"keys\":{\"hack\":71,\"skills\":75,\"cyberware\":85,\"activate\":89,\"arms\":76,\"camo\":79}}",
+			CyberWire.binds(VirtualKeys.DEFAULTS));
 	}
 }

@@ -15,6 +15,7 @@ final class CyberServer {
 		}
 
 		Hacking.tick(server);
+		HackFx.tick(server);
 		PerkEffects.tick(server);
 		CyberwareEffects.tick(server);
 	}

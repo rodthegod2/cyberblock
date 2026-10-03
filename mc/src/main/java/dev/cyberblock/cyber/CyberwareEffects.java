@@ -25,18 +25,21 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
 /**
  * What the implants do in Minecraft (plan retest2 section 1.7, task C4), with their particles and sounds, and the
  * `cyberfx` that gives V the Cyberpunk side where there is one. Server thread. Passive implants are attribute modifiers
- * (checked every tick: the arms only count with an empty main hand); ACTIVE ones fire from the activate key (activate);
+ * (checked every tick: the arms only count with an empty main hand);
+ * ACTIVE ones fire from their key (fire: Y the Operating System implant, L the Arms implant, O the camo);
  * AUTO ones fire by themselves (Kerenzikov on drawing a bow in the air, the Biomonitor at low health, the Second Heart
  * instead of death). Firing times are kept in CyberData.CYBER_READY (level game time, saved and synced for the HUD).
  */
@@ -66,6 +69,11 @@ public final class CyberwareEffects {
 	private static final double BERSERK_RADIUS = 3.0;
 	/** Game time the invisibility the camo gave runs out, per player (an attack or a launcher shot breaks only that one). */
 	private static final Map<UUID, Long> camoUntil = new HashMap<>();
+	/** A Mantis lunge in flight, per player: the target entity id and the ticks it may still take to arrive. */
+	private record Lunge(int target, int ticksLeft) {
+	}
+
+	private static final Map<UUID, Lunge> lunges = new HashMap<>();
 	/** Players whose Sandevistan ran last tick (its end plays the power-down). */
 	private static final Set<UUID> sandevistanRunning = new HashSet<>();
 	/** Wall time the shared slow-mo ends, 0 when time runs normally. */
@@ -117,6 +125,7 @@ public final class CyberwareEffects {
 			apply(player);
 			biomonitor(player, now);
 			sandevistanTrail(player, now);
+			lungeTick(player);
 			Long until = camoUntil.get(player.getUUID());
 			if (until != null && now >= until) {
 				camoUntil.remove(player.getUUID());
@@ -124,16 +133,27 @@ public final class CyberwareEffects {
 		}
 	}
 
-	// ---- the activate key ------------------------------------------------------------------------------------------------
+	// ---- the fire keys ---------------------------------------------------------------------------------------------------
+
+	/** "No ... to fire (%s)" for a key whose place holds no ACTIVE implant, until the lang file has its line. */
+	private static String noneFallback(final CyberwareRules.Trigger trigger) {
+		return switch (trigger) {
+			case OS -> "No Operating System implant to fire (%s)";
+			case ARMS -> "No active Arms implant to fire (%s)";
+			case CAMO -> "No Optical Camo installed (%s)";
+		};
+	}
 
 	/**
-	 * The activate key tapped (CyberKeys): fires the selected ACTIVE implant, or says why not (none installed, cooling down,
-	 * too close). `aim`: where the camera ray hits (64 blocks at most, the Night City surface included), for the launcher.
+	 * A fire key pressed (CyberKeys, plan retest3 section 1.7): fires the ACTIVE implant of its place (CyberwareRules.forTrigger),
+	 * or says why not (none installed, cooling down, too close). `aim`: where the camera ray hits (64 blocks at most, the Night
+	 * City surface included), for the launcher and the Mantis lunge.
 	 */
-	public static void activate(final ServerPlayer player, final @Nullable Vec3 aim) {
-		Cyberware cyberware = CyberData.selected(player);
+	public static void fire(final ServerPlayer player, final CyberwareRules.Trigger trigger, final @Nullable Vec3 aim) {
+		Cyberware cyberware = CyberwareRules.forTrigger(CyberData.installed(player), trigger);
 		if (cyberware == null) {
-			player.sendOverlayMessage(Component.translatable("cyberblock.cyberware.none"));
+			player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.cyberware.none." + trigger.id(), noneFallback(trigger),
+				Component.keybind(trigger.keyName())));
 			return;
 		}
 
@@ -145,6 +165,9 @@ public final class CyberwareEffects {
 		}
 
 		boolean fired = switch (cyberware) {
+			case MANTIS_BLADES -> lunge(player, aim, now);
+			case GORILLA_ARMS -> slam(player, now);
+			case MONOWIRE -> lash(player, now);
 			case PROJECTILE_LAUNCH_SYSTEM -> launcher(player, aim, now);
 			case SANDEVISTAN -> sandevistan(player, now);
 			case BERSERK -> berserk(player, now);
@@ -152,7 +175,7 @@ public final class CyberwareEffects {
 			default -> false;
 		};
 		if (fired) {
-			Cyberblock.LOG.info("cyberware: activate {}", cyberware.id());
+			Cyberblock.LOG.info("cyberware: fire {} ({})", cyberware.id(), trigger.id());
 		}
 	}
 
@@ -163,6 +186,164 @@ public final class CyberwareEffects {
 			&& CyberData.ready(player, Cyberware.SANDEVISTAN) && sandevistan(player, now)) {
 			Cyberblock.LOG.info("cyberware: activate sandevistan (sprint)");
 		}
+	}
+
+	// ---- arms abilities (plan retest3 section 1.8, key L) ---------------------------------------------------------------------
+
+	/** Where the arm implant's tip is: in front of Steve's right shoulder at chest height (the muzzle spark). */
+	private static Vec3 armTip(final ServerPlayer player) {
+		double yaw = Math.toRadians(player.getYRot());
+		Vec3 right = new Vec3(-Math.cos(yaw), 0.0, -Math.sin(yaw));
+		return player.getEyePosition().add(player.getLookAngle().scale(0.6)).add(right.scale(0.35)).add(0.0, -0.45, 0.0);
+	}
+
+	private static void muzzle(final ServerPlayer player, final ParticleOptions particle) {
+		Vec3 tip = armTip(player);
+		player.level().sendParticles(particle, tip.x, tip.y, tip.z, 4, 0.05, 0.05, 0.05, 0.02);
+	}
+
+	/** Living entities (proxies too) other than Steve within `radius` of `centre`. */
+	private static List<LivingEntity> around(final ServerPlayer player, final Vec3 centre, final double radius) {
+		return player.level().getEntitiesOfClass(LivingEntity.class, new AABB(centre, centre).inflate(radius),
+			e -> e != player && e.isAlive() && !e.isSpectator() && e.position().distanceTo(centre) <= radius);
+	}
+
+	/**
+	 * Mantis Blades: a lunge at the entity nearest the aim point, at most 10 blocks away, hitting it at 1.5x his attack damage
+	 * (a proxy's hit goes to Cyberpunk as `hit`). Hosted, it lands at once with a red trail from Steve to the target (he stays
+	 * on V: CyberwareRules.lungeLands). Otherwise Steve is launched at it and hits on arriving within 2.5 blocks; a lunge that
+	 * times out gives its cooldown back.
+	 */
+	private static boolean lunge(final ServerPlayer player, final @Nullable Vec3 aim, final long now) {
+		LivingEntity target = null;
+		if (aim != null && Double.isFinite(aim.x) && Double.isFinite(aim.y) && Double.isFinite(aim.z)) {
+			double best = Double.MAX_VALUE;
+			for (LivingEntity e : around(player, aim, 1.5)) {
+				double d = e.distanceToSqr(aim);
+				if (d < best && player.distanceTo(e) <= CyberwareRules.LUNGE_RANGE) {
+					best = d;
+					target = e;
+				}
+			}
+		}
+
+		if (target == null) {
+			player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.cyberware.no_target", "Nothing to lunge at"));
+			return false;
+		}
+
+		muzzle(player, new DustParticleOptions(BLADE_RED, 1.2F));
+		sound(player, SoundEvents.PLAYER_ATTACK_SWEEP, 0.7F);
+		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.cyberware.lunge", "Mantis lunge").withColor(BLADE_RED));
+		CyberData.setTimer(player, Cyberware.MANTIS_BLADES, CyberwareRules.Timer.fire(now, 0, Cyberware.MANTIS_BLADES.cooldownTicks()));
+		if (CyberwareRules.lungeLands(Cyberblock.active, player.distanceTo(target))) {
+			Vec3 from = player.position().add(0.0, 1.0, 0.0);
+			Vec3 to = target.position().add(0.0, target.getBbHeight() / 2.0, 0.0);
+			Vec3 step = to.subtract(from);
+			for (double t = 0.0; t <= 1.0; t += 0.5 / Math.max(0.5, step.length())) {
+				Vec3 p = from.add(step.scale(t));
+				player.level().sendParticles(new DustParticleOptions(BLADE_RED, 1.0F), p.x, p.y, p.z, 1, 0.05, 0.05, 0.05, 0.0);
+			}
+
+			strike(player, target);
+			return true;
+		}
+
+		Vec3 d = target.position().subtract(player.position());
+		double[] v = CyberwareRules.lungeVelocity(d.x, d.y, d.z);
+		player.setDeltaMovement(v[0], v[1], v[2]);
+		player.needsSync = true;
+		lunges.put(player.getUUID(), new Lunge(target.getId(), CyberwareRules.LUNGE_TICKS));
+		return true;
+	}
+
+	/** Every tick of a lunge: a red trail, and the hit once Steve is close enough (or the lunge times out, cooldown given back). */
+	private static void lungeTick(final ServerPlayer player) {
+		Lunge lunge = lunges.get(player.getUUID());
+		if (lunge == null) {
+			return;
+		}
+
+		ServerLevel level = player.level();
+		Entity target = level.getEntity(lunge.target());
+		if (!(target instanceof LivingEntity living) || !living.isAlive() || lunge.ticksLeft() <= 0) {
+			lunges.remove(player.getUUID());
+			CyberData.setTimer(player, Cyberware.MANTIS_BLADES, CyberwareRules.Timer.NONE);
+			return;
+		}
+
+		level.sendParticles(new DustParticleOptions(BLADE_RED, 1.0F), player.getX(), player.getY() + 1.0, player.getZ(), 3, 0.2, 0.3, 0.2, 0.0);
+		if (!CyberwareRules.lungeLands(false, player.distanceTo(living))) {
+			lunges.put(player.getUUID(), new Lunge(lunge.target(), lunge.ticksLeft() - 1));
+			return;
+		}
+
+		lunges.remove(player.getUUID());
+		strike(player, living);
+	}
+
+	/** The lunge's hit: 1.5x Steve's attack damage, the blade sweep and its sound. */
+	private static void strike(final ServerPlayer player, final LivingEntity living) {
+		ServerLevel level = player.level();
+		float damage = (float) player.getAttributeValue(Attributes.ATTACK_DAMAGE) * CyberwareRules.LUNGE_HIT;
+		breakCamo(player, level.getGameTime());
+		living.hurtServer(level, player.damageSources().playerAttack(player), damage);
+		Vec3 at = living.position().add(0.0, living.getBbHeight() / 2.0, 0.0);
+		level.sendParticles(ParticleTypes.SWEEP_ATTACK, at.x, at.y, at.z, 2, 0.3, 0.2, 0.3, 0.0);
+		level.sendParticles(new DustParticleOptions(BLADE_RED, 1.4F), at.x, at.y, at.z, 10, 0.3, 0.3, 0.3, 0.0);
+		sound(player, SoundEvents.PLAYER_ATTACK_STRONG, 1.0F);
+		Cyberblock.LOG.info("cyberware: mantis lunge hit {} for {}", living.getName().getString(), damage);
+	}
+
+	/** Gorilla Arms: a ground slam, knockback 1.0 (and a light hit) to everything living within 4 blocks. */
+	private static boolean slam(final ServerPlayer player, final long now) {
+		ServerLevel level = player.level();
+		for (double r = 1.0; r <= CyberwareRules.SLAM_RADIUS; r += 1.0) {
+			ring(level, ParticleTypes.DUST_PLUME, player.position().add(0.0, 0.1, 0.0), r, (int) (r * 10));
+		}
+
+		muzzle(player, ParticleTypes.CRIT);
+		sound(player, SoundEvents.MACE_SMASH_GROUND_HEAVY, 0.9F);
+		breakCamo(player, now);
+		DamageSource source = player.damageSources().playerAttack(player);
+		for (LivingEntity e : around(player, player.position(), CyberwareRules.SLAM_RADIUS)) {
+			e.hurtServer(level, source, CyberwareRules.SLAM_DAMAGE);
+			e.knockback(CyberwareRules.SLAM_KNOCKBACK, player.getX() - e.getX(), player.getZ() - e.getZ(), source, 0.0F);
+		}
+
+		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.cyberware.slam", "Gorilla slam").withColor(0xFFB347));
+		CyberData.setTimer(player, Cyberware.GORILLA_ARMS, CyberwareRules.Timer.fire(now, 0, Cyberware.GORILLA_ARMS.cooldownTicks()));
+		return true;
+	}
+
+	/** Monowire: a 120 degree lash up to 5 blocks ahead, 4 damage and Slowness II for 3 s on everything it catches. */
+	private static boolean lash(final ServerPlayer player, final long now) {
+		ServerLevel level = player.level();
+		Vec3 eye = player.getEyePosition();
+		Vec3 look = player.getLookAngle();
+		double yaw = Math.atan2(look.z, look.x);
+		for (int i = 0; i <= 24; i++) {
+			double a = yaw + Math.toRadians(-CyberwareRules.LASH_HALF_ANGLE + i * 5.0);
+			for (double r = 1.0; r <= CyberwareRules.LASH_RANGE; r += 1.0) {
+				level.sendParticles(ParticleTypes.ELECTRIC_SPARK, eye.x + Math.cos(a) * r, eye.y - 0.4, eye.z + Math.sin(a) * r, 1, 0.0, 0.0, 0.0, 0.0);
+			}
+		}
+
+		muzzle(player, ParticleTypes.ELECTRIC_SPARK);
+		sound(player, SoundEvents.PLAYER_ATTACK_SWEEP, 1.8F);
+		breakCamo(player, now);
+		DamageSource source = player.damageSources().playerAttack(player);
+		for (LivingEntity e : around(player, eye, CyberwareRules.LASH_RANGE + 1.0)) {
+			Vec3 to = e.position().add(0.0, e.getBbHeight() / 2.0, 0.0).subtract(eye);
+			if (CyberwareRules.inLash(look.x, look.z, to.x, to.y, to.z)) {
+				e.hurtServer(level, source, CyberwareRules.LASH_DAMAGE);
+				e.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, CyberwareRules.LASH_SLOW_TICKS, 1));
+			}
+		}
+
+		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.cyberware.lash", "Monowire lash").withColor(0x5FF4FF));
+		CyberData.setTimer(player, Cyberware.MONOWIRE, CyberwareRules.Timer.fire(now, 0, Cyberware.MONOWIRE.cooldownTicks()));
+		return true;
 	}
 
 	/** Projectile launch system: a hitscan rocket to the aim point (4 to 64 blocks), smoke and flame along the way. */
@@ -182,6 +363,7 @@ public final class CyberwareEffects {
 			level.sendParticles(ParticleTypes.FLAME, p.x, p.y, p.z, 1, 0.0, 0.0, 0.0, 0.0);
 		}
 
+		muzzle(player, ParticleTypes.FLAME);
 		sound(player, SoundEvents.CROSSBOW_SHOOT, 1.0F);
 		sound(player, SoundEvents.FIRECHARGE_USE, 1.0F);
 		breakCamo(player, now);
@@ -361,6 +543,7 @@ public final class CyberwareEffects {
 	static void reset(final @Nullable MinecraftServer server) {
 		camoUntil.clear();
 		sandevistanRunning.clear();
+		lunges.clear();
 		if (server != null) {
 			endSlow(server);
 		}

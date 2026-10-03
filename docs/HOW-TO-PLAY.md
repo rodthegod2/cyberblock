@@ -534,7 +534,7 @@ jump, an explosion).
 
 | Implant | Slot | Kind | In Minecraft | In Night City (V) |
 |---|---|---|---|---|
-| **Mantis Blades** | Arms | on | empty main hand: +6 attack damage, slower swings; red dust, a sweep and a strong-hit sound on every hit | your hits hurt people and cars as melee, as always |
+| **Mantis Blades** | Arms | on | empty main hand: +6 attack damage, slower swings; red dust, a sweep and a strong-hit sound on every hit. **L**: lunge at the aimed target up to 10 blocks away for 1.5x damage, 6 s cooldown (with Cyberpunk running it strikes at once along a red trail and V stays where she is; a lunge that misses gives the cooldown back) | your hits hurt people and cars as melee, as always; the lunge lands as a `hit` |
 | **Gorilla Arms** | Arms | on | empty hand: +4 damage, +2 knockback, slower swings; a gust and smash sounds | shoves people and cars hard (the same shove as the Gorilla Arms perk, never doubled) |
 | **Monowire** | Arms | on | empty hand: +3 damage, +3 reach, slower swings; a line of electric sparks to the target | your hits land as melee |
 | **Projectile Launch System** | Arms | **Y**, 8 s cooldown | fires along the crosshair up to 64 blocks (closer than 4 blocks: "Too close to fire", no cooldown): smoke and flames, crossbow and fire-charge sounds, a power 2.5 explosion | a real Cyberpunk explosion there: cars blow up, NCPD comes |

@@ -9,18 +9,26 @@ import dev.cyberblock.cyber.CyberMod;
 import dev.cyberblock.cyber.CyberWire;
 import dev.cyberblock.cyber.CyberwareEffects;
 import dev.cyberblock.cyber.CyberwareRules;
-import dev.cyberblock.cyber.Ripperdoc;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Camera;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.ComponentUtils;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
@@ -32,28 +40,35 @@ import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The Cyberblock key mappings (Hack G, Skill tree K, Cyberware screen U, Activate implant Y: plan retest2 section 1.8),
- * rebindable in Minecraft's Controls. While Cyberpunk has the focus it forwards them as {"t":"key","k":...} once it knows
- * them from `binds`. Y: a tap (let go within 8 ticks) fires the selected implant, holding it 8 ticks selects the next one.
+ * The Cyberblock key mappings (plan retest3 section 1.7): Hack G, Skill tree K, Cyberware screen U, Operating System implant
+ * Y, Arms implant L, Optical Camo O, rebindable in Minecraft's Controls. While Cyberpunk has the focus it forwards them as
+ * {"t":"key","k":...} once it knows them from `binds`. Y, L and O each fire the ACTIVE implant of their own place
+ * (CyberwareEffects.fire); there is no selection to cycle any more.
  */
 public final class CyberKeys {
 	static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(Cyberblock.ID, "cyberblock"));
-	/** Shown when two of the four keys would be one in Cyberpunk, until the lang file has its line. */
-	private static final String CLASH_FALLBACK = "Two Cyberblock keys would be the same key in Cyberpunk, so there all four work as %s %s %s %s";
+	/** Shown when two of the six keys would be one in Cyberpunk, until the lang file has its line. */
+	private static final String CLASH_FALLBACK = "Two Cyberblock keys would be the same key in Cyberpunk, so there all six work as their defaults: %s";
+	/** Shown when a vanilla mapping lost its key to ours, until the lang file has its line. */
+	private static final String VANILLA_FALLBACK = "Cyberblock took %s from %s (rebind it in Controls)";
+	/** Vanilla mappings (by name) already freed once, one per line, so a player who binds them back keeps his choice. */
+	private static final String FREED_FILE = "cyberblock-freed-keys.txt";
 	public static KeyMapping hack;
 	public static KeyMapping skills;
 	public static KeyMapping cyberware;
+	/** The Operating System implant (Sandevistan or Berserk). */
 	public static KeyMapping activate;
+	public static KeyMapping arms;
+	public static KeyMapping camo;
 	/** The binds last sent (virtual-key codes, `binds` order), so a rebinding is sent once. */
-	private static int[] sent = {-1, -1, -1, -1};
+	private static int[] sent = {-1, -1, -1, -1, -1, -1};
 	private static InputConstants.Key @Nullable [] lastKeys;
 	/** A host said hello: the note about the binds (if any) goes to chat once a player is there to read it. */
 	private static boolean notePending;
+	/** Notes about vanilla keys we took, shown once a player is there. */
+	private static final List<Component> vanillaNotes = new ArrayList<>();
 	/** Keys the host holds down: released when the host goes away, so a lost key-up never leaves the hack key held. */
 	private static final Set<KeyMapping> hostHeld = new HashSet<>();
-	/** Client ticks the activate key has been down (-1: up), and whether this hold already cycled the selection. */
-	private static int activateTicks = -1;
-	private static boolean activateCycled;
 
 	private CyberKeys() {
 	}
@@ -63,11 +78,22 @@ public final class CyberKeys {
 		skills = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.cyberblock.skills", InputConstants.KEY_K, CATEGORY));
 		cyberware = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.cyberblock.cyberware", InputConstants.KEY_U, CATEGORY));
 		activate = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.cyberblock.activate", InputConstants.KEY_Y, CATEGORY));
+		arms = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.cyberblock.arms", InputConstants.KEY_L, CATEGORY));
+		camo = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.cyberblock.camo", InputConstants.KEY_O, CATEGORY));
 	}
 
-	/** The four mappings in `binds` order (VirtualKeys.DEFAULTS). */
+	/** The six mappings in `binds` order (VirtualKeys.DEFAULTS, CyberWire.BIND_NAMES). */
 	private static KeyMapping[] mappings() {
-		return new KeyMapping[]{hack, skills, cyberware, activate};
+		return new KeyMapping[]{hack, skills, cyberware, activate, arms, camo};
+	}
+
+	/** The mapping that fires a trigger's implant. */
+	static KeyMapping of(final CyberwareRules.Trigger trigger) {
+		return switch (trigger) {
+			case OS -> activate;
+			case ARMS -> arms;
+			case CAMO -> camo;
+		};
 	}
 
 	/** The virtual key Cyberpunk forwards for each mapping's binding, -1 when it cannot (VirtualKeys.of). */
@@ -82,7 +108,7 @@ public final class CyberKeys {
 		return Arrays.stream(mappings()).map(KeyMappingHelper::getBoundKeyOf).toArray(InputConstants.Key[]::new);
 	}
 
-	/** {"t":"binds"} with the current bindings (host hello, or a rebinding): a refused key as its default, a clash as all four. */
+	/** {"t":"binds"} with the current bindings (host hello, or a rebinding): a refused key as its default, a clash as all six. */
 	static void sendBinds() {
 		sent = VirtualKeys.binds(vks());
 		Cyberblock.events.accept(CyberWire.binds(sent));
@@ -95,15 +121,15 @@ public final class CyberKeys {
 	}
 
 	/**
-	 * What the player should know about the binds Cyberpunk uses, or null when it uses all four as bound: a key it cannot
-	 * forward works there as its default (G, K, U, Y); two keys that would be the same there make all four the defaults.
+	 * What the player should know about the binds Cyberpunk uses, or null when it uses all six as bound: a key it cannot
+	 * forward works there as its default (G, K, U, Y, L, O); two keys that would be the same there make all six the defaults.
 	 */
 	static @Nullable Component note() {
 		int[] vks = vks();
 		int[] used = VirtualKeys.binds(vks);
 		if (VirtualKeys.clash(vks)) {
-			return Component.translatableWithFallback("cyberblock.binds.clash", CLASH_FALLBACK,
-				VirtualKeys.name(used[0]), VirtualKeys.name(used[1]), VirtualKeys.name(used[2]), VirtualKeys.name(used[3]));
+			return Component.translatableWithFallback("cyberblock.binds.clash_all", CLASH_FALLBACK,
+				ComponentUtils.formatList(Arrays.stream(used).mapToObj(VirtualKeys::name).toList()));
 		}
 
 		MutableComponent note = null;
@@ -119,18 +145,56 @@ public final class CyberKeys {
 		return note;
 	}
 
+	private static Path freedFile() {
+		return FabricLoader.getInstance().getConfigDir().resolve(FREED_FILE);
+	}
+
 	/**
-	 * Minecraft 26.3's Quick Actions key (Options.keyQuickActions) is G by default too, so both fired on G and the Controls
-	 * screen showed a conflict. On the first tick (the options are loaded by then) it is unbound when it shares the hack key,
-	 * and the options are saved; the player may bind it to another key.
+	 * Minecraft 26.3's own keys on G (Quick Actions), L (Advancements) and O (Friends) would fire with ours and
+	 * show conflicts in Controls (section 1.7). On the first tick (the options are loaded by then) every vanilla mapping bound
+	 * to one of our six keys is unbound, once per mapping (FREED_FILE remembers it, so binding it back later sticks), and the
+	 * options are saved; the player is told in chat and may rebind it.
 	 */
-	private static void freeQuickActions(final Minecraft minecraft) {
-		KeyMapping quickActions = minecraft.options.keyQuickActions;
-		if (!quickActions.isUnbound() && quickActions.same(hack)) {
-			quickActions.setKey(InputConstants.UNKNOWN);
+	private static void freeVanillaClashes(final Minecraft minecraft) {
+		Set<String> freed = new LinkedHashSet<>();
+		try {
+			if (Files.exists(freedFile())) {
+				freed.addAll(Files.readAllLines(freedFile()));
+			}
+		} catch (IOException e) {
+			Cyberblock.LOG.warn("binds: cannot read {}: {}", FREED_FILE, e.toString());
+		}
+
+		boolean changed = false;
+		for (KeyMapping vanilla : minecraft.options.keyMappings) {
+			// debug keys are F3 combinations (F3+G, F3+L): they never fire on our plain keys, so they keep theirs
+			if (vanilla.getCategory() == CATEGORY || vanilla.getCategory() == KeyMapping.Category.DEBUG || vanilla.isUnbound()
+				|| freed.contains(vanilla.getName())) {
+				continue;
+			}
+
+			for (KeyMapping ours : mappings()) {
+				if (vanilla.same(ours)) {
+					Component key = vanilla.getTranslatedKeyMessage();
+					vanilla.setKey(InputConstants.UNKNOWN);
+					freed.add(vanilla.getName());
+					changed = true;
+					Cyberblock.LOG.info("binds: unbound vanilla {} ({})", vanilla.getName(), ours.saveString());
+					vanillaNotes.add(Component.translatableWithFallback("cyberblock.binds.vanilla_unbound", VANILLA_FALLBACK, key,
+						Component.translatable(vanilla.getName())).withStyle(ChatFormatting.YELLOW));
+					break;
+				}
+			}
+		}
+
+		if (changed) {
 			KeyMapping.resetMapping();
 			minecraft.options.save();
-			Cyberblock.LOG.info("unbound Minecraft's Quick Actions key ({}): the Cyberblock hack key uses it", hack.saveString());
+			try {
+				Files.write(freedFile(), freed);
+			} catch (IOException e) {
+				Cyberblock.LOG.warn("binds: cannot write {}: {}", FREED_FILE, e.toString());
+			}
 		}
 	}
 
@@ -142,9 +206,9 @@ public final class CyberKeys {
 	}
 
 	/**
-	 * Every client tick: the skill and cyberware keys open their screens; the activate key fires or cycles; keys the host held
-	 * are let go once it stopped driving (an activate key held then neither fires nor cycles); a changed binding is sent to
-	 * Cyberpunk at once (and noted when it cannot be forwarded). The first tick frees G from Minecraft's Quick Actions.
+	 * Every client tick: the skill and cyberware keys open their screens; Y, L and O fire their implants; keys the host held
+	 * are let go once it stopped driving; a changed binding is sent to Cyberpunk at once (and noted when it cannot be
+	 * forwarded). The first tick frees our keys from vanilla's mappings.
 	 */
 	static void tick(final Minecraft minecraft) {
 		while (skills.consumeClick()) {
@@ -160,27 +224,28 @@ public final class CyberKeys {
 		}
 
 		if (!Cyberblock.active && !hostHeld.isEmpty()) {
-			if (hostHeld.contains(activate)) {
-				activateTicks = -1;
-				while (activate.consumeClick()) {
-					// the press the host never let go of: dropped with it
-				}
-			}
-
 			hostHeld.forEach(mapping -> mapping.setDown(false));
 			hostHeld.clear();
 		}
 
-		activateTick(minecraft);
-		if (notePending && minecraft.player != null) {
-			notePending = false;
-			showNote(minecraft);
+		for (CyberwareRules.Trigger trigger : CyberwareRules.Trigger.values()) {
+			fireTick(minecraft, trigger);
+		}
+
+		if (minecraft.player != null) {
+			if (notePending) {
+				notePending = false;
+				showNote(minecraft);
+			}
+
+			vanillaNotes.forEach(minecraft.player::sendSystemMessage);
+			vanillaNotes.clear();
 		}
 
 		InputConstants.Key[] keys = boundKeys();
 		if (lastKeys == null) {
-			freeQuickActions(minecraft);
-			lastKeys = keys;
+			freeVanillaClashes(minecraft);
+			lastKeys = boundKeys();
 			return;
 		}
 
@@ -194,45 +259,27 @@ public final class CyberKeys {
 		}
 	}
 
-	/** The activate key's tap and hold (plan retest2 section 1.8), never while a screen is open. */
-	private static void activateTick(final Minecraft minecraft) {
+	/** One fire key's presses this tick: each fires its implant on the server, never while a screen is open. */
+	private static void fireTick(final Minecraft minecraft, final CyberwareRules.Trigger trigger) {
+		KeyMapping mapping = of(trigger);
 		boolean clicked = false;
-		while (activate.consumeClick()) {
+		while (mapping.consumeClick()) {
 			clicked = true;
 		}
 
 		LocalPlayer player = minecraft.player;
-		if (player == null || minecraft.gui.screen() != null || player.isSpectator()) {
-			activateTicks = -1;
+		if (!clicked || player == null || minecraft.gui.screen() != null || player.isSpectator()) {
 			return;
 		}
 
-		if (activate.isDown()) {
-			if (activateTicks < 0) {
-				activateTicks = 0;
-				activateCycled = false;
-			}
-
-			if (++activateTicks >= CyberwareRules.TAP_TICKS && !activateCycled) {
-				activateCycled = true;
-				onServer(minecraft, Ripperdoc::cycle);
-			}
-
-			return;
-		}
-
-		// a press and release between two ticks shows only as a click: a tap too
-		boolean tapped = activateTicks >= 0 ? !activateCycled : clicked;
-		activateTicks = -1;
-		if (tapped) {
-			Vec3 aim = aim(minecraft, player);
-			onServer(minecraft, serverPlayer -> CyberwareEffects.activate(serverPlayer, aim));
-		}
+		Vec3 aim = aim(minecraft, player);
+		onServer(minecraft, serverPlayer -> CyberwareEffects.fire(serverPlayer, trigger, aim));
 	}
 
 	/**
-	 * Where the launcher's rocket goes: the first block or entity along the host camera's ray (as EntityPickMixin aims, from
-	 * level with the player in third person), at most 64 blocks and never past the Night City surface under the crosshair.
+	 * Where the launcher's rocket (and the Mantis lunge) goes: the first block or entity along the host camera's ray (as
+	 * EntityPickMixin aims, from level with the player in third person), at most 64 blocks and never past the Night City
+	 * surface under the crosshair.
 	 */
 	private static Vec3 aim(final Minecraft minecraft, final LocalPlayer player) {
 		Camera camera = minecraft.gameRenderer.mainCamera();
@@ -262,9 +309,9 @@ public final class CyberKeys {
 	}
 
 	/**
-	 * {"t":"key","k":"hack"|"skills"|"cyberware"|"activate","down":bool} from the host, on the client thread: pressed and
-	 * released as vanilla's keyboard handler would (a press counts a click). With a screen open the game never sees a key, as in
-	 * ClientInput; the skill and cyberware keys still close their own screens.
+	 * {"t":"key","k":"hack"|"skills"|"cyberware"|"activate"|"arms"|"camo","down":bool} from the host, on the client thread:
+	 * pressed and released as vanilla's keyboard handler would (a press counts a click). With a screen open the game never sees
+	 * a key, as in ClientInput; the skill and cyberware keys still close their own screens.
 	 */
 	static void onHostKey(final Minecraft minecraft, final KeyMapping mapping, final boolean down) {
 		if (minecraft.gui.screen() != null) {

@@ -4,14 +4,15 @@ import java.util.Locale;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The 17 implants (plan retest2 section 1.7) in their fixed wire order. Item id `cyberblock:<id>`, wire id `<id>`. Times are
+ * The 17 implants (plan retest2 section 1.7) in their fixed wire order. Mantis Blades, Gorilla Arms and Monowire are ACTIVE
+ * since plan retest3 section 1.8 (an ability on the Arms key L; their passive modifiers stay). Item id `cyberblock:<id>`, wire id `<id>`. Times are
  * ticks at 20 TPS; the duration is how long an ACTIVE or AUTO implant's effect lasts, the cooldown how long after that it
  * cannot fire again (0: no cooldown).
  */
 public enum Cyberware {
-	MANTIS_BLADES(CyberSlot.ARMS, Kind.PASSIVE, 0, 0),
-	GORILLA_ARMS(CyberSlot.ARMS, Kind.PASSIVE, 0, 0),
-	MONOWIRE(CyberSlot.ARMS, Kind.PASSIVE, 0, 0),
+	MANTIS_BLADES(CyberSlot.ARMS, Kind.ACTIVE, 0, 120),
+	GORILLA_ARMS(CyberSlot.ARMS, Kind.ACTIVE, 0, 160),
+	MONOWIRE(CyberSlot.ARMS, Kind.ACTIVE, 0, 100),
 	PROJECTILE_LAUNCH_SYSTEM(CyberSlot.ARMS, Kind.ACTIVE, 0, 160),
 	REINFORCED_TENDONS(CyberSlot.LEGS, Kind.PASSIVE, 0, 0),
 	FORTIFIED_ANKLES(CyberSlot.LEGS, Kind.PASSIVE, 0, 0),
@@ -27,7 +28,7 @@ public enum Cyberware {
 	SECOND_HEART(CyberSlot.CIRCULATORY, Kind.AUTO, 0, 6000),
 	RAM_UPGRADE(CyberSlot.FRONTAL_CORTEX, Kind.PASSIVE, 0, 0);
 
-	/** PASSIVE: always on. ACTIVE: fired with the activate key (Y). AUTO: fires by itself. */
+	/** PASSIVE: always on. ACTIVE: fired with its key (Y, L or O: CyberwareRules.Trigger). AUTO: fires by itself. */
 	public enum Kind {
 		PASSIVE,
 		ACTIVE,

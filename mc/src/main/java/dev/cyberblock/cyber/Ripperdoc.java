@@ -93,6 +93,16 @@ public final class Ripperdoc {
 		return true;
 	}
 
+	/** On join, before the first `cyberware` send: an older save's Operating System implants move to their fixed positions. */
+	public static void normalize(final ServerPlayer player) {
+		Map<String, String> slots = CyberData.slots(player);
+		Map<String, String> fixed = CyberwareRules.normalize(slots);
+		if (fixed != slots) {
+			CyberData.setSlots(player, fixed);
+			Cyberblock.LOG.info("cyberware: normalized slots {} -> {}", slots, fixed);
+		}
+	}
+
 	/** A click on an installed implant in the cyberware screen: out it goes (back into the inventory in survival). */
 	public static void remove(final ServerPlayer player, final String slotKey) {
 		Map<String, String> slots = new HashMap<>(CyberData.slots(player));
@@ -110,26 +120,6 @@ public final class Ripperdoc {
 		effects(player, 0.7F);
 		player.sendOverlayMessage(Component.translatable("cyberblock.cyberware.removed", name(cyberware)));
 		changed(player);
-	}
-
-	/** A right-click on an installed ACTIVE implant in the screen: the activate key fires it from now on. */
-	public static void select(final ServerPlayer player, final Cyberware cyberware) {
-		if (cyberware.kind() == Cyberware.Kind.ACTIVE && CyberData.has(player, cyberware)) {
-			player.setAttached(CyberData.CYBER_SELECTED, cyberware.id());
-			player.sendOverlayMessage(Component.translatable("cyberblock.cyberware.selected", name(cyberware)));
-		}
-	}
-
-	/** The activate key held: the next ACTIVE implant is selected (CyberwareRules.next). */
-	public static void cycle(final ServerPlayer player) {
-		Cyberware next = CyberwareRules.next(CyberData.installed(player), CyberData.selected(player));
-		if (next == null) {
-			player.sendOverlayMessage(Component.translatable("cyberblock.cyberware.none"));
-			return;
-		}
-
-		player.setAttached(CyberData.CYBER_SELECTED, next.id());
-		player.sendOverlayMessage(Component.translatable("cyberblock.cyberware.selected", name(next)));
 	}
 
 	/**
@@ -182,5 +172,6 @@ public final class Ripperdoc {
 		CyberwareEffects.apply(player);
 		PerkEffects.apply(player);
 		sendCyberware(player);
+		CyberAdvancements.cyberwareChanged(player);
 	}
 }

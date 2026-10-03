@@ -7,6 +7,7 @@ import dev.cyberblock.cyber.CyberMod;
 import dev.cyberblock.cyber.CyberSlot;
 import dev.cyberblock.cyber.Cyberware;
 import dev.cyberblock.cyber.CyberwareItem;
+import dev.cyberblock.cyber.CyberwareRules;
 import dev.cyberblock.cyber.Ripperdoc;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -29,9 +30,8 @@ import net.minecraft.world.item.ItemStack;
 /**
  * The ripperdoc (plan retest2 section 1.7, key U): on art/gui/cyberware_bg.png, the eight body slots on the left (a frame
  * per place) and the implants he could install on the right (the ones in his inventory; every one in creative). A
- * left-click installs an available implant or takes out an installed one; a right-click on an installed ACTIVE implant
- * makes it the one the activate key fires (the yellow Y). Driven by the host's cursor and clicks like every screen; the
- * game keeps running behind it. The integrated server does the work (singleplayer only, as the skill tree).
+ * left-click installs an available implant or takes out an installed one. Each installed ACTIVE implant shows the key that
+ * fires it (Y Operating System, L Arms, O camo: plan retest3 section 1.7) in yellow on its slot. Driven by the host's cursor and clicks like every screen; the game keeps running behind it. The integrated server does the work (singleplayer only, as the skill tree).
  */
 public final class CyberwareScreen extends Screen {
 	private static final Identifier BACKGROUND = Identifier.fromNamespaceAndPath(Cyberblock.ID, "textures/gui/cyberware_bg.png");
@@ -45,9 +45,11 @@ public final class CyberwareScreen extends Screen {
 	private static final int COLUMNS = 4;
 	/** One page: 4 x 6 cells. There are 17 implants, so it always holds every kind he has. */
 	private static final int PAGE = 24;
-	private static final int INSTALLED = 0xFF5FF4FF;
-	private static final int EMPTY = 0xFF4A5478;
-	private static final int SELECTED = 0xFFFFE14D;
+	/** Minecraft container colours (plan retest3 section 1.11): dark grey text on A's #C6C6C6 panel, #8B8B8B slot wells. */
+	private static final int TEXT = 0xFF404040;
+	private static final int KEY = 0xFFFFFF55;
+	/** Over a ghost icon (an empty Operating System position) or an installed implant in the list: greyed out as a disabled slot. */
+	private static final int GHOST = 0xB08B8B8B;
 
 	public CyberwareScreen() {
 		super(Component.translatable("cyberblock.cyberware.title"));
@@ -86,6 +88,15 @@ public final class CyberwareScreen extends Screen {
 		return this.top() + 32 + i / COLUMNS * CELL;
 	}
 
+	/** A vanilla slot well: #8B8B8B with the dark top-left and white bottom-right bevel. */
+	private static void well(final GuiGraphicsExtractor graphics, final int x, final int y) {
+		graphics.fill(x, y, x + FRAME, y + FRAME, 0xFF8B8B8B);
+		graphics.fill(x, y, x + FRAME - 1, y + 1, 0xFF373737);
+		graphics.fill(x, y, x + 1, y + FRAME - 1, 0xFF373737);
+		graphics.fill(x + 1, y + FRAME - 1, x + FRAME, y + FRAME, 0xFFFFFFFF);
+		graphics.fill(x + FRAME - 1, y + 1, x + FRAME, y + FRAME, 0xFFFFFFFF);
+	}
+
 	private static boolean inside(final double x, final double y, final int x0, final int y0, final int size) {
 		return x >= x0 && x < x0 + size && y >= y0 && y < y0 + size;
 	}
@@ -122,53 +133,59 @@ public final class CyberwareScreen extends Screen {
 
 		int left = this.left(), top = this.top();
 		graphics.blit(RenderPipelines.GUI_TEXTURED, BACKGROUND, left, top, 0.0F, 0.0F, PANEL_W, PANEL_H, PANEL_W, PANEL_H);
-		graphics.centeredText(this.font, this.title, left + PANEL_W / 2, top + 6, 0xFFFFFFFF);
+		graphics.text(this.font, this.title, left + PANEL_W / 2 - this.font.width(this.title) / 2, top + 6, TEXT, false);
 		Map<String, String> slots = CyberData.slots(player);
-		Cyberware selected = CyberData.selected(player);
 		ItemStack hovered = ItemStack.EMPTY;
+		Component hoveredGhost = null;
 		for (CyberSlot slot : CyberSlot.values()) {
 			int x = this.boxX(slot), y = this.boxY(slot);
-			graphics.fill(x, y, x + BOX_W, y + BOX_H, 0xC00A0C15);
-			graphics.outline(x, y, BOX_W, BOX_H, 0xFF3A4468);
 			// three quarters size, smaller still when the name would run out of its box ("Operating System")
 			Component label = Component.translatable(slot.langKey());
 			float scale = Math.min(0.75F, (BOX_W - 6) / (float) Math.max(1, this.font.width(label)));
 			graphics.pose().pushMatrix();
 			graphics.pose().translate(x + 3, y + 4);
 			graphics.pose().scale(scale, scale);
-			graphics.text(this.font, label, 0, 0, 0xFFD6DEFF, false);
+			graphics.text(this.font, label, 0, 0, TEXT, false);
 			graphics.pose().popMatrix();
 			for (int n = 0; n < slot.capacity(); n++) {
 				Cyberware in = Cyberware.byId(slots.get(slot.key(n)));
 				int fx = this.frameX(slot, n), fy = this.frameY(slot);
-				graphics.fill(fx, fy, fx + FRAME, fy + FRAME, 0xFF141826);
-				graphics.outline(fx, fy, FRAME, FRAME, in == null ? EMPTY : in == selected ? SELECTED : INSTALLED);
+				well(graphics, fx, fy);
 				if (in != null) {
 					ItemStack stack = new ItemStack(in.item());
 					graphics.item(stack, fx + 1, fy + 1);
-					if (in == selected) {
-						graphics.text(this.font, "Y", fx + FRAME - 5, fy - 3, SELECTED, true);
+					CyberwareRules.Trigger trigger = CyberwareRules.Trigger.of(in);
+					if (trigger != null) {
+						Component key = CyberKeys.of(trigger).getTranslatedKeyMessage();
+						graphics.text(this.font, key, fx + FRAME - this.font.width(key) + 1, fy - 3, KEY, true);
 					}
 
 					if (inside(mouseX, mouseY, fx, fy, FRAME)) {
 						hovered = stack;
 					}
+				} else if (slot == CyberSlot.OPERATING_SYSTEM) {
+					// plan retest3 section 1.8: the two fixed positions show what goes there, greyed out
+					graphics.item(new ItemStack((n == 0 ? Cyberware.CYBERDECK : Cyberware.SANDEVISTAN).item()), fx + 1, fy + 1);
+					graphics.fill(fx + 1, fy + 1, fx + FRAME - 1, fy + FRAME - 1, GHOST);
+					if (inside(mouseX, mouseY, fx, fy, FRAME)) {
+						hoveredGhost = n == 0
+							? Component.translatableWithFallback("cyberblock.cyberware.screen.os_deck", "Cyberdeck goes here")
+							: Component.translatableWithFallback("cyberblock.cyberware.screen.os_combat", "Sandevistan or Berserk goes here");
+					}
 				}
 			}
 		}
 
-		graphics.text(this.font, Component.translatable("cyberblock.cyberware.screen.available"), this.cellX(0), top + 20, 0xFFD6DEFF, false);
+		graphics.text(this.font, Component.translatable("cyberblock.cyberware.screen.available"), this.cellX(0), top + 20, TEXT, false);
 		List<Cyberware> available = this.available(player);
 		for (int i = 0; i < available.size(); i++) {
 			Cyberware c = available.get(i);
 			int x = this.cellX(i), y = this.cellY(i);
-			graphics.fill(x, y, x + FRAME, y + FRAME, 0xFF141826);
-			graphics.outline(x, y, FRAME, FRAME, EMPTY);
 			ItemStack stack = new ItemStack(c.item());
 			graphics.item(stack, x + 1, y + 1);
 			if (slots.containsValue(c.id())) {
 				// already installed: dimmed
-				graphics.fill(x + 1, y + 1, x + FRAME - 1, y + FRAME - 1, 0xA00A0C15);
+				graphics.fill(x + 1, y + 1, x + FRAME - 1, y + FRAME - 1, GHOST);
 			}
 
 			if (inside(mouseX, mouseY, x, y, FRAME)) {
@@ -178,18 +195,18 @@ public final class CyberwareScreen extends Screen {
 
 		int textX = this.cellX(0), textWidth = COLUMNS * CELL;
 		if (available.isEmpty()) {
-			graphics.textWithWordWrap(this.font, Component.translatable("cyberblock.cyberware.screen.empty"), textX, this.cellY(0), textWidth, 0xFF9AA6C8);
+			graphics.textWithWordWrap(this.font, Component.translatable("cyberblock.cyberware.screen.empty"), textX, this.cellY(0), textWidth, TEXT);
 		}
 
-		graphics.textWithWordWrap(this.font, selected == null ? Component.translatable("cyberblock.cyberware.none")
-			: Component.translatable("cyberblock.cyberware.selected", Ripperdoc.name(selected)), textX, this.cellY(PAGE), textWidth, SELECTED);
 		Component note = CyberKeys.note();
 		if (note != null) {
-			graphics.centeredText(this.font, note, this.width / 2, Math.min(this.height - 10, top + PANEL_H + 4), 0xFFFF8A2B);
+			graphics.centeredText(this.font, note, this.width / 2, Math.min(this.height - 10, top + PANEL_H + 4), 0xFFFFAA00);
 		}
 
 		if (!hovered.isEmpty()) {
 			graphics.setTooltipForNextFrame(this.font, hovered, mouseX, mouseY);
+		} else if (hoveredGhost != null) {
+			graphics.setTooltipForNextFrame(this.font, hoveredGhost, mouseX, mouseY);
 		}
 	}
 
@@ -208,7 +225,10 @@ public final class CyberwareScreen extends Screen {
 				String key = slot.key(n);
 				Cyberware in = Cyberware.byId(slots.get(key));
 				if (in != null && inside(event.x(), event.y(), this.frameX(slot, n), this.frameY(slot), FRAME)) {
-					this.onServer(left ? p -> Ripperdoc.remove(p, key) : p -> Ripperdoc.select(p, in));
+					if (left) {
+						this.onServer(p -> Ripperdoc.remove(p, key));
+					}
+
 					return true;
 				}
 			}

@@ -10,8 +10,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
@@ -29,18 +27,19 @@ public final class Hacking {
 	static final long CONNECTED_ANSWER_NANOS = 60_000_000_000L;
 	static final double SCAN_RANGE = 48.0;
 	static final double KIROSHI_SCAN_RANGE = 80.0;
-	/** cyberblock.hack.no_deck_os, shown until the lang file has its line: the implant, then the cyberware screen's key. */
-	private static final String NO_DECK_OS_FALLBACK = "Your Operating System slot holds %s: swap in the cyberdeck with %s to hack";
 	private static final AtomicInteger ids = new AtomicInteger();
 	private static final Map<Integer, Pending> pending = new HashMap<>();
 	private static @Nullable Locked locked;
 
-	/** What the last successful scan found: a Cyberpunk id, and whether it is a device. */
-	public record Locked(long target, boolean device, long untilNanos) {
+	/**
+	 * What the last successful scan found: a Cyberpunk id, whether it is a device, and (plan retest3 section 1.6) where: the
+	 * feet or device base x/y/z, the height there and the scanned name, for the hack effects that play at a fixed point.
+	 */
+	public record Locked(long target, boolean device, long untilNanos, double x, double y, double z, double height, String name) {
 	}
 
-	/** A sent hack waiting for its `hackresult`: who paid how much. */
-	private record Pending(UUID player, int cost, long sentNanos) {
+	/** A sent hack waiting for its `hackresult`: who paid how much, and what went where (the lock it went to). */
+	private record Pending(UUID player, int cost, long sentNanos, Hack hack, Locked lock) {
 	}
 
 	private Hacking() {
@@ -58,7 +57,13 @@ public final class Hacking {
 
 	/** A `scaninfo` with ok: this target is the one quickhacks go to for the next 5 s. */
 	public static void lock(final long target, final boolean device) {
-		locked = new Locked(target, device, System.nanoTime() + LOCK_NANOS);
+		lock(target, device, 0.0, 0.0, 0.0, 0.0, "");
+	}
+
+	/** The same with the scan's place (feet or device base), height and name. */
+	public static void lock(final long target, final boolean device, final double x, final double y, final double z, final double height,
+		final String name) {
+		locked = new Locked(target, device, System.nanoTime() + LOCK_NANOS, x, y, z, height, name);
 	}
 
 	/** A `scaninfo` without ok: the hack key now points at nothing, so quickhacks no longer go to the earlier target. */
@@ -106,6 +111,13 @@ public final class Hacking {
 		int ram = CyberData.ram(player);
 		int cost = Ram.cost(hack, CyberData.has(player, Perk.CHEAP_HACKS));
 		HackRules.Outcome outcome = HackRules.check(CyberData.hasDeck(player), lock != null, lock != null && lock.device(), hack, ram, cost);
+		if (outcome == HackRules.Outcome.OK && HackFx.busy(lock.target())) {
+			// the target still uploads a hack: no RAM spent, no cooldown (section 1.6)
+			player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.hack.busy", "%s is still uploading a hack",
+				lock.name().isEmpty() ? "?" : lock.name()));
+			return false;
+		}
+
 		if (outcome != HackRules.Outcome.OK) {
 			player.sendOverlayMessage(switch (outcome) {
 				case NO_DECK -> noDeck(player);
@@ -120,26 +132,20 @@ public final class Hacking {
 		CyberData.setRam(player, ram - cost);
 		player.getCooldowns().addCooldown(stack, hack.cooldownTicks());
 		int id = nextId();
-		pending.put(id, new Pending(player.getUUID(), cost, System.nanoTime()));
+		pending.put(id, new Pending(player.getUUID(), cost, System.nanoTime(), hack, lock));
 		Cyberblock.events.accept(CyberWire.hack(id, lock.target(), hack, CyberData.has(player, Perk.CHAIN_HACK)));
+		HackFx.start(id, player, hack, lock);
+		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.hack.fired", "Hack: %s", stack.getHoverName())
+			.withColor(HackFxRules.colour(hack)));
 		return true;
 	}
 
-	/**
-	 * Why there is no RAM (quickhacks, RAM shards). With Sandevistan or Berserk in the Operating System slot only an installed
-	 * deck counts, so the message names that implant instead of the plain one's "or carry one". Server side.
-	 */
+	/** Why there is no RAM (quickhacks, RAM shards): no cyberdeck installed or carried. */
 	static Component noDeck(final Player player) {
-		Cyberware os = CyberwareRules.osImplant(CyberData.slots(player));
-		if (os == null || os == Cyberware.CYBERDECK) {
-			return Component.translatable("cyberblock.hack.no_deck");
-		}
-
-		return Component.translatableWithFallback("cyberblock.hack.no_deck_os", NO_DECK_OS_FALLBACK, Ripperdoc.name(os),
-			Component.keybind("key.cyberblock.cyberware"));
+		return Component.translatableWithFallback("cyberblock.hack.no_deck", "No cyberdeck: install one in the Operating System slot (U) or carry one");
 	}
 
-	/** A `hackresult`: a failure gives the RAM back and says why; a success plays the hack sound. */
+	/** A `hackresult`: a failure gives the RAM back and says why; a success lets HackFx finish the upload and play the impact. */
 	public static void onResult(final MinecraftServer server, final HackResult result) {
 		Pending p = pending.remove(result.id());
 		ServerPlayer player = p == null ? null : server.getPlayerList().getPlayer(p.player());
@@ -148,8 +154,10 @@ public final class Hacking {
 		}
 
 		if (result.ok()) {
-			player.level().playSound(null, player.getX(), player.getY(), player.getZ(), SoundEvents.BEACON_POWER_SELECT, SoundSource.PLAYERS, 0.8F, 1.7F);
+			HackFx.onResult(server, result);
+			CyberAdvancements.hacked(player, p.hack());
 		} else {
+			HackFx.cancel(result.id());
 			refund(player, p.cost());
 			player.sendOverlayMessage(Component.translatable("cyberblock.hack.failed", result.reason()));
 		}
@@ -168,10 +176,12 @@ public final class Hacking {
 	static void tick(final MinecraftServer server) {
 		long now = System.nanoTime();
 		long timeout = answerTimeout(Cyberblock.active);
-		for (Iterator<Pending> it = pending.values().iterator(); it.hasNext(); ) {
-			Pending p = it.next();
+		for (Iterator<Map.Entry<Integer, Pending>> it = pending.entrySet().iterator(); it.hasNext(); ) {
+			Map.Entry<Integer, Pending> e = it.next();
+			Pending p = e.getValue();
 			if (now - p.sentNanos() > timeout) {
 				it.remove();
+				HackFx.cancel(e.getKey());
 				ServerPlayer player = server.getPlayerList().getPlayer(p.player());
 				if (player != null) {
 					refund(player, p.cost());
@@ -185,5 +195,6 @@ public final class Hacking {
 	static void clear() {
 		locked = null;
 		pending.clear();
+		HackFx.clear();
 	}
 }

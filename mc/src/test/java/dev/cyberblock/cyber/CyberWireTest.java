@@ -42,8 +42,11 @@ class CyberWireTest {
 	}
 
 	@Test
-	void bindsCarriesAllFourKeys() {
-		assertEquals("{\"t\":\"binds\",\"keys\":{\"hack\":71,\"skills\":75,\"cyberware\":85,\"activate\":89}}", CyberWire.binds(71, 75, 85, 89));
-		assertEquals("{\"t\":\"binds\",\"keys\":{\"hack\":76,\"skills\":79,\"cyberware\":48,\"activate\":121}}", CyberWire.binds(new int[]{76, 79, 48, 121}));
+	void bindsCarriesAllSixKeys() {
+		assertEquals(java.util.List.of("hack", "skills", "cyberware", "activate", "arms", "camo"), CyberWire.BIND_NAMES);
+		assertEquals("{\"t\":\"binds\",\"keys\":{\"hack\":71,\"skills\":75,\"cyberware\":85,\"activate\":89,\"arms\":76,\"camo\":79}}",
+			CyberWire.binds(71, 75, 85, 89, 76, 79));
+		assertEquals("{\"t\":\"binds\",\"keys\":{\"hack\":48,\"skills\":75,\"cyberware\":85,\"activate\":121,\"arms\":122,\"camo\":79}}",
+			CyberWire.binds(new int[]{48, 75, 85, 121, 122, 79}));
 	}
 }

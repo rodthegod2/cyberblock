@@ -23,7 +23,7 @@ final class RamHud {
 	private static final int ROW = 5;
 	/** Drawn at half the sheet's width so it fits beside the experience bar. */
 	private static final int WIDTH = 91;
-	private static final int LABEL_COLOUR = 0xFF5FF4FF;
+	private static final int LABEL_COLOUR = 0xFF55FFFF;
 
 	private RamHud() {
 	}

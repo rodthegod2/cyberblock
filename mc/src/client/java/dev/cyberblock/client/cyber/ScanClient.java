@@ -137,7 +137,7 @@ final class ScanClient {
 
 			shown = info.ok() ? info : null;
 			lockedUntilMs = info.ok() ? now + LOCK_MS : 0L;
-			CyberLink.onServer(info.ok() ? () -> Hacking.lock(info.target(), info.device()) : Hacking::unlock);
+			CyberLink.onServer(info.ok() ? () -> Hacking.lock(info.target(), info.device(), info.x(), info.y(), info.z(), info.h(), info.name()) : Hacking::unlock);
 		});
 	}
 
@@ -178,16 +178,17 @@ final class ScanClient {
 	}
 
 	static int threatColour(final ScanInfo info) {
+		// ChatFormatting colours (plan retest3 section 1.11): aqua devices, green / yellow / gold / red threats, grey none
 		if (info.device()) {
-			return 0xFF33E6FF;
+			return 0xFF55FFFF;
 		}
 
 		return switch (info.threat()) {
-			case "low" -> 0xFF7CFF5A;
-			case "medium" -> 0xFFFFE14D;
-			case "high" -> 0xFFFF8A2B;
-			case "extreme" -> 0xFFFF2B45;
-			default -> 0xFFB8C4D6;
+			case "low" -> 0xFF55FF55;
+			case "medium" -> 0xFFFFFF55;
+			case "high" -> 0xFFFFAA00;
+			case "extreme" -> 0xFFFF5555;
+			default -> 0xFFAAAAAA;
 		};
 	}
 
@@ -203,7 +204,7 @@ final class ScanClient {
 		List<Component> tail = new ArrayList<>();
 		boolean dim = !held;
 		if (info != null) {
-			int threatRgb = dim ? 0x707A8A : threatColour(info) & 0xFFFFFF;
+			int threatRgb = dim ? 0xAAAAAA : threatColour(info) & 0xFFFFFF;
 			head.add(Component.literal(info.name().isEmpty() ? "?" : info.name()).withStyle(dim ? ChatFormatting.GRAY : ChatFormatting.WHITE, ChatFormatting.BOLD));
 			if (!info.faction().isEmpty()) {
 				head.add(Component.literal(info.faction()).withStyle(dim ? ChatFormatting.DARK_GRAY : ChatFormatting.GRAY));
@@ -252,9 +253,9 @@ final class ScanClient {
 
 		if (barHeight > 0) {
 			int alpha = dim ? 0x80000000 : 0xFF000000;
-			graphics.fill(x, lineY, x + width, lineY + 3, alpha | 0x2A0F14);
+			graphics.fill(x, lineY, x + width, lineY + 3, alpha | 0x555555);
 			int fill = Math.round(width * Math.clamp(info.hp(), 0.0F, 1.0F));
-			int hpRgb = info.hp() > 0.5F ? 0x4DFF6A : info.hp() > 0.25F ? 0xFFD84D : 0xFF3B3B;
+			int hpRgb = info.hp() > 0.5F ? 0x55FF55 : info.hp() > 0.25F ? 0xFFFF55 : 0xFF5555;
 			graphics.fill(x, lineY, x + fill, lineY + 3, alpha | hpRgb);
 			lineY += barHeight;
 		}

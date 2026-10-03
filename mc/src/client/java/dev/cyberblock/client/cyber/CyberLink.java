@@ -6,7 +6,9 @@ import dev.cyberblock.Cyberblock;
 import dev.cyberblock.WorldBridge;
 import dev.cyberblock.cyber.CyberMod;
 import dev.cyberblock.cyber.CyberwareEffects;
+import dev.cyberblock.cyber.HackFx;
 import dev.cyberblock.cyber.HackResult;
+import dev.cyberblock.cyber.HackSpread;
 import dev.cyberblock.cyber.Hacking;
 import dev.cyberblock.cyber.Kills;
 import dev.cyberblock.cyber.Kit;
@@ -23,7 +25,7 @@ import net.minecraft.util.Util;
 
 /**
  * Track C's host message listeners (plan section 1.6): HostLink hands them every `hello`, `state`, `key`, `scaninfo`,
- * `hackresult` and `killed` on the link thread, after its own handling. Each moves its work to the client or the
+ * `hackresult`, `hackspread` and `killed` on the link thread, after its own handling. Each moves its work to the client or the
  * integrated server thread.
  */
 final class CyberLink {
@@ -44,6 +46,7 @@ final class CyberLink {
 		listen("key", CyberLink::key);
 		listen("scaninfo", CyberLink::scanInfo);
 		listen("hackresult", CyberLink::hackResult);
+		listen("hackspread", CyberLink::hackSpread);
 		listen("state", m -> {
 			if (!m.has("active") || m.get("active").getAsBoolean()) {
 				onLocalPlayer(Kit::onActive);
@@ -80,8 +83,19 @@ final class CyberLink {
 		}
 	}
 
+	/** {"t":"hackspread",...}: one more NPC a hack touched; its effect plays on the server (HackFx). */
+	private static void hackSpread(final JsonObject m) {
+		HackSpread spread = HackSpread.parse(m);
+		MinecraftServer server = WorldBridge.server();
+		if (spread == null) {
+			warn("bad hackspread dropped");
+		} else if (server != null) {
+			server.execute(() -> HackFx.onSpread(server, spread));
+		}
+	}
+
 	private static void listen(final String type, final Consumer<JsonObject> listener) {
-		Bridge.listeners.put(type, listener);
+		Bridge.listen(type, listener);
 	}
 
 	private static void onClient(final Runnable task) {
@@ -104,7 +118,7 @@ final class CyberLink {
 	}
 
 	/**
-	 * {"t":"key","k":...,"down":bool}: track C handles hack, skills, cyberware and activate, and watches sprint (forwarded,
+	 * {"t":"key","k":...,"down":bool}: track C handles hack, skills, cyberware, activate, arms and camo, and watches sprint (forwarded,
 	 * Cyberpunk keeps it) for the Sandevistan's double tap.
 	 */
 	private static void key(final JsonObject m) {
@@ -123,6 +137,8 @@ final class CyberLink {
 			case "skills" -> CyberKeys.skills;
 			case "cyberware" -> CyberKeys.cyberware;
 			case "activate" -> CyberKeys.activate;
+			case "arms" -> CyberKeys.arms;
+			case "camo" -> CyberKeys.camo;
 			default -> null;
 		};
 		if (mapping != null) {

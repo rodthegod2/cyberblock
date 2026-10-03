@@ -18,9 +18,9 @@ public final class Ram {
 		return hasDeck ? BASE_MAX + (extraRam ? EXTRA : 0) + (ramUpgrade ? EXTRA : 0) : 0;
 	}
 
-	/** A cyberdeck counts when it is installed, or carried while the Operating System slot is empty. */
-	public static boolean hasDeck(final boolean installed, final boolean osSlotEmpty, final boolean carried) {
-		return installed || osSlotEmpty && carried;
+	/** A cyberdeck counts when it is installed or carried (plan retest3 section 1.8: the deck has its own Operating System position). */
+	public static boolean hasDeck(final boolean installed, final boolean carried) {
+		return installed || carried;
 	}
 
 	public static int regenTicks(final boolean overclock) {
