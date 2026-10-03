@@ -4,8 +4,10 @@
 // V's car, god modes, V's friends, workspots: CyberblockEffects.IsProtected, as Hit) are never pushed; the log names
 // each of them at most every 10 s with the reason (CyberblockEffects.Withheld).
 //   Lead: every tick, a target farther than length from its anchor (the knot, or V when Steve holds the lead) is
-//     tugged toward it at min(12, 3 x excess) m/s, at most every 0.5 s per target (each tug is a velocity change; at
-//     10 Hz they would add up to a throw). More than length + 12 m for 2 s, or the target gone: Cyberblock_Unlead.
+//     tugged toward it (each tug is a velocity change; at 10 Hz they would add up to a throw). A vehicle: at
+//     min(12, 3 x excess) m/s, at most every 0.5 s. A person: only once excess > 0.5 m, at clamp(3 x excess, 4, 8)
+//     m/s, at most every 1.5 s; below 4 m/s nothing moves a person, from 11 m/s the ragdoll's impact kills.
+//     More than length + 12 m for 2 s, or the target gone: Cyberblock_Unlead.
 //   Pull: one impulse toward the rod at strength, plus 3 m/s up for people.
 //   Knockback: a radial impulse of strength x (1 - d / radius) on every NPC and vehicle within radius; no damage.
 // Tethers are plain data (ids and numbers) with nothing of theirs in Night City, so Clear only restarts their timers;
@@ -192,8 +194,14 @@ public class CyberblockTetherService extends ScriptableService {
     } else {
       this.farSince[slot] = -1.0;
     }
+    // A person moves only as a ragdoll (Knock: 4 m/s and more), and a ragdoll's impact at 11 m/s or more kills it
+    // (DamageSystem.ProcessRagdollHit, AIGeneralSettings.ragdollImpactKillVelocityThreshold). So a person is tugged
+    // only once 0.5 m beyond the lead, at 4 to 8 m/s, at most every 1.5 s (time to land before the next tug).
+    let vehicle = IsDefined(object as VehicleObject);
     let excess = distance - length;
-    if excess <= 0.0 || now - this.lastTug[slot] < 0.5 && now >= this.lastTug[slot] {
+    let slack = vehicle ? 0.0 : 0.5;
+    let interval = vehicle ? 0.5 : 1.5;
+    if excess <= slack || now - this.lastTug[slot] < interval && now >= this.lastTug[slot] {
       return;
     }
     if CyberblockEffects.Withheld(game, object, player) {
@@ -201,7 +209,8 @@ public class CyberblockTetherService extends ScriptableService {
     }
     this.lastTug[slot] = now;
     let direction = CyberblockTetherService.Toward(position, anchor);
-    let impulse = direction * MinF(12.0, 3.0 * excess);
+    let speed = vehicle ? MinF(12.0, 3.0 * excess) : ClampF(3.0 * excess, 4.0, 8.0);
+    let impulse = direction * speed;
     CyberblockEffects.Knock(object, position + new Vector4(0.0, 0.0, 1.0, 0.0), new Vector4(impulse.X, impulse.Y, impulse.Z, 0.0));
   }
 
