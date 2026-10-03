@@ -1,0 +1,7 @@
+{
+	"required": true,
+	"package": "dev.cyberblock.client.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": ["AbstractClientPlayerMixin", "AvatarRendererMixin", "CameraMixin", "ClientLevelMixin", "EntityPickMixin", "EntityRenderDispatcherMixin", "LivingEntityMixin", "FogRendererMixin", "GameRendererMixin", "GlCommandEncoderMixin", "GuiCursorMixin", "KeyMappingAccessor", "LocalPlayerMixin", "MouseHandlerMixin", "ToastManagerMixin", "WorldOpenFlowsMixin"],
+	"injectors": { "defaultRequire": 1 }
+}
