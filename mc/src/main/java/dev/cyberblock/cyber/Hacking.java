@@ -1,6 +1,5 @@
 package dev.cyberblock.cyber;
 
-import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -55,10 +54,9 @@ public final class Hacking {
 	/** A quickhack item used (QuickhackItem): the rules, then RAM, cooldown and the `hack` message. True when it was sent. */
 	static boolean use(final ServerPlayer player, final ItemStack stack, final Hack hack) {
 		Locked lock = locked();
-		boolean proxy = lock != null && !lock.device() && Bridge.proxyById.apply(lock.target()) != null;
 		int ram = CyberData.ram(player);
 		int cost = Ram.cost(hack, CyberData.has(player, Perk.CHEAP_HACKS));
-		HackRules.Outcome outcome = HackRules.check(CyberData.hasDeck(player), lock != null, lock != null && lock.device(), proxy, hack, ram, cost);
+		HackRules.Outcome outcome = HackRules.check(CyberData.hasDeck(player), lock != null, lock != null && lock.device(), hack, ram, cost);
 		if (outcome != HackRules.Outcome.OK) {
 			player.sendOverlayMessage(switch (outcome) {
 				case NO_DECK -> Component.translatable("cyberblock.hack.no_deck");

@@ -10,7 +10,10 @@ public final class HackRules {
 		NO_TARGET,
 		/** The Redstone Lever on a person or a car. */
 		NEED_DEVICE,
-		/** Any other quickhack (people, and cars through their driver) on a device, or on something with no proxy in Minecraft. */
+		/**
+		 * Any other quickhack (people, and cars through their driver) on a device. Whether a target that is no device is a person
+		 * Cyberpunk decides: it answers anything else (or anyone it protects) with a failure, and the RAM is refunded.
+		 */
 		NEED_NPC,
 		NO_RAM
 	}
@@ -18,12 +21,9 @@ public final class HackRules {
 	private HackRules() {
 	}
 
-	/**
-	 * @param targetIsProxy the locked target has a live proxy (a person or a vehicle)
-	 * @param cost what the hack costs now (Ram.cost)
-	 */
-	public static Outcome check(final boolean hasDeck, final boolean hasTarget, final boolean targetIsDevice, final boolean targetIsProxy,
-		final Hack hack, final int ram, final int cost) {
+	/** @param cost what the hack costs now (Ram.cost) */
+	public static Outcome check(final boolean hasDeck, final boolean hasTarget, final boolean targetIsDevice, final Hack hack, final int ram,
+		final int cost) {
 		if (!hasDeck) {
 			return Outcome.NO_DECK;
 		}
@@ -36,7 +36,7 @@ public final class HackRules {
 			return Outcome.NEED_DEVICE;
 		}
 
-		if (!hack.needsDevice() && (targetIsDevice || !targetIsProxy)) {
+		if (!hack.needsDevice() && targetIsDevice) {
 			return Outcome.NEED_NPC;
 		}
 
