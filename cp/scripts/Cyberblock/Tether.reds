@@ -9,7 +9,7 @@
 //   Knockback: a radial impulse of strength x (1 - d / radius) on every NPC and vehicle within radius; no damage.
 // Tethers are plain data (ids and numbers) with nothing of theirs in Night City, so Clear only restarts their timers;
 // Tick with live false drops them silently (contract); a target that no longer exists is unleaded on the next live
-// tick.
+// tick. A save keeps them: CyberblockSystem does not tick tethers while it is written (only ClearWorld's Clear runs).
 //
 // Which NPCs and vehicles exist: no 2.31 script query lists them (see Npcs.reds), so this service keeps its own
 // registry from Codeware's entity lifecycle callbacks Entity/AfterAttach and Entity/Detach, filtered with

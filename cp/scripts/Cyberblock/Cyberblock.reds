@@ -25,6 +25,11 @@
 // (Cyberblock_SetStance) and whether a Cyberpunk menu is open (Cyberblock_SetMenu). ClearWorld (every section 1.4
 // Clear plus CyberblockCollision.Clear) runs before every save, on session ready, at session end and on every
 // transition out of Active/Vehicle.
+//
+// While a save is written (Session/BeforeSave until Session/AfterSave) Minecraft's side is left as it is: its events
+// wait in the DLL's queue, the last NPC list stands (its proxies keep their leads) and the tethers stay (ClearWorld only
+// restarted their timers); all of it carries on after the save. The flag is also cleared on session ready and end, and
+// after 10 s of ticks without an AfterSave (a save that failed or was aborted), so it can never stay stuck.
 
 enum CyberblockState {
   Off = 0,
@@ -52,6 +57,7 @@ public class CyberblockSystem extends ScriptableSystem {
   private let events: ref<CyberblockEvents>;
   private let npcs: ref<CyberblockNpcs>;
   private let saving: Bool;
+  private let savingTicks: Int32;
   private let menuListener: ref<CallbackHandle>;
 
   private func OnAttach() -> Void {
@@ -94,6 +100,7 @@ public class CyberblockSystem extends ScriptableSystem {
   // tick (the HUD layer is not saved). Ticks leave V and Night City alone while the save is written.
   private cb func OnBeforeSave(event: ref<GameSessionEvent>) {
     this.saving = true;
+    this.savingTicks = 0;
     this.playerState.ClearSaved(GetPlayer(this.GetGameInstance()));
     this.creative.Clear(GetPlayer(this.GetGameInstance()));
     CyberblockSystem.ClearWorld(this.GetGameInstance());
@@ -101,13 +108,18 @@ public class CyberblockSystem extends ScriptableSystem {
   }
 
   private cb func OnAfterSave(event: ref<GameSessionEvent>) {
+    this.EndSave("after save");
+  }
+
+  private func EndSave(why: String) -> Void {
     this.saving = false;
     this.UpdatePlayer(GetPlayer(this.GetGameInstance()));
-    Cyberblock_Log(s"after save: state \(CyberblockSystem.Name(this.state))");
+    Cyberblock_Log(s"\(why): state \(CyberblockSystem.Name(this.state))");
   }
 
   // On every load (and new game): remove anything of ours the save may carry and start Off.
   private cb func OnSessionReady(event: ref<GameSessionEvent>) {
+    this.saving = false;
     let player = GetPlayer(this.GetGameInstance());
     this.playerState.Clear(player);
     this.creative.Clear(player);
@@ -122,6 +134,7 @@ public class CyberblockSystem extends ScriptableSystem {
   }
 
   private cb func OnSessionEnd(event: ref<GameSessionEvent>) {
+    this.saving = false;
     this.playerState.Clear(GetPlayer(this.GetGameInstance()));
     this.creative.Clear(GetPlayer(this.GetGameInstance()));
     CyberblockSystem.ClearWorld(this.GetGameInstance());
@@ -149,6 +162,12 @@ public class CyberblockSystem extends ScriptableSystem {
     let toggle = Cyberblock_ConsumeToggle();
     let game = this.GetGameInstance();
     Cyberblock_SetMenu(CyberblockSystem.InMenu(game));
+    if this.saving {
+      this.savingTicks += 1;
+      if this.savingTicks >= 100 {
+        this.EndSave("save: no AfterSave within 10 s, carrying on");
+      }
+    }
     let player = GetPlayer(game);
     if !IsDefined(player) {
       // No world to act on: Minecraft block changes still update the collision registry, the other events are dropped.
@@ -164,17 +183,23 @@ public class CyberblockSystem extends ScriptableSystem {
     let live = on && !this.saving;
     let active = Equals(this.state, CyberblockState.Active) && !this.saving;
     Cyberblock_SetStance(CyberblockSystem.Crouched(player));
-    this.events.Tick(game, live);
+    if !this.saving {
+      this.events.Tick(game, live);
+    }
     if live {
       CyberblockCollision.Stream(game, player.GetWorldPosition());
     }
     CyberblockPuppets.Tick(game, player, live);
     CyberblockFlight.Tick(game, player, live);
-    CyberblockTether.Tick(game, player, live);
+    if !this.saving {
+      CyberblockTether.Tick(game, player, live);
+    }
     CyberblockProjectiles.Tick(game, player, live);
     CyberblockPerks.Tick(game, player, active);
     CyberblockBuffs.Tick(game, player, active);
-    this.npcs.Tick(player, active);
+    if !this.saving {
+      this.npcs.Tick(player, active);
+    }
   }
 
   // Everything of ours in Night City (plan 2026-10-03 section 1.4 Clears). Perk ranks and the collision registry stay.

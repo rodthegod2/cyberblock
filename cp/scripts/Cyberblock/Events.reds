@@ -12,7 +12,8 @@
 //   effect -> CyberblockBuffs.Effect           hack -> CyberblockHacks.Hack       scan -> CyberblockScan.Scan
 //   perk -> CyberblockPerks.Set                perkfx -> CyberblockPerks.Fx
 //
-// While not live (Off, Lost, saving, no player) Night City is left alone:
+// While a save is written, CyberblockSystem does not call Tick at all: the events wait in the DLL's queue and are applied
+// after the save. While not live otherwise (Off, Lost, no player) Night City is left alone:
 //   - block changes still go into the collision registry (none of them is ever dropped), so the boxes match the
 //     Minecraft world once live again (e.g. blocks a TNT chain removed while a lag spike made us Lost). Only the
 //     registry changes: boxes are spawned by CyberblockCollision.Stream while live, and every box was already despawned
@@ -25,7 +26,7 @@
 // 2.31 APIs: none beyond the natives (Natives.reds) and redscript array intrinsics.
 
 public class CyberblockEvents {
-  // live: state is Active or Vehicle, not saving, with a player.
+  // live: state is Active or Vehicle, with a player (never called while a save is written).
   public func Tick(game: GameInstance, live: Bool) -> Void {
     let dropped = 0;
     let n = 0;      // events of the other kinds
