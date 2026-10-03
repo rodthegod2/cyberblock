@@ -1,15 +1,32 @@
-// Minecraft quickhack items fired at Night City (plan 2026-10-03 sections 1.4 and 1.5, task S3.1). Minecraft owns RAM and
-// cooldowns; Cyberpunk runs the hack through the game's own quickhack path with V as the executor, so the upload, the
-// status effect (damage, VFX, SFX, AI reaction), NCPD heat and kill credit are vanilla. Every request is answered once
-// with Cyberblock_HackResult(id, ok, reason); reasons: "target gone", "not hackable (<which gate>)", "no driver",
-// "no such hack" (at most 64 characters, protocol hackresult.reason).
+// Minecraft quickhack items fired at Night City (plan 2026-10-03 sections 1.4 and 1.5, task S3.1; re-test 3 plan
+// 2026-10-03-retest3-polish section 1.6, task S1). Minecraft owns RAM and cooldowns; Cyberpunk runs the hack through the
+// game's own quickhack path with V as the executor, so the upload, the status effect (damage, VFX, SFX, AI reaction),
+// NCPD heat and kill credit are vanilla. Every request is answered once with Cyberblock_HackResult(id, ok, reason,
+// upload, kind), after one Cyberblock_HackSpread(id, target, why) per extra NPC the hack reached (`chain`: the chain
+// hack's second target; `spread`: Contagion's own spread). Reasons: "target gone", "not hackable (<which gate>)",
+// "no driver", "no such hack" (at most 64 characters, protocol hackresult.reason). Each answer is logged as
+// 'hack <name> on <id>: ok (<kind>, upload <s>s, +<n> spread)' or 'hack <name> on <id>: <reason>'.
+//
+// Re-test 3 (F1, "every quickhack feels the same"): the vanilla records were already distinct, but most targets are crowd
+// pedestrians, on whom the squad- and AI-driven effects show nothing, and Minecraft reacted 1-3 s before the upload
+// ended. So the answer now carries:
+//   upload: the action's own upload time (ScriptableDeviceAction.GetActivationTime, baseDeviceActions.swift:444, read
+//     after SetExecutor/SetObjectActionID as ProcessRPGAction reads it), 0 for an instant action; Minecraft times its
+//     impact by it;
+//   kind: `driver` (a car's driver), `crowd` (Character_Record.IsCrowd, or no AI squad: AISquadHelper.GetSquadName is
+//     not a valid name), `squad` (anyone else); devices answer `camera`, `traffic`, `distract` or `device`.
+// The upload-time extras that make a hack visible on any NPC live in HackFx.reds (CyberblockHackFx.Queue).
 //
 // 2.31 sources (decompiled 2.31 scripts; TweakDB read from r6/cache/tweakdb.bin and tweakdb_ep1.bin; compile-checked):
 //   Puppet hacks: the PuppetAction pattern of ApplyObjectActionEffector.ActionOn / SpreadAreaEffector.ActionOn
 //     (quickhackEffectors.swift): new PuppetAction, RegisterAsRequester(target), SetExecutor(V), SetObjectActionID,
-//     SetUp(target.GetPuppetPS()), then ProcessRPGAction (baseDeviceActions.swift: queue or StartUpload, completion
-//     effects). SetCanSkipPayCost(true) skips the RAM cost (CanSkipPayCost); SetDisableSpread(true) except Contagion
-//     (audit B.5). ProcessRPGAction checks neither the cyberdeck nor the target's quickhack list (UI-side checks).
+//     SetUp(target.GetPuppetPS()), then ProcessRPGAction (baseDeviceActions.swift:308: queue or StartUpload, completion
+//     effects) with the target's GameplayRoleComponent, as ScriptedPuppet.ExecuteAction (scriptedPuppet.swift:2875)
+//     does, so the upload joins the target's quickhack queue (PutActionInQuickhackQueue). A record whose ActionName is
+//     Ping is built as PingSquad, as ScriptedPuppetPS.GetAction (scriptedPuppetPS.swift:796) does. SetCanSkipPayCost(true)
+//     skips the RAM cost (CanSkipPayCost). SetDisableSpread(true) on every upload: the vanilla spread reads V's spread
+//     stats (HackingDataDef.GetValuesFromSpreadMap), which V has none of, so Contagion spreads itself (below).
+//     ProcessRPGAction checks neither the cyberdeck nor the target's quickhack list (UI-side checks).
 //   Record IDs (ObjectAction records present in both tweakdb.bin and tweakdb_ep1.bin; lowest tier that exists):
 //     QuickHack.OverloadLvl1Hack, OverheatLvl1Hack, BlindLvl1Hack, LocomotionMalfunctionLvl2Hack (no Lvl1),
 //     ContagionLvl2Hack (no Lvl1), BrainMeltLvl2Hack (no Lvl1), PingLvl2Hack (no Lvl1), MemoryWipeLvl2Hack (no Lvl1),
@@ -31,8 +48,10 @@
 //     e.g. Character.lizzies_customer_female_high: MainQuest).
 //   Cars: a vehicle is no ScriptedPuppet, so a person hack aimed at one goes to its driver
 //     (VehicleComponent.GetDriverMounted, the scanner's driver lookup); an empty car answers "no driver".
-//   Chain: GameObject.GetNPCsAroundObject(range) (TargetingSystem query, as SpreadAreaEffector), nearest other living NPC
-//     within 8 m of the target.
+//   Chain and spread (NearestN): the nearest living, hackable NPCs around the target from the NPC registry that the
+//     Minecraft proxies come from (CyberblockTetherService.Known, Npcs.reds), so every extra target has a proxy that
+//     Minecraft can draw on; Cyberblock's mob stand-ins (CyberblockPuppets.IsPuppet) never count. The chain hack reaches
+//     the nearest one within 8 m; Contagion uploads ContagionLvl2 (spread off) to the 2 nearest within 6 m of its target.
 //   Device hacks (audit B, device hacks): Device.GetDevicePS(), ScriptableDeviceComponentPS.GenerateContext(
 //     gamedeviceRequestType.Remote, Device.GetInteractionClearance(), V, device id) and GetRemoteActions (public; it
 //     runs the device's GetQuickHackActions). A second list built with GetActionsContext.ignoresRPG = true tells which
@@ -49,14 +68,51 @@
 //   Traffic lights: no player quickhack in 2.31 (TrafficLightControllerPS has no GetQuickHackActions); the whole
 //     intersection flips through its TrafficIntersectionManagerControllerPS.HandleLightChangeRequest, reached through
 //     the light's DeviceComponentPS.GetParents (audit CyberblockAudit.FlipIntersection).
-//   Targets: Codeware EntityID.FromHash + GameInstance.FindEntityByID.
+//   Targets: Codeware EntityID.FromHash + GameInstance.FindEntityByID; ids on the wire through CyberblockIds.Hash.
+
+// What one hack request did: its kind and upload time, the hacked person (null for devices) and every extra NPC it
+// reached, in the order they are reported (parallel arrays).
+public class CyberblockHackRun {
+  public let kind: CName;
+  public let upload: Float;
+  public let target: wref<ScriptedPuppet>;
+  public let chained: array<wref<ScriptedPuppet>>;
+  public let extras: array<Uint64>;
+  public let whys: array<CName>;
+
+  public func Add(npc: ref<ScriptedPuppet>, why: CName) -> Void {
+    ArrayPush(this.extras, CyberblockIds.Hash(npc));
+    ArrayPush(this.whys, why);
+  }
+}
 
 public abstract class CyberblockHacks {
   public static func Hack(game: GameInstance, id: Int32, target: Uint64, hack: CName, chain: Bool) -> Void {
-    let reason = CyberblockHacks.Run(game, target, hack, chain);
+    let run = new CyberblockHackRun();
+    let reason = CyberblockHacks.Run(game, target, hack, chain, run);
     let ok = StrLen(reason) == 0;
-    Cyberblock_HackResult(id, ok, reason);
-    Cyberblock_Log(s"hack \(NameToString(hack)) on \(target)\(chain ? " (chain)" : ""): \(ok ? "ok" : reason)");
+    if !ok {
+      Cyberblock_HackResult(id, false, reason, 0.0, n"");
+      Cyberblock_Log(s"hack \(NameToString(hack)) on \(target): \(reason)");
+      return;
+    }
+    // chain/spread go before the result (protocol hackspread)
+    let i = 0;
+    while i < ArraySize(run.extras) {
+      Cyberblock_HackSpread(id, run.extras[i], run.whys[i]);
+      i += 1;
+    }
+    Cyberblock_HackResult(id, true, "", run.upload, run.kind);
+    Cyberblock_Log(s"hack \(NameToString(hack)) on \(target): ok (\(NameToString(run.kind)), upload \(run.upload)s, +\(ArraySize(run.extras)) spread)");
+    // the upload-time extras (HackFx.reds); ping and frenzy report their NPCs after the result
+    if IsDefined(run.target) {
+      CyberblockHackFx.Queue(game, id, hack, run.target, run.kind, run.upload, true);
+    }
+    for chained in run.chained {
+      if IsDefined(chained) {
+        CyberblockHackFx.Queue(game, id, hack, chained, CyberblockHacks.PersonKind(chained), run.upload, false);
+      }
+    }
   }
 
   // The quickhack ObjectAction for a hack name (plan section 1.5), TDBID.None() for device or unknown names.
@@ -91,8 +147,17 @@ public abstract class CyberblockHacks {
     return TDBID.None();
   }
 
-  // "" on success, else the reason sent back to Minecraft.
-  private static func Run(game: GameInstance, target: Uint64, hack: CName, chain: Bool) -> String {
+  // section 1.6 kind of a person target: crowd (a crowd record, or no AI squad) or squad.
+  public static func PersonKind(puppet: ref<ScriptedPuppet>) -> CName {
+    let record = puppet.GetRecord();
+    if IsDefined(record) && record.IsCrowd() || !IsNameValid(AISquadHelper.GetSquadName(puppet)) {
+      return n"crowd";
+    }
+    return n"squad";
+  }
+
+  // "" on success (run filled in), else the reason sent back to Minecraft.
+  private static func Run(game: GameInstance, target: Uint64, hack: CName, chain: Bool, run: ref<CyberblockHackRun>) -> String {
     let isDevice = Equals(hack, n"device");
     let action = CyberblockHacks.ActionFor(hack);
     if !isDevice && (!TDBID.IsValid(action) || !IsDefined(TweakDBInterface.GetObjectActionRecord(action))) {
@@ -108,7 +173,7 @@ public abstract class CyberblockHacks {
       return "not hackable (V is in a scene)";
     }
     if isDevice {
-      return CyberblockHacks.DeviceHack(player, object as Device);
+      return CyberblockHacks.DeviceHack(player, object as Device, run);
     }
     // a car is hacked through its driver (the scanner's VehicleComponent.GetDriverMounted, as Scan.reds)
     let vehicle = object as VehicleObject;
@@ -129,31 +194,52 @@ public abstract class CyberblockHacks {
     if StrLen(refusal) > 0 {
       return s"not hackable (\(refusal))";
     }
-    let spread = Equals(hack, n"contagion");
-    CyberblockHacks.Upload(player, puppet, action, spread);
+    run.kind = IsDefined(vehicle) ? n"driver" : CyberblockHacks.PersonKind(puppet);
+    run.target = puppet;
+    run.upload = CyberblockHacks.Upload(player, puppet, action);
+    let reached: array<ref<ScriptedPuppet>>;
+    ArrayPush(reached, puppet);
     if chain {
-      let next = CyberblockHacks.Nearest(game, puppet, 8.0);
-      if IsDefined(next) {
-        CyberblockHacks.Upload(player, next, action, spread);
+      for extra in CyberblockHacks.NearestN(game, puppet, 8.0, 1, reached) {
+        CyberblockHacks.Upload(player, extra, action);
+        ArrayPush(reached, extra);
+        ArrayPush(run.chained, extra);
+        run.Add(extra, n"chain");
+      }
+    }
+    if Equals(hack, n"contagion") {
+      for extra in CyberblockHacks.NearestN(game, puppet, 6.0, 2, reached) {
+        CyberblockHacks.Upload(player, extra, action);
+        ArrayPush(reached, extra);
+        run.Add(extra, n"spread");
       }
     }
     return "";
   }
 
-  // Audit B.1: the game's own quickhack path, without RAM cost; spread only for Contagion.
-  private static func Upload(player: ref<PlayerPuppet>, target: ref<ScriptedPuppet>, action: TweakDBID, spread: Bool) -> Void {
-    let hack = new PuppetAction();
+  // Audit B.1: the game's own quickhack path, without RAM cost and without the vanilla spread; the action's upload
+  // time (seconds, 0 = instant) is returned.
+  private static func Upload(player: ref<PlayerPuppet>, target: ref<ScriptedPuppet>, action: TweakDBID) -> Float {
+    let record = TweakDBInterface.GetObjectActionRecord(action);
+    let hack: ref<PuppetAction>;
+    if IsDefined(record) && Equals(record.ActionName(), n"Ping") {
+      hack = new PingSquad();
+    } else {
+      hack = new PuppetAction();
+    }
     hack.RegisterAsRequester(target.GetEntityID());
     hack.SetExecutor(player);
     hack.SetObjectActionID(action);
     hack.SetUp(target.GetPuppetPS());
     hack.SetCanSkipPayCost(true);
-    hack.SetDisableSpread(!spread);
-    hack.ProcessRPGAction(target.GetGame());
+    hack.SetDisableSpread(true);
+    let upload = MaxF(hack.GetActivationTime(), 0.0);
+    hack.ProcessRPGAction(target.GetGame(), target.GetGameplayRoleComponent());
+    return upload;
   }
 
   // Which of the header's gates keeps puppet from being hacked ("" when none does).
-  private static func Refusal(game: GameInstance, puppet: ref<ScriptedPuppet>) -> String {
+  public static func Refusal(game: GameInstance, puppet: ref<ScriptedPuppet>) -> String {
     if GameObject.IsFriendlyTowardsPlayer(puppet) {
       return "friendly";
     }
@@ -180,43 +266,66 @@ public abstract class CyberblockHacks {
     return "no quickhack actions";
   }
 
-  // The nearest other living, hackable NPC within range metres of target, or null.
-  private static func Nearest(game: GameInstance, target: ref<ScriptedPuppet>, range: Float) -> ref<ScriptedPuppet> {
-    let best: ref<ScriptedPuppet>;
-    let bestDistance2 = range * range;
+  // The n nearest living, hackable NPCs within range metres of target (nearest first), from the NPC registry; never
+  // V, a mob stand-in or one in exclude.
+  public static func NearestN(game: GameInstance, target: ref<GameObject>, range: Float, n: Int32, exclude: array<ref<ScriptedPuppet>>) -> array<ref<ScriptedPuppet>> {
+    let picked: array<ref<ScriptedPuppet>>;
+    let pickedDistance2: array<Float>;
+    let tether = CyberblockTetherService.Get();
+    if !IsDefined(tether) || !IsDefined(target) || n <= 0 {
+      return picked;
+    }
     let center = target.GetWorldPosition();
-    for npc in target.GetNPCsAroundObject(range) {
-      if IsDefined(npc) && npc != target && !npc.IsPlayer() && ScriptedPuppet.IsActive(npc) && StrLen(CyberblockHacks.Refusal(game, npc)) == 0 {
+    let range2 = range * range;
+    for object in tether.Known() {
+      let npc = object as ScriptedPuppet;
+      if IsDefined(npc) && !npc.IsPlayer() && !ArrayContains(exclude, npc) && npc.IsAttached() {
         let distance2 = Vector4.DistanceSquared(npc.GetWorldPosition(), center);
-        if distance2 <= bestDistance2 {
-          best = npc;
-          bestDistance2 = distance2;
+        if distance2 <= range2 && ScriptedPuppet.IsActive(npc) && !CyberblockPuppets.IsPuppet(game, npc.GetEntityID())
+          && StrLen(CyberblockHacks.Refusal(game, npc)) == 0 {
+          let at = ArraySize(picked);
+          while at > 0 && pickedDistance2[at - 1] > distance2 {
+            at -= 1;
+          }
+          if at < n {
+            ArrayInsert(picked, at, npc);
+            ArrayInsert(pickedDistance2, at, distance2);
+            if ArraySize(picked) > n {
+              ArrayResize(picked, n);
+              ArrayResize(pickedDistance2, n);
+            }
+          }
         }
       }
     }
-    return best;
+    return picked;
   }
 
   // Audit B device hacks: cameras ignore V, traffic lights flip their intersection, media and vending devices
-  // distract, anything else runs its first quickhack the device allows.
-  private static func DeviceHack(player: ref<PlayerPuppet>, device: ref<Device>) -> String {
+  // distract, anything else runs its first quickhack the device allows. Sets run.kind and run.upload.
+  private static func DeviceHack(player: ref<PlayerPuppet>, device: ref<Device>, run: ref<CyberblockHackRun>) -> String {
     if !IsDefined(device) || !IsDefined(device.GetDevicePS()) {
       return "not hackable (not a device)";
     }
     if IsDefined(device as TrafficLight) {
+      run.kind = n"traffic";
       return CyberblockHacks.FlipIntersection(device) ? "" : "not hackable (no intersection)";
     }
     if IsDefined(device as SurveillanceCamera) {
-      return CyberblockHacks.DeviceAction(player, device, n"ForceIgnoreTargets") ? "" : "not hackable (camera allows no hack)";
+      run.kind = n"camera";
+      return CyberblockHacks.DeviceAction(player, device, n"ForceIgnoreTargets", run) ? "" : "not hackable (camera allows no hack)";
     }
-    if CyberblockHacks.DeviceAction(player, device, n"QuickHackDistraction") {
+    run.kind = n"distract";
+    if CyberblockHacks.DeviceAction(player, device, n"QuickHackDistraction", run) {
       return "";
     }
-    return CyberblockHacks.DeviceAction(player, device, n"") ? "" : "not hackable (device allows no hack)";
+    run.kind = n"device";
+    return CyberblockHacks.DeviceAction(player, device, n"", run) ? "" : "not hackable (device allows no hack)";
   }
 
-  // Runs the first remote action named name (any allowed one for n"") that the device allows. False if none.
-  private static func DeviceAction(player: ref<PlayerPuppet>, device: ref<Device>, name: CName) -> Bool {
+  // Runs the first remote action named name (any allowed one for n"") that the device allows, its upload time in
+  // run.upload. False if none.
+  private static func DeviceAction(player: ref<PlayerPuppet>, device: ref<Device>, name: CName, run: ref<CyberblockHackRun>) -> Bool {
     let ps = device.GetDevicePS();
     let deviceID = device.GetEntityID();
     let probeContext = ps.GenerateContext(gamedeviceRequestType.Remote, Device.GetInteractionClearance(), player, deviceID);
@@ -239,6 +348,7 @@ public abstract class CyberblockHacks {
         action.RegisterAsRequester(deviceID);
         action.SetExecutor(player);
         action.SetCanSkipPayCost(true);
+        run.upload = MaxF(action.GetActivationTime(), 0.0);
         action.ProcessRPGAction(player.GetGame());
         return true;
       }

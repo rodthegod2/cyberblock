@@ -1,5 +1,5 @@
-// Natives.reds — declarations only; implemented by Cyberblock.dll
-public native func Cyberblock_Version() -> String;              // "0.1.0"
+// Natives.reds — declarations only; implemented by Cyberblock.dll (version 1.0.0)
+public native func Cyberblock_Version() -> String;              // "1.0.0"
 public native func Cyberblock_IsLinked() -> Bool;              // WebSocket open and hello exchanged
 public native func Cyberblock_SecondsSinceFrame() -> Float;    // since the last shared-memory frame or status; 999 if never
 public native func Cyberblock_ScreenOpen() -> Bool;            // last status.screen
@@ -64,5 +64,11 @@ public native func Cyberblock_SubmitProjectileHits(hits: array<Vector4>) -> Void
 public native func Cyberblock_Unlead(target: Uint64) -> Void;                       // -> unlead
 // Layer 6
 public native func Cyberblock_ScanResult(id: Int32, ok: Bool, target: Uint64, name: String, faction: String, threat: CName, hp: Float, device: Bool, pos: Vector4, size: Vector4) -> Void;
-public native func Cyberblock_HackResult(id: Int32, ok: Bool, reason: String) -> Void;
 public native func Cyberblock_Killed(target: Uint64, vehicle: Bool, hostile: Bool) -> Void;
+// ---- re-test 3 (plan 2026-10-03-retest3-polish section 1.2) ----
+public native func Cyberblock_HackResult(id: Int32, ok: Bool, reason: String, upload: Float, kind: CName) -> Void; // CHANGED: upload clamped 0..30, kind checked against kHackKinds (n"" allowed when !ok)
+public native func Cyberblock_HackSpread(id: Int32, target: Uint64, why: CName) -> Void;   // why in chain|spread|ping|frenzy; ≤ 16 per id
+public native func Cyberblock_SetSeat(seated: Bool, tpp: Bool, hipsLocal: Vector4) -> Void; // 10 Hz and on camera switch; hipsLocal in V's local axes (Y forward, Z up), metres
+public native func Cyberblock_SetSlowMoFx(id: CName, seconds: Float) -> Void;               // n"sandevistan"|n"kerenzikov", 0..30; n"" / 0 ends it
+public native func Cyberblock_SetViewAllowed(allowed: Bool) -> Void;                        // third person may be applied (Active on foot, not held, no menu, no braindance, no photo mode)
+public native func Cyberblock_ViewEye() -> Vector4;                                         // V's first-person eye (the camera without the third-person offset)

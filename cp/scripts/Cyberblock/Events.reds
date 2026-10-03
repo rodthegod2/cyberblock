@@ -144,7 +144,7 @@ public class CyberblockEvents {
   private static func Refuse(kind: CName) -> Bool {
     let reason = "Cyberblock is not active";
     if Equals(kind, n"hack") {
-      Cyberblock_HackResult(Cyberblock_EventId(), false, reason);
+      Cyberblock_HackResult(Cyberblock_EventId(), false, reason, 0.0, n"");
       return true;
     }
     if Equals(kind, n"scan") {
