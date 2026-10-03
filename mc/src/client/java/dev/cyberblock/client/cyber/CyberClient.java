@@ -13,10 +13,13 @@ public class CyberClient implements ClientModInitializer {
 		CyberKeys.register();
 		CyberLink.register();
 		HudElementRegistry.attachElementAfter(VanillaHudElements.HOTBAR, RamHud.ID, RamHud::draw);
+		HudElementRegistry.attachElementAfter(VanillaHudElements.CROSSHAIR, ScanClient.HUD_ID, ScanClient::draw);
 		ClientTickEvents.END_CLIENT_TICK.register(CyberClient::tick);
 	}
 
+	/** Every client tick (inside vanilla's per-tick gizmo collection, which the scan outline uses). */
 	private static void tick(final Minecraft minecraft) {
 		CyberKeys.tick(minecraft);
+		ScanClient.tick(minecraft);
 	}
 }

@@ -2,9 +2,14 @@ package dev.cyberblock.client.cyber;
 
 import com.google.gson.JsonObject;
 import dev.cyberblock.Bridge;
+import dev.cyberblock.Cyberblock;
+import dev.cyberblock.WorldBridge;
+import dev.cyberblock.cyber.Hacking;
+import dev.cyberblock.cyber.ScanInfo;
 import java.util.function.Consumer;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.server.MinecraftServer;
 
 /**
  * Track C's host message listeners (plan section 1.6): HostLink hands them every `hello`, `state`, `key`, `scaninfo`,
@@ -12,12 +17,15 @@ import net.minecraft.client.Minecraft;
  * integrated server thread.
  */
 final class CyberLink {
+	private static int bad;
+
 	private CyberLink() {
 	}
 
 	static void register() {
 		listen("hello", m -> onClient(CyberKeys::sendBinds));
 		listen("key", CyberLink::key);
+		listen("scaninfo", CyberLink::scanInfo);
 	}
 
 	private static void listen(final String type, final Consumer<JsonObject> listener) {
@@ -26,6 +34,21 @@ final class CyberLink {
 
 	private static void onClient(final Runnable task) {
 		Minecraft.getInstance().execute(task);
+	}
+
+	/** Runs on the integrated server's thread; dropped when no world is open. */
+	static void onServer(final Runnable task) {
+		MinecraftServer server = WorldBridge.server();
+		if (server != null) {
+			server.execute(task);
+		}
+	}
+
+	/** A hostile host could make this a log flood: say it once, then every 100th time. */
+	static void warn(final String what) {
+		if (bad++ % 100 == 0) {
+			Cyberblock.LOG.warn("{} (seen {} times)", what, bad);
+		}
 	}
 
 	/** {"t":"key","k":...,"down":bool}: track C handles hack and skills (sprint arrives with the Sandevistan, task C7). */
@@ -40,6 +63,20 @@ final class CyberLink {
 		if (mapping != null) {
 			Minecraft minecraft = Minecraft.getInstance();
 			onClient(() -> CyberKeys.onHostKey(minecraft, mapping, down));
+		}
+	}
+
+	/** {"t":"scaninfo",...}: drawn on the client; a target that is there becomes the locked one on the server. */
+	private static void scanInfo(final JsonObject m) {
+		ScanInfo info = ScanInfo.parse(m);
+		if (info == null) {
+			warn("bad scaninfo dropped");
+			return;
+		}
+
+		ScanClient.onInfo(info);
+		if (info.ok()) {
+			onServer(() -> Hacking.lock(info.target(), info.device()));
 		}
 	}
 }
