@@ -624,6 +624,15 @@ namespace
 		cb::natives::crouched = crouched;
 	}
 
+	// Cyberblock_GameMode() -> CName: Minecraft's last `status.gm` (n"survival", n"creative", n"adventure", n"spectator"),
+	// n"" before any status in this session.
+	void GameModeNative(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = RED4ext::CName(cb::game_mode_name(cb::link().game_mode()));
+	}
+
 	// Cyberblock_SetMenu(open: Bool) -> Void: a Cyberpunk menu is open; input forwarding pauses until it closes.
 	void SetMenu(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
@@ -730,6 +739,7 @@ namespace cb::natives
 		add(rtti, "Cyberblock_HackResult", &HackResult, nullptr, {{"Int32", "id"}, {"Bool", "ok"}, {"String", "reason"}});
 		add(rtti, "Cyberblock_Killed", &Killed, nullptr, {{"Uint64", "target"}, {"Bool", "vehicle"}, {"Bool", "hostile"}});
 		add(rtti, "Cyberblock_SetStance", &SetStance, nullptr, {{"Bool", "crouched"}});
+		add(rtti, "Cyberblock_GameMode", &GameModeNative, "CName");
 		add(rtti, "Cyberblock_SetMenu", &SetMenu, nullptr, {{"Bool", "open"}});
 		add(rtti, "Cyberblock_SetLookCapture", &SetLookCapture, nullptr, {{"Bool", "on"}});
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});

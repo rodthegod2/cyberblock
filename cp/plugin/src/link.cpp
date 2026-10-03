@@ -6,7 +6,6 @@
 namespace
 {
 	constexpr char kHost[] = "127.0.0.1";
-	constexpr int kPort = 25600;
 	constexpr size_t kMaxQueued = 8;
 
 	int64_t now_ticks()
@@ -22,12 +21,13 @@ namespace
 
 namespace cb
 {
-	void Link::start(Observer observer, DropHandler onDrop)
+	void Link::start(Observer observer, DropHandler onDrop, int port)
 	{
 		m_observer = std::move(observer);
 		m_onDrop = std::move(onDrop);
+		m_port = port;
 		m_stop = false;
-		m_ws.start(kHost, kPort);
+		m_ws.start(kHost, port);
 		m_thread = std::thread([this] { run(); });
 	}
 
@@ -86,21 +86,20 @@ namespace cb
 			{
 				// (re)connected: a new Minecraft session starts with our hello; nothing queued before it belongs there
 				generation = m_ws.generation();
-				if (m_linked.exchange(false) && m_onDrop)
-					m_onDrop();
+				if (m_linked.exchange(false))
+					dropped();
 				viewSent = 0;
 				{
 					std::lock_guard<std::mutex> lock(m_lock);
 					m_queue.clear();
 				}
 				m_ws.send(dump({{"t", "hello"}, {"proto", 1}, {"game", "cp2077"}, {"build", "2.31"}}));
-				log::info("connected to Minecraft on %s:%d", kHost, kPort);
+				log::info("connected to Minecraft on %s:%d", kHost, m_port);
 			}
 			if (!m_ws.connected() && m_linked.exchange(false))
 			{
 				log::warn("Minecraft disconnected");
-				if (m_onDrop)
-					m_onDrop();
+				dropped();
 			}
 
 			const uint32_t view = m_view;
@@ -124,6 +123,13 @@ namespace cb
 		}
 	}
 
+	void Link::dropped()
+	{
+		m_gameMode = static_cast<int>(GameMode::None);
+		if (m_onDrop)
+			m_onDrop();
+	}
+
 	void Link::handle(const std::string &text)
 	{
 		try
@@ -138,6 +144,7 @@ namespace cb
 					log::info("Minecraft says hello: mod %s, Minecraft %s", message.value("mod", "?").c_str(),
 							  message.value("mc", "?").c_str());
 					++m_session;
+					m_gameMode = static_cast<int>(GameMode::None); // the new session has not reported yet
 					m_linked = true;
 				}
 				else
@@ -147,6 +154,9 @@ namespace cb
 			{
 				m_screenOpen = message.value("screen", false);
 				m_lastStatus = now_ticks();
+				if (const auto gm = message.find("gm"); gm != message.end() && gm->is_string())
+					if (const GameMode mode = parse_game_mode(gm->get_ref<const std::string &>()); mode != GameMode::None)
+						m_gameMode = static_cast<int>(mode); // anything else is ignored: the last mode stays
 			}
 			// any other type: a later layer's message, ignored here
 

@@ -1,14 +1,17 @@
 // Manual check of the Minecraft link without the game: with the Minecraft dev client (or any server speaking protocol
-// v1) on 127.0.0.1:25600, prints the received hello and three status lines, then exits 0. Exits 1 after 30 s.
+// v1) on 127.0.0.1:<port> (default 25600; pass another as the first argument), prints the received hello and three
+// status lines, then exits 0. Exits 1 after 30 s.
 // Build on demand: cmake --build cp/plugin/build --config Release --target link_smoke
 #include "link.hpp"
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <thread>
 
-int main()
+int main(int argc, char **argv)
 {
+	const int port = argc > 1 ? std::atoi(argv[1]) : cb::Link::kDefaultPort;
 	std::atomic<int> statuses{0};
 	cb::Link &link = cb::link();
 	link.set_view(1280, 720);
@@ -21,14 +24,15 @@ int main()
 			if (type == "status")
 				++statuses;
 		}
-	});
+	}, {}, port);
 
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
 	while (statuses < 3 && std::chrono::steady_clock::now() < deadline)
 		std::this_thread::sleep_for(std::chrono::milliseconds(20));
 	const bool ok = statuses >= 3 && link.linked();
-	std::printf("linked=%s screen=%s seconds_since_status=%.3f -> %s\n", link.linked() ? "true" : "false",
-				link.screen_open() ? "true" : "false", link.seconds_since_status(), ok ? "OK" : "FAILED");
+	std::printf("linked=%s screen=%s gm=%s seconds_since_status=%.3f -> %s\n", link.linked() ? "true" : "false",
+				link.screen_open() ? "true" : "false", cb::game_mode_name(link.game_mode()), link.seconds_since_status(),
+				ok ? "OK" : "FAILED");
 	link.stop();
 	return ok ? 0 : 1;
 }
