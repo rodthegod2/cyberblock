@@ -18,8 +18,6 @@ import net.minecraft.client.gui.screens.DeathScreen;
 import net.minecraft.client.renderer.entity.NoopRenderer;
 import net.minecraft.client.tutorial.TutorialSteps;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.item.ItemStack;
 
 public class CyberblockClient implements ClientModInitializer {
 	/** Run on the server once the player has joined. */
@@ -40,13 +38,6 @@ public class CyberblockClient implements ClientModInitializer {
 		"time set noon",
 		"weather clear"
 	);
-	/** What a new world starts with: a few blocks to build with. */
-	private static final List<String> KIT = List.of(
-		"give @a minecraft:stone 64",
-		"give @a minecraft:glass 64",
-		"give @a minecraft:oak_planks 64",
-		"give @a minecraft:grass_block 64"
-	);
 	private static boolean configured;
 	/** Server ticks until the setup commands run (the player isn't in the player list yet when JOIN fires). */
 	private static int setupIn = -1;
@@ -61,19 +52,15 @@ public class CyberblockClient implements ClientModInitializer {
 		ClientTickEvents.END_CLIENT_TICK.register(CyberblockClient::tick);
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			ServerPlayer player = handler.player;
-			// never left gliding from a previous session, and with no host yet Steve hangs where he is instead of falling into the void
+			// never left gliding from a previous session, and with no host yet Steve hangs where he is instead of falling into the void.
+			// The chest slot is kept: it may hold his elytra (the cyber track's starter kit replaces the old block kit).
 			player.stopFallFlying();
-			player.setItemSlot(EquipmentSlot.CHEST, ItemStack.EMPTY);
 			player.setNoGravity(true);
 			setupIn = 10;
 		});
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
 			if (setupIn > 0 && --setupIn == 0) {
 				SETUP.forEach(WorldBridge::command);
-				if (AutoWorld.created) {
-					AutoWorld.created = false;
-					KIT.forEach(WorldBridge::command);
-				}
 			}
 		});
 	}

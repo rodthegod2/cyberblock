@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import dev.cyberblock.Bridge;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -93,6 +94,43 @@ class HostStateTest {
 		HostState.update(json("{'p':[1,2,3],'r':[0,0,0]}"));
 		assertThrows(IllegalArgumentException.class, () -> HostState.update(json(bad)));
 		assertEquals(1.0, HostState.live().x());
+	}
+
+	@Test
+	void crouchFollowsCamCr() {
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'cr':true}"));
+		assertTrue(Bridge.hostCrouching);
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0]}"));
+		assertFalse(Bridge.hostCrouching); // a host without layer 3 never sends it
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'cr':true}"));
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'cr':'yes'}"));
+		assertFalse(Bridge.hostCrouching);
+	}
+
+	@Test
+	void aRejectedCamKeepsTheCrouch() {
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'cr':true}"));
+		assertThrows(IllegalArgumentException.class, () -> HostState.update(json("{'p':[NaN,2,3],'r':[0,0,0],'cr':false}")));
+		assertTrue(Bridge.hostCrouching);
+		HostState.resetKeys();
+		assertFalse(Bridge.hostCrouching);
+	}
+
+	@Test
+	void eachJumpPressIsTakenOnce() {
+		HostState.resetKeys();
+		HostState.setKey("jump", true);
+		HostState.setKey("jump", true); // key repeat is not a new press
+		assertTrue(HostState.jumpDown());
+		assertTrue(HostState.takeJumpPress());
+		assertFalse(HostState.takeJumpPress());
+		HostState.setKey("jump", false);
+		assertFalse(HostState.jumpDown());
+		assertFalse(HostState.takeJumpPress());
+		HostState.setKey("sprint", true);
+		assertTrue(HostState.sprintDown());
+		HostState.resetKeys();
+		assertFalse(HostState.sprintDown());
 	}
 
 	@Test

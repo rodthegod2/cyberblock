@@ -6,6 +6,7 @@ import java.util.Map;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.phys.Vec3;
@@ -109,6 +110,17 @@ public final class ProxyManager {
 
 		proxies.clear();
 		kinds.clear();
+	}
+
+	/** Server thread (Bridge.proxyById): the live proxy standing for a Cyberpunk id, or null. */
+	static Entity byId(final long id) {
+		ProxyEntity proxy = proxies.get(id);
+		return proxy != null && !proxy.isRemoved() ? proxy : null;
+	}
+
+	/** Server thread (Bridge.proxyIdOf): the Cyberpunk id a live proxy stands for, 0 for any other entity. */
+	static long idOf(final Entity entity) {
+		return entity instanceof ProxyEntity proxy && !proxy.isRemoved() && proxies.get(proxy.proxyId()) == proxy ? proxy.proxyId() : 0L;
 	}
 
 	/** Server thread, from a proxy: it took damage that counts. */

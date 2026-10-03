@@ -4,6 +4,8 @@ package dev.cyberblock.client;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
+import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 
 /** The host's latest camera and player pose, already in Minecraft coordinates (the host converts). */
@@ -74,6 +76,45 @@ public final class HostState {
 			lookYaw, lookPitch,
 			m.has("gun") && m.get("gun").getAsBoolean()
 		);
+		// V crouched (layers 3-6): Steve crouches too (KeyboardInputMixin), and the cyber track reads it for optical camo
+		Bridge.hostCrouching = m.get("cr") instanceof JsonPrimitive cr && cr.isBoolean() && cr.getAsBoolean();
+	}
+
+	/** The host's Space and Left Shift (key "jump"/"sprint"): Cyberpunk keeps them too, Minecraft only reads them. Client thread. */
+	private static boolean jumpDown, sprintDown;
+	/** A jump press not yet taken by the glide start. Client thread. */
+	private static boolean jumpPressed;
+
+	static void setKey(final String k, final boolean down) {
+		if (k.equals("jump")) {
+			jumpPressed |= down && !jumpDown;
+			jumpDown = down;
+		} else if (k.equals("sprint")) {
+			sprintDown = down;
+		}
+	}
+
+	/** Client thread: whether the host's jump key is held. */
+	public static boolean jumpDown() {
+		return jumpDown;
+	}
+
+	/** Client thread: whether the host's sprint key is held. */
+	public static boolean sprintDown() {
+		return sprintDown;
+	}
+
+	/** Client thread: true once per press of the host's jump key since the last call. */
+	public static boolean takeJumpPress() {
+		boolean pressed = jumpPressed;
+		jumpPressed = false;
+		return pressed;
+	}
+
+	/** The host went away: no key stays held, and V is not crouching. Client thread. */
+	static void resetKeys() {
+		jumpDown = sprintDown = jumpPressed = false;
+		Bridge.hostCrouching = false;
 	}
 
 	/**

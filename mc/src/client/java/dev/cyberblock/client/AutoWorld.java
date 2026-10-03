@@ -25,8 +25,6 @@ public final class AutoWorld {
 	public static final String WORLD = "cyberblock";
 	private static final ResourceKey<WorldPreset> PRESET = ResourceKey.create(Registries.WORLD_PRESET, Identifier.fromNamespaceAndPath(Cyberblock.ID, "nightcity"));
 	private static boolean requested;
-	/** True once this session created the world: it is new, so it gets the starter blocks. */
-	static volatile boolean created;
 
 	private AutoWorld() {
 	}
@@ -41,7 +39,6 @@ public final class AutoWorld {
 
 		requested = true;
 		Cyberblock.LOG.info("creating world {}", WORLD);
-		created = true;
 		LevelSettings settings = new LevelSettings("Cyberblock", GameType.SURVIVAL, LevelSettings.DifficultySettings.DEFAULT, true, WorldDataConfiguration.DEFAULT);
 		minecraft.createWorldOpenFlows().createFreshLevel(WORLD, settings, new WorldOptions(0L, false, false),
 			registries -> registries.lookupOrThrow(Registries.WORLD_PRESET).getOrThrow(PRESET).value().createWorldDimensions(), screen);

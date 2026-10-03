@@ -4,6 +4,7 @@ package dev.cyberblock.client;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.HostDamage;
 import dev.cyberblock.ProxyManager;
@@ -22,7 +23,7 @@ import org.java_websocket.server.WebSocketServer;
  *
  * <p>Host to Minecraft (JSON, Minecraft coordinates):
  * <ul>
- * <li>{"t":"cam","f":frame,"p":[x,y,z],"r":[yaw,pitch,roll],"fov":vertical degrees,"fp":first person,"pl":[feet x,y,z],"h":body yaw}:
+ * <li>{"t":"cam","f":frame,"p":[x,y,z],"r":[yaw,pitch,roll],"fov":vertical degrees,"fp":first person,"pl":[feet x,y,z],"h":body yaw,"cr":V crouched}:
  * every number must be finite, positions within +-2.9e7 (y +-20000) and fov within 1..179, else the message is logged and
  * ignored (pitch is clamped to +-90)</li>
  * <li>{"t":"ground","c":[x,z,yBottom,yTop, ...]}: solid ranges (barriers); "unground" takes the same ranges out again</li>
@@ -34,12 +35,14 @@ import org.java_websocket.server.WebSocketServer;
  * <li>{"t":"cmd","c":"setblock 0 64 0 stone"}: a server command, for test tools (not part of protocol v1)</li>
  * <li>{"t":"key","k":"use|attack|pick|inventory|drop|swap|chat|command|escape","down":bool}, and "slot": while a screen is open
  * these are key presses for that screen (E closes the inventory, Q drops the hovered stack, 1-9 swap it into the hotbar) and
- * never reach the game, so nothing is replayed when the screen closes</li>
+ * never reach the game, so nothing is replayed when the screen closes. "jump" and "sprint" are only stored (HostState), "perspective"
+ * is ignored (the host drives the camera)</li>
  * <li>{"t":"slot","n":0-8}, {"t":"scroll","d":+-1}, {"t":"hud","hidden":bool}, {"t":"view","w":px,"h":px}</li>
  * <li>{"t":"state","active":bool,"vehicle":bool}: in a vehicle Steve, his hand and the HUD are hidden</li>
  * </ul>
  * <p>Minecraft to host: {"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3"} on connect, {"t":"status",...} (see
- * StatusReporter). A host hello with another proto closes the link. Unknown "t" values are ignored.
+ * StatusReporter). A host hello with another proto closes the link. Unknown "t" values are ignored. After its own handling every
+ * message also goes to Bridge.dispatch (the cyber track's listeners), on this thread.
  */
 public final class HostLink extends WebSocketServer {
 	private static final int PROTOCOL = 1;
@@ -87,9 +90,24 @@ public final class HostLink extends WebSocketServer {
 
 	@Override
 	public void onMessage(final WebSocket conn, final String message) {
+		JsonObject m;
+		String t;
 		try {
-			JsonObject m = JsonParser.parseString(message).getAsJsonObject();
-			switch (m.get("t").getAsString()) {
+			m = JsonParser.parseString(message).getAsJsonObject();
+			t = m.get("t").getAsString();
+		} catch (RuntimeException e) {
+			Cyberblock.LOG.warn("bad host message {}: {}", message.length() > 200 ? message.substring(0, 200) : message, e.toString());
+			return;
+		}
+
+		this.handle(conn, message, m, t);
+		// then the cyber track's listener for this type, if any (plan 2026-10-03 section 1.6); a bad message for us may still be its
+		Bridge.dispatch(t, m);
+	}
+
+	private void handle(final WebSocket conn, final String message, final JsonObject m, final String t) {
+		try {
+			switch (t) {
 				case "hello" -> {
 					int proto = m.has("proto") ? m.get("proto").getAsInt() : -1;
 					if (proto != PROTOCOL) {
