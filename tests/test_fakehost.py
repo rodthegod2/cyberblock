@@ -8,7 +8,8 @@ import pytest
 from PIL import Image
 from websockets.asyncio.server import serve
 
-from test_protocol_md import L36_EXAMPLES, VALIDATORS  # shared/protocol.md: the example messages and the documented limits of layers 3-6
+from test_protocol_md import (L36_EXAMPLES, L36_NEW_CP_TO_MC, R3_EXT_CP, R3_NEW_CP, R3_VALIDATORS,  # shared/protocol.md: the example messages and the
+                              VALIDATORS)  # documented limits of layers 3-6 and of re-test 3
 from tools import fakehost, shm
 
 HELLO = {"t": "hello", "proto": 1, "mod": "cyberblock", "mc": "26.3"}
@@ -474,3 +475,193 @@ def test_layer_options_are_checked(monkeypatch):
         with pytest.raises(SystemExit) as e:
             fakehost.main()
         assert e.value.code == 2
+
+
+# ---- re-test 3 modes (plan 2026-10-03-retest3-polish P2): --ui, --hacks and --seat ----
+def mode_set(*names):
+    return frozenset(names)
+
+
+CP_SENT = L36_NEW_CP_TO_MC | {"cam", "key", "click"} | R3_NEW_CP | R3_EXT_CP  # the types the fake host sends that protocol.md gives a validator
+
+
+def valid3(m):
+    """A message the fake host sent obeys the documented limits (the re-test 3 validators win over the layers 3-6 ones)."""
+    if m["t"] not in CP_SENT:
+        return True
+    return (R3_VALIDATORS if m["t"] in R3_NEW_CP | R3_EXT_CP else VALIDATORS)[m["t"]](m)
+
+
+def test_ui_script_covers_every_ui_message_and_every_message_is_valid():
+    script = fakehost.ui_script()
+    assert [t for t, _ in script] == sorted(t for t, _ in script)
+    sent = [m for _, m in script]
+    assert all(valid3(m) for m in sent)
+    kinds = [m["t"] for m in sent]
+    assert {"stats", "quest", "pins", "prompt", "choices", "sub", "call", "notify", "screen", "key"} <= set(kinds)
+    quest = next(m for m in sent if m["t"] == "quest")
+    assert quest["wp"] is not None and len(quest["obj"]) == 2
+    hubs = [m for m in sent if m["t"] == "choices" and m["hubs"]]
+    assert len(hubs[0]["hubs"][0]["list"]) == 4 and len({m["sel"] for m in hubs}) >= 3  # four choices, the selection moves
+    assert [m["left"] for m in hubs] == sorted((m["left"] for m in hubs), reverse=True)  # the timer runs down
+    assert [m for m in sent if m["t"] == "choices"][-1]["hubs"] == []  # and the hub is cleared at the end
+    assert [m["phase"] for m in sent if m["t"] == "call"] == ["incoming", "active", "end"]
+    assert [m["kind"] for m in sent if m["t"] == "notify"] == ["quest", "money", "item"]
+    assert [m["show"] for m in sent if m["t"] == "sub"] == [True, False]
+    screens = [m for m in sent if m["t"] == "screen"]
+    assert screens == [{"t": "screen", "open": "pause"}, {"t": "screen", "pass": "vendor"}, {"t": "screen", "pass": ""}]
+    assert [m["list"] for m in sent if m["t"] == "prompt"][-1] == []  # the prompt is cleared too
+    assert fakehost.PERSPECTIVE_KEY[0] > fakehost.UI_MENU[1]  # F5 is tapped after the menu is closed
+
+
+def test_ui_replies_answer_the_three_requests_and_nothing_else():
+    for action, kind in (("journalreq", "journal"), ("phonereq", "phone"), ("atlasreq", "atlas")):
+        (reply,) = fakehost.ui_replies({"t": "uiact", "a": action, "arg": "", "hash": 0, "id": 41})
+        assert reply["kind"] == kind and reply["id"] == 41 and valid3(reply)
+    for action in ("save", "loadlast", "mainmenu", "cpmenu", "track", "smsreply", "fasttravel"):
+        assert fakehost.ui_replies({"t": "uiact", "a": action, "id": 1}) == []
+    assert fakehost.ui_replies({"t": "uiact"}) == [] and fakehost.ui_replies({"t": "uiact", "a": 5}) == []
+
+
+def test_ui_mode_plays_the_stream_opens_the_menu_cam_and_answers_requests(tmp_path, exporting, quick, capsys):
+    requests = [{"t": "uiact", "a": a, "arg": "", "hash": 0, "id": i} for i, a in enumerate(("journalreq", "phonereq", "atlasreq", "save"), 10)]
+    status = {**STATUS, "pause": True}
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[status, *requests, {"t": "persp", "mode": "first"}], hold=0.6, modes=mode_set("ui"))
+    assert [m["t"] for m in got if m["t"] in ("stats", "quest", "pins")] == ["stats", "quest", "pins"] and all(valid3(m) for m in got)
+    assert [(m["kind"], m["id"]) for m in got if m["t"] == "reply"] == [("journal", 10), ("phone", 11), ("atlas", 12)]
+    cams = hold_cams(got)
+    menu = [i for i, m in enumerate(cams) if m["menu"]]
+    assert menu and menu == list(range(menu[0], menu[-1] + 1)) and not cams[0]["menu"] and not cams[-1]["menu"]  # one window, then closed
+    assert [m["k"] for m in got if m["t"] == "key"] == ["perspective", "perspective"]
+    out = capsys.readouterr()
+    assert "'pause': True" in out.out  # the status with the Night City pause is printed
+    lines = {}
+    for line in out.out.splitlines():
+        head, _, tail = line.partition(": ")
+        if head in ("uiact", "persp"):
+            lines.setdefault(head, []).append(json.loads(tail))
+    assert lines["uiact"] == requests and lines["persp"] == [{"t": "persp", "mode": "first"}]
+
+
+def test_ui_mode_follows_persp_back_with_a_third_person_camera(tmp_path, exporting, quick):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, hold=0.6, modes=mode_set("ui"),
+                                        react=lambda m: [{"t": "persp", "mode": "back"}] if m["t"] == "key" and m["k"] == "perspective" and m["down"] else [])
+    cams = hold_cams(got)
+    assert cams[0]["fp"] is True and cams[-1]["fp"] is False  # F5 was tapped, Minecraft answered `persp back`, the cam is third person
+    assert all(valid3(m) for m in cams)
+
+
+def test_hack_replies_give_kind_and_upload_per_target_and_chip():
+    hostile, crowd, car = "9007199254740993", "18446744073709551615", "4503599627370497"
+    for name, upload in fakehost.HACK_UPLOAD.items():
+        for target, kind in ((hostile, "squad"), (crowd, "crowd"), (car, "driver")):
+            now, later, wait = fakehost.hack_replies({"t": "hack", "id": 3, "target": target, "hack": name, "chain": False})
+            result = now[-1]
+            assert result["t"] == "hackresult" and result["ok"] is True and result["reason"] == "" and wait == upload == result["upload"]
+            assert result["kind"] == (kind if name != "device" else fakehost.DEVICE_KINDS[3 % 4]) and valid3(result)
+            assert all(valid3(m) and m["id"] == 3 for m in (*now, *later))
+    assert {fakehost.hack_replies({"t": "hack", "id": i, "target": hostile, "hack": "device", "chain": False})[0][-1]["kind"] for i in range(4)} == set(fakehost.DEVICE_KINDS)
+    assert fakehost.HACK_UPLOAD["device"] == 0.0 and max(fakehost.HACK_UPLOAD.values()) <= 30
+
+
+def test_hack_replies_spread_chain_and_contagion_before_the_result_and_ping_and_frenzy_after_it():
+    hostile, crowd = "9007199254740993", "18446744073709551615"
+    chain, later, _ = fakehost.hack_replies({"t": "hack", "id": 5, "target": hostile, "hack": "short_circuit", "chain": True})
+    assert [(m["t"], m.get("why"), m.get("target")) for m in chain] == [("hackspread", "chain", crowd), ("hackresult", None, None)] and later == []
+    contagion, later, _ = fakehost.hack_replies({"t": "hack", "id": 6, "target": crowd, "hack": "contagion", "chain": False})
+    assert [m.get("why") for m in contagion] == ["spread", None] and contagion[0]["target"] == hostile and later == []
+    ping, later, _ = fakehost.hack_replies({"t": "hack", "id": 7, "target": crowd, "hack": "ping", "chain": False})
+    assert [m["t"] for m in ping] == ["hackresult"] and [(m["why"], m["target"]) for m in later] == [("ping", hostile)]
+    frenzy, later, upload = fakehost.hack_replies({"t": "hack", "id": 8, "target": hostile, "hack": "cyberpsychosis", "chain": False})
+    assert [m["t"] for m in frenzy] == ["hackresult"] and [(m["why"], m["target"]) for m in later] == [("frenzy", crowd)] and upload > 0
+    plain, later, _ = fakehost.hack_replies({"t": "hack", "id": 9, "target": hostile, "hack": "memory_wipe", "chain": False})
+    assert len(plain) == 1 and later == []
+
+
+def test_hacks_mode_answers_with_results_and_spreads_and_delays_ping_and_frenzy(tmp_path, exporting, quick):
+    hack = lambda i, name, target="9007199254740993", chain=False: {"t": "hack", "id": i, "target": target, "hack": name, "chain": chain}  # noqa: E731
+    replies = [hack(1, "contagion"), hack(2, "ping"), hack(3, "cyberpsychosis", chain=True), {**hack(4, "nuke")}, {"t": "hack", "target": "1", "hack": "ping", "chain": False}]
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=replies, hold=0.6, modes=mode_set("hacks"))
+    results = {m["id"]: m for m in got if m["t"] == "hackresult"}
+    assert set(results) == {1, 2, 3} and all(valid3(m) for m in got)  # an unknown chip and a missing id get no answer
+    assert results[1]["kind"] == "squad" and results[1]["upload"] == 1.5 and "upload" in results[2]
+    order = [(m["t"], m["id"], m.get("why")) for m in got if m["t"] in ("hackresult", "hackspread")]
+    assert order.index(("hackspread", 1, "spread")) < order.index(("hackresult", 1, None))  # spread comes first
+    assert order.index(("hackspread", 3, "chain")) < order.index(("hackresult", 3, None)) < order.index(("hackspread", 3, "frenzy"))
+    assert order.index(("hackresult", 2, None)) < order.index(("hackspread", 2, "ping"))  # ping after the upload
+
+
+def test_hacks_mode_taps_the_hack_arms_and_camo_keys_and_prints_the_six_binds(tmp_path, exporting, quick, capsys):
+    binds = {"t": "binds", "keys": {"hack": 71, "skills": 75, "cyberware": 85, "activate": 89, "arms": 76, "camo": 79}}
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[binds, {"t": "persp", "mode": "back"}], hold=0.3, modes=mode_set("hacks"))
+    assert [(m["k"], m["down"]) for m in got if m["t"] == "key"] == [("hack", True), ("hack", False), ("arms", True), ("arms", False), ("camo", True), ("camo", False)]
+    lines = printed(capsys)
+    assert lines["binds"] == [binds] and len(lines["binds"][0]["keys"]) == 6 and lines["persp"] == [{"t": "persp", "mode": "back"}]
+
+
+def test_seat_mode_rides_a_vehicle_with_the_hips_point_and_a_flipping_camera(tmp_path, exporting, quick):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, hold=0.5, modes=mode_set("seat"))
+    assert {"t": "state", "active": True, "vehicle": True} in got
+    cams = hold_cams(got)
+    assert cams and all(m["seat"] is True and valid3(m) and "fly" not in m for m in cams)
+    assert all(m["pl"] == [-1.0, fakehost.SLAB_Y + 1.0 + fakehost.HIPS_UP, -1.0] for m in cams)  # the hips, not the feet
+    flips = [a["fp"] for a, b in zip(cams, cams[1:]) if a["fp"] != b["fp"]]
+    assert cams[0]["fp"] is True and len(flips) >= 2  # first person, then third person, then first person again
+    third = next(m for m in cams if not m["fp"])
+    assert math.dist(third["p"], third["pl"]) > 3.0 > math.dist(cams[0]["p"], cams[0]["pl"])  # the third-person camera sits back from V
+
+
+def test_modes_combine_with_layers_and_every_message_sent_is_valid(tmp_path, exporting, quick):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[{"t": "persp", "mode": "back"}], hold=0.6, layers=layer_set(2),
+                                        modes=mode_set("ui", "hacks"))
+    assert {"stats", "quest", "dmg", "npcs"} <= set(types(got))
+    assert all(valid3(m) for m in got)
+
+
+def test_modes_alone_send_npcs_but_no_layer_messages(tmp_path, exporting):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, hold=0.05, layers=layer_set(), modes=mode_set("seat"))
+    assert "npcs" in types(got) and not {"dmg", "mobdmg", "pcells"} & set(types(got))
+
+
+def test_layer_runs_do_not_send_re_test_3_messages(tmp_path, exporting, quick):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, hold=0.3, layers=layer_set(2, 3, 4, 5, 6))
+    assert not {"stats", "quest", "pins", "prompt", "choices", "sub", "call", "notify", "screen", "reply", "hackspread"} & set(types(got))
+    assert all("seat" not in m and "menu" not in m for m in hold_cams(got))
+
+
+def test_mode_flags_pick_the_modes_the_hold_and_the_commands(monkeypatch):
+    seen = []
+
+    async def fake_run(*args):
+        seen.append(args)
+        return 1
+
+    monkeypatch.setattr(fakehost, "run", fake_run)
+    for argv in (["--ui"], ["--hacks", "--seat", "--hold", "3"], ["--ui", "--layer2", "--cmd", "say hi"], ["--layer6"], []):
+        monkeypatch.setattr("sys.argv", ["fakehost", *argv])
+        assert fakehost.main() == 0
+    holds, commands, layers, modes = ([a[i] for a in seen] for i in (6, 7, 8, 9))
+    assert holds == [10.0, 3.0, 10.0, 10.0, None] and commands == [[], [], ["say hi"], [], []]
+    assert layers == [frozenset(), frozenset(), frozenset({2}), frozenset({6}), frozenset()]
+    assert modes == [frozenset({"ui"}), frozenset({"hacks", "seat"}), frozenset({"ui"}), frozenset(), frozenset()]
+
+
+def test_a_command_needs_a_layer_or_a_mode(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["fakehost", "--cmd", "say hi"])
+    with pytest.raises(SystemExit) as e:
+        fakehost.main()
+    assert e.value.code == 2
+    monkeypatch.setattr("sys.argv", ["fakehost", "--seat", "--hold", "-1"])
+    with pytest.raises(SystemExit) as e:
+        fakehost.main()
+    assert e.value.code == 2
+
+
+@pytest.mark.parametrize("mode", ["ui", "hacks", "seat"])
+def test_modes_print_persp_and_the_six_key_binds_and_nothing_of_other_modes(tmp_path, exporting, capsys, mode):
+    persp, binds = {"t": "persp", "mode": "back"}, {"t": "binds", "keys": dict(zip(("hack", "skills", "cyberware", "activate", "arms", "camo"), (71, 75, 85, 89, 76, 79)))}
+    other = {"t": "hack", "id": 1, "target": "9007199254740993", "hack": "ping", "chain": False}  # printed by --hacks only
+    run_against_fake_minecraft(tmp_path, 30, exporting, replies=[persp, binds, other], hold=0.1, modes=mode_set(mode))
+    lines = printed(capsys)
+    assert lines["persp"] == [persp] and lines["binds"] == [binds]
+    assert ("hack" in lines) == (mode == "hacks")

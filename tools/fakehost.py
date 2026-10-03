@@ -36,6 +36,21 @@ print what Minecraft reports for their layer as `<type>: <json>`:
 Re-test 2: Minecraft's `align` (the world's ground alignment k) is printed with every run, like the `blocks` resync that
 always follows it; neither needs an answer. The fake host's `cam` carries no `lv`, so Minecraft converts it at its
 current k.
+
+Re-test 3 modes (shared/protocol.md "Re-test 3"; combinable with each other and with the layer flags, same --hold, --cmd,
+--port and NPC resend; each mode runs for --hold seconds after the orbit and prints what Minecraft reports):
+  --ui     plays the UI stream: `stats`, a `quest` with a waypoint, `pins`, a `prompt`, a 4-choice `choices` hub whose
+           selection changes while its timer runs down, a `sub`title, a ringing `call`, three `notify` toasts,
+           `screen open:"pause"`, then `screen pass:"vendor"` with `cam menu:true` and `pass:""`, and a `key
+           perspective` tap (F5); the camera follows `persp back` (`fp:false`). Answers `uiact journalreq`, `phonereq`
+           and `atlasreq` with sample `reply` messages. Prints `uiact`, `persp`, `binds` and every `status`
+           (`pause` included).
+  --hacks  answers every `hack` with `hackresult` carrying `upload` and `kind` (the hostile human is a squad member, the
+           other human a crowd pedestrian, the vehicle a driver, devices rotate camera/traffic/distract/device) and sends
+           `hackspread`: `chain` and `spread` before the result, `ping` and `frenzy` after the upload; taps the Arms
+           (`key arms`) and Optical Camo (`key camo`) keys. Prints `hack`, `uiact`, `persp` and `binds` (six keys).
+  --seat   V rides in a vehicle: `state vehicle:true`, `cam seat:true` with `pl` at V's hips, and `fp` flipping every
+           2 s (a first-person then a third-person vehicle camera). Prints `persp` and `binds`.
 """
 import argparse
 import asyncio
@@ -73,6 +88,16 @@ JUMP_AT, JUMP_FOR = 0.5, 0.1  # layer 4: seconds after the scenario starts, and 
 HACK_KEY, SKILLS_KEY, KILLED_AT = (1.0, 2.0), (2.5, 2.6), 3.0  # layer 6: (down, up) and the kill, in seconds
 CYBERWARE_KEYS, ACTIVATE_KEY = ((3.5, 3.6), (4.0, 4.1)), (4.5, 4.6)  # layer 6: U opens the Cyberware screen then closes it; Y is a tap
 PCELLS_AHEAD, MAX_PCELLS = 0.5, 64  # layer 4: seconds ahead of a projectile for its wall, and the `pcells` cap
+MODES = ("ui", "hacks", "seat")  # re-test 3: --ui, --hacks, --seat
+MODE_EVENTS = {"ui": {"uiact", "persp", "binds"}, "hacks": {"hack", "uiact", "persp", "binds"}, "seat": {"persp", "binds"}}
+UI_MENU = (6.0, 7.0)  # --ui: seconds in which `cam.menu` is true (a pass-through menu is open)
+PERSPECTIVE_KEY = (8.0, 8.1)  # --ui: the F5 tap that makes Minecraft answer `persp`
+HACKS_KEYS = {"hack": (1.0, 2.0), "arms": (2.5, 2.6), "camo": (3.0, 3.1)}  # --hacks: (down, up) in seconds
+SEAT_PERIOD = 2.0  # --seat: seconds between camera switches (first person <-> third person)
+SEAT_FEET, HIPS_UP = (-1.0, SLAB_Y + 1.0, -1.0), 0.6  # --seat: V's feet; `pl` is the hips point, HIPS_UP above them
+HACK_UPLOAD = {"short_circuit": 0.6, "overheat": 1.0, "reboot_optics": 0.8, "cripple_movement": 1.2, "contagion": 1.5,
+               "synapse_burnout": 3.0, "ping": 0.5, "memory_wipe": 1.0, "cyberpsychosis": 4.0, "device": 0.0}  # canned upload seconds
+DEVICE_KINDS = ("camera", "traffic", "distract", "device")
 DEPTH_RANGE_M = 32.0
 BACKGROUND = np.array([40, 40, 48], np.float64)
 SETUP_COMMANDS = [  # a gold block at the centre and four coloured blocks on the axes: +x red, -x blue, +z lime, -z yellow
@@ -145,6 +170,103 @@ def pcells_message(projectiles: list) -> dict | None:
     return {"t": "pcells", "c": flat} if flat else None
 
 
+def hack_kind(name: str, target: str, request: int) -> str:
+    """The `hackresult.kind` of a canned answer: devices rotate through the four device kinds by request id, the vehicle's
+    driver is hacked, the hostile human is a squad member and the other human a crowd pedestrian."""
+    npc = next((e for e in npcs_message()["list"] if e["id"] == target), None)
+    if name == "device":
+        return DEVICE_KINDS[request % len(DEVICE_KINDS)]
+    if npc is None or npc["kind"] == "vehicle":
+        return "driver"
+    return "squad" if npc["hostile"] else "crowd"
+
+
+def hack_replies(m: dict) -> tuple[list[dict], list[dict], float]:
+    """The canned answer to a `hack`: (messages to send at once, messages to send `upload` seconds later, that upload).
+    `chain` and `spread` spreads come before the `hackresult`, `ping` and `frenzy` come after the upload, as the DLL does."""
+    request, target, name = m["id"], m["target"], m["hack"]
+    upload = HACK_UPLOAD.get(name, 0.0)
+    humans = [e for e in npcs_message()["list"] if e["kind"] == "human"]
+    others = [e["id"] for e in humans if e["id"] != target]
+
+    def spread(why: str, ids: list[str]) -> list[dict]:
+        return [{"t": "hackspread", "id": request, "target": i, "why": why} for i in ids]
+
+    now = spread("chain", others[:1]) if m.get("chain") is True else []
+    now += spread("spread", others[:2]) if name == "contagion" else []
+    result = {"t": "hackresult", "id": request, "ok": True, "reason": "", "upload": upload, "kind": hack_kind(name, target, request)}
+    later = spread("ping", [e["id"] for e in humans if e["hostile"]]) if name == "ping" else []
+    later += spread("frenzy", others[:1]) if name == "cyberpsychosis" else []
+    return [*now, result], later, upload
+
+
+def ui_script() -> list[tuple[float, dict]]:
+    """--ui: (seconds after the scenario starts, message) of the Minecraft-drawn UI stream, in time order. Every message is
+    an example shape of shared/protocol.md "Re-test 3" (tests/test_fakehost.py checks them against its validators)."""
+    hub = {"id": 3, "title": "Judy", "list": [{"text": "How are you?", "f": []}, {"text": "Pay 500 eddies", "f": ["pay", "quest"]},
+                                              {"text": "Let's go", "f": ["check_ok"]}, {"text": "Leave", "f": ["timed"]}]}
+
+    def choices(sel: int, left: float) -> dict:
+        return {"t": "choices", "hubs": [hub], "active": 3, "sel": sel, "left": left}
+
+    prompt = {"t": "prompt", "title": "Vending Machine", "list": [{"text": "Open", "key": "F", "hold": False, "inactive": False},
+                                                                   {"text": "Hack", "key": "R", "hold": True, "inactive": True}]}
+    sub = {"t": "sub", "show": True, "key": "q101_jackie_0042", "who": "Jackie", "text": "Hey, choom! Over here.", "secs": 3.5}
+    call = {"t": "call", "who": "Judy", "audio": True, "reject": True}
+    toast = lambda kind, title, text: {"t": "notify", "kind": kind, "title": title, "text": text, "secs": 4.0}  # noqa: E731
+    key = lambda down: {"t": "key", "k": "perspective", "down": down}  # noqa: E731
+    return sorted([
+        (0.0, {"t": "stats", "money": 12450, "wanted": 2, "district": "Watson", "time": [14, 35], "speed": -1}),
+        (0.0, {"t": "quest", "title": "The Pickup", "kind": "main", "wp": [4.5, SLAB_Y + 1.0, -6.5], "obj": [
+            {"text": "Meet Jackie at the bar", "cur": 0, "tot": 0, "opt": False, "on": True},
+            {"text": "Collect the shards", "cur": 1, "tot": 3, "opt": True, "on": False}]}),
+        (0.0, {"t": "pins", "list": [{"p": [-5.5, SLAB_Y + 1.0, 3.5], "kind": "vendor", "tr": False},
+                                     {"p": [4.5, SLAB_Y + 1.0, -6.5], "kind": "quest", "tr": True},
+                                     {"p": [6.5, SLAB_Y + 1.0, 6.5], "kind": "police", "tr": False}]}),
+        (0.2, prompt),
+        (0.5, choices(0, 8.0)), (0.8, choices(1, 7.7)), (1.1, choices(2, 7.4)), (1.4, choices(3, 7.1)),
+        (1.7, {"t": "choices", "hubs": [], "active": -1, "sel": -1, "left": -1}),
+        (1.8, {**prompt, "title": "", "list": []}),
+        (2.0, sub), (2.0, {**call, "phase": "incoming"}),
+        (2.2, toast("quest", "Job updated", "The Pickup")), (2.5, toast("money", "Eddies", "+250")), (2.8, toast("item", "Item", "Iconic pistol")),
+        (3.0, {**call, "phase": "active"}), (4.0, {**call, "phase": "end"}),
+        (5.5, {**sub, "show": False}),
+        (5.0, {"t": "screen", "open": "pause"}), (UI_MENU[0], {"t": "screen", "pass": "vendor"}), (UI_MENU[1], {"t": "screen", "pass": ""}),
+        (PERSPECTIVE_KEY[0], key(True)), (PERSPECTIVE_KEY[1], key(False)),
+    ], key=lambda e: e[0])
+
+
+def ui_replies(m: dict) -> list[dict]:
+    """--ui: the sample `reply` to a `uiact journalreq`, `phonereq` or `atlasreq` (`id` echoed; nothing for other actions)."""
+    rid = m.get("id", 0)
+    if m.get("a") == "journalreq":
+        return [{"t": "reply", "kind": "journal", "id": rid, "pins": [], "groups": [
+            {"hash": 3735928559, "title": "The Pickup", "kind": "main", "tracked": True, "done": False,
+             "lines": [{"hash": 1001, "text": "Meet Jackie at the bar", "state": 0}, {"hash": 1002, "text": "Get the car", "state": 1}]},
+            {"hash": 3735928560, "title": "Sample Gig", "kind": "gig", "tracked": False, "done": False,
+             "lines": [{"hash": 1003, "text": "Find the courier", "state": 0}]}]}]
+    if m.get("a") == "phonereq":
+        return [{"t": "reply", "kind": "phone", "id": rid, "pins": [], "groups": [
+            {"hash": 77, "title": "Judy", "kind": "sms", "tracked": False, "done": False,
+             "lines": [{"hash": 5, "text": "Call me later.", "state": 0}, {"hash": 6, "text": "Will do.", "state": 2}]}]}]
+    if m.get("a") == "atlasreq":
+        return [{"t": "reply", "kind": "atlas", "id": rid, "groups": [], "pins": [
+            {"p": [-5.5, SLAB_Y + 1.0, 3.5], "kind": "fasttravel", "name": "Watson Docks", "i": 4},
+            {"p": [4.5, SLAB_Y + 1.0, -6.5], "kind": "quest", "name": "The Pickup", "i": -1}]}]
+    return []
+
+
+def seat_cam(f: int, t: float) -> dict:
+    """--seat: V rides in a vehicle. `pl` is the hips point, `fp` flips every SEAT_PERIOD s (first person, then a third-person
+    vehicle camera that sits behind and above V)."""
+    x, y, z = SEAT_FEET
+    hips = [x, y + HIPS_UP, z]
+    first = int(t / (SEAT_PERIOD * SCRIPT_SCALE)) % 2 == 0
+    eye = [x, y + HIPS_UP + 0.7, z] if first else [x, y + HIPS_UP + 1.5, z - 4.0]
+    return {"t": "cam", "f": f, "p": eye, "r": [0.0, 0.0 if first else 15.0, 0.0], "fov": FOV, "fp": first, "pl": hips, "h": 0.0,
+            "cr": False, "seat": True}
+
+
 class Body:
     """Where V is in layer 4: falls from FALL_FROM at FALL_SPEED until Minecraft reports `flight`, then follows it (and
     says `fly:true`, as the real host's drive does); a touchdown (`flight` inactive) or an ender pearl's `teleport` puts V
@@ -174,8 +296,10 @@ class Body:
 class Cyberpunk:
     """Cyberpunk's side of layers 2-6 once the orbit is over: the timed messages it sends by itself and its answers."""
 
-    def __init__(self, layers: frozenset[int]) -> None:
-        self.layers, self.body, self.mobdmg_sent = layers, Body(), False
+    def __init__(self, layers: frozenset[int], modes: frozenset[str] = frozenset()) -> None:
+        self.layers, self.modes, self.body, self.mobdmg_sent = layers, modes, Body(), False
+        self.view_back = False  # --ui: Minecraft asked for the third-person view (`persp back`), so `cam.fp` is false
+        self.delayed: list[tuple[float, dict]] = []  # (perf_counter due time, message): the `ping` and `frenzy` spreads of --hacks
 
     def script(self) -> list[tuple[float, dict]]:
         """(seconds after the scenario starts, message), in time order: the layer 4 jump tap, the layer 6 keys and kill."""
@@ -192,15 +316,44 @@ class Cyberpunk:
             for down, up in CYBERWARE_KEYS:  # U twice: the first press opens the Cyberware screen, the second closes it
                 events += [(down, key("cyberware", True)), (up, key("cyberware", False))]
             events += [(ACTIVATE_KEY[0], key("activate", True)), (ACTIVATE_KEY[1], key("activate", False))]
+        if "hacks" in self.modes:
+            events += [(t, key(k, down)) for k, times in HACKS_KEYS.items() for t, down in zip(times, (True, False))]
+        if "seat" in self.modes:
+            events += [(0.0, {"t": "state", "active": True, "vehicle": True})]
+        if "ui" in self.modes:
+            events += ui_script()
         return sorted(((t * SCRIPT_SCALE, m) for t, m in events), key=lambda e: e[0])
 
+    def due(self, now: float) -> list[dict]:
+        """The delayed messages (--hacks) whose time has come, oldest first; they are removed."""
+        ready = sorted((d for d in self.delayed if d[0] <= now), key=lambda d: d[0])
+        self.delayed = [d for d in self.delayed if d[0] > now]
+        return [m for _, m in ready]
+
     def cam(self, f: int, t: float, held: dict) -> dict:
-        """The `cam` for frame f, t seconds into the scenario: V's body in layer 4, else the last orbit pose held."""
-        return self.body.cam(f, t) if 4 in self.layers else {**held, "f": f}
+        """The `cam` for frame f, t seconds into the scenario: V in a vehicle (--seat), V's body in layer 4, else the last
+        orbit pose held (`fp:false` once Minecraft asked for the third-person view, `menu:true` while --ui shows a pass-through menu)."""
+        if "seat" in self.modes:
+            return seat_cam(f, t)
+        cam = self.body.cam(f, t) if 4 in self.layers else {**held, "f": f}
+        if self.view_back:
+            cam["fp"] = False
+        if "ui" in self.modes:
+            cam["menu"] = UI_MENU[0] * SCRIPT_SCALE <= t < UI_MENU[1] * SCRIPT_SCALE
+        return cam
 
     def reply(self, m: dict) -> list[dict]:
         """What Cyberpunk answers to Minecraft's message `m` (only for the layers that were asked for)."""
         t, items, rid = m.get("t"), m.get("list"), m.get("id")
+        if t == "persp" and m.get("mode") in ("first", "back"):
+            self.view_back = m["mode"] == "back"
+        if "ui" in self.modes and t == "uiact":
+            return ui_replies(m)
+        if "hacks" in self.modes and t == "hack" and isinstance(rid, int) and isinstance(m.get("target"), str) and m.get("hack") in HACK_UPLOAD:
+            now, later, upload = hack_replies(m)
+            due = time.perf_counter() + upload * SCRIPT_SCALE
+            self.delayed += [(due, d) for d in later]
+            return now
         if 4 in self.layers:
             self.body.update(m)
             if t == "proj" and isinstance(items, list) and (pcells := pcells_message(items)):
@@ -230,15 +383,15 @@ def save_frame(frame: dict, out: Path, f: int) -> None:
     over_background(frame["overlay"]).save(out / f"frame_{f:03d}_overlay.png")
 
 
-def printed_events(layers: frozenset[int]) -> set[str]:
-    """The message types of Minecraft that are printed: layer 2's always, a layer 3-6 flag adds its own."""
-    return LAYER2_EVENTS.union(*(LAYER_EVENTS.get(n, ()) for n in layers))
+def printed_events(layers: frozenset[int], modes: frozenset[str] = frozenset()) -> set[str]:
+    """The message types of Minecraft that are printed: layer 2's always, a layer 3-6 flag or a re-test 3 mode adds its own."""
+    return LAYER2_EVENTS.union(*(LAYER_EVENTS.get(n, ()) for n in layers), *(MODE_EVENTS.get(m, ()) for m in modes))
 
 
 async def listen(ws, host: Cyberpunk) -> None:
     """Print Minecraft's hello, every change of its status and the events of layer 2 and of the active layers; send
     `host`'s answers."""
-    printed = printed_events(host.layers)
+    printed = printed_events(host.layers, host.modes)
     last = None
     async for raw in ws:
         m = json.loads(raw)
@@ -261,8 +414,9 @@ async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, com
     npcs = npcs_message()
     for m in (npcs, *([dmg_message()] if 2 in host.layers else []), *({"t": "cmd", "c": c} for c in commands)):
         await ws.send(json.dumps(m))
-    print(f"layer {', '.join(map(str, sorted(host.layers)))}: sent {len(npcs['list'])} npcs, {len(commands)} command(s)"
-          f"{' and a bullet dmg' if 2 in host.layers else ''}; listening {hold:g} s for {', '.join(sorted(printed_events(host.layers)))}")
+    label = ", ".join([*(f"layer {n}" for n in sorted(host.layers)), *(f"--{m}" for m in sorted(host.modes))])
+    print(f"{label}: sent {len(npcs['list'])} npcs, {len(commands)} command(s)"
+          f"{' and a bullet dmg' if 2 in host.layers else ''}; listening {hold:g} s for {', '.join(sorted(printed_events(host.layers, host.modes)))}")
     npcs_every = max(1, round(fps / NPC_HZ))
     timeline = host.script()
     t0 = time.perf_counter()
@@ -272,15 +426,19 @@ async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, com
             await ws.send(json.dumps(npcs))
         while timeline and timeline[0][0] <= t:
             await ws.send(json.dumps(timeline.pop(0)[1]))
+        for m in host.due(time.perf_counter()):
+            await ws.send(json.dumps(m))
         await ws.send(json.dumps(host.cam(first_frame + i, t, cam)))
         await asyncio.sleep(max(0.0, t0 + (i + 1) / fps - time.perf_counter()))
 
 
 async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str = shm.NAME, setup: bool = True,
-              hold: float | None = None, commands: Sequence[str] = (), layers: frozenset[int] = frozenset({2})) -> int:
-    """Returns the number of frame sets saved. `hold` (seconds) runs the scripts of `layers` (2 to 6) after the orbit."""
+              hold: float | None = None, commands: Sequence[str] = (), layers: frozenset[int] = frozenset({2}),
+              modes: frozenset[str] = frozenset()) -> int:
+    """Returns the number of frame sets saved. `hold` (seconds) runs the scripts of `layers` (2 to 6) and of the re-test 3
+    `modes` (ui, hacks, seat) after the orbit."""
     out.mkdir(parents=True, exist_ok=True)
-    host = Cyberpunk(layers if hold is not None else frozenset())
+    host = Cyberpunk(layers if hold is not None else frozenset(), modes if hold is not None else frozenset())
     async with connect(url, max_size=None) as ws:
         listener = asyncio.create_task(listen(ws, host))
         for m in ({"t": "hello", "proto": 1, "game": "cp2077", "build": "2.31"}, {"t": "view", "w": VIEW[0], "h": VIEW[1]},
@@ -327,20 +485,24 @@ def main() -> int:
     ap.add_argument("--layer4", action="store_true", help="after the orbit: V falls from y 200 with a jump tap, follows flight (glide or launch, with cam fly:true) and teleport, answers proj with pcells; print flight/teleport/proj")
     ap.add_argument("--layer5", action="store_true", help="after the orbit: print lead/pull/knock/effect (set the scene with --cmd)")
     ap.add_argument("--layer6", action="store_true", help="after the orbit: answer scan and hack, press the hack/skills keys, report a kill, press U (open, close) and tap Y; print perks/cyberware/cyberfx/perkfx/binds/scan/hack")
-    ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6: seconds to keep the link up and listen (default 10)")
-    ap.add_argument("--cmd", action="append", default=[], metavar="COMMAND", help='--layer2 .. --layer6: a server command to send after the npcs, e.g. "summon tnt 0 64 0" (repeatable)')
+    ap.add_argument("--ui", action="store_true", help="after the orbit: play the Minecraft-drawn UI stream (stats, quest, pins, prompt, choices, subtitle, call, toasts, pause and pass-through screens), answer uiact requests; print uiact/persp/binds/status")
+    ap.add_argument("--hacks", action="store_true", help="after the orbit: answer every hack with hackresult (upload, kind) and hackspread, tap the Arms and Camo keys; print hack/uiact/persp/binds")
+    ap.add_argument("--seat", action="store_true", help="after the orbit: V rides in a vehicle (cam seat:true, pl at the hips, fp flipping every 2 s); print persp/binds")
+    ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6, --ui, --hacks, --seat: seconds to keep the link up and listen (default 10)")
+    ap.add_argument("--cmd", action="append", default=[], metavar="COMMAND", help='--layer2 .. --layer6, --ui, --hacks, --seat: a server command to send after the npcs, e.g. "summon tnt 0 64 0" (repeatable)')
     args = ap.parse_args()
     layers = frozenset(n for n in range(2, 7) if getattr(args, f"layer{n}"))
+    modes = frozenset(m for m in MODES if getattr(args, m))
     url = args.url or f"ws://127.0.0.1:{args.port}"
     if args.frames < 1 or args.fps <= 0:
         ap.error("--frames and --fps must be positive")
     if args.hold < 0:
         ap.error("--hold must not be negative")
-    if args.cmd and not layers:
-        ap.error("--cmd needs one of --layer2 .. --layer6")
+    if args.cmd and not (layers or modes):
+        ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks or --seat")
     try:
         saved = asyncio.run(run(url, args.frames, args.out, args.fps, args.shm, not args.no_setup,
-                                args.hold if layers else None, args.cmd, layers))
+                                args.hold if layers or modes else None, args.cmd, layers, modes))
     except (ConnectionError, TimeoutError, ConnectionClosed) as e:
         print(f"no connection to Minecraft at {url} ({e}); start the dev client first:\n"
               '  mc\\gradlew.bat runClient --args="--quickPlaySingleplayer cyberblock"', file=sys.stderr)
