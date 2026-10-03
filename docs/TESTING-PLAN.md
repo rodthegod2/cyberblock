@@ -702,32 +702,138 @@ already running still has the old mod. The full key table and the netrunning wal
 
 ### Re-test 3 — needsInGame lists
 
-Each package of the Re-test 3 build lists the checks that only the real game can answer. The integrator pastes the lists
-of packages D, U, S, M, C, W and A under the headings below; the F1-F13 checks above cover them in the user's order. The
-checks of package P (docs and release) are filled in.
+Each package of the Re-test 3 build listed the checks that only the real game can answer; they are below, per package
+(merged on main, version 1.0.0). The F1-F13 checks above cover them in the user's order; these lists add the exact log
+lines and tuning hints. Where a package's check was overtaken by a later fix, the line says so.
 
 #### Re-test 3 — package D (DLL)
-_(the integrator pastes the list here)_
+- [ ] **F4 glide steering:** glide with the elytra, swing the mouse left and right mid-glide. The glide turns at once, and
+  the Cyberblock.log line `flight: N frames ... yaw start A end B, mouse x N counts at R deg/count, pitch min..max` shows
+  A != B. Also expect `look: R deg per mouse count` after some walking on foot (about 0.15 or your sensitivity).
+- [ ] **F3 seat:** get into a car and switch the camera (first and third person). Expect `seat: on (first person)` /
+  `seat: on (third person)` and `seat: off` when leaving; Minecraft keeps its HUD and hand (`hud hidden:false`); Steve
+  sits at the hips point; `cam.fp` is false in the third-person car camera.
+- [ ] **F2 third person:** on foot press F5 in Minecraft. Expect `persp: Minecraft asks for the third-person view`,
+  `view: third person on (distance 3.20 m)` and `view: applied, eye moved D m (expected E m)`. D should be close to E; if
+  not, the FPPCameraComponent parent frame is not V's and the offset axes need fixing in `view.cpp`. Walk toward a wall or
+  a Minecraft block: the camera shortens and does not clip. F5 again gives `view: first person (Minecraft asks for first
+  person)`. Opening a menu, a scene, a vehicle or F9 off each restore first person with a reason.
+- [ ] **F1:** fire a quickhack. With S's `Natives.reds` declaring the 5-parameter `Cyberblock_HackResult` (merged), the
+  Minecraft log shows `hackresult` with `upload`/`kind`, and `hackspread` messages arrive for chained, spread, ping and
+  frenzy targets (at most 16 per id).
+- [ ] **F8:** press Y, L, O in game: Minecraft gets `key activate/arms/camo` and Cyberpunk does not act on L/O. Log
+  `binds: hack G, skills K, cyberware U, activate Y, arms L, camo O`. Rebind two actions to the same key and all six fall
+  back.
+- [ ] **F10:** activate the Sandevistan. Expect `screenfx: sandevistan S s` (S's `Cyberblock_SetSlowMoFx` call is
+  merged) and the colour split, afterimages on moving things, lime/cyan depth edges, green-teal tint and a pulsing
+  vignette, with the HUD and hand crisp. In the ReShade overlay, set "Sandevistan effect strength" to 0 and the effect is
+  gone; opening a Cyberpunk menu during it also hides it.
+- [ ] **F12:** open a passed-through Cyberpunk menu (vendor). Expect `compositor: menu pass-through on` and no Minecraft
+  world drawn over the menu, then `off` on close.
+- [ ] **F13:** during an incoming call, T answers in Cyberpunk (log `phone: T goes to Cyberpunk ...`, via U's
+  `Cyberblock_SetPhonePrompt`, merged) instead of opening Minecraft chat.
+- [ ] **F11:** the load line reads `Cyberblock 1.0.0 loading`. With M's `hello.ver`: `Minecraft says hello: mod
+  cyberblock 1.0.0, Minecraft 26.3`; an older mod gives `version mismatch: DLL 1.0.0, mod unknown`.
 
 #### Re-test 3 — package U (Cyberpunk UI bridge)
-_(the integrator pastes the list here)_
+- [ ] While On, trigger a tutorial popup that waits for input (for example a new-mechanic tutorial). Expect `ui: shown
+  for blocking popup (TutorialPopupGameController)` or `(UI_TutorialPopup)`, `ui: pass-through tutorial`, and the popup
+  visible and grey-tinted inside a Minecraft frame. Closing it should log `ui: hidden (on)` and `ui: pass-through ended
+  (tutorial)`.
+- [ ] While On, pick up a shard and open a codex popup: expect `ui: shown for blocking popup (...)` and a usable popup.
+- [ ] While On in a car, open the vehicle radio or vehicles manager popup: expect `ui: shown for blocking popup
+  (VehicleRadioPopupGameController/VehiclesManagerPopupGameController)` and pass-through `other`.
+- [ ] While On, open a vendor (pass-through vendor) and buy a stackable item: the quantity picker must be visible and
+  usable, and the log must show `ui: shown for menu popups`. Also check sell-junk and the ripperdoc purchase confirmation.
+- [ ] Atlas pin tracking (`ui: tracked pin <i>`, `ui: track pin <i> unresolved (not a quest pin)`): **superseded** — W
+  removed the Atlas Track button, so quests are tracked from the Journal (J). Check instead that the Journal's Track button
+  tracks the quest on the HUD (see F2 step 2).
+- [ ] While On, quick save from the Minecraft pause screen and let an autosave happen: no `ui: restored (saving)` line,
+  and no Cyberpunk HUD, notifications or waiting sign appear during the save. The "Saving Night City..." and "Saved"
+  toasts appear in Minecraft.
+- [ ] Check that a non-blocking tutorial hint (`closeAtInput` and `pauseGame` both false) stays hidden. This is by
+  design; it is not forwarded to Minecraft.
 
 #### Re-test 3 — package S (scripts)
-_(the integrator pastes the list here)_
+- [ ] **F1** (the F1 table above): fire every chip at a ganger and at a pedestrian. Cyberblock.log should show `hack
+  <name> on <id>: ok (squad|crowd|driver, upload <s>s, +<n> spread)` with a non-zero upload, and the quickhack queue bar
+  should appear over the target.
+- [ ] **F1 crowd extras** after the upload: Overheat should log `hackfx: overheat crowd ignite <id> 5 s` and the
+  pedestrian burns; Reboot Optics logs `blind ... 5 s`; Cripple Movement logs `stun ... 4 s` and the pedestrian stops;
+  Memory Wipe logs `dazed ... 2 s`; Short Circuit logs `electrocuted vfx` (check whether status_electrocuted shows on a
+  crowd NPC).
+- [ ] **F1 Cyberpsychosis** on a pedestrian next to others: lines `hackfx: cyberpsychosis crowd <src> strikes <victim>`
+  every 1.5 s, at most 4, then `frenzy of <src> over`. Victims flinch.
+- [ ] **F1 Synapse Burnout** should log `hackfx: synapse_burnout <kind> heavy hit on <id>` and a `knock: <id> s=3.5
+  tier=impact` line, with no ragdoll.
+- [ ] **F1 Ping** near a gang should log `hackfx: ping <id> revealed N hostile NPCs` with N > 0; hostiles are revealed for
+  about 10 s.
+- [ ] **F1 Contagion** with 2 or more pedestrians within 6 m should log `+2 spread`, and both nearby NPCs get the poison.
+- [ ] **F7:** punch (2 m/s) should log `tier=impact` and the NPC flinches; sprint hit (4.5) `tier=stagger`; Knockback II or
+  gauntlet (7) `tier=knockdown` with no ragdoll; gauntlet + Gorilla Arms (12) `tier=ragdoll` with `impulse=32` and a
+  `moved X m/s over 0.3 s` line (tune `RagdollImpulsePerMs` from X). A lethal 10+ m/s hit should log `ragdoll (lethal:
+  ...)`.
+- [ ] **F7 Tether:** a lead tug and a rod pull should still move people with no lethal flinging; a wind charge pushes cars
+  about half as far as before (`VehicleShare` 0.5). Re-check that cars still respond enough.
+- [ ] **F3:** get in a car while Active. Expect `seat: slot Hips hips (x, y, z) tpp false` (or `seat: no Hips slot`).
+  Toggling the vehicle camera should flip the DLL's `seat: on (third person|first person)` at once; leaving the car should
+  log `seat: off`.
+- [ ] **F2:** with D's view module, F5 on foot should be allowed only while Active, not in a vehicle, menu, braindance or
+  photo mode. Block targeting in third person should match first person, because Aim measures from `ViewEye`.
+- [ ] **F10:** activate the Sandevistan. Expect `cyberfx: sandevistan N s`, then the DLL's `screenfx: sandevistan N s`;
+  the screen effect ends with the slow-mo.
 
 #### Re-test 3 — package M (Minecraft core)
-_(the integrator pastes the list here)_
+- [ ] **F3 first person:** get into a car in Cyberpunk with Cyberblock On. Expected: Minecraft's hand stays visible (no
+  `hud hidden:true`), and Steve's body is not drawn.
+- [ ] **F3 third person:** switch to a third-person vehicle camera. Expected: Steve sits on V's seat in the riding pose
+  (legs forward, walk animation still), facing the car's way. Check `SEAT_DROP` = 0.70 against a real seat: if Steve
+  floats or sinks, the hips offset (S/D) or `SEAT_DROP` needs tuning. Expected Cyberblock.log: `seat: on (third person)`.
+- [ ] **F2:** press F5 on foot. Expected: the action bar shows "Third person", latest.log has `persp: back`, and
+  Cyberblock.log has `view: third person on`. F5 again gives "First person" and `persp: first`. Exiting the
+  game/reconnecting resends the mode after hello.
+- [ ] **F7:** hit a pedestrian with a plain fist or sword. Expected: `hit.impulse` is about 2 m/s and Cyberpunk shows an
+  Impact reaction (no fling). A sprint hit is about 4.5 (Stagger). Gauntlet + Gorilla Arms perk is about 12 (knockdown +
+  ragdoll). An arrow without Punch is 2 m/s. Check the `knock:` lines from S.
+- [ ] **F11 launcher:** install the jar in a launcher profile with the JVM args from plan 1.13. Expected: the title screen
+  shows "Play Cyberblock" above Singleplayer, and with `-Dcyberblock.autostart=true` the Night City world opens by itself
+  once. latest.log: `launcher: opening cyberblock (autostart)`.
+- [ ] **F11 version:** with the 1.0.0 DLL, Cyberblock.log shows `Minecraft says hello: mod cyberblock 1.0.0, Minecraft
+  26.3` and no version mismatch.
+- [ ] **F4:** glide with the elytra and swing the mouse mid-glide. Expected: latest.log's `glide started ... yaw A` and
+  `glide ended ... yaw B` differ, and match the yaw change in the DLL flight summary.
 
 #### Re-test 3 — package C (Minecraft cyber)
-_(the integrator pastes the list here)_
+- [ ] Hosted, with Mantis Blades installed and an empty main hand, aim at an NPC proxy 5 to 10 blocks away and press L.
+  Expect: "Mantis lunge" in red, a red dust line from Steve to the NPC, a sweep and a strong-hit sound. latest.log should
+  show `cyberware: fire mantis_blades (arms)` and then `cyberware: mantis lunge hit ...`, and Cyberblock.log a `hit` for
+  that proxy. V does not move.
+- [ ] Standalone Minecraft only: a lunge at a mob that moves out of reach, so it times out after 12 ticks, should leave L
+  ready right away (no 6 s cooldown on the HUD).
 
 #### Re-test 3 — package W (Minecraft UI)
-_(the integrator pastes the list here)_
+- [ ] Quest-teleport or other long load (over 10 s): the "Loading Night City..." cover stays up for the whole load.
+  Afterwards the job tracker, Locator Bar waypoint, radar pins and eddies come back without needing a reconnect or a
+  quest change.
+- [ ] F9 off (`state active:false`) or a new host session (`hello`): the HUD data and the waypoint clear right away.
+- [ ] Atlas (M): selecting a pin shows no Track button. A fast-travel pin shows a centred "Fast travel to X" button that
+  works.
+- [ ] Phone on a mid-game save with more than 11 contacts: the mouse wheel over the contact column scrolls it, a scroll
+  bar shows, threads with pending replies are at the top, and clicking a scrolled row opens the right thread.
 
 #### Re-test 3 — package A (art, assets, lang, data)
-_(the integrator pastes the list here)_
+- [ ] Open the perk screen (P) and the ripperdoc screen (U) (C's container restyle is merged): panels should look like
+  vanilla container panels, with slot wells aligned under the nodes, cells and boxes.
+- [ ] The RAM bar HUD renders as an aqua notched boss-style bar and the radar frame (80x80) shows the white/grey bevel
+  with a yellow north tick over the map content.
+- [ ] The phone icon in the toast and screen is grey with a green/grey screen and a red dot.
 
 #### Re-test 3 — package P (protocol, docs and release)
+- [ ] **F3:** in a car, the first-person camera shows only Steve's hand, with no hotbar, bars or crosshair. In third
+  person the whole seated Steve is drawn, also with no hotbar.
+- [ ] **F11/F8:** Esc, **Minecraft Options...**, Controls, bind Advancements to a free key. Close the menus and press it:
+  the advancements screen opens with the Cyberblock tab (six advancements). If the key does nothing while Active, ask W to
+  add an Advancements button instead.
 - **Release zip on a clean machine (F11).** Unzip `dist/Cyberblock-1.0.0.zip`, run `install.bat` on a copy of the game
   folder: it must refuse while Cyberpunk runs, find the game through Steam (or accept a dropped folder with `-Game`), warn
   about missing frameworks, back up the saves once, never overwrite a foreign file, keep an existing `ReShade.fxh` and
