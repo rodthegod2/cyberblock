@@ -32,6 +32,9 @@ public final class UiHud {
 		before(VanillaHudElements.CHAT, "radar", RadarHud::draw);
 		before(VanillaHudElements.CHAT, "stats", StatsHud::draw);
 		before(VanillaHudElements.CHAT, "quest", QuestHud::draw);
+		before(VanillaHudElements.CHAT, "subtitle", SubtitleHud::draw);
+		before(VanillaHudElements.CHAT, "choices", ChoicesHud::draw);
+		before(VanillaHudElements.CHAT, "prompt", PromptHud::draw);
 		HudElementRegistry.attachElementAfter(VanillaHudElements.CROSSHAIR, id("third_person_crosshair"), CrosshairHud::draw);
 		VehicleHud.register();
 	}
