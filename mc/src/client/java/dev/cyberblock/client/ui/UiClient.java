@@ -19,7 +19,6 @@ public class UiClient implements ClientModInitializer {
 	}
 
 	private static void tick(final Minecraft minecraft) {
-		UiLink.tick();
 		Waypoints.tick(minecraft);
 		if (minecraft.gui.screen() == null) {
 			// every way out of the pause screen and the screens opened from it ends with no screen: Night City runs again

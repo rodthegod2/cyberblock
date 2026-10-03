@@ -31,8 +31,8 @@ final class Waypoints {
 		ClientPacketListener connection = minecraft.getConnection();
 		UiModel.Quest quest = UiModel.quest;
 		// the Locator Bar's dots are not part of a wrappable HUD element: in a vehicle (QuestHud's arrow instead) and under a
-		// pass-through menu the waypoint is taken out
-		Vec3i want = quest == null || quest.wp() == null || !Cyberblock.active || HostState.vehicle() || UiHud.covered() ? null
+		// pass-through menu the waypoint is taken out, and while the host is quiet (it comes back, the quest is kept)
+		Vec3i want = quest == null || quest.wp() == null || !Cyberblock.active || !UiLink.recentlyLinked() || HostState.vehicle() || UiHud.covered() ? null
 			: new Vec3i((int) Math.floor(quest.wp().x()), (int) Math.floor(quest.wp().y()), (int) Math.floor(quest.wp().z()));
 		if (connection != shownOn) {
 			// a new world: the old manager went with the old connection

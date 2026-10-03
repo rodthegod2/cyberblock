@@ -16,11 +16,16 @@ import org.jspecify.annotations.Nullable;
  * toasts, waypoints) to the client thread. Also: {@code npcs} for the radar, {@code hello} and {@code state} for resets.
  */
 public final class UiLink {
-	/** Host messages older than this mean the link is gone: the UI data is dropped. */
-	private static final long STALE_NANOS = 10_000_000_000L;
+	/**
+	 * A host quiet for longer than this hides the HUD, but the data stays: Cyberpunk sends quest, pins and stats only when they
+	 * change, so a quiet spell (a long quest-teleport load) must not blank them. Only {@code hello} and {@code state active:false}
+	 * drop the data.
+	 */
+	private static final long QUIET_NANOS = 10_000_000_000L;
+	/** The loading cover's safety limit: it stays up through a whole load and goes only on screen.pass "", hello or state off. */
+	private static final long LOADING_NANOS = 120_000_000_000L;
 	private static final long LINKED_NANOS = 2_000_000_000L;
 	private static volatile long lastHostNanos;
-	private static volatile boolean stale = true;
 	private static final AtomicInteger warned = new AtomicInteger();
 	private static final AtomicInteger nextRequest = new AtomicInteger(1);
 	/** Screens waiting for a {@code reply}, by request id. */
@@ -129,24 +134,24 @@ public final class UiLink {
 		});
 	}
 
-	/** Every client tick: a link that went quiet drops the UI data once. */
-	static void tick() {
-		if (!stale && System.nanoTime() - lastHostNanos > STALE_NANOS) {
-			stale = true;
-			UiModel.reset();
-			waiting.clear();
-			onReset();
-		}
-	}
-
 	/** The host spoke within the last 2 s. */
 	public static boolean linked() {
-		return lastHostNanos != 0L && System.nanoTime() - lastHostNanos < LINKED_NANOS;
+		return heardWithin(LINKED_NANOS);
 	}
 
-	/** The host spoke within the last 10 s (the loading cover stays up while Night City loads). */
+	/** The host spoke within the last 10 s: the HUD shows; quieter than that it hides (the data is kept). */
 	public static boolean recentlyLinked() {
-		return lastHostNanos != 0L && System.nanoTime() - lastHostNanos < STALE_NANOS;
+		return heardWithin(QUIET_NANOS);
+	}
+
+	/** Cyberpunk said it is loading ({@code screen.pass:"loading"}) and has not ended it; 120 s of silence is the safety limit. */
+	public static boolean loading() {
+		return UiModel.pass.equals("loading") && heardWithin(LOADING_NANOS);
+	}
+
+	private static boolean heardWithin(final long nanos) {
+		long last = lastHostNanos;
+		return last != 0L && System.nanoTime() - last < nanos;
 	}
 
 	private static void heard() {
@@ -155,7 +160,6 @@ public final class UiLink {
 
 	/** Client thread: the UI data was dropped. */
 	private static void onReset() {
-		stale = !recentlyLinked();
 		UiEvents.reset();
 	}
 
@@ -195,7 +199,6 @@ public final class UiLink {
 			warn(type);
 		} else {
 			heard();
-			stale = false;
 		}
 
 		return parsed;

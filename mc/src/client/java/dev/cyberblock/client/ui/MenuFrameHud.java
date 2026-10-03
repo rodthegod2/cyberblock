@@ -26,7 +26,7 @@ final class MenuFrameHud {
 		String pass = UiModel.pass;
 		Font font = Minecraft.getInstance().font;
 		int w = graphics.guiWidth(), h = graphics.guiHeight();
-		if (pass.equals("loading") && UiLink.recentlyLinked()) {
+		if (UiLink.loading()) {
 			// opaque: vanilla's menu background is see-through over a world
 			graphics.fill(0, 0, w, h, 0xFF000000);
 			Screen.extractMenuBackgroundTexture(graphics, Screen.MENU_BACKGROUND, 0, 0, 0.0F, 0.0F, w, h);

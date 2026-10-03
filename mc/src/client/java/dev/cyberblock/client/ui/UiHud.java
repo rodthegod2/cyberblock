@@ -44,10 +44,13 @@ public final class UiHud {
 		HudElementRegistry.attachElementBefore(vanilla, id(path), element);
 	}
 
-	/** The local player when a host drives Minecraft and no pass-through menu covers the screen; else null (draw nothing). */
+	/**
+	 * The local player when a host drives Minecraft, spoke within 10 s and no pass-through menu covers the screen; else null (draw
+	 * nothing). A quiet host only hides the HUD: UiModel keeps its data for when the host speaks again.
+	 */
 	static @Nullable Player player() {
 		Minecraft minecraft = Minecraft.getInstance();
-		if (!Cyberblock.active || minecraft.player == null || covered()) {
+		if (!Cyberblock.active || minecraft.player == null || !UiLink.recentlyLinked() || covered()) {
 			return null;
 		}
 
@@ -65,7 +68,7 @@ public final class UiHud {
 	 */
 	static boolean covered() {
 		HostState.Pose pose = HostState.frame();
-		return pose != null && pose.menu() || UiModel.pass.equals("loading") && UiLink.recentlyLinked();
+		return pose != null && pose.menu() || UiLink.loading();
 	}
 
 	/**

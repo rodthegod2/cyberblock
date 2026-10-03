@@ -23,9 +23,13 @@ import org.jspecify.annotations.Nullable;
 /**
  * Night City's world map as a Minecraft atlas (F12, section 1.11: M opens it). A parchment-coloured grid drawn in code (north up,
  * pannable by dragging, zoomed with the wheel or the +/- buttons), every map pin of Cyberpunk's {@code atlas} reply with vanilla
- * map-decoration sprites, V as the map's player arrow and the tracked objective. Clicking a pin selects it: Track sends
- * {@code uiact track} (arg "pin", id = the pin's index in the reply), Fast travel {@code uiact fasttravel} (id = the fast-travel
- * index), offered only for pins the reply marks as fast-travel points (index &gt;= 0).
+ * map-decoration sprites, V as the map's player arrow and the tracked objective. Clicking a pin selects it: Fast travel sends
+ * {@code uiact fasttravel} (id = the fast-travel index), offered only for pins the reply marks as fast-travel points
+ * (index &gt;= 0).
+ *
+ * <p>No Track button: section 1.1's atlas reply pins carry no journal hash, and Cyberpunk's {@code uiact track} handler takes only a
+ * journal hash, so the Atlas has nothing it can name (contract deviation reported; the Journal's Track works). It comes back once
+ * reply pins carry a hash or {@code track} accepts arg "pin" with id = the pin's index.
  */
 public final class AtlasScreen extends Screen {
 	private static final int MARGIN = 8;
@@ -44,7 +48,7 @@ public final class AtlasScreen extends Screen {
 	private int requestId = -1;
 	private int selected = -1;
 	private boolean dragging;
-	private @Nullable Button track, travel;
+	private @Nullable Button travel;
 
 	public AtlasScreen(final @Nullable Screen parent) {
 		super(NightCityPauseScreen.ui("atlas.title", "Atlas"));
@@ -71,9 +75,7 @@ public final class AtlasScreen extends Screen {
 		int y = this.height - BOTTOM + 4;
 		this.addRenderableWidget(Button.builder(Component.literal("+"), b -> this.zoom(WHEEL_STEP * WHEEL_STEP)).bounds(MARGIN, y, 20, 20).build());
 		this.addRenderableWidget(Button.builder(Component.literal("-"), b -> this.zoom(1.0 / (WHEEL_STEP * WHEEL_STEP))).bounds(MARGIN + 22, y, 20, 20).build());
-		this.track = this.addRenderableWidget(Button.builder(NightCityPauseScreen.ui("atlas.track", "Track"), b -> this.trackSelected())
-			.bounds(this.width / 2 - 102, y, 100, 20).build());
-		this.travel = this.addRenderableWidget(Button.builder(Component.empty(), b -> this.travelSelected()).bounds(this.width / 2 + 2, y, 140, 20).build());
+		this.travel = this.addRenderableWidget(Button.builder(Component.empty(), b -> this.travelSelected()).bounds(this.width / 2 - 70, y, 140, 20).build());
 		this.updateButtons();
 	}
 
@@ -88,18 +90,11 @@ public final class AtlasScreen extends Screen {
 
 	private void updateButtons() {
 		UiModel.ReplyPin pin = this.selectedPin();
-		if (this.track != null && this.travel != null) {
-			this.track.visible = pin != null;
+		if (this.travel != null) {
 			this.travel.visible = pin != null && pin.index() >= 0;
 			if (pin != null && pin.index() >= 0) {
 				this.travel.setMessage(NightCityPauseScreen.ui("atlas.fast_travel", "Fast travel to %s", pin.name()));
 			}
-		}
-	}
-
-	private void trackSelected() {
-		if (this.selectedPin() != null) {
-			UiLink.act("track", "pin", 0L, this.selected);
 		}
 	}
 
@@ -191,8 +186,8 @@ public final class AtlasScreen extends Screen {
 
 		UiModel.ReplyPin pin = this.selectedPin();
 		if (pin != null && pin.index() < 0 && pin.kind().equals("fasttravel")) {
-			graphics.text(this.font, NightCityPauseScreen.ui("atlas.fast_travel_off", "Fast travel: use the Night City map (Night City Menu...)"),
-				this.width / 2 + 2, this.height - BOTTOM + 10, McTheme.GRAY, true);
+			graphics.centeredText(this.font, NightCityPauseScreen.ui("atlas.fast_travel_off", "Fast travel: use the Night City map (Night City Menu...)"),
+				this.width / 2, this.height - BOTTOM + 10, McTheme.GRAY);
 		}
 
 		super.extractRenderState(graphics, mouseX, mouseY, a);

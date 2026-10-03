@@ -4,6 +4,7 @@ import dev.cyberblock.client.ui.McTheme;
 import dev.cyberblock.client.ui.UiLink;
 import dev.cyberblock.client.ui.UiModel;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
@@ -14,7 +15,8 @@ import net.minecraft.util.FormattedCharSequence;
 import org.jspecify.annotations.Nullable;
 
 /**
- * V's messages as a Minecraft container screen (F12, section 1.11): contacts on the left in inventory slots, the selected thread
+ * V's messages as a Minecraft container screen (F12, section 1.11): contacts on the left in inventory slots (threads with a reply
+ * to send first; scroll with the wheel), the selected thread
  * on the right (the contact's lines left-aligned, V's right-aligned), and the replies V can choose as vanilla buttons, each sending
  * {@code uiact smsreply} with the reply's hash; the thread is asked for again afterwards.
  */
@@ -31,6 +33,10 @@ public final class PhoneScreen extends Screen {
 	private UiModel.@Nullable Reply reply;
 	private int requestId = -1;
 	private long selectedHash = -1L;
+	/** The reply's contacts, the threads with a reply V can send first (otherwise in Cyberpunk's order). */
+	private List<UiModel.Group> contacts = List.of();
+	/** The first contact row shown; the wheel over the contact column moves it. */
+	private int scroll;
 	private final List<Button> replyButtons = new ArrayList<>();
 
 	public PhoneScreen(final @Nullable Screen parent) {
@@ -66,25 +72,47 @@ public final class PhoneScreen extends Screen {
 	private void request() {
 		this.requestId = UiLink.request("phone", r -> {
 			this.reply = r;
-			if (this.selected() == null && !r.groups().isEmpty()) {
-				this.selectedHash = r.groups().getFirst().hash();
+			// a stable sort: the actionable threads show without scrolling
+			this.contacts = r.groups().stream().sorted(Comparator.comparing((UiModel.Group g) -> !pending(g))).toList();
+			if (this.selected() == null && !this.contacts.isEmpty()) {
+				this.selectedHash = this.contacts.getFirst().hash();
 			}
 
 			this.updateReplies();
 		});
 	}
 
+	private static boolean pending(final UiModel.Group group) {
+		return group.lines().stream().anyMatch(l -> l.state() == 2);
+	}
+
 	private UiModel.@Nullable Group selected() {
-		UiModel.Reply r = this.reply;
-		if (r != null) {
-			for (UiModel.Group group : r.groups()) {
-				if (group.hash() == this.selectedHash) {
-					return group;
-				}
+		for (UiModel.Group group : this.contacts) {
+			if (group.hash() == this.selectedHash) {
+				return group;
 			}
 		}
 
 		return null;
+	}
+
+	private int listTop() {
+		return this.top() + 30;
+	}
+
+	/** Contact rows that fit in the column's slot. */
+	private static int visibleRows() {
+		return (H - 38) / ROW;
+	}
+
+	/** The scroll offset kept within the list, so drawing and clicking agree. */
+	private int clampedScroll() {
+		this.scroll = Math.clamp(this.scroll, 0, Math.max(0, this.contacts.size() - visibleRows()));
+		return this.scroll;
+	}
+
+	private boolean inContacts(final double x) {
+		return x >= this.left() + 8 && x < this.left() + 7 + CONTACTS_W - 1;
 	}
 
 	/** The replies V can send in the selected thread (state 2). */
@@ -118,29 +146,31 @@ public final class PhoneScreen extends Screen {
 		graphics.text(this.font, this.title, left + 8, top + 6, McTheme.PANEL_TEXT, false);
 		graphics.text(this.font, NightCityPauseScreen.ui("phone.contacts", "Contacts"), left + 8, top + 18, McTheme.PANEL_TEXT, false);
 		UiModel.Reply r = this.reply;
-		int listTop = top + 30;
+		int listTop = this.listTop();
 		McTheme.slot(graphics, left + 7, listTop - 1, CONTACTS_W, H - 38);
 		McTheme.slot(graphics, left + CONTACTS_W + 11, top + 17, W - CONTACTS_W - 18, H - 24);
 		if (r == null) {
 			Component status = this.requestId < 0 ? NightCityPauseScreen.ui("screen.unavailable", "Night City is not connected") : Component.literal("...");
 			graphics.text(this.font, status, left + CONTACTS_W + 16, top + 22, this.requestId < 0 ? McTheme.RED : McTheme.WHITE, false);
-		} else if (r.groups().isEmpty()) {
+		} else if (this.contacts.isEmpty()) {
 			graphics.text(this.font, NightCityPauseScreen.ui("phone.empty", "No messages"), left + CONTACTS_W + 16, top + 22, McTheme.GRAY, false);
 		} else {
-			int y = listTop;
-			for (UiModel.Group group : r.groups()) {
-				if (y + ROW > top + H - 8) {
-					break;
-				}
-
+			int y = listTop, first = this.clampedScroll(), rows = visibleRows(), total = this.contacts.size();
+			for (UiModel.Group group : this.contacts.subList(first, Math.min(total, first + rows))) {
 				boolean selected = group.hash() == this.selectedHash;
-				boolean hovered = mouseX >= left + 8 && mouseX < left + 7 + CONTACTS_W - 1 && mouseY >= y && mouseY < y + ROW;
+				boolean hovered = this.inContacts(mouseX) && mouseY >= y && mouseY < y + ROW;
 				if (selected || hovered) {
 					graphics.fill(left + 8, y, left + 7 + CONTACTS_W - 1, y + ROW, selected ? 0x80FFFFFF : 0x40FFFFFF);
 				}
 
 				graphics.text(this.font, this.font.plainSubstrByWidth(group.title(), CONTACTS_W - 8), left + 11, y + 3, selected ? McTheme.YELLOW : McTheme.WHITE, true);
 				y += ROW;
+			}
+
+			if (total > rows) {
+				// a thin scroll bar on the slot's right edge: there are more contacts than fit
+				int trackH = rows * ROW, thumbH = Math.max(6, trackH * rows / total), thumbY = listTop + (trackH - thumbH) * first / (total - rows);
+				graphics.fill(left + 7 + CONTACTS_W - 3, thumbY, left + 7 + CONTACTS_W - 1, thumbY + thumbH, McTheme.GRAY);
 			}
 
 			this.drawThread(graphics);
@@ -188,21 +218,27 @@ public final class PhoneScreen extends Screen {
 			return true;
 		}
 
-		UiModel.Reply r = this.reply;
-		int left = this.left(), y = this.top() + 30;
-		if (r != null && event.x() >= left + 8 && event.x() < left + 7 + CONTACTS_W) {
-			for (UiModel.Group group : r.groups()) {
-				if (event.y() >= y && event.y() < y + ROW) {
-					this.selectedHash = group.hash();
-					this.updateReplies();
-					return true;
-				}
-
-				y += ROW;
+		if (this.inContacts(event.x()) && event.y() >= this.listTop()) {
+			int row = (int) ((event.y() - this.listTop()) / ROW), i = this.clampedScroll() + row;
+			if (row < visibleRows() && i < this.contacts.size()) {
+				this.selectedHash = this.contacts.get(i).hash();
+				this.updateReplies();
+				return true;
 			}
 		}
 
 		return false;
+	}
+
+	@Override
+	public boolean mouseScrolled(final double x, final double y, final double scrollX, final double scrollY) {
+		if (scrollY != 0.0 && this.inContacts(x)) {
+			this.scroll -= (int) Math.signum(scrollY);
+			this.clampedScroll();
+			return true;
+		}
+
+		return super.mouseScrolled(x, y, scrollX, scrollY);
 	}
 
 	@Override

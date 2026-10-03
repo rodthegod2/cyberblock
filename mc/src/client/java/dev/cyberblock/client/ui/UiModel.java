@@ -57,7 +57,7 @@ public final class UiModel {
 	private UiModel() {
 	}
 
-	/** A new host session or a link drop: nothing Cyberpunk said before is true any more. */
+	/** A new host session ({@code hello}) or Cyberblock off ({@code state active:false}): nothing Cyberpunk said before holds. */
 	public static void reset() {
 		stats = null;
 		quest = null;
