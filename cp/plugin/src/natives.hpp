@@ -20,6 +20,9 @@ namespace cb
 		inline std::atomic<bool> crouched{false};
 		/// Set by Cyberblock_SetMenu: a Cyberpunk menu is open, so input forwarding pauses.
 		inline std::atomic<bool> menuOpen{false};
+		/// Set by Cyberblock_SetChoices: a Cyberpunk dialogue or choice list shows two or more choices, so E, Q, 1-4 and the
+		/// wheel stay Cyberpunk's. Back to false whenever Cyberblock_SetActive changes the state.
+		inline std::atomic<bool> choicesOpen{false};
 		/// Set by Cyberblock_SetLookCapture: raw mouse deltas go to Minecraft as `look` (the camera-only flight fallback).
 		inline std::atomic<bool> lookCapture{false};
 		/// F9 went down: set by the window hook, read and cleared by Cyberblock_ConsumeToggle.

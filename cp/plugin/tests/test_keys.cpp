@@ -67,6 +67,24 @@ TEST(everything_else_reaches_cyberpunk)
 		CHECK(!is_swallowed(vk, defaults));
 }
 
+TEST(a_cyberpunk_choice_list_keeps_e_q_and_1_to_4)
+{
+	const Context choices{.choices = true};
+	for (uint32_t vk : {uint32_t('E'), uint32_t('Q'), uint32_t('1'), uint32_t('2'), uint32_t('3'), uint32_t('4')})
+	{
+		CHECK(is_choice_key(vk));
+		CHECK(is_swallowed(vk, Binds{}) && !is_swallowed(vk, Binds{}, choices));
+	}
+	// everything else Minecraft takes stays Minecraft's: 5-9, T, X, /, F5, the bound keys, and F9
+	for (uint32_t vk : {uint32_t('5'), uint32_t('9'), uint32_t('T'), uint32_t('X'), kOem2, kF5, kG, kK, kF9})
+	{
+		CHECK(!is_choice_key(vk));
+		CHECK(is_swallowed(vk, Binds{}, choices));
+	}
+	for (uint32_t vk : {uint32_t('W'), uint32_t('F'), kSpace, kShift})
+		CHECK(!is_swallowed(vk, Binds{}, choices));
+}
+
 TEST(f9_never_reaches_cyberpunk)
 {
 	// Cyberblock's toggle; Cyberpunk's default F9 is QuickLoad, which loaded a save in the 2026-10-03 session
@@ -249,6 +267,13 @@ TEST(strip_removes_the_left_right_middle_down_and_wheel_bits_and_keeps_the_up_bi
 	}
 	CHECK(strip_down_and_wheel(0) == 0);
 	CHECK(strip_down_and_wheel(0xFFFF) == 0xF3EA); // 0xFFFF without 0x0C15 (the five down and wheel bits): the rest is left alone
+}
+
+TEST(strip_down_keeps_the_wheels_for_a_cyberpunk_choice_list)
+{
+	CHECK(strip_down(kMouseWheel) == kMouseWheel && strip_down(kMouseHWheel) == kMouseHWheel);
+	CHECK(strip_down(uint16_t(kMouseLeftDown | kMouseRightDown | kMouseMiddleDown)) == 0);
+	CHECK(strip_down(uint16_t(kMouseLeftDown | kMouseWheel | kMouseButton4Down | 0x0002)) == (kMouseWheel | kMouseButton4Down | 0x0002));
 }
 
 TEST(mouse_4_and_5_stay_with_cyberpunk)

@@ -34,9 +34,18 @@ namespace
 
 namespace cb::keys
 {
-	bool is_swallowed(uint32_t vk, const Binds &binds)
+	bool is_choice_key(uint32_t vk)
 	{
-		return vk == kF9 || in_fixed_swallow_set(vk) || vk == binds.hack || vk == binds.skills;
+		return vk == kE || vk == kQ || (vk >= kDigit1 && vk <= kDigit4);
+	}
+
+	bool is_swallowed(uint32_t vk, const Binds &binds, Context context)
+	{
+		if (vk == kF9)
+			return true;
+		if (context.choices && is_choice_key(vk))
+			return false;
+		return in_fixed_swallow_set(vk) || vk == binds.hack || vk == binds.skills;
 	}
 
 	bool bindable(uint32_t vk)

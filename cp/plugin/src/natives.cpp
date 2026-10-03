@@ -159,6 +159,7 @@ namespace
 		if (changed)
 		{
 			cb::log::info("mashup %s%s", active ? "on" : "off", inVehicle ? " (in a vehicle)" : "");
+			cb::natives::choicesOpen = false; // the script sets it again on its next tick
 			send_state();
 		}
 		if (activeChanged)
@@ -644,6 +645,16 @@ namespace
 		cb::natives::menuOpen = open;
 	}
 
+	// Cyberblock_SetChoices(open: Bool) -> Void: a Cyberpunk dialogue or choice list shows two or more choices; E, Q, 1-4
+	// and the wheel go to Cyberpunk (to pick one) instead of Minecraft until it is false again.
+	void SetChoices(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		bool open = false;
+		RED4ext::GetParameter(frame, &open);
+		++frame->code;
+		cb::natives::choicesOpen = open;
+	}
+
 	// Cyberblock_SetLookCapture(on: Bool) -> Void: the camera-only flight fallback: while on, raw mouse movement goes to
 	// Minecraft as `look` deltas.
 	void SetLookCapture(IScriptable *, CStackFrame *frame, void *, int64_t)
@@ -743,6 +754,7 @@ namespace cb::natives
 		add(rtti, "Cyberblock_SetStance", &SetStance, nullptr, {{"Bool", "crouched"}});
 		add(rtti, "Cyberblock_GameMode", &GameModeNative, "CName");
 		add(rtti, "Cyberblock_SetMenu", &SetMenu, nullptr, {{"Bool", "open"}});
+		add(rtti, "Cyberblock_SetChoices", &SetChoices, nullptr, {{"Bool", "open"}});
 		add(rtti, "Cyberblock_SetLookCapture", &SetLookCapture, nullptr, {{"Bool", "on"}});
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});
 		log::info("redscript natives registered");

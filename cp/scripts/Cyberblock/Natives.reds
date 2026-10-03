@@ -26,6 +26,7 @@ public native func Cyberblock_EventId() -> Int32;       // hit: mob id (-1 none)
 // Stance, menus, game mode
 public native func Cyberblock_SetStance(crouched: Bool) -> Void;     // carried as cam.cr until changed
 public native func Cyberblock_SetMenu(open: Bool) -> Void;           // a Cyberpunk menu is open: input forwarding pauses
+public native func Cyberblock_SetChoices(open: Bool) -> Void;        // 2+ dialogue choices shown: E, Q, 1-4, wheel stay Cyberpunk's
 public native func Cyberblock_GameMode() -> CName;                   // last status.gm, n"" before any status
 // Layer 3 mobs: Cyberblock_MobCount takes a snapshot of the latest mobs list that the getters read (i in 0..count-1)
 public native func Cyberblock_MobCount() -> Int32;

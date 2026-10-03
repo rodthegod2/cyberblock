@@ -17,6 +17,7 @@ namespace cb::keys
 	inline constexpr uint32_t kControl = 0x11;
 	inline constexpr uint32_t kSpace = 0x20;
 	inline constexpr uint32_t kDigit1 = 0x31; // '1'..'9' are 0x31..0x39
+	inline constexpr uint32_t kDigit4 = 0x34;
 	inline constexpr uint32_t kDigit9 = 0x39;
 	inline constexpr uint32_t kA = 0x41;
 	inline constexpr uint32_t kC = 0x43;
@@ -45,9 +46,21 @@ namespace cb::keys
 		bool operator==(const Binds &) const = default;
 	};
 
-	/// Keys Cyberpunk never sees while forwarding: E, Q, T, X, 1-9, "/", F5 and the two bound keys, and F9 (Cyberblock's
-	/// toggle, which input.cpp keeps from Cyberpunk in every state, so its QuickLoad never fires).
-	bool is_swallowed(uint32_t vk, const Binds &binds);
+	/// What is on screen besides the world.
+	struct Context
+	{
+		/// A Cyberpunk dialogue or choice list offers two or more choices (Cyberblock_SetChoices): E, Q, 1-4 and the wheel
+		/// pick them, so they stay Cyberpunk's.
+		bool choices = false;
+	};
+
+	/// E, Q and 1-4: the keys a Cyberpunk choice list needs while Context::choices.
+	bool is_choice_key(uint32_t vk);
+
+	/// Keys Cyberpunk never sees while forwarding: E, Q, T, X, 1-9, "/", F5 and the two bound keys (but not E, Q and 1-4
+	/// while `context.choices`), and F9 (Cyberblock's toggle, which input.cpp keeps from Cyberpunk in every state, so its
+	/// QuickLoad never fires).
+	bool is_swallowed(uint32_t vk, const Binds &binds, Context context = {});
 
 	/// May `vk` be bound to hack or skills: 1..254, and not F9, Esc, Space, Shift, Ctrl, a key of the fixed swallow set
 	/// above (E Q T X 1-9 / F5), or one of Cyberpunk's own letters W A S D C F I M J H N B P V Z R. Of the keys Minecraft
@@ -128,6 +141,12 @@ namespace cb::keys
 	constexpr uint16_t strip_down_and_wheel(uint16_t buttonFlags)
 	{
 		return static_cast<uint16_t>(buttonFlags & ~kMouseDownAndWheelBits);
+	}
+
+	/// As strip_down_and_wheel, but the wheels stay too: while a Cyberpunk choice list is shown the wheel scrolls it.
+	constexpr uint16_t strip_down(uint16_t buttonFlags)
+	{
+		return static_cast<uint16_t>(buttonFlags & ~(kMouseLeftDown | kMouseRightDown | kMouseMiddleDown));
 	}
 
 	/// Minecraft turns 0.15 degrees per raw mouse count at sensitivity 100 %.

@@ -22,7 +22,8 @@
 // Layers 3-6 wiring (plan 2026-10-03 S1.6, section 1.4): every tick with a player also runs CyberblockPuppets,
 // CyberblockFlight, CyberblockTether and CyberblockProjectiles (live: Active or Vehicle, not saving) and
 // CyberblockPerks and CyberblockBuffs (active: Active, not saving), reports whether V is crouched
-// (Cyberblock_SetStance) and whether a Cyberpunk menu is open (Cyberblock_SetMenu). ClearWorld (every section 1.4
+// (Cyberblock_SetStance), whether a Cyberpunk menu is open (Cyberblock_SetMenu) and whether a dialogue offers two or more
+// choices while Active (Cyberblock_SetChoices: E, Q, 1-4 and the wheel then stay Cyberpunk's). ClearWorld (every section 1.4
 // Clear plus CyberblockCollision.Clear) runs before every save, on session ready, at session end and on every
 // transition out of Active/Vehicle.
 //
@@ -89,6 +90,7 @@ public class CyberblockSystem extends ScriptableSystem {
       ui.UnregisterListenerBool(GetAllBlackboardDefs().UI_System.IsInMenu, this.menuListener);
     }
     Cyberblock_SetMenu(false);
+    Cyberblock_SetChoices(false);
     this.playerState.ShowHud();
     CyberblockSystem.ClearWorld(this.GetGameInstance());
     this.state = CyberblockState.Off;
@@ -170,11 +172,14 @@ public class CyberblockSystem extends ScriptableSystem {
     }
     let player = GetPlayer(game);
     if !IsDefined(player) {
+      Cyberblock_SetChoices(false);
       // No world to act on: Minecraft block changes still update the collision registry, the other events are dropped.
       this.events.Tick(game, false);
       return;
     }
     this.Step(player, toggle);
+    // A dialogue or choice list with two or more choices keeps E, Q, 1-4 and the wheel for Cyberpunk (the DLL).
+    Cyberblock_SetChoices(Equals(this.state, CyberblockState.Active) && CyberblockSystem.ChoiceCount(game) >= 2);
     this.UpdatePlayer(player);
     let on = CyberblockSystem.IsOn(this.state);
     if on {
@@ -221,6 +226,22 @@ public class CyberblockSystem extends ScriptableSystem {
     }
     let state = IntEnum<gamePSMLocomotionStates>(psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.Locomotion));
     return Equals(state, gamePSMLocomotionStates.Crouch) || Equals(state, gamePSMLocomotionStates.CrouchDodge) || Equals(state, gamePSMLocomotionStates.Slide);
+  }
+
+  // The choices on screen: every choice of every dialogue choice hub (UIInteractions.DialogChoiceHubs, as
+  // DefaultTransition.AreChoiceHubsActive reads it, defaultTransition.swift:1586; DialogChoiceHubs.choiceHubs and
+  // ListChoiceHubData.choices, orphans.swift).
+  private static func ChoiceCount(game: GameInstance) -> Int32 {
+    let interactions = GameInstance.GetBlackboardSystem(game).Get(GetAllBlackboardDefs().UIInteractions);
+    if !IsDefined(interactions) {
+      return 0;
+    }
+    let hubs = FromVariant<DialogChoiceHubs>(interactions.GetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs));
+    let count = 0;
+    for hub in hubs.choiceHubs {
+      count += ArraySize(hub.choices);
+    }
+    return count;
   }
 
   private cb func OnMenuChanged(inMenu: Bool) -> Bool {

@@ -86,6 +86,18 @@ namespace
 		return forwarding() && cb::link().screen_open();
 	}
 
+	/// A Cyberpunk choice list with two or more choices is shown and no Minecraft screen covers it: E, Q, 1-4 and the wheel
+	/// are Cyberpunk's.
+	bool choices_shown()
+	{
+		return cb::natives::choicesOpen && !cb::link().screen_open();
+	}
+
+	cb::keys::Context context()
+	{
+		return {.choices = choices_shown()};
+	}
+
 	/// Shift and Ctrl as the key state of the message being handled has them, in SDL bits.
 	int mods()
 	{
@@ -207,7 +219,7 @@ namespace
 			return screen_open() || g_held.contains(kEscape);
 		if (vk == VK_F9)
 			return true; // Cyberblock's toggle: Cyberpunk's own F9 (QuickLoad) never fires while its window is in front
-		const bool swallowable = forwarding() && cb::keys::is_swallowed(vk, binds());
+		const bool swallowable = forwarding() && cb::keys::is_swallowed(vk, binds(), context());
 		return (down ? g_rawGate.down(vk, swallowable) : g_rawGate.up(vk)) == cb::keys::KeyGate::Verdict::Swallow;
 	}
 
@@ -271,27 +283,32 @@ namespace
 			return ours;
 		}
 
-		const bool swallowable = forwarding() && cb::keys::is_swallowed(static_cast<uint32_t>(vk), binds());
-		const bool swallow = (down ? g_messageGate.down(static_cast<uint32_t>(vk), swallowable)
-								   : g_messageGate.up(static_cast<uint32_t>(vk))) == cb::keys::KeyGate::Verdict::Swallow;
+		const auto code = static_cast<uint32_t>(vk);
+		const cb::keys::Context now = context();
+		const bool swallowable = forwarding() && cb::keys::is_swallowed(code, binds(), now);
+		const bool swallow =
+			(down ? g_messageGate.down(code, swallowable) : g_messageGate.up(code)) == cb::keys::KeyGate::Verdict::Swallow;
 
+		// a Cyberpunk choice list keeps E, Q and 1-4 (a release still goes out for a press Minecraft got before it showed)
+		const bool forward = forwarding() && !(now.choices && cb::keys::is_choice_key(code));
 		if (const char *name = key_name(vk))
 		{
 			const std::string id = std::string("key:") + name;
 			if (!down)
 				release(id);
-			else if (forwarding())
+			else if (forward)
 				press(id, key(name, true), key(name, false));
 		}
-		else if (vk >= '1' && vk <= '9' && down && !repeat && forwarding())
+		else if (vk >= '1' && vk <= '9' && down && !repeat && forward)
 			cb::link().send({{"t", "slot"}, {"n", int(vk - '1')}});
 		return swallow;
 	}
 
-	/// The wheel while forwarding: notches go to Minecraft and Cyberpunk does not see the message.
+	/// The wheel while forwarding: notches go to Minecraft and Cyberpunk does not see the message. A Cyberpunk choice list
+	/// keeps the wheel.
 	bool on_wheel(WPARAM wParam)
 	{
-		if (!forwarding())
+		if (!forwarding() || choices_shown())
 			return false;
 		g_wheel += GET_WHEEL_DELTA_WPARAM(wParam);
 		const int notches = g_wheel / WHEEL_DELTA; // + = away from the user = up
@@ -374,9 +391,14 @@ namespace
 			if (packet->header.dwType == RIM_TYPEMOUSE)
 			{
 				RAWMOUSE &mouse = packet->data.mouse;
-				if ((mouse.usButtonFlags & cb::keys::kMouseWheel) != 0 || (mouse.usButtonFlags & cb::keys::kMouseHWheel) != 0)
-					mouse.usButtonData = 0; // the wheel delta goes with the wheel bit
-				mouse.usButtonFlags = cb::keys::strip_down_and_wheel(mouse.usButtonFlags);
+				if (choices_shown())
+					mouse.usButtonFlags = cb::keys::strip_down(mouse.usButtonFlags); // the wheel scrolls Cyberpunk's choices
+				else
+				{
+					if ((mouse.usButtonFlags & cb::keys::kMouseWheel) != 0 || (mouse.usButtonFlags & cb::keys::kMouseHWheel) != 0)
+						mouse.usButtonData = 0; // the wheel delta goes with the wheel bit
+					mouse.usButtonFlags = cb::keys::strip_down_and_wheel(mouse.usButtonFlags);
+				}
 			}
 		}
 		return copied;
