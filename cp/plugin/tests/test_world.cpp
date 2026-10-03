@@ -292,6 +292,79 @@ TEST(each_change_of_active_discards_queued_transient_events_only)
 	CHECK(q.next() == EventKind::None);
 }
 
+TEST(a_resync_burst_while_inactive_loses_no_block_change)
+{
+	// Minecraft resyncs while Cyberpunk is still loading: nothing drains the queue meanwhile.
+	cb::world::EventQueue q;
+	Event reset;
+	reset.kind = EventKind::BlockReset;
+	q.push(reset);
+	for (int i = 0; i < 5000; ++i)
+		q.push(block(EventKind::BlockAdd, i));
+	for (int i = 0; i < 300; ++i) // a burst of other kept events on top
+	{
+		Event perk;
+		perk.kind = EventKind::Perk;
+		q.push(perk);
+	}
+	CHECK(q.stats().queued == 1 + 5000 + 256 && q.stats().dropped == 44);
+	for (int i = 0; i < 256; ++i)
+		CHECK(q.next() == EventKind::Perk);
+	CHECK(q.next() == EventKind::BlockReset);
+	for (int i = 0; i < 5000; ++i)
+		CHECK(q.next() == EventKind::BlockAdd && approx(q.current().pos.x, i));
+	CHECK(q.next() == EventKind::None);
+}
+
+TEST(block_changes_keep_the_last_one_per_cell_and_a_reset_forgets_the_earlier_ones)
+{
+	cb::world::EventQueue q;
+	q.push(block(EventKind::BlockAdd, 1));
+	q.push(block(EventKind::BlockRemove, 1)); // the same cell: only the remove is left
+	q.push(block(EventKind::BlockAdd, 2));
+	CHECK(q.stats().queued == 2);
+	CHECK(q.next() == EventKind::BlockRemove && approx(q.current().pos.x, 1));
+	CHECK(q.next() == EventKind::BlockAdd && approx(q.current().pos.x, 2));
+
+	q.push(block(EventKind::BlockAdd, 3));
+	Event reset;
+	reset.kind = EventKind::BlockReset;
+	q.push(reset); // the add of cell 3 is moot
+	q.push(block(EventKind::BlockAdd, 4));
+	q.push(reset); // so is the first reset and the add of cell 4
+	q.push(block(EventKind::BlockAdd, 5));
+	CHECK(q.stats().queued == 2);
+	CHECK(q.next() == EventKind::BlockReset);
+	CHECK(q.next() == EventKind::BlockAdd && approx(q.current().pos.x, 5));
+	CHECK(q.next() == EventKind::None);
+}
+
+TEST(a_full_queue_drops_transient_events_before_kept_ones)
+{
+	cb::world::EventQueue q;
+	q.set_active(true);
+	Event hack;
+	hack.kind = EventKind::Hack;
+	hack.id = 7;
+	q.push(hack);
+	for (int i = 1; i <= 256; ++i)
+		q.push(explosion(i)); // explosion 1 makes way for 256
+	CHECK(q.stats().queued == 256 && q.stats().dropped == 1);
+	CHECK(q.next() == EventKind::Hack && q.current().id == 7);
+	CHECK(q.next() == EventKind::Explosion && approx(q.current().amount, 2));
+
+	cb::world::EventQueue kept;
+	kept.set_active(true);
+	for (int i = 0; i < 256; ++i)
+	{
+		hack.id = i;
+		kept.push(hack);
+	}
+	kept.push(explosion(1)); // nothing transient to drop: the new one goes
+	CHECK(kept.stats().queued == 256 && kept.stats().dropped == 1);
+	CHECK(kept.next() == EventKind::Hack && kept.current().id == 0);
+}
+
 TEST(clear_forgets_everything_including_the_current_event)
 {
 	cb::world::EventQueue q;

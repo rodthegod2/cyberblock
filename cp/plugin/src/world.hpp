@@ -6,9 +6,11 @@
 // docs/superpowers/plans/2026-10-03-layers3-6-complete-mod.md sections 1.2, 1.3 and 1.5.
 #pragma once
 #include "cbmath.hpp"
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -100,17 +102,25 @@ namespace cb::world
 
 	struct QueueStats
 	{
-		size_t queued = 0;
-		uint64_t dropped = 0;  // oldest events dropped because the queue was full
+		size_t queued = 0;     // events waiting, block changes included
+		uint64_t dropped = 0;  // events dropped because the queue (or the block cell table) was full
 		uint64_t rejected = 0; // messages parse_event rejected (and list entries it dropped)
 	};
 
-	/// Events for redscript: a mutex-guarded FIFO of at most kCapacity events (the oldest is dropped), and the "current"
-	/// event the Cyberblock_Event* natives read. Never blocks: every operation is a short critical section.
+	/// Events for redscript, and the "current" event the Cyberblock_Event* natives read. Never blocks: every operation is
+	/// a short critical section.
+	///
+	/// Block changes are state, so they are never lost to a burst: they are kept per cell (the last add or remove of each
+	/// cell wins, and a `block_reset` forgets every change before it), so memory is bounded by the cells that changed, at
+	/// most kMaxBlockCells. Every other kind is a FIFO of at most kCapacity events; when it is full the oldest transient
+	/// event goes first (a perk, scan or hack only when nothing else is left). next() hands out that FIFO first, then a
+	/// pending `block_reset`, then the block changes (by cell, not by arrival: their order does not matter once each cell
+	/// has one change).
 	class EventQueue
 	{
 	public:
 		static constexpr size_t kCapacity = 256;
+		static constexpr size_t kMaxBlockCells = size_t(1) << 20;
 
 		/// Whether the mashup is Active. While it is not, the transient events (explosion, hit, ignite, teleport, lead,
 		/// lead_release, pull, knock, effect, perkfx) are discarded (nothing can act on them), and each change of state
@@ -130,7 +140,9 @@ namespace cb::world
 
 	private:
 		mutable std::mutex m_lock;
-		std::deque<Event> m_queue;
+		std::deque<Event> m_queue; // every kind but the block ones, oldest first
+		bool m_blockReset = false; // a block_reset is pending; it comes out before m_blocks
+		std::map<std::array<double, 3>, EventKind> m_blocks; // AABB min corner -> BlockAdd or BlockRemove
 		Event m_current;
 		bool m_active = false;
 		uint64_t m_dropped = 0;

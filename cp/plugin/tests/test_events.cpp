@@ -456,12 +456,15 @@ TEST(inactive_queue_keeps_block_perk_scan_and_hack_events_only)
 						   EventKind::LeadRelease, EventKind::Pull, EventKind::Knock, EventKind::Effect, EventKind::PerkFx})
 		q.push(event(kind));
 	CHECK(q.stats().queued == 0); // transient: nothing can act on them while not Active
-	const EventKind kept[] = {EventKind::BlockAdd, EventKind::BlockRemove, EventKind::BlockReset,
-							  EventKind::Perk,     EventKind::Scan,        EventKind::Hack};
-	for (EventKind kind : kept)
-		q.push(event(kind));
+	Event removed = event(EventKind::BlockRemove);
+	removed.pos = {1, 0, 0};
+	for (const Event &e : {event(EventKind::BlockReset), event(EventKind::BlockAdd), removed, event(EventKind::Perk),
+						   event(EventKind::Scan), event(EventKind::Hack)})
+		q.push(e);
 	CHECK(q.stats().queued == 6);
-	for (EventKind kind : kept)
+	// the FIFO kinds first, then the reset, then the block changes
+	for (EventKind kind : {EventKind::Perk, EventKind::Scan, EventKind::Hack, EventKind::BlockReset, EventKind::BlockAdd,
+						   EventKind::BlockRemove})
 		CHECK(q.next() == kind);
 	CHECK(q.next() == EventKind::None);
 }
@@ -526,8 +529,8 @@ TEST(observer_queues_every_event_of_a_blocks_and_a_perks_message)
 	cb::world::on_minecraft_message(json::parse(R"({"t":"hack","id":1,"target":"2","hack":"ping","chain":false})"));
 	cb::world::on_minecraft_message(json::parse(R"({"t":"scan","id":2,"target":null})"));
 	CHECK(q.stats().queued == 6); // reset, 2 adds, perk, hack, scan: all kept while inactive
-	for (EventKind kind : {EventKind::BlockReset, EventKind::BlockAdd, EventKind::BlockAdd, EventKind::Perk, EventKind::Hack,
-						   EventKind::Scan})
+	for (EventKind kind : {EventKind::Perk, EventKind::Hack, EventKind::Scan, EventKind::BlockReset, EventKind::BlockAdd,
+						   EventKind::BlockAdd})
 		CHECK(q.next() == kind);
 	q.clear();
 }

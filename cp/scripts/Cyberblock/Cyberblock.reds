@@ -151,7 +151,7 @@ public class CyberblockSystem extends ScriptableSystem {
     Cyberblock_SetMenu(CyberblockSystem.InMenu(game));
     let player = GetPlayer(game);
     if !IsDefined(player) {
-      // No world to act on: Minecraft block changes wait for the next live tick, the other events are dropped.
+      // No world to act on: Minecraft block changes still update the collision registry, the other events are dropped.
       this.events.Tick(game, false);
       return;
     }

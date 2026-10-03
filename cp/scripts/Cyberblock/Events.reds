@@ -1,6 +1,8 @@
 // Minecraft -> Cyberpunk events, queued by Cyberblock.dll already in Cyberpunk space and handed to the S2/S3 classes
 // (layer 2 plan section 1.4; plan 2026-10-03 sections 1.3 and 1.4). CyberblockSystem calls Tick every 100 ms, so up
-// to 640 events a second are applied.
+// to 640 events a second are applied, plus up to 5120 block changes a second: those are only registry updates, and
+// the DLL hands them out after the other kinds, so a backlog (a resync that arrived while the game was loading or
+// paused, when this tick does not run) drains in seconds without delaying hits or hack answers.
 //
 // Event -> script API (plan 2026-10-03 section 1.3 event table):
 //   block_add / block_remove -> CyberblockCollision.Add / Remove      block_reset -> CyberblockCollision.Reset
@@ -11,9 +13,10 @@
 //   perk -> CyberblockPerks.Set                perkfx -> CyberblockPerks.Fx
 //
 // While not live (Off, Lost, saving, no player) Night City is left alone:
-//   - block changes are kept (in order) and replayed on the next live tick, so the collision boxes still match the
-//     Minecraft world (e.g. blocks a TNT chain removed while a lag spike made us Lost); a block_reset forgets the
-//     registry and the changes kept so far at once, which is what replaying it in order would do;
+//   - block changes still go into the collision registry (none of them is ever dropped), so the boxes match the
+//     Minecraft world once live again (e.g. blocks a TNT chain removed while a lag spike made us Lost). Only the
+//     registry changes: boxes are spawned by CyberblockCollision.Stream while live, and every box was already despawned
+//     on leaving live (ClearWorld), so nothing appears in Night City;
 //   - perk ranks are recorded (Minecraft sends them after each hello, whatever the state);
 //   - hack and scan requests are answered at once with ok:false, "Cyberblock is not active" (Minecraft waits for an
 //     answer to every request);
@@ -22,35 +25,37 @@
 // 2.31 APIs: none beyond the natives (Natives.reds) and redscript array intrinsics.
 
 public class CyberblockEvents {
-  // Block changes waiting for the next live tick: AABB min corner and add (true) / remove (false).
-  private let pendingPos: array<Vector4>;
-  private let pendingAdd: array<Bool>;
-
   // live: state is Active or Vehicle, not saving, with a player.
   public func Tick(game: GameInstance, live: Bool) -> Void {
-    if live {
-      this.Replay(game);
-    }
     let dropped = 0;
-    let n = 0;
-    while n < 64 {
+    let n = 0;      // events of the other kinds
+    let blocks = 0; // block changes
+    while n < 64 && blocks < 512 {
       let kind = Cyberblock_NextEvent();
       if Equals(kind, n"") {
         break;
       }
-      n += 1;
-      if Equals(kind, n"block_add") || Equals(kind, n"block_remove") {
-        this.Block(game, live, Cyberblock_EventPos(), Equals(kind, n"block_add"));
+      if Equals(kind, n"block_add") {
+        blocks += 1;
+        CyberblockCollision.Add(game, Cyberblock_EventPos());
+      } else if Equals(kind, n"block_remove") {
+        blocks += 1;
+        CyberblockCollision.Remove(game, Cyberblock_EventPos());
       } else if Equals(kind, n"block_reset") {
-        this.Reset(game);
-      } else if Equals(kind, n"perk") {
-        CyberblockPerks.Set(game, Cyberblock_EventName(), RoundF(Cyberblock_EventAmount()));
-      } else if !live {
-        if !CyberblockEvents.Refuse(kind) {
-          dropped += 1;
-        }
+        // Minecraft re-sends all its blocks after this (blocks resync after each host hello).
+        blocks += 1;
+        CyberblockCollision.Reset(game);
       } else {
-        CyberblockEvents.Apply(game, kind);
+        n += 1;
+        if Equals(kind, n"perk") {
+          CyberblockPerks.Set(game, Cyberblock_EventName(), RoundF(Cyberblock_EventAmount()));
+        } else if !live {
+          if !CyberblockEvents.Refuse(kind) {
+            dropped += 1;
+          }
+        } else {
+          CyberblockEvents.Apply(game, kind);
+        }
       }
     }
     if dropped > 0 {
@@ -102,51 +107,5 @@ public class CyberblockEvents {
       return true;
     }
     return false;
-  }
-
-  private func Block(game: GameInstance, live: Bool, aabbMin: Vector4, add: Bool) -> Void {
-    if live {
-      CyberblockEvents.ApplyBlock(game, aabbMin, add);
-      return;
-    }
-    // Bounded like the DLL queue: past 4096 changes the oldest are forgotten.
-    if ArraySize(this.pendingPos) >= 4096 {
-      ArrayErase(this.pendingPos, 0);
-      ArrayErase(this.pendingAdd, 0);
-    }
-    ArrayPush(this.pendingPos, aabbMin);
-    ArrayPush(this.pendingAdd, add);
-  }
-
-  // Minecraft re-sends all its blocks after this (blocks resync after each host hello).
-  private func Reset(game: GameInstance) -> Void {
-    let forgotten = ArraySize(this.pendingPos);
-    ArrayClear(this.pendingPos);
-    ArrayClear(this.pendingAdd);
-    CyberblockCollision.Reset(game);
-    Cyberblock_Log(s"events: block reset (\(forgotten) block changes from while not active forgotten)");
-  }
-
-  private func Replay(game: GameInstance) -> Void {
-    let count = ArraySize(this.pendingPos);
-    if count == 0 {
-      return;
-    }
-    let i = 0;
-    while i < count {
-      CyberblockEvents.ApplyBlock(game, this.pendingPos[i], this.pendingAdd[i]);
-      i += 1;
-    }
-    ArrayClear(this.pendingPos);
-    ArrayClear(this.pendingAdd);
-    Cyberblock_Log(s"events: \(count) block changes from while not active replayed");
-  }
-
-  private static func ApplyBlock(game: GameInstance, aabbMin: Vector4, add: Bool) -> Void {
-    if add {
-      CyberblockCollision.Add(game, aabbMin);
-    } else {
-      CyberblockCollision.Remove(game, aabbMin);
-    }
   }
 }

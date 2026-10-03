@@ -365,10 +365,33 @@ namespace cb::world
 		std::lock_guard<std::mutex> lock(m_lock);
 		if (event.kind == EventKind::None || (transient(event.kind) && !m_active))
 			return;
+		if (event.kind == EventKind::BlockReset)
+		{
+			m_blocks.clear(); // what they changed is forgotten by the reset anyway
+			m_blockReset = true;
+			return;
+		}
+		if (event.kind == EventKind::BlockAdd || event.kind == EventKind::BlockRemove)
+		{
+			const std::array<double, 3> cell{event.pos.x, event.pos.y, event.pos.z};
+			if (m_blocks.size() >= kMaxBlockCells && !m_blocks.contains(cell))
+			{
+				++m_dropped;
+				return;
+			}
+			m_blocks[cell] = event.kind;
+			return;
+		}
 		if (m_queue.size() >= kCapacity)
 		{
-			m_queue.pop_front();
 			++m_dropped;
+			const auto oldestTransient = std::ranges::find_if(m_queue, [](const Event &e) { return transient(e.kind); });
+			if (oldestTransient != m_queue.end())
+				m_queue.erase(oldestTransient);
+			else if (transient(event.kind))
+				return; // only perks, scans and hacks are queued: they outrank this one
+			else
+				m_queue.pop_front();
 		}
 		m_queue.push_back(event);
 	}
@@ -383,10 +406,23 @@ namespace cb::world
 	{
 		std::lock_guard<std::mutex> lock(m_lock);
 		m_current = {};
-		if (m_queue.empty())
-			return EventKind::None;
-		m_current = m_queue.front();
-		m_queue.pop_front();
+		if (!m_queue.empty())
+		{
+			m_current = m_queue.front();
+			m_queue.pop_front();
+		}
+		else if (m_blockReset)
+		{
+			m_current.kind = EventKind::BlockReset;
+			m_blockReset = false;
+		}
+		else if (!m_blocks.empty())
+		{
+			const auto [cell, kind] = *m_blocks.begin();
+			m_current.kind = kind;
+			m_current.pos = {cell[0], cell[1], cell[2]};
+			m_blocks.erase(m_blocks.begin());
+		}
 		return m_current.kind;
 	}
 
@@ -400,13 +436,15 @@ namespace cb::world
 	{
 		std::lock_guard<std::mutex> lock(m_lock);
 		m_queue.clear();
+		m_blockReset = false;
+		m_blocks.clear();
 		m_current = {};
 	}
 
 	QueueStats EventQueue::stats() const
 	{
 		std::lock_guard<std::mutex> lock(m_lock);
-		return {m_queue.size(), m_dropped, m_rejected};
+		return {m_queue.size() + m_blocks.size() + (m_blockReset ? 1 : 0), m_dropped, m_rejected};
 	}
 
 	void on_minecraft_message(const json &message)
