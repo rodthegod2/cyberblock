@@ -77,6 +77,8 @@ public class CyberblockFlightService extends ScriptableService {
   private let generation: Int32;
   private let lastFrame: Float;
   private let startTime: Float; // sim time at 'flight: start'
+  private let applied: Vector4; // primary: where V was put last
+  private let clipLogged: Bool;
   private let anchor: Vector4; // camera only: where V waits
   private let camera: EntityID;
   private let cameraActive: Bool;
@@ -137,6 +139,8 @@ public class CyberblockFlightService extends ScriptableService {
     }
     this.flying = true;
     this.startTime = CyberblockEffectsService.Now(game);
+    this.applied = player.GetWorldPosition();
+    this.clipLogged = false;
     this.usingCamera = this.cameraOnly && this.SpawnCamera(Cyberblock_FlightPos());
     if this.usingCamera {
       this.anchor = player.GetWorldPosition();
@@ -176,14 +180,40 @@ public class CyberblockFlightService extends ScriptableService {
       }
       this.MoveCamera(game, Cyberblock_FlightPos());
     } else {
-      teleport.Teleport(player, Cyberblock_FlightPos(), Vector4.ToRotation(player.GetWorldForward()));
+      this.applied = this.Clip(game, this.applied, Cyberblock_FlightPos());
+      teleport.Teleport(player, this.applied, Vector4.ToRotation(player.GetWorldForward()));
     }
     this.Next(game, generation);
+  }
+
+  // Night City between where V was put last and `to` (Static + Terrain; not our collision boxes, which already stop
+  // Steve in Minecraft): V stops 0.3 m short of it along the way instead of going through. Minecraft may have no
+  // barrier there yet (beyond the probes, between their columns), and the extrapolated position can overshoot a
+  // landing into the ground.
+  private func Clip(game: GameInstance, from: Vector4, to: Vector4) -> Vector4 {
+    let hit: Vector4;
+    if !CyberblockProbes.FirstHit(game, from, to, hit) {
+      return to;
+    }
+    let length = Vector4.Distance(from, to);
+    if length <= 0.0 {
+      return from;
+    }
+    if !this.clipLogged {
+      this.clipLogged = true;
+      Cyberblock_Log("flight: V stopped short of Night City geometry Minecraft flew through");
+    }
+    let t = MaxF(Vector4.Distance(from, hit) - 0.3, 0.0) / length;
+    return new Vector4(from.X + (to.X - from.X) * t, from.Y + (to.Y - from.Y) * t, from.Z + (to.Z - from.Z) * t, 1.0);
   }
 
   // The flight is over: Cyberblock_FlightPos() is now the landing spot.
   private func Land(game: GameInstance, player: ref<PlayerPuppet>) -> Void {
     let spot = Cyberblock_FlightPos();
+    if !this.usingCamera {
+      // Primary: V never goes through Night City, not even to the landing spot (V stays on its side and Steve comes back).
+      spot = this.Clip(game, this.applied, spot);
+    }
     // A flight that was over at once, or a spot V already stands at (a glide Minecraft called off reports V's own
     // feet), needs no teleport: in-game 2026-10-03 such landings put V 0.4-1 m off its ground.
     if CyberblockEffectsService.Now(game) - this.startTime < 0.3 || Vector4.Distance(spot, player.GetWorldPosition()) < 1.5 {

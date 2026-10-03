@@ -115,6 +115,22 @@ public class CyberblockProbes {
     return CyberblockProbes.TraceNightCity(GameInstance.GetSpatialQueriesSystem(game), filter, from, to, result, casts);
   }
 
+  // The first Night City surface (Static + Terrain, not our collision boxes) between two points (Flight.reds stops V
+  // short of it).
+  public static func FirstHit(game: GameInstance, from: Vector4, to: Vector4, out hit: Vector4) -> Bool {
+    let filter: QueryFilter;
+    QueryFilter.AddGroup(filter, n"Static");
+    QueryFilter.AddGroup(filter, n"Terrain");
+    let result: TraceResult;
+    let casts = 0;
+    if !CyberblockProbes.TraceNightCity(GameInstance.GetSpatialQueriesSystem(game), filter, from, to, result, casts) {
+      return false;
+    }
+    let at = Cast<Vector4>(result.position);
+    hit = new Vector4(at.X, at.Y, at.Z, 1.0);
+    return true;
+  }
+
   // Trace's raycast; `casts` counts the rays it took.
   private static func TraceNightCity(queries: ref<SpatialQueriesSystem>, filter: QueryFilter, from: Vector4, to: Vector4, out result: TraceResult, out casts: Int32) -> Bool {
     let entities = GameInstance.GetStaticEntitySystem();
