@@ -10,6 +10,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The proxies in the Minecraft world: one per Cyberpunk NPC or vehicle in the host's latest {"t":"npcs"} list, created,
@@ -209,6 +210,15 @@ public final class ProxyManager {
 	static Entity byId(final long id) {
 		ProxyEntity proxy = proxies.get(id);
 		return proxy != null && !proxy.isRemoved() ? proxy : null;
+	}
+
+	/**
+	 * Server thread (Bridge.proxyAimedAt, the scan pick of plan retest2 R2): the live proxy the ray from eye along dir means, within
+	 * reach and a margin around its box (ProxyAim), nearest the line of sight first. Null when none.
+	 */
+	static @Nullable Entity aimedAt(final Vec3 eye, final Vec3 dir, final double reach) {
+		return ProxyAim.best(eye, dir, reach, proxies.values().stream().filter(p -> !p.isRemoved()).toList(), Entity::getBoundingBox,
+			p -> p.getType() == ProxyEntities.VEHICLE ? ProxyAim.VEHICLE_MARGIN : ProxyAim.HUMAN_MARGIN);
 	}
 
 	/** Server thread (Bridge.proxyIdOf): the Cyberpunk id a live proxy stands for, 0 for any other entity. */
