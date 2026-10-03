@@ -35,6 +35,12 @@ public abstract class CyberblockFlight {
     return CyberblockFlightService.Get().IsFlying();
   }
 
+  // Where the world around V is: the flight position while the camera-only fallback flies the view away from V
+  // (Probes.reds probes around it), else V's feet.
+  public static func Center(game: GameInstance, player: ref<PlayerPuppet>) -> Vector4 {
+    return CyberblockFlightService.Get().UsingCamera() ? Cyberblock_FlightPos() : player.GetWorldPosition();
+  }
+
   // Flying, or less than 2 s since a landing or a Teleport: Health.reds does not report falls.
   public static func SuppressFall(game: GameInstance) -> Bool {
     return CyberblockFlightService.Get().IsFlying() || CyberblockEffectsService.Get().IsFallSuppressed(game);
@@ -95,6 +101,11 @@ public class CyberblockFlightService extends ScriptableService {
 
   public func IsFlying() -> Bool {
     return this.flying;
+  }
+
+  // A camera-only flight is under way: V waits at the take-off spot while the view flies.
+  public func UsingCamera() -> Bool {
+    return this.flying && this.usingCamera;
   }
 
   public func Tick(game: GameInstance, player: ref<PlayerPuppet>, live: Bool) -> Void {

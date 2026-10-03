@@ -8,6 +8,8 @@
 //   the last tick: radius min(64, 24 + s) for both kinds, down rays reaching feet.z - (10 + s), columns on a 1-m grid
 //   within 24 m and a 2-m grid beyond. Each pass over them probes the columns inside a +-60 degree cone ahead of the
 //   horizontal velocity first (nearest first), then the others; the wall rays run before each of the two groups.
+//   "V's feet" is CyberblockFlight.Center: the flight position in the camera-only fallback, where V stays behind at
+//   the take-off spot. The aim ray always starts at the active camera.
 // Our own collision boxes (Collision.reds, Minecraft's blocks) are not Night City: a ray that hits one goes on
 // through it, so the probes and the aim report what is behind (collision-spike "Side effects").
 //
@@ -48,7 +50,8 @@ public class CyberblockProbes {
       this.BuildColumns(24);
     }
 
-    let feet = player.GetWorldPosition();
+    // In the camera-only flight fallback V waits at the take-off spot: the ground is probed around the flight instead.
+    let feet = CyberblockFlight.Center(game, player);
     let velocity = this.Velocity(game, feet);
     let flying = CyberblockFlight.IsFlying(game);
     let speed = flying ? MinF(Vector4.Length(velocity), 200.0) : 0.0; // 200 m/s: the flight message limit
