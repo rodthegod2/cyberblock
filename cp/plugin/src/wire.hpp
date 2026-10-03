@@ -29,8 +29,11 @@ namespace cb::wire
 	bool optional_bool(const nlohmann::json &m, const char *key);
 	/// [x, y, z] with every |component| < kMaxCoord; `whole` also demands whole numbers (block coordinates).
 	Vec3 triple(const nlohmann::json &m, const char *key, bool whole);
-	/// A Minecraft-space [x, y, z] position or vector, returned in Cyberpunk space (plan section 1.1: they map alike).
-	Vec3 cp_triple(const nlohmann::json &m, const char *key);
+	/// A Minecraft-space [x, y, z] position, returned in Cyberpunk space with the ground alignment `off` applied
+	/// (mc_to_cp_pos; plan 2026-10-03-retest2 section 1.1).
+	Vec3 cp_triple(const nlohmann::json &m, const char *key, double off);
+	/// A Minecraft-space [x, y, z] velocity or impulse, returned in Cyberpunk space (mc_vel_to_cp: never offset).
+	Vec3 cp_vector(const nlohmann::json &m, const char *key);
 	/// A decimal uint64 in a string (the wire cannot carry one as a number).
 	uint64_t entity_id(const nlohmann::json &m, const char *key);
 	/// A decimal-string id, or 0 when the key is absent or null.

@@ -4,6 +4,8 @@
 //   gameCameraSystem.GetActiveCameraFOV() -> Float, GetAspectRatio() -> Float, GetActiveCameraForward() -> Vector4
 //   GetPlayer;GameInstance(ScriptGameInstance) -> handle:PlayerPuppet
 //   entEntity.GetWorldPosition() -> Vector4, GetWorldForward() -> Vector4
+// Positions (camera, feet) take the ground alignment (plan 2026-10-03-retest2 section 1.1: Minecraft y = Cyberpunk z - k/64),
+// read once per publish and sent as `cam.lv`; directions (facing, forward, the look quaternion) never do.
 #include "camera.hpp"
 #include "cbmath.hpp"
 #include "compositor.h"
@@ -92,14 +94,16 @@ namespace cb::camera
 			!call(player.GetPtr(), "entEntity", "GetWorldForward", &facing))
 			return warn_once("reading V's position failed");
 
+		const int levelK = world::level_k(); // once per publish: the cam's positions and its `lv` agree
+		const double off = world::level_offset(levelK);
 		const RED4ext::Vector4 &c = transform.position;
-		const Vec3 position = cp_to_mc_pos(c.X, c.Y, c.Z);
+		const Vec3 position = cp_to_mc_pos(c.X, c.Y, c.Z, off);
 		const YawPitch look = cp_quat_to_mc_yaw_pitch(q.i, q.j, q.k, q.r);
 		if (aspect <= 0.0f)
 			aspect = 16.0f / 9.0f;
 		const double vfov = fovIsHorizontal ? vfov_from_hfov(fov, aspect) : fov;
-		const Vec3 feetMc = cp_to_mc_pos(feet.X, feet.Y, feet.Z);
-		const Vec3 facingMc = cp_to_mc_pos(facing.X, facing.Y, facing.Z);
+		const Vec3 feetMc = cp_to_mc_pos(feet.X, feet.Y, feet.Z, off);
+		const Vec3 facingMc = cp_dir_to_mc(facing.X, facing.Y, facing.Z);
 		const double bodyYaw = std::hypot(facingMc.x, facingMc.z) > 1e-6 ? mc_yaw_pitch(facingMc.x, 0.0, facingMc.z).yaw : look.yaw;
 
 		link().send(world::make_cam(g_frame++, position, look, vfov, feetMc, bodyYaw,
@@ -107,7 +111,8 @@ namespace cb::camera
 									 .flying = natives::flightFollowing,
 									 .menu = natives::menuOpen,
 									 .air = natives::inAir,
-									 .held = natives::held}));
+									 .held = natives::held},
+									levelK));
 		compositor::set_host_pose(float(look.yaw), float(look.pitch), 0.0f, float(vfov), position.x, position.y, position.z);
 		compositor::set_host_planes(kNearClip, kFarClip);
 
@@ -116,15 +121,16 @@ namespace cb::camera
 			// for the cube test (F2): the raw camera, what it became, and the camera's own forward as a cross-check
 			RED4ext::Vector4 forward;
 			call(cameras, "gameCameraSystem", "GetActiveCameraForward", &forward);
-			const Vec3 forwardMc = cp_to_mc_pos(forward.X, forward.Y, forward.Z);
+			const Vec3 forwardMc = cp_dir_to_mc(forward.X, forward.Y, forward.Z);
 			const YawPitch check = std::hypot(forwardMc.x, forwardMc.y, forwardMc.z) > 1e-6
 									   ? mc_yaw_pitch(forwardMc.x, forwardMc.y, forwardMc.z)
 									   : YawPitch{NAN, NAN};
 			log::info("pose %d: cp pos (%.3f, %.3f, %.3f) quat (%.4f, %.4f, %.4f, %.4f) fov %.2f aspect %.4f -> mc pos "
 					  "(%.3f, %.3f, %.3f) yaw %.2f pitch %.2f vfov %.2f; GetActiveCameraForward gives yaw %.2f pitch %.2f; "
-					  "feet mc (%.3f, %.3f, %.3f) body yaw %.2f",
+					  "feet mc (%.3f, %.3f, %.3f) body yaw %.2f; ground alignment k %d/64",
 					  g_loggedPoses + 1, c.X, c.Y, c.Z, q.i, q.j, q.k, q.r, fov, aspect, position.x, position.y,
-					  position.z, look.yaw, look.pitch, vfov, check.yaw, check.pitch, feetMc.x, feetMc.y, feetMc.z, bodyYaw);
+					  position.z, look.yaw, look.pitch, vfov, check.yaw, check.pitch, feetMc.x, feetMc.y, feetMc.z, bodyYaw,
+					  levelK);
 			++g_loggedPoses;
 		}
 	}

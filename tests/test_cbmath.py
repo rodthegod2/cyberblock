@@ -1,4 +1,4 @@
-import json, math
+import json, math, random
 from pathlib import Path
 from tools import cbmath
 
@@ -84,23 +84,115 @@ def test_mc_vel_to_cp_is_the_position_mapping_without_offset():
     for v in [(0.0, -9.8, 0.0), (-30.5, 12.25, 7.0)]:
         assert cbmath.mc_vel_to_cp(*v) == cbmath.mc_to_cp_pos(*v)
 
+# ---- re-test 2 (plan 2026-10-03-retest2 section 1.1): the ground alignment ----------------------------------------------
+
+OFFSETS = [cbmath.level_offset(k) for k in (0, 1, 32, 57, 63)]
+
+def test_level_offset_is_k_sixty_fourths_and_exact_in_float32():
+    import struct
+    for k in range(cbmath.LEVEL_STEPS):
+        off = cbmath.level_offset(k)
+        assert off == k / 64
+        assert struct.unpack("f", struct.pack("f", off))[0] == off
+
+def test_offset_moves_positions_by_off_both_ways():
+    assert cbmath.cp_to_mc_pos(1.0, 2.0, 3.0, 0.5) == (1.0, 2.5, -2.0)
+    assert cbmath.mc_to_cp_pos(1.0, 2.5, -2.0, 0.5) == (1.0, 2.0, 3.0)
+    assert cbmath.mc_to_cp_pos(0.0, 70.0, 0.0, 57 / 64) == (0.0, -0.0, 70.890625)
+
+def test_offset_round_trips():
+    for off in OFFSETS:
+        for p in [(1.0, 2.0, 3.0), (-1245.5, 812.25, 66.62), (0.5, -0.25, 1e6), (7.25, -3.0, 6.907)]:
+            back = cbmath.mc_to_cp_pos(*cbmath.cp_to_mc_pos(*p, off), off)
+            assert all(math.isclose(a, b, rel_tol=1e-12, abs_tol=1e-9) for a, b in zip(back, p))
+            back = cbmath.cp_to_mc_pos(*cbmath.mc_to_cp_pos(*p, off), off)
+            assert all(math.isclose(a, b, rel_tol=1e-12, abs_tol=1e-9) for a, b in zip(back, p))
+
+def test_block_aabb_with_offset_is_the_cp_image_of_the_block_corners():
+    for off in OFFSETS:
+        for b in [(10, 4, -21), (-1, -64, -1), (3, 70, 4)]:
+            lo, hi = cbmath.mc_block_to_cp_aabb(*b, off)
+            assert lo == (b[0], -(b[2] + 1), b[1] + off) and hi == (b[0] + 1, -b[2], b[1] + 1 + off)
+            corners = [cbmath.mc_to_cp_pos(b[0] + dx, b[1] + dy, b[2] + dz, off) for dx in (0, 1) for dy in (0, 1) for dz in (0, 1)]
+            assert lo == tuple(min(c[i] for c in corners) for i in range(3))
+            assert hi == tuple(max(c[i] for c in corners) for i in range(3))
+            # a point inside the block falls in its cell
+            inside = tuple((a + c) / 2 for a, c in zip(lo, hi))
+            assert cbmath.wall_hit_to_range(*inside, off) == (b[0], b[2], b[1], b[1])
+
+def test_down_hits_round_to_the_nearest_whole_y():
+    # the barrier's top face (range top + 1) is the nearest whole Minecraft y to z - off; ties go up
+    assert cbmath.down_hit_to_range(0.5, 0.5, 12.25) == (0, -1, 10, 11)     # was 12 with ceil: a block above the floor
+    assert cbmath.down_hit_to_range(0.5, 0.5, 12.5) == (0, -1, 11, 12)      # tie goes up
+    assert cbmath.down_hit_to_range(0.5, 0.5, 12.49) == (0, -1, 10, 11)
+    assert cbmath.down_hit_to_range(0.5, 0.5, 12.0) == (0, -1, 10, 11)
+    assert cbmath.down_hit_to_range(0.5, 0.5, -0.75) == (0, -1, -3, -2)
+    assert cbmath.down_hit_to_range(0.5, 0.5, 6.907, 57 / 64) == (0, -1, 4, 5)  # 6.016 -> top face 6
+    assert cbmath.wall_hit_to_range(0.5, 0.5, 6.907, 57 / 64) == (0, -1, 6, 6)
+
+def test_down_range_is_stable_against_float_noise_once_aligned():
+    off = cbmath.level_offset(57)
+    ranges = {cbmath.down_hit_to_range(3.5, 2.5, 6.907 + d, off) for d in (-1e-6, 0.0, 1e-6, -1e-4, 1e-4)}
+    assert ranges == {(3, -3, 4, 5)}
+
+def test_align_k_fixed_cases():
+    # plan section 1.1, used by every suite
+    cases = {6.907: 57, 6.001: 63, 0.0: 63, -3.25: 47, 312.999: 63, -0.0005: 63, 64.5: 31}
+    for z, k in cases.items():
+        assert cbmath.align_k(z) == k, z
+
+def test_align_k_puts_the_floor_just_above_a_whole_y():
+    rng = random.Random(20261003)
+    for _ in range(10_000):
+        z = rng.uniform(-5000.0, 5000.0)
+        k = cbmath.align_k(z)
+        assert 0 <= k < cbmath.LEVEL_STEPS and isinstance(k, int)
+        y = z - cbmath.level_offset(k)
+        e = y - math.floor(y)
+        assert 0.00195 <= e < 0.0176, (z, k, e)
+        # the nearest-rounded barrier under that floor has its top face exactly at floor(y): Steve stands on it
+        assert cbmath.down_hit_to_range(0.0, 0.0, z, cbmath.level_offset(k))[3] + 1 == math.floor(y)
+
+def test_directions_and_quaternions_never_take_the_offset():
+    assert cbmath.cp_dir_to_mc(1.0, 2.0, 3.0) == (1.0, 3.0, -2.0)
+    for p in [(1.0, 2.0, 3.0), (-0.3, 0.9, -0.1)]:
+        assert cbmath.cp_dir_to_mc(*p) == cbmath.cp_to_mc_pos(*p, 0.0)
+        assert cbmath.cp_dir_to_mc(*p) != cbmath.cp_to_mc_pos(*p, 0.5)
+    assert cbmath.mc_vel_to_cp(1.0, 2.0, 3.0) == (1.0, -3.0, 2.0)
+    # yaw/pitch come from cp_dir_to_mc, so they are the same whatever k is: compare with a hand-made mapping
+    for q in [(0.0, 0.0, 0.0, 1.0), (0.1, -0.2, 0.3, 0.927), (-0.5, 0.5, 0.5, 0.5)]:
+        f = cbmath.cp_quat_forward(*q)
+        assert cbmath.cp_quat_to_mc_yaw_pitch(*q) == cbmath.mc_yaw_pitch(f[0], f[2], -f[1])
+
 def test_vectors_file_matches_truth():
     data = json.loads(Path("shared/vectors.json").read_text())
     for case in data["quat"]:
         yaw, pitch = cbmath.cp_quat_to_mc_yaw_pitch(*case["q"])
         assert math.isclose(yaw, case["yaw"], abs_tol=1e-6) and math.isclose(pitch, case["pitch"], abs_tol=1e-6)
-    for case in data["down"]:
-        assert list(cbmath.down_hit_to_range(*case["hit"])) == case["range"]
-    for case in data["wall"]:
-        assert list(cbmath.wall_hit_to_range(*case["hit"])) == case["range"]
 
-    assert len(data["mc_pos"]) >= 6 and len(data["mc_block"]) >= 6
+    # re-test 2: down and wall at k 0, 32, 57 and 63, plus the noise cases at k 57
+    assert {c["k"] for c in data["down"]} == {0, 32, 57, 63} and {c["k"] for c in data["wall"]} == {0, 32, 57, 63}
+    for case in data["down"]:
+        assert list(cbmath.down_hit_to_range(*case["hit"], cbmath.level_offset(case["k"]))) == case["range"]
+    for case in data["wall"]:
+        assert list(cbmath.wall_hit_to_range(*case["hit"], cbmath.level_offset(case["k"]))) == case["range"]
+    noise = [c for c in data["down"] if c["k"] == 57 and c["hit"][:2] == [3.5, 2.5]]
+    assert len(noise) == 3 and len({tuple(c["range"]) for c in noise}) == 1
+    assert any(c["hit"] == [-3.2, -7.9, 12.25] and c["k"] == 0 and c["range"][3] == 11 for c in data["down"])
+
+    assert len(data["mc_pos"]) >= 12 and len(data["mc_block"]) >= 12
+    assert {c["k"] for c in data["mc_pos"]} == {0, 57} and {c["k"] for c in data["mc_block"]} == {0, 57}
     for case in data["mc_pos"]:
-        assert list(cbmath.mc_to_cp_pos(*case["mc"])) == case["cp"]
-        assert list(cbmath.cp_to_mc_pos(*case["cp"])) == case["mc"]
+        off = cbmath.level_offset(case["k"])
+        assert list(cbmath.mc_to_cp_pos(*case["mc"], off)) == case["cp"]
+        assert all(math.isclose(a, b, abs_tol=1e-9) for a, b in zip(cbmath.cp_to_mc_pos(*case["cp"], off), case["mc"]))
     for case in data["mc_block"]:
-        lo, hi = cbmath.mc_block_to_cp_aabb(*case["block"])
+        lo, hi = cbmath.mc_block_to_cp_aabb(*case["block"], cbmath.level_offset(case["k"]))
         assert [list(lo), list(hi)] == [case["min"], case["max"]]
+
+    assert len(data["align"]) == 7
+    for case in data["align"]:
+        assert cbmath.align_k(case["z"]) == case["k"]
 
     assert len(data["mc_yaw"]) >= 6 and len(data["mc_vel"]) >= 6
     for case in data["mc_yaw"]:

@@ -562,3 +562,126 @@ TEST(a_hello_clears_the_kept_events_too)
 	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3"})"));
 	CHECK(q.stats().queued == 0 && q.next() == EventKind::None);
 }
+
+// ---- re-test 2 (plan 2026-10-03-retest2 sections 1.2, 1.3 and 1.7): cyberware and cyberfx --------------------------------
+
+TEST(cyberware_becomes_one_cyber_event_per_entry_in_order)
+{
+	const cb::world::Parsed p = parse(R"({"t":"cyberware","list":[{"id":"mantis_blades","on":1},{"id":"sandevistan","on":0}]})");
+	CHECK(p.status == Status::Event && p.droppedEntries == 0 && p.events.size() == 2);
+	CHECK(p.events[0].kind == EventKind::Cyber && p.events[0].name == "mantis_blades" && approx(p.events[0].amount, 1));
+	CHECK(p.events[1].kind == EventKind::Cyber && p.events[1].name == "sandevistan" && approx(p.events[1].amount, 0));
+	CHECK(approx(one(R"({"t":"cyberware","list":[{"id":"cyberdeck","on":1.0}]})").amount, 1)); // a whole float
+}
+
+TEST(all_seventeen_cyberware_ids_are_accepted_in_the_section_1_7_order)
+{
+	const char *const expected[] = {"mantis_blades",  "gorilla_arms",   "monowire",     "projectile_launch_system",
+									"reinforced_tendons", "fortified_ankles", "lynx_paws", "sandevistan",
+									"berserk",        "cyberdeck",      "kerenzikov",   "optical_camo",
+									"subdermal_armor", "kiroshi_optics", "biomonitor",  "second_heart",
+									"ram_upgrade"};
+	CHECK(std::size(cb::world::kCyberwareIds) == 17 && std::size(expected) == 17);
+	json list = json::array();
+	for (size_t i = 0; i < 17; ++i)
+	{
+		CHECK(std::string(cb::world::kCyberwareIds[i]) == expected[i]);
+		list.push_back({{"id", expected[i]}, {"on", int(i % 2)}});
+	}
+	const cb::world::Parsed p = cb::world::parse_event({{"t", "cyberware"}, {"list", list}});
+	CHECK(p.status == Status::Event && p.events.size() == 17 && p.droppedEntries == 0);
+	for (size_t i = 0; i < 17; ++i)
+		CHECK(p.events[i].name == expected[i] && approx(p.events[i].amount, double(i % 2)));
+}
+
+TEST(a_bad_cyberware_entry_is_dropped_and_counted_the_rest_is_kept)
+{
+	const cb::world::Parsed p = parse(
+		R"({"t":"cyberware","list":[{"id":"monowire","on":1},{"id":"jetpack","on":1},{"id":"berserk","on":2},)"
+		R"(7,{"id":"berserk"},{"on":1},{"id":"berserk","on":0.5},{"id":"Berserk","on":1},{"id":"berserk","on":true},)"
+		R"({"id":"biomonitor","on":0}]})");
+	CHECK(p.status == Status::Event && p.droppedEntries == 8 && !p.reason.empty());
+	CHECK(p.events.size() == 2 && p.events[0].name == "monowire" && p.events[1].name == "biomonitor");
+	// past 32 entries the rest is dropped
+	json list = json::array();
+	for (int i = 0; i < 35; ++i)
+		list.push_back({{"id", "berserk"}, {"on", 1}});
+	const cb::world::Parsed many = cb::world::parse_event({{"t", "cyberware"}, {"list", list}});
+	CHECK(many.status == Status::Event && many.events.size() == 32 && many.droppedEntries == 3);
+}
+
+TEST(cyberware_without_a_list_is_rejected_and_an_empty_list_is_valid)
+{
+	CHECK(rejected(R"({"t":"cyberware"})"));
+	CHECK(rejected(R"({"t":"cyberware","list":{"id":"berserk","on":1}})"));
+	const cb::world::Parsed empty = parse(R"({"t":"cyberware","list":[]})");
+	CHECK(empty.status == Status::Event && empty.events.empty() && empty.droppedEntries == 0);
+}
+
+TEST(cyberfx_fills_id_and_seconds_within_0_30)
+{
+	for (const char *id : cb::world::kCyberFxIds)
+	{
+		json m = {{"t", "cyberfx"}, {"id", id}, {"seconds", 6}};
+		const cb::world::Parsed p = cb::world::parse_event(m);
+		CHECK(p.status == Status::Event && p.events.size() == 1 && p.events[0].kind == EventKind::CyberFx);
+		CHECK(p.events[0].name == id && approx(p.events[0].amount, 6));
+	}
+	CHECK(std::size(cb::world::kCyberFxIds) == 3);
+	CHECK(one(R"({"t":"cyberfx","id":"sandevistan","seconds":0})").kind == EventKind::CyberFx); // 0 = end now
+	CHECK(one(R"({"t":"cyberfx","id":"kerenzikov","seconds":30})").kind == EventKind::CyberFx);
+	CHECK(rejected(R"({"t":"cyberfx","id":"sandevistan","seconds":30.5})"));
+	CHECK(rejected(R"({"t":"cyberfx","id":"sandevistan","seconds":-1})"));
+	CHECK(rejected(R"({"t":"cyberfx","id":"optical_camo","seconds":5})")); // not one of the three effects
+	CHECK(rejected(R"({"t":"cyberfx","seconds":5})"));
+	CHECK(rejected(R"({"t":"cyberfx","id":"berserk"})"));
+	json nan_seconds = {{"t", "cyberfx"}, {"id", "berserk"}, {"seconds", kNaN}};
+	CHECK(invalid(nan_seconds));
+	// perkfx is still accepted
+	CHECK(one(R"({"t":"perkfx","id":"sandevistan","seconds":5})").kind == EventKind::PerkFx);
+}
+
+TEST(cyber_is_kept_while_inactive_and_cyberfx_is_dropped)
+{
+	cb::world::EventQueue q;
+	q.push(event(EventKind::CyberFx));
+	CHECK(q.stats().queued == 0);
+	q.push(event(EventKind::Cyber));
+	CHECK(q.stats().queued == 1);
+	q.set_active(true);
+	q.push(event(EventKind::CyberFx));
+	CHECK(q.stats().queued == 2);
+	q.set_active(false); // the cyberfx goes, the install state stays
+	CHECK(q.stats().queued == 1 && q.next() == EventKind::Cyber);
+	// a full queue drops transient events first: a cyber event outranks them like a perk
+	cb::world::EventQueue full;
+	full.set_active(true);
+	full.push(event(EventKind::Cyber));
+	for (int i = 0; i < 256; ++i)
+		full.push(event(EventKind::CyberFx));
+	CHECK(full.next() == EventKind::Cyber);
+}
+
+TEST(cyber_event_names_are_cyber_and_cyberfx)
+{
+	CHECK(std::string(cb::world::event_name(EventKind::Cyber)) == "cyber");
+	CHECK(std::string(cb::world::event_name(EventKind::CyberFx)) == "cyberfx");
+}
+
+TEST(the_observer_queues_a_cyber_event_per_entry_while_inactive)
+{
+	cb::world::EventQueue &q = cb::world::events();
+	q.clear();
+	q.set_active(false);
+	cb::world::on_minecraft_message(json::parse(R"({"t":"cyberware","list":[{"id":"kiroshi_optics","on":1},{"id":"x","on":1}]})"));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"cyberfx","id":"sandevistan","seconds":6})")); // transient: dropped
+	CHECK(q.stats().queued == 1 && q.next() == EventKind::Cyber && q.current().name == "kiroshi_optics");
+	CHECK(q.current().amount == 1.0);
+	q.clear();
+}
+
+TEST(four_key_binds_and_align_stay_out_of_the_event_queue)
+{
+	for (const char *text : {R"({"t":"binds","keys":{"hack":71,"skills":75,"cyberware":85,"activate":89}})", R"({"t":"align","k":57})"})
+		CHECK(parse(text).status == Status::Ignored);
+}

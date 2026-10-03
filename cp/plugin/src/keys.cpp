@@ -1,5 +1,6 @@
 #include "keys.hpp"
 #include <cmath>
+#include <iterator>
 #include <string_view>
 #include <utility>
 
@@ -18,9 +19,9 @@ namespace
 		return vk == kE || vk == kQ || vk == kT || vk == kX || vk == kOem2 || vk == kF5 || is_digit(vk);
 	}
 
-	/// Reads `keys[name]`: leaves `slot` alone when it is missing, sets it when it is usable, and flags `rejected` when
-	/// it is there but not a whole number that bindable() takes.
-	void read_bind(const nlohmann::json &keys, const char *name, uint32_t &slot, bool &rejected)
+	/// Reads `keys[name]`: leaves `slot` alone when it is missing, sets it when it is usable, and when it is there but
+	/// not a whole number that bindable() takes, sets it to `fallback` (the action's default) and flags `rejected`.
+	void read_bind(const nlohmann::json &keys, const char *name, uint32_t &slot, uint32_t fallback, bool &rejected)
 	{
 		const auto it = keys.find(name);
 		if (it == keys.end())
@@ -29,7 +30,10 @@ namespace
 		if (v == std::floor(v) && v >= 0.0 && v <= 255.0 && bindable(static_cast<uint32_t>(v)))
 			slot = static_cast<uint32_t>(v);
 		else
+		{
+			slot = fallback;
 			rejected = true;
+		}
 	}
 }
 
@@ -46,7 +50,7 @@ namespace cb::keys
 			return true;
 		if (context.choices && is_choice_key(vk))
 			return false;
-		return in_fixed_swallow_set(vk) || vk == binds.hack || vk == binds.skills;
+		return in_fixed_swallow_set(vk) || vk == binds.hack || vk == binds.skills || vk == binds.cyberware || vk == binds.activate;
 	}
 
 	bool bindable(uint32_t vk)
@@ -79,11 +83,18 @@ namespace cb::keys
 		if (keys == message.end() || !keys->is_object())
 			return std::nullopt;
 		BindsUpdate out;
+		const Binds defaults;
 		Binds next = current;
-		read_bind(*keys, "hack", next.hack, out.hackRejected);
-		read_bind(*keys, "skills", next.skills, out.skillsRejected);
-		out.clash = next.hack == next.skills; // one key for both actions would fire both
-		out.binds = out.fellBack() ? Binds{} : next;
+		read_bind(*keys, "hack", next.hack, defaults.hack, out.hackRejected);
+		read_bind(*keys, "skills", next.skills, defaults.skills, out.skillsRejected);
+		read_bind(*keys, "cyberware", next.cyberware, defaults.cyberware, out.cyberwareRejected);
+		read_bind(*keys, "activate", next.activate, defaults.activate, out.activateRejected);
+		// one key for two actions would fire both: every action goes back to its default
+		const uint32_t resolved[] = {next.hack, next.skills, next.cyberware, next.activate};
+		for (size_t i = 0; i < std::size(resolved); ++i)
+			for (size_t j = i + 1; j < std::size(resolved); ++j)
+				out.clash = out.clash || resolved[i] == resolved[j];
+		out.binds = out.clash ? defaults : next;
 		return out;
 	}
 

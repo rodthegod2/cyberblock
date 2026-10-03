@@ -4,9 +4,11 @@
 // Wire formats: shared/protocol.md "Layers 3-6" (plan sections 1.2 and 1.3).
 #pragma once
 #include "cbmath.hpp"
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -43,10 +45,20 @@ namespace cb::snap
 	struct FlightSample
 	{
 		bool active = false;
+		bool launch = false;       // `kind` "launch": Steve was thrown (wind charge, blast); anything else is a glide
+		std::optional<double> ts;  // `ts`: Minecraft's monotonic sample clock, ms (absent or invalid: the arrival time counts)
 		Vec3 pos{};          // feet, Cyberpunk space (the landing spot when not active)
 		Vec3 velocity{};     // m/s, Cyberpunk space
 		double yaw = 0;      // Cyberpunk degrees
 		double pitch = 0;    // Minecraft degrees, positive = down
+	};
+
+	/// How the samples of the current (or last) flight arrived, for the drive's per-flight summary line.
+	struct FlightStats
+	{
+		int samples = 0;         // active samples since the flight started
+		double medianGapMs = 0;  // median time between their arrivals (0.5 ms resolution)
+		double maxGapMs = 0;     // longest time between two of them
 	};
 
 	template<typename T>
@@ -61,18 +73,23 @@ namespace cb::snap
 	inline constexpr size_t kMaxMobs = 12;
 	inline constexpr size_t kMaxProjectiles = 16;
 
+	// The parsers take the ground alignment `off` (plan 2026-10-03-retest2 section 1.1): positions get `+off`, velocities
+	// never do. The production caller (on_minecraft_message) passes the current level_offset; 0.0 is for tests.
+
 	/// {"t":"mobs","list":[{id, kind, p, yaw, w, h, hp, maxHp}]}: at most 12 entries. id is an int >= 0, kind matches
 	/// [a-z0-9_]{1,32}, p is finite with |c| < 3e7, yaw is finite, w and h are 0..16, hp and maxHp 0..2048. A bad entry or
 	/// one past the 12th is dropped and counted; a `list` that is not an array makes the message invalid.
-	ListParse<Mob> parse_mobs(const nlohmann::json &message);
+	ListParse<Mob> parse_mobs(const nlohmann::json &message, double off = 0.0);
 
 	/// {"t":"proj","list":[{id, p, v, g}]}: at most 16 entries. id is an int >= 0, p and v are finite (p with |c| < 3e7, v
 	/// with |v| <= 200 m/s), g is 0..40 m/s^2. Dropping works as in parse_mobs.
-	ListParse<Projectile> parse_proj(const nlohmann::json &message);
+	ListParse<Projectile> parse_proj(const nlohmann::json &message, double off = 0.0);
 
-	/// {"t":"flight","active","p","v","yaw","pitch"}: p is always needed; v, yaw and pitch only while `active` (|v| <= 200
-	/// m/s, yaw and pitch finite; the pitch is clamped to -90..90). nullopt when the message is malformed, with `reason`.
-	std::optional<FlightSample> parse_flight(const nlohmann::json &message, std::string &reason);
+	/// {"t":"flight","active","kind","ts","p","v","yaw","pitch"}: p is always needed; v, yaw and pitch only while `active`
+	/// (|v| <= 200 m/s, yaw and pitch finite; the pitch is clamped to -90..90). `kind` "launch" sets `launch` (anything
+	/// else, or none, is a glide); `ts` is kept when it is a finite number in 0..1e13 and ignored otherwise (plan retest2
+	/// section 1.2). nullopt when the message is malformed, with `reason`.
+	std::optional<FlightSample> parse_flight(const nlohmann::json &message, std::string &reason, double off = 0.0);
 
 	// ---- the state -------------------------------------------------------------------------------------------------
 
@@ -124,8 +141,9 @@ namespace cb::snap
 		std::vector<T> m_snapshot;
 	};
 
-	/// Minecraft's elytra flight as the last `flight` sample. Thread-safe. Every query takes the current time: a sample
-	/// older than kMaxAge means Minecraft vanished mid-flight and counts as `active: false`.
+	/// Minecraft's elytra flight or launch as the last `flight` sample, plus a ring of the recent ones for the per-frame
+	/// drive (plan 2026-10-03-retest2 task D3). Thread-safe. Every query takes the current time: a sample older than
+	/// kMaxAge means Minecraft vanished mid-flight and counts as `active: false`.
 	class Flight
 	{
 	public:
@@ -133,6 +151,12 @@ namespace cb::snap
 		/// Minecraft's physics move Steve once per 50 ms tick: guessing past one tick of travel only overshoots, and V snaps
 		/// back when the next sample lands.
 		static constexpr auto kMaxExtrapolation = std::chrono::milliseconds(50);
+		/// The active samples render_pos interpolates between.
+		static constexpr size_t kRing = 32;
+		/// render_pos plays the samples back this far behind their (de-jittered) arrival: 1.5 x the median spacing,
+		/// clamped to 8..60 ms (60 ms while there are fewer than two samples).
+		static constexpr auto kMinPlayout = std::chrono::milliseconds(8);
+		static constexpr auto kMaxPlayout = std::chrono::milliseconds(60);
 
 		void update(const FlightSample &sample, Clock::time_point now);
 		/// A new Minecraft session or a dropped link: a flight in progress ends where it was last seen.
@@ -146,6 +170,16 @@ namespace cb::snap
 		bool timed_out(Clock::time_point now);
 		/// Feet, Cyberpunk space: p + v * min(age, 0.05 s) while active, else the landing spot.
 		Vec3 pos(Clock::time_point now);
+		/// Feet, Cyberpunk space, for the frame drawn at `now` while active: the ring played back with a delay D (see
+		/// kMinPlayout), linear between the two samples around now - D, and past the newest one extrapolated by its
+		/// velocity for at most 50 ms; held at the oldest one before it. A sample's time is `ts` + the smallest
+		/// (arrival - ts) in the ring when it has `ts` (this removes the link's jitter), else its arrival. Not active: the
+		/// landing spot.
+		Vec3 render_pos(Clock::time_point now);
+		/// The last sample's `kind` was "launch".
+		bool launch(Clock::time_point now);
+		/// The arrivals of the current flight's samples, or the last one's after it ended (until the next start).
+		FlightStats stats();
 		Vec3 velocity(Clock::time_point now);
 		double yaw(Clock::time_point now);
 		double pitch(Clock::time_point now);
@@ -156,11 +190,27 @@ namespace cb::snap
 		/// Locked: the position `sample` extrapolates to at `now`.
 		Vec3 extrapolated(Clock::time_point now) const;
 
+		/// Locked: the ring starts over (every change of `active`, and reset()).
+		void clear_ring();
+
+		struct Entry
+		{
+			FlightSample sample;
+			double arrival = 0; // seconds on Clock
+		};
+		static constexpr size_t kGapBuckets = 512; // 0.5 ms each; the last one also holds every longer gap
+
 		std::mutex m_lock;
 		FlightSample m_sample;
 		Clock::time_point m_receivedAt{};
 		int32_t m_seq = 0;
 		bool m_timedOut = false;
+		std::deque<Entry> m_ring; // active samples of this flight, oldest first, at most kRing
+		// stats() of the current or last flight
+		int m_samples = 0;
+		double m_lastArrival = 0;
+		double m_maxGap = 0; // seconds
+		std::array<uint32_t, kGapBuckets> m_gaps{};
 	};
 
 	inline ListState<Mob> &mobs()

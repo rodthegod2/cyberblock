@@ -30,10 +30,12 @@ namespace
 	constexpr double kMaxRequestId = 2147483647.0; // scripts get request and mob ids as Int32
 	constexpr size_t kMaxBlockCells = 64;
 	constexpr size_t kMaxPerkEntries = 32; // the table has 20 ids: a sane bound, the rest is dropped
+	constexpr size_t kMaxCyberwareEntries = cb::world::kMaxCyberwareEntries;
 	constexpr size_t kMaxEffectName = 32;
 
 	using cb::wire::Bad;
 	using cb::wire::cp_triple;
+	using cb::wire::cp_vector;
 	using cb::wire::entity_id;
 	using cb::wire::finite;
 	using cb::wire::integer;
@@ -45,21 +47,32 @@ namespace
 	using cb::wire::triple;
 	using cb::wire::triple_json;
 
-	Event block_add(int bx, int by, int bz)
+	/// The ground alignment k of the attached world (plan 2026-10-03-retest2 section 1.1): Minecraft's `align`, back to 0
+	/// on every `hello`. Written on the link thread, read by the natives and the camera on the game's threads.
+	std::atomic<int> g_levelK{0};
+
+	void set_level_k(int k)
+	{
+		if (g_levelK.exchange(k) != k)
+			cb::log::info("ground alignment: Minecraft y = Cyberpunk z - %.4f (k %d/64)", cb::world::level_offset(k), k);
+	}
+
+	/// A block's event position is its Cyberpunk AABB min corner: (bx, -(bz+1), by + off).
+	Event block_add(int bx, int by, int bz, double off)
 	{
 		Event e;
 		e.kind = EventKind::BlockAdd;
-		e.pos = cb::mc_block_to_cp_aabb(bx, by, bz).min;
+		e.pos = cb::mc_block_to_cp_aabb(bx, by, bz, off).min;
 		return e;
 	}
 
-	Event parse_block(const json &m)
+	Event parse_block(const json &m, double off)
 	{
 		const auto op = m.find("op");
 		if (op == m.end() || !op->is_string() || (*op != "add" && *op != "remove"))
 			throw Bad{"op must be \"add\" or \"remove\""};
 		const cb::Vec3 b = triple(m, "pos", true);
-		Event e = block_add(int(b.x), int(b.y), int(b.z));
+		Event e = block_add(int(b.x), int(b.y), int(b.z), off);
 		if (*op == "remove")
 			e.kind = EventKind::BlockRemove;
 		return e;
@@ -67,7 +80,7 @@ namespace
 
 	/// {"t":"blocks","reset":bool,"c":[x,y,z, ...]}: a `block_reset` when it resets, then a `block_add` per cell. A bad cell
 	/// is left out and counted; a `c` that is not a list of triples, or holds more than 64 cells, rejects the message.
-	void parse_blocks(const json &m, cb::world::Parsed &out)
+	void parse_blocks(const json &m, cb::world::Parsed &out, double off)
 	{
 		const bool reset = optional_bool(m, "reset");
 		const auto cells = m.find("c");
@@ -92,17 +105,17 @@ namespace
 				good = c.is_number() && std::abs(v[k]) < kMaxCoord && v[k] == std::floor(v[k]);
 			}
 			if (good)
-				out.events.push_back(block_add(int(v[0]), int(v[1]), int(v[2])));
+				out.events.push_back(block_add(int(v[0]), int(v[1]), int(v[2]), off));
 			else if (out.droppedEntries++ == 0)
 				out.reason = "blocks: a cell is not three whole numbers within range";
 		}
 	}
 
-	Event parse_explosion(const json &m)
+	Event parse_explosion(const json &m, double off)
 	{
 		Event e;
 		e.kind = EventKind::Explosion;
-		e.pos = cp_triple(m, "pos");
+		e.pos = cp_triple(m, "pos", off);
 		e.amount = number(m, "power", 0.0, kMaxPower);
 		e.flag = optional_bool(m, "fire");
 		return e;
@@ -115,7 +128,7 @@ namespace
 		e.target = entity_id(m, "target");
 		e.amount = number(m, "dmg", 0.0, kMaxDamage) / kHealthPerFraction;
 		if (m.find("impulse") != m.end())
-			e.vector = cp_triple(m, "impulse");
+			e.vector = cp_vector(m, "impulse"); // an impulse is a velocity: never offset
 		e.id = -1; // not dealt by a mob: V's own hit
 		if (const auto mob = m.find("mob"); mob != m.end() && !mob->is_null())
 			e.id = integer(m, "mob", 0.0, kMaxRequestId);
@@ -131,17 +144,17 @@ namespace
 		return e;
 	}
 
-	Event parse_teleport(const json &m)
+	Event parse_teleport(const json &m, double off)
 	{
 		Event e;
 		e.kind = EventKind::Teleport;
-		e.pos = cp_triple(m, "p");
+		e.pos = cp_triple(m, "p", off);
 		e.amount = cb::mc_yaw_to_cp_yaw(number(m, "yaw", -kMaxCoord, kMaxCoord));
 		return e;
 	}
 
 	/// `lead` (a proxy was leashed), or `lead_release` for {"release":true}.
-	Event parse_lead(const json &m)
+	Event parse_lead(const json &m, double off)
 	{
 		Event e;
 		e.target = entity_id(m, "target");
@@ -154,27 +167,27 @@ namespace
 		e.amount = number(m, "length", kMinLeadLength, kMaxLeadLength);
 		if (const auto anchor = m.find("anchor"); anchor != m.end() && !anchor->is_null())
 		{
-			e.pos = cp_triple(m, "anchor");
+			e.pos = cp_triple(m, "anchor", off);
 			e.flag = true; // a fixed anchor; without one Steve holds the leash
 		}
 		return e;
 	}
 
-	Event parse_pull(const json &m)
+	Event parse_pull(const json &m, double off)
 	{
 		Event e;
 		e.kind = EventKind::Pull;
 		e.target = entity_id(m, "target");
-		e.pos = cp_triple(m, "toward");
+		e.pos = cp_triple(m, "toward", off);
 		e.amount = number(m, "strength", 0.0, kMaxStrength);
 		return e;
 	}
 
-	Event parse_knock(const json &m)
+	Event parse_knock(const json &m, double off)
 	{
 		Event e;
 		e.kind = EventKind::Knock;
-		e.pos = cp_triple(m, "pos");
+		e.pos = cp_triple(m, "pos", off);
 		e.amount = number(m, "radius", 0.0, kMaxKnockRadius);
 		e.extra = number(m, "strength", 0.0, kMaxStrength);
 		return e;
@@ -249,6 +262,47 @@ namespace
 		return e;
 	}
 
+	/// {"t":"cyberware","list":[{"id","on"}]} (plan 2026-10-03-retest2 section 1.2): a `cyber` per entry. A bad entry (not
+	/// an object, an unknown id, an `on` that is not 0 or 1, or past the 32nd) is left out and counted; a `list` that is
+	/// not an array rejects the message.
+	void parse_cyberware(const json &m, cb::world::Parsed &out)
+	{
+		const auto list = m.find("list");
+		if (list == m.end() || !list->is_array())
+			throw Bad{"list is missing or not an array"};
+		size_t seen = 0;
+		for (const json &entry : *list)
+		{
+			try
+			{
+				if (++seen > kMaxCyberwareEntries)
+					throw Bad{"more than 32 entries"};
+				if (!entry.is_object())
+					throw Bad{"an entry is not an object"};
+				Event e;
+				e.kind = EventKind::Cyber;
+				e.name = one_of(entry, "id", cb::world::kCyberwareIds);
+				e.amount = integer(entry, "on", 0.0, 1.0);
+				out.events.push_back(std::move(e));
+			}
+			catch (const Bad &bad)
+			{
+				if (out.droppedEntries++ == 0)
+					out.reason = "cyberware: " + bad.why;
+			}
+		}
+	}
+
+	/// {"t":"cyberfx","id","seconds"}: an implant effect starts (0 seconds: it ends now). It replaces Minecraft's perkfx.
+	Event parse_cyberfx(const json &m)
+	{
+		Event e;
+		e.kind = EventKind::CyberFx;
+		e.name = one_of(m, "id", cb::world::kCyberFxIds);
+		e.amount = number(m, "seconds", 0.0, kMaxPerkFxSeconds);
+		return e;
+	}
+
 	/// The kinds that are kept while the mashup is not Active (see EventQueue::set_active); every other kind is transient.
 	bool kept_while_inactive(EventKind kind)
 	{
@@ -258,6 +312,7 @@ namespace
 		case EventKind::BlockRemove:
 		case EventKind::BlockReset:
 		case EventKind::Perk:
+		case EventKind::Cyber: // the install state, like a perk rank
 		case EventKind::Scan:
 		case EventKind::Hack:
 			return true;
@@ -294,12 +349,14 @@ namespace cb::world
 		case EventKind::Scan: return "scan";
 		case EventKind::Perk: return "perk";
 		case EventKind::PerkFx: return "perkfx";
+		case EventKind::Cyber: return "cyber";
+		case EventKind::CyberFx: return "cyberfx";
 		case EventKind::None: break;
 		}
 		return "";
 	}
 
-	Parsed parse_event(const json &message)
+	Parsed parse_event(const json &message, double off)
 	{
 		Parsed out;
 		if (!message.is_object())
@@ -311,25 +368,27 @@ namespace cb::world
 		try
 		{
 			if (t == "blocks")
-				parse_blocks(message, out);
+				parse_blocks(message, out, off);
 			else if (t == "perks")
 				parse_perks(message, out);
+			else if (t == "cyberware")
+				parse_cyberware(message, out);
 			else if (t == "block")
-				out.events.push_back(parse_block(message));
+				out.events.push_back(parse_block(message, off));
 			else if (t == "explosion")
-				out.events.push_back(parse_explosion(message));
+				out.events.push_back(parse_explosion(message, off));
 			else if (t == "hit")
 				out.events.push_back(parse_hit(message));
 			else if (t == "ignite")
 				out.events.push_back(parse_ignite(message));
 			else if (t == "teleport")
-				out.events.push_back(parse_teleport(message));
+				out.events.push_back(parse_teleport(message, off));
 			else if (t == "lead")
-				out.events.push_back(parse_lead(message));
+				out.events.push_back(parse_lead(message, off));
 			else if (t == "pull")
-				out.events.push_back(parse_pull(message));
+				out.events.push_back(parse_pull(message, off));
 			else if (t == "knock")
-				out.events.push_back(parse_knock(message));
+				out.events.push_back(parse_knock(message, off));
 			else if (t == "effect")
 				out.events.push_back(parse_effect(message));
 			else if (t == "hack")
@@ -338,6 +397,8 @@ namespace cb::world
 				out.events.push_back(parse_scan(message));
 			else if (t == "perkfx")
 				out.events.push_back(parse_perkfx(message));
+			else if (t == "cyberfx")
+				out.events.push_back(parse_cyberfx(message));
 			else
 				return out; // another layer's message
 			out.status = Parsed::Status::Event;
@@ -447,16 +508,35 @@ namespace cb::world
 		return {m_queue.size() + m_blocks.size() + (m_blockReset ? 1 : 0), m_dropped, m_rejected};
 	}
 
+	int level_k()
+	{
+		return g_levelK.load();
+	}
+
 	void on_minecraft_message(const json &message)
 	{
 		const auto type = message.find("t");
 		if (type != message.end() && *type == "hello")
 		{
-			// a new Minecraft session: whatever the old one queued is stale
+			// a new Minecraft session: whatever the old one queued is stale, and its alignment comes again with `align`
 			events().clear();
+			set_level_k(0);
 			return;
 		}
-		const Parsed parsed = parse_event(message);
+		if (type != message.end() && *type == "align")
+		{
+			// plan retest2 section 1.2: k must be an integer 0..63; a bad message is counted and the old k kept
+			try
+			{
+				set_level_k(integer(message, "k", 0.0, kLevelSteps - 1.0));
+			}
+			catch (const Bad &bad)
+			{
+				note_invalid(1, "align: " + bad.why);
+			}
+			return;
+		}
+		const Parsed parsed = parse_event(message, level_offset(level_k()));
 		for (const Event &event : parsed.events)
 			events().push(event);
 		const size_t bad = parsed.status == Parsed::Status::Rejected ? 1 : parsed.droppedEntries;
@@ -483,7 +563,7 @@ namespace cb::world
 		return yaw;
 	}
 
-	std::optional<json> make_dmg(double frac, std::string_view kind, Vec3 fromCp, bool hasFrom)
+	std::optional<json> make_dmg(double frac, std::string_view kind, Vec3 fromCp, bool hasFrom, double off)
 	{
 		if (!std::isfinite(frac))
 			return std::nullopt;
@@ -491,7 +571,7 @@ namespace cb::world
 		json from = nullptr;
 		if (hasFrom && finite(fromCp))
 		{
-			const Vec3 mc = cp_to_mc_pos(fromCp.x, fromCp.y, fromCp.z);
+			const Vec3 mc = cp_to_mc_pos(fromCp.x, fromCp.y, fromCp.z, off);
 			from = triple_json(mc);
 		}
 		return json{{"t", "dmg"},
@@ -502,7 +582,7 @@ namespace cb::world
 
 	std::optional<json> make_npcs(std::span<const uint64_t> ids, std::span<const Vec3> feetCp,
 								  std::span<const double> yawsCp, std::span<const uint8_t> vehicles,
-								  std::span<const uint8_t> hostile)
+								  std::span<const uint8_t> hostile, double off)
 	{
 		const size_t n = ids.size();
 		if (feetCp.size() != n || yawsCp.size() != n || vehicles.size() != n || hostile.size() != n)
@@ -512,7 +592,7 @@ namespace cb::world
 		{
 			if (!finite(feetCp[i]) || !std::isfinite(yawsCp[i]))
 				continue;
-			const Vec3 feet = cp_to_mc_pos(feetCp[i].x, feetCp[i].y, feetCp[i].z);
+			const Vec3 feet = cp_to_mc_pos(feetCp[i].x, feetCp[i].y, feetCp[i].z, off);
 			list.push_back({{"id", std::to_string(ids[i])},
 							{"p", triple_json(feet)},
 							{"yaw", rounded(cp_yaw_to_mc_yaw(yawsCp[i]), 1e2)},
@@ -522,7 +602,8 @@ namespace cb::world
 		return json{{"t", "npcs"}, {"list", std::move(list)}};
 	}
 
-	json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, CamFlags flags)
+	json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, CamFlags flags,
+				  int levelK)
 	{
 		return {{"t", "cam"},
 				{"f", frame},
@@ -536,7 +617,8 @@ namespace cb::world
 				{"fly", flags.flying},
 				{"menu", flags.menu},
 				{"air", flags.air},
-				{"held", flags.held}};
+				{"held", flags.held},
+				{"lv", levelK}};
 	}
 
 	json make_look(double dyaw, double dpitch)
@@ -554,12 +636,12 @@ namespace cb::world
 					{"by", hasBy ? json(std::to_string(by)) : json(nullptr)}};
 	}
 
-	std::optional<json> make_pcells(std::span<const Vec3> hitsCp)
+	std::optional<json> make_pcells(std::span<const Vec3> hitsCp, double off)
 	{
 		std::vector<std::array<int, 3>> cells;
 		for (const Vec3 &hit : hitsCp)
 		{
-			const Vec3 mc = cp_to_mc_pos(hit.x, hit.y, hit.z);
+			const Vec3 mc = cp_to_mc_pos(hit.x, hit.y, hit.z, off);
 			if (!finite(mc) || !(std::abs(mc.x) < kMaxCoord && std::abs(mc.y) < kMaxCoord && std::abs(mc.z) < kMaxCoord))
 				continue;
 			const std::array<int, 3> cell{int(std::floor(mc.x)), int(std::floor(mc.y)), int(std::floor(mc.z))};
@@ -583,7 +665,8 @@ namespace cb::world
 	}
 
 	std::optional<json> make_scaninfo(int32_t id, bool ok, uint64_t target, std::string_view name, std::string_view faction,
-									  std::string_view threat, double hp, bool device, Vec3 feetCp, double width, double height)
+									  std::string_view threat, double hp, bool device, Vec3 feetCp, double width, double height,
+									  double off)
 	{
 		if (id < 0)
 			return std::nullopt;
@@ -596,7 +679,7 @@ namespace cb::world
 			feetCp = {};
 		}
 		const bool knownThreat = std::find(std::begin(kThreatLevels), std::end(kThreatLevels), threat) != std::end(kThreatLevels);
-		const Vec3 feet = finite(feetCp) ? cp_to_mc_pos(feetCp.x, feetCp.y, feetCp.z) : Vec3{};
+		const Vec3 feet = finite(feetCp) ? cp_to_mc_pos(feetCp.x, feetCp.y, feetCp.z, off) : Vec3{};
 		const auto finiteOr0 = [](double v) { return std::isfinite(v) ? v : 0.0; };
 		return json{{"t", "scaninfo"},
 					{"id", id},

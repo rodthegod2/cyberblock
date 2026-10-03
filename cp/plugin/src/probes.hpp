@@ -25,8 +25,10 @@ namespace cb
 	class ProbeSet
 	{
 	public:
-		/// `cpCenter`: V's feet in Cyberpunk space; `down` / `wall`: hit positions in Cyberpunk space.
-		Delta submit(Vec3 cpCenter, std::span<const Vec3> down, std::span<const Vec3> wall, double radius,
+		/// `cpCenter`: V's feet in Cyberpunk space; `down` / `wall`: hit positions in Cyberpunk space; `off`: the ground
+		/// alignment (plan 2026-10-03-retest2 section 1.1), applied to the centre and to every range. A change of `off`
+		/// needs a clear() first: the ranges already sent were made with the old one.
+		Delta submit(Vec3 cpCenter, std::span<const Vec3> down, std::span<const Vec3> wall, double radius, double off,
 					 double now = steady_seconds());
 		/// Forget everything (sent with `clear`, which empties Minecraft's side too).
 		void clear();

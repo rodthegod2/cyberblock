@@ -6,8 +6,12 @@
 #include "world.hpp"
 #include <chrono>
 #include <cmath>
+#include <algorithm>
+#include <cstdint>
 #include <limits>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -562,4 +566,222 @@ TEST(a_hello_empties_mobs_and_projectiles)
 	CHECK(mobs().snapshot(Clock::now()) == 1 && projectiles().snapshot(Clock::now()) == 1);
 	on_minecraft_message(json::parse(R"({"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3"})"));
 	CHECK(mobs().snapshot(Clock::now()) == 0 && projectiles().snapshot(Clock::now()) == 0);
+}
+
+// ---- re-test 2 (plan 2026-10-03-retest2 section 1.1): positions take the ground alignment, velocities do not -------------
+
+TEST(snapshot_positions_take_plus_off_and_velocities_do_not)
+{
+	constexpr double off = 57.0 / 64.0; // 0.890625
+	const ListParse<Mob> mobsAt = parse_mobs(mobs_message({mob_entry()}), off);
+	CHECK(approx(mobsAt.items.at(0).feet, 10, 20, 64.890625) && approx(mobsAt.items[0].yaw, 180));
+	const ListParse<Projectile> projAt = parse_proj(json{{"t", "proj"}, {"list", json::array({proj_entry()})}}, off);
+	CHECK(approx(projAt.items.at(0).pos, 1, 2, 70.890625) && approx(projAt.items[0].velocity, 3, -5, 4));
+	std::string reason;
+	const auto s = parse_flight(flight_message(true), reason, off);
+	CHECK(s && approx(s->pos, 10, 20, 100.890625) && approx(s->velocity, 3, -4, -1) && approx(s->yaw, 180) && approx(s->pitch, 30));
+	const auto land = parse_flight(json::parse(R"({"t":"flight","active":false,"p":[1,64,-2]})"), reason, off);
+	CHECK(land && approx(land->pos, 1, 2, 64.890625)); // the landing spot too
+}
+
+TEST(the_observer_converts_snapshots_with_the_current_alignment)
+{
+	on_link_dropped();
+	cb::world::on_minecraft_message(json::parse(R"({"t":"align","k":57})")); // main.cpp: world first, then snap
+	on_minecraft_message(json::parse(R"({"t":"align","k":57})"));
+	on_minecraft_message(mobs_message({mob_entry()}));
+	CHECK(mobs().snapshot(Clock::now()) == 1 && approx(mobs().at(0)->feet, 10, 20, 64.890625));
+	on_minecraft_message(json::parse(R"({"t":"flight","active":false,"p":[1,64,-2]})"));
+	CHECK(approx(flight().pos(Clock::now()), 1, 2, 64.890625));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3"})"));
+	on_minecraft_message(json::parse(R"({"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3"})"));
+	on_minecraft_message(mobs_message({mob_entry()}));
+	CHECK(mobs().snapshot(Clock::now()) == 1 && approx(mobs().at(0)->feet, 10, 20, 64));
+	on_link_dropped();
+}
+
+// ---- re-test 2 (plan 2026-10-03-retest2 section 1.2 and task D3): kind, ts and the interpolated render position -----------
+
+namespace
+{
+	/// A deterministic 0..1 sequence (a linear congruential generator), so the jitter is the same on every run.
+	struct Lcg
+	{
+		uint32_t state = 12345u;
+		double next()
+		{
+			state = state * 1664525u + 1013904223u;
+			return (state >> 8) / double(1u << 24);
+		}
+	};
+
+	/// Seconds as a steady-clock duration.
+	Clock::duration secs(double s)
+	{
+		return std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(s));
+	}
+
+	FlightSample timed(cb::Vec3 pos, cb::Vec3 vel, std::optional<double> tsMs, bool launch = false)
+	{
+		FlightSample s = sample(true, pos, vel);
+		s.ts = tsMs;
+		s.launch = launch;
+		return s;
+	}
+}
+
+TEST(flight_kind_and_ts_are_parsed_and_a_bad_ts_is_ignored)
+{
+	std::string reason;
+	json m = flight_message(true);
+	CHECK(!parse_flight(m, reason)->launch && !parse_flight(m, reason)->ts); // absent: a glide, no ts
+	m["kind"] = "launch";
+	CHECK(parse_flight(m, reason)->launch);
+	for (const json &kind : {json("glide"), json("Launch"), json("rocket"), json(1), json(nullptr), json(true)})
+	{
+		m["kind"] = kind;
+		const auto s = parse_flight(m, reason);
+		CHECK(s.has_value() && !s->launch); // anything but "launch" is a glide, never a rejection
+	}
+	m = flight_message(true);
+	m["ts"] = 81234.5;
+	CHECK(parse_flight(m, reason)->ts == 81234.5);
+	m["ts"] = 0;
+	CHECK(parse_flight(m, reason)->ts == 0.0);
+	m["ts"] = 1e13;
+	CHECK(parse_flight(m, reason)->ts == 1e13);
+	for (const json &bad : {json(-1), json(1.0000001e13), json("81234"), json(nullptr), json(kNaN), json(kInf), json::array()})
+	{
+		m["ts"] = bad;
+		const auto s = parse_flight(m, reason);
+		CHECK(s.has_value() && !s->ts); // ignored, not rejected
+	}
+	const auto land = parse_flight(json::parse(R"({"t":"flight","active":false,"kind":"launch","ts":99,"p":[1,64,-2]})"), reason);
+	CHECK(land && !land->active && land->launch && land->ts == 99.0);
+}
+
+TEST(render_pos_follows_linear_motion_with_jittered_arrivals_smoothly)
+{
+	// Steve flies at 20 m/s along +x; Minecraft samples at 120 Hz with its own clock (ts). The local link adds 2 ms plus
+	// 0..4 ms of jitter, and every 0.3 s Minecraft stalls for 25 ms (a GC pause, a slow frame) and its samples arrive in
+	// one burst. V is placed every 60 fps frame: each step must be 20 m/s x 16.7 ms within 2 cm, and never go backwards.
+	Flight f;
+	const Clock::time_point t0 = Clock::now();
+	const cb::Vec3 v{20, 0, 0};
+	const double spacing = 1.0 / 120.0;
+	Lcg rng;
+	std::vector<std::pair<Clock::time_point, FlightSample>> arrivals;
+	Clock::time_point previous = t0;
+	for (int i = 0; i < 240; ++i)
+	{
+		const double ts = i * spacing;
+		const double stall = std::fmod(ts, 0.3) < 0.025 ? 0.025 - std::fmod(ts, 0.3) : 0.0; // held until the stall ends
+		// TCP keeps the order: a late message holds back the ones behind it
+		previous = std::max(previous, t0 + secs(ts + stall + 0.002 + 0.004 * rng.next()));
+		arrivals.push_back({previous, timed({v.x * ts, 5, 100}, v, ts * 1000.0 + 5000.0)});
+	}
+	size_t next = 0;
+	double last = -1e9;
+	int frames = 0;
+	bool smooth = true, monotonic = true, onTheLine = true;
+	for (double t = 0.2; t < 1.9; t += 1.0 / 60.0)
+	{
+		const Clock::time_point now = t0 + secs(t);
+		while (next < arrivals.size() && arrivals[next].first <= now)
+		{
+			f.update(arrivals[next].second, arrivals[next].first);
+			++next;
+		}
+		const cb::Vec3 p = f.render_pos(now);
+		if (last > -1e8)
+		{
+			smooth = smooth && std::abs((p.x - last) - v.x / 60.0) < 0.02;
+			monotonic = monotonic && p.x >= last;
+		}
+		onTheLine = onTheLine && approx(p.y, 5, 1e-9) && approx(p.z, 100, 1e-9);
+		last = p.x;
+		++frames;
+	}
+	CHECK(frames > 90 && smooth && monotonic && onTheLine);
+	// V trails Steve by the playout delay and the link's lowest latency, not by a whole tick
+	const Clock::time_point end = t0 + secs(1.9);
+	const double truth = v.x * (1.9 - 0.002);
+	CHECK(f.render_pos(end).x < truth && f.render_pos(end).x > truth - v.x * 0.07);
+}
+
+TEST(render_pos_without_ts_still_follows)
+{
+	Flight f;
+	const Clock::time_point t0 = Clock::now();
+	const cb::Vec3 v{0, -10, -2};
+	for (int i = 0; i < 60; ++i)
+	{
+		const double t = i / 60.0;
+		f.update(timed({0, v.y * t, 200 + v.z * t}, v, std::nullopt), t0 + secs(t));
+	}
+	// arrival times are the clock: the playout delay is 1.5 x the 16.7 ms spacing, so V is where Steve was 25 ms ago
+	const cb::Vec3 at = f.render_pos(t0 + secs(59 / 60.0 + 0.005));
+	CHECK(approx(at.y, v.y * (59 / 60.0 + 0.005 - 0.025), 1e-6));
+	CHECK(approx(at.z, 200 + at.y / 5, 1e-6)); // on the line z = 200 + y/5
+}
+
+TEST(render_pos_extrapolates_at_most_50_ms_past_the_newest_sample)
+{
+	Flight f;
+	const Clock::time_point t0 = Clock::now();
+	f.update(timed({0, 0, 100}, {10, 0, 0}, 1000.0), t0);
+	f.update(timed({0.1, 0, 100}, {10, 0, 0}, 1010.0), t0 + 10ms);
+	CHECK(approx(f.render_pos(t0 + 400ms), 0.1 + 10 * 0.05, 0, 100, 1e-9)); // capped at 0.05 s of travel
+	CHECK(approx(f.render_pos(t0 + 10ms + 15ms + 20ms), 0.1 + 10 * 0.020, 0, 100, 1e-6)); // D = 15 ms: 20 ms past it
+	// before the oldest sample: held there, never extrapolated backwards
+	CHECK(approx(f.render_pos(t0 + 5ms), 0, 0, 100, 1e-9));
+}
+
+TEST(render_pos_of_an_inactive_flight_is_the_landing_spot)
+{
+	Flight f;
+	const Clock::time_point t0 = Clock::now();
+	CHECK(approx(f.render_pos(t0), 0, 0, 0));
+	f.update(timed({0, 0, 100}, {10, 0, 0}, 0.0), t0);
+	f.update(sample(false, {7, 8, 60}), t0 + 40ms);
+	CHECK(approx(f.render_pos(t0 + 40ms), 7, 8, 60) && approx(f.render_pos(t0 + 5s), 7, 8, 60));
+	// a flight that goes stale ends where it was last seen, as pos() says
+	Flight g;
+	g.update(timed({0, 0, 100}, {10, 0, 0}, 0.0), t0);
+	CHECK(approx(g.render_pos(t0 + 1s), g.pos(t0 + 1s).x, 0, 100) && !g.active(t0 + 1s));
+}
+
+TEST(the_ring_starts_over_with_every_flight_and_on_reset)
+{
+	Flight f;
+	const Clock::time_point t0 = Clock::now();
+	for (int i = 0; i < 10; ++i)
+		f.update(timed({double(i), 0, 100}, {120, 0, 0}, i * 8.0), t0 + std::chrono::milliseconds(8 * i));
+	f.update(sample(false, {9, 0, 100}), t0 + 90ms);
+	// a new flight far away, whose ts clock restarted: nothing from the old ring leaks into it
+	f.update(timed({500, 0, 50}, {0, 0, 0}, 3.0), t0 + 1s);
+	CHECK(approx(f.render_pos(t0 + 1s + 1ms), 500, 0, 50) && approx(f.render_pos(t0 + 1s + 100ms), 500, 0, 50));
+	f.reset(t0 + 2s);
+	f.update(timed({-5, 0, 10}, {0, 0, 0}, 0.0), t0 + 3s);
+	CHECK(approx(f.render_pos(t0 + 3s + 30ms), -5, 0, 10));
+}
+
+TEST(launch_and_stats_follow_the_samples)
+{
+	Flight f;
+	const Clock::time_point t0 = Clock::now();
+	CHECK(!f.launch(t0) && f.stats().samples == 0);
+	f.update(timed({0, 0, 70}, {0, 0, 12}, 0.0, true), t0);
+	f.update(timed({0, 0, 70.1}, {0, 0, 12}, 8.0, true), t0 + 8ms);
+	f.update(timed({0, 0, 70.3}, {0, 0, 12}, 16.0, true), t0 + 16ms);
+	f.update(timed({0, 0, 70.6}, {0, 0, 12}, 40.0, true), t0 + 46ms);
+	CHECK(f.launch(t0 + 46ms) && f.active(t0 + 46ms));
+	const FlightStats s = f.stats();
+	CHECK(s.samples == 4 && approx(s.medianGapMs, 8, 0.6) && approx(s.maxGapMs, 30, 0.6));
+	f.update(timed({0, 0, 80}, {}, 60.0, false), t0 + 60ms); // switched to a glide mid-air
+	CHECK(!f.launch(t0 + 60ms));
+	f.update(sample(false, {0, 0, 80}), t0 + 70ms);
+	CHECK(f.stats().samples == 5); // kept after the landing, for the drive's summary line
+	f.update(timed({0, 0, 80}, {}, 0.0), t0 + 1s);
+	CHECK(f.stats().samples == 1 && f.stats().maxGapMs == 0.0); // a new flight starts counting again
 }

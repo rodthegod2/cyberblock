@@ -25,19 +25,24 @@ namespace
 
 namespace cb
 {
-	Vec3 cp_to_mc_pos(double x, double y, double z)
+	Vec3 cp_to_mc_pos(double x, double y, double z, double off)
+	{
+		return {x, z - off, -y};
+	}
+
+	Vec3 mc_to_cp_pos(double x, double y, double z, double off)
+	{
+		return {x, -z, y + off};
+	}
+
+	Vec3 cp_dir_to_mc(double x, double y, double z)
 	{
 		return {x, z, -y};
 	}
 
-	Vec3 mc_to_cp_pos(double x, double y, double z)
-	{
-		return {x, -z, y};
-	}
-
 	Vec3 mc_vel_to_cp(double vx, double vy, double vz)
 	{
-		return mc_to_cp_pos(vx, vy, vz);
+		return {vx, -vz, vy};
 	}
 
 	double mc_yaw_to_cp_yaw(double mcYaw)
@@ -50,10 +55,10 @@ namespace cb
 		return yaw;
 	}
 
-	Aabb mc_block_to_cp_aabb(int bx, int by, int bz)
+	Aabb mc_block_to_cp_aabb(int bx, int by, int bz, double off)
 	{
 		const double x = bx, y = by, z = bz; // doubles first: no int overflow at the extremes
-		return {{x, -(z + 1), y}, {x + 1, -z, y + 1}};
+		return {{x, -(z + 1), y + off}, {x + 1, -z, y + 1 + off}};
 	}
 
 	Vec3 cp_quat_forward(double i, double j, double k, double r)
@@ -71,7 +76,7 @@ namespace cb
 	YawPitch cp_quat_to_mc_yaw_pitch(double i, double j, double k, double r)
 	{
 		const Vec3 f = cp_quat_forward(i, j, k, r);
-		const Vec3 m = cp_to_mc_pos(f.x, f.y, f.z);
+		const Vec3 m = cp_dir_to_mc(f.x, f.y, f.z);
 		return mc_yaw_pitch(m.x, m.y, m.z);
 	}
 
@@ -80,15 +85,15 @@ namespace cb
 		return degrees(2 * std::atan(std::tan(radians(hfov_deg) / 2) / aspect));
 	}
 
-	Range down_hit_to_range(double x, double y, double z)
+	Range down_hit_to_range(double x, double y, double z, double off)
 	{
-		const int top = static_cast<int>(std::ceil(z)) - 1;
+		const int top = floor_int(z - off + 0.5) - 1; // nearest whole y, ties up: as cbmath.py's math.floor, never round()
 		return {floor_int(x), floor_int(-y), top - 1, top};
 	}
 
-	Range wall_hit_to_range(double x, double y, double z)
+	Range wall_hit_to_range(double x, double y, double z, double off)
 	{
-		const int b = floor_int(z);
+		const int b = floor_int(z - off);
 		return {floor_int(x), floor_int(-y), b, b};
 	}
 }

@@ -1,6 +1,7 @@
 // redscript natives, registered as RTTI global functions like RED4ext.SDK's examples/native_globals_redscript.
 #include "natives.hpp"
 #include "compositor.h"
+#include "drive.hpp"
 #include "link.hpp"
 #include "log.hpp"
 #include "probes.hpp"
@@ -31,9 +32,16 @@ namespace
 		bool active = false;
 		bool vehicle = false;
 		int session = 0; // the link session the state below was sent to
+		int levelK = 0;  // the ground alignment `probes` was built with (plan retest2 section 1.1)
 		cb::ProbeSet probes;
 		std::optional<cb::Vec3> lastCenter;
 	};
+
+	/// The current ground alignment as an offset in metres (Minecraft y = Cyberpunk z - off).
+	double level_offset()
+	{
+		return cb::world::level_offset(cb::world::level_k());
+	}
 	std::mutex g_lock;
 	Mashup g_mashup;
 
@@ -154,6 +162,8 @@ namespace
 		g_mashup.session = cb::link().session();
 		cb::natives::active = active;
 		cb::natives::inVehicle = inVehicle;
+		if (!active)
+			cb::natives::flightAllowed = false; // the script allows flights again on its next tick while Active
 		cb::world::events().set_active(active);
 		compositor::set_active(active);
 		if (changed)
@@ -190,6 +200,14 @@ namespace
 			send_state();
 			restart_ground();
 		}
+		// Minecraft re-aligned the ground (`align`): every range already sent sits at the old height, so start over
+		const int levelK = cb::world::level_k();
+		if (levelK != g_mashup.levelK)
+		{
+			cb::log::info("ground: alignment k %d -> %d, Minecraft gets the ground again", g_mashup.levelK, levelK);
+			g_mashup.levelK = levelK;
+			restart_ground();
+		}
 		const cb::Vec3 feet{center.X, center.Y, center.Z};
 		// the link's queue had to drop ground messages while Minecraft was not reading: its ground starts over
 		const bool groundLost = cb::link().take_ground_lost();
@@ -198,7 +216,8 @@ namespace
 			restart_ground();
 		g_mashup.lastCenter = feet;
 
-		const cb::Delta delta = g_mashup.probes.submit(feet, to_vec3(downHits), to_vec3(wallHits), radius);
+		const cb::Delta delta =
+			g_mashup.probes.submit(feet, to_vec3(downHits), to_vec3(wallHits), radius, cb::world::level_offset(levelK));
 		if (!delta.remove.empty())
 			cb::link().send({{"t", "unground"}, {"c", delta.remove}});
 		if (!delta.add.empty())
@@ -239,7 +258,8 @@ namespace
 
 		if (!cb::natives::active)
 			return;
-		const auto message = cb::world::make_dmg(frac, known_name(kind, cb::world::kDamageKinds), {from.X, from.Y, from.Z}, hasFrom);
+		const auto message =
+			cb::world::make_dmg(frac, known_name(kind, cb::world::kDamageKinds), {from.X, from.Y, from.Z}, hasFrom, level_offset());
 		if (message)
 			cb::link().send(*message);
 		else
@@ -274,7 +294,7 @@ namespace
 		const std::vector<double> yawList = to_vector<double>(yaws);
 		const std::vector<uint8_t> vehicleList = to_vector<uint8_t>(vehicles);
 		const std::vector<uint8_t> hostileList = to_vector<uint8_t>(hostile);
-		const auto message = cb::world::make_npcs(idList, feetList, yawList, vehicleList, hostileList);
+		const auto message = cb::world::make_npcs(idList, feetList, yawList, vehicleList, hostileList, level_offset());
 		if (message)
 			cb::link().send(*message);
 		else
@@ -289,7 +309,9 @@ namespace
 
 	// Cyberblock_NextEvent() -> CName: pops the oldest Minecraft event and makes it current: n"explosion", n"hit",
 	// n"ignite", n"block_add", n"block_remove", n"block_reset", n"teleport", n"lead", n"lead_release", n"pull", n"knock",
-	// n"effect", n"hack", n"scan", n"perk" or n"perkfx"; n"" (the empty CName, hash 0) when there is none.
+	// n"effect", n"hack", n"scan", n"perk", n"perkfx", n"cyber" or n"cyberfx" (re-test 2: one `cyber` per entry of a
+	// `cyberware` message, kept while not Active like n"perk"; n"cyberfx" is dropped while not Active); n"" (the empty
+	// CName, hash 0) when there is none.
 	void NextEvent(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
 	{
 		++frame->code;
@@ -315,7 +337,7 @@ namespace
 	}
 
 	// Cyberblock_EventAmount() -> Float: explosion power | hit damage as a fraction of the target's max health | ignite
-	// seconds.
+	// seconds | ... (world.hpp Event::amount) | cyber: 1 installed, 0 not | cyberfx: seconds (0 = end now).
 	void EventAmount(IScriptable *, CStackFrame *frame, float *out, int64_t)
 	{
 		++frame->code;
@@ -339,7 +361,8 @@ namespace
 			*out = cb::world::events().current().flag;
 	}
 
-	// Cyberblock_EventName() -> CName: the effect name | hack name | perk id | perkfx id; n"" for the other kinds.
+	// Cyberblock_EventName() -> CName: the effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id; n""
+	// for the other kinds.
 	void EventName(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
 	{
 		++frame->code;
@@ -452,17 +475,37 @@ namespace
 			*out = cb::snap::flight().timed_out(cb::snap::Clock::now());
 	}
 
-	// Cyberblock_SetFlightFollowing(following: Bool) -> Void: V follows Steve's glide; carried as `cam.fly` until set again
-	// (natives.hpp says what else clears it).
-	void SetFlightFollowing(IScriptable *, CStackFrame *frame, void *, int64_t)
+	// ---- re-test 2 (plan 2026-10-03-retest2 section 1.3): the per-frame drive -------------------------------------------
+
+	// Cyberblock_SetFlightAllowed(allowed: Bool) -> Void: 10 Hz from CyberblockFlight.Tick: V may be moved (live, not
+	// mounted, not locked). The DLL drive (drive.cpp) never moves V while it is false. Cleared by Cyberblock_SetActive(false).
+	void SetFlightAllowed(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
-		bool following = false;
-		RED4ext::GetParameter(frame, &following);
+		bool allowed = false;
+		RED4ext::GetParameter(frame, &allowed);
 		++frame->code;
-		cb::natives::flightFollowing = following;
+		cb::natives::flightAllowed = allowed;
+	}
+
+	// Cyberblock_FlightDriving() -> Bool: the DLL is moving V this flight (the same value as cam.fly).
+	void FlightDriving(IScriptable *, CStackFrame *frame, bool *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = cb::drive::driving();
+	}
+
+	// Cyberblock_SecondsSinceFlight() -> Float: 0 while driving, the seconds since the last flight ended (Cyberpunk menus
+	// do not count), 999 if none yet.
+	void SecondsSinceFlight(IScriptable *, CStackFrame *frame, float *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = cb::drive::seconds_since_end();
 	}
 
 	// Cyberblock_FlightPos() -> Vector4: feet, Cyberpunk space, p + v * min(age, 0.05 s) while flying, else the landing spot.
+	// Kept for scripts; the drive uses Flight::render_pos.
 	void FlightPos(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
 	{
 		++frame->code;
@@ -561,7 +604,7 @@ namespace
 		if (!cb::natives::active)
 			return;
 		const std::vector<cb::Vec3> points = to_vec3(hits);
-		if (const auto message = cb::world::make_pcells(points))
+		if (const auto message = cb::world::make_pcells(points, level_offset()))
 			cb::link().send(*message);
 	}
 
@@ -604,7 +647,7 @@ namespace
 		static bool warned = false;
 		send_or_warn(cb::world::make_scaninfo(id, ok, target, name.c_str(), faction.c_str(),
 											  known_name(threat, cb::world::kThreatLevels), hp, device, {pos.X, pos.Y, pos.Z},
-											  size.X, size.Y),
+											  size.X, size.Y, level_offset()),
 					 warned, "Cyberblock_ScanResult", "the request id is negative");
 	}
 
@@ -682,8 +725,8 @@ namespace
 		cb::natives::choicesOpen = open;
 	}
 
-	// Cyberblock_SetLookCapture(on: Bool) -> Void: the camera-only flight fallback: while on, raw mouse movement goes to
-	// Minecraft as `look` deltas.
+	// Cyberblock_SetLookCapture(on: Bool) -> Void: while on, raw mouse movement goes to Minecraft as `look` deltas. Kept,
+	// but no script calls it since re-test 2 (the camera-only flight fallback is gone).
 	void SetLookCapture(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
 		bool on = false;
@@ -762,7 +805,9 @@ namespace cb::natives
 		add(rtti, "Cyberblock_FlightActive", &FlightActive, "Bool");
 		add(rtti, "Cyberblock_FlightSeq", &FlightSeq, "Int32");
 		add(rtti, "Cyberblock_FlightTimedOut", &FlightTimedOut, "Bool");
-		add(rtti, "Cyberblock_SetFlightFollowing", &SetFlightFollowing, nullptr, {{"Bool", "following"}});
+		add(rtti, "Cyberblock_SetFlightAllowed", &SetFlightAllowed, nullptr, {{"Bool", "allowed"}});
+		add(rtti, "Cyberblock_FlightDriving", &FlightDriving, "Bool");
+		add(rtti, "Cyberblock_SecondsSinceFlight", &SecondsSinceFlight, "Float");
 		add(rtti, "Cyberblock_FlightPos", &FlightPos, "Vector4");
 		add(rtti, "Cyberblock_FlightVelocity", &FlightVelocity, "Vector4");
 		add(rtti, "Cyberblock_FlightYaw", &FlightYaw, "Float");
