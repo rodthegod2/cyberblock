@@ -35,6 +35,13 @@ public class CyberblockUiService extends ScriptableService {
   public let bypassWait: Int32;
   // The pass-through name Minecraft was told last (Restyle.reds).
   public let pass: CName;
+  // Restyle.reds state: pump passes, where the next widget walk starts, the persistent-layer roots it tinted and their
+  // own colours, and whether the loading screen controller was logged.
+  public let restylePass: Int32;
+  public let walkOffset: Int32;
+  public let tintedRoots: array<wref<inkWidget>>;
+  public let rootColors: array<HDRColor>;
+  public let loadingLogged: Bool;
   // Notification controllers waiting for their data (Notifications.reds) and the pump passes each waited.
   public let pendingNotifications: array<wref<GenericNotificationController>>;
   public let pendingAges: array<Int32>;
@@ -77,6 +84,7 @@ public abstract class CyberblockUi {
     if IsDefined(GetPlayer(game)) {
       CyberblockInk.Apply(game, on);
       CyberblockNotifications.Poll(game, on);
+      CyberblockRestyle.Update(game, on);
     }
   }
 }
@@ -129,6 +137,8 @@ public abstract class CyberblockInk {
   }
 
   public static func RestoreFor(game: GameInstance, why: String) -> Void {
+    // A pass-through menu ends with Cyberblock On: Minecraft is told, the tinted layer roots get their colours back.
+    CyberblockRestyle.Update(game, false);
     let s = CyberblockUiService.Get();
     if IsDefined(s) && !s.hidden {
       return;
