@@ -4,7 +4,7 @@
 //   double_jump  -> V's HasDoubleJump +1 (S1 also leaves it unzeroed while the perk is owned);
 //   silent_steps -> V's Visibility x0.5;
 //   sandevistan  -> perkfx: world slow-mo x0.2 for the given seconds with V at normal speed;
-//   dodge        -> nothing here (S1 reads Has(n"dodge") for its IsNewPerkBought wrap and stat exceptions).
+//   dodge        -> V's HasDodgeAir +1 (S1 reads Has(n"dodge") for its IsNewPerkBought wrap and stat exceptions).
 // Every other perk is Minecraft-side only. Tick(active false) and Clear remove every modifier and end the slow-mo;
 // ranks stay.
 //
@@ -14,6 +14,10 @@
 //     + StatsSystem.AddModifier / RemoveModifier(StatsObjectID, the same modifier object).
 //   HasDoubleJump: DoubleJumpDecisions.EnterCondition checks HasStatFlag(HasDoubleJump), and refuses while
 //     HasChargeJump or HasAirHover is set (S1 zeroes both while Active, audit A.4).
+//   HasDodgeAir: the 2.x air dash runs in the dodge state (DodgeEvents.OnEnter, TreatDashAsAirDash), which needs HasDodge
+//     and the Reflexes milestone 3 that S1's wrap reports; the air dodge state (DodgeAirDecisions.EnterCondition,
+//     locomotionTransitions.swift:4584) also needs HasDodgeAir, which the player's base stats do not grant. It is granted
+//     like HasDoubleJump, so the Dodge perk gives an air dash whichever of the two states the locomotion graph enters.
 //   Visibility: PlayerPuppet.UpdateVisibilityModifier sends VisibleObjectDetectionMultEvent(multiplier = Visibility),
 //     run by VisibilityStatListener whenever the stat changes (audit C.4).
 //   Slow-mo (audit C.1): TimeSystem.SetIgnoreTimeDilationOnLocalPlayerZero(true) then SetTimeDilation(reason, 0.2,
@@ -28,6 +32,7 @@ public class CyberblockPerksService extends ScriptableService {
   public let ranks: array<Int32>;
   // Our modifiers on V, removed exactly; owner is the entity they were added to.
   public let doubleJump: ref<gameStatModifierData>;
+  public let dodgeAir: ref<gameStatModifierData>;
   public let silentSteps: ref<gameStatModifierData>;
   public let owner: EntityID;
   // Active on foot at the last Tick: slow-mo only starts then.
@@ -122,7 +127,7 @@ public abstract class CyberblockPerks {
       CyberblockPerks.EndSlowMo(game, perks);
     }
     let id = player.GetEntityID();
-    if (IsDefined(perks.doubleJump) || IsDefined(perks.silentSteps)) && perks.owner != id {
+    if (IsDefined(perks.doubleJump) || IsDefined(perks.dodgeAir) || IsDefined(perks.silentSteps)) && perks.owner != id {
       CyberblockPerks.RemoveModifiers(game, perks); // V was replaced (load): the old modifiers went with the old V
     }
     perks.owner = id;
@@ -136,6 +141,16 @@ public abstract class CyberblockPerks {
       if !wantDoubleJump && IsDefined(perks.doubleJump) {
         stats.RemoveModifier(statsId, perks.doubleJump);
         perks.doubleJump = null;
+      }
+    }
+    let wantDodgeAir = CyberblockPerks.Has(game, n"dodge");
+    if wantDodgeAir && !IsDefined(perks.dodgeAir) {
+      perks.dodgeAir = RPGManager.CreateStatModifier(gamedataStatType.HasDodgeAir, gameStatModifierType.Additive, 1.0);
+      stats.AddModifier(statsId, perks.dodgeAir);
+    } else {
+      if !wantDodgeAir && IsDefined(perks.dodgeAir) {
+        stats.RemoveModifier(statsId, perks.dodgeAir);
+        perks.dodgeAir = null;
       }
     }
     let wantSilentSteps = CyberblockPerks.Has(game, n"silent_steps");
@@ -165,7 +180,7 @@ public abstract class CyberblockPerks {
   }
 
   private static func RemoveModifiers(game: GameInstance, perks: ref<CyberblockPerksService>) -> Void {
-    if !IsDefined(perks.doubleJump) && !IsDefined(perks.silentSteps) {
+    if !IsDefined(perks.doubleJump) && !IsDefined(perks.dodgeAir) && !IsDefined(perks.silentSteps) {
       return;
     }
     let statsId = Cast<StatsObjectID>(perks.owner);
@@ -173,6 +188,10 @@ public abstract class CyberblockPerks {
     if IsDefined(perks.doubleJump) {
       stats.RemoveModifier(statsId, perks.doubleJump);
       perks.doubleJump = null;
+    }
+    if IsDefined(perks.dodgeAir) {
+      stats.RemoveModifier(statsId, perks.dodgeAir);
+      perks.dodgeAir = null;
     }
     if IsDefined(perks.silentSteps) {
       stats.RemoveModifier(statsId, perks.silentSteps);
