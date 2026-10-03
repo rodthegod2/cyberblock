@@ -99,6 +99,21 @@ class CyberwareRulesTest {
 		assertEquals(Map.of("eyes/0", "kiroshi_optics"), stale.slots());
 	}
 
+	/**
+	 * The kit installs the deck, then the player installs its Sandevistan: the Operating System slot holds the Sandevistan, so a
+	 * carried deck gives no RAM (Ram.hasDeck) and the no-deck message names the Sandevistan instead of saying "carry one".
+	 */
+	@Test
+	void theOperatingSystemSlotHoldsOneImplant() {
+		assertNull(CyberwareRules.osImplant(Map.of()));
+		Map<String, String> deck = CyberwareRules.install(Map.of("eyes/0", "kiroshi_optics"), Cyberware.CYBERDECK).slots();
+		assertSame(Cyberware.CYBERDECK, CyberwareRules.osImplant(deck));
+		Map<String, String> sandy = CyberwareRules.install(deck, Cyberware.SANDEVISTAN).slots();
+		assertSame(Cyberware.SANDEVISTAN, CyberwareRules.osImplant(sandy));
+		assertSame(Cyberware.BERSERK, CyberwareRules.osImplant(CyberwareRules.install(sandy, Cyberware.BERSERK).slots()));
+		assertNull(CyberwareRules.osImplant(Map.of("operating_system/0", "x-ray"))); // an id nobody knows: the slot is free
+	}
+
 	@Test
 	void installingTwiceIsAlready() {
 		Map<String, String> slots = CyberwareRules.install(Map.of(), Cyberware.KIROSHI_OPTICS).slots();

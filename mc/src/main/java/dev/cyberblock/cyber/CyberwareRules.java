@@ -109,6 +109,14 @@ public final class CyberwareRules {
 	}
 
 	/**
+	 * The one implant in the Operating System slot (the cyberdeck, Sandevistan or Berserk), or null when it is free. While it
+	 * holds anything but the deck, a carried deck does not count (Ram.hasDeck).
+	 */
+	public static @Nullable Cyberware osImplant(final Map<String, String> slots) {
+		return Cyberware.byId(slots.get(CyberSlot.OPERATING_SYSTEM.key(0)));
+	}
+
+	/**
 	 * Installs into the first free position of the implant's slot (one holding an unknown id counts as free), else replaces
 	 * position 0. An implant already installed anywhere changes nothing.
 	 */

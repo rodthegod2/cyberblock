@@ -127,7 +127,7 @@ public final class CyberData {
 
 	/** An installed cyberdeck, or one carried while the Operating System slot is empty (plan retest2 section 1.7). Either side. */
 	public static boolean hasDeck(final Player player) {
-		boolean osSlotEmpty = Cyberware.byId(slots(player).get(CyberSlot.OPERATING_SYSTEM.key(0))) == null;
+		boolean osSlotEmpty = CyberwareRules.osImplant(slots(player)) == null;
 		return Ram.hasDeck(has(player, Cyberware.CYBERDECK), osSlotEmpty, osSlotEmpty && player.getInventory().contains(stack -> stack.is(CyberItems.CYBERDECK)));
 	}
 

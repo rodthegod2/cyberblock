@@ -4,7 +4,7 @@ package dev.cyberblock.cyber;
 public final class HackRules {
 	public enum Outcome {
 		OK,
-		/** No cyberdeck in the inventory. */
+		/** No cyberdeck that counts (Ram.hasDeck): none installed, and none carried or the Operating System slot holds another implant. */
 		NO_DECK,
 		/** Nothing scanned in the last 5 s. */
 		NO_TARGET,
