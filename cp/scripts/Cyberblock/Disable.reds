@@ -2,7 +2,7 @@
 // compile-checked appendix). While Cyberblock's god mode is on V (Active, on foot):
 //   - F5 does not quicksave (Minecraft's perspective key);
 //   - G does not toggle V's walk mode (the hack key);
-//   - V's own perk-gated dash and air dash follow Steve's Dodge perk instead of V's Reflexes perks.
+//   - V's own perk-gated dash and air dash follow Steve's Dodge perk instead of V's Reflexes perks, outside menus.
 // The DLL swallows F5 and G as well (plan D5); these wraps are the second line. Each wrap is as narrow as the audit's:
 // outside Active every answer is vanilla. The restrictions and the ability stats are in PlayerState.reds.
 //
@@ -15,6 +15,11 @@
 //     Reflexes_Central_Milestone_3 at level 3 for the air dash, DodgeDecisions needs Reflexes_Central_Milestone_2 at
 //     level 2 for the dash (locomotionTransitions.swift:262-299, 2340-2364).
 //   GodModeSystem.GetGodModeSources(EntityID, gameGodModeType) -> array<CName> (as Health.reds).
+//   IsNewPerkBought is also read where perk state changes: PlayerDevelopmentSystem.BuyNewPerk unlocks a perk's children
+//     only when its reported level is the max level, UnlockFreeNewPerks and CanSellNewPerk check it too
+//     (playerDevelopmentSystem.swift:1003, 3234, 3277); they run from the perk screen (NewPerksScreenLogicController)
+//     and at initialisation. The dash checks run in locomotion, never in a menu, so the wrap answers vanilla while a
+//     menu is open (UI_System.IsInMenu, as CyberblockSystem's input pause): buying a milestone while Active stays right.
 
 public abstract class CyberblockDisable {
   // Cyberblock's god mode is on V: the audit's Active test (source n"Cyberblock", PlayerState.reds).
@@ -25,6 +30,12 @@ public abstract class CyberblockDisable {
     }
     let sources = GameInstance.GetGodModeSystem(game).GetGodModeSources(player.GetEntityID(), gameGodModeType.Invulnerable);
     return ArrayContains(sources, n"Cyberblock");
+  }
+
+  // A Cyberpunk menu is open (pause, hub, popups; audit A.3 InMenu).
+  public static func InMenu(game: GameInstance) -> Bool {
+    let ui = GameInstance.GetBlackboardSystem(game).Get(GetAllBlackboardDefs().UI_System);
+    return IsDefined(ui) && ui.GetBool(GetAllBlackboardDefs().UI_System.IsInMenu);
   }
 }
 
@@ -49,18 +60,20 @@ private final func ProcessToggleWalkInput() -> Void {
 
 // V's dash (Reflexes_Central_Milestone_2 at 2) and air dash (Reflexes_Central_Milestone_3 at 3) are reported as not
 // bought while Active, and as bought while Steve owns the Dodge perk (CyberblockPerks, S3). PlayerState keeps
-// HasDodge/HasDodgeAir for the same perk.
+// HasDodge/HasDodgeAir for the same perk. In a menu (the perk screen buys and sells perks) the answer is vanilla.
 @wrapMethod(PlayerDevelopmentData)
 public final const func IsNewPerkBought(perkType: gamedataNewPerkType) -> Int32 {
   let level = wrappedMethod(perkType);
-  if !IsDefined(this.m_owner) || !CyberblockDisable.Active(this.m_owner.GetGame()) {
+  let dash = Equals(perkType, gamedataNewPerkType.Reflexes_Central_Milestone_2);
+  if (!dash && !Equals(perkType, gamedataNewPerkType.Reflexes_Central_Milestone_3)) || !IsDefined(this.m_owner) {
     return level;
   }
-  if Equals(perkType, gamedataNewPerkType.Reflexes_Central_Milestone_2) {
-    return CyberblockPerks.Has(this.m_owner.GetGame(), n"dodge") ? 2 : 0;
+  let game = this.m_owner.GetGame();
+  if !CyberblockDisable.Active(game) || CyberblockDisable.InMenu(game) {
+    return level;
   }
-  if Equals(perkType, gamedataNewPerkType.Reflexes_Central_Milestone_3) {
-    return CyberblockPerks.Has(this.m_owner.GetGame(), n"dodge") ? 3 : 0;
+  if !CyberblockPerks.Has(game, n"dodge") {
+    return 0;
   }
-  return level;
+  return dash ? 2 : 3;
 }

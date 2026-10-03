@@ -161,7 +161,7 @@ public class CyberblockSystem extends ScriptableSystem {
     // Consume F9 even without a player, so a press in the main menu cannot fire later.
     let toggle = Cyberblock_ConsumeToggle();
     let game = this.GetGameInstance();
-    Cyberblock_SetMenu(CyberblockSystem.InMenu(game));
+    Cyberblock_SetMenu(CyberblockDisable.InMenu(game));
     if this.saving {
       this.savingTicks += 1;
       if this.savingTicks >= 100 {
@@ -221,11 +221,6 @@ public class CyberblockSystem extends ScriptableSystem {
     }
     let state = IntEnum<gamePSMLocomotionStates>(psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.Locomotion));
     return Equals(state, gamePSMLocomotionStates.Crouch) || Equals(state, gamePSMLocomotionStates.CrouchDodge) || Equals(state, gamePSMLocomotionStates.Slide);
-  }
-
-  // A Cyberpunk menu is open (pause, hub, popups): the DLL stops forwarding input to Minecraft (audit A.3, InMenu).
-  private static func InMenu(game: GameInstance) -> Bool {
-    return GameInstance.GetBlackboardSystem(game).Get(GetAllBlackboardDefs().UI_System).GetBool(GetAllBlackboardDefs().UI_System.IsInMenu);
   }
 
   private cb func OnMenuChanged(inMenu: Bool) -> Bool {
