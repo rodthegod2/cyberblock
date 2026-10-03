@@ -1,0 +1,13 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "misc",
+	"ingredients": [
+		"minecraft:ink_sac",
+		"minecraft:iron_nugget",
+		"minecraft:copper_ingot"
+	],
+	"result": {
+		"id": "cyberblock:ink_sac_daemon",
+		"count": 1
+	}
+}

@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "misc",
+	"ingredients": [
+		"minecraft:glass_bottle",
+		"minecraft:sugar",
+		"minecraft:iron_nugget",
+		"minecraft:copper_ingot"
+	],
+	"result": {
+		"id": "cyberblock:bottle_forgetting",
+		"count": 1
+	}
+}

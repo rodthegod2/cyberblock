@@ -1,0 +1,13 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "misc",
+	"ingredients": [
+		"minecraft:lever",
+		"minecraft:redstone",
+		"minecraft:copper_ingot"
+	],
+	"result": {
+		"id": "cyberblock:redstone_lever",
+		"count": 1
+	}
+}

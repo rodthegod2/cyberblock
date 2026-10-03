@@ -14,6 +14,7 @@ public class CyberMod implements ModInitializer {
 	@Override
 	public void onInitialize() {
 		CyberData.register();
+		CyberItems.register();
 		Bridge.perkRank = id -> {
 			ServerPlayer player = localPlayer();
 			return player == null ? 0 : CyberData.rank(player, id);
