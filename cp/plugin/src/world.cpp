@@ -1,11 +1,9 @@
 #include "world.hpp"
 #include "log.hpp"
+#include "wire.hpp"
 #include <algorithm>
 #include <atomic>
-#include <charconv>
 #include <cmath>
-#include <iterator>
-#include <string_view>
 
 namespace
 {
@@ -13,7 +11,7 @@ namespace
 	using cb::world::Event;
 	using cb::world::EventKind;
 
-	constexpr double kMaxCoord = 3e7; // |coordinate| must stay below this
+	constexpr double kMaxCoord = cb::wire::kMaxCoord; // |coordinate| must stay below this
 	constexpr double kMaxPower = 20.0;
 	constexpr double kMaxDamage = 1000.0; // Minecraft health points
 	constexpr double kMaxSeconds = 120.0;
@@ -32,121 +30,18 @@ namespace
 	constexpr size_t kMaxPerkEntries = 32; // the table has 20 ids: a sane bound, the rest is dropped
 	constexpr size_t kMaxEffectName = 32;
 
-	/// A field that failed validation; caught in parse_event.
-	struct Bad
-	{
-		std::string why;
-	};
-
-	/// A JSON number within [lo, hi] (NaN and infinities fail the comparison).
-	double number(const json &m, const char *key, double lo, double hi)
-	{
-		const auto it = m.find(key);
-		if (it == m.end() || !it->is_number())
-			throw Bad{std::string(key) + " is missing or not a number"};
-		const double v = it->get<double>();
-		if (!(v >= lo && v <= hi))
-			throw Bad{std::string(key) + " is out of range"};
-		return v;
-	}
-
-	/// A whole number in [lo, hi] (3 and 3.0 are the same: a wire writer may print an int as a float).
-	int32_t integer(const json &m, const char *key, double lo, double hi)
-	{
-		const double v = number(m, key, lo, hi);
-		if (v != std::floor(v))
-			throw Bad{std::string(key) + " must be a whole number"};
-		return static_cast<int32_t>(v);
-	}
-
-	/// An optional bool, false when absent.
-	bool optional_bool(const json &m, const char *key)
-	{
-		const auto it = m.find(key);
-		if (it == m.end())
-			return false;
-		if (!it->is_boolean())
-			throw Bad{std::string(key) + " is not a bool"};
-		return it->get<bool>();
-	}
-
-	/// [x, y, z] with every |component| < 3e7; `whole` also demands whole numbers (block coordinates).
-	cb::Vec3 triple(const json &m, const char *key, bool whole)
-	{
-		const auto it = m.find(key);
-		if (it == m.end() || !it->is_array() || it->size() != 3)
-			throw Bad{std::string(key) + " is missing or not [x, y, z]"};
-		double v[3];
-		for (size_t i = 0; i < 3; ++i)
-		{
-			const json &c = (*it)[i];
-			if (!c.is_number())
-				throw Bad{std::string(key) + " holds a non-number"};
-			v[i] = c.get<double>();
-			if (!(std::abs(v[i]) < kMaxCoord))
-				throw Bad{std::string(key) + " is out of range"};
-			if (whole && v[i] != std::floor(v[i]))
-				throw Bad{std::string(key) + " must be whole numbers"};
-		}
-		return {v[0], v[1], v[2]};
-	}
-
-	/// A Minecraft-space [x, y, z] position or vector as the Cyberpunk-space one (plan 1.1: positions and velocities map
-	/// the same way).
-	cb::Vec3 cp_triple(const json &m, const char *key)
-	{
-		const cb::Vec3 at = triple(m, key, false);
-		return cb::mc_to_cp_pos(at.x, at.y, at.z);
-	}
-
-	/// A decimal uint64 in a string (the wire cannot carry one as a number).
-	uint64_t entity_id(const json &m, const char *key)
-	{
-		const auto it = m.find(key);
-		if (it == m.end() || !it->is_string())
-			throw Bad{std::string(key) + " is missing or not a decimal string"};
-		const std::string &text = it->get_ref<const std::string &>();
-		uint64_t id = 0;
-		const char *const end = text.data() + text.size();
-		const auto [stop, error] = std::from_chars(text.data(), end, id);
-		if (error != std::errc{} || stop != end)
-			throw Bad{std::string(key) + " is not a decimal uint64"};
-		return id;
-	}
-
-	/// A decimal-string id, or 0 when the key is absent or null (`scan.target` null: whatever V looks at).
-	uint64_t optional_entity_id(const json &m, const char *key)
-	{
-		const auto it = m.find(key);
-		return it == m.end() || it->is_null() ? 0 : entity_id(m, key);
-	}
-
-	/// A string that is one of `allowed`.
-	template<size_t N>
-	std::string one_of(const json &m, const char *key, const char *const (&allowed)[N])
-	{
-		const auto it = m.find(key);
-		if (it == m.end() || !it->is_string())
-			throw Bad{std::string(key) + " is missing or not a string"};
-		const std::string &text = it->get_ref<const std::string &>();
-		if (std::find(std::begin(allowed), std::end(allowed), std::string_view(text)) == std::end(allowed))
-			throw Bad{std::string(key) + " is not a known name"};
-		return text;
-	}
-
-	/// A Minecraft effect path: [a-z_]{1,32}.
-	std::string effect_name(const json &m, const char *key)
-	{
-		const auto it = m.find(key);
-		if (it == m.end() || !it->is_string())
-			throw Bad{std::string(key) + " is missing or not a string"};
-		const std::string &text = it->get_ref<const std::string &>();
-		const bool ok = !text.empty() && text.size() <= kMaxEffectName &&
-						std::all_of(text.begin(), text.end(), [](char c) { return (c >= 'a' && c <= 'z') || c == '_'; });
-		if (!ok)
-			throw Bad{std::string(key) + " is not [a-z_]{1,32}"};
-		return text;
-	}
+	using cb::wire::Bad;
+	using cb::wire::cp_triple;
+	using cb::wire::entity_id;
+	using cb::wire::finite;
+	using cb::wire::integer;
+	using cb::wire::number;
+	using cb::wire::one_of;
+	using cb::wire::optional_bool;
+	using cb::wire::optional_entity_id;
+	using cb::wire::rounded;
+	using cb::wire::triple;
+	using cb::wire::triple_json;
 
 	Event block_add(int bx, int by, int bz)
 	{
@@ -287,7 +182,7 @@ namespace
 	{
 		Event e;
 		e.kind = EventKind::Effect;
-		e.name = effect_name(m, "name");
+		e.name = cb::wire::word(m, "name", kMaxEffectName, false); // a Minecraft effect path
 		e.amount = number(m, "seconds", 0.0, kMaxEffectSeconds);
 		e.extra = integer(m, "amp", 0.0, kMaxAmplifier);
 		return e;
@@ -372,22 +267,6 @@ namespace
 	bool transient(EventKind kind)
 	{
 		return kind != EventKind::None && !kept_while_inactive(kind);
-	}
-
-	/// Wire numbers: rounded so floats do not print as 12.345000267028809, and always a plain JSON number.
-	double rounded(double v, double scale)
-	{
-		return std::round(v * scale) / scale;
-	}
-
-	json triple_json(const cb::Vec3 &v)
-	{
-		return {rounded(v.x, 1e3), rounded(v.y, 1e3), rounded(v.z, 1e3)};
-	}
-
-	bool finite(const cb::Vec3 &v)
-	{
-		return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
 	}
 }
 
@@ -542,13 +421,16 @@ namespace cb::world
 			events().push(event);
 		const size_t bad = parsed.status == Parsed::Status::Rejected ? 1 : parsed.droppedEntries;
 		if (bad > 0)
-		{
-			events().note_rejected(bad);
-			static std::atomic<int> logged{0};
-			constexpr int kMaxLogged = 10; // the memory log line carries the total
-			if (logged++ < kMaxLogged)
-				log::warn("ignoring an invalid message or list entry from Minecraft (%s)", parsed.reason.c_str());
-		}
+			note_invalid(bad, parsed.reason);
+	}
+
+	void note_invalid(size_t count, const std::string &reason)
+	{
+		events().note_rejected(count);
+		static std::atomic<int> logged{0};
+		constexpr int kMaxLogged = 10; // the memory log line carries the total
+		if (logged++ < kMaxLogged)
+			log::warn("ignoring an invalid message or list entry from Minecraft (%s)", reason.c_str());
 	}
 
 	double cp_yaw_to_mc_yaw(double cpYaw)

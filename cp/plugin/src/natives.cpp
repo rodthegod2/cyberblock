@@ -4,6 +4,7 @@
 #include "link.hpp"
 #include "log.hpp"
 #include "probes.hpp"
+#include "snapshots.hpp"
 #include "world.hpp"
 #include <RED4ext/RED4ext.hpp>
 #include <RED4ext/Scripting/Natives/Generated/Vector4.hpp>
@@ -349,6 +350,151 @@ namespace
 			*out = cb::world::events().current().id;
 	}
 
+	// ---- layer 3: mobs ----------------------------------------------------------------------------------------------
+
+	/// The index parameter `i: Int32` of the snapshot getters.
+	int32_t index_parameter(CStackFrame *frame)
+	{
+		int32_t i = 0;
+		RED4ext::GetParameter(frame, &i);
+		++frame->code;
+		return i;
+	}
+
+	// Cyberblock_MobCount() -> Int32: takes a snapshot of the latest `mobs` list (empty once it is 2 s old, after a link
+	// drop or a hello) that the getters read.
+	void MobCount(IScriptable *, CStackFrame *frame, int32_t *out, int64_t)
+	{
+		++frame->code;
+		const size_t count = cb::snap::mobs().snapshot(cb::snap::Clock::now());
+		if (out)
+			*out = int32_t(count);
+	}
+
+	// Cyberblock_MobId(i: Int32) -> Int32: the Minecraft entity id; 0 for an index out of range (the getters below too).
+	void MobId(IScriptable *, CStackFrame *frame, int32_t *out, int64_t)
+	{
+		const auto mob = cb::snap::mobs().at(index_parameter(frame));
+		if (out)
+			*out = mob ? mob->id : 0;
+	}
+
+	// Cyberblock_MobKind(i: Int32) -> CName: n"zombie", n"skeleton", ...
+	void MobKind(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
+	{
+		const auto mob = cb::snap::mobs().at(index_parameter(frame));
+		if (out)
+			*out = mob ? RED4ext::CName(mob->kind.c_str()) : RED4ext::CName();
+	}
+
+	// Cyberblock_MobPos(i: Int32) -> Vector4: feet, Cyberpunk space (w = 1).
+	void MobPos(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
+	{
+		const auto mob = cb::snap::mobs().at(index_parameter(frame));
+		if (out)
+			*out = mob ? to_vector4(mob->feet, 1.0f) : to_vector4({}, 0.0f);
+	}
+
+	// Cyberblock_MobYaw(i: Int32) -> Float: Cyberpunk yaw, degrees.
+	void MobYaw(IScriptable *, CStackFrame *frame, float *out, int64_t)
+	{
+		const auto mob = cb::snap::mobs().at(index_parameter(frame));
+		if (out)
+			*out = mob ? float(mob->yaw) : 0.0f;
+	}
+
+	// Cyberblock_MobSize(i: Int32) -> Vector4: X width, Y height, Z hp, W max hp.
+	void MobSize(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
+	{
+		const auto mob = cb::snap::mobs().at(index_parameter(frame));
+		if (out)
+			*out = mob ? RED4ext::Vector4{float(mob->width), float(mob->height), float(mob->hp), float(mob->maxHp)}
+					   : to_vector4({}, 0.0f);
+	}
+
+	// ---- layer 4: flight and projectiles ----------------------------------------------------------------------------
+
+	// Cyberblock_FlightActive() -> Bool: Minecraft says Steve glides (a sample older than 0.5 s counts as not).
+	void FlightActive(IScriptable *, CStackFrame *frame, bool *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = cb::snap::flight().active(cb::snap::Clock::now());
+	}
+
+	// Cyberblock_FlightSeq() -> Int32: +1 on every start and every landing.
+	void FlightSeq(IScriptable *, CStackFrame *frame, int32_t *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = cb::snap::flight().seq(cb::snap::Clock::now());
+	}
+
+	// Cyberblock_FlightPos() -> Vector4: feet, Cyberpunk space, p + v * min(age, 0.1 s) while flying, else the landing spot.
+	void FlightPos(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = to_vector4(cb::snap::flight().pos(cb::snap::Clock::now()), 1.0f);
+	}
+
+	// Cyberblock_FlightVelocity() -> Vector4: m/s, Cyberpunk space (w = 0).
+	void FlightVelocity(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = to_vector4(cb::snap::flight().velocity(cb::snap::Clock::now()), 0.0f);
+	}
+
+	// Cyberblock_FlightYaw() -> Float: Cyberpunk yaw, degrees.
+	void FlightYaw(IScriptable *, CStackFrame *frame, float *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = float(cb::snap::flight().yaw(cb::snap::Clock::now()));
+	}
+
+	// Cyberblock_FlightPitch() -> Float: Minecraft pitch, degrees (positive = down).
+	void FlightPitch(IScriptable *, CStackFrame *frame, float *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = float(cb::snap::flight().pitch(cb::snap::Clock::now()));
+	}
+
+	// Cyberblock_ProjCount() -> Int32: takes a snapshot of the latest `proj` list (empty once it is 0.5 s old).
+	void ProjCount(IScriptable *, CStackFrame *frame, int32_t *out, int64_t)
+	{
+		++frame->code;
+		const size_t count = cb::snap::projectiles().snapshot(cb::snap::Clock::now());
+		if (out)
+			*out = int32_t(count);
+	}
+
+	// Cyberblock_ProjPos(i: Int32) -> Vector4: Cyberpunk space (w = 1); zeros for an index out of range.
+	void ProjPos(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
+	{
+		const auto p = cb::snap::projectiles().at(index_parameter(frame));
+		if (out)
+			*out = p ? to_vector4(p->pos, 1.0f) : to_vector4({}, 0.0f);
+	}
+
+	// Cyberblock_ProjVelocity(i: Int32) -> Vector4: m/s, Cyberpunk space (w = 0).
+	void ProjVelocity(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
+	{
+		const auto p = cb::snap::projectiles().at(index_parameter(frame));
+		if (out)
+			*out = to_vector4(p ? p->velocity : cb::Vec3{}, 0.0f);
+	}
+
+	// Cyberblock_ProjGravity(i: Int32) -> Float: m/s^2 along -Z.
+	void ProjGravity(IScriptable *, CStackFrame *frame, float *out, int64_t)
+	{
+		const auto p = cb::snap::projectiles().at(index_parameter(frame));
+		if (out)
+			*out = p ? float(p->gravity) : 0.0f;
+	}
+
 	// Cyberblock_Log(msg: String) -> Void
 	void Log(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
@@ -410,6 +556,22 @@ namespace cb::natives
 		add(rtti, "Cyberblock_EventName", &EventName, "CName");
 		add(rtti, "Cyberblock_EventExtra", &EventExtra, "Float");
 		add(rtti, "Cyberblock_EventId", &EventId, "Int32");
+		add(rtti, "Cyberblock_MobCount", &MobCount, "Int32");
+		add(rtti, "Cyberblock_MobId", &MobId, "Int32", {{"Int32", "i"}});
+		add(rtti, "Cyberblock_MobKind", &MobKind, "CName", {{"Int32", "i"}});
+		add(rtti, "Cyberblock_MobPos", &MobPos, "Vector4", {{"Int32", "i"}});
+		add(rtti, "Cyberblock_MobYaw", &MobYaw, "Float", {{"Int32", "i"}});
+		add(rtti, "Cyberblock_MobSize", &MobSize, "Vector4", {{"Int32", "i"}});
+		add(rtti, "Cyberblock_FlightActive", &FlightActive, "Bool");
+		add(rtti, "Cyberblock_FlightSeq", &FlightSeq, "Int32");
+		add(rtti, "Cyberblock_FlightPos", &FlightPos, "Vector4");
+		add(rtti, "Cyberblock_FlightVelocity", &FlightVelocity, "Vector4");
+		add(rtti, "Cyberblock_FlightYaw", &FlightYaw, "Float");
+		add(rtti, "Cyberblock_FlightPitch", &FlightPitch, "Float");
+		add(rtti, "Cyberblock_ProjCount", &ProjCount, "Int32");
+		add(rtti, "Cyberblock_ProjPos", &ProjPos, "Vector4", {{"Int32", "i"}});
+		add(rtti, "Cyberblock_ProjVelocity", &ProjVelocity, "Vector4", {{"Int32", "i"}});
+		add(rtti, "Cyberblock_ProjGravity", &ProjGravity, "Float", {{"Int32", "i"}});
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});
 		log::info("redscript natives registered");
 	}

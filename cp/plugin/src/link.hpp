@@ -19,10 +19,12 @@ namespace cb
 	{
 	public:
 		using Observer = std::function<void(const nlohmann::json &)>;
+		using DropHandler = std::function<void()>;
 
 		/// Starts the background thread. `observer`, if given, sees every message Minecraft sends (on that thread,
-		/// after the link's own handling).
-		void start(Observer observer = {});
+		/// after the link's own handling); `onDrop`, if given, runs on that thread each time a linked Minecraft goes away
+		/// (disconnect or reconnect), so state kept from its messages can be forgotten.
+		void start(Observer observer = {}, DropHandler onDrop = {});
 		void stop();
 
 		/// Connected and Minecraft's `hello` with proto 1 received.
@@ -51,6 +53,7 @@ namespace cb
 
 		WsClient m_ws;
 		Observer m_observer;
+		DropHandler m_onDrop;
 		std::thread m_thread;
 		std::atomic<bool> m_stop{false};
 		std::atomic<bool> m_linked{false};

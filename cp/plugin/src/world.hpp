@@ -148,6 +148,8 @@ namespace cb::world
 	/// messages in events(), counts and logs invalid ones (the first 10 only: a misbehaving peer must not fill the log)
 	/// and forgets the old session's events on each `hello`.
 	void on_minecraft_message(const nlohmann::json &message);
+	/// Counts `count` invalid messages or list entries (events().stats().rejected) and logs `reason` for the first 10 only.
+	void note_invalid(size_t count, const std::string &reason);
 
 	// ---- Cyberpunk -> Minecraft -------------------------------------------------------------------------------------
 

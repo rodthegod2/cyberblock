@@ -22,9 +22,10 @@ namespace
 
 namespace cb
 {
-	void Link::start(Observer observer)
+	void Link::start(Observer observer, DropHandler onDrop)
 	{
 		m_observer = std::move(observer);
+		m_onDrop = std::move(onDrop);
 		m_stop = false;
 		m_ws.start(kHost, kPort);
 		m_thread = std::thread([this] { run(); });
@@ -85,7 +86,8 @@ namespace cb
 			{
 				// (re)connected: a new Minecraft session starts with our hello; nothing queued before it belongs there
 				generation = m_ws.generation();
-				m_linked = false;
+				if (m_linked.exchange(false) && m_onDrop)
+					m_onDrop();
 				viewSent = 0;
 				{
 					std::lock_guard<std::mutex> lock(m_lock);
@@ -95,7 +97,11 @@ namespace cb
 				log::info("connected to Minecraft on %s:%d", kHost, kPort);
 			}
 			if (!m_ws.connected() && m_linked.exchange(false))
+			{
 				log::warn("Minecraft disconnected");
+				if (m_onDrop)
+					m_onDrop();
+			}
 
 			const uint32_t view = m_view;
 			if (m_ws.connected() && view != 0 && view != viewSent)
