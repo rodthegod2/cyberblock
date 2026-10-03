@@ -47,6 +47,14 @@ class WireTest {
 		assertEquals("18446744073709551615", hit.get("target").getAsString());
 	}
 
+	/** Plan retest2 section 1.2: {"t":"align","k":57}. */
+	@Test
+	void alignMatchesTheProtocolExample() {
+		assertEquals("{\"t\":\"align\",\"k\":57}", Wire.align(57));
+		assertEquals(0, json(Wire.align(0)).get("k").getAsInt());
+		assertEquals(63, json(Wire.align(63)).get("k").getAsInt());
+	}
+
 	@Test
 	void numbersUseADotWhateverTheLocale() {
 		java.util.Locale old = java.util.Locale.getDefault();

@@ -124,6 +124,11 @@ public final class Wire {
 			Math.clamp(amp, 0, 255));
 	}
 
+	/** {"t":"align","k":0..63}: the world's ground alignment, Minecraft y = Cyberpunk z - k/64 (plan retest2 section 1.2). */
+	public static String align(final int k) {
+		return "{\"t\":\"align\",\"k\":" + Math.clamp(k, 0, GroundAlign.STEPS - 1) + "}";
+	}
+
 	/** {"t":"ignite","target":"id","seconds":s}: a proxy was set on fire. */
 	public static String ignite(final String target, final double seconds) {
 		return String.format(Locale.ROOT, "{\"t\":\"ignite\",\"target\":\"%s\",\"seconds\":%.2f}", target, fin(seconds));
