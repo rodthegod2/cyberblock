@@ -34,9 +34,11 @@ public final class SkillTreeScreen extends Screen {
 	private static final int NODE = 22;
 	private static final int FIRST_NODE_Y = 64;
 	private static final int NODE_STEP = 42;
-	private static final int OWNED = 0xFF5FF4FF;
-	private static final int AVAILABLE = 0xFFFFE14D;
-	private static final int LOCKED = 0xFF4A5478;
+	/** Minecraft container colours (plan retest3 section 1.11): dark grey text on the #C6C6C6 panel A drew, ChatFormatting accents. */
+	private static final int TEXT = 0xFF404040;
+	private static final int OWNED = 0xFF00AAAA;
+	private static final int AVAILABLE = 0xFFFFFF55;
+	private static final int LOCKED = 0xFF555555;
 
 	public SkillTreeScreen() {
 		super(Component.translatable("cyberblock.skills.title"));
@@ -100,7 +102,7 @@ public final class SkillTreeScreen extends Screen {
 		super.extractRenderState(graphics, mouseX, mouseY, a);
 		int left = this.left(), top = this.top();
 		graphics.blit(RenderPipelines.GUI_TEXTURED, BACKGROUND, left, top, 0.0F, 0.0F, PANEL, PANEL, PANEL, PANEL);
-		graphics.centeredText(this.font, this.title, left + PANEL / 2, top + 8, 0xFFFFFFFF);
+		graphics.text(this.font, this.title, left + PANEL / 2 - this.font.width(this.title) / 2, top + 8, TEXT, false);
 		Map<String, Integer> ranks = this.ranks();
 		int levels = this.levels();
 		boolean free = this.free();
@@ -111,7 +113,7 @@ public final class SkillTreeScreen extends Screen {
 			graphics.pose().pushMatrix();
 			graphics.pose().translate(cx, top + 42);
 			graphics.pose().scale(0.75F, 0.75F);
-			graphics.centeredText(this.font, label, 0, 0, 0xFFD6DEFF);
+			graphics.text(this.font, label, -this.font.width(label) / 2, 0, TEXT, false);
 			graphics.pose().popMatrix();
 		}
 
@@ -121,10 +123,10 @@ public final class SkillTreeScreen extends Screen {
 
 		// beside the title: at 720p the GUI is 240 high and the panel's bottom edge is off screen
 		Component levelsText = free ? Component.translatable("cyberblock.skills.free") : Component.translatable("cyberblock.skills.levels", levels);
-		graphics.text(this.font, levelsText, left + PANEL - 8 - this.font.width(levelsText), top + 8, 0xFF7CFF5A, true);
+		graphics.text(this.font, levelsText, left + PANEL - 8 - this.font.width(levelsText), top + 8, 0xFF00AA00, false);
 		Component note = CyberKeys.note();
 		if (note != null) {
-			graphics.centeredText(this.font, note, this.width / 2, Math.min(this.height - 10, top + PANEL + 4), 0xFFFF8A2B);
+			graphics.centeredText(this.font, note, this.width / 2, Math.min(this.height - 10, top + PANEL + 4), 0xFFFFAA00);
 		}
 
 		Perk hovered = this.perkAt(mouseX, mouseY);
@@ -145,22 +147,27 @@ public final class SkillTreeScreen extends Screen {
 			graphics.fill(x + NODE / 2 - 1, y + NODE, x + NODE / 2 + 1, y + NODE_STEP, state == PerkShop.Outcome.OWNED ? OWNED : LOCKED);
 		}
 
-		graphics.fill(x, y, x + NODE, y + NODE, 0xFF0A0C15);
+		// the slot well is A's background; a node that can be bought now is lit like a hovered slot, and every node gets its state's rim
+		if (state == PerkShop.Outcome.OK) {
+			graphics.fill(x + 1, y + 1, x + NODE - 1, y + NODE - 1, 0x80FFFFFF);
+		}
+
 		graphics.outline(x, y, NODE, NODE, colour);
 		if (state == PerkShop.Outcome.OWNED) {
 			graphics.blit(RenderPipelines.GUI_TEXTURED, TOKEN, x + 3, y + 3, 0.0F, 0.0F, 16, 16, 16, 16);
 		} else {
 			// the branch emblem, faint: lit up yellow when it can be bought now
-			int tint = state == PerkShop.Outcome.OK ? 0xC0FFFFFF : 0x50FFFFFF;
+			int tint = state == PerkShop.Outcome.OK ? 0xFFFFFFFF : 0x60FFFFFF;
 			graphics.blit(RenderPipelines.GUI_TEXTURED, texture("item/skill_" + Perk.BRANCHES[perk.branch()]), x + 3, y + 3, 0.0F, 0.0F, 16, 16, 16, 16, tint);
 		}
 
 		Component cost = Component.literal(Integer.toString(perk.cost()));
 		graphics.pose().pushMatrix();
-		graphics.pose().translate(x + NODE / 2.0F, y + NODE + 2);
+		// right of the node, clear of the link line below it
+		graphics.pose().translate(x + NODE + 2.0F, y + NODE / 2.0F - 3.0F);
 		graphics.pose().scale(0.75F, 0.75F);
-		int costColour = free ? 0xFF5A6078 : state == PerkShop.Outcome.TOO_POOR ? 0xFFFF5A5A : 0xFF9AA6C8;
-		graphics.centeredText(this.font, cost, 0, 0, costColour);
+		int costColour = free ? 0xFF8B8B8B : state == PerkShop.Outcome.TOO_POOR ? 0xFFAA0000 : TEXT;
+		graphics.text(this.font, cost, 0, 0, costColour, false);
 		graphics.pose().popMatrix();
 	}
 

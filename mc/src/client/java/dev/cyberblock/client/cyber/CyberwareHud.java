@@ -22,10 +22,11 @@ import net.minecraft.world.item.ItemStack;
 final class CyberwareHud {
 	static final Identifier ID = Identifier.fromNamespaceAndPath(Cyberblock.ID, "cyberware_bar");
 	private static final int STEP = 20;
-	private static final int BAR_EMPTY = 0xFF3A3F4F;
-	private static final int BAR_READY = 0xFF33E6FF;
-	private static final int BAR_ACTIVE = 0xFFFF3DF2;
-	private static final int KEY = 0xFFFFE14D;
+	/** ChatFormatting colours (plan retest3 section 1.11): dark grey empty, aqua ready, light purple running, yellow keys. */
+	private static final int BAR_EMPTY = 0xFF555555;
+	private static final int BAR_READY = 0xFF55FFFF;
+	private static final int BAR_ACTIVE = 0xFFFF55FF;
+	private static final int KEY = 0xFFFFFF55;
 
 	private CyberwareHud() {
 	}
@@ -50,7 +51,7 @@ final class CyberwareHud {
 			Cyberware c = row.get(i);
 			int x = x0 + i * STEP;
 			CyberwareRules.Timer timer = CyberData.timer(player, c);
-			graphics.fill(x, y, x + STEP - 2, y + 22, 0x900A0C15);
+			graphics.fill(x, y, x + STEP - 2, y + 22, 0x80000000);
 			graphics.item(new ItemStack(c.item()), x + 1, y + 1);
 			graphics.fill(x + 1, y + 19, x + 17, y + 21, BAR_EMPTY);
 			if (timer.active(now)) {
