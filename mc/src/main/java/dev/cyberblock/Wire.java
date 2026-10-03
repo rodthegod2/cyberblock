@@ -95,6 +95,35 @@ public final class Wire {
 		return String.format(Locale.ROOT, "{\"t\":\"teleport\",\"p\":[%.3f,%.3f,%.3f],\"yaw\":%.2f}", fin(x), fin(y), fin(z), fin(yaw));
 	}
 
+	/** {"t":"lead","target":"id","anchor":[x,y,z]|null,"length":m}: a proxy was leashed, to Steve (anchor null) or to a fence knot. */
+	public static String lead(final String target, final double[] anchor, final double length) {
+		String at = anchor == null ? "null" : String.format(Locale.ROOT, "[%.3f,%.3f,%.3f]", fin(anchor[0]), fin(anchor[1]), fin(anchor[2]));
+		return String.format(Locale.ROOT, "{\"t\":\"lead\",\"target\":\"%s\",\"anchor\":%s,\"length\":%.2f}", target, at, Math.clamp(fin(length), 1.0, 32.0));
+	}
+
+	/** {"t":"lead","target":"id","release":true}: the leash was removed, broken or dropped. */
+	public static String leadRelease(final String target) {
+		return "{\"t\":\"lead\",\"target\":\"" + target + "\",\"release\":true}";
+	}
+
+	/** {"t":"pull","target":"id","toward":[x,y,z],"strength":m/s}: a fishing rod reeled a hooked proxy in. */
+	public static String pull(final String target, final double x, final double y, final double z, final double strength) {
+		return String.format(Locale.ROOT, "{\"t\":\"pull\",\"target\":\"%s\",\"toward\":[%.3f,%.3f,%.3f],\"strength\":%.2f}",
+			target, fin(x), fin(y), fin(z), Math.clamp(fin(strength), 0.0, 50.0));
+	}
+
+	/** {"t":"knock","pos":[x,y,z],"radius":m,"strength":m/s}: a wind burst (sent instead of explosion). */
+	public static String knock(final double x, final double y, final double z, final double radius, final double strength) {
+		return String.format(Locale.ROOT, "{\"t\":\"knock\",\"pos\":[%.3f,%.3f,%.3f],\"radius\":%.3f,\"strength\":%.3f}",
+			fin(x), fin(y), fin(z), Math.clamp(fin(radius), 0.0, Tethers.MAX_KNOCK_RADIUS), Math.clamp(fin(strength), 0.0, Tethers.MAX_KNOCK_STRENGTH));
+	}
+
+	/** {"t":"effect","name":"speed","seconds":s (0 = removed, 86400 = infinite),"amp":0..255}: a status effect on Steve. */
+	public static String effect(final String name, final double seconds, final int amp) {
+		return String.format(Locale.ROOT, "{\"t\":\"effect\",\"name\":\"%s\",\"seconds\":%.2f,\"amp\":%d}", name, Math.clamp(fin(seconds), 0.0, 86400.0),
+			Math.clamp(amp, 0, 255));
+	}
+
 	/** {"t":"ignite","target":"id","seconds":s}: a proxy was set on fire. */
 	public static String ignite(final String target, final double seconds) {
 		return String.format(Locale.ROOT, "{\"t\":\"ignite\",\"target\":\"%s\",\"seconds\":%.2f}", target, fin(seconds));

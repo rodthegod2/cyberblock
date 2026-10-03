@@ -83,6 +83,20 @@ public final class ProxyDamage {
 		return capped(away.scale(2.0 * Math.max(0.0, damage) / length));
 	}
 
+	/** The headhunter perk's multiplier, and how close to a pedestrian's top (m) the arrow must be. */
+	static final float HEADSHOT = 2.0F;
+	static final double HEAD_BAND = 0.35;
+
+	/** The gorilla_arms perk: a melee push twice as strong on a pedestrian, three times on a vehicle (at most MAX_IMPULSE). */
+	public static Vec3 gorillaArms(final Vec3 impulse, final boolean vehicle) {
+		return capped(impulse.scale(vehicle ? 3.0 : 2.0));
+	}
+
+	/** An arrow at arrowY (its position when it hits) is a head shot on a pedestrian standing at feetY this tall. */
+	public static boolean headshot(final double arrowY, final double feetY, final double height) {
+		return Math.abs(arrowY - (feetY + height)) <= HEAD_BAND;
+	}
+
 	private static Vec3 capped(final Vec3 v) {
 		double length = v.length();
 		if (!Double.isFinite(length)) {

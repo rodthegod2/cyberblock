@@ -56,7 +56,7 @@ public final class ProxyManager {
 		ProxyDiff.Plan plan = ProxyDiff.apply(kinds, parsed.entries());
 		for (Long id : plan.remove()) {
 			kinds.remove(id);
-			proxies.remove(id).discard();
+			remove(proxies.remove(id));
 		}
 
 		for (ProxyDiff.Entry e : plan.move()) {
@@ -105,11 +105,34 @@ public final class ProxyManager {
 	/** Server thread: remove every proxy (the host left, or the world is about to be saved). */
 	static void clear() {
 		for (ProxyEntity proxy : proxies.values()) {
-			proxy.discard();
+			remove(proxy);
 		}
 
 		proxies.clear();
 		kinds.clear();
+	}
+
+	/** A proxy goes; a lead on it drops as an item, as vanilla's would. */
+	private static void remove(final ProxyEntity proxy) {
+		if (proxy.isLeashed()) {
+			proxy.dropLeash();
+		}
+
+		proxy.discard();
+	}
+
+	/** Link thread: {"t":"unlead","target":"id"}: the host gave the tether up (target gone, or it snapped). */
+	public static void unlead(final JsonObject message) {
+		long id = MobRules.id(message.get("target"));
+		MinecraftServer s = WorldBridge.server();
+		if (id != 0L && s != null) {
+			s.execute(() -> {
+				ProxyEntity proxy = proxies.get(id);
+				if (proxy != null && !proxy.isRemoved()) {
+					proxy.unlead();
+				}
+			});
+		}
 	}
 
 	/** Server thread (Bridge.proxyById): the live proxy standing for a Cyberpunk id, or null. */

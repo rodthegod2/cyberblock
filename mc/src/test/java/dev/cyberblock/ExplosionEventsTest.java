@@ -37,9 +37,27 @@ class ExplosionEventsTest {
 
 	@Test
 	void windChargesAndWindBurstsAreNotBlasts() {
-		assertNull(ExplosionEvents.message(ExplosionInteraction.TRIGGER, 0, 0, 0, 1.2f, false));
+		assertFalse(ExplosionEvents.isBlast(ExplosionInteraction.TRIGGER));
 		assertTrue(ExplosionEvents.isBlast(ExplosionInteraction.NONE));
 		assertTrue(ExplosionEvents.isBlast(ExplosionInteraction.BLOCK));
+	}
+
+	/** Layer 5: a wind charge (radius 1.2) or a breeze's (3.0) pushes Night City at 12 m/s per block of radius, and blows nothing up. */
+	@Test
+	void windBurstsKnockInstead() {
+		assertEquals("{\"t\":\"knock\",\"pos\":[1.000,64.500,-2.000],\"radius\":1.200,\"strength\":14.400}",
+			ExplosionEvents.message(ExplosionInteraction.TRIGGER, 1.0, 64.5, -2.0, 1.2f, false));
+		assertTrue(ExplosionEvents.message(ExplosionInteraction.TRIGGER, 0, 0, 0, 3.0f, false).contains("\"strength\":36.000"));
+		// the protocol's limits: radius 0..16, strength 0..50
+		assertTrue(ExplosionEvents.message(ExplosionInteraction.TRIGGER, 0, 0, 0, 30.0, false).endsWith("\"radius\":16.000,\"strength\":50.000}"));
+		assertNull(ExplosionEvents.message(ExplosionInteraction.TRIGGER, 0, 0, 0, 0.0, false));
+	}
+
+	@Test
+	void demolitionsMakesStevesOwnHalfAsBigAgain() {
+		assertEquals(6.0f, ExplosionEvents.radius(4.0f, true, true));
+		assertEquals(4.0f, ExplosionEvents.radius(4.0f, true, false));
+		assertEquals(4.0f, ExplosionEvents.radius(4.0f, false, true));
 	}
 
 	@Test

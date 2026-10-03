@@ -8,6 +8,7 @@ import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.HostDamage;
 import dev.cyberblock.MobWar;
+import dev.cyberblock.PlayerEffects;
 import dev.cyberblock.Projectiles;
 import dev.cyberblock.ProxyManager;
 import dev.cyberblock.Ranges;
@@ -117,8 +118,9 @@ public final class HostLink extends WebSocketServer {
 						Cyberblock.LOG.warn("host speaks protocol {}, this mod speaks {}: closing the link", proto, PROTOCOL);
 						conn.close(CloseFrame.PROTOCOL_ERROR, "protocol " + proto + " not supported");
 					} else {
-						// a new host session (or either side restarted): it knows none of our blocks
+						// a new host session (or either side restarted): it knows none of our blocks nor Steve's effects
 						WorldBridge.hostHello();
+						PlayerEffects.hostHello();
 					}
 				}
 				case "cam" -> HostState.update(m);
@@ -129,6 +131,7 @@ public final class HostLink extends WebSocketServer {
 				case "npcs" -> ProxyManager.update(m);
 				case "dmg" -> HostDamage.update(m);
 				case "mobdmg" -> MobWar.damage(m);
+				case "unlead" -> ProxyManager.unlead(m);
 				case "pcells" -> {
 					int[] cells = Projectiles.cells(m);
 					if (cells == null) {
