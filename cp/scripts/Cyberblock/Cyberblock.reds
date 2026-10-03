@@ -40,6 +40,7 @@ public class CyberblockSystem extends ScriptableSystem {
   private let events: ref<CyberblockEvents>;
   private let npcs: ref<CyberblockNpcs>;
   private let saving: Bool;
+  private let menuListener: ref<CallbackHandle>;
 
   private func OnAttach() -> Void {
     this.state = CyberblockState.Off;
@@ -49,6 +50,11 @@ public class CyberblockSystem extends ScriptableSystem {
     this.npcs = new CyberblockNpcs();
     this.npcs.Register();
     Cyberblock_SetActive(false, false);
+    // A menu can pause the game (and with it this tick), so its opening is also taken straight from the blackboard.
+    let ui = GameInstance.GetBlackboardSystem(this.GetGameInstance()).Get(GetAllBlackboardDefs().UI_System);
+    if IsDefined(ui) {
+      this.menuListener = ui.RegisterListenerBool(GetAllBlackboardDefs().UI_System.IsInMenu, this, n"OnMenuChanged");
+    }
     let callbacks = GameInstance.GetCallbackSystem();
     callbacks.RegisterCallback(n"Session/BeforeSave", this, n"OnBeforeSave");
     callbacks.RegisterCallback(n"Session/AfterSave", this, n"OnAfterSave");
@@ -59,6 +65,11 @@ public class CyberblockSystem extends ScriptableSystem {
 
   private func OnDetach() -> Void {
     GameInstance.GetDelaySystem(this.GetGameInstance()).CancelCallback(this.tickId);
+    let ui = GameInstance.GetBlackboardSystem(this.GetGameInstance()).Get(GetAllBlackboardDefs().UI_System);
+    if IsDefined(ui) && IsDefined(this.menuListener) {
+      ui.UnregisterListenerBool(GetAllBlackboardDefs().UI_System.IsInMenu, this.menuListener);
+    }
+    Cyberblock_SetMenu(false);
     this.playerState.ShowHud();
     CyberblockCollision.Clear(this.GetGameInstance());
     this.state = CyberblockState.Off;
@@ -119,6 +130,7 @@ public class CyberblockSystem extends ScriptableSystem {
     // Consume F9 even without a player, so a press in the main menu cannot fire later.
     let toggle = Cyberblock_ConsumeToggle();
     let game = this.GetGameInstance();
+    Cyberblock_SetMenu(CyberblockSystem.InMenu(game));
     let player = GetPlayer(game);
     if !IsDefined(player) {
       // No world to act on: Minecraft block changes wait for the next live tick, the other events are dropped.
@@ -137,6 +149,15 @@ public class CyberblockSystem extends ScriptableSystem {
       CyberblockCollision.Stream(game, player.GetWorldPosition());
     }
     this.npcs.Tick(player, Equals(this.state, CyberblockState.Active) && !this.saving);
+  }
+
+  // A Cyberpunk menu is open (pause, hub, popups): the DLL stops forwarding input to Minecraft (audit A.3, InMenu).
+  private static func InMenu(game: GameInstance) -> Bool {
+    return GameInstance.GetBlackboardSystem(game).Get(GetAllBlackboardDefs().UI_System).GetBool(GetAllBlackboardDefs().UI_System.IsInMenu);
+  }
+
+  private cb func OnMenuChanged(inMenu: Bool) -> Bool {
+    Cyberblock_SetMenu(inMenu);
   }
 
   // Active or Vehicle: Minecraft is shown and acts on Night City.
