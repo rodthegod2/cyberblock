@@ -55,7 +55,7 @@ public final class PerkShop {
 		}
 	}
 
-	/** {"t":"perks"} with all 20 ranks: on every host hello and after every purchase. */
+	/** {"t":"perks"} with all 20 ranks: on every host hello, when the player joins a world and after every purchase. */
 	public static void sendPerks(final ServerPlayer player) {
 		Cyberblock.events.accept(CyberWire.perks(player.getAttachedOrElse(CyberData.PERKS, Map.of())));
 	}

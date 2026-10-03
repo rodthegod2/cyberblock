@@ -4,6 +4,7 @@ import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.WorldBridge;
 import java.util.List;
+import java.util.Map;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
@@ -27,7 +28,14 @@ public class CyberMod implements ModInitializer {
 			Hacking.clear();
 			PerkEffects.reset(server);
 		});
-		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> PerkEffects.reset(server));
+		// the host usually says hello at the title screen, before any world: so `perks` also goes out when the player joins
+		// (handler.player: JOIN fires before PlayerList adds him, so localPlayer() is still null), and a closed world's
+		// ranks are dropped on the Cyberpunk side when he leaves
+		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> PerkShop.sendPerks(handler.player));
+		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+			PerkEffects.reset(server);
+			Cyberblock.events.accept(CyberWire.perks(Map.of()));
+		});
 		ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> PerkEffects.apply(newPlayer));
 		// /cyberblock kit, for everyone (permission level 0)
 		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> dispatcher.register(
