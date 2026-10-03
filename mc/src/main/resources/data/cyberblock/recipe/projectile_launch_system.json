@@ -1,0 +1,15 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "equipment",
+	"ingredients": [
+		"minecraft:redstone",
+		"minecraft:copper_ingot",
+		"minecraft:tnt",
+		"minecraft:crossbow",
+		"minecraft:iron_ingot"
+	],
+	"result": {
+		"id": "cyberblock:projectile_launch_system",
+		"count": 1
+	}
+}
