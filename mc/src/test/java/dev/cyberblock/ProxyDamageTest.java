@@ -23,11 +23,20 @@ class ProxyDamageTest {
 		assertEquals("arrow", ProxyDamage.kind(false, false, Medium.ARROW, Actor.PLAYER));
 		assertEquals("arrow", ProxyDamage.kind(false, false, Medium.ARROW, Actor.MOB));
 		assertEquals("trident", ProxyDamage.kind(false, false, Medium.TRIDENT, Actor.PLAYER));
-		assertEquals("explosion", ProxyDamage.kind(true, false, Medium.BODY, Actor.PLAYER));
-		assertEquals("explosion", ProxyDamage.kind(true, false, Medium.PROJECTILE, Actor.MOB));
 		assertEquals("fire", ProxyDamage.kind(false, true, Medium.PROJECTILE, Actor.MOB), "a ghast fireball");
 		assertEquals("melee", ProxyDamage.kind(false, false, Medium.PROJECTILE, Actor.PLAYER));
 		assertEquals("mob", ProxyDamage.kind(false, false, Medium.PROJECTILE, Actor.MOB));
+	}
+
+	/** The host's {"t":"explosion"} is the only source of a blast's damage: a hit for Minecraft's copy of it would count it twice. */
+	@Test
+	void explosionsAreNeverAHitWhoeverCausedThem() {
+		for (Actor actor : Actor.values()) {
+			for (Medium medium : Medium.values()) {
+				assertNull(ProxyDamage.kind(true, false, medium, actor), actor + " " + medium);
+				assertNull(ProxyDamage.kind(true, true, medium, actor), actor + " " + medium + " (a fiery blast)");
+			}
+		}
 	}
 
 	@Test
@@ -73,14 +82,5 @@ class ProxyDamageTest {
 	void noImpulseIsBeyondTheCap() {
 		assertEquals(100.0, ProxyDamage.projectile(new Vec3(0.0, 0.0, 50.0)).length(), 1e-9);
 		assertEquals(Vec3.ZERO, ProxyDamage.projectile(new Vec3(Double.NaN, 0.0, 1.0)));
-		assertEquals(100.0, ProxyDamage.blast(new Vec3(1.0, 0.0, 0.0), 1000.0).length(), 1e-9);
-	}
-
-	@Test
-	void blastsPushAwayFromTheCentre() {
-		Vec3 v = ProxyDamage.blast(new Vec3(0.0, 0.0, -3.0), 5.0);
-		assertEquals(-10.0, v.z, 1e-9);
-		assertEquals(Vec3.ZERO, ProxyDamage.blast(Vec3.ZERO, 5.0));
-		assertEquals(Vec3.ZERO, ProxyDamage.blast(new Vec3(1.0, 0.0, 0.0), Double.NaN));
 	}
 }
