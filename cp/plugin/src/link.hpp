@@ -57,6 +57,16 @@ namespace cb
 		bool m_groundLost = false;
 	};
 
+	/// What the DLL logs about Minecraft's `hello` (re-test 3 plan task D8): `line` is "Minecraft says hello: mod
+	/// cyberblock 1.0.0, Minecraft 26.3"; `mismatch` is "version mismatch: DLL 1.0.0, mod X" when `hello.ver` is not
+	/// `dllVersion` (X is "unknown" for an older mod that sends no `ver`), else empty.
+	struct HelloNote
+	{
+		std::string line;
+		std::string mismatch;
+	};
+	HelloNote describe_hello(const nlohmann::json &hello, const std::string &dllVersion);
+
 	class Link
 	{
 	public:

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(Cyberblock VERSION 0.1.0 LANGUAGES CXX)
+project(Cyberblock VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -10,6 +10,9 @@ FetchContent_Declare(json URL https://github.com/nlohmann/json/releases/download
 FetchContent_MakeAvailable(json)
 
 set(ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+# The one place the DLL's version is written (re-test 3 plan section 1.13); main.cpp, natives.hpp and link.cpp read it.
+set(CB_VERSION_DEFINITIONS CB_VERSION="${PROJECT_VERSION}" CB_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+	CB_VERSION_MINOR=${PROJECT_VERSION_MINOR} CB_VERSION_PATCH=${PROJECT_VERSION_PATCH})
 # RED4ext.SDK exports the static library `RED4ext.SDK` and its aliases `RED4ext::SDK` / `RED4ext::RED4ext.SDK`.
 add_subdirectory(${ROOT}/third_party/RED4ext.SDK ${CMAKE_BINARY_DIR}/red4ext.sdk EXCLUDE_FROM_ALL)
 
@@ -17,6 +20,7 @@ file(GLOB CB_SOURCES CONFIGURE_DEPENDS src/*.cpp)
 add_library(Cyberblock SHARED ${CB_SOURCES})
 target_include_directories(Cyberblock PRIVATE src ${ROOT}/third_party/reshade/include)
 target_link_libraries(Cyberblock PRIVATE RED4ext::SDK nlohmann_json::nlohmann_json ws2_32 user32 dxgi)
+target_compile_definitions(Cyberblock PRIVATE ${CB_VERSION_DEFINITIONS})
 
 enable_testing()
 add_executable(cb_tests tests/test_main.cpp tests/test_cbmath.cpp tests/test_probes.cpp tests/test_world.cpp tests/test_events.cpp
@@ -30,7 +34,7 @@ target_link_libraries(cb_tests PRIVATE nlohmann_json::nlohmann_json ws2_32)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui.cpp AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui.cpp)
 	target_sources(cb_tests PRIVATE src/ui.cpp tests/test_ui.cpp)
 endif()
-target_compile_definitions(cb_tests PRIVATE CB_VECTORS="${ROOT}/shared/vectors.json")
+target_compile_definitions(cb_tests PRIVATE CB_VECTORS="${ROOT}/shared/vectors.json" ${CB_VERSION_DEFINITIONS})
 add_test(NAME cb_tests COMMAND cb_tests)
 
 # fx_check (re-test 3 plan task D7): ReShade's own FX front end (third_party/reshade, BSD-3-Clause) compiles
@@ -57,3 +61,4 @@ add_custom_target(fx_checked ALL DEPENDS ${CMAKE_BINARY_DIR}/fx_check.stamp)
 add_executable(link_smoke EXCLUDE_FROM_ALL tests/link_smoke.cpp src/link.cpp src/ws.cpp src/log.cpp)
 target_include_directories(link_smoke PRIVATE src)
 target_link_libraries(link_smoke PRIVATE nlohmann_json::nlohmann_json ws2_32)
+target_compile_definitions(link_smoke PRIVATE ${CB_VERSION_DEFINITIONS})

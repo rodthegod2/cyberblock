@@ -5,7 +5,10 @@
 
 namespace cb
 {
-	inline constexpr char kVersion[] = "0.1.0"; // keep in step with Query() and project(VERSION) in CMakeLists.txt
+#ifndef CB_VERSION
+#error "CB_VERSION comes from project(VERSION) in cp/plugin/CMakeLists.txt"
+#endif
+	inline constexpr char kVersion[] = CB_VERSION; // project(VERSION) in CMakeLists.txt, as Query() reports it
 
 	namespace natives
 	{

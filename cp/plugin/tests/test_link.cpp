@@ -286,3 +286,26 @@ TEST(out_queue_stays_bounded_under_every_kind_of_message)
 	q.clear();
 	CHECK(q.size() == 0 && !q.take_ground_lost());
 }
+
+// ---- re-test 3 (plan 2026-10-03-retest3-polish task D8): version 1.0.0 and hello.ver -----------------------------------
+
+TEST(the_dll_version_is_1_0_0_from_cmake)
+{
+	CHECK(std::string(CB_VERSION) == "1.0.0");
+	CHECK(CB_VERSION_MAJOR == 1 && CB_VERSION_MINOR == 0 && CB_VERSION_PATCH == 0);
+}
+
+TEST(hello_ver_is_logged_and_a_mismatch_is_named)
+{
+	const auto same = cb::describe_hello(nlohmann::json::parse(R"({"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3","ver":"1.0.0"})"), "1.0.0");
+	CHECK(same.line == "Minecraft says hello: mod cyberblock 1.0.0, Minecraft 26.3" && same.mismatch.empty());
+	const auto other = cb::describe_hello(nlohmann::json::parse(R"({"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3","ver":"0.9.2"})"), "1.0.0");
+	CHECK(other.line == "Minecraft says hello: mod cyberblock 0.9.2, Minecraft 26.3");
+	CHECK(other.mismatch == "version mismatch: DLL 1.0.0, mod 0.9.2");
+	const auto older = cb::describe_hello(nlohmann::json::parse(kHello), "1.0.0"); // no ver
+	CHECK(older.line == "Minecraft says hello: mod cyberblock, Minecraft 26.3");
+	CHECK(older.mismatch == "version mismatch: DLL 1.0.0, mod unknown");
+	const auto odd = cb::describe_hello(nlohmann::json::parse(R"({"t":"hello","ver":"1.0.0\n\u00e9","mod":7})"), "1.0.0");
+	CHECK(odd.line == "Minecraft says hello: mod ? 1.0.0???, Minecraft ?"); // control and non-ASCII bytes are masked
+	CHECK(!odd.mismatch.empty());
+}

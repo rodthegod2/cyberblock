@@ -126,7 +126,7 @@ RED4EXT_C_EXPORT void RED4EXT_CALL Query(RED4ext::v1::PluginInfo *aInfo)
 {
 	aInfo->name = L"Cyberblock";
 	aInfo->author = L"rodthegod2";
-	aInfo->version = RED4EXT_V1_SEMVER(0, 1, 0);
+	aInfo->version = RED4EXT_V1_SEMVER(CB_VERSION_MAJOR, CB_VERSION_MINOR, CB_VERSION_PATCH); // project(VERSION)
 	// the game version is gated in Main(), so RED4ext only acts as the loader
 	aInfo->runtime = RED4EXT_V1_RUNTIME_VERSION_INDEPENDENT;
 	aInfo->sdk = RED4EXT_V1_SDK_VERSION_CURRENT;
