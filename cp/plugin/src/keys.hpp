@@ -49,8 +49,10 @@ namespace cb::keys
 	/// What is on screen besides the world.
 	struct Context
 	{
-		/// A Cyberpunk dialogue or choice list offers two or more choices (Cyberblock_SetChoices): E, Q, 1-4 and the wheel
-		/// pick them, so they stay Cyberpunk's.
+		/// A Minecraft screen (inventory, chest, chat, skill tree) is open: it has the whole keyboard, so V stands still.
+		bool screenOpen = false;
+		/// A Cyberpunk dialogue or choice list offers two or more choices (Cyberblock_SetChoices) and no Minecraft screen
+		/// covers it: E, Q, 1-4 and the wheel pick them, so they stay Cyberpunk's.
 		bool choices = false;
 	};
 
@@ -58,9 +60,28 @@ namespace cb::keys
 	bool is_choice_key(uint32_t vk);
 
 	/// Keys Cyberpunk never sees while forwarding: E, Q, T, X, 1-9, "/", F5 and the two bound keys (but not E, Q and 1-4
-	/// while `context.choices`), and F9 (Cyberblock's toggle, which input.cpp keeps from Cyberpunk in every state, so its
-	/// QuickLoad never fires).
+	/// while `context.choices`), every key while `context.screenOpen`, and F9 (Cyberblock's toggle, which input.cpp keeps
+	/// from Cyberpunk in every state, so its QuickLoad never fires). Esc is decided by input.cpp.
 	bool is_swallowed(uint32_t vk, const Binds &binds, Context context = {});
+
+	// ---- typing into a Minecraft screen ---------------------------------------------------------------------------------
+
+	/// The SDL scancode (Minecraft 26.3 InputConstants.KEY_*) of an editing key that a Minecraft screen gets as `skey`:
+	/// Enter, Backspace, Delete, Tab, the arrows, Home, End, Page Up and Page Down. nullopt for any other key.
+	std::optional<int> editing_scancode(uint32_t vk);
+
+	/// Joins the UTF-16 units of WM_CHAR into code points for `char`: a surrogate pair becomes one code point, an unpaired
+	/// surrogate is dropped, and control characters (below 0x20, and 0x7F) give nothing (Enter, Backspace and Tab go as
+	/// `skey`). Window thread only.
+	class CharJoiner
+	{
+	public:
+		std::optional<char32_t> feed(uint16_t unit);
+		void reset() { m_high = 0; }
+
+	private:
+		uint16_t m_high = 0; // a high surrogate waiting for its low one
+	};
 
 	/// May `vk` be bound to hack or skills: 1..254, and not F9, Esc, Space, Shift, Ctrl, a key of the fixed swallow set
 	/// above (E Q T X 1-9 / F5), or one of Cyberpunk's own letters W A S D C F I M J H N B P V Z R. Of the keys Minecraft

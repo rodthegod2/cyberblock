@@ -85,6 +85,54 @@ TEST(a_cyberpunk_choice_list_keeps_e_q_and_1_to_4)
 		CHECK(!is_swallowed(vk, Binds{}, choices));
 }
 
+TEST(an_open_minecraft_screen_keeps_every_key_from_cyberpunk)
+{
+	const Context screen{.screenOpen = true};
+	for (uint32_t vk = 1; vk <= 254; ++vk)
+		CHECK(is_swallowed(vk, Binds{}, screen)); // W A S D too: V stands still while Steve's inventory or chat is open
+	// a screen covers a Cyberpunk choice list: its keys are Minecraft's again
+	CHECK(is_swallowed('E', Binds{}, Context{.screenOpen = true, .choices = true}));
+}
+
+TEST(a_key_held_from_before_a_screen_opened_still_gets_its_up)
+{
+	KeyGate gate;
+	CHECK(gate.down('W', is_swallowed('W', Binds{})) == Verdict::Pass); // walking when the inventory opens
+	const bool swallowable = is_swallowed('W', Binds{}, Context{.screenOpen = true});
+	CHECK(gate.down('W', swallowable) == Verdict::Pass); // the repeat follows the first down
+	CHECK(gate.up('W') == Verdict::Pass);                // so Cyberpunk sees the release and V stops
+	CHECK(gate.down('W', swallowable) == Verdict::Swallow);
+	CHECK(gate.up('W') == Verdict::Swallow);
+}
+
+TEST(editing_keys_have_minecraft_26_3_scancodes)
+{
+	// Windows VK -> SDL scancode (InputConstants.KEY_*)
+	const std::pair<uint32_t, int> cases[] = {{0x0D, 40} /*Enter*/, {0x08, 42} /*Backspace*/, {0x09, 43} /*Tab*/,
+											  {0x2E, 76} /*Delete*/,  {0x24, 74} /*Home*/,      {0x23, 77} /*End*/,
+											  {0x21, 75} /*PgUp*/,    {0x22, 78} /*PgDn*/,      {0x27, 79} /*Right*/,
+											  {0x25, 80} /*Left*/,    {0x28, 81} /*Down*/,      {0x26, 82} /*Up*/};
+	for (const auto &[vk, scancode] : cases)
+		CHECK(editing_scancode(vk) == scancode);
+	for (uint32_t vk : {uint32_t('A'), uint32_t('1'), kSpace, kEscape, kShift, kF5, uint32_t(0x2D) /*Insert*/})
+		CHECK(!editing_scancode(vk));
+}
+
+TEST(typed_characters_are_joined_into_code_points)
+{
+	CharJoiner chars;
+	CHECK(chars.feed(u'a') == U'a' && chars.feed(0x00E9) == char32_t(0x00E9) && chars.feed(u' ') == U' '); // e acute
+	CHECK(!chars.feed(0xD83D));                          // a high surrogate waits
+	CHECK(chars.feed(0xDE00) == char32_t(0x1F600));      // U+1F600 from D83D DE00
+	CHECK(!chars.feed(0xDE00));                          // a low surrogate on its own
+	CHECK(!chars.feed(0xD83D) && chars.feed(u'b') == U'b'); // an unpaired high one is dropped, the next char kept
+	for (uint16_t control : {uint16_t(0x08), uint16_t(0x09), uint16_t(0x0D), uint16_t(0x1B), uint16_t(0x01), uint16_t(0x7F)})
+		CHECK(!chars.feed(control));                     // Backspace, Tab, Enter, Esc, Ctrl+A, DEL
+	CHECK(!chars.feed(0xD83D));
+	chars.reset();
+	CHECK(!chars.feed(0xDE00));                          // reset forgot the waiting high surrogate
+}
+
 TEST(f9_never_reaches_cyberpunk)
 {
 	// Cyberblock's toggle; Cyberpunk's default F9 is QuickLoad, which loaded a save in the 2026-10-03 session

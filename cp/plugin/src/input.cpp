@@ -13,6 +13,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -45,6 +46,7 @@ namespace
 	// One gate per input path, since each of WM_INPUT and WM_KEYDOWN sees every key event. Window thread only.
 	cb::keys::KeyGate g_rawGate;
 	cb::keys::KeyGate g_messageGate;
+	cb::keys::CharJoiner g_chars; // WM_CHAR surrogate pairs. Window thread only.
 
 	// Minecraft's cursor while one of its screens is open, in 0..1 of the window: moved on the window thread, flushed
 	// from the game thread too.
@@ -95,7 +97,7 @@ namespace
 
 	cb::keys::Context context()
 	{
-		return {.choices = choices_shown()};
+		return {.screenOpen = screen_open(), .choices = choices_shown()};
 	}
 
 	/// Shift and Ctrl as the key state of the message being handled has them, in SDL bits.
@@ -210,7 +212,7 @@ namespace
 	}
 
 	/// Whether Cyberpunk must not see this raw keyboard packet: a key of the swallow set while forwarding (with its repeats
-	/// and its up), or an Esc that Minecraft takes.
+	/// and its up; every key while a Minecraft screen is open), F9, or an Esc that Minecraft takes.
 	bool swallow_raw_key(const RAWKEYBOARD &keyboard)
 	{
 		const uint32_t vk = keyboard.VKey;
@@ -262,7 +264,7 @@ namespace
 	}
 
 	/// Legacy key messages. Returns true for a key that Cyberpunk must not see: a key of the swallow set while forwarding
-	/// (with its repeats and its up), or an Esc that Minecraft takes.
+	/// (with its repeats and its up; every key while a Minecraft screen is open), F9, or an Esc that Minecraft takes.
 	bool on_key(WPARAM vk, LPARAM lParam, bool down)
 	{
 		const bool repeat = down && (lParam & (1 << 30)) != 0;
@@ -301,7 +303,29 @@ namespace
 		}
 		else if (vk >= '1' && vk <= '9' && down && !repeat && forward)
 			cb::link().send({{"t", "slot"}, {"n", int(vk - '1')}});
+
+		// the editing keys of a Minecraft screen (text fields, recipe book, sign edit), with their auto-repeat
+		if (down && now.screenOpen)
+			if (const auto scancode = cb::keys::editing_scancode(code))
+				send_with_mods({{"t", "skey"}, {"sc", *scancode}});
 		return swallow;
+	}
+
+	/// Typed text (WM_CHAR, which the game's own TranslateMessage makes from the key-down even when we swallow it): goes to
+	/// an open Minecraft screen as `char` and Cyberpunk does not see it. Returns whether it was taken.
+	bool on_char(WPARAM unit)
+	{
+		if (!screen_open())
+		{
+			g_chars.reset();
+			return false;
+		}
+		static bool logged = false;
+		if (!std::exchange(logged, true))
+			cb::log::info("typing reaches Minecraft's screens (first WM_CHAR while a screen is open)");
+		if (const auto codepoint = g_chars.feed(static_cast<uint16_t>(unit)))
+			cb::link().send({{"t", "char"}, {"c", uint32_t(*codepoint)}});
+		return true;
 	}
 
 	/// The wheel while forwarding: notches go to Minecraft and Cyberpunk does not see the message. A Cyberpunk choice list
@@ -334,6 +358,10 @@ namespace
 		case WM_SYSKEYDOWN:
 		case WM_SYSKEYUP:
 			if (on_key(wParam, lParam, msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN))
+				return 0;
+			break;
+		case WM_CHAR:
+			if (on_char(wParam))
 				return 0;
 			break;
 		case WM_LBUTTONDOWN:
@@ -373,6 +401,7 @@ namespace
 			release(kEscape);
 			g_rawGate.reset();
 			g_messageGate.reset();
+			g_chars.reset();
 			break;
 		}
 		return CallWindowProcW(g_original.load(), hwnd, msg, wParam, lParam);
