@@ -79,8 +79,9 @@ public class CyberblockClient implements ClientModInitializer {
 	}
 
 	private static void tick(final Minecraft minecraft) {
-		// a death (the void) would leave the death screen over the host's picture: respawn straight away
-		if (minecraft.player != null && minecraft.gui.screen() instanceof DeathScreen && --respawnIn <= 0) {
+		// a death with no host driving (the void) is respawned straight away; while the host drives, Cyberpunk damage can kill
+		// Steve for real: then the death screen is shown over the host's picture and he respawns with the host's cursor and click
+		if (minecraft.player != null && !Cyberblock.active && minecraft.gui.screen() instanceof DeathScreen && --respawnIn <= 0) {
 			respawnIn = 40;
 			minecraft.player.respawn();
 		}
