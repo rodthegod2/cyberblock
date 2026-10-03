@@ -126,16 +126,20 @@ final class ScanClient {
 	}
 
 	/**
-	 * Link thread: a valid `scaninfo`. A target found is shown (and locked, CyberLink) for 5 s from now; nothing found clears
-	 * it, as the server's lock. An answer more than a second after the key was let go is ignored.
+	 * Link thread: a valid `scaninfo`. A target found is shown and locked on the server (Hacking) for 5 s from now; nothing found
+	 * clears both. An answer more than a second after the key was let go is ignored by both, so the server never locks or drops a
+	 * target the tooltip does not show.
 	 */
 	static void onInfo(final ScanInfo info) {
 		Minecraft.getInstance().execute(() -> {
 			long now = Util.getMillis();
-			if (now <= answersUntilMs) {
-				shown = info.ok() ? info : null;
-				lockedUntilMs = info.ok() ? now + LOCK_MS : 0L;
+			if (now > answersUntilMs) {
+				return;
 			}
+
+			shown = info.ok() ? info : null;
+			lockedUntilMs = info.ok() ? now + LOCK_MS : 0L;
+			CyberLink.onServer(info.ok() ? () -> Hacking.lock(info.target(), info.device()) : Hacking::unlock);
 		});
 	}
 
