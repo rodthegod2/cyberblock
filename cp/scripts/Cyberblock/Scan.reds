@@ -26,7 +26,8 @@
 //     (Probes.reds Aim, the aim message), so it can pick a proxy 8-48 m away behind a wall. Such a target is answered
 //     ok:false (and so never locked for a quickhack) when Night City (CyberblockProbes.Blocked: Static + Terrain, not
 //     Minecraft's blocks) cuts both lines from the active camera (CameraSystem.GetActiveCameraWorldTransform, as Probes
-//     .Aim) to the target's middle and to its top. The look-at path already asks GetLookAtObject for line of sight.
+//     .Aim) toward the target's middle and its top, each stopping short of the target (0.5 m, cars 2.5 m) so its own
+//     body never counts. The look-at path already asks GetLookAtObject for line of sight.
 
 public abstract class CyberblockScan {
   public static func Scan(game: GameInstance, id: Int32, target: Uint64) -> Void {
@@ -58,9 +59,23 @@ public abstract class CyberblockScan {
     }
     let eye = Transform.GetPosition(view);
     let feet = object.GetWorldPosition();
-    let height = IsDefined(object as VehicleObject) ? 1.6 : 1.8;
-    return !CyberblockProbes.Blocked(game, eye, new Vector4(feet.X, feet.Y, feet.Z + 0.5 * height, 1.0))
-      || !CyberblockProbes.Blocked(game, eye, new Vector4(feet.X, feet.Y, feet.Z + 0.9 * height, 1.0));
+    let vehicle = IsDefined(object as VehicleObject);
+    let height = vehicle ? 1.6 : 1.8;
+    let margin = vehicle ? 2.5 : 0.5;
+    return CyberblockScan.ClearLine(game, eye, new Vector4(feet.X, feet.Y, feet.Z + 0.5 * height, 1.0), margin)
+      || CyberblockScan.ClearLine(game, eye, new Vector4(feet.X, feet.Y, feet.Z + 0.9 * height, 1.0), margin);
+  }
+
+  // No Night City on the line from the eye toward a point of the target, up to `margin` metres short of the point, so
+  // the target's own body (a car is up to 2.3 m from its middle to its ends) never counts as a wall.
+  private static func ClearLine(game: GameInstance, eye: Vector4, point: Vector4, margin: Float) -> Bool {
+    let d = Vector4.Distance(eye, point);
+    if d <= margin {
+      return true;
+    }
+    let along = (d - margin) / d;
+    let end = new Vector4(eye.X + (point.X - eye.X) * along, eye.Y + (point.Y - eye.Y) * along, eye.Z + (point.Z - eye.Z) * along, 1.0);
+    return !CyberblockProbes.Blocked(game, eye, end);
   }
 
   // Sends the scan of object; false when it is nothing Minecraft can show (not an NPC, vehicle or device).
