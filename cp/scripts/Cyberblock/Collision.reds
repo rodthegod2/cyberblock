@@ -2,7 +2,8 @@
 // Every box Minecraft reports is registered by its integer AABB min corner; Stream keeps those within 64 m of V spawned,
 // at most 1000 (nearest first). A box is the vanilla engine\fallback\helper_no_entity.ent spawned by Codeware's
 // StaticEntitySystem, whose mesh is switched off and which gets a script-built World Static box collider while it
-// initializes. Spawned boxes are runtime only: Clear despawns them all (deactivate, session end, before save).
+// initializes. Spawned boxes are runtime only: Clear despawns them all (deactivate, session end, before save) and keeps
+// the registry; Reset also empties the registry (the link to Minecraft starts or ends, see docs/notes/collision-spike.md).
 //
 // 2.31 + Codeware 1.20.3 APIs (Codeware.Global.reds, NativeDB, compile-checked): StaticEntitySystem.SpawnEntity/
 // DespawnEntity/DespawnTagged, StaticEntitySpec, CallbackSystem.RegisterCallback(n"Entity/Initialize") +
@@ -26,6 +27,12 @@ public abstract class CyberblockCollision {
 
   public static func Clear(game: GameInstance) -> Void {
     CyberblockCollisionService.Get().Clear();
+  }
+
+  // Not in plan §1.4 yet (integrator): forgets every registered box. For when the boxes may no longer match the
+  // Minecraft world: a new link session (another world or server) or blocks removed while the link was down.
+  public static func Reset(game: GameInstance) -> Void {
+    CyberblockCollisionService.Get().Reset();
   }
 }
 
@@ -194,6 +201,16 @@ public class CyberblockCollisionService extends ScriptableService {
     }
     this.spawnedCount = 0;
     this.dirty = true;
+  }
+
+  // Despawns every box and empties the registry; the only way to forget boxes besides Remove.
+  public func Reset() -> Void {
+    this.Clear();
+    Cyberblock_Log(s"collision: reset, \(ArraySize(this.keys)) boxes forgotten");
+    ArrayClear(this.keys);
+    ArrayClear(this.mins);
+    ArrayClear(this.spawned);
+    this.slots = new inkIntHashMap();
   }
 
   private func Spawn(slot: Int32) -> Bool {

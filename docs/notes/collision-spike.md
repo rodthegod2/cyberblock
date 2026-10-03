@@ -89,6 +89,22 @@ shows whether it matches the constants.
   Minecraft world keeps its blocks). It does not survive a game restart, and Minecraft never re-sends existing
   blocks; a later layer needs a "resend blocks on connect" message (or Codeware persistent service fields).
   Spawned entities are never saved: `Clear` despawns all of them before every save, on deactivate and at session end.
+- **Blocker for the integrator: nothing empties the registry.** `Clear` only despawns, and plan §1.4 has no reset.
+  If the user connects to a different Minecraft world or server, or Minecraft removes a block while the link is down
+  (that `remove` never arrives), the old boxes stay registered. Whenever Cyberblock is Active, `Stream` spawns them
+  again as invisible World Static walls. They block NPCs, cars and V, stop bullets and are hit by the layer-1
+  probes, and only a game restart removes them. S2 now provides `CyberblockCollision.Reset(game)`, which despawns
+  every box and forgets the registry. To finish the fix:
+  1. The integrator adds `public static func Reset(game: GameInstance) -> Void; // forget all boxes` to §1.4.
+  2. S1 calls it when the link to Minecraft comes up (a new hello, i.e. `Cyberblock_IsLinked()` turns true) and
+     when the link drops.
+  3. Because Minecraft never re-sends its blocks, step 2 also forgets the blocks of the same world after a reconnect,
+     so those blocks lose their collision. Missing collision is a safer failure than a phantom wall. To get both
+     right, M needs to re-send its placed blocks after hello (a "resend blocks on connect" message, see Lifetime
+     above), and S1 must call `Reset` before those blocks arrive.
+
+  Until this is wired, the user can recover from the CET console:
+  `CyberblockCollision.Reset(Game.GetPlayer():GetGame())`.
 
 ## Options rejected
 
@@ -112,3 +128,5 @@ CyberblockCollision.Stream(g, p)
 3. Repeat with a wall of 5 boxes across a pavement: a pedestrian walking into it stops (does not pass through).
 4. Same wall across a lane: a traffic car stops (or at least collides); a car driven by V crashes into it.
 5. `CyberblockCollision.Clear(g)`: the box is gone; saving and loading show no leftovers.
+6. Add the box again, `CyberblockCollision.Reset(g)`, then `CyberblockCollision.Stream(g, p)` with V moved 5 m: the
+   box does not come back, and the log has `collision: reset, 1 boxes forgotten`.
