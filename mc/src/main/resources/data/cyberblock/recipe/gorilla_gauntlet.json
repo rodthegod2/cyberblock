@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "equipment",
+	"ingredients": [
+		"minecraft:iron_block",
+		"minecraft:leather",
+		"minecraft:redstone",
+		"minecraft:copper_ingot"
+	],
+	"result": {
+		"id": "cyberblock:gorilla_gauntlet",
+		"count": 1
+	}
+}

@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "misc",
+	"ingredients": [
+		"minecraft:bone",
+		"minecraft:coal",
+		"minecraft:iron_nugget",
+		"minecraft:copper_ingot"
+	],
+	"result": {
+		"id": "cyberblock:wither_skull_daemon",
+		"count": 1
+	}
+}

@@ -1,0 +1,13 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "misc",
+	"ingredients": [
+		"minecraft:spider_eye",
+		"minecraft:iron_nugget",
+		"minecraft:copper_ingot"
+	],
+	"result": {
+		"id": "cyberblock:spider_eye_virus",
+		"count": 1
+	}
+}

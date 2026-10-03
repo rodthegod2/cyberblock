@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "misc",
+	"ingredients": [
+		"minecraft:string",
+		"minecraft:string",
+		"minecraft:iron_nugget",
+		"minecraft:copper_ingot"
+	],
+	"result": {
+		"id": "cyberblock:cobweb_daemon",
+		"count": 1
+	}
+}

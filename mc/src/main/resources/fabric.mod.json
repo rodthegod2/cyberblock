@@ -12,16 +12,23 @@
 	"environment": "*",
 	"entrypoints": {
 		"main": [
-			"dev.cyberblock.Cyberblock"
+			"dev.cyberblock.Cyberblock",
+			"dev.cyberblock.cyber.CyberMod"
 		],
 		"client": [
-			"dev.cyberblock.client.CyberblockClient"
+			"dev.cyberblock.client.CyberblockClient",
+			"dev.cyberblock.client.cyber.CyberClient"
 		]
 	},
 	"mixins": [
 		"cyberblock.mixins.json",
 		{
 			"config": "cyberblock.client.mixins.json",
+			"environment": "client"
+		},
+		"cyberblock.cyber.mixins.json",
+		{
+			"config": "cyberblock.cyber.client.mixins.json",
 			"environment": "client"
 		}
 	],

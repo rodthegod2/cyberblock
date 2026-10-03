@@ -1,0 +1,13 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "misc",
+	"ingredients": [
+		"minecraft:lapis_lazuli",
+		"minecraft:redstone",
+		"minecraft:glass_pane"
+	],
+	"result": {
+		"id": "cyberblock:ram_shard",
+		"count": 1
+	}
+}

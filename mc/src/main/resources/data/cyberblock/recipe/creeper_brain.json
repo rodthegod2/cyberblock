@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "misc",
+	"ingredients": [
+		"minecraft:gunpowder",
+		"minecraft:rotten_flesh",
+		"minecraft:redstone",
+		"minecraft:copper_ingot"
+	],
+	"result": {
+		"id": "cyberblock:creeper_brain",
+		"count": 1
+	}
+}
