@@ -10,3 +10,7 @@ __pycache__/
 /.claude/settings.local.json
 /net/
 /mc/logs/
+# never commit unpacked game sources (agents have left these here)
+/net/
+/com/
+/META-INF/
