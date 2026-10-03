@@ -51,9 +51,11 @@
 	"key.cyberblock.activate": "Activate implant",
 	"cyberblock.binds.note": "Cyberpunk cannot forward %1$s for %2$s, so there it works as %3$s (allowed: G K L O U Y 0 F1-F4 F6-F8 F10-F12)",
 	"cyberblock.binds.same": "Hack (%1$s) and Skill Tree (%2$s) would be the same key in Cyberpunk, so there they work as %3$s and %4$s",
+	"cyberblock.binds.clash": "Two Cyberblock keys would be the same key in Cyberpunk, so there all four work as %s %s %s %s",
 
 	"cyberblock.hack.no_target": "Hold %s and look at a target",
 	"cyberblock.hack.no_deck": "No cyberdeck: install one in the Operating System slot (U) or carry one",
+	"cyberblock.hack.no_deck_os": "Your Operating System slot holds %s: swap in the cyberdeck with %s to hack",
 	"cyberblock.hack.need_device": "The Redstone Lever only works on devices",
 	"cyberblock.hack.need_npc": "This quickhack needs a person or an occupied car",
 	"cyberblock.hack.no_ram": "Not enough RAM: %s of %s",

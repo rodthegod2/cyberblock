@@ -6,7 +6,7 @@ bottom; each step says what should happen. Tell Claude "R5 L-1: what you saw" (o
 
 ## Re-test 2 (do this first)
 
-The second session (the re-test above, `out/user-issues.md` section "Re-test 2026-10-03 ~15:05-15:20") found six things.
+The second session (when you ran the first re-test below, `out/user-issues.md` section "Re-test 2026-10-03 ~15:05-15:20") found six things.
 They are fixed or added on this build; **R1 to R6 below are those six, in the user's order**. (The R1-R6 of the older
 re-test further down are a different list: call them "old R1" and so on.)
 
@@ -21,7 +21,9 @@ re-test further down are a different list: call them "old R1" and so on.)
 
 **Before testing:** close Cyberpunk, run `uv run python -m tools.install`, and **restart Minecraft**
 (`uv run python -m tools.play`): a Minecraft that was already running still has the old mod. Load a save on a flat
-street, press **F9**, and stand still until the chat says Cyberblock is on. Everything is described in
+street, press **F9**, and stand still until the chat says Cyberblock is on. That first activation aligns the world's ground by
+itself (R4). If V was not standing on the street then, or blocks still float, run **`/cyberblock level`** once while V
+stands on the street. Everything is described in
 `docs/HOW-TO-PLAY.md` (key table, Cyberware chapter).
 
 **Logs to grep** (`<Cyberpunk 2077>\red4ext\logs\Cyberblock.log` for the DLL and scripts, `mc\run\logs\latest.log` for
@@ -29,50 +31,79 @@ Minecraft). The lines the checks below look for:
 
 | Where | Line |
 |---|---|
-| DLL | `drive: ready (Teleport <param types>, raycast <param types>)` once at start, or one `drive: disabled: <what> missing` |
+| DLL | `drive: ready (Teleport <param types>, raycast <param types>; ...)` once, on the first flight, or one `drive: disabled: <what> missing` |
+| DLL | `flight: samples back`, and `ground: alignment k A -> B, Minecraft gets the ground again` after every align |
 | DLL | `flight: start (glide\|launch)`, `flight: landed (glide\|launch) after X s`, `flight: over, V stays where it is` |
 | DLL | `flight: N frames, M samples (median spacing a ms, max gap b ms), max step c m, clipped yes\|no` after every flight |
 | DLL | `flight: stopped, V is held, in a vehicle or Cyberblock is off`, `flight: no samples, holding V`, `flight: no samples for 1 s, V put on the ground`, `flight: V stopped short of Night City geometry` |
 | DLL | `ground alignment: Minecraft y = Cyberpunk z - %.4f (k %d/64)`, and `binds: hack G, skills K, cyberware U, activate Y` |
-| Scripts | `flight: ignored ... (<LockReason>)`, `dmg instant kill (landing) not reported: flight` |
+| Scripts | `flight: ignored, V may not be moved (<reason>)`, `flight: cleared in mid-flight, V put on the ground`, `dmg instant kill (landing) not reported: flight` |
 | Scripts | `scan N: ok <class> <8-digit id> (requested\|look-at\|near crosshair)`, `hack <name> on <id>: ok` |
-| Scripts | `cyberware: <id> on\|off`, `cyberfx: <id> <s> s`, `berserk: Minecraft side only` |
-| Minecraft | `launch started at {} with {} m/s`, `ground alignment: k {} -> {} (offset {} m) at Cyberpunk z {} ({})` |
+| Scripts | `cyberware: <id> on\|off`, `cyberfx: <id> <s> s`, `cyberfx: <id> slow-mo ended`, `berserk: Minecraft side only` |
+| Minecraft | `launch started at {} with {} m/s`, `launch turned into a glide at {}`, `launch\|glide ended at {}` |
+| Minecraft | `ground alignment: k {} -> {} (offset {} m) at Cyberpunk z {} ({})` (k -1 = never aligned), `block resync: {} cells` |
 | Minecraft | `cyberware: installed {} in {}`, `cyberware: activate {}`, `glide called off (the host did not follow)` |
 
 ### R1. The elytra follows every frame (F-1 to F-3, L-7)
 Cyberblock Active, an elytra on the chest and firework rockets (the survival kit has both), a megabuilding roof.
-1. **Start-up line.** After loading Cyberpunk with Cyberblock, Cyberblock.log has `drive: ready (...)`. If it says
-   `drive: disabled: <what> missing`, stop and send the line: the per-frame drive is off and every flight will be called
-   off after 0.5 s.
+1. **Start-up line.** On the first flight Cyberblock.log has exactly one `drive: ready (Teleport handle:gameObject,
+   Vector4, EulerAngles -> Void, raycast Vector4, Vector4, opt CName, out TraceResult (or physicsTraceResult), opt Bool,
+   opt Bool -> Bool; ...)` and no `drive: disabled:` line. If it says `drive: disabled: <what> missing`, stop and send
+   the line: the per-frame drive is off, `cam.fly` stays false and Minecraft calls every flight off within 0.5 s.
 2. **F-1 smoothness.** Jump off the roof, press Space, glide for about 10 s with a few rockets (about 20 m/s).
    - **Expect:** V and the camera move **smoothly, every frame**: no stepping about once a second, no teleporting, no
      jitter of Night City, and the mouse still turns the view.
-   - **Log:** `flight: start (glide)`; after the landing the summary line: **median spacing 17 ms or less, max step
-     under 1 m at 20 m/s**, `clipped no` in open air.
+   - **Log:** `flight: start (glide)`; after the landing the summary line `flight: N frames, M samples (median spacing
+     a ms, max gap b ms), max step c m, clipped no`: **a 17 ms or less, c under 1 m at 20 m/s**, and N about 60 x the
+     seconds flown (the 15:04-15:21 log had about 1 per second). There is no `flight: ignored` line.
 3. **F-2b turning while gliding.** Swing the mouse hard left, right, up and down during a glide.
-   - **Expect:** the view follows the mouse at once, the glide steers with it, and V's body does not lag, stick or snap
-     back on fast turns. (Risk to watch: yaw "stickiness" on fast mouse turns. Say so if you see it.)
+   - **Expect:** the view follows the mouse at once, the glide steers with it, V's body keeps its own facing and the
+     first-person camera turns smoothly. (Risk to watch: yaw "stickiness" or a snap back on fast mouse turns. Say so if
+     you see it; the forward is already read just before every Teleport.)
 4. **F-3 landing.** Glide from the roof down to the street.
    - **Expect:** V stands on the street within a frame of Steve's touchdown, never stopped in mid-air and never hanging
      in the fall animation on the ground; no death-landing effects, V's health unchanged.
-   - **Log:** `flight: landed (glide) after X s`, **no** `dmg fall` within 2 s, and no instant kill (a
-     `dmg instant kill (landing) not reported: flight` line is fine). If V hangs in the Fall pose on the ground, report
-     it: the follow-up is `wrappedMethod || SuppressFall && IsOnGround()` in the landing wraps.
+   - **Log:** `flight: landed (glide) after X s` in the same frame as Minecraft's touchdown, **no** `dmg fall` within
+     2 s, and no instant kill. If a landing attack still fires, these lines are fine: `dmg fall ... not reported: flight
+     or teleport landing`, `dmg instant kill (landing) not reported: flight (Attacks.*Landing)`.
+   - **Landing state:** V can walk or jump at once. If V stays frozen in the Fall pose on the ground for about 2 s and
+     then plays a hard landing (or a `dmg fall` shows up about 2 s after landing), report it: the follow-up is a
+     `ToRegularLand` wrap, `wrappedMethod(...) || SuppressFall && IsTouchingGround`.
    - A very short hop or a landing within 1.5 m of V logs `flight: over, V stays where it is` instead.
+   - **Hand-off:** Steve takes V's position again as soon as V stands at the landing spot, with no visible 0.5 s
+     freeze.
 5. **L-7 menu mid-flight.** Glide (or launch), press **Esc** (or open the map) and wait **5 s**, then close it.
    - **Expect:** Steve waits in the air and the flight carries on; V never snaps to the ground meanwhile.
-   - **Log:** possibly `flight: no samples, holding V` then `flight: samples back`; **no** `V put on the ground`;
-     Minecraft logs `glide paused` then `glide resumed`.
+   - **Log:** possibly `flight: no samples, holding V` then `flight: samples back`; **no** `flight: no samples for 1 s,
+     V put on the ground`; V either resumes or lands normally. Minecraft logs `glide paused at ... (Cyberpunk menu)` then
+     `glide resumed`.
+6. **Walls (clip).** Glide Steve into a Night City wall that Minecraft has no barrier for yet (fast, low, along a
+   street).
+   - **Expect:** V stops at the wall and ends on the ground on its side of it, never inside or through it.
+   - **Log:** `flight: V stopped short of Night City geometry` once, and `clipped yes` in the summary line.
+7. **Timeout.** Mid-glide, close Minecraft (or anything that freezes it for over a second).
+   - **Log:** `flight: no samples, holding V`, then about 1 s later `flight: no samples for 1 s, V put on the ground`.
+8. **Clear.** Press **F9** (or save) mid-glide.
+   - **Expect:** V stands on the ground below, not in the air.
+   - **Log:** `flight: cleared in mid-flight, V put on the ground`.
+9. **No flight while V is held.** Sit in a car or a scene and try to start a glide.
+   - **Log:** one `flight: ignored, V may not be moved (vehicle|scene|workspot|...)`; Minecraft calls Steve back within
+     0.5 s (`glide called off ...`). A flight already under way when V gets held logs
+     `flight: stopped, V is held, in a vehicle or Cyberblock is off`, and V is not teleported.
 
 ### R2. Scan and hack: real ids
 1. **Scan id.** Hold **G** on a pedestrian 5 to 15 m away (the kit has a deck and chips).
    - **Expect:** the tooltip (name, faction, threat) and the glowing box on the right person.
-   - **Log:** `scan N: ok <class> <8-digit id> (requested)`. The id has about **8 digits** (for example 10019101),
-     **not** 13 digits (2668059858640) and not 0.
+   - **Log:** `events: scan scan N: ok NPCPuppet <8-digit id> (requested|look-at|near crosshair)`. The id has about
+     **8 digits** (for example 10019101), **not** 13 digits (2668059858640) and not 0.
+   - **Leeway:** aiming about 0.3 m beside a pedestrian, or 0.5 m beside a car, still picks it (the pick runs on the
+     server from the proxies' real positions).
 2. **Hack.** Keep G held, roll the wheel to **Bottle of Forgetting**, right-click.
    - **Expect:** a beacon sound, the upload starts, no "target lost/gone" message, RAM drops by 3.
-   - **Log:** `hack memory_wipe on <same id>: ok`.
+   - **Log:** `hack memory_wipe on <same id>: ok` (it must not say `target gone`).
+   - **Ids everywhere:** hit an NPC, then kill one. `events: hit target <id>`, `effects: push withheld from <id>` and
+     `killed human <id>` use the same 8-digit id, never 0 and never a 13-digit one; `puppets: mobdmg ... by <id>` is a
+     real id too.
 3. **Target gone, for real.** Scan a person, kill them with your sword within the 5 s the lock lasts, then fire the
    chip.
    - **Expect:** "Hack failed: target gone" **only now**, with the RAM given back.
@@ -101,24 +132,31 @@ Cyberblock Active, an elytra on the chest and firework rockets (the survival kit
 ### R4. Blocks sit on the street (ground alignment)
 1. **First activation.** Stand still on a flat street, not in the air or a car, and press F9 (an existing world that was
    never aligned does this too).
-   - **Log (Minecraft):** `ground alignment: k 0 -> <k> (offset <m> m) at Cyberpunk z <z> (first activation)`.
-   - **Log (DLL):** `ground alignment: Minecraft y = Cyberpunk z - <m> (k <k>/64)`.
+   - **Log (Minecraft):** `ground alignment: k -1 -> <k> (offset <m> m) at Cyberpunk z <z> (first activation)` (-1:
+     never aligned), then `block resync: N cells`.
+   - **Log (DLL):** `ground alignment: Minecraft y = Cyberpunk z - 0.xxxx (k <k>/64)`, then
+     `ground: alignment k 0 -> <k>, Minecraft gets the ground again`. The camera debug line's `lv` matches `k`.
 2. **Place a block** (stone) on the street and look at it from a low angle.
    - **Expect:** it sits **on** the street: no gap, no block-high float, and the targeted barrier cube is no longer above
-     the street. Stand on it: V's feet are one block above the street, not sunk and not floating.
+     the street. Stand on it: V's feet are one block above the street, not sunk and not floating. V's collision box
+     sits flush on the street (V can step onto it, no 1 m gap).
 3. **Another floor.** Go to a kerb, a sidewalk or a roof of a different height, place a block, note any offset (up to
    half a block is expected, nearest rounding). Stand there and run **`/cyberblock level`**.
    - **Expect:** chat "Ground aligned: offset <m> m (was <m> m). Blocks you placed elsewhere moved by less than 1 m.",
      and your blocks reappear after the resync (the earlier ones may have moved by less than 1 m).
-   - **Log (Minecraft):** `ground alignment: k <old> -> <new> ... (/cyberblock level)`.
+   - **Log (Minecraft):** `ground alignment: k <old> -> <new> ... (/cyberblock level)`, then a block resync.
+   - **Expect:** Steve's feet stay on V's floor, with no visible vertical jump of the picture during the re-align.
 4. **Refusals.** `/cyberblock level` while jumping or in a car: "V must stand on the ground (not in the air, a vehicle
    or a scene)". With Cyberblock off: "Cyberpunk is not connected, or Cyberblock is off".
 5. **Steve on the ground.** No `Player standing on air` spam in the Minecraft log, and an ender pearl landing on the
-   street does not sink V (it is put on the Night City floor).
+   street does not sink V or drop it (it is put on the Night City floor). A pearl onto a placed block: V stands on top
+   of the block.
 
 ### R5. Wind-charge launches (L-1 to L-6; L-7 is under R1)
-Wind charges are in the survival kit (8). Each launch should log `launch started at ... with ... m/s` in Minecraft and
-`flight: start (launch)` then `flight: landed (launch) after X s` in Cyberblock.log, with no `dmg fall` within 2 s.
+Wind charges are in the survival kit (8). Each launch should log `launch started at ... with ... m/s` (about 22 m/s
+for your own charge at your feet) and later `launch ended at ...` in Minecraft, and `flight: start (launch)` then
+`flight: landed (launch) after X s` in Cyberblock.log, with no Night City fall damage on V and no `dmg fall` reaching
+Steve within 2 s.
 1. **L-1 own charge, survival.** Look straight down and throw a wind charge at your own feet.
    - **Expect:** Steve and V are thrown up, V follows every frame (as in R1), you land on your feet and Cyberpunk
      movement takes over. People and cars near the burst are still knocked back.
@@ -133,9 +171,12 @@ Wind charges are in the survival kit (8). Each launch should log `launch started
 5. **L-5 launch, then glide.** With the elytra on, launch yourself, and at the top (falling faster than 1 m/s with 3
    blocks clear below) press **Space**.
    - **Expect:** the elytra opens mid-air and you keep flying with no pause, no second `launch started`, and no V
-     teleport.
+     teleport; V follows the whole way.
+   - **Log (Minecraft):** `launch turned into a glide at ...`, then `glide ended at ...`.
 6. **L-6 no launch while V is held.** Sit on a bench or in a workspot (or drive), then throw a charge at your feet.
    - **Expect:** no launch: no `launch started` line, Steve stays with V, and nothing drops V.
+   - If the DLL drive is disabled (R1 step 1), every launch shows `launch called off (the host did not follow)` within
+     0.5 s and Steve snaps back to V.
 
 ### R6. Cyberware (screen on U, fire on Y, HUD bars)
 **Set-up.** Survival with `/cyberblock kit` (installs the Cyberdeck, Kiroshi Optics, Reinforced Tendons and Biomonitor;
@@ -162,19 +203,19 @@ the screen lists every implant and installs are free. Press **U** with no screen
 | # | Implant | Do | Minecraft | Night City (V) | Log |
 |---|---|---|---|---|---|
 | 1 | Mantis Blades | empty hand, hit a person | +6 damage, red dust, sweep, strong-hit sound; none with an item in hand | person takes melee damage, ragdolls | `cyberware: mantis_blades on` |
-| 2 | Gorilla Arms | empty hand, hit a person and a car | +4 damage, +2 knockback, gust and smash sounds; one shove even with the Gorilla Arms perk | person and car shoved far | `cyberware: gorilla_arms on` |
+| 2 | Gorilla Arms | empty hand, hit a person and a car | +4 damage, +2 knockback, gust and smash sounds; one shove even with the Gorilla Arms perk | person and car shoved far, once (the hit impulse is twice a bare punch; the perk alone gives the same, both together still one shove) | `cyberware: gorilla_arms on` |
 | 3 | Monowire | empty hand, hit at about 6 blocks | +3 damage, +3 reach, a line of electric sparks | hit lands | `cyberware: monowire on` |
 | 4 | Projectile Launch System | **Y** at a far target; at a wall under 4 blocks; again at once | smoke and flames trail, crossbow and fire-charge sounds, 8 s HUD bar; "Too close to fire" (no cooldown); "is cooling down" | a real explosion (power 2.5): a car blows up, NCPD comes | `cyberware: activate projectile_launch_system` |
-| 5 | Reinforced Tendons | jump, then **Space** again in the air | ring of cloud and a gust | V **double-jumps**. CET `Game.GetStatsSystem():GetStatValue(Game.GetPlayer():GetEntityID(), gamedataStatType.HasDoubleJump)` is 1; **0 without the implant, even with the Double Jump perk** | `cyberware: reinforced_tendons on` |
-| 6 | Fortified Ankles | hold Space about half a second, release | dust plume, gust, breeze-charge sound | V's charge jump; `HasChargeJump` is 1 with it, 0 without | `cyberware: fortified_ankles on` |
-| 7 | Lynx Paws | walk past a sculk sensor and a guard; with and without it | no step vibration (the sculk sensor stays quiet), mobs notice you from half as far | `Visibility` stat is 0.5 x its base; with the Silent Steps perk too it is still 0.5, not 0.25 | `cyberware: lynx_paws on` |
-| 8 | Sandevistan | **Y**; then the perk | Speed II, the world at half speed (`/tick query` shows rate 10), cyan and magenta afterimages, beacon sounds, 6 s then the off sound, 25 s cooldown | NPCs and cars slow to x0.2, V does not; F9 off mid-effect ends it at once. With the Sandevistan Sprint perk: 8 s and 18 s, and a double-tap of Shift fires it (only with the implant) | `cyberware: activate sandevistan`, `cyberfx: sandevistan 6 s`, then the end |
-| 9 | Berserk | **Y** | Strength I, Resistance I, Jump Boost I for 8 s, dust ring, angry burst, smash and anchor sounds, mobs within 3 blocks knocked back, 40 s cooldown | V jumps higher. Note which line appears: Cyberpunk's own berserk status, or `berserk: Minecraft side only` | `cyberfx: berserk 8 s` |
-| 10 | Cyberdeck | install it; swap Sandevistan in; empty the slot with the deck in the bag | RAM bar max 8; after the swap RAM is 0 and chips say "No cyberdeck: install one in the Operating System slot (U) or carry one"; with the slot empty and the deck in the bag RAM is 8 again | a quickhack works while the deck counts | `cyberware: cyberdeck on\|off` |
+| 5 | Reinforced Tendons | jump, then **Space** again in the air (and a third time, with the elytra on and high enough) | ring of cloud and a gust | V **double-jumps** (the 1st air press is V's double jump, the 2nd opens the elytra). CET `Game.GetStatsSystem():GetStatValue(Game.GetPlayer():GetEntityID(), gamedataStatType.HasDoubleJump)` is 1; **0 without the implant, even with the Double Jump perk** | `cyberware: reinforced_tendons on` |
+| 6 | Fortified Ankles | hold Space about half a second, release | dust plume, gust, breeze-charge sound | V's charge jump (Space held over 0.15 s and released); a double jump does **not** happen; `HasChargeJump` is 1 with it, 0 without | `cyberware: fortified_ankles on` |
+| 7 | Lynx Paws | walk past a sculk sensor and a guard; with and without it | no step vibration (the sculk sensor stays quiet), mobs notice you from half as far | CET `Game.GetStatsSystem():GetStatValue(Game.GetPlayer():GetEntityID(), gamedataStatType.Visibility)` is half its value without it; with the Silent Steps perk too it is still half, not a quarter | `cyberware: lynx_paws on` |
+| 8 | Sandevistan | **Y**; then the perk | Speed II, the world at half speed (`/tick query` shows rate 10), cyan and magenta afterimages, beacon sounds, 6 s then the off sound, 25 s cooldown | NPCs and cars slow to x0.2, V does not; F9 off mid-effect ends it at once. With the Sandevistan Sprint perk: 8 s and 18 s, and a double-tap of Shift fires it (only with the implant). A Kerenzikov during a running Sandevistan switches the factor to x0.3 | `cyberware: activate sandevistan`, `cyberfx: sandevistan 6 s`, about 6 s later `cyberfx: sandevistan slow-mo ended` |
+| 9 | Berserk | **Y** | Strength I, Resistance I, Jump Boost I for 8 s, dust ring, angry burst, smash and anchor sounds, mobs within 3 blocks knocked back, 40 s cooldown | V jumps higher; Cyberpunk's own Berserk status is not used, so V gets **no** superhero landing or ground slam on falls | `cyberfx: berserk 8 s`, `berserk: Minecraft side only` |
+| 10 | Cyberdeck | survival, fresh kit: install the kit's Sandevistan (right-click it, or U then click); fire a chip and use a RAM Shard; U and click the returned Cyberdeck; empty the slot with the deck in the bag | "Installed Sandevistan (returned Cyberdeck)"; then RAM is 0 and the chip and the shard say "Your Operating System slot holds Sandevistan: swap in the cyberdeck with U to hack" (not "...or carry one"); swapping back says "Installed Cyberdeck (returned Sandevistan)", RAM max 8 again and chips fire; with the slot empty and the deck in the bag RAM is 8 again. Rebind Cyberware (for example to O) and the message names the new key | a quickhack works while the deck counts | `cyberware: installed sandevistan in operating_system/0`, `cyberware: cyberdeck on\|off` |
 | 11 | Kerenzikov | jump, then draw a bow (or a crossbow or trident) in the air; on the ground | the world at half speed for 2 s, a ring of sparks, a rising chime, 10 s cooldown; **nothing on the ground** | Night City slows to x0.3 for 2 s | `cyberfx: kerenzikov 2 s` |
 | 12 | Optical Camo | **Y**; attack; fire the Launch System; with the perk crouch still 2 s | Invisibility 10 s (the icon shows, no particles), a portal shimmer; it breaks on your attack or a Launch System shot; 30 s cooldown | hostiles lose V; CET `StatusEffectSystem.ObjectHasStatusEffect(Game.GetPlayer(), TweakDBID.new("BaseStatusEffect.OpticalCamoPlayerBuffRare"))` is true while it runs. The perk re-cloaks only with the implant | `cyberware: activate optical_camo` |
 | 13 | Subdermal Armor | install, then take the same hit with and without | +6 armor, +2 toughness, a netherite equip sound | Night City hits do less to Steve | `cyberware: subdermal_armor on` |
-| 14 | Kiroshi Optics | **G** on a person at about 60 m; spawn a zombie and look around | the scan reaches 80 m (48 without); hostile proxies (gangers) and hostile mobs within 32 blocks get a red outline, passers-by do not | the scan range | `scan N: ok ... (look-at)` |
+| 14 | Kiroshi Optics | **G** on a person at about 60 m near the crosshair, with and without it; spawn a zombie and look around | the scan reaches 80 m (48 without); hostile proxies (gangers) and hostile mobs within 32 blocks get a red outline, passers-by do not | the scan range | with it `scan N: ok ... (look-at)`; without it `scan N: nothing under the crosshair` |
 | 15 | Biomonitor | `/damage @s 14` from full health (20 max) | at 30 % or less: healed 8, Regeneration I 6 s, hearts, a chime, "Biomonitor: emergency heal"; again within 90 s does nothing | - | `cyberware: biomonitor on` |
 | 16 | Second Heart | `/damage @s 100` (not `/kill`); again at once; save, quit, reopen | instead of dying: full health, Regeneration II 5 s, Absorption I 30 s, the totem animation, "Second Heart restarted you"; the second time within 5 minutes you die; the cooldown survives the reload; `/kill @s` still kills | - | `cyberware: second_heart on` |
 | 17 | RAM Upgrade | install with the deck | RAM max 12 (16 with the Extra RAM perk too) | - | `cyberware: ram_upgrade on` |
@@ -194,6 +235,20 @@ the screen lists every implant and installs are free. Press **U** with no screen
    - Cyberware and Hack both to G: **all four** go back to G K U Y, with a chat note;
      `binds: hack G, skills K, cyberware U, activate Y`.
    - Activate to **B** (refused): Activate falls back to Y and the others stay.
+   - After each link Cyberblock.log has `binds: hack G, skills K, cyberware U, activate Y` (or the keys in force):
+     Cyberware to L gives `binds: hack G, skills K, cyberware L, activate Y`; a clash gives a single warn and all four
+     back to G/K/U/Y.
+8. **Items and art.**
+   - **Creative tab Cyberblock:** every implant shows its own icon (no purple-black missing texture) and its name.
+   - **Recipes:** craft one or two from the HOW-TO-PLAY Cyberware chapter (redstone + copper ingot + clock + feather gives
+     Kerenzikov; redstone + copper ingot + 2 RAM Shards + gold ingot gives RAM Upgrade). The Minecraft log has no recipe
+     parse errors.
+   - **The U screen background** draws unstretched: the body silhouette behind the slot boxes on the left, the implant
+     list on the right. The slot boxes are placed by guess: say if a box sits badly on the art (the last row reaches
+     slightly into the bottom strip).
+   - **Tooltips:** hover an implant: Slot, the Minecraft and Night City lines, Cooldown and Install read as plain text,
+     with no stray `%` placeholder. In the skill tree (K), Double Jump, Sandevistan Sprint and Optical Camo say they
+     upgrade the implants.
 
 ---
 
@@ -422,16 +477,128 @@ already running still has the old mod. The full key table and the netrunning wal
 
 ## Appendix — every in-game check the build agents recorded
 
-### Re-test 2 — packages D, S, M, C, A (the integrator pastes each package's needsInGame list here)
-- [ ] _(D)_ the `drive: ready (Teleport <param types>, raycast <param types>)` signature line; F-1 to F-3 and L-1 to L-7
-  (Teleport from `OnUpdate`, a static `ToRotation` call with a null context, yaw stickiness on fast mouse turns).
-- [ ] _(S)_ F-1 to F-3, L-1 to L-7; the scan log shows an 8-digit id; a placed block sits on the floor after alignment and
-  pearl landings do not sink; double jump only with tendons, charge jump with ankles, slow-mo on Y; Berserk: which
-  decision S6 took (`berserk: Minecraft side only` or the Cyberpunk status).
-- [ ] _(M)_ a new world aligns on first activation (log line) and `/cyberblock level` moves the blocks; L-1 to L-7.
-- [ ] _(C)_ in survival with 0 levels, `/cyberblock perks free on` then buy, and the setting survives a reload; U opens
-  the screen, a kit install shows on the HUD and Y fires Sandevistan (tick rate 10 in the log).
-- [ ] _(A)_ the new item sprites and `cyberware_bg.png` look right in the creative tab and on the screen.
+### Re-test 2 — package D (DLL)
+- [ ] Drive signature: on the first flight Cyberblock.log shows exactly one `drive: ready (Teleport handle:gameObject,
+  Vector4, EulerAngles -> Void, raycast Vector4, Vector4, opt CName, out TraceResult (or physicsTraceResult), opt Bool,
+  opt Bool -> Bool; ...)` and no `drive: disabled:` line. If it says disabled, `cam.fly` stays false and Minecraft calls
+  every flight off within 0.5 s.
+- [ ] F-1 smoothness: glide at about 20 m/s for 5 s or more and land. The summary line `flight: N frames, M samples
+  (median spacing a ms, max gap b ms), max step c m, clipped no` shows a <= 17 ms and c < 1 m, with N about 60 x the
+  seconds (not about 1 per second as in the 15:04-15:21 log).
+- [ ] F-2b: turn the mouse hard while gliding. V's body keeps its own facing and the FPP camera turns smoothly. If yaw
+  sticks or snaps back, record it (the forward is already read just before every Teleport).
+- [ ] F-3 landing: `flight: landed (glide) after X s` is logged in the same frame as Minecraft's touchdown, V stands on
+  the street (not in mid-air or inside it), and there is no `dmg fall` and no instant-kill report.
+- [ ] L-7 menu: open the Esc menu mid-glide for 5 s, then close it. There is no `flight: no samples for 1 s, V put on
+  the ground`; V either resumes (`flight: samples back`) or lands normally.
+- [ ] L-1 to L-6 (wind charge launch): `flight: start (launch)` then `flight: landed (launch) after X s`. L-6: while V
+  sits in a vehicle or a scene there is no start; a start already under way gives `flight: stopped, V is held, in a
+  vehicle or Cyberblock is off` and V is not teleported.
+- [ ] Clip: glide Steve through a Night City wall that Minecraft has no barrier for. Expect `flight: V stopped short of
+  Night City geometry` once, `clipped yes` in the summary, and V ending on the ground on its side of the wall.
+- [ ] Timeout: freeze or close Minecraft mid-glide. Expect `flight: no samples, holding V` and, about 1 s later,
+  `flight: no samples for 1 s, V put on the ground`.
+- [ ] Ground alignment (R4): after Minecraft's first-activation align, Cyberblock.log shows `ground alignment: Minecraft
+  y = Cyberpunk z - 0.xxxx (k NN/64)` followed by `ground: alignment k 0 -> NN, Minecraft gets the ground again`. A
+  block placed on the street sits on it; the cam log (`lv`) matches.
+- [ ] Binds: after each link, `binds: hack G, skills K, cyberware U, activate Y`. Rebind U to L in Minecraft and expect
+  `binds: hack G, skills K, cyberware L, activate Y`. Rebind two actions to the same key and expect a single warn and
+  all four back to G/K/U/Y.
+- [ ] Cyberware events: install an implant in Minecraft. The script log shows `cyberware: <id> on` (S5) for exactly that
+  id; Y on Sandevistan gives `cyberfx: sandevistan 6 s`.
+
+### Re-test 2 — package S (scripts)
+- [ ] R2 scan: aim at a pedestrian and press G. Cyberblock.log shows `events: scan scan N: ok NPCPuppet <8-digit id>
+  (look-at|near crosshair)`. Then fire memory_wipe: the `hack memory_wipe on <same id>` line must not say `target gone`.
+- [ ] R2 ids: hit an NPC, then kill one. The `effects: push withheld from <id>` line and `killed human <id>` use the same
+  8-digit id as `events: hit target <id>`, never 0 and never a 13-digit heap-like number. `puppets: mobdmg ... by <id>`
+  is a real id too.
+- [ ] F-1 to F-3 (with package D): glide with the elytra. There is no `flight: ignored` line, and the DLL summary line
+  appears. After landing, Cyberblock.log has no `dmg fall` and no `dmg instant kill` for the landing. If a landing attack
+  still fires, expect `dmg fall ... not reported: flight or teleport landing` or `dmg instant kill (landing) not
+  reported: flight (Attacks.*Landing)`.
+- [ ] Landing state (follow-up trigger): after a fast glide or wind-charge landing, V can walk or jump at once. If V stays
+  frozen in Fall on the ground for about 2 s and then plays a hard landing (or the log shows a `dmg fall` about 2 s after
+  landing), add the ToRegularLand wrap: `wrappedMethod || SuppressFall && IsTouchingGround`.
+- [ ] L-6: start a glide or launch while V sits in a vehicle or is in a scene. Expect one `flight: ignored, V may not be
+  moved (vehicle|scene|workspot|...)` line, and Minecraft calls Steve back within 0.5 s.
+- [ ] Clear: press F9 (or save) mid-glide. Expect `flight: cleared in mid-flight, V put on the ground`, and V standing on
+  the ground below, not in the air.
+- [ ] R4: after the alignment, place a block on the street. V's collision box sits flush on the street (V can step onto
+  it, no 1 m gap). Throw an ender pearl onto the street: V lands on the floor without sinking or dropping. Throw one onto
+  a placed block: V stands on top of it.
+- [ ] S5 jumps: install reinforced_tendons (log `cyberware: reinforced_tendons on`): V double-jumps. Remove it: no double
+  jump, even with the double_jump perk. Install fortified_ankles: holding Space more than 0.15 s and releasing gives a
+  charge jump, and a double jump does not.
+- [ ] S5 lynx_paws: with lynx_paws (or the silent_steps perk), the CET command
+  `Game.GetStatsSystem():GetStatValue(Game.GetPlayer():GetEntityID(), gamedataStatType.Visibility)` returns half the
+  value it gives without either.
+- [ ] S5 Sandevistan: press Y. Expect `cyberfx: sandevistan 6 s`, the world slowed to x0.2 with V at normal speed, then
+  `cyberfx: sandevistan slow-mo ended` about 6 s later. Kerenzikov (bow or crossbow while airborne) gives `cyberfx:
+  kerenzikov 2 s` and the world at x0.3. A Kerenzikov during a running Sandevistan switches the factor to 0.3: this
+  checks that SetTimeDilation with the same reason replaces the old one.
+- [ ] S6: activate Berserk. Expect `cyberfx: berserk 8 s` and `berserk: Minecraft side only`. V gets no superhero landing
+  or ground slam on falls.
+- [ ] Kiroshi: an NPC about 60 m away near the crosshair scans ok only with kiroshi_optics installed; without it the log
+  says `scan N: nothing under the crosshair`.
+
+### Re-test 2 — package M (Minecraft world)
+- [ ] R4-1 (new or pre-retest-2 world): on the first activation with V standing still on the street,
+  `mc/run/logs/latest.log` shows `ground alignment: k -1 -> N (offset X m) at Cyberpunk z Z (first activation)`, then
+  `block resync: ...`. Cyberblock.log shows D's `ground alignment: Minecraft y = Cyberpunk z - X (k N/64)`. A block Steve
+  then places on the street sits flush on it, not a block above.
+- [ ] R4-2: standing on the street, run `/cyberblock level`. Chat: "Ground aligned: offset X m (was Y m)...". The log
+  shows `ground alignment: k A -> B ... (/cyberblock level)` then a block resync. While jumping or in a car: "V must
+  stand on the ground...". With F9 off or no Cyberpunk: "Cyberpunk is not connected, or Cyberblock is off".
+- [ ] R4-3: after `/cyberblock level`, Steve's feet stay on V's floor with no visible vertical jump of the picture. This
+  checks HostState's `lv` correction during the align round trip.
+- [ ] R5 L-1 (survival): throw a wind charge at your own feet. The log shows `launch started at ... with ~22 m/s`; Steve
+  and V rise together, land, then `launch ended at ...`. No Night City fall damage on V and no `dmg fall` reaching
+  Steve.
+- [ ] R5 L-2 (creative): the same, with the same log lines. This checks ServerExplosionMixin and
+  SimpleExplosionDamageCalculatorMixin.
+- [ ] R5 L-3: a breeze's or another player's wind charge near Steve launches him (`launch started`). L-4: a mace hit with
+  Wind Burst launches the attacker.
+- [ ] R5 L-5: in a launch with an elytra, press Space while falling more than 3 blocks above ground. The log shows
+  `launch turned into a glide at ...` then `glide ended at ...`, and V follows the whole way.
+- [ ] R5 L-6: while V sits in a car or is held by a scene, a wind charge at Steve's feet logs no `launch started` and
+  Steve stays with V. If the DLL drive is disabled, a launch shows `launch called off (the host did not follow)` within
+  0.5 s and Steve snaps back to V.
+- [ ] R1 hand-off: after a glide or launch lands, Steve takes V's position again as soon as V stands at the landing spot,
+  with no visible 0.5 s freeze. Flight messages carry `kind` and `ts`: the DLL's per-flight summary line shows the median
+  spacing.
+- [ ] R2 (with C1 merged): aiming about 0.3 m beside a pedestrian, or 0.5 m beside a car, and pressing G picks it.
+  `Bridge.proxyAimedAt` works from the server's proxy positions.
+- [ ] R6 hooks: with gorilla_arms installed and an empty main hand, a punch shoves the NPC once (the hit impulse is twice a
+  bare punch); the gorilla_arms perk alone does the same, and both together still shove once. With reinforced_tendons
+  installed, V's first air jump is V's own double jump and the second press opens the elytra. Kiroshi outlines appear
+  only around hostile proxies: ProxyEntity DATA_HOSTILE is synced to the client.
+
+### Re-test 2 — package C (Minecraft cyber)
+- [ ] Survival, fresh kit: install the kit's Sandevistan (right-click it, or U then click). Expect the overlay "Installed
+  Sandevistan (returned Cyberdeck)" and the latest.log line `cyberware: installed sandevistan in operating_system/0`.
+  Then scan a target with G and fire a quickhack chip. Expect "Your Operating System slot holds Sandevistan: swap in the
+  cyberdeck with U to hack" (the lang line `cyberblock.hack.no_deck_os`, added at integration; the code's fallback text
+  is the same), not "...or carry one".
+- [ ] In the same state, use a RAM shard. Expect the same OS-slot message instead of the generic no-deck one.
+- [ ] Press U and click the returned Cyberdeck to swap it back in. Expect "Installed Cyberdeck (returned Sandevistan)",
+  the RAM HUD back at 8+, and quickhacks firing again.
+- [ ] Rebind the Cyberware key (for example to O) and repeat the first check. The message names the new key.
+
+### Re-test 2 — package A (art, assets, lang, recipes)
+- [ ] With C's items merged (they are), these are pure integration checks. In the creative tab, every new cyberware item
+  shows its own icon (no purple-black missing texture) and its name from the lang file.
+- [ ] Open each recipe in the recipe book or craft one: for example redstone + copper_ingot + clock + feather gives
+  Kerenzikov; redstone + copper_ingot + cyberblock:ram_shard x2 + gold_ingot gives RAM Upgrade. Expected: no recipe
+  parse errors in the Minecraft log.
+- [ ] Press U: the cyberware screen background (`textures/gui/cyberware_bg.png`, 256x192) draws without stretching. The
+  art layout is A's guess, so C's boxes may need nudging: the silhouette is centred on x=64 and spans y 20..177, the right
+  list field spans x 135..247 and y 22..171, and the title strip (y<18) and bottom strip (y>175) are empty. (C's slot
+  boxes span x 8..132 and y 20..184, so the last row reaches 9 px into the bottom strip; the implant cells span x
+  150..238 and y 32..164, inside the list field.)
+- [ ] Hover a cyberware item: the tooltip lines (Slot, .mc, .cp, Cooldown, Install) read as plain text and none contains
+  a stray `%` placeholder. Open the skill tree (K) on Double Jump, Sandevistan Sprint and Optical Camo: the texts say
+  they upgrade the implants.
 
 ### Re-test 2 — package P
 - [ ] With a dev client on a test port (`-Pcyberblock.port=<port>`, `-Pcyberblock.frame=<frame>`) and `uv run python -m
@@ -443,8 +610,12 @@ already running still has the old mod. The full key table and the netrunning wal
   `align`, `cyberware` and `cyberfx` lines when Minecraft sends them.
 - [ ] A world aligned by fakehost (its `cam` has no `lv`, so Minecraft converts it at its own `k`): fakehost prints `align`
   once and then the `blocks reset:true` resync, and nothing else changes.
-- [ ] Integration: the DLL's and Minecraft's alignment tests agree with the fixed `align` table in `shared/protocol.md`
-  and `shared/vectors.json`.
+- [x] Integration: the DLL's and Minecraft's alignment tests agree with the fixed `align` table in `shared/protocol.md`
+  and `shared/vectors.json` (6.907 gives 57, 6.001 gives 63, 0.0 gives 63, -3.25 gives 47, 312.999 gives 63, -0.0005
+  gives 63, 64.5 gives 31). Checked at integration: Python `align_k`, Java `GroundAlignTest` and `shared/vectors.json`
+  agree; `cb_tests` checks that the vector file holds the 7 cases (the DLL never chooses `k`).
+- [ ] All user-facing Re-test 2 checks (R1 to R6, F-1..F-3, L-1..L-7, the 17 implants) are in the "Re-test 2" section
+  at the top with the log lines to grep.
 
 ### Layer 2 — track P
 - [ ] Track M's M6 oracle: with the dev Minecraft client running on a test port, run 'uv run python -m tools.fakehost --layer2 --url ws://127.0.0.1:<port> --shm <name> --cmd "summon tnt 0 64 0" --hold 15' and confirm that explosion arrives (power 4), that block events arrive when blocks are placed or destroyed, that hit arrives when a bow or sword hits a proxy, and that Steve loses 5 hearts (25% of max health) from the dmg. Only Minecraft can show this, since the fake host has no real Minecraft side.

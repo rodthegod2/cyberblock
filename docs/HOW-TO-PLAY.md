@@ -236,8 +236,10 @@ the Minecraft log how many proxies exist ("proxies: H people, C cars").
     standing on the floor you want to build on. Blocks you placed earlier move by less than 1 m. It refuses with
     "Cyberpunk is not connected, or Cyberblock is off" or "V must stand on the ground (not in the air, a vehicle or a
     scene)".
-  - Minecraft's log says `ground alignment: k 63 -> 57 (offset ... m) at Cyberpunk z ...`, and Cyberblock.log says
-    `ground alignment: Minecraft y = Cyberpunk z - ... (k 57/64)`.
+  - Minecraft's log says `ground alignment: k 63 -> 57 (offset ... m) at Cyberpunk z ... (/cyberblock level)` (the
+    first one says `k -1 -> 57 ... (first activation)`: -1 means "never aligned"), then `block resync: N cells`.
+    Cyberblock.log says `ground alignment: Minecraft y = Cyberpunk z - ... (k 57/64)` and
+    `ground: alignment k 63 -> 57, Minecraft gets the ground again`.
 - **Night City is solid for Minecraft.** Raycasts around V turn floors and walls into invisible barrier blocks:
   - the radius is 24 m on foot, and grows to 64 m while gliding;
   - Steve, mobs and arrows stand on them and bump into them;
@@ -327,6 +329,8 @@ the Minecraft log how many proxies exist ("proxies: H people, C cars").
 - **While V cannot be moved** (in a vehicle, or held by the game as above), pearls, gliding and launches leave V where
   V is: a pearl shows "Pearl blocked: V cannot be moved right now" and is given back (no damage, no teleport), no
   flight starts, and one already under way stops (with the same 2 s fall grace). This keeps quests from breaking.
+- **F9 or a save mid-flight** ends the flight and puts V on the ground below, never in mid-air (Cyberblock.log:
+  "flight: cleared in mid-flight, V put on the ground").
 - Thrown things (pearls, arrows, tridents, potions, wind charges, the fishing hook) also stop on Night City walls,
   because the walls on their predicted paths are filled in ahead of time.
 - There is **no camera-only fallback** any more (`CyberblockFlight.SetCameraOnly` is gone): V is moved by the DLL, and
@@ -381,8 +385,10 @@ costs apply in both), not in spectator, and not from a car (nothing is forwarded
   the **Cyberblock** creative tab, then install it with **U**.
 - **The deck counts** when it is installed in the Operating System slot, **or** when that slot is empty and a Cyberdeck
   is anywhere in your inventory (hotbar or main inventory). If the slot holds another implant (Sandevistan or Berserk)
-  and the deck is not installed, you have no deck. Without one your maximum RAM is 0 and every chip says "No cyberdeck:
-  install one in the Operating System slot (U) or carry one".
+  and the deck is not installed, you have no deck, even with one in the bag: chips and RAM Shards say "Your Operating
+  System slot holds Sandevistan: swap in the cyberdeck with U to hack" (the name of whatever is installed there, and
+  your Cyberware key). With no deck at all your maximum RAM is 0 and every chip says "No cyberdeck: install one in the
+  Operating System slot (U) or carry one".
 
 **Step 2: watch your RAM.** The cyan bar left of the hotbar, level with the experience bar, is labelled "RAM n/m".
 - The maximum is 8 with a deck, plus 4 with the Extra RAM perk and plus 4 with the RAM Upgrade implant (up to 16). It
@@ -435,6 +441,7 @@ or leaves first, the hack is lost and its RAM is not given back.
 |---|---|
 | Hold G and look at a target | nothing is locked: scan first (the lock lasts 5 s) |
 | No cyberdeck: install one in the Operating System slot (U) or carry one | install the deck with **U**, or empty the slot and carry one (step 1) |
+| Your Operating System slot holds Sandevistan: swap in the cyberdeck with U to hack | another implant (Sandevistan or Berserk) is in the deck's slot: press **U** and click the Cyberdeck to swap it back in |
 | Not enough RAM: n of m | wait for it to regenerate, or use a RAM Shard |
 | Still recharging | that chip is on its 2 s (or 10 s) recharge: pick another with the wheel |
 | The Redstone Lever only works on devices | you locked a person or a car |
@@ -535,7 +542,7 @@ jump, an explosion).
 | **Fortified Ankles** | Legs | on | 4 more blocks of safe fall; a charged jump (hold Space about half a second, then let go) throws dust and a gust | V's **charge jump** |
 | **Lynx Paws** | Legs | on | Steve makes no step vibrations, and mobs notice you from half as far | people notice V from half as far (one effect, shared with the Silent Steps perk) |
 | **Sandevistan** | Operating System | **Y**, 6 s on, 25 s cooldown (8 s and 18 s with the Sandevistan Sprint perk) | Speed II and the Minecraft world at half speed; cyan and magenta afterimages, beacon sounds | Night City slows to 20 %, V does not |
-| **Berserk** | Operating System | **Y**, 8 s on, 40 s cooldown | Strength I, Resistance I and Jump Boost I; a ring of dust, an angry burst, a smash sound; hostile mobs within 3 blocks are knocked back | the jump boost reaches V. Cyberpunk's own berserk effect is used only if it proved safe, otherwise Minecraft only (Cyberblock.log: "berserk: Minecraft side only") |
+| **Berserk** | Operating System | **Y**, 8 s on, 40 s cooldown | Strength I, Resistance I and Jump Boost I; a ring of dust, an angry burst, a smash sound; hostile mobs within 3 blocks are knocked back | the jump boost reaches V. Cyberpunk's own Berserk status is **not** used (it would give V a superhero landing and a ground slam on falls): Cyberblock.log says "berserk: Minecraft side only" |
 | **Cyberdeck** | Operating System | on | your netrunning RAM (8 at most, see [netrunning](#netrunning-step-by-step)) | quickhacks run as before |
 | **Kerenzikov** | Nervous System | automatic, 2 s on, 10 s cooldown | fires by itself when you draw a bow, crossbow or trident while V is in the air: the Minecraft world at half speed, a ring of sparks, a rising chime | Night City slows to 30 % |
 | **Optical Camo** | Integumentary | **Y**, 10 s on, 30 s cooldown | Invisibility without particles (the icon shows), a portal-like shimmer; it breaks when you attack or fire the Launch System | V's optical camo, as with the Invisibility potion |
@@ -805,7 +812,7 @@ Running both games needs a lot of **Windows commit** (RAM plus page file), not j
   Active.
 - **The elytra does not open:** V must be falling with 3 blocks of free air below, not held by the game and not in a
   menu (see [layer 4](#layer-4-elytra-wind-charge-launches-and-ender-pearls)). Cyberblock.log says why a glide was ignored
-  ("flight: ignored, V is in a vehicle or held (<reason>)"); the Minecraft log shows "glide called off".
+  ("flight: ignored, V may not be moved (<reason>)"); the Minecraft log shows "glide called off".
 - **Weapons, leads and mobs ignore people:** look at the 5 s lines "npcs: sent H people + C cars; ... left out: ..."
   in Cyberblock.log and "proxies: H people, C cars" in the Minecraft log. The left-out reasons (dead, defeated,
   mounted, puppet, detached, not_npc, over_cap) say why. Scanning and quickhacks on people do not need proxies.

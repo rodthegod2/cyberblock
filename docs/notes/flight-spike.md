@@ -134,7 +134,7 @@ States Idle, Following, Holding. Constants: hold 1.0 s, quick landing 0.3 s, nea
 - **At touchdown**, `LocomotionAirEvents.OnUpdate` picks the landing from that vertical speed. The hard, very hard,
   death and superhero landings are **suppressed by the wraps** for 2 s after the flight (audit G-9 is covered), and their
   attacks are not reported. `ToRegularLand` still runs: if V hangs in the Fall pose on the ground, the follow-up is
-  `wrappedMethod || SuppressFall && IsOnGround()` in that wrap.
+  `wrappedMethod(...) || SuppressFall && IsTouchingGround` in a `ToRegularLand` wrap (the name Flight.reds gives).
 - **The risks of the drive:** `Teleport` called from `OnUpdate` (not from a game-thread script), a static call to
   `Vector4::ToRotation` with a null context, and yaw "stickiness" on fast mouse turns (the fix would be to read
   `GetWorldOrientation` just before the call).
@@ -159,7 +159,7 @@ the log; the lines quoted are in `docs/TESTING-PLAN.md` "Re-test 2".
   - V stands on the street within a frame of touchdown, not in mid-air and not hanging in the Fall pose;
   - **no** `dmg fall` within 2 s and no instant kill (`dmg instant kill (landing) not reported: flight` is fine);
   - V's health is unchanged and no death-landing effects play. If V hangs in the Fall pose, record it and ship the
-    `IsOnGround()` follow-up above.
+    `IsTouchingGround` follow-up above.
 - **F-6 clear mid-flight:** quicksave is blocked while Active, so test with F9 (Off) in mid-glide. Expected: the drive
   stops at once and V is put on the ground below; the camera is V's own.
 - **F-7 ender pearl:** throw a pearl onto a rooftop. Expected: V is teleported there facing Steve's yaw, onto the Night City

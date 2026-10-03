@@ -66,7 +66,9 @@ class CyberAssetsTest {
 		Map.entry("cyberblock.cyberware.tooltip.install", 1),
 		Map.entry("cyberblock.cyberware.screen.available", 0),
 		Map.entry("cyberblock.cyberware.screen.empty", 0),
-		Map.entry("cyberblock.hack.no_deck", 0));
+		Map.entry("cyberblock.hack.no_deck", 0),
+		Map.entry("cyberblock.hack.no_deck_os", 2),
+		Map.entry("cyberblock.binds.clash", 4));
 
 	private static List<String> items() {
 		List<String> items = new ArrayList<>();
