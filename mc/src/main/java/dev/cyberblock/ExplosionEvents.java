@@ -50,19 +50,22 @@ public final class ExplosionEvents {
 		return Wire.explosion(x, y, z, Math.min(power, MAX_POWER), fire);
 	}
 
-	/** An explosion's radius after the demolitions perk (Steve's own, with the perk: half as big again). */
-	static float radius(final float r, final boolean steves, final boolean demolitions) {
-		return steves && demolitions ? r * DEMOLITIONS : r;
+	/**
+	 * An explosion's radius after the demolitions perk (Steve's own blast, with the perk: half as big again). A wind burst is no blast,
+	 * it only pushes (and its radius is what the host hears): the perk leaves it alone.
+	 */
+	static float radius(final Level.ExplosionInteraction interaction, final float r, final boolean steves, final boolean demolitions) {
+		return isBlast(interaction) && steves && demolitions ? r * DEMOLITIONS : r;
 	}
 
 	/**
 	 * Server thread, from ServerLevel.explode before it runs: the radius it runs with. Steve's explosions are the ones he caused (his
 	 * TNT, a fireball he sent back, anything whose damage names him) and creepers he lit.
 	 */
-	public static float radius(final @Nullable Entity source, final @Nullable DamageSource damageSource, final float r) {
+	public static float radius(final Level.ExplosionInteraction interaction, final @Nullable Entity source, final @Nullable DamageSource damageSource, final float r) {
 		Entity cause = damageSource != null ? damageSource.getEntity() : Explosion.getIndirectSourceEntity(source);
 		boolean steves = cause instanceof ServerPlayer || source != null && litBySteve.contains(source);
-		return radius(r, steves, Bridge.perkRank.applyAsInt("demolitions") > 0);
+		return radius(interaction, r, steves, Bridge.perkRank.applyAsInt("demolitions") > 0);
 	}
 
 	/** Server thread: Steve lit this creeper. */
