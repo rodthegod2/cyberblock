@@ -23,6 +23,8 @@ public final class Bridge {
 	public static volatile boolean hostCrouching;
 	/** The game holds V (the host's cam.held: a scene, workspot, braindance or moving elevator), so V cannot be moved. M sets it. */
 	public static volatile boolean hostHeld;
+	/** V is in a vehicle (the host's state.vehicle). M sets it. */
+	public static volatile boolean hostInVehicle;
 
 	private Bridge() {
 	}

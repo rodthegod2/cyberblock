@@ -138,6 +138,15 @@ class HostStateTest {
 	}
 
 	@Test
+	void theServerHearsWhenVIsInAVehicle() {
+		HostState.setVehicle(true);
+		assertTrue(HostState.vehicle());
+		assertTrue(Bridge.hostInVehicle);
+		HostState.setVehicle(false);
+		assertFalse(Bridge.hostInVehicle);
+	}
+
+	@Test
 	void theHostGoingAwayReleasesV() {
 		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'held':true}"));
 		assertTrue(Bridge.hostHeld);

@@ -179,6 +179,7 @@ public final class HostState {
 
 	static void setVehicle(final boolean inVehicle) {
 		vehicle = inVehicle;
+		Bridge.hostInVehicle = inVehicle; // the server refuses ender pearl teleports (ThrownEnderpearlMixin)
 	}
 
 	/** The latest pose if the host is still sending, else null. */
