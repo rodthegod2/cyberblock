@@ -1,0 +1,152 @@
+// Minecraft's hack key scan (plan 2026-10-03 sections 1.2 scaninfo and 1.4, task S3.2): what Night City has at the
+// requested id (0: whatever V looks at). Every request is answered once with Cyberblock_ScanResult; ok false with empty
+// strings when nothing scannable is there.
+//
+// 2.31 sources (decompiled 2.31 scripts; compile-checked):
+//   Look-at: TargetingSystem.GetLookAtObject(V, withLOS true, ignoreTransparent true), the call PlayerPuppet
+//     .ReevaluateLookAtTarget makes for V's own look-at target.
+//   NPC name: the scanner's rules in NPCPuppet's scanner data (ScannerName chunk): alternative names when
+//     GamePuppetPS.HasAlternativeName; civilians use Character_Record.DisplayName; others FullDisplayName, then
+//     DisplayName; GameObject.GetDisplayName as the last resort. Loc keys resolve with GetLocalizedTextByKey and
+//     "LocKey#" strings with GetLocalizedText (as craftingMain / ButtonHints do).
+//   Faction: Character_Record.Affiliation().LocalizedName() (the scanner's ScannerFaction chunk).
+//   Threat: RPGManager.CalculatePowerDifferential(target) -> gameEPowerDifferential, the helper the scanner's bounty
+//     level uses: TRASH and EASY -> low, NORMAL -> medium, HARD -> high, IMPOSSIBLE -> extreme. "none" for NPCs that
+//     are not aggressive (ScriptedPuppet.IsAggressive: civilians), not active (dead, defeated, unconscious), devices,
+//     and vehicles without an active aggressive driver (VehicleComponent.GetDriverMounted).
+//   HP: StatPoolsSystem.GetStatPoolValue(id, Health, perc true) is 0..100 (AdamSmasherComponent compares it to 50 and
+//     30); 1 when the object has no Health pool (IsStatPoolAdded), 0 when dead or destroyed.
+//   Vehicle name: Vehicle_Record.DisplayName (the scanner's ScannerVehicleName). Device name: GameObject
+//     .GetDisplayName, else Device.GetDeviceName (Device.GetScannerName's order).
+//   Size: humans 0.6 x 1.8 m, vehicles 2 x 1.6 m, devices 1 x 2 m. No script API exposes a vehicle's bounding box in
+//     2.31 (the only one, vehicleBoundingBox, lives in the native vehicle camera context), so the plan's fallback is
+//     used for every vehicle.
+//   Text limit: 64 characters (Codeware UTF8StrLeft, so a multi-byte letter is never cut in half).
+
+public abstract class CyberblockScan {
+  public static func Scan(game: GameInstance, id: Int32, target: Uint64) -> Void {
+    let player = GetPlayer(game);
+    let object: ref<GameObject>;
+    if IsDefined(player) {
+      if target == 0ul {
+        object = GameInstance.GetTargetingSystem(game).GetLookAtObject(player, true, true);
+      } else {
+        object = GameInstance.FindEntityByID(game, EntityID.FromHash(target)) as GameObject;
+      }
+    }
+    if !IsDefined(object) || object == player || !CyberblockScan.Answer(game, id, object) {
+      Cyberblock_ScanResult(id, false, target, "", "", n"none", 0.0, false, new Vector4(0.0, 0.0, 0.0, 1.0), new Vector4(0.0, 0.0, 0.0, 0.0));
+      Cyberblock_Log(s"scan \(id): nothing at \(target)");
+    }
+  }
+
+  // Sends the scan of object; false when it is nothing Minecraft can show (not an NPC, vehicle or device).
+  private static func Answer(game: GameInstance, id: Int32, object: ref<GameObject>) -> Bool {
+    let hash = EntityID.ToHash(object.GetEntityID());
+    let pos = object.GetWorldPosition();
+    let puppet = object as ScriptedPuppet;
+    if IsDefined(puppet) {
+      let record = puppet.GetRecord();
+      let faction = "";
+      if IsDefined(record) && IsDefined(record.Affiliation()) {
+        faction = CyberblockScan.Text(record.Affiliation().LocalizedName());
+      }
+      Cyberblock_ScanResult(id, true, hash, CyberblockScan.Clip(CyberblockScan.NpcName(puppet)), CyberblockScan.Clip(faction), CyberblockScan.NpcThreat(puppet), CyberblockScan.Hp(game, object), false, pos, new Vector4(0.6, 1.8, 0.0, 0.0));
+      return true;
+    }
+    let vehicle = object as VehicleObject;
+    if IsDefined(vehicle) {
+      let name = "";
+      if IsDefined(vehicle.GetRecord()) {
+        name = CyberblockScan.Text(vehicle.GetRecord().DisplayName());
+      }
+      let threat = n"none";
+      let driver = VehicleComponent.GetDriverMounted(game, vehicle.GetEntityID()) as ScriptedPuppet;
+      if IsDefined(driver) {
+        threat = CyberblockScan.NpcThreat(driver);
+      }
+      let hp = vehicle.IsDestroyed() ? 0.0 : CyberblockScan.Hp(game, object);
+      Cyberblock_ScanResult(id, true, hash, CyberblockScan.Clip(name), "", threat, hp, false, pos, new Vector4(2.0, 1.6, 0.0, 0.0));
+      return true;
+    }
+    let device = object as Device;
+    if IsDefined(device) {
+      let name = CyberblockScan.Localize(device.GetDisplayName());
+      if StrLen(name) == 0 && IsDefined(device.GetDevicePS()) {
+        name = CyberblockScan.Localize(device.GetDeviceName());
+      }
+      Cyberblock_ScanResult(id, true, hash, CyberblockScan.Clip(name), "", n"none", CyberblockScan.Hp(game, object), true, pos, new Vector4(1.0, 2.0, 0.0, 0.0));
+      return true;
+    }
+    return false;
+  }
+
+  // The scanner's NPC name rules (NPCPuppet scanner data, ScannerName).
+  private static func NpcName(puppet: ref<ScriptedPuppet>) -> String {
+    let record = puppet.GetRecord();
+    if !IsDefined(record) {
+      return CyberblockScan.Localize(puppet.GetDisplayName());
+    }
+    let ps = puppet.GetPuppetPS();
+    if IsDefined(ps) && ps.HasAlternativeName() {
+      if IsNameValid(record.AlternativeFullDisplayName()) {
+        return CyberblockScan.Text(record.AlternativeFullDisplayName());
+      }
+      return CyberblockScan.Text(record.AlternativeDisplayName());
+    }
+    if !puppet.IsCharacterCivilian() && IsNameValid(record.FullDisplayName()) {
+      return CyberblockScan.Text(record.FullDisplayName());
+    }
+    if IsNameValid(record.DisplayName()) {
+      return CyberblockScan.Text(record.DisplayName());
+    }
+    return CyberblockScan.Localize(puppet.GetDisplayName());
+  }
+
+  private static func NpcThreat(puppet: ref<ScriptedPuppet>) -> CName {
+    if !ScriptedPuppet.IsActive(puppet) || !puppet.IsAggressive() {
+      return n"none";
+    }
+    switch RPGManager.CalculatePowerDifferential(puppet) {
+      case gameEPowerDifferential.IMPOSSIBLE:
+        return n"extreme";
+      case gameEPowerDifferential.HARD:
+        return n"high";
+      case gameEPowerDifferential.NORMAL:
+        return n"medium";
+      default:
+        return n"low";
+    }
+  }
+
+  // Fraction 0..1 of the Health pool; 1 for objects without one, 0 for the dead.
+  private static func Hp(game: GameInstance, object: ref<GameObject>) -> Float {
+    let id = Cast<StatsObjectID>(object.GetEntityID());
+    let pools = GameInstance.GetStatPoolsSystem(game);
+    if !pools.IsStatPoolAdded(id, gamedataStatPoolType.Health) {
+      return 1.0;
+    }
+    return ClampF(pools.GetStatPoolValue(id, gamedataStatPoolType.Health, true) / 100.0, 0.0, 1.0);
+  }
+
+  private static func Text(key: CName) -> String {
+    if !IsNameValid(key) {
+      return "";
+    }
+    return GetLocalizedTextByKey(key);
+  }
+
+  private static func Localize(text: String) -> String {
+    if StrBeginsWith(text, "LocKey#") {
+      return GetLocalizedText(text);
+    }
+    return text;
+  }
+
+  private static func Clip(text: String) -> String {
+    if UTF8StrLen(text) > 64 {
+      return UTF8StrLeft(text, 64);
+    }
+    return text;
+  }
+}

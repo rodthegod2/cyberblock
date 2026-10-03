@@ -73,3 +73,37 @@ hacks. Only the main target's result is reported.
 Side effects (audit B.4) stay as in vanilla:
 - V gets each hack's cooldown status effect and Intelligence XP.
 - NCPD reacts where the completion effects notify it.
+
+## S3.2 Scan (`Scan.reds`)
+
+`CyberblockScan.Scan(game, id, target)` always answers `Cyberblock_ScanResult` exactly once.
+
+- **Target:** a target of 0 means what V looks at. That is `TargetingSystem.GetLookAtObject(V, true, true)`, the
+  same call `PlayerPuppet.ReevaluateLookAtTarget` makes. Any other value is `EntityID.FromHash` +
+  `FindEntityByID`.
+- **NPC** (`ScriptedPuppet`):
+  - name: the scanner's own rules (alternative name, then civilian `DisplayName`, else `FullDisplayName` /
+    `DisplayName`, else `GetDisplayName`);
+  - faction: `Affiliation().LocalizedName()`;
+  - size: 0.6 × 1.8 m.
+- **Vehicle:**
+  - name: `Vehicle_Record.DisplayName`;
+  - faction: empty;
+  - threat: from its mounted driver;
+  - HP: 0 once destroyed;
+  - size: 2 × 1.6 m. No 2.31 script API exposes a vehicle bounding box (`vehicleBoundingBox` exists only inside the
+    native vehicle camera context), so the fallback is used.
+- **Device:**
+  - name: `GetDisplayName`, else `GetDeviceName` (the order of `Device.GetScannerName`);
+  - threat: `none`;
+  - size: 1 × 2 m.
+- **Anything else** (props, items, nothing): `ok:false` with empty strings.
+- **Threat:** `RPGManager.CalculatePowerDifferential` (the helper the scanner's bounty level uses) maps
+  TRASH/EASY → `low`, NORMAL → `medium`, HARD → `high`, IMPOSSIBLE → `extreme`. It is `none` for non-aggressive
+  (civilian) or inactive NPCs.
+- **HP:** `GetStatPoolValue(Health, perc=true) / 100`. The percentage scale was confirmed by
+  `AdamSmasherComponent`'s 50/30 thresholds. It is 1 for objects without a Health pool.
+- **Text:**
+  - Loc keys go through `GetLocalizedTextByKey`.
+  - `LocKey#` strings go through `GetLocalizedText`.
+  - Everything is clipped to 64 characters with Codeware's `UTF8StrLeft`.
