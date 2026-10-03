@@ -15,13 +15,16 @@ STATUS = {"t": "status", "hp": 20, "maxHp": 20, "food": 20, "gm": "survival", "s
 W, H = 8, 4
 
 
-def run_against_fake_minecraft(out, frames, shm_name, **kwargs):
-    """fakehost.run against a local server that plays Minecraft's part; returns (frame sets saved, messages received)."""
+def run_against_fake_minecraft(out, frames, shm_name, replies=(), **kwargs):
+    """fakehost.run against a local server that plays Minecraft's part (and also sends `replies`, e.g. layer 2 events
+    like an explosion); returns (frame sets saved, messages received)."""
     received = []
 
     async def minecraft(ws):
         await ws.send(json.dumps(HELLO))
         await ws.send(json.dumps(STATUS))
+        for m in replies:
+            await ws.send(json.dumps(m))
         async for raw in ws:
             received.append(json.loads(raw))
 
@@ -99,3 +102,80 @@ def test_unreachable_minecraft_is_a_clean_failure(capsys, monkeypatch):
     monkeypatch.setattr("sys.argv", ["fakehost", "--url", "ws://127.0.0.1:1", "--frames", "1"])
     assert fakehost.main() == 1
     assert "no connection to Minecraft" in capsys.readouterr().err
+
+
+# ---- --layer2: NPC proxies and a bullet hit sent to Minecraft, Minecraft's block/explosion/hit/ignite events printed ----
+EVENTS = [
+    {"t": "block", "op": "add", "pos": [10, 4, -21]},
+    {"t": "explosion", "pos": [10.5, 4.0, -20.5], "power": 4.0, "fire": False},
+    {"t": "hit", "target": "9007199254740993", "dmg": 7.0, "kind": "melee", "impulse": [0.0, 1.5, 6.0]},
+    {"t": "ignite", "target": "9007199254740993", "seconds": 8.0},
+]
+
+
+def types(messages):
+    return [m["t"] for m in messages]
+
+
+def test_layer2_sends_three_npcs_then_a_bullet_hit_after_the_layer1_script(tmp_path, exporting):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, layer2_hold=0.05)
+    t = types(got)
+    assert t[:5] == ["hello", "view", "clear", "state", "hud"]
+    first_npcs, first_dmg = t.index("npcs"), t.index("dmg")
+    last_orbit_cam = max(i for i, m in enumerate(got) if m["t"] == "cam" and m["f"] <= 30)
+    assert t.index("ground") < t.index("cam") < last_orbit_cam < first_npcs
+    assert first_dmg == first_npcs + 1 and t.count("dmg") == 1
+    npcs = got[first_npcs]["list"]
+    assert [e["kind"] for e in npcs] == ["human", "human", "vehicle"] and any(e["hostile"] for e in npcs)
+    dmg = got[first_dmg]
+    assert dmg["frac"] == 0.25 and dmg["kind"] == "bullet" and len(dmg["from"]) == 3
+
+
+def test_layer2_npcs_are_valid_and_stand_clear_of_the_setup_blocks():
+    msg = fakehost.npcs_message()
+    assert msg["t"] == "npcs" and len(msg["list"]) == 3 and len({e["id"] for e in msg["list"]}) == 3
+    blocks = [tuple(int(v) for v in c.split()[1:4]) for c in fakehost.SETUP_COMMANDS if c.startswith("setblock")]
+    for e in msg["list"]:
+        assert set(e) == {"id", "p", "yaw", "kind", "hostile"} and e["id"].isdigit() and int(e["id"]) < 2**64
+        x, y, z = e["p"]
+        assert y == fakehost.SLAB_Y + 1 and abs(x) <= fakehost.SLAB_HALF and abs(z) <= fakehost.SLAB_HALF  # standing on the slab
+        width, height = (0.6, 1.8) if e["kind"] == "human" else (2.0, 1.6)  # the proxy hitboxes of shared/protocol.md
+        for bx, by, bz in blocks:
+            assert not (abs(x - (bx + 0.5)) < 0.5 + width / 2 and abs(z - (bz + 0.5)) < 0.5 + width / 2 and y < by + 1 and y + height > by)
+
+
+def test_layer2_holds_the_last_camera_and_resends_the_npcs_while_listening(tmp_path, exporting):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, layer2_hold=0.3)
+    cams = [m for m in got if m["t"] == "cam"]
+    assert len(cams) > 100 and [m["f"] for m in cams] == list(range(1, len(cams) + 1))
+    assert all(m["p"] == cams[29]["p"] and m["r"] == cams[29]["r"] for m in cams[29:])  # held at the last orbit pose
+    assert 2 <= types(got).count("npcs") <= 6  # about 10 Hz: the first at once, then one per 100 ms
+
+
+def test_layer2_prints_every_event_minecraft_reports(tmp_path, exporting, capsys):
+    run_against_fake_minecraft(tmp_path, 30, exporting, replies=EVENTS, layer2_hold=0.1)
+    lines = capsys.readouterr().out.splitlines()
+    for event in EVENTS:
+        line = next(l for l in lines if l.startswith(f"{event['t']}: "))
+        assert json.loads(line.split(": ", 1)[1]) == event
+
+
+def test_layer2_commands_are_sent_after_the_dmg_in_order(tmp_path, exporting):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, layer2_hold=0.05, commands=["summon tnt 0 64 0", "kill @e[type=tnt]"])
+    after = got[types(got).index("dmg") + 1:]
+    assert [m["c"] for m in after if m["t"] == "cmd"] == ["summon tnt 0 64 0", "kill @e[type=tnt]"]
+
+
+def test_layer1_run_sends_no_layer2_messages(tmp_path, exporting):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting)
+    assert not {"npcs", "dmg"} & set(types(got))
+
+
+def test_layer2_options_are_checked(monkeypatch, capsys):
+    for argv in (["--cmd", "say hi"], ["--layer2", "--hold", "-1"]):
+        monkeypatch.setattr("sys.argv", ["fakehost", *argv])
+        with pytest.raises(SystemExit) as e:
+            fakehost.main()
+        assert e.value.code == 2
+    monkeypatch.setattr("sys.argv", ["fakehost", "--layer2", "--url", "ws://127.0.0.1:1", "--frames", "1"])
+    assert fakehost.main() == 1 and "no connection to Minecraft" in capsys.readouterr().err

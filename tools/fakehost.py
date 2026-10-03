@@ -9,6 +9,12 @@ It sends `hello`, `view`, a 17 x 17 stone-slab `ground` (x, z in [-8, 8], y 63; 
 with reference-mod `cmd` server commands, which are not part of protocol v1) and one orbit of the camera around
 (0, 65, 0) at 60 Hz. Every 30 frames it saves the latest exported frame as out/frame_XXX_{color,depth,overlay}.png:
 colour and overlay composited over dark grey, depth as a grey ramp (white = near, 32 m = black, nothing = black).
+
+With --layer2 it then plays Cyberpunk's part of layer 2 (shared/protocol.md): an `npcs` list with two humans (one
+hostile) and a vehicle standing on the slab, and one `dmg` (25 % of V's health, a bullet from the hostile human), then
+any --cmd server commands (e.g. --cmd "summon tnt 0 64 0"). For --hold seconds (default 10) it holds the last camera pose
+and resends the NPC list at 10 Hz, as the real host does, while printing every `block`, `explosion`, `hit` and `ignite`
+Minecraft reports, one line each: `<type>: <json>`.
 """
 import argparse
 import asyncio
@@ -16,6 +22,7 @@ import json
 import math
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -31,6 +38,8 @@ CENTER = (0.0, 65.0, 0.0)
 RADIUS, EYE_Y, FOV = 6.0, 66.5, 70.0
 SLAB_HALF, SLAB_Y = 8, 63
 SAVE_EVERY = 30
+LAYER2_EVENTS = {"block", "explosion", "hit", "ignite"}  # what Minecraft reports back to Cyberpunk in layer 2
+NPC_HZ = 10
 DEPTH_RANGE_M = 32.0
 BACKGROUND = np.array([40, 40, 48], np.float64)
 SETUP_COMMANDS = [  # a gold block at the centre and four coloured blocks on the axes: +x red, -x blue, +z lime, -z yellow
@@ -57,6 +66,22 @@ def orbit_cam(f: int, frames: int) -> dict:
             "pl": [eye[0], SLAB_Y + 1.0, eye[2]], "h": yaw}
 
 
+def npcs_message() -> dict:
+    """The `npcs` list: two humans and a vehicle on the slab, clear of the setup blocks. Ids are the examples of protocol.md."""
+    feet = SLAB_Y + 1.0
+    return {"t": "npcs", "list": [
+        {"id": "9007199254740993", "p": [2.5, feet, 2.5], "yaw": 135.0, "kind": "human", "hostile": True},
+        {"id": "18446744073709551615", "p": [-2.5, feet, 2.5], "yaw": -135.0, "kind": "human", "hostile": False},
+        {"id": "4503599627370497", "p": [-4.5, feet, -4.5], "yaw": 180.0, "kind": "vehicle", "hostile": False},
+    ]}
+
+
+def dmg_message() -> dict:
+    """A quarter of V's health, shot by the hostile human (from its chest)."""
+    x, y, z = npcs_message()["list"][0]["p"]
+    return {"t": "dmg", "frac": 0.25, "kind": "bullet", "from": [x, y + 1.3, z]}
+
+
 def save_frame(frame: dict, out: Path, f: int) -> None:
     def over_background(rgba: np.ndarray) -> Image.Image:  # premultiplied alpha
         px = rgba.astype(np.float64)
@@ -70,7 +95,7 @@ def save_frame(frame: dict, out: Path, f: int) -> None:
 
 
 async def listen(ws) -> None:
-    """Print Minecraft's hello and every change of its status."""
+    """Print Minecraft's hello, every change of its status and every layer 2 event it reports."""
     last = None
     async for raw in ws:
         m = json.loads(raw)
@@ -81,10 +106,29 @@ async def listen(ws) -> None:
         elif m.get("t") == "status" and m != last:
             print("status:", m)
             last = m
+        elif m.get("t") in LAYER2_EVENTS:
+            print(f"{m['t']}: {json.dumps(m)}")
 
 
-async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str = shm.NAME, setup: bool = True) -> int:
-    """Returns the number of frame sets saved."""
+async def layer2(ws, first_frame: int, cam: dict, fps: float, hold: float, commands: Sequence[str]) -> None:
+    """Cyberpunk's side of layer 2: the NPC list, one bullet hit, the commands; then hold `cam` and resend the NPCs for `hold` seconds."""
+    npcs = npcs_message()
+    for m in (npcs, dmg_message(), *({"t": "cmd", "c": c} for c in commands)):
+        await ws.send(json.dumps(m))
+    print(f"layer 2: sent {len(npcs['list'])} npcs, a bullet dmg and {len(commands)} command(s); "
+          f"listening {hold:g} s for {', '.join(sorted(LAYER2_EVENTS))}")
+    npcs_every = max(1, round(fps / NPC_HZ))
+    t0 = time.perf_counter()
+    for i in range(round(hold * fps)):
+        if i and i % npcs_every == 0:
+            await ws.send(json.dumps(npcs))
+        await ws.send(json.dumps({**cam, "f": first_frame + i}))
+        await asyncio.sleep(max(0.0, t0 + (i + 1) / fps - time.perf_counter()))
+
+
+async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str = shm.NAME, setup: bool = True,
+              layer2_hold: float | None = None, commands: Sequence[str] = ()) -> int:
+    """Returns the number of frame sets saved. `layer2_hold` (seconds) enables the layer 2 script after the orbit."""
     out.mkdir(parents=True, exist_ok=True)
     async with connect(url, max_size=None) as ws:
         listener = asyncio.create_task(listen(ws))
@@ -112,6 +156,8 @@ async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str
                 saved += 1
                 break
             await asyncio.sleep(0.01)
+        if layer2_hold is not None:
+            await layer2(ws, frames + 1, orbit_cam(frames, frames), fps, layer2_hold, commands)
         listener.cancel()
     return saved
 
@@ -124,11 +170,19 @@ def main() -> int:
     ap.add_argument("--fps", type=float, default=60.0, help="camera message rate (default 60)")
     ap.add_argument("--shm", default=shm.NAME, help=f"shared memory name (default {shm.NAME})")
     ap.add_argument("--no-setup", action="store_true", help="do not send the visible-block setup commands")
+    ap.add_argument("--layer2", action="store_true", help="after the orbit: send 3 npcs and a bullet dmg, print Minecraft's block/explosion/hit/ignite")
+    ap.add_argument("--hold", type=float, default=10.0, help="--layer2: seconds to keep the link up and listen (default 10)")
+    ap.add_argument("--cmd", action="append", default=[], metavar="COMMAND", help='--layer2: a server command to send after the dmg, e.g. "summon tnt 0 64 0" (repeatable)')
     args = ap.parse_args()
     if args.frames < 1 or args.fps <= 0:
         ap.error("--frames and --fps must be positive")
+    if args.hold < 0:
+        ap.error("--hold must not be negative")
+    if args.cmd and not args.layer2:
+        ap.error("--cmd needs --layer2")
     try:
-        saved = asyncio.run(run(args.url, args.frames, args.out, args.fps, args.shm, not args.no_setup))
+        saved = asyncio.run(run(args.url, args.frames, args.out, args.fps, args.shm, not args.no_setup,
+                                args.hold if args.layer2 else None, args.cmd))
     except (ConnectionError, TimeoutError, ConnectionClosed) as e:
         print(f"no connection to Minecraft at {args.url} ({e}); start the dev client first:\n"
               '  mc\\gradlew.bat runClient --args="--quickPlaySingleplayer cyberblock"', file=sys.stderr)
