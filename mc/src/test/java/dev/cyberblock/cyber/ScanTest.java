@@ -54,6 +54,14 @@ class ScanTest {
 		assertTrue(t.shouldSend(50, 5));
 	}
 
+	/** Plan retest2 C1: Kiroshi optics give an 80-block scan ray, otherwise 48. */
+	@Test
+	void scanRangeWithAndWithoutKiroshi() {
+		assertEquals(48.0, Hacking.scanRange(java.util.Set.of()));
+		assertEquals(48.0, Hacking.scanRange(java.util.Set.of("mantis_blades", "cyberdeck")));
+		assertEquals(80.0, Hacking.scanRange(java.util.Set.of("kiroshi_optics")));
+	}
+
 	@Test
 	void scanJson() {
 		assertEquals("{\"t\":\"scan\",\"id\":3,\"target\":\"42\"}", CyberWire.scan(3, 42L));

@@ -4,6 +4,7 @@ import dev.cyberblock.Cyberblock;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.network.chat.Component;
@@ -26,6 +27,8 @@ public final class Hacking {
 	 * so a refund after 10 s would make that hack free.
 	 */
 	static final long CONNECTED_ANSWER_NANOS = 60_000_000_000L;
+	static final double SCAN_RANGE = 48.0;
+	static final double KIROSHI_SCAN_RANGE = 80.0;
 	private static final AtomicInteger ids = new AtomicInteger();
 	private static final Map<Integer, Pending> pending = new HashMap<>();
 	private static @Nullable Locked locked;
@@ -39,6 +42,11 @@ public final class Hacking {
 	}
 
 	private Hacking() {
+	}
+
+	/** How far the hack key's scan ray reaches (plan retest2 section 1.7): 80 blocks with Kiroshi optics installed, else 48. */
+	public static double scanRange(final Set<String> installedCyberware) {
+		return installedCyberware.contains("kiroshi_optics") ? KIROSHI_SCAN_RANGE : SCAN_RANGE;
 	}
 
 	/** A fresh request id for `scan` or `hack` (int >= 0, any thread). */

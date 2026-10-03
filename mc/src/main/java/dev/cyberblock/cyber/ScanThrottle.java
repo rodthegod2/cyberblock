@@ -2,7 +2,8 @@ package dev.cyberblock.cyber;
 
 /**
  * When a held hack key sends a `scan` (task C4): when the picked target changes, or every second for the same one, and
- * never more than 5 per second (the protocol's limit). Not thread-safe: the client thread owns it.
+ * never more than 5 per second (the protocol's limit). Not thread-safe: the server thread owns it (plan retest2 C1: the
+ * pick runs there, and the client hands over the reset on release).
  */
 public final class ScanThrottle {
 	public static final long REPEAT_MS = 1000L;
