@@ -122,6 +122,11 @@ public abstract class CyberblockBuffs {
     }
     buffs.active = false;
     CyberblockBuffs.TakeOff(game, buffs);
+    // Anything of ours a save or an earlier session left on V (applied with our instigator id).
+    let player = GetPlayer(game);
+    if IsDefined(player) {
+      StatusEffectHelper.RemoveStatusEffectsByInstigatorID(player, t"Cyberblock.Buffs");
+    }
     let now = CyberblockBuffs.Now(game);
     let i = ArraySize(buffs.names) - 1;
     while i >= 0 {

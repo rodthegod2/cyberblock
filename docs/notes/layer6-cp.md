@@ -162,4 +162,133 @@ Every record below is in the records section of both TweakDB files (status effec
 - **Stat modifiers:** these are the exact objects, removed from the entity they were added to.
 - **`Tick(active false)`:** takes everything off V and keeps the entries, so a potion survives a vehicle ride or a save.
 - **`Clear`:** does the same and also forgets infinite entries (86400 s). While Cyberblock is off, S1 drops `effect`
-  events, so the removal of an infinite effect could be missed. Timed entries are bounded by their own expiry.
+  events, so the removal of an infinite effect could be missed. Timed entries are bounded by their own expiry. It also
+  removes any status effect still carrying our instigator ID (`t"Cyberblock.Buffs"`), in case a save or an earlier
+  session left one on V.
+
+## S3.5 Kills (`Kills.reds`)
+
+Two wraps call `Cyberblock_Killed(hash, vehicle, hostile)`, once per entity (the last 64 reported hashes are
+remembered):
+- `NPCPuppet.OnDeath(evt: ref<gameDeathEvent>)`, a protected cb;
+- `VehicleComponent.OnDeath(evt: ref<gameDeathEvent>)`, which explodes the vehicle and calls `FindAndRewardKiller`.
+
+**Conditions:**
+- Cyberblock's god mode must be on V (`GetGodModeSources(V, Invulnerable)` contains `n"Cyberblock"`).
+- V must have hurt the victim, meaning one of these holds:
+  - the death event's instigator is V;
+  - the NPC's `GetMyKiller()` is V;
+  - V is in the victim's damage history of the killing frame (`GetReceivedDamageByPlayerLastTimeStamp() > 0`, the
+    history `FindAndRewardKiller` uses).
+
+V is the instigator of every Minecraft effect (Effects.reds), so this covers Steve's hits, TNT, fire and hacks that
+damage. It does not cover NPCs that a Cyberpsychosis victim kills, or the victim's own suicide.
+
+**`hostile`:** `IsHostileTowardsPlayer` of the NPC, or of the vehicle's mounted driver, read before the vehicle's death
+handler runs.
+
+## Cross-check with S1 and S2
+
+The five S3 files were compiled together with `l36/S1` at `41f14f5` and `l36/S2` at `2fd373a`. The S1 files were
+Natives (with the real §1.3 declarations), Events, Cyberblock, PlayerState, Disable, Health and Probes; the S2 files
+were Effects and Puppets. Stubs covered only the S2 classes that were not committed yet (Flight, Tether,
+Projectiles). Result: OK. So every call S1 makes into the S3 API matches these signatures, and no class or wrap
+collides.
+
+## needsInGame
+
+Run each check with Cyberblock Active (F9), Minecraft linked, and `red4ext/logs/Cyberblock.log` open. The log lines
+quoted are the ones these files write.
+
+### Audit checks
+
+- **G-3 Quickhack.**
+  1. In CET, get the NPC V looks at:
+     `npc = Game.GetTargetingSystem():GetLookAtObject(Game.GetPlayer(), false, false)`.
+  2. Run `StatusEffectHelper.ApplyStatusEffect(npc, TweakDBID.new("BaseStatusEffect.OverloadLevel1"), Game.GetPlayer():GetEntityID())`.
+     Expect electrocution VFX and damage.
+  3. Use a Redstone Charge on the same kind of ganger. Expect an upload delay, then the same result plus NCPD
+     heat. The log shows `hack short_circuit on <id>: ok`.
+  4. Repeat on a crowd NPC and on a mech.
+- **G-4 Device hack.**
+  1. Use a Redstone Lever on a vending machine. Expect the screen to glitch and cans to drop
+     (`hack device on <id>: ok`).
+  2. Use it on a camera. Its detection cone should stop tracking V, and the Minecraft view must **not** switch to
+     the CCTV.
+- **G-5 Traffic.** Use a Redstone Lever on a traffic light at an intersection. Do the lights change, and do cars stop
+  and go?
+- **G-6 Slow-mo.**
+  1. Buy Sandevistan and double-tap sprint in Minecraft. NPCs and cars should slow to ×0.2 while V does not, for
+     5 s; the log shows `perks: sandevistan slow-mo for 5 s` then `perks: slow-mo ended`.
+  2. Note whether there is any screen effect.
+  3. Toggle F9 during the slow-mo. Time must return to normal at once.
+- **G-7 Camo.**
+  1. In combat, drink an invisibility potion. Hostiles should lose V within a few seconds.
+  2. Repeat with only `Game.GetPlayer():SetInvisible(true)` in CET and compare.
+  3. Check that the effect is still on after 10 s:
+     `StatusEffectSystem.ObjectHasStatusEffect(Game.GetPlayer(), TweakDBID.new("BaseStatusEffect.OpticalCamoPlayerBuffRare"))`.
+     Combat camo decay may remove it; Buffs re-applies it once a second.
+- **G-8 Visibility.**
+  1. With Silent Steps bought, `Game.GetStatsSystem():GetStatValue(Game.GetPlayer():GetEntityID(), gamedataStatType.Visibility)`
+     is half its value with the perk off.
+  2. Crouch-walk towards an idle guard and compare the time the detection meter takes to fill, with and without the
+     perk.
+
+### One check per hack
+
+The target is a hostile ganger, except where a check says otherwise. Every use answers `hackresult ok:true`.
+- **Short Circuit (Redstone Charge):** after the upload, electrocution VFX and damage. Covered by G-3.
+- **Overheat (Blaze Chip):** the target burns (overheat VFX) and its health ticks down. Steve takes no damage.
+- **Reboot Optics (Ink Sac Daemon):** blinded VFX; the target loses track of V for its duration.
+- **Cripple Movement (Cobweb Daemon):** the target stops moving.
+- **Contagion (Spider Eye Virus):** poison VFX and damage over time on the target. Whether it spreads depends on V's
+  spread perks.
+- **Synapse Burnout (Wither Skull Daemon):** brain-bolt VFX and heavy damage.
+- **Ping (Compass Ping):** the log shows `ok`, and in CET
+  `StatusEffectSystem.ObjectHasStatusEffect(npc, TweakDBID.new("BaseStatusEffect.Ping"))` is true. Nothing is visible,
+  because the HUD is hidden.
+- **Memory Wipe (Bottle of Forgetting):** a ganger in combat with V stops fighting and returns to idle.
+- **Cyberpsychosis (Creeper Brain):** on a ganger in a group, it attacks its squad, then kills itself.
+- **Device (Redstone Lever):**
+  - vending machine: as in G-4;
+  - camera: as in G-4;
+  - traffic light: as in G-5;
+  - a TV or radio: it glitches or distracts;
+  - a device with no allowed hack (for example a powered-off one): `hackresult ok:false` with reason
+    "not hackable".
+- **Chain Hack:** with the perk, a ganger standing within 8 m of the target gets the same hack (two VFX).
+- **Refusals:**
+  - a companion or a quest NPC in a scene: reason "not hackable";
+  - a dead ganger: reason "target gone".
+
+### One check per buff
+
+- **invisibility:** see G-7. When the potion ends, `SetInvisible(false)` and the camo status effect is gone.
+- **speed:**
+  1. Read `GetStatValue(…, gamedataStatType.MaxSpeed)` before and during Speed II. Expect ×1.4.
+  2. V crosses a measured street visibly faster.
+  3. The value is back to normal when the potion ends or on F9.
+- **slowness:** Slowness I gives `MaxSpeed` ×0.85, and V is slower. Slowness X stays at ×0.3.
+- **jump_boost:** with Jump Boost II, V clears an obstacle about twice the normal jump height. Normal again
+  afterwards.
+- **nausea:** eating a pufferfish gives the drunk wobble
+  (`StatusEffectSystem.ObjectHasStatusEffect(Game.GetPlayer(), TweakDBID.new("BaseStatusEffect.Drunk"))` is true). It
+  is gone when Minecraft removes the effect. Check whether the wobble is visible behind the Minecraft frame.
+- **blindness:** splash blindness gives the blind screen on V (`AIQuickHackStatusEffect.HackBlind` on V). It is gone
+  when the effect ends, even if that is after 8 s.
+- **darkness:** as blindness, near a Warden or with `/effect give @p darkness`.
+- **poison and wither:** the log shows `buffs: effect poison has no Cyberpunk mapping, ignored` once. V gets no
+  effect, and Steve takes only Minecraft's own poison damage.
+
+### Perks, scan and kills
+
+- **Double Jump:** with the perk bought, V double-jumps while Active, and
+  `GetStatValue(…, gamedataStatType.HasDoubleJump)` ≥ 1. After F9 off, V's own value is back.
+- **Scan:**
+  - hack key held on a ganger: `scaninfo ok:true` with its name, faction and threat;
+  - on a vending machine: `device:true`;
+  - on the sky: `ok:false`.
+- **Kills:**
+  - killing a hostile ganger with a sword logs `killed human <id> (hostile)` once;
+  - destroying a car with TNT logs `killed vehicle <id>`;
+  - a kill V makes with Cyberblock Off logs nothing.
