@@ -13,10 +13,12 @@ public class UiClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		UiLink.register();
+		UiHud.register();
 		ClientTickEvents.END_CLIENT_TICK.register(UiClient::tick);
 	}
 
 	private static void tick(final Minecraft minecraft) {
 		UiLink.tick();
+		Waypoints.tick(minecraft);
 	}
 }

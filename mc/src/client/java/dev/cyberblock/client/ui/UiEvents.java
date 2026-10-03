@@ -62,5 +62,6 @@ final class UiEvents {
 
 	/** The UI data was dropped (new host session, Cyberblock off, link gone). */
 	static void reset() {
+		Waypoints.clear(Minecraft.getInstance());
 	}
 }
