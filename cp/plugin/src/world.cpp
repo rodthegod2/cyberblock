@@ -2,8 +2,10 @@
 #include "log.hpp"
 #include "wire.hpp"
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
+#include <vector>
 
 namespace
 {
@@ -480,5 +482,97 @@ namespace cb::world
 							{"hostile", hostile[i] != 0}});
 		}
 		return json{{"t", "npcs"}, {"list", std::move(list)}};
+	}
+
+	json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, bool crouched)
+	{
+		return {{"t", "cam"},
+				{"f", frame},
+				{"p", {position.x, position.y, position.z}},
+				{"r", {look.yaw, look.pitch, 0.0}},
+				{"fov", vfov},
+				{"fp", true},
+				{"pl", {feet.x, feet.y, feet.z}},
+				{"h", bodyYaw},
+				{"cr", crouched}};
+	}
+
+	std::optional<json> make_mobdmg(int32_t id, double frac, uint64_t by, bool hasBy)
+	{
+		if (id < 0 || !std::isfinite(frac))
+			return std::nullopt;
+		return json{{"t", "mobdmg"},
+					{"id", id},
+					{"frac", rounded(std::clamp(frac, 0.0, kMaxFrac), 1e4)},
+					{"by", hasBy ? json(std::to_string(by)) : json(nullptr)}};
+	}
+
+	std::optional<json> make_pcells(std::span<const Vec3> hitsCp)
+	{
+		std::vector<std::array<int, 3>> cells;
+		for (const Vec3 &hit : hitsCp)
+		{
+			const Vec3 mc = cp_to_mc_pos(hit.x, hit.y, hit.z);
+			if (!finite(mc) || !(std::abs(mc.x) < kMaxCoord && std::abs(mc.y) < kMaxCoord && std::abs(mc.z) < kMaxCoord))
+				continue;
+			const std::array<int, 3> cell{int(std::floor(mc.x)), int(std::floor(mc.y)), int(std::floor(mc.z))};
+			if (std::find(cells.begin(), cells.end(), cell) == cells.end())
+				cells.push_back(cell);
+			if (cells.size() == kMaxPcells)
+				break;
+		}
+		if (cells.empty())
+			return std::nullopt;
+		json c = json::array();
+		for (const auto &cell : cells)
+			for (const int v : cell)
+				c.push_back(v);
+		return json{{"t", "pcells"}, {"c", std::move(c)}};
+	}
+
+	json make_unlead(uint64_t target)
+	{
+		return {{"t", "unlead"}, {"target", std::to_string(target)}};
+	}
+
+	std::optional<json> make_scaninfo(int32_t id, bool ok, uint64_t target, std::string_view name, std::string_view faction,
+									  std::string_view threat, double hp, bool device, Vec3 feetCp, double width, double height)
+	{
+		if (id < 0)
+			return std::nullopt;
+		if (!ok)
+		{
+			name = faction = threat = {};
+			target = 0;
+			hp = width = height = 0.0;
+			device = false;
+			feetCp = {};
+		}
+		const bool knownThreat = std::find(std::begin(kThreatLevels), std::end(kThreatLevels), threat) != std::end(kThreatLevels);
+		const Vec3 feet = finite(feetCp) ? cp_to_mc_pos(feetCp.x, feetCp.y, feetCp.z) : Vec3{};
+		const auto finiteOr0 = [](double v) { return std::isfinite(v) ? v : 0.0; };
+		return json{{"t", "scaninfo"},
+					{"id", id},
+					{"ok", ok},
+					{"target", std::to_string(target)},
+					{"name", wire::truncate_utf8(name, kMaxTextBytes)},
+					{"faction", wire::truncate_utf8(faction, kMaxTextBytes)},
+					{"threat", knownThreat ? std::string(threat) : std::string("none")},
+					{"hp", rounded(std::clamp(finiteOr0(hp), 0.0, 1.0), 1e4)},
+					{"device", device},
+					{"p", triple_json(feet)},
+					{"size", json::array({rounded(std::max(finiteOr0(width), 0.0), 1e3), rounded(std::max(finiteOr0(height), 0.0), 1e3)})}};
+	}
+
+	std::optional<json> make_hackresult(int32_t id, bool ok, std::string_view reason)
+	{
+		if (id < 0)
+			return std::nullopt;
+		return json{{"t", "hackresult"}, {"id", id}, {"ok", ok}, {"reason", ok ? std::string() : wire::truncate_utf8(reason, kMaxTextBytes)}};
+	}
+
+	json make_killed(uint64_t target, bool vehicle, bool hostile)
+	{
+		return {{"t", "killed"}, {"target", std::to_string(target)}, {"kind", vehicle ? "vehicle" : "human"}, {"hostile", hostile}};
 	}
 }

@@ -16,6 +16,8 @@ namespace cb
 		/// Set by Cyberblock_SetActive.
 		inline std::atomic<bool> active{false};
 		inline std::atomic<bool> inVehicle{false};
+		/// Set by Cyberblock_SetStance: V is crouched. Sent as `cam.cr` with every camera frame.
+		inline std::atomic<bool> crouched{false};
 		/// F9 went down: set by the window hook, read and cleared by Cyberblock_ConsumeToggle.
 		inline std::atomic<bool> togglePressed{false};
 	}

@@ -93,6 +93,17 @@ namespace cb::wire
 		return text;
 	}
 
+	std::string truncate_utf8(std::string_view text, size_t maxBytes)
+	{
+		if (text.size() <= maxBytes)
+			return std::string(text);
+		// text[maxBytes] is the first byte that is left out: when it continues a character, that character is cut in two
+		size_t keep = maxBytes;
+		while (keep > 0 && (static_cast<unsigned char>(text[keep]) & 0xC0) == 0x80)
+			--keep;
+		return std::string(text.substr(0, keep));
+	}
+
 	double rounded(double v, double scale)
 	{
 		return std::round(v * scale) / scale;

@@ -51,6 +51,9 @@ namespace cb::wire
 		return text;
 	}
 
+	/// `text` cut to at most `maxBytes` bytes without splitting a UTF-8 character.
+	std::string truncate_utf8(std::string_view text, size_t maxBytes);
+
 	/// Wire numbers are rounded so floats do not print as 12.345000267028809.
 	double rounded(double v, double scale);
 	nlohmann::json triple_json(const Vec3 &v);

@@ -170,4 +170,45 @@ namespace cb::world
 	std::optional<nlohmann::json> make_npcs(std::span<const uint64_t> ids, std::span<const Vec3> feetCp,
 											std::span<const double> yawsCp, std::span<const uint8_t> vehicles,
 											std::span<const uint8_t> hostile);
+
+	// ---- layers 3-6 (plan 2026-10-03 section 1.2) ----
+
+	/// The threat levels `scaninfo.threat` knows; anything else is sent as "none".
+	inline constexpr const char *kThreatLevels[] = {"none", "low", "medium", "high", "extreme"};
+	/// Longest `scaninfo.name`, `scaninfo.faction` and `hackresult.reason`, in UTF-8 bytes.
+	inline constexpr size_t kMaxTextBytes = 64;
+	/// Most block cells one `pcells` message holds.
+	inline constexpr size_t kMaxPcells = 64;
+
+	/// {"t":"cam",...}: the camera and V, every Cyberpunk frame while active (Minecraft convention, so `position`, `feet`
+	/// and `look` are already converted). `r` is [yaw, pitch, 0]; `cr` is whether V is crouched. Numbers are not rounded.
+	nlohmann::json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, bool crouched);
+
+	/// {"t":"mobdmg","id","frac","by"}: a Cyberpunk NPC damaged the puppet of mob `id`. `frac` (fraction of the puppet's
+	/// max health) is clamped to 0..4; `by` is the NPC's id as a decimal string, null unless `hasBy`. nullopt when `id`
+	/// is negative or `frac` is not finite.
+	std::optional<nlohmann::json> make_mobdmg(int32_t id, double frac, uint64_t by, bool hasBy);
+
+	/// {"t":"pcells","c":[x,y,z, ...]}: the Minecraft block cells (`floor` per axis, after converting from Cyberpunk space)
+	/// of Night City surface points hit by predicted projectiles. Points with a non-finite or out-of-range coordinate are
+	/// skipped, repeated cells are sent once, and past 64 cells the rest is dropped. nullopt when no cell is left.
+	std::optional<nlohmann::json> make_pcells(std::span<const Vec3> hitsCp);
+
+	/// {"t":"unlead","target":"<id>"}: Cyberpunk gave up the tether on `target`.
+	nlohmann::json make_unlead(uint64_t target);
+
+	/// {"t":"scaninfo",...}: the reply to a `scan`. `name` and `faction` are cut to 64 UTF-8 bytes on a character
+	/// boundary, `threat` is one of kThreatLevels (else "none"), `hp` is clamped to 0..1, `feetCp` (Cyberpunk space) is
+	/// sent in Minecraft space and `width` x `height` as `size`. A non-finite number is sent as 0. `ok` false sends the
+	/// empty reply (empty strings, threat "none", hp 0, no target, no device, zeros). nullopt when `id` is negative.
+	std::optional<nlohmann::json> make_scaninfo(int32_t id, bool ok, uint64_t target, std::string_view name,
+												std::string_view faction, std::string_view threat, double hp, bool device,
+												Vec3 feetCp, double width, double height);
+
+	/// {"t":"hackresult","id","ok","reason"}: the reply to a `hack`; `reason` is cut to 64 UTF-8 bytes and is "" when `ok`.
+	/// nullopt when `id` is negative.
+	std::optional<nlohmann::json> make_hackresult(int32_t id, bool ok, std::string_view reason);
+
+	/// {"t":"killed","target","kind","hostile"}: an NPC or vehicle that V damaged died or was destroyed.
+	nlohmann::json make_killed(uint64_t target, bool vehicle, bool hostile);
 }
