@@ -11,9 +11,11 @@
 // (the native name of VehicleObject, RED4ext.SDK vehicle/BaseObject.hpp). Handlers registered from a non-service
 // object live for the session (CallbackLifetime::Session) and hold the object weakly.
 //
-// Left out: dead or destroyed ones (ScriptedPuppet.IsAlive + NPCPuppet.IsDead, VehicleObject.IsDestroyed), NPCs
-// mounted in a vehicle (their vehicle's proxy stands for them, VehicleComponent.IsMountedToVehicle) and Cyberblock's
-// own mob puppets (CyberblockPuppets.IsPuppet).
+// Left out: dead, defeated or destroyed ones (ScriptedPuppet.IsAlive + ScriptedPuppet.IsDefeated, the Defeated and
+// DefeatedWithRecover status effect types; VehicleObject.IsDestroyed), NPCs mounted in a vehicle (their vehicle's
+// proxy stands for them, VehicleComponent.IsMountedToVehicle) and Cyberblock's own mob puppets
+// (CyberblockPuppets.IsPuppet). Every 5 s the log counts what was sent and attached, people and cars apart, and why
+// the rest was left out (beyond 48 m, over the cap of 48, or the Reason).
 //
 // Yaw: degrees counter-clockwise from +Y about +Z, from Entity.GetWorldForward (0 = facing +Y, 90 = facing -X), the
 // EulerAngles yaw convention the DLL's cp_yaw_to_mc_yaw (180 - yaw) expects. AtanF(a, b) is atan2(a, b) (as used in
@@ -73,8 +75,12 @@ public class CyberblockNpcs {
     // Nearest first: insertion into arrays kept sorted by squared distance, at most maxCount long.
     let picked: array<wref<GameObject>>;
     let pickedDistance2: array<Float>;
-    // Why entities were left out this tick (logged with the 5 s line; in-game test 2026-10-03 sent 0 of 62).
+    // What is attached and why entities were left out this tick, for the 5 s log line (in-game test 2026-10-03 sent
+    // 0 of 62). Reason is computed once per entity within 48 m.
+    let people = 0;
+    let cars = 0;
     let far = 0;
+    let overCap = 0;
     let rejected: array<CName>;
     let i = ArraySize(this.known) - 1;
     while i >= 0 {
@@ -82,21 +88,19 @@ public class CyberblockNpcs {
       if !IsDefined(object) {
         ArrayErase(this.known, i);
       } else {
-        let distance2 = Vector4.DistanceSquared(object.GetWorldPosition(), center);
-        let limit = maxDistance2;
-        if ArraySize(picked) >= maxCount {
-          limit = pickedDistance2[maxCount - 1];
+        if IsDefined(object as VehicleObject) {
+          cars += 1;
+        } else {
+          people += 1;
         }
-        if distance2 >= limit {
+        let distance2 = Vector4.DistanceSquared(object.GetWorldPosition(), center);
+        if distance2 >= maxDistance2 {
           far += 1;
         } else {
           let reason = CyberblockNpcs.Reason(game, object);
           if NotEquals(reason, n"") {
             ArrayPush(rejected, reason);
-          }
-        }
-        if distance2 < limit {
-          if Equals(CyberblockNpcs.Reason(game, object), n"") {
+          } else {
             let at = ArraySize(picked);
             while at > 0 {
               if pickedDistance2[at - 1] <= distance2 {
@@ -109,6 +113,7 @@ public class CyberblockNpcs {
             if ArraySize(picked) > maxCount {
               ArrayResize(picked, maxCount);
               ArrayResize(pickedDistance2, maxCount);
+              overCap += 1;
             }
           }
         }
@@ -116,6 +121,7 @@ public class CyberblockNpcs {
       i -= 1;
     }
 
+    let sentCars = 0;
     for object in picked {
       let id = object.GetEntityID();
       let forward = object.GetWorldForward();
@@ -125,6 +131,7 @@ public class CyberblockNpcs {
       ArrayPush(yaws, Rad2Deg(AtanF(-forward.X, forward.Y)));
       ArrayPush(vehicles, IsDefined(vehicle));
       if IsDefined(vehicle) {
+        sentCars += 1;
         ArrayPush(hostile, IsHostileTowardsPlayer(VehicleComponent.GetDriverMounted(game, id)));
       } else {
         ArrayPush(hostile, IsHostileTowardsPlayer(object));
@@ -137,7 +144,7 @@ public class CyberblockNpcs {
       this.logDelay -= 1;
     } else {
       this.logDelay = 50; // 5 s
-      Cyberblock_Log(s"npcs: \(ArraySize(ids)) sent of \(ArraySize(this.known)) NPCs/vehicles attached; left out: \(far) beyond 48 m, \(CyberblockNpcs.Tally(rejected))");
+      Cyberblock_Log(s"npcs: sent \(ArraySize(ids) - sentCars) people + \(sentCars) cars; attached \(people) people + \(cars) cars; left out: \(far) beyond 48 m, \(overCap) over_cap, \(CyberblockNpcs.Tally(rejected))");
     }
   }
 
@@ -159,8 +166,13 @@ public class CyberblockNpcs {
     if CyberblockPuppets.IsPuppet(game, npc.GetEntityID()) {
       return n"puppet";
     }
-    if !ScriptedPuppet.IsAlive(npc) || npc.IsDead() {
+    // ScriptedPuppet.IsAlive reads the puppet's own dead flag (IsDeadNoStatPool). Not NPCPuppet.IsDead: it reads the
+    // Health stat pool (HasStatPoolValueReachedMin), which says nothing reliable for an NPC whose pool is not set up.
+    if !ScriptedPuppet.IsAlive(npc) {
       return n"dead";
+    }
+    if ScriptedPuppet.IsDefeated(npc) {
+      return n"defeated";
     }
     return VehicleComponent.IsMountedToVehicle(game, npc) ? n"mounted" : n"";
   }
