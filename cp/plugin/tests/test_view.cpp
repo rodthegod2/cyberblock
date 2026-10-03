@@ -100,3 +100,24 @@ TEST(persp_back_is_kept_until_first_a_hello_or_a_link_drop)
 	cb::world::on_link_dropped();
 	CHECK(!cb::world::third_person_wanted());
 }
+
+// ---- re-test 3 task D6: status.pause ----------------------------------------------------------------------------------
+
+TEST(minecraft_pause_follows_status_pause_and_resets_on_hello_and_drop)
+{
+	cb::world::on_minecraft_message(json{{"t", "hello"}, {"proto", 1}});
+	CHECK(!cb::world::minecraft_pause());
+	cb::world::on_minecraft_message(json{{"t", "status"}, {"screen", true}, {"pause", true}});
+	CHECK(cb::world::minecraft_pause());
+	cb::world::on_minecraft_message(json{{"t", "status"}, {"screen", true}}); // an older build: no pause field
+	CHECK(!cb::world::minecraft_pause());
+	cb::world::on_minecraft_message(json{{"t", "status"}, {"pause", true}});
+	cb::world::on_minecraft_message(json{{"t", "status"}, {"pause", "yes"}}); // not a boolean: not paused
+	CHECK(!cb::world::minecraft_pause());
+	cb::world::on_minecraft_message(json{{"t", "status"}, {"pause", true}});
+	cb::world::on_minecraft_message(json{{"t", "hello"}, {"proto", 1}});
+	CHECK(!cb::world::minecraft_pause());
+	cb::world::on_minecraft_message(json{{"t", "status"}, {"pause", true}});
+	cb::world::on_link_dropped();
+	CHECK(!cb::world::minecraft_pause());
+}

@@ -45,11 +45,18 @@ namespace cb::keys
 		return vk == kE || vk == kQ || (vk >= kDigit1 && vk <= kDigit4);
 	}
 
+	bool is_phone_key(uint32_t vk)
+	{
+		return vk == kT;
+	}
+
 	bool is_swallowed(uint32_t vk, const Binds &binds, Context context)
 	{
 		if (vk == kF9 || context.screenOpen)
 			return true;
 		if (context.choices && is_choice_key(vk))
+			return false;
+		if (context.phone && is_phone_key(vk))
 			return false;
 		if (in_fixed_swallow_set(vk))
 			return true;

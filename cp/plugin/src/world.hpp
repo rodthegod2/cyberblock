@@ -205,6 +205,10 @@ namespace cb::world
 	/// The last `persp` asked for the third-person view (on_minecraft_message keeps it; false before any, after every
 	/// `hello` and after a link drop). Any thread.
 	bool third_person_wanted();
+	/// The last `status.pause` (Minecraft's Night City pause screen is open: Cyberpunk must be paused). False before any
+	/// status, when a status has no boolean `pause` (older Minecraft builds), after every `hello` and after a link drop.
+	/// Any thread. The UI bridge turns it into pause/resume actions (plan section 1.1: level-triggered).
+	bool minecraft_pause();
 	/// A linked Minecraft went away (main.cpp's drop handler, link thread): forgets `persp` and the pause.
 	void on_link_dropped();
 

@@ -119,7 +119,9 @@ namespace
 
 	cb::keys::Context context()
 	{
-		return {.screenOpen = screen_open(), .choices = choices_shown()};
+		return {.screenOpen = screen_open(),
+				.choices = choices_shown(),
+				.phone = cb::natives::phonePrompt && !cb::link().screen_open()};
 	}
 
 	/// Shift and Ctrl as the key state of the message being handled has them, in SDL bits.
@@ -325,7 +327,9 @@ namespace
 			(down ? g_messageGate.down(code, swallowable) : g_messageGate.up(code)) == cb::keys::KeyGate::Verdict::Swallow;
 
 		// a Cyberpunk choice list keeps E, Q and 1-4 (a release still goes out for a press Minecraft got before it showed)
-		const bool forward = forwarding() && !(now.choices && cb::keys::is_choice_key(code));
+		// and a ringing call or an actionable notification keeps T (answer, reply)
+		const bool forward = forwarding() && !(now.choices && cb::keys::is_choice_key(code)) &&
+							 !(now.phone && cb::keys::is_phone_key(code));
 		if (const char *name = key_name(vk))
 		{
 			const std::string id = std::string("key:") + name;

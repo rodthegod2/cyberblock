@@ -41,6 +41,9 @@ uniform float cb_age_ms < hidden = true; > = 0.0;
 // screen height; z: roll, radians), and the nether portal's warp (0..1) while passing through.
 uniform float3 cb_shake < hidden = true; > = float3(0.0, 0.0, 0.0);
 uniform float cb_portal_warp < hidden = true; > = 0.0;
+// A Cyberpunk menu is open and passed through (no Minecraft screen replaced it): Minecraft's world is not drawn over it;
+// the overlay (Minecraft's frame around the menu) still is.
+uniform bool cb_menu < hidden = true; > = false;
 
 uniform float DepthBias < ui_type = "drag"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.005; ui_label = "Depth bias (m)";
 	ui_tooltip = "How far behind Night City's surface Minecraft may still show (blocks resting on the ground)."; > = 0.04;
@@ -187,7 +190,7 @@ void PS_Composite(float4 pos : SV_Position, float2 uv : TEXCOORD, out float4 out
 	const float3 host = tex2D(ReShade::BackBuffer, uv).rgb;
 	outInfo = 0.0;
 	outColor = float4(host, 1.0);
-	if (!cb_active)
+	if (!cb_active || cb_menu)
 		return;
 
 	// Where this Night City pixel's view ray lands in Minecraft's frame (screen-locked unless re-projected).

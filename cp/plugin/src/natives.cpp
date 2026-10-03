@@ -4,8 +4,10 @@
 #include "drive.hpp"
 #include "link.hpp"
 #include "log.hpp"
+#include "native_reg.hpp"
 #include "probes.hpp"
 #include "snapshots.hpp"
+#include "ui.hpp"
 #include "view.hpp"
 #include "world.hpp"
 #include <RED4ext/RED4ext.hpp>
@@ -192,6 +194,7 @@ namespace
 			cb::natives::flightAllowed = false; // the script allows flights again on its next tick while Active
 			clear_seat();
 			cb::view::set_allowed(false); // the view comes off on the next frame
+			cb::natives::phonePrompt = false;
 		}
 		cb::world::events().set_active(active);
 		compositor::set_active(active);
@@ -860,6 +863,17 @@ namespace
 			*out = to_vector4(cb::view::eye(), 1.0f);
 	}
 
+	// Cyberblock_SetPhonePrompt(open: Bool) -> Void (declared in U's UiNatives.reds): a call rings or an actionable
+	// notification shows, so T goes to Cyberpunk (answer, reply) instead of opening Minecraft's chat.
+	void SetPhonePrompt(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		bool open = false;
+		RED4ext::GetParameter(frame, &open);
+		++frame->code;
+		if (cb::natives::phonePrompt.exchange(open) != open)
+			cb::log::info("phone: T goes to %s", open ? "Cyberpunk (a call or a message waits)" : "Minecraft again");
+	}
+
 	// Cyberblock_Log(msg: String) -> Void
 	void Log(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
@@ -869,24 +883,6 @@ namespace
 		cb::log::info("script: %s", message.c_str());
 	}
 
-	using Param = std::pair<const char *, const char *>; // RTTI type, name
-
-	template<typename T>
-	void add(RED4ext::CRTTISystem *rtti, const char *name, RED4ext::ScriptingFunction_t<T> fn, const char *returnType,
-			 std::initializer_list<Param> params = {})
-	{
-		RED4ext::CGlobalFunction *func = RED4ext::CGlobalFunction::Create(name, name, fn);
-		func->flags = {};
-		func->flags.isNative = true;
-		func->flags.isStatic = true;
-		// an unknown RTTI type name leaves the function without that parameter: say so, the script call would misbehave
-		for (const auto &[type, paramName] : params)
-			if (!func->AddParam(type, paramName))
-				cb::log::error("native %s: unknown parameter type %s (%s)", name, type, paramName);
-		if (returnType != nullptr && !func->SetReturnType(returnType))
-			cb::log::error("native %s: unknown return type %s", name, returnType);
-		rtti->RegisterFunction(func);
-	}
 }
 
 namespace cb::natives
@@ -898,6 +894,7 @@ namespace cb::natives
 	void on_link_dropped()
 	{
 		clear_seat();
+		phonePrompt = false;
 	}
 
 	void post_register_types()
@@ -965,7 +962,9 @@ namespace cb::natives
 		add(rtti, "Cyberblock_SetSeat", &SetSeat, nullptr, {{"Bool", "seated"}, {"Bool", "tpp"}, {"Vector4", "hipsLocal"}});
 		add(rtti, "Cyberblock_SetViewAllowed", &SetViewAllowed, nullptr, {{"Bool", "allowed"}});
 		add(rtti, "Cyberblock_ViewEye", &ViewEye, "Vector4");
+		add(rtti, "Cyberblock_SetPhonePrompt", &SetPhonePrompt, nullptr, {{"Bool", "open"}});
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});
 		log::info("redscript natives registered");
+		ui::register_natives(rtti); // the UI bridge's natives (ui_game.cpp, re-test 3 plan section 1.3)
 	}
 }

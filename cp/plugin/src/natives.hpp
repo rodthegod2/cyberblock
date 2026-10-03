@@ -48,7 +48,12 @@ namespace cb
 		inline std::atomic<bool> seatTpp{false};
 		inline std::atomic<float> hipsX{0.0f}, hipsY{0.0f}, hipsZ{0.0f};
 
-		/// The link to Minecraft dropped (main.cpp's drop handler, link thread): forgets the seat.
+		/// Re-test 3 (plan section 1.2, task D6): set by Cyberblock_SetPhonePrompt: a call rings or an actionable
+		/// notification shows, so T is Cyberpunk's (keys::Context::phone) while no Minecraft screen is open. Cleared by
+		/// Cyberblock_SetActive(false) and a link drop.
+		inline std::atomic<bool> phonePrompt{false};
+
+		/// The link to Minecraft dropped (main.cpp's drop handler, link thread): forgets the seat and the phone prompt.
 		void on_link_dropped();
 	}
 }

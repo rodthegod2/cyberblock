@@ -68,13 +68,19 @@ namespace cb::keys
 		/// A Cyberpunk dialogue or choice list offers two or more choices (Cyberblock_SetChoices) and no Minecraft screen
 		/// covers it: E, Q, 1-4 and the wheel pick them, so they stay Cyberpunk's.
 		bool choices = false;
+		/// A Cyberpunk call rings or an actionable notification shows (Cyberblock_SetPhonePrompt) and no Minecraft screen
+		/// covers it: T answers or replies in Cyberpunk instead of opening Minecraft's chat (re-test 3 task D6).
+		bool phone = false;
 	};
+
+	/// T while Context::phone: Cyberpunk's (answer / reject a call, reply to a message).
+	bool is_phone_key(uint32_t vk);
 
 	/// E, Q and 1-4: the keys a Cyberpunk choice list needs while Context::choices.
 	bool is_choice_key(uint32_t vk);
 
 	/// Keys Cyberpunk never sees while forwarding: E, Q, T, X, 1-9, "/", F5 and the six bound keys (but not E, Q and 1-4
-	/// while `context.choices`), every key while `context.screenOpen`, and F9 (Cyberblock's toggle, which input.cpp keeps
+	/// while `context.choices`, nor T while `context.phone`), every key while `context.screenOpen`, and F9 (Cyberblock's toggle, which input.cpp keeps
 	/// from Cyberpunk in every state, so its QuickLoad never fires). Esc is decided by input.cpp.
 	bool is_swallowed(uint32_t vk, const Binds &binds, Context context = {});
 

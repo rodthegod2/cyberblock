@@ -40,6 +40,7 @@ namespace
 	std::atomic<bool> g_cameraLocked{false};
 	std::atomic<float> g_lookLight{-1.0f}, g_lookBias{-1.0f}, g_lookSlope{-1.0f};
 	std::atomic<float> g_shakeX{0.0f}, g_shakeY{0.0f}, g_shakeRoll{0.0f}, g_portalWarp{0.0f};
+	std::atomic<bool> g_menu{false}; // re-test 3: a Cyberpunk menu is passed through (cb_menu)
 	float g_savedLight = -1.0f, g_savedBias = -1.0f, g_savedSlope = -1.0f;
 
 	struct Pose
@@ -473,6 +474,8 @@ namespace
 			runtime->set_uniform_value_float(v, g_shakeX.load(), g_shakeY.load(), g_shakeRoll.load());
 		if (const effect_uniform_variable v = uniform("cb_portal_warp"); v.handle != 0)
 			runtime->set_uniform_value_float(v, g_portalWarp.load());
+		if (const effect_uniform_variable v = uniform("cb_menu"); v.handle != 0)
+			runtime->set_uniform_value_bool(v, g_menu.load() && !test);
 
 		// Re-projection (done by the effect) from Minecraft's pose to Cyberpunk's latest, extrapolated by the effect's
 		// PosePrediction frames. Without a host pose, a locked camera or test frames, the host pose is Minecraft's own:
@@ -569,6 +572,12 @@ namespace compositor
 		g_shakeY = shake_y;
 		g_shakeRoll = shake_roll;
 		g_portalWarp = portal_warp;
+	}
+
+	void set_menu_mode(bool menu)
+	{
+		if (g_menu.exchange(menu) != menu)
+			cb::log::info("compositor: menu pass-through %s", menu ? "on" : "off");
 	}
 
 	void set_look(float light_match, float depth_bias, float slope_bias)

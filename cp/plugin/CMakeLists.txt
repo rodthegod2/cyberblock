@@ -26,6 +26,10 @@ add_executable(cb_tests tests/test_main.cpp tests/test_cbmath.cpp tests/test_pro
 	src/world.cpp src/ws.cpp)
 target_include_directories(cb_tests PRIVATE src)
 target_link_libraries(cb_tests PRIVATE nlohmann_json::nlohmann_json ws2_32)
+# The UI bridge's pure builders (package U, plan 2026-10-03-retest3-polish section 1.3); ui.cpp includes no RED4ext.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui.cpp AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui.cpp)
+	target_sources(cb_tests PRIVATE src/ui.cpp tests/test_ui.cpp)
+endif()
 target_compile_definitions(cb_tests PRIVATE CB_VECTORS="${ROOT}/shared/vectors.json")
 add_test(NAME cb_tests COMMAND cb_tests)
 

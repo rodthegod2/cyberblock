@@ -1,7 +1,7 @@
 // Cyberblock.dll: a RED4ext plugin (loaded from red4ext\plugins\Cyberblock\) that also registers itself as a ReShade
 // add-on (compositor.h). It links to the Minecraft mod (link.hpp), gives redscript its natives (natives.hpp),
-// moves V after Steve's flights every frame (drive.hpp), publishes Cyberpunk's camera every frame (camera.hpp) and
-// forwards input from Cyberpunk's window (input.hpp).
+// moves V after Steve's flights every frame (drive.hpp), applies the third-person view (view.hpp), publishes Cyberpunk's
+// camera every frame (camera.hpp), forwards input from Cyberpunk's window (input.hpp) and pumps the UI bridge (ui.hpp).
 #include <RED4ext/RED4ext.hpp>
 
 #include "camera.hpp"
@@ -12,6 +12,7 @@
 #include "log.hpp"
 #include "natives.hpp"
 #include "snapshots.hpp"
+#include "ui.hpp"
 #include "view.hpp"
 #include "world.hpp"
 
@@ -50,6 +51,9 @@ namespace
 		cb::view::tick();                                     // before the camera: cam.fp says whether the view applied
 		cb::camera::publish(dx);
 		cb::input::tick();
+		cb::ui::pump(); // the UI bridge (ui_game.cpp) throttles itself to 30 Hz and runs while paused too
+		// a Cyberpunk menu passed through (no Minecraft screen replaced it): Minecraft's world is not drawn over it
+		compositor::set_menu_mode(cb::natives::active && cb::natives::menuOpen && !cb::link().screen_open());
 		return false;
 	}
 }
@@ -92,12 +96,14 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 				cb::world::on_minecraft_message(message);
 				cb::snap::on_minecraft_message(message);
 				cb::input::on_minecraft_message(message);
+				cb::ui::on_minecraft_message(message);
 			},
 			[]
 			{
 				cb::snap::on_link_dropped();
 				cb::world::on_link_dropped();
 				cb::natives::on_link_dropped();
+				cb::ui::on_link_dropped();
 			});
 		break;
 	}

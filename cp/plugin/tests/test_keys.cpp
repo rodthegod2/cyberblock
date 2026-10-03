@@ -533,3 +533,20 @@ TEST(turn_rate_is_clamped_to_0_002_and_1)
 	}
 	CHECK(approx(slow.degrees_per_count(), 0.002) && approx(fast.degrees_per_count(), 1.0));
 }
+
+// ---- re-test 3 (plan 2026-10-03-retest3-polish task D6): T for a ringing call -------------------------------------------
+
+TEST(a_ringing_call_keeps_t_for_cyberpunk)
+{
+	const Context phone{.phone = true};
+	CHECK(is_phone_key('T') && !is_phone_key('E') && !is_phone_key('Y'));
+	CHECK(is_swallowed('T', Binds{}) && !is_swallowed('T', Binds{}, phone));
+	// everything else stays as it was: E, Q, the digits, the binds
+	for (uint32_t vk : {uint32_t('E'), uint32_t('Q'), uint32_t('1'), kG, kL, kO, kF9})
+		CHECK(is_swallowed(vk, Binds{}, phone));
+	// with choices too, both keep their keys
+	const Context both{.choices = true, .phone = true};
+	CHECK(!is_swallowed('T', Binds{}, both) && !is_swallowed('E', Binds{}, both) && is_swallowed('X', Binds{}, both));
+	// a Minecraft screen (chat) covers it: every key is Minecraft's again
+	CHECK(is_swallowed('T', Binds{}, Context{.screenOpen = true, .phone = true}));
+}

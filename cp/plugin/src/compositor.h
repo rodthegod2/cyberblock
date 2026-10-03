@@ -28,4 +28,8 @@ namespace compositor
 	void set_screen_fx(float shake_x, float shake_y, float shake_roll, float portal_warp);
 	/// Cyberpunk's backbuffer size as ReShade sees it (0 until the first frame).
 	void backbuffer_size(int &width, int &height);
+	/// A Cyberpunk menu is open and passed through (no Minecraft screen replaced it; re-test 3 plan section 1.10): the
+	/// effect's `cb_menu` makes the Composite pass skip Minecraft's world, and the Final pass still adds the overlay (now
+	/// only Minecraft's frame around the menu). Every frame from the game thread; a change is logged.
+	void set_menu_mode(bool menu);
 }

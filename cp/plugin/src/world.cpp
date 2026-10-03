@@ -52,6 +52,14 @@ namespace
 	std::atomic<int> g_levelK{0};
 	/// Re-test 3: the last `persp` was "back" (link thread writes, the game's threads read).
 	std::atomic<bool> g_thirdPerson{false};
+	/// Re-test 3: the last `status.pause`.
+	std::atomic<bool> g_pause{false};
+
+	void set_pause(bool pause)
+	{
+		if (g_pause.exchange(pause) != pause)
+			cb::log::info("pause: Minecraft's Night City pause screen %s", pause ? "opened" : "closed");
+	}
 
 	void set_level_k(int k)
 	{
@@ -524,6 +532,13 @@ namespace cb::world
 			events().clear();
 			set_level_k(0);
 			g_thirdPerson = false; // the new session sends `persp` again after its hello
+			set_pause(false);
+			return;
+		}
+		if (type != message.end() && *type == "status")
+		{
+			const auto pause = message.find("pause");
+			set_pause(pause != message.end() && pause->is_boolean() && pause->get<bool>());
 			return;
 		}
 		if (type != message.end() && *type == "persp")
@@ -575,9 +590,15 @@ namespace cb::world
 		return g_thirdPerson;
 	}
 
+	bool minecraft_pause()
+	{
+		return g_pause;
+	}
+
 	void on_link_dropped()
 	{
 		g_thirdPerson = false;
+		set_pause(false);
 	}
 
 	void note_invalid(size_t count, const std::string &reason)
