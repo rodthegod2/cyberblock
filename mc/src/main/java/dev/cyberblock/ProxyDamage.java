@@ -7,7 +7,7 @@ import net.minecraft.world.phys.Vec3;
  * counts after vanilla's damage cooldown, and the impulse in m/s. Plain numbers in and out, so it can be tested.
  */
 public final class ProxyDamage {
-	/** Who is behind the damage: a player, a mob, or nobody (lava, suffocation, falling, TNT nobody lit). */
+	/** Who is behind the damage: a player, a mob, or nobody (lava, suffocation, falling). */
 	public enum Actor {
 		PLAYER, MOB, OTHER
 	}
@@ -29,14 +29,14 @@ public final class ProxyDamage {
 	private ProxyDamage() {
 	}
 
-	/** The hit kind (melee, arrow, trident, mob, explosion, fire), or null when the damage is not Minecraft's to deal: only players and mobs hurt proxies. */
+	/**
+	 * The hit kind (melee, arrow, trident, mob, fire), or null when the damage is not Minecraft's to deal: only players and mobs hurt
+	 * proxies, and never an explosion. The host turns every explosion into a real Cyberpunk one ({"t":"explosion"}), which hurts the NPC
+	 * itself: a hit for it as well would apply the blast twice.
+	 */
 	public static String kind(final boolean explosion, final boolean fire, final Medium medium, final Actor actor) {
-		if (actor == Actor.OTHER) {
+		if (explosion || actor == Actor.OTHER) {
 			return null;
-		}
-
-		if (explosion) {
-			return "explosion";
 		}
 
 		if (fire) {
@@ -48,6 +48,19 @@ public final class ProxyDamage {
 			case ARROW -> "arrow";
 			default -> actor == Actor.PLAYER ? "melee" : "mob";
 		};
+	}
+
+	/** A fire must be longer than the one the host was told of by this much (ticks) to be reported again while that one burns. */
+	static final int REIGNITE_MARGIN = 20;
+
+	/**
+	 * Whether a fire of remainingTicks is for the host to hear: when the earlier ignition has burnt out (cooldownTicks left of the
+	 * reportedTicks it was told), or when this one is longer than that by more than a second (lava after flint and steel). Vanilla sets
+	 * the same fire again every tick an entity stands in lava or a flame: measured against the length reported (not what is left of it)
+	 * those are never new, and one that goes on is reported once more when the host's burn has run out.
+	 */
+	public static boolean igniteDue(final int cooldownTicks, final int reportedTicks, final int remainingTicks) {
+		return cooldownTicks <= 0 || remainingTicks > reportedTicks + REIGNITE_MARGIN;
 	}
 
 	/**
@@ -71,16 +84,6 @@ public final class ProxyDamage {
 	/** An arrow's or trident's velocity (blocks per tick) times its share, in m/s. */
 	public static Vec3 projectile(final Vec3 velocity) {
 		return capped(velocity.scale(TICKS_PER_SECOND * PROJECTILE_SHARE));
-	}
-
-	/** Away from the blast centre, 2 m/s per point of damage. */
-	public static Vec3 blast(final Vec3 away, final double damage) {
-		double length = away.length();
-		if (!(length > 1.0E-6) || !Double.isFinite(damage)) {
-			return Vec3.ZERO;
-		}
-
-		return capped(away.scale(2.0 * Math.max(0.0, damage) / length));
 	}
 
 	/** The headhunter perk's multiplier, and how close to a pedestrian's top (m) the arrow must be. */

@@ -58,6 +58,21 @@ public final class MobRules {
 		return !groundBelow || dx * dx + dz * dz > HOLD_RANGE * HOLD_RANGE;
 	}
 
+	/** How much a mob with this base follow range needs on top of it to hunt proxies from RANGE away: 0 when it sees that far already. */
+	public static double followRangeBoost(final double baseRange) {
+		return baseRange < RANGE ? RANGE - baseRange : 0.0;
+	}
+
+	/** A proxy this far (horizontally) from Steve is on probed ground: a mob may hunt it, one that left it would be held on the way. */
+	public static boolean proxyInReach(final double dx, final double dz) {
+		return !held(dx, dz, true);
+	}
+
+	/** Which of two pedestrians a mob hunts: a hostile one before a peaceful one, then the nearer. True when the first is the better target. */
+	public static boolean preferred(final boolean hostileA, final double distanceSqA, final boolean hostileB, final double distanceSqB) {
+		return hostileA != hostileB ? hostileA : distanceSqA < distanceSqB;
+	}
+
 	/** The wire kind for a mob type path: the path when it fits [a-z0-9_]{1,32}, else "mob". */
 	public static String kind(final String typePath) {
 		return KIND.matcher(typePath).matches() ? typePath : "mob";

@@ -23,11 +23,47 @@ class ProxyDamageTest {
 		assertEquals("arrow", ProxyDamage.kind(false, false, Medium.ARROW, Actor.PLAYER));
 		assertEquals("arrow", ProxyDamage.kind(false, false, Medium.ARROW, Actor.MOB));
 		assertEquals("trident", ProxyDamage.kind(false, false, Medium.TRIDENT, Actor.PLAYER));
-		assertEquals("explosion", ProxyDamage.kind(true, false, Medium.BODY, Actor.PLAYER));
-		assertEquals("explosion", ProxyDamage.kind(true, false, Medium.PROJECTILE, Actor.MOB));
 		assertEquals("fire", ProxyDamage.kind(false, true, Medium.PROJECTILE, Actor.MOB), "a ghast fireball");
 		assertEquals("melee", ProxyDamage.kind(false, false, Medium.PROJECTILE, Actor.PLAYER));
 		assertEquals("mob", ProxyDamage.kind(false, false, Medium.PROJECTILE, Actor.MOB));
+	}
+
+	/** The host's {"t":"explosion"} is the only source of a blast's damage: a hit for Minecraft's copy of it would count it twice. */
+	@Test
+	void explosionsAreNeverAHitWhoeverCausedThem() {
+		for (Actor actor : Actor.values()) {
+			for (Medium medium : Medium.values()) {
+				assertNull(ProxyDamage.kind(true, false, medium, actor), actor + " " + medium);
+				assertNull(ProxyDamage.kind(true, true, medium, actor), actor + " " + medium + " (a fiery blast)");
+			}
+		}
+	}
+
+	@Test
+	void anIgnitionIsReportedOnceUntilItHasBurntOut() {
+		assertTrue(ProxyDamage.igniteDue(0, 0, 160), "flint and steel on a dry NPC");
+		assertFalse(ProxyDamage.igniteDue(159, 160, 160), "the same fire set again the next tick");
+		assertFalse(ProxyDamage.igniteDue(100, 160, 160), "flint and steel again while it burns");
+		assertFalse(ProxyDamage.igniteDue(100, 160, 180), "within a second of what the host was told");
+		assertFalse(ProxyDamage.igniteDue(100, 300, 160), "a shorter fire while a longer one burns");
+	}
+
+	/** Lava (and a flame block) sets the same fire again every tick: that must not be reported again and again as the report's burn runs down. */
+	@Test
+	void standingInLavaIsReportedOnceUntilTheBurnRunsOut() {
+		for (int tick = 1; tick < 300; tick++) {
+			assertFalse(ProxyDamage.igniteDue(300 - tick, 300, 300), "tick " + tick + " in lava");
+		}
+
+		assertTrue(ProxyDamage.igniteDue(0, 300, 300), "the host's 15 s are up and the NPC is still in the lava");
+	}
+
+	@Test
+	void aLongerFireIsReportedWhileAShorterOneBurns() {
+		// flint and steel (8 s) and then lava (15 s): the host must hear of the 15 s, not wait for the 8 s to end
+		assertTrue(ProxyDamage.igniteDue(100, 160, 300));
+		assertTrue(ProxyDamage.igniteDue(100, 160, 181));
+		assertFalse(ProxyDamage.igniteDue(100, 160, 180));
 	}
 
 	@Test
@@ -73,14 +109,5 @@ class ProxyDamageTest {
 	void noImpulseIsBeyondTheCap() {
 		assertEquals(100.0, ProxyDamage.projectile(new Vec3(0.0, 0.0, 50.0)).length(), 1e-9);
 		assertEquals(Vec3.ZERO, ProxyDamage.projectile(new Vec3(Double.NaN, 0.0, 1.0)));
-		assertEquals(100.0, ProxyDamage.blast(new Vec3(1.0, 0.0, 0.0), 1000.0).length(), 1e-9);
-	}
-
-	@Test
-	void blastsPushAwayFromTheCentre() {
-		Vec3 v = ProxyDamage.blast(new Vec3(0.0, 0.0, -3.0), 5.0);
-		assertEquals(-10.0, v.z, 1e-9);
-		assertEquals(Vec3.ZERO, ProxyDamage.blast(Vec3.ZERO, 5.0));
-		assertEquals(Vec3.ZERO, ProxyDamage.blast(new Vec3(1.0, 0.0, 0.0), Double.NaN));
 	}
 }

@@ -49,6 +49,37 @@ class MobRulesTest {
 		assertTrue(MobRules.held(-30.0, 0.0, false));
 	}
 
+	/** Mobs only hunt the NPCs on the probed ring around Steve: one that chased further would be held at its edge, and a target beyond it. */
+	@Test
+	void proxiesAreOnlyHuntedWithinTheProbedRing() {
+		assertTrue(MobRules.proxyInReach(0.0, 0.0));
+		assertTrue(MobRules.proxyInReach(-22.0, 0.0), "the edge is still in");
+		assertFalse(MobRules.proxyInReach(0.0, 22.01));
+		assertFalse(MobRules.proxyInReach(16.0, -16.0), "22.6 diagonally");
+		assertFalse(MobRules.proxyInReach(48.0, 0.0), "in the mob's follow range, but off the ground the host probes");
+	}
+
+	/** The boost goes on as a modifier on the base, so base + boost is exactly the hunting range; a mob that sees further is left alone. */
+	@Test
+	void followRangeIsRaisedToTheHuntingRangeWithoutChangingTheBase() {
+		assertEquals(13.0, MobRules.followRangeBoost(35.0), 1e-9, "a zombie");
+		assertEquals(32.0, MobRules.followRangeBoost(16.0), 1e-9, "a skeleton");
+		assertEquals(MobRules.RANGE, 16.0 + MobRules.followRangeBoost(16.0), 1e-9);
+		assertEquals(0.0, MobRules.followRangeBoost(MobRules.RANGE));
+		assertEquals(0.0, MobRules.followRangeBoost(64.0));
+		assertEquals(0.0, MobRules.followRangeBoost(Double.NaN));
+	}
+
+	@Test
+	void mobsPreferHostilePedestriansThenTheNearest() {
+		assertTrue(MobRules.preferred(true, 900.0, false, 4.0), "a hostile one far off beats a peaceful one beside it");
+		assertFalse(MobRules.preferred(false, 4.0, true, 900.0));
+		assertTrue(MobRules.preferred(false, 4.0, false, 9.0), "peaceful: the nearer");
+		assertFalse(MobRules.preferred(false, 9.0, false, 4.0));
+		assertTrue(MobRules.preferred(true, 4.0, true, 9.0), "both hostile: the nearer");
+		assertFalse(MobRules.preferred(true, 4.0, true, 4.0), "a tie keeps the one found first");
+	}
+
 	@Test
 	void reportsAtMost12NearestFirstWithin48() {
 		List<MobRules.Seen> all = new ArrayList<>();
@@ -102,6 +133,15 @@ class MobRulesTest {
 		assertEquals("mob", hit.get("kind").getAsString());
 		assertFalse(json(Wire.hit("42", 3.0, "melee", 1.0, 0.0, 0.0, -1)).has("mob"));
 		assertEquals(Wire.hit("42", 3.0, "melee", 1.0, 0.0, 0.0), Wire.hit("42", 3.0, "melee", 1.0, 0.0, 0.0, -1));
+	}
+
+	/** A mob's fire (a ghast's fireball) is a "fire" hit, and it names the mob like any other blow: the puppet in Night City is the attacker. */
+	@Test
+	void aMobsFireNamesTheMobToo() {
+		assertEquals("fire", ProxyDamage.kind(false, true, ProxyDamage.Medium.PROJECTILE, ProxyDamage.Actor.MOB));
+		JsonObject hit = json(Wire.hit("42", 6.0, "fire", 0.0, 0.0, 0.0, 17));
+		assertEquals("fire", hit.get("kind").getAsString());
+		assertEquals(17, hit.get("mob").getAsInt());
 	}
 
 	@Test

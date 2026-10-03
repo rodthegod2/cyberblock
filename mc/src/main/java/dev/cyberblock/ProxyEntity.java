@@ -28,7 +28,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * Stands in Minecraft for one Cyberpunk NPC or vehicle: invisible, no gravity, put at the host's position by ProxyManager and
  * never saved. Minecraft weapons and mobs can hit it, but it is never hurt here: a hit becomes a {"t":"hit"} for the host,
- * which applies it to the real NPC. Damage with no player or mob behind it (lava, suffocation, falling) is ignored. A lead on it
+ * which applies it to the real NPC. Damage with no player or mob behind it (lava, suffocation, falling) is ignored, and so is every
+ * explosion (the host's own Cyberpunk explosion hurts the NPC). A lead on it
  * (layer 5) is reported as {"t":"lead"} and the host drags the NPC; a fishing rod reeling it in is {"t":"pull"}.
  */
 public final class ProxyEntity extends LivingEntity implements Leashable {
@@ -41,11 +42,15 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	private @Nullable Entity reportedHolder;
 	/** How long flint and steel or a fire charge set an NPC alight. */
 	private static final float ITEM_IGNITE_SECONDS = 8.0F;
-	/** Cyberpunk's NPC burns for the reported time: the same ignition is not reported again until it has run out. */
+	/** Cyberpunk's NPC burns for the reported time: the same ignition is not reported again until it has run out (a longer one is). */
 	private int igniteCooldown;
+	/** How long the burn the host was last told of is: a fire has to be longer than this to be reported while it burns. */
+	private int igniteReported;
 	private int damageCooldown;
 	private float lastDamage;
 	private long proxyId;
+	/** Hostile to V as far as the host knows (its latest list): the mobs hunt these first. */
+	private boolean hostile;
 
 	public ProxyEntity(final EntityType<? extends ProxyEntity> type, final Level level) {
 		super(type, level);
@@ -60,6 +65,14 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 
 	long proxyId() {
 		return this.proxyId;
+	}
+
+	void setHostile(final boolean hostile) {
+		this.hostile = hostile;
+	}
+
+	boolean isHostile() {
+		return this.hostile;
 	}
 
 	@Override
@@ -111,9 +124,10 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	public void setRemainingFireTicks(final int remainingTicks) {
 		if (remainingTicks <= 0 || !(this.level() instanceof ServerLevel)) {
 			super.setRemainingFireTicks(remainingTicks);
-		} else if (this.igniteCooldown <= 0) {
+		} else if (ProxyDamage.igniteDue(this.igniteCooldown, this.igniteReported, remainingTicks)) {
 			ProxyManager.ignite(this, remainingTicks / 20.0);
 			this.igniteCooldown = remainingTicks;
+			this.igniteReported = remainingTicks;
 		}
 	}
 
@@ -122,7 +136,8 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	public InteractionResult interact(final Player player, final InteractionHand hand, final Vec3 location) {
 		ItemStack held = player.getItemInHand(hand);
 		boolean flint = held.is(Items.FLINT_AND_STEEL);
-		if (!flint && !held.is(Items.FIRE_CHARGE)) {
+		// a vehicle does not burn: the item stays unused (and is not worn or consumed)
+		if (this.getType() == ProxyEntities.VEHICLE || !flint && !held.is(Items.FIRE_CHARGE)) {
 			return super.interact(player, hand, location);
 		}
 
@@ -148,6 +163,7 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 		ProxyDamage.Medium medium = direct instanceof ThrownTrident ? ProxyDamage.Medium.TRIDENT
 			: direct instanceof AbstractArrow ? ProxyDamage.Medium.ARROW
 			: direct instanceof Projectile ? ProxyDamage.Medium.PROJECTILE : ProxyDamage.Medium.BODY;
+		// no kind for an explosion (TNT, creeper, firework...): the host's real Cyberpunk explosion is what hurts the NPC, and this one is consumed
 		String kind = ProxyDamage.kind(source.is(DamageTypeTags.IS_EXPLOSION), source.is(DamageTypeTags.IS_FIRE), medium, actor);
 		if (kind == null || !(damage > 0.0F) || !Float.isFinite(damage)) {
 			return false;
@@ -166,21 +182,16 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 			counted *= ProxyDamage.HEADSHOT;
 		}
 
-		// layer 3: a mob's own blow or projectile names the mob, so its puppet in Night City is the attacker
-		int mob = attacker instanceof Mob && (kind.equals("mob") || kind.equals("arrow") || kind.equals("trident")) ? attacker.getId() : -1;
-		ProxyManager.hit(this, counted, kind, this.impulse(level, source, kind, medium, attacker, direct, counted), mob);
+		// layer 3: whatever a mob deals (blow, arrow, trident, a ghast's fireball) names the mob, so its puppet in Night City is the attacker
+		int mob = attacker instanceof Mob ? attacker.getId() : -1;
+		ProxyManager.hit(this, counted, kind, this.impulse(level, source, kind, medium, attacker, direct), mob);
 		return true;
 	}
 
 	private Vec3 impulse(final ServerLevel level, final DamageSource source, final String kind, final ProxyDamage.Medium medium,
-		final @Nullable Entity attacker, final @Nullable Entity direct, final float counted) {
+		final @Nullable Entity attacker, final @Nullable Entity direct) {
 		if (kind.equals("fire")) {
 			return Vec3.ZERO;
-		}
-
-		if (kind.equals("explosion")) {
-			Vec3 centre = source.getSourcePosition();
-			return centre == null ? Vec3.ZERO : ProxyDamage.blast(this.position().add(0.0, this.getBbHeight() / 2.0, 0.0).subtract(centre), counted);
 		}
 
 		if (medium != ProxyDamage.Medium.BODY) {

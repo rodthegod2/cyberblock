@@ -22,6 +22,8 @@ public final class ExplosionEvents {
 	public static final double FIREWORK_POWER = 1.5;
 	/** The host accepts 0..20; commands and data packs can ask for more. */
 	static final double MAX_POWER = 20.0;
+	/** Cyberpunk metres of push radius per block of a wind burst's Minecraft radius (a wind charge's 1.2 pushes within 2.4 m: more than a hand's reach). */
+	static final double KNOCK_RADIUS_PER_POWER = 2.0;
 	/** The demolitions perk: Steve's explosions are this much bigger. */
 	static final float DEMOLITIONS = 1.5F;
 	/** Creepers Steve lit with flint and steel or a fire charge (server thread only; they are gone after their blast). */
@@ -42,25 +44,28 @@ public final class ExplosionEvents {
 		}
 
 		if (!isBlast(interaction)) {
-			return Wire.knock(x, y, z, power, Tethers.knockStrength(power));
+			return Wire.knock(x, y, z, Math.min(KNOCK_RADIUS_PER_POWER * power, Tethers.MAX_KNOCK_RADIUS), Tethers.knockStrength(power));
 		}
 
 		return Wire.explosion(x, y, z, Math.min(power, MAX_POWER), fire);
 	}
 
-	/** An explosion's radius after the demolitions perk (Steve's own, with the perk: half as big again). */
-	static float radius(final float r, final boolean steves, final boolean demolitions) {
-		return steves && demolitions ? r * DEMOLITIONS : r;
+	/**
+	 * An explosion's radius after the demolitions perk (Steve's own blast, with the perk: half as big again). A wind burst is no blast,
+	 * it only pushes (and its radius is what the host hears): the perk leaves it alone.
+	 */
+	static float radius(final Level.ExplosionInteraction interaction, final float r, final boolean steves, final boolean demolitions) {
+		return isBlast(interaction) && steves && demolitions ? r * DEMOLITIONS : r;
 	}
 
 	/**
 	 * Server thread, from ServerLevel.explode before it runs: the radius it runs with. Steve's explosions are the ones he caused (his
 	 * TNT, a fireball he sent back, anything whose damage names him) and creepers he lit.
 	 */
-	public static float radius(final @Nullable Entity source, final @Nullable DamageSource damageSource, final float r) {
+	public static float radius(final Level.ExplosionInteraction interaction, final @Nullable Entity source, final @Nullable DamageSource damageSource, final float r) {
 		Entity cause = damageSource != null ? damageSource.getEntity() : Explosion.getIndirectSourceEntity(source);
 		boolean steves = cause instanceof ServerPlayer || source != null && litBySteve.contains(source);
-		return radius(r, steves, Bridge.perkRank.applyAsInt("demolitions") > 0);
+		return radius(interaction, r, steves, Bridge.perkRank.applyAsInt("demolitions") > 0);
 	}
 
 	/** Server thread: Steve lit this creeper. */

@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.cyberblock.ProxyDiff.Entry;
 import dev.cyberblock.ProxyDiff.Kind;
+import dev.cyberblock.ProxyDiff.Motion;
 import dev.cyberblock.ProxyDiff.Parsed;
 import dev.cyberblock.ProxyDiff.Plan;
 import java.util.HashMap;
@@ -13,6 +14,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
 class ProxyDiffTest {
@@ -32,7 +34,7 @@ class ProxyDiffTest {
 	}
 
 	private static Entry entry(final long id, final Kind kind) {
-		return new Entry(id, 1, 2, 3, 0, kind);
+		return new Entry(id, 1, 2, 3, 0, kind, false);
 	}
 
 	private static Set<Long> ids(final List<Entry> entries) {
@@ -57,6 +59,27 @@ class ProxyDiffTest {
 		assertEquals(-1L, b.id(), "2^64-1 is a valid unsigned id (it is -1 as a signed long)");
 		assertEquals("18446744073709551615", Long.toUnsignedString(b.id()));
 		assertEquals(Kind.VEHICLE, b.kind());
+	}
+
+	@Test
+	void hostileIsReadFromTheList() {
+		Parsed p = parse("[{\"id\":\"1\",\"p\":[0,0,0],\"yaw\":0,\"kind\":\"human\",\"hostile\":true},"
+			+ "{\"id\":\"2\",\"p\":[0,0,0],\"yaw\":0,\"kind\":\"human\",\"hostile\":false},"
+			+ "{\"id\":\"3\",\"p\":[0,0,0],\"yaw\":0,\"kind\":\"vehicle\",\"hostile\":true}]");
+		assertEquals(0, p.rejected());
+		assertTrue(p.entries().get(0).hostile());
+		assertFalse(p.entries().get(1).hostile());
+		assertTrue(p.entries().get(2).hostile());
+	}
+
+	@Test
+	void hostileIsOptionalAndNeverMakesAnEntryBad() {
+		for (String hostile : new String[] {"", ",\"hostile\":null", ",\"hostile\":\"true\"", ",\"hostile\":1", ",\"hostile\":[true]", ",\"hostile\":{}"}) {
+			Parsed p = parse("[{\"id\":\"1\",\"p\":[0,0,0],\"yaw\":0,\"kind\":\"human\"" + hostile + "}]");
+			assertEquals(0, p.rejected(), hostile);
+			assertEquals(1, p.entries().size(), hostile);
+			assertFalse(p.entries().get(0).hostile(), hostile);
+		}
 	}
 
 	@Test
@@ -176,6 +199,79 @@ class ProxyDiffTest {
 		assertEquals(Set.of(1L, 2L), new HashSet<>(plan.remove()));
 		assertTrue(plan.spawn().isEmpty());
 		assertTrue(plan.move().isEmpty());
+	}
+
+	private static Entry at(final double x, final double y, final double z) {
+		return new Entry(1, x, y, z, 0, Kind.VEHICLE, false);
+	}
+
+	private static final long TENTH = 100_000_000L;
+
+	@Test
+	void aProxyRunsOnAtTheSpeedOfTheLastTwoLists() {
+		Motion first = Motion.first(at(0, 64, 0), 0L);
+		assertFalse(first.moving());
+		assertEquals(new Vec3(0, 64, 0), first.position(TENTH / 2), "no speed known yet: it stays");
+		// 1.5 m in a tenth of a second is 15 m/s
+		Motion second = first.next(at(1.5, 64, 0), TENTH);
+		assertTrue(second.moving());
+		assertEquals(15.0, second.vx(), 1e-9);
+		assertEquals(new Vec3(1.5, 64, 0), second.position(TENTH), "at the list's own position when it arrives");
+		Vec3 half = second.position(TENTH + TENTH / 2);
+		assertEquals(2.25, half.x, 1e-9);
+		assertEquals(64.0, half.y, 1e-9);
+		assertEquals(3.0, second.position(TENTH + TENTH).x, 1e-9, "a whole interval on: where the next list should put it");
+	}
+
+	@Test
+	void speedHasAllThreeAxes() {
+		Motion m = Motion.first(at(0, 64, 0), 0L).next(at(0.3, 63.6, -0.4), TENTH);
+		assertEquals(3.0, m.vx(), 1e-9);
+		assertEquals(-4.0, m.vy(), 1e-9);
+		assertEquals(-4.0, m.vz(), 1e-9);
+		Vec3 half = m.position(TENTH + TENTH / 2);
+		assertEquals(0.3 + 3.0 * 0.05, half.x, 1e-9);
+		assertEquals(63.6 - 4.0 * 0.05, half.y, 1e-9);
+		assertEquals(-0.4 - 4.0 * 0.05, half.z, 1e-9);
+	}
+
+	@Test
+	void aProxyNeverRunsOnMoreThanHalfASecondAhead() {
+		Motion m = Motion.first(at(0, 64, 0), 0L).next(at(2, 64, 0), TENTH); // 20 m/s
+		assertEquals(2.0 + 20.0 * 0.5, m.position(TENTH + 500_000_000L).x, 1e-9);
+		assertEquals(12.0, m.position(TENTH + 5_000_000_000L).x, 1e-9, "the host went quiet: it stays where it was heading");
+	}
+
+	@Test
+	void aTimeBeforeTheListIsNotExtrapolatedBackwards() {
+		Motion m = Motion.first(at(0, 64, 0), 1_000L).next(at(2, 64, 0), 1_000L + TENTH);
+		assertEquals(2.0, m.position(1_000L).x, 1e-9);
+	}
+
+	@Test
+	void aJumpIsATeleportNotDriving() {
+		Motion m = Motion.first(at(0, 64, 0), 0L).next(at(100, 64, 0), TENTH); // 1000 m/s
+		assertFalse(m.moving());
+		assertEquals(100.0, m.position(TENTH + TENTH).x, 1e-9, "it is simply there");
+		assertTrue(Motion.first(at(0, 64, 0), 0L).next(at(4, 64, 0), TENTH).moving(), "40 m/s still drives");
+		assertFalse(Motion.first(at(0, 64, 0), 0L).next(at(4.1, 64, 0), TENTH).moving(), "41 m/s does not");
+	}
+
+	@Test
+	void aStoppedProxyStopsAndListsTooCloseTogetherSayNothingNew() {
+		Motion running = Motion.first(at(0, 64, 0), 0L).next(at(1.5, 64, 0), TENTH);
+		assertFalse(running.next(at(1.5, 64, 0), 2 * TENTH).moving(), "braked to a halt");
+		Motion tooSoon = running.next(at(1.6, 64, 0), TENTH + 1_000_000L); // 1 ms later
+		assertEquals(15.0, tooSoon.vx(), 1e-9, "keeps the speed it had");
+		assertEquals(1.6, tooSoon.x(), 1e-9, "but is where the host put it");
+		assertEquals(TENTH + 1_000_000L, tooSoon.nanos());
+		assertEquals(15.0, running.next(at(1.5, 64, 0), TENTH).vx(), 1e-9, "no time passed at all");
+	}
+
+	@Test
+	void theLogLineCountsPeopleAndCars() {
+		assertEquals("proxies: 7 people, 3 cars (spawned 9, removed 2)", ProxyDiff.summary(7, 3, 9, 2));
+		assertEquals("proxies: 0 people, 0 cars (spawned 0, removed 4)", ProxyDiff.summary(0, 0, 0, 4));
 	}
 
 	@Test

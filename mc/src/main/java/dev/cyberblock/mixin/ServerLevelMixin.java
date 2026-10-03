@@ -18,7 +18,8 @@ import org.spongepowered.asm.mixin.Mixin;
 
 /**
  * Every explosion of the server world (TNT, creepers, beds, anchors, ghast fireballs, wind charges, commands) funnels through explode:
- * the radius gets the demolitions perk first, then the host hears of it with the radius it really has.
+ * the radius gets the demolitions perk first (blasts only: a wind burst keeps its size), then the host hears of it with the radius it
+ * really has.
  */
 @Mixin(ServerLevel.class)
 abstract class ServerLevelMixin {
@@ -27,7 +28,7 @@ abstract class ServerLevelMixin {
 		final double x, final double y, final double z, final float r, final boolean fire, final Level.ExplosionInteraction interactionType,
 		final ParticleOptions smallExplosionParticles, final ParticleOptions largeExplosionParticles, final WeightedList<ExplosionParticleInfo> blockParticles,
 		final Holder<SoundEvent> explosionSound, final Operation<Void> original) {
-		float radius = ExplosionEvents.radius(source, damageSource, r);
+		float radius = ExplosionEvents.radius(interactionType, source, damageSource, r);
 		ExplosionEvents.report((ServerLevel) (Object) this, interactionType, x, y, z, radius, fire);
 		original.call(source, damageSource, damageCalculator, x, y, z, radius, fire, interactionType, smallExplosionParticles, largeExplosionParticles,
 			blockParticles, explosionSound);
