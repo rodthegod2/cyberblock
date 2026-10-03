@@ -9,3 +9,4 @@ __pycache__/
 *.log
 /.claude/settings.local.json
 /net/
+/mc/logs/
