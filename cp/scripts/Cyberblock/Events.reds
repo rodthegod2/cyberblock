@@ -23,7 +23,8 @@
 //     answer to every request);
 //   - everything else refers to a moment that has passed and is dropped (counted in the log).
 //
-// Hits, leads and pulls are logged with target and amount, at most one line per kind per second (Note).
+// Hits, leads and pulls are logged with target and amount, and successful scans with Scan's note (class, id, how it
+// was found), at most one line per kind per second (Note).
 //
 // 2.31 APIs: none beyond the natives (Natives.reds), redscript array intrinsics and the simulation clock
 // (CyberblockEffectsService.Now, TimeSystem.GetSimTime).
@@ -99,7 +100,10 @@ public class CyberblockEvents {
     } else if Equals(kind, n"hack") {
       CyberblockHacks.Hack(game, Cyberblock_EventId(), Cyberblock_EventTarget(), Cyberblock_EventName(), Cyberblock_EventFlag());
     } else if Equals(kind, n"scan") {
-      CyberblockScan.Scan(game, Cyberblock_EventId(), Cyberblock_EventTarget());
+      let note = CyberblockScan.Scan(game, Cyberblock_EventId(), Cyberblock_EventTarget());
+      if StrLen(note) > 0 {
+        this.Note(game, kind, note); // a failure was logged by Scan itself
+      }
     } else if Equals(kind, n"perkfx") {
       CyberblockPerks.Fx(game, Cyberblock_EventName(), Cyberblock_EventAmount());
     } else {

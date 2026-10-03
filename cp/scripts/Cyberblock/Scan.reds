@@ -1,6 +1,8 @@
 // Minecraft's hack key scan (plan 2026-10-03 sections 1.2 scaninfo and 1.4, task S3.2): what Night City has at the
 // requested id (0: whatever V looks at). Every request is answered once with Cyberblock_ScanResult; ok false with empty
-// strings when nothing scannable is there.
+// strings when nothing scannable is there. Both outcomes reach the log (plan 2026-10-03-retest2 S2): a failure here as
+// "scan N: <why> at <id>", a success through the note Scan returns, "scan N: ok <class> <id> (<how>)", whose id is
+// CyberblockIds.Hash's (Ids.reds), the one Minecraft locks for its hacks.
 //
 // 2.31 sources (decompiled 2.31 scripts; compile-checked):
 //   Look-at: TargetingSystem.GetLookAtObject(V, withLOS true, ignoreTransparent true), the call PlayerPuppet
@@ -38,18 +40,20 @@
 //     body never counts. The look-at path already asks GetLookAtObject for line of sight.
 
 public abstract class CyberblockScan {
-  public static func Scan(game: GameInstance, id: Int32, target: Uint64) -> Void {
+  // Answers the scan request. Returns the success note "scan N: ok <class> <id> (requested|look-at|near crosshair)",
+  // which the caller logs (Events.reds Note, rate-limited), or "" when the request failed: that is logged here.
+  public static func Scan(game: GameInstance, id: Int32, target: Uint64) -> String {
     let player = GetPlayer(game);
     let why = "no player";
     if IsDefined(player) {
       if target == 0ul {
         let looked = GameInstance.GetTargetingSystem(game).GetLookAtObject(player, true, true);
         if CyberblockScan.Try(game, id, player, looked) {
-          return;
+          return CyberblockScan.Ok(id, looked, "look-at");
         }
         let near = CyberblockScan.NearCrosshair(game, player);
         if CyberblockScan.Try(game, id, player, near) {
-          return;
+          return CyberblockScan.Ok(id, near, "near crosshair");
         }
         why = CyberblockScan.Refused(player, looked, near);
       } else {
@@ -61,7 +65,7 @@ public abstract class CyberblockScan {
             why = "behind Night City";
           } else {
             if CyberblockScan.Try(game, id, player, object) {
-              return;
+              return CyberblockScan.Ok(id, object, "requested");
             }
             why = CyberblockScan.Refused(player, object, null);
           }
@@ -70,11 +74,17 @@ public abstract class CyberblockScan {
     }
     Cyberblock_ScanResult(id, false, target, "", "", n"none", 0.0, false, new Vector4(0.0, 0.0, 0.0, 1.0), new Vector4(0.0, 0.0, 0.0, 0.0));
     Cyberblock_Log(s"scan \(id): \(why) at \(target)");
+    return "";
   }
 
   // Answers the scan with object when it is something Minecraft can show (never V herself).
   private static func Try(game: GameInstance, id: Int32, player: ref<PlayerPuppet>, object: ref<GameObject>) -> Bool {
     return IsDefined(object) && object != player && CyberblockScan.Answer(game, id, object);
+  }
+
+  // The success note: which object was sent, with the id Minecraft will lock for its hacks.
+  private static func Ok(id: Int32, object: ref<GameObject>, how: String) -> String {
+    return s"scan \(id): ok \(NameToString(object.GetClassName())) \(CyberblockIds.Hash(object)) (\(how))";
   }
 
   // The log's reason for a scan that found nothing to show.
