@@ -19,6 +19,17 @@ public final class CyberWire {
 		return m.toString();
 	}
 
+	/** {"t":"hack","id":n,"target":"<id>","hack":"short_circuit","chain":bool}. */
+	public static String hack(final int id, final long target, final Hack hack, final boolean chain) {
+		JsonObject m = new JsonObject();
+		m.addProperty("t", "hack");
+		m.addProperty("id", id);
+		m.addProperty("target", Long.toUnsignedString(target));
+		m.addProperty("hack", hack.wire());
+		m.addProperty("chain", chain);
+		return m.toString();
+	}
+
 	/** {"t":"scan","id":n,"target":"<id>"|null}: null asks Cyberpunk for whatever V looks at. */
 	public static String scan(final int id, final long target) {
 		JsonObject m = new JsonObject();

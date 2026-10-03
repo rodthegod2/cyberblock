@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.WorldBridge;
+import dev.cyberblock.cyber.HackResult;
 import dev.cyberblock.cyber.Hacking;
 import dev.cyberblock.cyber.ScanInfo;
 import java.util.function.Consumer;
@@ -26,6 +27,18 @@ final class CyberLink {
 		listen("hello", m -> onClient(CyberKeys::sendBinds));
 		listen("key", CyberLink::key);
 		listen("scaninfo", CyberLink::scanInfo);
+		listen("hackresult", CyberLink::hackResult);
+	}
+
+	/** {"t":"hackresult",...}: refund or sound, on the server. */
+	private static void hackResult(final JsonObject m) {
+		HackResult result = HackResult.parse(m);
+		MinecraftServer server = WorldBridge.server();
+		if (result == null) {
+			warn("bad hackresult dropped");
+		} else if (server != null) {
+			server.execute(() -> Hacking.onResult(server, result));
+		}
 	}
 
 	private static void listen(final String type, final Consumer<JsonObject> listener) {

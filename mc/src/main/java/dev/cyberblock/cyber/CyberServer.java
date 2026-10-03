@@ -12,5 +12,7 @@ final class CyberServer {
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 			CyberData.setRam(player, Ram.tick(CyberData.ram(player), CyberData.maxRam(player), player.tickCount, CyberData.has(player, Perk.OVERCLOCK)));
 		}
+
+		Hacking.tick(server);
 	}
 }
