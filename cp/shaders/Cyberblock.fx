@@ -124,12 +124,12 @@ float mc_linear(float d)
 {
 	const float n = cb_mc_near, f = cb_mc_far;
 	const bool reversed = (cb_mc_flags & 4) != 0;
-	if (reversed ? d <= 0.0 : d >= 1.0)
-		return 1e9;
-	if (cb_mc_flags & 1)
-		return reversed ? n * f / (n + d * (f - n)) : n * f / (f - d * (f - n));
 	const float ndc = 2.0 * d - 1.0; // a [-1, 1] depth range, stored as 0.5 * ndc + 0.5
-	return 2.0 * n * f / ((f + n) + (reversed ? ndc : -ndc) * (f - n));
+	float z = 2.0 * n * f / ((f + n) + (reversed ? ndc : -ndc) * (f - n));
+	if (cb_mc_flags & 1)
+		z = reversed ? n * f / (n + d * (f - n)) : n * f / (f - d * (f - n));
+	// single exit: early returns here make the HLSL compiler warn X4000 about the result
+	return (reversed ? d <= 0.0 : d >= 1.0) ? 1e9 : z;
 }
 
 /// Texture coordinate in Minecraft's frame for a point of its screen (x right, y up, both -1..1).
