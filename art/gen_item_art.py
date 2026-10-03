@@ -762,139 +762,114 @@ SPRITES = {
 # =====================================================================================
 # GUI
 # =====================================================================================
+# Minecraft container palette (every GUI sprite below uses only these; the HUD text colours are ChatFormatting's).
+MC_PANEL, MC_SLOT = rgb("#c6c6c6"), rgb("#8b8b8b")
+MC_WHITE, MC_SHADOW, MC_WELL, MC_EDGE = rgb("#ffffff"), rgb("#555555"), rgb("#373737"), rgb("#000000")
+MC_FIGURE = rgb("#b4b4b4")  # the body silhouette: a shade between panel and slot
+MC_YELLOW, MC_GRAY, MC_AQUA, MC_DARK_AQUA = rgb("#ffff55"), rgb("#aaaaaa"), rgb("#55ffff"), rgb("#00aaaa")
+
+
 def ram_bar() -> Image.Image:
-    """182x10 like the XP bar sheet: rows 0-4 empty frame, rows 5-9 filled cyan."""
+    """182x10 like the 10-notch boss/XP bar sheet: rows 0-4 the empty grey frame, rows 5-9 the filled aqua bar."""
     w = 182
     img = Image.new("RGBA", (w, 10), (0, 0, 0, 0))
-    frame = [rgb("#070b14"), rgb("#17233b"), rgb("#0e1829"), rgb("#0e1829"), rgb("#070b14")]
-    fill = [rgb("#19b8cc"), rgb("#9ffcff"), RAMPS["cyan"][1], rgb("#27cfe6"), RAMPS["cyan"][3]]
+    frame = [MC_EDGE, MC_SLOT, MC_SHADOW, MC_SHADOW, MC_EDGE]
+    fill = [MC_EDGE, rgb("#aaffff"), MC_AQUA, MC_DARK_AQUA, MC_EDGE]
     ticks = {round(i * w / 10) for i in range(1, 10)}
     for x in range(w):
         for y in range(5):
             if x in (0, w - 1) and y in (0, 4):
                 continue  # clipped corners
-            e = frame[y] if x not in (0, w - 1) else frame[0]
-            f = fill[y] if x not in (0, w - 1) else dark(fill[y], 0.55)
+            e = frame[y] if x not in (0, w - 1) else MC_EDGE
+            f = fill[y] if x not in (0, w - 1) else MC_EDGE
             if x in ticks and 0 < y < 4:
-                e, f = rgb("#1f2f4d"), dark(fill[y], 0.78)
+                e, f = MC_EDGE, dark(fill[y], 0.5)  # the notches of the 10-segment boss bar
             img.putpixel((x, y), (*e, 255))
             img.putpixel((x, y + 5), (*f, 255))
     return img
 
 
-PANEL_BASE, PANEL_TRACE, PANEL_NODE = rgb("#1b1f30"), rgb("#262d48"), rgb("#323c60")
-BEVEL_LIT, BEVEL_SHD, BEVEL_EDGE = (rgb("#68729a"), rgb("#4a5478")), (rgb("#10131f"), rgb("#0a0c15")), rgb("#05070d")
-
-
 def bevel(img: Image.Image) -> None:
-    """Dark outer edge, a 2px light bevel on the top/left and a 2px shadow on the bottom/right, and the notched
-    corners of a Minecraft panel."""
+    """The Minecraft container border: a black outer edge, a 2px #FFFFFF bevel on the top/left, a 2px #555555 shadow on
+    the bottom/right, and notched corners."""
     w, h = img.size
     px = img.load()
     for y in range(h):
         for x in range(w):
             k = min(x, y, w - 1 - x, h - 1 - y)
             if k == 0:
-                px[x, y] = (*BEVEL_EDGE, 255)
+                px[x, y] = (*MC_EDGE, 255)
             elif k <= 2:
                 lit = min(x, y) <= min(w - 1 - x, h - 1 - y)  # nearer the top/left edge
-                px[x, y] = (*(BEVEL_LIT if lit else BEVEL_SHD)[k - 1], 255)
+                px[x, y] = (*(MC_WHITE if lit else MC_SHADOW), 255)
     for y in range(h):  # notched corners like a Minecraft panel
         for x in range(w):
             dx, dy = min(x, w - 1 - x), min(y, h - 1 - y)
             if dx + dy <= 1:
                 px[x, y] = (0, 0, 0, 0)
             elif dx + dy == 2 and dx <= 2 and dy <= 2:
-                px[x, y] = (*BEVEL_EDGE, 255)
+                px[x, y] = (*MC_EDGE, 255)
+
+
+def slot_well(img: Image.Image, x: int, y: int, size: int) -> None:
+    """A size x size inventory slot: #373737 top/left edge, #FFFFFF bottom/right edge, #8B8B8B inside."""
+    d = ImageDraw.Draw(img)
+    d.rectangle([x, y, x + size - 1, y + size - 1], fill=(*MC_SLOT, 255))
+    d.line([(x, y), (x + size - 2, y)], fill=(*MC_WELL, 255))
+    d.line([(x, y), (x, y + size - 2)], fill=(*MC_WELL, 255))
+    d.line([(x + 1, y + size - 1), (x + size - 1, y + size - 1)], fill=(*MC_WHITE, 255))
+    d.line([(x + size - 1, y + 1), (x + size - 1, y + size - 1)], fill=(*MC_WHITE, 255))
+
+
+def recess(img: Image.Image, x0: int, y0: int, x1: int, y1: int) -> None:
+    """A sunken rectangle outline (inclusive corners): #555555 top/left, #FFFFFF bottom/right, interior untouched."""
+    d = ImageDraw.Draw(img)
+    d.line([(x0, y0), (x1 - 1, y0)], fill=(*MC_SHADOW, 255))
+    d.line([(x0, y0), (x0, y1 - 1)], fill=(*MC_SHADOW, 255))
+    d.line([(x0 + 1, y1), (x1, y1)], fill=(*MC_WHITE, 255))
+    d.line([(x1, y0 + 1), (x1, y1)], fill=(*MC_WHITE, 255))
 
 
 def skill_tree_bg() -> Image.Image:
-    """256x256 beveled dark panel with a faint circuit pattern."""
-    n = 256
-    img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
-    px = img.load()
-    base, trace, node = PANEL_BASE, PANEL_TRACE, PANEL_NODE
-    for y in range(n):
-        for x in range(n):
-            px[x, y] = (*base, 255)
-
-    rng = random.Random(2077)
-    used: set[tuple[int, int]] = set()
-    dirs = [(1, 0), (0, 1), (-1, 0), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)]
-    cell, lo, hi = 8, 3, n // 8 - 3
-    drawn = 0
-    for _ in range(900):
-        if drawn >= 120:
-            break
-        gx, gy = rng.randint(lo, hi), rng.randint(lo, hi)
-        if (gx, gy) in used:
-            continue
-        d, path = rng.choice(dirs), [(gx, gy)]
-        for _ in range(rng.randint(3, 12)):
-            if rng.random() < 0.35:
-                d = rng.choice([dirs[(dirs.index(d) + k) % 8] for k in (-1, 1)] if rng.random() < .6 else dirs)
-            nx, ny = path[-1][0] + d[0], path[-1][1] + d[1]
-            if not (lo <= nx <= hi and lo <= ny <= hi) or (nx, ny) in used or (nx, ny) in path:
-                break
-            path.append((nx, ny))
-        if len(path) < 3:
-            continue
-        used.update(path)
-        drawn += 1
-        pts = [(gx * cell, gy * cell) for gx, gy in path]
-        for a, b in zip(pts, pts[1:]):
-            for x, y in line(a, b):
-                px[x, y] = (*trace, 255)
-        ex, ey = pts[-1]
-        for x, y in ((ex - 1, ey), (ex + 1, ey), (ex, ey - 1), (ex, ey + 1)):
-            px[x, y] = (*node, 255)
-        px[ex, ey] = (*base, 255)
-        sx, sy = pts[0]
-        for x, y in ((sx, sy), (sx + 1, sy), (sx, sy + 1), (sx + 1, sy + 1)):
-            px[x, y] = (*node, 255)
-
+    """256x256 container panel for the perk screen: five branch columns of 51 px, an emblem slot at y 21 (centred on
+    the column) and four 22x22 node slots from y 64 in steps of 42, joined by a groove (the screen's own geometry)."""
+    n, column = 256, 51
+    img = Image.new("RGBA", (n, n), (*MC_PANEL, 255))
+    for b in range(5):
+        x = column * b + (column - 22) // 2
+        slot_well(img, column * b + column // 2 - 9, 21, 18)
+        for tier in range(4):
+            y = 64 + 42 * tier
+            if tier < 3:  # the groove to the next tier: the screen draws its lit link 2px wide over the middle
+                d = ImageDraw.Draw(img)
+                d.rectangle([x + 9, y + 22, x + 12, y + 41], fill=(*MC_SLOT, 255))
+                d.line([(x + 9, y + 22), (x + 9, y + 41)], fill=(*MC_SHADOW, 255))
+                d.line([(x + 12, y + 22), (x + 12, y + 41)], fill=(*MC_WHITE, 255))
+            slot_well(img, x, y, 22)
     bevel(img)
     return img
 
 
 def cyberware_bg() -> Image.Image:
-    """256x192 notched panel for the cyberware screen: a line-art body in the left half (centred on x = 64, y 20..180),
-    a divider at x = 128 and a recessed field in the right half for the list of implants. The title strip (y < 18) and
-    the bottom strip (y > 174) stay empty for text."""
+    """256x192 container panel for the cyberware screen. Left: a blocky player outline (Steve proportions at 5x, a flat grey figure
+    centred on x = 70, y 22..181) behind the eight 60x38 slot boxes the screen lays out in two columns at x 8 and 72,
+    y 20 + 42 n. Right: a sunken field at x 146..242, y 30..162 holding the 4x6 grid of 18 px cells at x 150 + 22 i,
+    y 32 + 22 j. The title strip (y < 18) and the strip under the field stay plain for text."""
     w, h = 256, 192
-    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    img = Image.new("RGBA", (w, h), (*MC_PANEL, 255))
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, w - 1, h - 1], fill=(*PANEL_BASE, 255))
-    for y in range(8, h - 6, 8):  # blueprint dots
-        for x in range(8, w - 6, 8):
-            img.putpixel((x, y), (*PANEL_TRACE, 255))
-    d.line([(8, 17), (w - 9, 17)], fill=(*PANEL_TRACE, 255))
-    d.line([(8, 175), (w - 9, 175)], fill=(*PANEL_TRACE, 255))
-
-    body, node = rgb("#3b5588"), rgb("#2aa6bd")
-    c = 64
-
-    def both(pts: list[tuple[int, int]]) -> None:  # draw a left-side outline and its mirror around x = c
-        d.polygon(pts, outline=(*body, 255))
-        d.polygon([(2 * c - x, y) for x, y in pts], outline=(*body, 255))
-
-    d.ellipse([c - 11, 21, c + 11, 45], outline=(*body, 255))  # head
-    d.rectangle([c - 4, 45, c + 4, 51], outline=(*body, 255))  # neck
-    d.polygon([(c - 16, 51), (c + 16, 51), (c + 20, 57), (c + 19, 99), (c + 14, 113), (c - 14, 113), (c - 19, 99), (c - 20, 57)],
-              outline=(*body, 255))  # torso
-    both([(c - 21, 54), (c - 28, 58), (c - 33, 70), (c - 37, 101), (c - 39, 123), (c - 33, 126), (c - 30, 104), (c - 24, 77), (c - 21, 70)])
-    both([(c - 14, 114), (c - 1, 114), (c - 2, 144), (c - 4, 177), (c - 15, 177), (c - 16, 144)])
-    d.line([(c - 11, 60), (c - 4, 60)], fill=(*body, 255))  # collarbone ticks
-    d.line([(c + 4, 60), (c + 11, 60)], fill=(*body, 255))
-    for x, y in ((c, 33), (c, 40), (c, 62), (c + 7, 74), (c, 86), (c - 10, 96), (c + 10, 96), (c - 35, 106), (c + 35, 106),
-                 (c - 9, 150), (c + 9, 150)):  # frontal cortex, eyes, nervous, circulatory, OS, skin x2, arms x2, legs x2
-        d.rectangle([x - 1, y - 1, x + 1, y + 1], fill=(*node, 255))
-
-    d.line([(128, 22), (128, 171)], fill=(*BEVEL_SHD[0], 255))
-    d.line([(129, 22), (129, 171)], fill=(*BEVEL_LIT[1], 255))
-    d.rectangle([135, 22, w - 9, 171], fill=rgb("#141828") + (255,), outline=(*BEVEL_SHD[0], 255))  # recessed list
-    d.line([(135, 172), (w - 9, 172)], fill=(*BEVEL_LIT[1], 255))
-    d.line([(w - 8, 22), (w - 8, 172)], fill=(*BEVEL_LIT[1], 255))
+    c, u, top = 70, 5, 22  # a Steve is 16 wide, 32 tall (head 8x8, body 8x12, arms 4x12, legs 4x12)
+    for x0, y0, bw, bh in ((4, 0, 8, 8), (4, 8, 8, 12), (0, 8, 4, 12), (12, 8, 4, 12), (4, 20, 4, 12), (8, 20, 4, 12)):
+        d.rectangle([c - 8 * u + x0 * u, top + y0 * u, c - 8 * u + (x0 + bw) * u - 1, top + (y0 + bh) * u - 1],
+                    fill=(*MC_FIGURE, 255))
+    for col in range(2):
+        for row in range(4):
+            x, y = 8 + col * 64, 20 + row * 42
+            recess(img, x, y, x + 59, y + 37)
+    recess(img, 146, 30, 242, 162)
+    for j in range(6):
+        for i in range(4):
+            slot_well(img, 150 + 22 * i, 32 + 22 * j, 18)
     bevel(img)
     return img
 
@@ -1108,7 +1083,7 @@ STAR = ["....O....",
 def wanted_star(filled: bool) -> Image.Image:
     """9x9 five-point star: gold when the wanted level reaches it, dull grey when it does not."""
     legend = ({"O": rgb("#8a5412"), "Y": rgb("#ffd23d"), "H": rgb("#fff0a0"), "S": rgb("#d6921f")} if filled else
-              {"O": rgb("#262630"), "Y": rgb("#4c4c58"), "H": rgb("#686878"), "S": rgb("#3a3a46")})
+              {"O": rgb("#373737"), "Y": rgb("#555555"), "H": rgb("#8b8b8b"), "S": rgb("#464646")})
     img = Image.new("RGBA", (9, 9), (0, 0, 0, 0))
     for (x, y), c in glyph(STAR, 0, 0, legend).items():
         img.putpixel((x, y), (*c, 255))
@@ -1116,28 +1091,33 @@ def wanted_star(filled: bool) -> Image.Image:
 
 
 def phone() -> Sprite:
-    """16x16 smartphone: dark body, glowing screen with message lines, a magenta unread dot."""
+    """16x16 smartphone as a Minecraft item: grey body, dark screen with green and grey message lines, a red unread dot
+    (ChatFormatting green, gray and red)."""
+    body = (rgb("#8b8b8b"), rgb("#555555"), rgb("#373737"), rgb("#1e1e1e"))
     s = Sprite()
-    s.part(rect(4, 1, 11, 14) - {(4, 1), (11, 1), (4, 14), (11, 14)}, "gunmetal", sep=True)
-    s.part(rect(5, 3, 10, 11), "void", shade=False)
-    s.dots([(6, 4), (7, 4), (8, 4)], CYAN).dots([(6, 6), (7, 6), (8, 6), (9, 6)], RAMPS["cyan"][2])
-    s.dots([(6, 8), (7, 8)], RAMPS["cyan"][2]).dots([(9, 4)], MAGENTA)
-    s.dots([(7, 13), (8, 13)], RAMPS["steel"][1])
-    s.dots([(7, 2), (8, 2)], RAMPS["gunmetal"][3])
+    s.part(rect(4, 1, 11, 14) - {(4, 1), (11, 1), (4, 14), (11, 14)}, body, sep=True)
+    s.part(rect(5, 3, 10, 11), (MC_SLOT, rgb("#232323"), rgb("#232323"), rgb("#232323")), shade=False)
+    s.dots([(6, 4), (7, 4), (8, 4)], rgb("#55ff55")).dots([(6, 6), (7, 6), (8, 6), (9, 6)], MC_GRAY)
+    s.dots([(6, 8), (7, 8)], MC_GRAY).dots([(9, 4)], rgb("#ff5555"))
+    s.dots([(7, 13), (8, 13)], MC_PANEL)
+    s.dots([(7, 2), (8, 2)], MC_WELL)
     return s
 
 
 def radar_frame() -> Image.Image:
-    """80x80 frame for the radar: the bevelled panel border with notched corners and a transparent middle,
-    plus a cyan north tick on top and dim ticks at the other three compass points."""
+    """80x80 frame for the radar, map-item style: the Minecraft container border (black edge, #FFFFFF / #555555 bevel,
+    notched corners), a #8B8B8B inner line and a transparent middle, a yellow north tick on top and #AAAAAA ticks at
+    the other three compass points."""
     img = Image.new("RGBA", (80, 80), (0, 0, 0, 0))
     bevel(img)
-    cyan, dim = (*CYAN, 255), (*RAMPS["steel"][2], 255)
-    _fill(img, 38, 3, 41, 3, cyan)
-    _fill(img, 39, 4, 40, 4, cyan)
-    _fill(img, 38, 76, 41, 76, dim)
-    _fill(img, 3, 38, 3, 41, dim)
-    _fill(img, 76, 38, 76, 41, dim)
+    d = ImageDraw.Draw(img)
+    d.rectangle([3, 3, 76, 76], outline=(*MC_SLOT, 255))
+    yellow, gray = (*MC_YELLOW, 255), (*MC_GRAY, 255)
+    _fill(img, 38, 3, 41, 3, yellow)
+    _fill(img, 39, 4, 40, 4, yellow)
+    _fill(img, 38, 76, 41, 76, gray)
+    _fill(img, 3, 38, 3, 41, gray)
+    _fill(img, 76, 38, 76, 41, gray)
     return img
 
 
