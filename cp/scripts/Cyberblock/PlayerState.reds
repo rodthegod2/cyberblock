@@ -45,6 +45,8 @@ public class CyberblockPlayerState {
   private let hiddenMeshes: array<wref<IComponent>>;
   // Ticks until the next body check (every 2 s: toggling meshes rebuilds their render proxies on the GPU).
   private let bodyCheckDelay: Int32;
+  // Log lines about meshes the game re-enabled (at most 50 per session object).
+  private let reenableLogs: Int32;
   // Ability stats we zeroed and the modifier on each (parallel arrays); exactly these are removed again.
   private let zeroedStats: array<gamedataStatType>;
   private let zeroMods: array<ref<gameStatModifierData>>;
@@ -209,7 +211,11 @@ public class CyberblockPlayerState {
         }
       }
     }
-    if hidden > 0 || reenabled > 0 {
+    // In a vehicle the check runs every tick and a camera switch re-enables meshes each time: those reports are capped.
+    if hidden > 0 || (reenabled > 0 && this.reenableLogs < 50) {
+      if hidden == 0 {
+        this.reenableLogs += 1;
+      }
       Cyberblock_Log(s"body: hid \(hidden) new meshes, \(reenabled) re-enabled by the game, tracking \(ArraySize(this.hiddenMeshes))");
     }
   }
