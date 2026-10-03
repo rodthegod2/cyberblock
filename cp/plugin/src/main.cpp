@@ -1,10 +1,12 @@
 // Cyberblock.dll: a RED4ext plugin (loaded from red4ext\plugins\Cyberblock\) that also registers itself as a ReShade
 // add-on (compositor.h). It links to the Minecraft mod (link.hpp), gives redscript its natives (natives.hpp),
-// publishes Cyberpunk's camera every frame (camera.hpp) and forwards input from Cyberpunk's window (input.hpp).
+// moves V after Steve's flights every frame (drive.hpp), publishes Cyberpunk's camera every frame (camera.hpp) and
+// forwards input from Cyberpunk's window (input.hpp).
 #include <RED4ext/RED4ext.hpp>
 
 #include "camera.hpp"
 #include "compositor.h"
+#include "drive.hpp"
 #include "input.hpp"
 #include "link.hpp"
 #include "log.hpp"
@@ -41,6 +43,7 @@ namespace
 		int width = 0, height = 0;
 		compositor::backbuffer_size(width, height);
 		cb::link().set_view(width, height);
+		cb::drive::tick(); // before the camera: cam.fly is true on the first frame V is moved
 		cb::camera::publish();
 		cb::input::tick();
 		return false;

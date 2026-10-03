@@ -22,11 +22,14 @@ namespace cb
 		inline std::atomic<bool> crouched{false};
 		inline std::atomic<bool> inAir{false};
 		inline std::atomic<bool> held{false};
-		/// Set by Cyberblock_SetFlightFollowing: V follows Steve's glide. Sent as `cam.fly`. It stays until set again, and
-		/// goes back to false when Cyberblock_SetActive changes the state, when a Minecraft session starts or the link drops,
-		/// and when Minecraft reports a landing (`flight` with active false); not when a flight times out (no samples for
-		/// 0.5 s, Cyberblock_FlightTimedOut).
+		/// Written by the per-frame drive (drive.cpp, plan 2026-10-03-retest2 section 1.4), the only writer besides the
+		/// resets below: true from the first frame the drive moves V until the flight ends (landing, ground, stop). Sent
+		/// as `cam.fly`. It also goes back to false when Cyberblock_SetActive changes the state, when a Minecraft session
+		/// starts or the link drops, and when Minecraft reports a landing (`flight` with active false).
 		inline std::atomic<bool> flightFollowing{false};
+		/// Set by Cyberblock_SetFlightAllowed (10 Hz from CyberblockFlight.Tick): V may be moved (live, not mounted, not
+		/// locked). The drive never moves V while it is false. Cleared by Cyberblock_SetActive(false).
+		inline std::atomic<bool> flightAllowed{false};
 		/// Set by Cyberblock_SetMenu: a Cyberpunk menu is open, so input forwarding pauses. Sent as `cam.menu`.
 		inline std::atomic<bool> menuOpen{false};
 		/// Set by Cyberblock_SetChoices: a Cyberpunk dialogue or choice list shows two or more choices, so E, Q, 1-4 and the

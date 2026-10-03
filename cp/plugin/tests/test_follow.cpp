@@ -233,3 +233,25 @@ TEST(follow_a_menu_after_landing_freezes_seconds_since_end)
 	}
 	CHECK(f.seconds_since_end(now) < 0.05); // the fall-damage grace does not run out behind a menu
 }
+
+// ---- the drive's geometry (task D5), pure ------------------------------------------------------------------------------
+
+TEST(stop_short_stops_the_margin_before_the_hit)
+{
+	using cb::follow::stop_short;
+	CHECK(at(stop_short({0, 0, 0}, {10, 0, 0}, 4.0, 0.3), 3.7, 0, 0));
+	CHECK(at(stop_short({0, 0, 0}, {0, 3, 4}, 5.0, 0.3), 0, 3 * 0.94, 4 * 0.94)); // along the segment, any direction
+	CHECK(at(stop_short({1, 1, 1}, {9, 1, 1}, 0.2, 0.3), 1, 1, 1));               // closer than the margin: stay put
+	CHECK(at(stop_short({1, 1, 1}, {9, 1, 1}, 50.0, 0.3), 9, 1, 1));              // never past the target
+	CHECK(at(stop_short({1, 1, 1}, {1, 1, 1}, 0.0, 0.3), 1, 1, 1));               // no movement
+}
+
+TEST(snap_landing_lifts_out_of_the_ground_and_drops_onto_it_from_over_1_m)
+{
+	using cb::follow::snap_landing;
+	CHECK(at(snap_landing({5, 6, 10.0}, 10.4), 5, 6, 10.4));  // the spot is inside the ground: lifted onto it
+	CHECK(at(snap_landing({5, 6, 10.0}, 8.5), 5, 6, 8.5));    // 1.5 m up: put on the ground
+	CHECK(at(snap_landing({5, 6, 10.0}, 9.5), 5, 6, 10.0));   // 0.5 m up: a short drop is fine
+	CHECK(at(snap_landing({5, 6, 10.0}, 10.0), 5, 6, 10.0));  // on it
+	CHECK(at(snap_landing({5, 6, 10.0}, std::nullopt), 5, 6, 10.0)); // no ground found: the spot
+}

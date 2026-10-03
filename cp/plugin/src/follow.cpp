@@ -19,6 +19,23 @@ namespace
 
 namespace cb::follow
 {
+	Vec3 stop_short(Vec3 from, Vec3 to, double hitDistance, double margin)
+	{
+		const double length = distance(from, to);
+		if (!(length > 0.0))
+			return from;
+		const double t = std::clamp((hitDistance - margin) / length, 0.0, 1.0);
+		return {from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t, from.z + (to.z - from.z) * t};
+	}
+
+	Vec3 snap_landing(Vec3 spot, std::optional<double> groundZ)
+	{
+		constexpr double kMaxDrop = 1.0; // m a landing may leave V above the ground (it then falls, fall damage off)
+		if (groundZ && (*groundZ > spot.z || spot.z - *groundZ > kMaxDrop))
+			return {spot.x, spot.y, *groundZ};
+		return spot;
+	}
+
 	Out Follower::end(Act act, Vec3 to, std::string log, double now)
 	{
 		m_state = State::Idle;
@@ -122,5 +139,10 @@ namespace cb::follow
 	Summary Follower::summary() const
 	{
 		return m_summary;
+	}
+
+	Vec3 Follower::last() const
+	{
+		return m_last;
 	}
 }

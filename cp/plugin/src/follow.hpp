@@ -7,10 +7,20 @@
 // in RED4ext's Running-state OnUpdate instead, every frame, and this is its brain.
 #pragma once
 #include "cbmath.hpp"
+#include <optional>
 #include <string>
 
 namespace cb::follow
 {
+	/// The point `margin` metres short of a hit `hitDistance` metres along from -> to; `from` itself when the hit is
+	/// closer than `margin` (the drive's clip, task D5).
+	Vec3 stop_short(Vec3 from, Vec3 to, double hitDistance, double margin);
+
+	/// Where a landing puts V's feet, given the highest Night City ground found below the spot (task D5): the ground
+	/// when it is above the spot (the spot sank into it) or the spot is more than 1 m above it (V would fall), else the
+	/// spot itself. No ground found: the spot.
+	Vec3 snap_landing(Vec3 spot, std::optional<double> groundZ);
+
 	/// What the drive does this frame.
 	enum class Act
 	{
@@ -76,6 +86,8 @@ namespace cb::follow
 		double seconds_since_end(double now) const;
 		/// The current or last flight's frames and largest step.
 		Summary summary() const;
+		/// Where V was last put (V's feet at the start, until the first applied()): where the next clip starts.
+		Vec3 last() const;
 
 	private:
 		enum class State

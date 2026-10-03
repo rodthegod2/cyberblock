@@ -1,6 +1,7 @@
 // redscript natives, registered as RTTI global functions like RED4ext.SDK's examples/native_globals_redscript.
 #include "natives.hpp"
 #include "compositor.h"
+#include "drive.hpp"
 #include "link.hpp"
 #include "log.hpp"
 #include "probes.hpp"
@@ -161,6 +162,8 @@ namespace
 		g_mashup.session = cb::link().session();
 		cb::natives::active = active;
 		cb::natives::inVehicle = inVehicle;
+		if (!active)
+			cb::natives::flightAllowed = false; // the script allows flights again on its next tick while Active
 		cb::world::events().set_active(active);
 		compositor::set_active(active);
 		if (changed)
@@ -469,17 +472,37 @@ namespace
 			*out = cb::snap::flight().timed_out(cb::snap::Clock::now());
 	}
 
-	// Cyberblock_SetFlightFollowing(following: Bool) -> Void: V follows Steve's glide; carried as `cam.fly` until set again
-	// (natives.hpp says what else clears it).
-	void SetFlightFollowing(IScriptable *, CStackFrame *frame, void *, int64_t)
+	// ---- re-test 2 (plan 2026-10-03-retest2 section 1.3): the per-frame drive -------------------------------------------
+
+	// Cyberblock_SetFlightAllowed(allowed: Bool) -> Void: 10 Hz from CyberblockFlight.Tick: V may be moved (live, not
+	// mounted, not locked). The DLL drive (drive.cpp) never moves V while it is false. Cleared by Cyberblock_SetActive(false).
+	void SetFlightAllowed(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
-		bool following = false;
-		RED4ext::GetParameter(frame, &following);
+		bool allowed = false;
+		RED4ext::GetParameter(frame, &allowed);
 		++frame->code;
-		cb::natives::flightFollowing = following;
+		cb::natives::flightAllowed = allowed;
+	}
+
+	// Cyberblock_FlightDriving() -> Bool: the DLL is moving V this flight (the same value as cam.fly).
+	void FlightDriving(IScriptable *, CStackFrame *frame, bool *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = cb::drive::driving();
+	}
+
+	// Cyberblock_SecondsSinceFlight() -> Float: 0 while driving, the seconds since the last flight ended (Cyberpunk menus
+	// do not count), 999 if none yet.
+	void SecondsSinceFlight(IScriptable *, CStackFrame *frame, float *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = cb::drive::seconds_since_end();
 	}
 
 	// Cyberblock_FlightPos() -> Vector4: feet, Cyberpunk space, p + v * min(age, 0.05 s) while flying, else the landing spot.
+	// Kept for scripts; the drive uses Flight::render_pos.
 	void FlightPos(IScriptable *, CStackFrame *frame, RED4ext::Vector4 *out, int64_t)
 	{
 		++frame->code;
@@ -699,8 +722,8 @@ namespace
 		cb::natives::choicesOpen = open;
 	}
 
-	// Cyberblock_SetLookCapture(on: Bool) -> Void: the camera-only flight fallback: while on, raw mouse movement goes to
-	// Minecraft as `look` deltas.
+	// Cyberblock_SetLookCapture(on: Bool) -> Void: while on, raw mouse movement goes to Minecraft as `look` deltas. Kept,
+	// but no script calls it since re-test 2 (the camera-only flight fallback is gone).
 	void SetLookCapture(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
 		bool on = false;
@@ -779,7 +802,9 @@ namespace cb::natives
 		add(rtti, "Cyberblock_FlightActive", &FlightActive, "Bool");
 		add(rtti, "Cyberblock_FlightSeq", &FlightSeq, "Int32");
 		add(rtti, "Cyberblock_FlightTimedOut", &FlightTimedOut, "Bool");
-		add(rtti, "Cyberblock_SetFlightFollowing", &SetFlightFollowing, nullptr, {{"Bool", "following"}});
+		add(rtti, "Cyberblock_SetFlightAllowed", &SetFlightAllowed, nullptr, {{"Bool", "allowed"}});
+		add(rtti, "Cyberblock_FlightDriving", &FlightDriving, "Bool");
+		add(rtti, "Cyberblock_SecondsSinceFlight", &SecondsSinceFlight, "Float");
 		add(rtti, "Cyberblock_FlightPos", &FlightPos, "Vector4");
 		add(rtti, "Cyberblock_FlightVelocity", &FlightVelocity, "Vector4");
 		add(rtti, "Cyberblock_FlightYaw", &FlightYaw, "Float");
