@@ -651,21 +651,70 @@ namespace
 					 warned, "Cyberblock_ScanResult", "the request id is negative");
 	}
 
-	// Cyberblock_HackResult(id: Int32, ok: Bool, reason: String) -> Void: the reply to a `hack` request. Always sent (while
-	// linked). `reason` is "" on success.
+	// Cyberblock_HackResult(id: Int32, ok: Bool, reason: String, upload: Float, kind: CName) -> Void: the reply to a `hack`
+	// request. Always sent (while linked). `reason` is "" on success; `upload` (seconds, clamped 0..30) and `kind` (one of
+	// world::kHackKinds, n"" allowed when !ok) only go out when `ok` (plan 2026-10-03-retest3-polish section 1.2).
 	void HackResult(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
 		int32_t id = 0;
 		bool ok = false;
 		RED4ext::CString reason;
+		float upload = 0.0f;
+		RED4ext::CName kind;
 		RED4ext::GetParameter(frame, &id);
 		RED4ext::GetParameter(frame, &ok);
 		RED4ext::GetParameter(frame, &reason);
+		RED4ext::GetParameter(frame, &upload);
+		RED4ext::GetParameter(frame, &kind);
+		++frame->code;
+
+		const std::string_view kindName = known_name(kind, cb::world::kHackKinds);
+		if (ok && kindName.empty() && !kind.IsNone())
+		{
+			static bool kindWarned = false;
+			if (!std::exchange(kindWarned, true))
+				cb::log::warn("Cyberblock_HackResult: kind %s is not a known target kind; sent without one (logged once)",
+							  kind.ToString());
+		}
+		static bool warned = false;
+		send_or_warn(cb::world::make_hackresult(id, ok, reason.c_str(), upload, kindName), warned, "Cyberblock_HackResult",
+					 "the request id is negative");
+	}
+
+	/// The per-id cap of Cyberblock_HackSpread.
+	cb::world::SpreadCounter g_spreads;
+
+	// Cyberblock_HackSpread(id: Int32, target: Uint64, why: CName) -> Void: hack request `id` also touched NPC `target`
+	// (why: n"chain", n"spread", n"ping" or n"frenzy"). At most 16 per id; the 17th and later are dropped and counted.
+	void HackSpread(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		int32_t id = 0;
+		uint64_t target = 0;
+		RED4ext::CName why;
+		RED4ext::GetParameter(frame, &id);
+		RED4ext::GetParameter(frame, &target);
+		RED4ext::GetParameter(frame, &why);
 		++frame->code;
 
 		static bool warned = false;
-		send_or_warn(cb::world::make_hackresult(id, ok, reason.c_str()), warned, "Cyberblock_HackResult",
-					 "the request id is negative");
+		const auto message = cb::world::make_hackspread(id, target, known_name(why, cb::world::kSpreadWhy));
+		if (!message)
+		{
+			if (!std::exchange(warned, true))
+				cb::log::warn("Cyberblock_HackSpread: a negative id or an unknown why (%s); dropping it (logged once)",
+							  why.ToString());
+			return;
+		}
+		if (!g_spreads.allow(id))
+		{
+			static bool capWarned = false;
+			if (!std::exchange(capWarned, true))
+				cb::log::warn("Cyberblock_HackSpread: hack %d touched more than %d NPCs; the rest are not sent (logged once, "
+							  "%llu so far)",
+							  id, cb::world::kMaxSpreadPerId, static_cast<unsigned long long>(g_spreads.dropped()));
+			return;
+		}
+		cb::link().send(*message);
 	}
 
 	// Cyberblock_Killed(target: Uint64, vehicle: Bool, hostile: Bool) -> Void: an NPC or vehicle that V damaged died.
@@ -823,7 +872,9 @@ namespace cb::natives
 		add(rtti, "Cyberblock_ScanResult", &ScanResult, nullptr,
 			{{"Int32", "id"}, {"Bool", "ok"}, {"Uint64", "target"}, {"String", "name"}, {"String", "faction"},
 			 {"CName", "threat"}, {"Float", "hp"}, {"Bool", "device"}, {"Vector4", "pos"}, {"Vector4", "size"}});
-		add(rtti, "Cyberblock_HackResult", &HackResult, nullptr, {{"Int32", "id"}, {"Bool", "ok"}, {"String", "reason"}});
+		add(rtti, "Cyberblock_HackResult", &HackResult, nullptr,
+			{{"Int32", "id"}, {"Bool", "ok"}, {"String", "reason"}, {"Float", "upload"}, {"CName", "kind"}});
+		add(rtti, "Cyberblock_HackSpread", &HackSpread, nullptr, {{"Int32", "id"}, {"Uint64", "target"}, {"CName", "why"}});
 		add(rtti, "Cyberblock_Killed", &Killed, nullptr, {{"Uint64", "target"}, {"Bool", "vehicle"}, {"Bool", "hostile"}});
 		add(rtti, "Cyberblock_SetStance", &SetStance, nullptr, {{"Bool", "crouched"}, {"Bool", "inAir"}, {"Bool", "held"}});
 		add(rtti, "Cyberblock_GameMode", &GameModeNative, "CName");

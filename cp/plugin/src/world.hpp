@@ -270,9 +270,43 @@ namespace cb::world
 												std::string_view faction, std::string_view threat, double hp, bool device,
 												Vec3 feetCp, double width, double height, double off);
 
-	/// {"t":"hackresult","id","ok","reason"}: the reply to a `hack`; `reason` is cut to 64 UTF-8 bytes and is "" when `ok`.
-	/// nullopt when `id` is negative.
-	std::optional<nlohmann::json> make_hackresult(int32_t id, bool ok, std::string_view reason);
+	// ---- re-test 3 (plan 2026-10-03-retest3-polish sections 1.1 and 1.6): distinct quickhacks ----
+
+	/// The target kinds `hackresult.kind` knows (anything else is left out).
+	inline constexpr const char *kHackKinds[] = {"squad", "crowd", "driver", "camera", "traffic", "distract", "device"};
+	/// Why `hackspread` touched an extra NPC.
+	inline constexpr const char *kSpreadWhy[] = {"chain", "spread", "ping", "frenzy"};
+	/// Most `hackspread` messages one hack request id may send; the 17th and later are dropped and counted.
+	inline constexpr int kMaxSpreadPerId = 16;
+	/// Longest upload a `hackresult` reports, seconds.
+	inline constexpr double kMaxUploadSeconds = 30.0;
+
+	/// {"t":"hackresult","id","ok","reason"[,"upload","kind"]}: the reply to a `hack`; `reason` is cut to 64 UTF-8 bytes and
+	/// is "" when `ok`. Only when `ok`: `upload` (seconds the upload takes, clamped to 0..30, a non-finite one is 0) and
+	/// `kind` (one of kHackKinds; left out when empty or unknown). nullopt when `id` is negative.
+	std::optional<nlohmann::json> make_hackresult(int32_t id, bool ok, std::string_view reason, double upload = 0.0,
+												  std::string_view kind = {});
+
+	/// {"t":"hackspread","id","target","why"}: hack request `id` also touched NPC `target` (sent as a decimal string).
+	/// nullopt when `id` is negative or `why` is not one of kSpreadWhy.
+	std::optional<nlohmann::json> make_hackspread(int32_t id, uint64_t target, std::string_view why);
+
+	/// Counts `hackspread` messages per hack request id (kMaxSpreadPerId each). Remembers the last kRemembered ids, so its
+	/// memory is bounded. Thread-safe.
+	class SpreadCounter
+	{
+	public:
+		static constexpr size_t kRemembered = 64;
+		/// Whether one more spread may be sent for `id`; false (and counted as dropped) past kMaxSpreadPerId.
+		bool allow(int32_t id);
+		/// Spreads refused so far.
+		uint64_t dropped() const;
+
+	private:
+		mutable std::mutex m_lock;
+		std::deque<std::pair<int32_t, int>> m_counts; // id -> spreads sent, oldest id first
+		uint64_t m_dropped = 0;
+	};
 
 	/// {"t":"killed","target","kind","hostile"}: an NPC or vehicle that V damaged died or was destroyed.
 	nlohmann::json make_killed(uint64_t target, bool vehicle, bool hostile);

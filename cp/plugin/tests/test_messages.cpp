@@ -241,6 +241,63 @@ TEST(hackresult_reason_is_cut_to_64_bytes_and_the_id_must_not_be_negative)
 	CHECK(!make_hackresult(-1, false, "no"));
 }
 
+// ---- re-test 3 (plan 2026-10-03-retest3-polish section 1.1): upload, kind and hackspread -------------------------------
+
+TEST(hackresult_upload_is_clamped_to_0_30_and_non_finite_is_0)
+{
+	CHECK(approx(make_hackresult(1, true, "", 2.5, "squad")->at("upload"), 2.5));
+	CHECK(approx(make_hackresult(1, true, "", -1.0, "squad")->at("upload"), 0.0));
+	CHECK(approx(make_hackresult(1, true, "", 31.0, "squad")->at("upload"), 30.0));
+	CHECK(approx(make_hackresult(1, true, "", kNaN, "squad")->at("upload"), 0.0));
+	CHECK(approx(make_hackresult(1, true, "", kInf, "squad")->at("upload"), 0.0));
+	CHECK(approx(make_hackresult(1, true, "", 1.23456, "squad")->at("upload"), 1.235)); // rounded to ms
+	CHECK(make_hackresult(1, true, "")->at("upload") == 0.0); // the defaults: instant, no kind
+	CHECK(survives_the_wire(*make_hackresult(1, true, "", kNaN, "crowd")));
+}
+
+TEST(hackresult_kind_is_one_of_the_seven_or_left_out)
+{
+	for (const char *kind : cb::world::kHackKinds)
+		CHECK(make_hackresult(4, true, "", 1.0, kind)->at("kind") == kind);
+	CHECK(!make_hackresult(4, true, "", 1.0, "pedestrian")->contains("kind"));
+	CHECK(!make_hackresult(4, true, "", 1.0, "")->contains("kind"));
+	CHECK(!make_hackresult(4, true, "", 1.0, "Squad")->contains("kind"));
+}
+
+TEST(hackresult_leaves_upload_and_kind_out_when_not_ok)
+{
+	const auto failed = make_hackresult(5, false, "target gone", 3.0, "squad");
+	CHECK(failed.has_value() && !failed->contains("upload") && !failed->contains("kind"));
+	CHECK(failed->size() == 4 && failed->at("reason") == "target gone");
+}
+
+TEST(hackspread_carries_the_id_a_decimal_target_and_why)
+{
+	const auto m = cb::world::make_hackspread(9, 18446744073709551615ull, "chain");
+	CHECK(m.has_value() && m->at("t") == "hackspread" && m->at("id") == 9 && m->at("why") == "chain");
+	CHECK(m->at("target") == "18446744073709551615" && m->size() == 4 && survives_the_wire(*m));
+	for (const char *why : cb::world::kSpreadWhy)
+		CHECK(cb::world::make_hackspread(1, 2, why)->at("why") == why);
+	CHECK(!cb::world::make_hackspread(1, 2, "contagion"));
+	CHECK(!cb::world::make_hackspread(1, 2, ""));
+	CHECK(!cb::world::make_hackspread(-1, 2, "ping"));
+}
+
+TEST(hackspread_allows_16_per_id_and_counts_the_rest)
+{
+	cb::world::SpreadCounter counter;
+	for (int i = 0; i < cb::world::kMaxSpreadPerId; ++i)
+		CHECK(counter.allow(7));
+	CHECK(!counter.allow(7) && !counter.allow(7));
+	CHECK(counter.dropped() == 2);
+	CHECK(counter.allow(8)); // another id has its own budget
+	// the counter remembers a bounded number of ids: an old id forgotten long ago starts over
+	for (int id = 100; id < 100 + int(cb::world::SpreadCounter::kRemembered); ++id)
+		CHECK(counter.allow(id));
+	CHECK(counter.allow(7));
+	CHECK(counter.dropped() == 2);
+}
+
 // ---- cam flags ---------------------------------------------------------------------------------------------------------
 
 TEST(cam_carries_the_stance_in_cr)

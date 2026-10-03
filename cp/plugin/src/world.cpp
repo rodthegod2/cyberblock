@@ -694,11 +694,50 @@ namespace cb::world
 					{"size", json::array({rounded(std::max(finiteOr0(width), 0.0), 1e3), rounded(std::max(finiteOr0(height), 0.0), 1e3)})}};
 	}
 
-	std::optional<json> make_hackresult(int32_t id, bool ok, std::string_view reason)
+	std::optional<json> make_hackresult(int32_t id, bool ok, std::string_view reason, double upload, std::string_view kind)
 	{
 		if (id < 0)
 			return std::nullopt;
-		return json{{"t", "hackresult"}, {"id", id}, {"ok", ok}, {"reason", ok ? std::string() : wire::truncate_utf8(reason, kMaxTextBytes)}};
+		json m{{"t", "hackresult"}, {"id", id}, {"ok", ok}, {"reason", ok ? std::string() : wire::truncate_utf8(reason, kMaxTextBytes)}};
+		if (!ok)
+			return m;
+		m["upload"] = std::isfinite(upload) ? rounded(std::clamp(upload, 0.0, kMaxUploadSeconds), 1e3) : 0.0;
+		if (std::find(std::begin(kHackKinds), std::end(kHackKinds), kind) != std::end(kHackKinds))
+			m["kind"] = std::string(kind);
+		return m;
+	}
+
+	std::optional<json> make_hackspread(int32_t id, uint64_t target, std::string_view why)
+	{
+		if (id < 0 || std::find(std::begin(kSpreadWhy), std::end(kSpreadWhy), why) == std::end(kSpreadWhy))
+			return std::nullopt;
+		return json{{"t", "hackspread"}, {"id", id}, {"target", std::to_string(target)}, {"why", std::string(why)}};
+	}
+
+	bool SpreadCounter::allow(int32_t id)
+	{
+		std::lock_guard<std::mutex> lock(m_lock);
+		auto it = std::ranges::find_if(m_counts, [id](const auto &entry) { return entry.first == id; });
+		if (it == m_counts.end())
+		{
+			if (m_counts.size() >= kRemembered)
+				m_counts.pop_front();
+			m_counts.emplace_back(id, 0);
+			it = std::prev(m_counts.end());
+		}
+		if (it->second >= kMaxSpreadPerId)
+		{
+			++m_dropped;
+			return false;
+		}
+		++it->second;
+		return true;
+	}
+
+	uint64_t SpreadCounter::dropped() const
+	{
+		std::lock_guard<std::mutex> lock(m_lock);
+		return m_dropped;
 	}
 
 	json make_killed(uint64_t target, bool vehicle, bool hostile)
