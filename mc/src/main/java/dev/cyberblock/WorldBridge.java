@@ -145,9 +145,14 @@ public final class WorldBridge {
 		blockEvents.drain(BlockEvents.PER_TICK, (pos, op) -> Cyberblock.events.accept(Wire.block(op, BlockPos.getX(pos), BlockPos.getY(pos), BlockPos.getZ(pos))));
 	}
 
+	/** True while the host is driving the game and this is the world it plays in: the only time it wants to hear about the world. */
+	public static boolean hostSees(final ServerLevel level) {
+		return Cyberblock.active && level == level.getServer().overworld();
+	}
+
 	/** Server thread, from LevelChunk.setBlockState: queue the change when the host's collision is affected. */
 	public static void onBlockChanged(final ServerLevel level, final BlockPos pos, final BlockState oldState, final BlockState newState) {
-		if (!Cyberblock.active || level != level.getServer().overworld()) {
+		if (!hostSees(level)) {
 			return;
 		}
 
