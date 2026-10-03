@@ -38,6 +38,13 @@ public final class CyberData {
 		.copyOnDeath()
 		.initializer(() -> false)
 		.buildAndRegister(id("kit_given"));
+	/** `/cyberblock perks free on`: the skill tree costs no levels (plan retest2 R3). Synced, so the tree can show it. */
+	public static final AttachmentType<Boolean> FREE_PERKS = AttachmentRegistry.<Boolean>builder()
+		.persistent(Codec.BOOL)
+		.copyOnDeath()
+		.initializer(() -> false)
+		.syncWith(ByteBufCodecs.BOOL, AttachmentSyncPredicate.targetOnly())
+		.buildAndRegister(id("free_perks"));
 
 	private CyberData() {
 	}
@@ -64,6 +71,11 @@ public final class CyberData {
 		Map<String, Integer> perks = new HashMap<>(player.getAttachedOrElse(PERKS, Map.of()));
 		perks.put(perkId, rank);
 		player.setAttached(PERKS, Map.copyOf(perks));
+	}
+
+	/** Perks cost no levels: always in creative, otherwise while `/cyberblock perks free on` holds. Either side. */
+	public static boolean freePerks(final Player player) {
+		return player.isCreative() || player.getAttachedOrElse(FREE_PERKS, false);
 	}
 
 	public static int ram(final Player player) {

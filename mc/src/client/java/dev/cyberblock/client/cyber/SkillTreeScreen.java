@@ -83,6 +83,12 @@ public final class SkillTreeScreen extends Screen {
 		return player == null ? 0 : player.experienceLevel;
 	}
 
+	/** Creative or `/cyberblock perks free on` (plan retest2 R3): the costs are shown greyed out and nothing takes levels. */
+	private boolean free() {
+		LocalPlayer player = this.minecraft.player;
+		return player != null && CyberData.freePerks(player);
+	}
+
 	@Override
 	public boolean isPauseScreen() {
 		// singleplayer pauses the server under a pause screen: Night City keeps going, so Minecraft must too
@@ -97,6 +103,7 @@ public final class SkillTreeScreen extends Screen {
 		graphics.centeredText(this.font, this.title, left + PANEL / 2, top + 8, 0xFFFFFFFF);
 		Map<String, Integer> ranks = this.ranks();
 		int levels = this.levels();
+		boolean free = this.free();
 		for (int b = 0; b < Perk.BRANCHES.length; b++) {
 			int cx = left + b * COLUMN + COLUMN / 2;
 			graphics.blit(RenderPipelines.GUI_TEXTURED, texture("item/skill_" + Perk.BRANCHES[b]), cx - 8, top + 22, 0.0F, 0.0F, 16, 16, 16, 16);
@@ -109,11 +116,11 @@ public final class SkillTreeScreen extends Screen {
 		}
 
 		for (Perk perk : Perk.values()) {
-			this.drawNode(graphics, perk, PerkShop.check(perk, ranks, levels));
+			this.drawNode(graphics, perk, PerkShop.check(perk, ranks, levels, free), free);
 		}
 
 		// beside the title: at 720p the GUI is 240 high and the panel's bottom edge is off screen
-		Component levelsText = Component.translatable("cyberblock.skills.levels", levels);
+		Component levelsText = free ? Component.translatable("cyberblock.skills.free") : Component.translatable("cyberblock.skills.levels", levels);
 		graphics.text(this.font, levelsText, left + PANEL - 8 - this.font.width(levelsText), top + 8, 0xFF7CFF5A, true);
 		Component note = CyberKeys.note();
 		if (note != null) {
@@ -126,7 +133,7 @@ public final class SkillTreeScreen extends Screen {
 		}
 	}
 
-	private void drawNode(final GuiGraphicsExtractor graphics, final Perk perk, final PerkShop.Outcome state) {
+	private void drawNode(final GuiGraphicsExtractor graphics, final Perk perk, final PerkShop.Outcome state, final boolean free) {
 		int x = this.nodeX(perk), y = this.nodeY(perk);
 		int colour = switch (state) {
 			case OWNED -> OWNED;
@@ -152,7 +159,8 @@ public final class SkillTreeScreen extends Screen {
 		graphics.pose().pushMatrix();
 		graphics.pose().translate(x + NODE / 2.0F, y + NODE + 2);
 		graphics.pose().scale(0.75F, 0.75F);
-		graphics.centeredText(this.font, cost, 0, 0, state == PerkShop.Outcome.TOO_POOR ? 0xFFFF5A5A : 0xFF9AA6C8);
+		int costColour = free ? 0xFF5A6078 : state == PerkShop.Outcome.TOO_POOR ? 0xFFFF5A5A : 0xFF9AA6C8;
+		graphics.centeredText(this.font, cost, 0, 0, costColour);
 		graphics.pose().popMatrix();
 	}
 

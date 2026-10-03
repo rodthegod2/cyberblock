@@ -50,25 +50,35 @@ class PerkShopTest {
 
 	@Test
 	void firstTierNeedsOnlyLevels() {
-		assertEquals(OK, PerkShop.check(Perk.EXTRA_RAM, Map.of(), 3));
-		assertEquals(TOO_POOR, PerkShop.check(Perk.EXTRA_RAM, Map.of(), 2));
+		assertEquals(OK, PerkShop.check(Perk.EXTRA_RAM, Map.of(), 3, false));
+		assertEquals(TOO_POOR, PerkShop.check(Perk.EXTRA_RAM, Map.of(), 2, false));
 	}
 
 	@Test
 	void tiersInOrder() {
-		assertEquals(LOCKED, PerkShop.check(Perk.CHEAP_HACKS, Map.of(), 100));
-		assertEquals(OK, PerkShop.check(Perk.CHEAP_HACKS, Map.of("extra_ram", 1), 5));
-		assertEquals(TOO_POOR, PerkShop.check(Perk.CHEAP_HACKS, Map.of("extra_ram", 1), 4));
-		assertEquals(LOCKED, PerkShop.check(Perk.OVERCLOCK, Map.of("extra_ram", 1, "cheap_hacks", 1), 100));
-		assertEquals(OK, PerkShop.check(Perk.OVERCLOCK, Map.of("extra_ram", 1, "cheap_hacks", 1, "chain_hack", 1), 12));
+		assertEquals(LOCKED, PerkShop.check(Perk.CHEAP_HACKS, Map.of(), 100, false));
+		assertEquals(OK, PerkShop.check(Perk.CHEAP_HACKS, Map.of("extra_ram", 1), 5, false));
+		assertEquals(TOO_POOR, PerkShop.check(Perk.CHEAP_HACKS, Map.of("extra_ram", 1), 4, false));
+		assertEquals(LOCKED, PerkShop.check(Perk.OVERCLOCK, Map.of("extra_ram", 1, "cheap_hacks", 1), 100, false));
+		assertEquals(OK, PerkShop.check(Perk.OVERCLOCK, Map.of("extra_ram", 1, "cheap_hacks", 1, "chain_hack", 1), 12, false));
 		// another branch's perks do not count, and rank 0 is not owned
-		assertEquals(LOCKED, PerkShop.check(Perk.SANDEVISTAN, Map.of("iron_skin", 1), 100));
-		assertEquals(LOCKED, PerkShop.check(Perk.SANDEVISTAN, Map.of("double_jump", 0), 100));
+		assertEquals(LOCKED, PerkShop.check(Perk.SANDEVISTAN, Map.of("iron_skin", 1), 100, false));
+		assertEquals(LOCKED, PerkShop.check(Perk.SANDEVISTAN, Map.of("double_jump", 0), 100, false));
+	}
+
+	/** Plan retest2 R3: free perks (creative, or /cyberblock perks free on) cost no levels but keep the tier order. */
+	@Test
+	void freePerksNeedNoLevelsButKeepTheOrder() {
+		assertEquals(OK, PerkShop.check(Perk.EXTRA_RAM, Map.of(), 0, true));
+		assertEquals(OK, PerkShop.check(Perk.OVERCLOCK, Map.of("extra_ram", 1, "cheap_hacks", 1, "chain_hack", 1), 0, true));
+		assertEquals(LOCKED, PerkShop.check(Perk.CHEAP_HACKS, Map.of(), 0, true));
+		assertEquals(LOCKED, PerkShop.check(Perk.CHEAP_HACKS, Map.of(), 100, true));
+		assertEquals(OWNED, PerkShop.check(Perk.IRON_SKIN, Map.of("iron_skin", 1), 0, true));
 	}
 
 	@Test
 	void ownedOnce() {
-		assertEquals(OWNED, PerkShop.check(Perk.IRON_SKIN, Map.of("iron_skin", 1), 100));
+		assertEquals(OWNED, PerkShop.check(Perk.IRON_SKIN, Map.of("iron_skin", 1), 100, false));
 	}
 
 	@Test

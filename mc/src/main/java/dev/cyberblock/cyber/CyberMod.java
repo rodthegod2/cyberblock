@@ -1,5 +1,6 @@
 package dev.cyberblock.cyber;
 
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.WorldBridge;
@@ -12,6 +13,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -49,18 +51,40 @@ public class CyberMod implements ModInitializer {
 
 			return InteractionResult.PASS;
 		});
-		// /cyberblock kit, for everyone (permission level 0)
+		// /cyberblock kit and /cyberblock perks free [on|off], for everyone (permission level 0); Brigadier merges these
+		// `cyberblock` literals with the world track's
 		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> dispatcher.register(
-			Commands.literal("cyberblock").then(Commands.literal("kit").executes(command -> {
-				Kit.give(command.getSource().getPlayerOrException());
-				command.getSource().sendSuccess(() -> Component.translatable("cyberblock.kit.given"), false);
-				return 1;
-			}))));
+			Commands.literal("cyberblock")
+				.then(Commands.literal("kit").executes(command -> {
+					Kit.give(command.getSource().getPlayerOrException());
+					command.getSource().sendSuccess(() -> Component.translatable("cyberblock.kit.given"), false);
+					return 1;
+				}))
+				.then(Commands.literal("perks").then(Commands.literal("free")
+					.executes(command -> freePerks(command.getSource(), null))
+					.then(Commands.literal("on").executes(command -> freePerks(command.getSource(), true)))
+					.then(Commands.literal("off").executes(command -> freePerks(command.getSource(), false)))))));
 		Bridge.perkRank = id -> {
 			ServerPlayer player = localPlayer();
 			return player == null ? 0 : CyberData.rank(player, id);
 		};
 		Cyberblock.LOG.info("cyberblock cyber loaded");
+	}
+
+	/**
+	 * `/cyberblock perks free [on|off]` (plan retest2 section 1.9): sets the player's FREE_PERKS (null: only reports it) and says
+	 * whether perks are free now (creative always is).
+	 */
+	private static int freePerks(final CommandSourceStack source, final @Nullable Boolean on) throws CommandSyntaxException {
+		ServerPlayer player = source.getPlayerOrException();
+		if (on != null) {
+			player.setAttached(CyberData.FREE_PERKS, on);
+		}
+
+		Component state = player.getAttachedOrElse(CyberData.FREE_PERKS, false) ? Component.translatable("cyberblock.perks.free.on")
+			: player.isCreative() ? Component.translatable("cyberblock.perks.free.creative") : Component.translatable("cyberblock.perks.free.off");
+		source.sendSuccess(() -> state, false);
+		return 1;
 	}
 
 	/** The singleplayer world's player (the spec is singleplayer only), or null before anyone joined. Server thread. */
