@@ -260,6 +260,15 @@ public final class CyberwareRules {
 		return new double[]{vx, Math.clamp(dy / 6.0 + 0.2, -0.5, 1.0), vz};
 	}
 
+	/**
+	 * Whether a Mantis lunge lands now, `distance` blocks from its target. Hosted, always at once: PlayerSync keeps Steve on V,
+	 * and the lunge's low launch (lungeVelocity, under FlightRules.MOTION_LAUNCH_MIN_UP) never lifts him off her, so he would
+	 * never arrive. Otherwise once he is within LUNGE_ARRIVE.
+	 */
+	public static boolean lungeLands(final boolean hosted, final double distance) {
+		return hosted || distance <= LUNGE_ARRIVE;
+	}
+
 	/** Monowire lash: `to` (target minus eye) is within LASH_RANGE and within LASH_HALF_ANGLE of the look direction, horizontally. */
 	public static boolean inLash(final double lookX, final double lookZ, final double toX, final double toY, final double toZ) {
 		double dist = Math.sqrt(toX * toX + toY * toY + toZ * toZ);

@@ -209,9 +209,10 @@ public final class CyberwareEffects {
 	}
 
 	/**
-	 * Mantis Blades: a lunge at the entity nearest the aim point, at most 10 blocks away. Steve is launched at it (the server's
-	 * motion goes to the client, which the R5 launch pipeline turns into V following); arriving within 2.5 blocks he hits it at
-	 * 1.5x his attack damage (a proxy's hit goes to Cyberpunk as `hit`).
+	 * Mantis Blades: a lunge at the entity nearest the aim point, at most 10 blocks away, hitting it at 1.5x his attack damage
+	 * (a proxy's hit goes to Cyberpunk as `hit`). Hosted, it lands at once with a red trail from Steve to the target (he stays
+	 * on V: CyberwareRules.lungeLands). Otherwise Steve is launched at it and hits on arriving within 2.5 blocks; a lunge that
+	 * times out gives its cooldown back.
 	 */
 	private static boolean lunge(final ServerPlayer player, final @Nullable Vec3 aim, final long now) {
 		LivingEntity target = null;
@@ -231,19 +232,32 @@ public final class CyberwareEffects {
 			return false;
 		}
 
+		muzzle(player, new DustParticleOptions(BLADE_RED, 1.2F));
+		sound(player, SoundEvents.PLAYER_ATTACK_SWEEP, 0.7F);
+		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.cyberware.lunge", "Mantis lunge").withColor(BLADE_RED));
+		CyberData.setTimer(player, Cyberware.MANTIS_BLADES, CyberwareRules.Timer.fire(now, 0, Cyberware.MANTIS_BLADES.cooldownTicks()));
+		if (CyberwareRules.lungeLands(Cyberblock.active, player.distanceTo(target))) {
+			Vec3 from = player.position().add(0.0, 1.0, 0.0);
+			Vec3 to = target.position().add(0.0, target.getBbHeight() / 2.0, 0.0);
+			Vec3 step = to.subtract(from);
+			for (double t = 0.0; t <= 1.0; t += 0.5 / Math.max(0.5, step.length())) {
+				Vec3 p = from.add(step.scale(t));
+				player.level().sendParticles(new DustParticleOptions(BLADE_RED, 1.0F), p.x, p.y, p.z, 1, 0.05, 0.05, 0.05, 0.0);
+			}
+
+			strike(player, target);
+			return true;
+		}
+
 		Vec3 d = target.position().subtract(player.position());
 		double[] v = CyberwareRules.lungeVelocity(d.x, d.y, d.z);
 		player.setDeltaMovement(v[0], v[1], v[2]);
 		player.needsSync = true;
 		lunges.put(player.getUUID(), new Lunge(target.getId(), CyberwareRules.LUNGE_TICKS));
-		muzzle(player, new DustParticleOptions(BLADE_RED, 1.2F));
-		sound(player, SoundEvents.PLAYER_ATTACK_SWEEP, 0.7F);
-		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.cyberware.lunge", "Mantis lunge").withColor(BLADE_RED));
-		CyberData.setTimer(player, Cyberware.MANTIS_BLADES, CyberwareRules.Timer.fire(now, 0, Cyberware.MANTIS_BLADES.cooldownTicks()));
 		return true;
 	}
 
-	/** Every tick of a lunge: a red trail, and the hit once Steve is close enough (or the lunge times out). */
+	/** Every tick of a lunge: a red trail, and the hit once Steve is close enough (or the lunge times out, cooldown given back). */
 	private static void lungeTick(final ServerPlayer player) {
 		Lunge lunge = lunges.get(player.getUUID());
 		if (lunge == null) {
@@ -254,16 +268,23 @@ public final class CyberwareEffects {
 		Entity target = level.getEntity(lunge.target());
 		if (!(target instanceof LivingEntity living) || !living.isAlive() || lunge.ticksLeft() <= 0) {
 			lunges.remove(player.getUUID());
+			CyberData.setTimer(player, Cyberware.MANTIS_BLADES, CyberwareRules.Timer.NONE);
 			return;
 		}
 
 		level.sendParticles(new DustParticleOptions(BLADE_RED, 1.0F), player.getX(), player.getY() + 1.0, player.getZ(), 3, 0.2, 0.3, 0.2, 0.0);
-		if (player.distanceTo(living) > CyberwareRules.LUNGE_ARRIVE) {
+		if (!CyberwareRules.lungeLands(false, player.distanceTo(living))) {
 			lunges.put(player.getUUID(), new Lunge(lunge.target(), lunge.ticksLeft() - 1));
 			return;
 		}
 
 		lunges.remove(player.getUUID());
+		strike(player, living);
+	}
+
+	/** The lunge's hit: 1.5x Steve's attack damage, the blade sweep and its sound. */
+	private static void strike(final ServerPlayer player, final LivingEntity living) {
+		ServerLevel level = player.level();
 		float damage = (float) player.getAttributeValue(Attributes.ATTACK_DAMAGE) * CyberwareRules.LUNGE_HIT;
 		breakCamo(player, level.getGameTime());
 		living.hurtServer(level, player.damageSources().playerAttack(player), damage);
@@ -271,6 +292,7 @@ public final class CyberwareEffects {
 		level.sendParticles(ParticleTypes.SWEEP_ATTACK, at.x, at.y, at.z, 2, 0.3, 0.2, 0.3, 0.0);
 		level.sendParticles(new DustParticleOptions(BLADE_RED, 1.4F), at.x, at.y, at.z, 10, 0.3, 0.3, 0.3, 0.0);
 		sound(player, SoundEvents.PLAYER_ATTACK_STRONG, 1.0F);
+		Cyberblock.LOG.info("cyberware: mantis lunge hit {} for {}", living.getName().getString(), damage);
 	}
 
 	/** Gorilla Arms: a ground slam, knockback 1.0 (and a light hit) to everything living within 4 blocks. */

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.cyberblock.FlightRules;
 import dev.cyberblock.client.cyber.ArmCyberware;
 import java.util.EnumSet;
 import java.util.Set;
@@ -54,6 +55,17 @@ class ArmCyberwareTest {
 		double[] none = CyberwareRules.lungeVelocity(0.0, 0.0, 0.0);
 		assertEquals(0.0, none[0]);
 		assertEquals(0.0, none[2]);
+	}
+
+	@Test
+	void theHostedLungeLandsAtOnce() {
+		// the lunge's launch on flat ground is too low for the motion-launch filter, so V never carries Steve to the target...
+		double[] v = CyberwareRules.lungeVelocity(8.0, 0.0, 0.0);
+		assertFalse(FlightRules.launch(v[0], v[1], v[2], false));
+		// ...so hosted it lands right away, at any reach; standalone only once he is there
+		assertTrue(CyberwareRules.lungeLands(true, CyberwareRules.LUNGE_RANGE));
+		assertFalse(CyberwareRules.lungeLands(false, 6.0));
+		assertTrue(CyberwareRules.lungeLands(false, CyberwareRules.LUNGE_ARRIVE));
 	}
 
 	@Test
