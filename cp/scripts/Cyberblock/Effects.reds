@@ -197,7 +197,7 @@ public abstract class CyberblockEffects {
 
   // Targets the push must leave alone: those the damage pipeline protects (V, V's car, god modes, friends of V), cars
   // they drive, and anyone a quest is animating (workspot, scene), whom a forced ragdoll would pull out of it.
-  private static func IsProtected(game: GameInstance, object: ref<GameObject>, player: ref<PlayerPuppet>) -> Bool {
+  public static func IsProtected(game: GameInstance, object: ref<GameObject>, player: ref<PlayerPuppet>) -> Bool {
     let id = object.GetEntityID();
     let mounted: wref<GameObject>;
     if object == player || VehicleComponent.GetVehicle(game, player, mounted) && mounted == object {
@@ -236,7 +236,7 @@ public abstract class CyberblockEffects {
     effects.SetStatusEffectRemainingDuration(object.GetEntityID(), burning, seconds);
   }
 
-  private static func Find(game: GameInstance, target: Uint64) -> ref<GameObject> {
+  public static func Find(game: GameInstance, target: Uint64) -> ref<GameObject> {
     return GameInstance.FindEntityByID(game, EntityID.FromHash(target)) as GameObject;
   }
 
