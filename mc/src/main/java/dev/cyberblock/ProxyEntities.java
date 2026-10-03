@@ -14,7 +14,7 @@ import net.minecraft.world.entity.MobCategory;
 public final class ProxyEntities {
 	/** A pedestrian: 0.6 x 1.8. */
 	public static EntityType<ProxyEntity> HUMAN;
-	/** A car, bike or truck: 2.0 wide, 1.6 high. */
+	/** A car, bike or truck: 3.0 wide and deep (a square box: a car is about 2 m by 4.5 m, and 2.0 was too easy to miss), 1.6 high. */
 	public static EntityType<ProxyEntity> VEHICLE;
 
 	private ProxyEntities() {
@@ -22,7 +22,7 @@ public final class ProxyEntities {
 
 	static void register() {
 		HUMAN = register("proxy_human", 0.6F, 1.8F);
-		VEHICLE = register("proxy_vehicle", 2.0F, 1.6F);
+		VEHICLE = register("proxy_vehicle", 3.0F, 1.6F);
 	}
 
 	private static EntityType<ProxyEntity> register(final String name, final float width, final float height) {
