@@ -33,6 +33,14 @@
 // save. Minecraft's NPC proxies (and their leads) stay as long as Minecraft still gets cam frames, as through a save or a
 // Cyberpunk menu, and are removed only when the host goes inactive. The saving flag is also cleared on session ready and
 // end, and after 10 s of ticks without an AfterSave (a save that failed or was aborted), so it can never stay stuck.
+//
+// Re-test 3 (plan 2026-10-03-retest3-polish task U1, sections 1.4 and 1.11): while On (Active or Vehicle, not saving)
+// every tick runs CyberblockInk.Apply, which keeps Cyberpunk's HUD, game-notification and waiting-sign layers invisible
+// (Minecraft draws the UI); every Clear path (Off, Lost, before saves, session ready and end, detach) runs
+// CyberblockInk.Restore. The Vehicle state only hides V's meshes (CyberblockPlayerState). Our own messages go to
+// Minecraft as toasts (Cyberblock_Notify) while it is shown; "Start Minecraft first", "Minecraft lost" and the switch
+// back to Off stay Cyberpunk warnings, since Minecraft is not drawn then. Each tick also runs package S's
+// CyberblockSeat.Tick and CyberblockView.Tick (10 Hz), and every Clear path their Clear.
 
 enum CyberblockState {
   Off = 0,
@@ -93,7 +101,7 @@ public class CyberblockSystem extends ScriptableSystem {
     }
     Cyberblock_SetMenu(false);
     Cyberblock_SetChoices(false);
-    this.playerState.ShowHud();
+    CyberblockInk.RestoreFor(this.GetGameInstance(), "detach");
     CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
@@ -106,6 +114,7 @@ public class CyberblockSystem extends ScriptableSystem {
   private cb func OnBeforeSave(event: ref<GameSessionEvent>) {
     this.saving = true;
     this.savingTicks = 0;
+    CyberblockInk.RestoreFor(this.GetGameInstance(), "saving");
     this.playerState.ClearSaved(GetPlayer(this.GetGameInstance()));
     this.creative.Clear(GetPlayer(this.GetGameInstance()));
     CyberblockSystem.ClearWorld(this.GetGameInstance(), false);
@@ -126,6 +135,7 @@ public class CyberblockSystem extends ScriptableSystem {
   private cb func OnSessionReady(event: ref<GameSessionEvent>) {
     this.saving = false;
     let player = GetPlayer(this.GetGameInstance());
+    CyberblockInk.RestoreFor(this.GetGameInstance(), "session ready");
     this.playerState.Clear(player);
     this.creative.Clear(player);
     if IsDefined(player) {
@@ -140,6 +150,7 @@ public class CyberblockSystem extends ScriptableSystem {
 
   private cb func OnSessionEnd(event: ref<GameSessionEvent>) {
     this.saving = false;
+    CyberblockInk.RestoreFor(this.GetGameInstance(), "session end");
     this.playerState.Clear(GetPlayer(this.GetGameInstance()));
     this.creative.Clear(GetPlayer(this.GetGameInstance()));
     CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
@@ -150,9 +161,19 @@ public class CyberblockSystem extends ScriptableSystem {
 
   private func UpdatePlayer(player: ref<PlayerPuppet>) -> Void {
     if IsDefined(player) && !this.saving {
-      this.playerState.Update(player, Equals(this.state, CyberblockState.Active), Cyberblock_ScreenOpen());
+      this.playerState.Update(player, Equals(this.state, CyberblockState.Active), Equals(this.state, CyberblockState.Vehicle), Cyberblock_ScreenOpen());
       this.creative.Update(player, Equals(this.state, CyberblockState.Vehicle));
+      CyberblockInk.Apply(this.GetGameInstance(), CyberblockSystem.IsOn(this.state));
     }
+  }
+
+  // Cyberblock is On and not writing a save: Minecraft is shown and draws the UI (CyberblockUi.Pump asks this).
+  public func UiOn() -> Bool {
+    return CyberblockSystem.IsOn(this.state) && !this.saving;
+  }
+
+  public static func Get(game: GameInstance) -> ref<CyberblockSystem> {
+    return GameInstance.GetScriptableSystemsContainer(game).Get(n"CyberblockSystem") as CyberblockSystem;
   }
 
   private func ScheduleTick() -> Void {
@@ -193,6 +214,9 @@ public class CyberblockSystem extends ScriptableSystem {
     // cam.cr / cam.air / cam.held: Minecraft keeps Steve crouched, airborne or still with V.
     let held = VehicleComponent.IsMountedToVehicle(game, player) || CyberblockEffects.PlayerLocked(game, player);
     Cyberblock_SetStance(CyberblockSystem.Crouched(player), CyberblockSystem.InAir(player), held);
+    // Package S (plan section 1.4): seat data for Steve in vehicles, and the third-person view gate.
+    CyberblockSeat.Tick(game, player, live);
+    CyberblockView.Tick(game, player, active, held, CyberblockDisable.InMenu(game));
     if !this.saving {
       this.events.Tick(game, live);
     }
@@ -230,6 +254,8 @@ public class CyberblockSystem extends ScriptableSystem {
     CyberblockPerks.Clear(game);
     CyberblockCyberware.Clear(game);
     CyberblockBuffs.Clear(game, leaving);
+    CyberblockSeat.Clear(game);
+    CyberblockView.Clear(game);
   }
 
   // Crouched as the game's own crouch indicator counts it: Crouch, CrouchDodge or Slide
@@ -261,7 +287,7 @@ public class CyberblockSystem extends ScriptableSystem {
   // The choices on screen: every choice of every dialogue choice hub (UIInteractions.DialogChoiceHubs, as
   // DefaultTransition.AreChoiceHubsActive reads it, defaultTransition.swift:1586; DialogChoiceHubs.choiceHubs and
   // ListChoiceHubData.choices, orphans.swift), plus those of an active interaction list (UIInteractions
-  // .InteractionChoiceHub, InteractionChoiceHubData.active/choices, as PlayerState.reds' ChoicesShown reads it): both are
+  // .InteractionChoiceHub, InteractionChoiceHubData.active/choices, as settingsMain.swift's noChoiceHubsShown reads it): both are
   // the InteractionActions input context, which scrolls with the wheel and picks choices 3 and 4 with 1 and 2.
   private static func ChoiceCount(game: GameInstance) -> Int32 {
     let interactions = GameInstance.GetBlackboardSystem(game).Get(GetAllBlackboardDefs().UIInteractions);
@@ -331,11 +357,20 @@ public class CyberblockSystem extends ScriptableSystem {
     let active = CyberblockSystem.IsOn(next);
     if wasOn && !active {
       CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
+      CyberblockInk.RestoreFor(this.GetGameInstance(), Equals(next, CyberblockState.Lost) ? "lost" : "off");
     }
     Cyberblock_SetActive(active, mounted);
-    this.Notify(message);
+    if active {
+      // Minecraft is drawn from now on: the message is a Minecraft toast.
+      Cyberblock_Notify(n"info", "Cyberblock", message, 2.0);
+    } else {
+      // Off or Lost: Minecraft is no longer drawn, so the message stays a Cyberpunk warning.
+      this.Notify(message);
+    }
   }
 
+  // A Cyberpunk on-screen warning, only for the moments Minecraft is not shown ("Start Minecraft first", "Minecraft
+  // lost", "Cyberblock off").
   private func Notify(message: String) -> Void {
     let msg: SimpleScreenMessage;
     msg.isShown = true;
