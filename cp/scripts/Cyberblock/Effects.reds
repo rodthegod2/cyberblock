@@ -79,12 +79,17 @@ public abstract class CyberblockEffects {
     impulse.Run();
 
     GameInstance.GetAudioSystem(game).PlayShockwave(n"explosion", pos);
-    // NPCs react as to a grenade V threw (the stim is broadcast from V, the only object we have at hand).
-    let investigate: stimInvestigateData;
-    investigate.attackInstigator = player;
-    investigate.attackInstigatorPosition = player.GetWorldPosition();
-    investigate.revealsInstigatorPosition = true;
-    StimBroadcasterComponent.BroadcastStim(player, gamedataStimType.Explosion, 30.0, investigate);
+    // NPCs react as to a grenade V threw. The stim goes out from V (the only object we have at hand) with the grenade's
+    // 30 m radius, so it is sent only for an explosion within 30 m of V; one farther away (TNT Steve set off and walked
+    // away from, a creeper behind a wall) must not draw everyone to V. Only one within 10 m tells them where V is.
+    let distance = Vector4.Distance(pos, player.GetWorldPosition());
+    if distance <= 30.0 {
+      let investigate: stimInvestigateData;
+      investigate.attackInstigator = player;
+      investigate.attackInstigatorPosition = player.GetWorldPosition();
+      investigate.revealsInstigatorPosition = distance <= 10.0;
+      StimBroadcasterComponent.BroadcastStim(player, gamedataStimType.Explosion, 30.0, investigate);
+    }
   }
 
   // Damages the NPC or vehicle by frac of its max health and pushes it with impulse (m/s, Cyberpunk space).
