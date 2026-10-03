@@ -9,8 +9,8 @@
 // DespawnEntity/DespawnTagged, StaticEntitySpec, CallbackSystem.RegisterCallback(n"Entity/Initialize") +
 // CallbackSystemHandler.AddTarget(StaticEntityTarget.Tag), EntityLifecycleEvent.GetEntity, Entity.GetComponents/
 // AddComponent, IComponent.Toggle/IsA, ColliderComponent fields, physicsColliderBox, physicsFilterData,
-// SimulationFilter/QueryFilter masks, SimulationFilter.SimulationFilter_BuildFromPreset, TrafficGenDynamicImpact,
-// ScriptableServiceContainer.GetService, inkIntHashMap (Uint64 -> Int32, native).
+// SimulationFilter/QueryFilter masks, SimulationFilter.SimulationFilter_BuildFromPreset, QueryFilter.ZERO/AddGroup,
+// TrafficGenDynamicImpact, ScriptableServiceContainer.GetService, inkIntHashMap (Uint64 -> Int32, native).
 
 public abstract class CyberblockCollision {
   public static func Add(game: GameInstance, aabbMin: Vector4) -> Void {
@@ -288,24 +288,25 @@ public class CyberblockCollisionService extends ScriptableService {
     let shapes: array<ref<physicsICollider>>;
     ArrayPush(shapes, box);
 
-    // World Static: what buildings use; its type is in the collision mask of the player, NPCs and vehicles.
-    // Masks as cooked for World Static (the values World Builder/entSpawner ships), so the result does not depend on
-    // whether the engine resolves the preset name at runtime.
+    // World Static: what buildings use; its type is in the collision mask of the player, NPCs and vehicles. Both masks
+    // come from the engine's own group table, so they match the running game: the simulation filter from the preset,
+    // the query filter from the preset's QueryDetect groups (2.31 engine\physics\collision_presets.json), each set by
+    // QueryFilter.AddGroup (it ORs the group's bit into mask2, where cooked colliders keep QueryDetect; mask1 stays 0
+    // as in cooked colliders). The masks once hard-coded here were an older bit layout (docs/notes/collision-spike.md).
     let simulation: SimulationFilter;
-    simulation.mask1 = 114696ul;
-    simulation.mask2 = 23627ul;
-    let query: QueryFilter;
-    query.mask1 = 0ul;
-    query.mask2 = 70107400ul;
+    SimulationFilter.SimulationFilter_BuildFromPreset(simulation, n"World Static");
+    let query = QueryFilter.ZERO();
+    let groups: array<CName> = [n"Static", n"Visibility", n"Shooting", n"VehicleBlocker", n"PhotoModeCamera", n"TankBlocker", n"PlayerBlocker"];
+    for group in groups {
+      QueryFilter.AddGroup(query, group);
+    }
     let filter = new physicsFilterData();
     filter.preset = n"World Static";
     filter.simulationFilter = simulation;
     filter.queryFilter = query;
     if !this.filterLogged {
       this.filterLogged = true;
-      let built: SimulationFilter;
-      SimulationFilter.SimulationFilter_BuildFromPreset(built, n"World Static");
-      Cyberblock_Log(s"collision: World Static simulation filter from preset \(built.mask1)/\(built.mask2), used \(simulation.mask1)/\(simulation.mask2)");
+      Cyberblock_Log(s"collision: World Static filters from the engine: simulation \(simulation.mask1)/\(simulation.mask2), query \(query.mask1)/\(query.mask2)");
     }
 
     // Lets the traffic system treat the box as blocking a lane (if it registers runtime colliders).
