@@ -273,6 +273,7 @@ def test_layer4_replays_a_fall_at_8_m_per_s_from_200_with_a_jump_tap(tmp_path, e
     for k in (0, 50, 200):  # frames are 1 ms apart: 8 mm of fall per frame
         assert cams[k]["pl"] == pytest.approx([-1.0, 200.0 - 0.008 * k, -1.0])
     assert all(m["p"][1] == pytest.approx(m["pl"][1] + 1.62) and m["r"] == [0.0, 0.0, 0.0] and m["cr"] is False for m in cams)
+    assert all(m["fly"] is False and "lv" not in m for m in cams)  # falling is not a flight; no `lv`: Minecraft keeps its own k
     keys = [(i, m["k"], m["down"]) for i, m in enumerate(got) if m["t"] == "key"]
     assert [(k, down) for _, k, down in keys] == [("jump", True), ("jump", False)]
     before = lambda i: len([m for m in got[:i] if m["t"] == "cam" and m["f"] > 30])
@@ -286,12 +287,26 @@ def test_layer4_body_falls_follows_flight_and_stays_where_it_lands():
     for garbage in ({"t": "flight", "active": True, "p": "nope"}, {"t": "flight", "active": True, "p": [1, 2]}, {"t": "cam", "p": [1, 2, 3]}):
         body.update(garbage)
         assert body.mode == "fall"
+    assert body.cam(1, 0.0)["fly"] is False and body.cam(3, 1000.0)["fly"] is False  # falling, or landed on the slab
     body.update({"t": "flight", "active": True, "p": [1, 2, 3], "yaw": 10.0, "pitch": 5.0})
     assert body.mode == "flight" and body.cam(4, 99.0)["pl"] == [1.0, 2.0, 3.0] and body.cam(4, 99.0)["r"] == [10.0, 5.0, 0.0]
+    assert body.cam(4, 99.0)["fly"] is True  # the host follows the flight: Minecraft must see `fly` within 0.5 s
     body.update({"t": "flight", "active": False, "p": [4, 5, 6]})
     assert body.mode == "ground" and body.cam(5, 0.0)["pl"] == [4.0, 5.0, 6.0] and body.cam(5, 0.0)["r"] == [10.0, 5.0, 0.0]
+    assert body.cam(5, 0.0)["fly"] is False  # touchdown ends it
     body.update({"t": "teleport", "p": [7, 8, 9], "yaw": -45.0})
     assert body.mode == "ground" and body.cam(6, 0.0)["pl"] == [7.0, 8.0, 9.0] and body.cam(6, 0.0)["r"][0] == -45.0
+    assert body.cam(6, 0.0)["fly"] is False
+
+
+def test_layer4_body_accepts_the_flight_kind_and_sample_clock_and_ignores_bad_ones():
+    """Re-test 2: `flight` carries `kind` (glide or launch) and `ts` (ms). V follows every sample either way."""
+    for extra in ({"kind": "glide", "ts": 10.0}, {"kind": "launch", "ts": 81234.5}, {"kind": "fly", "ts": -1}, {"kind": 7, "ts": "late"},
+                  {"ts": float("nan")}, {"kind": None}):
+        body = fakehost.Body()
+        body.update({"t": "flight", "active": True, "p": [5, 70, 6], "yaw": 20.0, "pitch": 3.0, **extra})
+        cam = body.cam(1, 0.0)
+        assert cam["pl"] == [5.0, 70.0, 6.0] and cam["fly"] is True and cam["r"] == [20.0, 3.0, 0.0], extra
 
 
 def test_layer4_cam_follows_flight_then_stays_where_it_touches_down(tmp_path, exporting, quick):
@@ -304,6 +319,7 @@ def test_layer4_cam_follows_flight_then_stays_where_it_touches_down(tmp_path, ex
     landed = [i for i, m in enumerate(cams) if m["pl"] == [1.5, 64.0, 2.5]]
     assert flying and landed and flying == list(range(len(flying))) and landed == list(range(len(cams) - len(landed), len(cams)))
     assert len(flying) + len(landed) == len(cams)  # nothing in between: V never fell
+    assert all(cams[i]["fly"] is True for i in flying) and all(cams[i]["fly"] is False for i in landed)  # `fly` while following only
     assert cams[0]["r"] == [90.0, 10.0, 0.0] and cams[0]["h"] == 90.0 and cams[0]["p"][1] == pytest.approx(150.0 + 1.62)
     assert cams[-1]["r"] == [90.0, 0.0, 0.0]
 
@@ -358,12 +374,14 @@ def test_layer6_ignores_a_scan_or_hack_without_a_request_id(tmp_path, exporting)
     assert [m["id"] for m in got if m["t"] == "scaninfo"] == [5] and "hackresult" not in types(got)
 
 
-def test_layer6_presses_the_hack_and_skills_keys_then_reports_a_kill(tmp_path, exporting, quick):
+def test_layer6_presses_the_hack_and_skills_keys_then_reports_a_kill_then_the_cyberware_keys(tmp_path, exporting, quick):
     _, got = run_against_fake_minecraft(tmp_path, 30, exporting, hold=0.3, layers=layer_set(6))
     script = [m for m in got if m["t"] in ("key", "killed")]
     assert [(m["t"], m.get("k"), m.get("down")) for m in script] == [
-        ("key", "hack", True), ("key", "hack", False), ("key", "skills", True), ("key", "skills", False), ("killed", None, None)]
-    assert script[-1] == {"t": "killed", "target": "9007199254740993", "kind": "human", "hostile": True}
+        ("key", "hack", True), ("key", "hack", False), ("key", "skills", True), ("key", "skills", False), ("killed", None, None),
+        ("key", "cyberware", True), ("key", "cyberware", False), ("key", "cyberware", True), ("key", "cyberware", False),  # U opens, U closes
+        ("key", "activate", True), ("key", "activate", False)]  # a Y tap (released well inside 8 client ticks)
+    assert script[4] == {"t": "killed", "target": "9007199254740993", "kind": "human", "hostile": True}
     assert all(VALIDATORS[m["t"]](m) for m in script)
     assert hold_cams(got)[-1]["pl"][1] == fakehost.SLAB_Y + 1.0  # layer 6 alone holds the orbit pose
 
@@ -380,6 +398,30 @@ def test_layer_prints_the_protocol_examples_of_its_own_types_only(tmp_path, expo
     assert not others & set(lines)
 
 
+def test_layer6_prints_the_cyberware_list_and_the_cyberfx_effects(tmp_path, exporting, capsys):
+    replies = example_messages("cyberware", "cyberfx", "binds")
+    run_against_fake_minecraft(tmp_path, 30, exporting, replies=replies, hold=0.1, layers=layer_set(6))
+    lines = printed(capsys)
+    assert lines["cyberware"] == example_messages("cyberware") and lines["cyberfx"] == example_messages("cyberfx")
+    assert lines["binds"] == example_messages("binds") and len(lines["binds"][0]["keys"]) == 4
+
+
+def test_cyberware_and_cyberfx_are_not_printed_without_layer6(tmp_path, exporting, capsys):
+    run_against_fake_minecraft(tmp_path, 30, exporting, replies=example_messages("cyberware", "cyberfx"), hold=0.1, layers=layer_set(2))
+    assert not {"cyberware", "cyberfx"} & set(printed(capsys))
+
+
+@pytest.mark.parametrize("layers", [(2,), (4,), (6,), (3, 5)])
+def test_align_is_printed_with_every_layer_and_its_resync_needs_no_answer(tmp_path, exporting, capsys, layers):
+    """Minecraft's `align` is always followed by a `blocks reset:true` resync: the fake host prints both and sends nothing back."""
+    align, resync = example_messages("align")[0], {"t": "blocks", "reset": True, "c": [10, 4, -21]}
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[align, resync], hold=0.1, layers=layer_set(*layers))
+    lines = printed(capsys)
+    assert lines["align"] == [align] and lines["blocks"] == [resync]
+    assert {m["t"] for m in got} <= {"hello", "view", "clear", "state", "hud", "cmd", "ground", "cam", "npcs", "dmg", "key", "killed", "scaninfo",
+                                     "hackresult", "mobdmg", "pcells"}  # nothing was invented in answer to align or blocks
+
+
 def test_blocks_resync_is_printed_with_the_layer2_events(tmp_path, exporting, capsys):
     blocks = example_messages("blocks")
     run_against_fake_minecraft(tmp_path, 30, exporting, replies=blocks, hold=0.1, layers=layer_set(2))
@@ -393,9 +435,11 @@ def test_layers_combine_and_every_message_sent_obeys_the_documented_limits(tmp_p
     assert t.count("dmg") == 1 and t.count("mobdmg") == 1 and t.count("pcells") == 1 and t.count("scaninfo") == 2
     assert t.count("hackresult") == 1 and t.count("killed") == 1 and t.count("npcs") >= 3
     assert [(m["k"], m["down"]) for m in got if m["t"] == "key"] == [
-        ("jump", True), ("jump", False), ("hack", True), ("hack", False), ("skills", True), ("skills", False)]
+        ("jump", True), ("jump", False), ("hack", True), ("hack", False), ("skills", True), ("skills", False),
+        ("cyberware", True), ("cyberware", False), ("cyberware", True), ("cyberware", False), ("activate", True), ("activate", False)]
     cams = hold_cams(got)
     assert cams and all(m["pl"] == example_messages("flight")[0]["p"] for m in cams)  # layer 4's body, following the flight
+    assert all(m["fly"] is True for m in cams)  # the protocol.md launch example (kind and ts included) is followed and confirmed
     for m in got:
         if m["t"] in VALIDATORS:
             assert VALIDATORS[m["t"]](m), m

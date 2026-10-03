@@ -22,13 +22,20 @@ print what Minecraft reports for their layer as `<type>: <json>`:
   --layer3  sends the `npcs`; the first non-empty `mobs` list is answered once with `mobdmg` (frac 0.5, by the hostile
             human). Prints `mobs`.
   --layer4  V falls from y = 200 at 8 m/s (the `cam` stream) with a `key jump` tap at 0.5 s; while Minecraft reports
-            `flight` active the `cam` follows its position and look, a touchdown or a `teleport` puts V down there; every
-            `proj` is answered with `pcells`, a 3 x 3 wall 0.5 s ahead of each projectile. Prints `flight`, `teleport`
-            and `proj`.
+            `flight` active (a glide, or since re-test 2 a launch: `kind` and `ts` are accepted) the `cam` follows its
+            position and look and says `fly:true`, which Minecraft needs within 0.5 s to keep the flight; a touchdown or
+            a `teleport` puts V down there (`fly:false`); every `proj` is answered with `pcells`, a 3 x 3 wall 0.5 s
+            ahead of each projectile. Prints `flight`, `teleport` and `proj`.
   --layer5  prints `lead`, `pull`, `knock` and `effect` (set the scene with --cmd).
   --layer6  answers every `scan` with a canned `scaninfo` (Officer Test, NCPD, high, 0.8, the first human) and every
             `hack` with `hackresult ok:true`; holds `key hack` from 1 s to 2 s, `key skills` from 2.5 s to 2.6 s and
-            reports `killed` for the hostile human at 3 s. Prints `perks`, `perkfx`, `binds`, `scan` and `hack`.
+            reports `killed` for the hostile human at 3 s; then presses the Cyberware key U twice (3.5 s opens the
+            screen, 4 s closes it, `key cyberware`) and taps the Activate key Y at 4.5 s (`key activate`, released after
+            0.1 s: a tap). Prints `perks`, `cyberware`, `cyberfx`, `perkfx`, `binds`, `scan` and `hack`.
+
+Re-test 2: Minecraft's `align` (the world's ground alignment k) is printed with every run, like the `blocks` resync that
+always follows it; neither needs an answer. The fake host's `cam` carries no `lv`, so Minecraft converts it at its
+current k.
 """
 import argparse
 import asyncio
@@ -52,18 +59,19 @@ CENTER = (0.0, 65.0, 0.0)
 RADIUS, EYE_Y, FOV = 6.0, 66.5, 70.0
 SLAB_HALF, SLAB_Y = 8, 63
 SAVE_EVERY = 30
-LAYER2_EVENTS = {"block", "explosion", "hit", "ignite", "blocks"}  # what Minecraft reports back to Cyberpunk in layer 2 (and the resync)
+LAYER2_EVENTS = {"block", "explosion", "hit", "ignite", "blocks", "align"}  # what Minecraft reports back to Cyberpunk in layer 2, the resync and the ground alignment
 LAYER_EVENTS = {  # ... and in layers 3-6 (printed only when the layer's flag is given)
     3: {"mobs"},
     4: {"flight", "teleport", "proj"},
     5: {"lead", "pull", "knock", "effect"},
-    6: {"perks", "perkfx", "binds", "scan", "hack"},
+    6: {"perks", "perkfx", "binds", "scan", "hack", "cyberware", "cyberfx"},
 }
 NPC_HZ = 10
 SCRIPT_SCALE = 1.0  # multiplies every time of the layer 4 and layer 6 scripts (the tests shrink it)
 FALL_FROM, FALL_SPEED, FALL_XZ, EYE_HEIGHT, FLOOR_Y = 200.0, 8.0, (-1.0, -1.0), 1.62, SLAB_Y + 1.0  # layer 4: V's fall
 JUMP_AT, JUMP_FOR = 0.5, 0.1  # layer 4: seconds after the scenario starts, and how long the key stays down
 HACK_KEY, SKILLS_KEY, KILLED_AT = (1.0, 2.0), (2.5, 2.6), 3.0  # layer 6: (down, up) and the kill, in seconds
+CYBERWARE_KEYS, ACTIVATE_KEY = ((3.5, 3.6), (4.0, 4.1)), (4.5, 4.6)  # layer 6: U opens the Cyberware screen then closes it; Y is a tap
 PCELLS_AHEAD, MAX_PCELLS = 0.5, 64  # layer 4: seconds ahead of a projectile for its wall, and the `pcells` cap
 DEPTH_RANGE_M = 32.0
 BACKGROUND = np.array([40, 40, 48], np.float64)
@@ -138,8 +146,9 @@ def pcells_message(projectiles: list) -> dict | None:
 
 
 class Body:
-    """Where V is in layer 4: falls from FALL_FROM at FALL_SPEED until Minecraft reports `flight`, then follows it; a
-    touchdown (`flight` inactive) or an ender pearl's `teleport` puts V down at that spot."""
+    """Where V is in layer 4: falls from FALL_FROM at FALL_SPEED until Minecraft reports `flight`, then follows it (and
+    says `fly:true`, as the real host's drive does); a touchdown (`flight` inactive) or an ender pearl's `teleport` puts V
+    down at that spot. A `flight` sample's `kind` (glide or launch) and `ts` make no difference to the fake host."""
 
     def __init__(self) -> None:
         self.mode, self.feet, self.yaw, self.pitch = "fall", [FALL_XZ[0], FALL_FROM, FALL_XZ[1]], 0.0, 0.0
@@ -159,7 +168,7 @@ class Body:
         if self.mode == "fall":
             y = max(FLOOR_Y, FALL_FROM - FALL_SPEED * t)
         return {"t": "cam", "f": f, "p": [x, y + EYE_HEIGHT, z], "r": [self.yaw, self.pitch, 0.0], "fov": FOV, "fp": True,
-                "pl": [x, y, z], "h": self.yaw, "cr": False}
+                "pl": [x, y, z], "h": self.yaw, "cr": False, "fly": self.mode == "flight"}
 
 
 class Cyberpunk:
@@ -180,6 +189,9 @@ class Cyberpunk:
             events += [(HACK_KEY[0], key("hack", True)), (HACK_KEY[1], key("hack", False)),
                        (SKILLS_KEY[0], key("skills", True)), (SKILLS_KEY[1], key("skills", False)),
                        (KILLED_AT, {"t": "killed", "target": hostile_human()["id"], "kind": "human", "hostile": True})]
+            for down, up in CYBERWARE_KEYS:  # U twice: the first press opens the Cyberware screen, the second closes it
+                events += [(down, key("cyberware", True)), (up, key("cyberware", False))]
+            events += [(ACTIVATE_KEY[0], key("activate", True)), (ACTIVATE_KEY[1], key("activate", False))]
         return sorted(((t * SCRIPT_SCALE, m) for t, m in events), key=lambda e: e[0])
 
     def cam(self, f: int, t: float, held: dict) -> dict:
@@ -310,11 +322,11 @@ def main() -> int:
     ap.add_argument("--fps", type=float, default=60.0, help="camera message rate (default 60)")
     ap.add_argument("--shm", default=shm.NAME, help=f"shared memory name (default {shm.NAME})")
     ap.add_argument("--no-setup", action="store_true", help="do not send the visible-block setup commands")
-    ap.add_argument("--layer2", action="store_true", help="after the orbit: send 3 npcs and a bullet dmg, print Minecraft's block/explosion/hit/ignite/blocks")
+    ap.add_argument("--layer2", action="store_true", help="after the orbit: send 3 npcs and a bullet dmg, print Minecraft's block/explosion/hit/ignite/blocks/align")
     ap.add_argument("--layer3", action="store_true", help="after the orbit: send the npcs, answer the first mobs list with a mobdmg, print mobs")
-    ap.add_argument("--layer4", action="store_true", help="after the orbit: V falls from y 200 with a jump tap, follows flight/teleport, answers proj with pcells; print flight/teleport/proj")
+    ap.add_argument("--layer4", action="store_true", help="after the orbit: V falls from y 200 with a jump tap, follows flight (glide or launch, with cam fly:true) and teleport, answers proj with pcells; print flight/teleport/proj")
     ap.add_argument("--layer5", action="store_true", help="after the orbit: print lead/pull/knock/effect (set the scene with --cmd)")
-    ap.add_argument("--layer6", action="store_true", help="after the orbit: answer scan and hack, press the hack/skills keys, report a kill; print perks/perkfx/binds/scan/hack")
+    ap.add_argument("--layer6", action="store_true", help="after the orbit: answer scan and hack, press the hack/skills keys, report a kill, press U (open, close) and tap Y; print perks/cyberware/cyberfx/perkfx/binds/scan/hack")
     ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6: seconds to keep the link up and listen (default 10)")
     ap.add_argument("--cmd", action="append", default=[], metavar="COMMAND", help='--layer2 .. --layer6: a server command to send after the npcs, e.g. "summon tnt 0 64 0" (repeatable)')
     args = ap.parse_args()

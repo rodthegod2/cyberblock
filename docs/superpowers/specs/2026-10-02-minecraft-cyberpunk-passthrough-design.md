@@ -1,6 +1,7 @@
 # Cyberblock: Minecraft × Cyberpunk 2077 passthrough — design
 
-Date: 2026-10-02 · Status: approved in brainstorming, awaiting spec review
+Date: 2026-10-02 · Status: approved in brainstorming, awaiting spec review · Amended 2026-10-03 after the second
+in-game re-test (ground alignment in §3.2, the flight drive and launches in §5 layer 4, cyberware in §5)
 
 ## 1. What we are building
 
@@ -64,8 +65,17 @@ Minecraft against `fakehost.py`, the compositor against recorded frames, the scr
 console.
 
 ### 3.2 Coordinates
-- 1 metre = 1 block. Cyberpunk is Z-up: Cyberpunk (x, y, z) → Minecraft (x, z, −y), no offset, so every
-  placed block has a permanent Night City location.
+- 1 metre = 1 block. Cyberpunk is Z-up: Cyberpunk (x, y, z) → Minecraft (x, z − off, −y), so every placed block has a
+  permanent Night City location. Directions, velocities and impulses use (x, z, −y) with no offset.
+- **Ground alignment (amended after re-test 2).** The first design had no vertical offset and put the top of a ground
+  barrier at `ceil(z) − 1`, which is 0 to 1 m above the real floor: every block the player placed floated about one
+  block above the street. Each world now has an integer `k` in 0..63 with `off = k/64` m, so Minecraft y = Cyberpunk
+  z − off. Minecraft owns `k`: it is chosen at the first activation, while V stands on the ground, so that the floor under
+  V's feet lands just above a whole block boundary (`k = floorMod(floor(frac(z) · 64 − 0.125), 64)`), saved in the world,
+  and sent to the DLL as `align`; `/cyberblock level` chooses it again for the ground V stands on now. The DLL applies
+  `off` to every position in both directions and rounds other ground to the **nearest** block (`top = floor(z − off +
+  0.5) − 1`) instead of rounding up, so any floor is within half a block of the barrier that stands for it. Before an
+  `align` arrives the DLL uses `k = 0`. Details: `shared/protocol.md`, "Ground alignment".
 - Minecraft world uses a datapack dimension type with `min_y = -512`, `height = 2048`.
 - Rotation conversion (yaw/pitch/roll, Cyberpunk quaternion → Minecraft yaw/pitch) is fixed by
   `shared/vectors.json`, measured in-game in layer 1 (step "cube test") and checked by all three test suites.
@@ -92,7 +102,8 @@ Minecraft → Cyberpunk
 - `hit {target, dmg, kind:"melee"|"arrow"|"trident"|"mob", impulse[3]}`
 - `ignite {target, seconds}`
 - `block {op:"add"|"remove", pos[3]}`
-- `teleport {pos[3], yaw}` · `flight {active, pos[3], vel[3], yaw, pitch}`
+- `teleport {pos[3], yaw}` · `flight {active, pos[3], vel[3], yaw, pitch, kind:"glide"|"launch", ts}` (re-test 2)
+- `align {k}` (the world's ground alignment, 0..63) · `cyberware {list:[{id, on}]}` · `cyberfx {id, seconds}` (re-test 2)
 - `lead {target, anchor[3], length}` / `lead {target, release:true}` · `pull {target, toward[3], strength}`
 - `knock {pos[3], radius, strength}` (wind charge)
 - `effect {name, seconds}` (potions → Cyberpunk status effects)
@@ -127,7 +138,8 @@ Every frame the scripts raycast a budget of probes (default 192) around V and se
   and inside buildings are found;
 - **wall rays** horizontally in 32 directions at 3 heights (0.5, 1.5, 2.5 m).
 Minecraft fills those cells with barrier blocks in a managed layer that the player cannot break and that
-explosions do not destroy; cells leaving the radius are cleared.
+explosions do not destroy; cells leaving the radius are cleared. Heights go through the world's ground alignment and
+nearest rounding (§3.2).
 
 ### 4.3 V's state while active
 V's body and weapons hidden, combat blocked by a gameplay restriction, Cyberpunk HUD hidden on foot,
@@ -191,8 +203,13 @@ sent as `hit` and applied as real Cyberpunk damage, so heat, NCPD, ragdolls and 
 
 ### Layer 4: movement
 - Elytra: while gliding, Minecraft physics move Steve; `flight` moves V each frame; touching down returns
-  control to Cyberpunk movement. Probe radius grows with speed. Fallback if per-frame moves jitter: move
-  only the camera during flight and place V on landing.
+  control to Cyberpunk movement. Probe radius grows with speed. As built (re-test 2): the **DLL** teleports V every
+  rendered frame from RED4ext's update hook, playing the stream out a few milliseconds late and interpolating between
+  samples; redscript only decides whether V may be moved and owns the fall-damage rules. The camera-only fallback
+  of the first design was dropped, because the script loop it was meant to back up never ran per frame in 2.31.
+- **Launches (re-test 2):** a wind charge (Steve's own, another's or a breeze's) or a mace burst that throws Steve into
+  the air starts the same flight pipeline with `kind:"launch"`: Minecraft physics move Steve, V follows every frame
+  until the touchdown, and an elytra opened mid-air turns it into a glide.
 - Ender pearl landing → `teleport`.
 - **Done when:** glide from a megabuilding roof with firework boosts and land on a street.
 
@@ -200,7 +217,7 @@ sent as `hit` and applied as real Cyberpunk damage, so heat, NCPD, ragdolls and 
 - **Lead (lasso):** leash a proxy; beyond the leash length the NPC/vehicle is pulled toward Steve; release
   by using the lead again.
 - **Fishing rod:** hook a proxy and reel it in (`pull`).
-- **Wind charge:** `knock` blast.
+- **Wind charge:** `knock` blast on people and cars. A burst that reaches Steve also launches him (layer 4).
 - **Shield:** while raised and facing the shooter, Cyberpunk gunfire damage to Steve is blocked.
 - **Potions:** invisibility → optical camo, speed → sprint boost, others → closest Cyberpunk status effect. As built
   (plan 2026-10-03 §1.5), only invisibility, speed, slowness, jump boost, nausea, blindness and darkness are mapped;
@@ -238,7 +255,21 @@ sent as `hit` and applied as real Cyberpunk damage, so heat, NCPD, ragdolls and 
   | Cool | Optical Camo (crouch still 2 s → invisibility + Cyberpunk camo) · Headhunter (×2 arrow damage on headshots vs NPCs) · Cold Blood (Speed I for 10 s after a kill) · Silent Steps (mobs and NPCs detect at half range) |
 - **Done when:** short-circuit an NCPD officer with a Redstone Charge, buy and feel Double Jump.
 
-Stretch after layer 6: cyberware items (mantis-blade sword, gorilla-arm gauntlets).
+### Cyberware (re-test 2)
+The stretch item of the first design became a feature of its own. **Cyberware** are items the player *installs* in
+custom ripperdoc slots (arms, legs, operating system, nervous system, integumentary, eyes, circulatory, frontal
+cortex; not armor slots), through a Cyberware screen on U and with one activation key on Y; 17 implants in all, listed in
+the player guide. Minecraft owns the whole state (what is installed, cooldowns, selection) and sends the installed set
+to Cyberpunk as `cyberware` and timed effects as `cyberfx`.
+- Every implant has a Minecraft effect with particles and sounds, and where it makes sense the real Cyberpunk effect on
+  V: Sandevistan and Kerenzikov slow Night City, Optical Camo cloaks V, Reinforced Tendons and Fortified Ankles give V
+  the double and charge jump back, the Projectile Launch System is a real explosion, Kiroshi Optics lengthens the scan,
+  Lynx Paws halves detection. Berserk uses Cyberpunk's own effect only if it proves safe.
+- The netrunning RAM now comes from the Cyberdeck implant (or from a deck carried while the operating-system slot is
+  empty); Extra RAM and the RAM Upgrade implant add up.
+- Three perks became upgrades of implants (Double Jump, Sandevistan Sprint, Optical Camo), so one effect never comes from
+  two sources. Cyberpunk's own cyberware stays disabled (§1); Cyberblock's implants replace it.
+- Items are craftable, in the creative tab and (a basic set) in the starter kit; in creative, installs are free.
 
 ## 6. Risks
 | Risk | Mitigation |
@@ -247,7 +278,7 @@ Stretch after layer 6: cyberware items (mantis-blade sword, gorilla-arm gauntlet
 | Cyberpunk depth buffer not found or wrong under DLSS/path tracing | Verified first in layer 1 with a depth-visualisation pass before any compositing. |
 | redscript APIs differ in 2.31 | Each API is checked against Codeware/redscript references and the CET console before use. |
 | NPCs fighting mobs via puppets | Fallback in layer 3. |
-| Elytra jitter | Fallback in layer 4. |
+| Elytra jitter | The DLL drives V every rendered frame (re-test 2); the first design's camera-only fallback was dropped. |
 | Patch updates break hooks | Pin to 2.31; the DLL checks the game build and refuses to activate on a mismatch. |
 
 ## 7. Rules

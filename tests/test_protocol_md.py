@@ -103,11 +103,19 @@ def test_ignite_example():
 L36_CP_TO_MC, L36_MC_TO_CP = "Layers 3–6: Cyberpunk → Minecraft", "Layers 3–6: Minecraft → Cyberpunk"
 L36_CP_EXAMPLES, L36_MC_EXAMPLES = "Layers 3–6 examples, Cyberpunk to Minecraft:", "Layers 3–6 examples, Minecraft to Cyberpunk:"
 L36_NEW_CP_TO_MC = {"mobdmg", "pcells", "unlead", "scaninfo", "hackresult", "killed", "look", "char", "skey"}
-L36_NEW_MC_TO_CP = {"blocks", "mobs", "flight", "teleport", "proj", "lead", "pull", "knock", "effect", "scan", "hack", "perks", "perkfx", "binds"}
+L36_NEW_MC_TO_CP = {"blocks", "mobs", "flight", "teleport", "proj", "lead", "pull", "knock", "effect", "scan", "hack", "perks", "perkfx", "binds",
+                    "align", "cyberware", "cyberfx"}  # the last three: re-test 2 (plan 2026-10-03-retest2 section 1.2)
 L36_EXTENDED = {"cam", "key", "click", "hit"}
 CAM_FLAGS = {"cr", "air", "held", "menu", "fly"}
+CAM_ADDED = CAM_FLAGS | {"lv"}  # what the layers 3-6 `cam` row adds to the layer 1 message (`lv`: re-test 2)
 THREATS = {"none", "low", "medium", "high", "extreme"}
-NEW_KEYS = {"jump", "sprint", "perspective", "hack", "skills"}
+NEW_KEYS = {"jump", "sprint", "perspective", "hack", "skills", "cyberware", "activate"}
+BIND_NAMES = {"hack", "skills", "cyberware", "activate"}
+FLIGHT_KINDS = {"glide", "launch"}
+CYBERWARE_IDS = ["mantis_blades", "gorilla_arms", "monowire", "projectile_launch_system", "reinforced_tendons", "fortified_ankles",
+                 "lynx_paws", "sandevistan", "berserk", "cyberdeck", "kerenzikov", "optical_camo", "subdermal_armor",
+                 "kiroshi_optics", "biomonitor", "second_heart", "ram_upgrade"]  # plan section 1.7, in this fixed order
+CYBERFX_IDS = ["sandevistan", "kerenzikov", "berserk"]
 KIND_RE, EFFECT_RE = re.compile(r"[a-z0-9_]{1,32}"), re.compile(r"[a-z_]{1,32}")
 
 
@@ -116,7 +124,7 @@ def names(label: str) -> list[str]:
     return re.findall(r"`([a-z_]+)`", line.split("—", 1)[1])
 
 
-HACKS, PERKS = names("Hack names"), names("Perk ids")
+HACKS, PERKS, CYBERWARE, CYBERFX = names("Hack names"), names("Perk ids"), names("Cyberware ids"), names("Cyberfx ids")
 
 
 def rows_by_type(heading: str) -> dict[str, str]:
@@ -177,7 +185,18 @@ def perks_ok(m) -> bool:
 
 
 def binds_ok(m) -> bool:
-    return set(m["keys"]) == {"hack", "skills"} and all(whole(vk, 1, 254) for vk in m["keys"].values())
+    """Minecraft always sends all four names; a receiver also tolerates a missing one (an older Minecraft build)."""
+    return set(m["keys"]) == BIND_NAMES and all(whole(vk, 1, 254) for vk in m["keys"].values())
+
+
+def cyberware_ok(m) -> bool:
+    return list_ok(m, "list", 32, lambda e: set(e) == {"id", "on"} and e["id"] in CYBERWARE and e["on"] in (0, 1) and not isinstance(e["on"], bool))
+
+
+def flight_ok(m) -> bool:
+    """`kind` and `ts` are optional; the receiver treats a bad one as absent, a sender stays inside the limits."""
+    return (isinstance(m["active"], bool) and vec3(m["p"]) and speed_ok(m["v"]) and num(m["yaw"], -1e4, 1e4) and num(m["pitch"], -90, 90)
+            and m.get("kind", "glide") in FLIGHT_KINDS and ("ts" not in m or num(m["ts"], 0, 1e13)))
 
 
 def mods_ok(m) -> bool:
@@ -186,9 +205,10 @@ def mods_ok(m) -> bool:
 
 
 def cam_ok(m) -> bool:
-    """`cr` always; `air`, `held`, `menu` and `fly` are booleans when present (the fake host sends only `cr`)."""
+    """`cr` always; `air`, `held`, `menu` and `fly` are booleans when present (the fake host sends only `cr`, and `fly` in layer 4);
+    `lv` is an integer 0..63 when present (the fake host and older hosts send none)."""
     return (isinstance(m["cr"], bool) and {"f", "p", "r", "fov", "fp", "pl", "h"} <= set(m)
-            and all(isinstance(m[f], bool) for f in CAM_FLAGS & set(m)))
+            and all(isinstance(m[f], bool) for f in CAM_FLAGS & set(m)) and ("lv" not in m or whole(m["lv"], 0, 63)))
 
 
 # Each validator applies the plan section 1.2 limits to a whole message (everything but `t` is checked).
@@ -211,7 +231,7 @@ VALIDATORS = {
     "hit": lambda m: uint64_string(m["target"]) and m["kind"] in HIT_KINDS and vec3(m["impulse"]) and num(m["dmg"], 0, 1000) and whole(m["mob"]),
     "blocks": lambda m: isinstance(m["reset"], bool) and cells_ok(m["c"]),
     "mobs": lambda m: list_ok(m, "list", 12, mob_ok),
-    "flight": lambda m: isinstance(m["active"], bool) and vec3(m["p"]) and speed_ok(m["v"]) and num(m["yaw"], -1e4, 1e4) and num(m["pitch"], -90, 90),
+    "flight": flight_ok,
     "teleport": lambda m: vec3(m["p"]) and num(m["yaw"], -1e4, 1e4),
     "proj": lambda m: list_ok(m, "list", 16, proj_ok),
     "lead": lead_ok,
@@ -223,12 +243,16 @@ VALIDATORS = {
     "perks": perks_ok,
     "perkfx": lambda m: m["id"] == "sandevistan" and num(m["seconds"], 0, 30),
     "binds": binds_ok,
+    "align": lambda m: whole(m["k"], 0, 63),
+    "cyberware": cyberware_ok,
+    "cyberfx": lambda m: m["id"] in CYBERFX and num(m["seconds"], 0, 30),
 }
 L36_EXAMPLES = [(m["t"], m) for first in (L36_CP_EXAMPLES, L36_MC_EXAMPLES) for m in examples(first)]
 
 
 def test_layer36_name_lists_have_the_plan_counts():
     assert len(HACKS) == 10 and len(set(HACKS)) == 10 and len(PERKS) == 20 and len(set(PERKS)) == 20
+    assert CYBERWARE == CYBERWARE_IDS and CYBERFX == CYBERFX_IDS  # re-test 2: 17 implants in the fixed order, 3 timed effects
     assert {"short_circuit", "device", "cyberpsychosis"} <= set(HACKS) and {"iron_skin", "sandevistan", "silent_steps"} <= set(PERKS)
 
 
@@ -273,15 +297,16 @@ def test_layer36_examples_carry_the_exact_field_sets():
     assert fields["mobdmg"] == {("by", "frac", "id")} and fields["pcells"] == {("c",)}
     assert fields["scaninfo"] == {("device", "faction", "hp", "id", "name", "ok", "p", "size", "target", "threat")}
     assert fields["hackresult"] == {("id", "ok", "reason")} and fields["killed"] == {("hostile", "kind", "target")}
-    assert fields["flight"] == {("active", "p", "pitch", "v", "yaw")} and fields["teleport"] == {("p", "yaw")}
+    assert fields["flight"] == {("active", "kind", "p", "pitch", "ts", "v", "yaw")} and fields["teleport"] == {("p", "yaw")}
     assert fields["pull"] == {("strength", "target", "toward")} and fields["knock"] == {("pos", "radius", "strength")}
     assert fields["effect"] == {("amp", "name", "seconds")} and fields["hack"] == {("chain", "hack", "id", "target")}
     assert fields["perkfx"] == {("id", "seconds")} and fields["binds"] == {("keys",)} and fields["blocks"] == {("c", "reset")}
+    assert fields["align"] == {("k",)} and fields["cyberware"] == {("list",)} and fields["cyberfx"] == {("id", "seconds")}
 
 
 def test_layer36_extended_examples_keep_their_layer1_and_layer2_fields():
     cam = next(m for t, m in L36_EXAMPLES if t == "cam")
-    assert set(cam) == set(example("Cyberpunk → Minecraft:", "cam")) | CAM_FLAGS
+    assert set(cam) == set(example("Cyberpunk → Minecraft:", "cam")) | CAM_ADDED
     click = next(m for t, m in L36_EXAMPLES if t == "click")
     assert set(click) == set(example("Cyberpunk → Minecraft:", "click")) | {"mods"}
     hit = next(m for t, m in L36_EXAMPLES if t == "hit")
@@ -324,8 +349,19 @@ OUT_OF_LIMITS = [
     ("effect", with_("effect", seconds=86401)), ("effect", with_("effect", name="Speed")), ("effect", with_("effect", amp=256)),
     ("scan", with_("scan", id=-1)), ("hack", with_("hack", hack="nuke")), ("hack", with_("hack", chain=1)),
     ("perks", many("perks", "list", 19)), ("perks", entry("perks", "list", rank=2)), ("perks", entry("perks", "list", id="iron_skin")),
-    ("perkfx", with_("perkfx", seconds=31)), ("binds", with_("binds", keys={"hack": 0, "skills": 75})),
-    ("binds", with_("binds", keys={"hack": 71, "skills": 255})), ("binds", with_("binds", keys={"hack": 71})),
+    ("perkfx", with_("perkfx", seconds=31)), ("binds", with_("binds", keys={"hack": 0, "skills": 75, "cyberware": 85, "activate": 89})),
+    ("binds", with_("binds", keys={"hack": 71, "skills": 255, "cyberware": 85, "activate": 89})), ("binds", with_("binds", keys={"hack": 71})),
+    ("binds", with_("binds", keys={"hack": 71, "skills": 75})), ("binds", with_("binds", keys={"hack": 71, "skills": 75, "cyberware": 85, "activate": 0})),
+    ("align", with_("align", k=64)), ("align", with_("align", k=-1)), ("align", with_("align", k=1.5)), ("align", with_("align", k="57")),
+    ("align", with_("align", k=True)),
+    ("cyberware", entry("cyberware", "list", on=2)), ("cyberware", entry("cyberware", "list", on=True)),
+    ("cyberware", entry("cyberware", "list", id="mantis_blade")), ("cyberware", many("cyberware", "list", 33)),
+    ("cyberfx", with_("cyberfx", seconds=31)), ("cyberfx", with_("cyberfx", seconds=-1)), ("cyberfx", with_("cyberfx", id="optical_camo")),
+    ("cyberfx", with_("cyberfx", seconds=float("nan"))),
+    ("flight", with_("flight", kind="fly")), ("flight", with_("flight", ts=-1)), ("flight", with_("flight", ts=1e14)),
+    ("flight", with_("flight", ts=float("nan"))), ("flight", with_("flight", ts="81234.5")),
+    ("cam", with_("cam", lv=64)), ("cam", with_("cam", lv=-1)), ("cam", with_("cam", lv=1.5)), ("cam", with_("cam", lv="57")),
+    ("key", with_("key", k="tab")),
     ("cam", with_("cam", fly=1)), ("key", with_("key", mods=-1)), ("click", with_("click", b=3)), ("click", with_("click", mods="shift")),
     ("char", with_("char", c=0x0D)), ("char", with_("char", c=0xD800)), ("char", with_("char", c=0x110000)),
     ("skey", with_("skey", sc=0)), ("skey", with_("skey", sc=512)),
@@ -344,5 +380,101 @@ def test_layer36_validators_reject_out_of_limit_messages(t, m):
 def test_layer36_limits_are_stated_in_the_document():
     text = section("Layers 3–6 semantics and limits") + section(L36_CP_TO_MC) + section(L36_MC_TO_CP)
     for phrase in ("0..40", "0..2048", "0..16", "0..1", "0..4", "1..32", "0..50", "0..86400", "0..255", "0..30", "1..254",
-                   "≤ 12", "≤ 16", "≤ 64", "≤ 5", "≤ 120 Hz", "3e7", "200 m/s", "[a-z0-9_]{1,32}", "[a-z_]{1,32}"):
+                   "≤ 12", "≤ 16", "≤ 64", "≤ 5", "≤ 120 Hz", "3e7", "200 m/s", "[a-z0-9_]{1,32}", "[a-z_]{1,32}",
+                   "0..63", "1e13", "≤ 32"):  # the last three: re-test 2 (`align.k` and `cam.lv`, `flight.ts`, `cyberware.list`)
         assert phrase in text, f"limit {phrase!r} is not stated"
+
+
+# ---- re-test 2 (plan 2026-10-03-retest2 sections 1.1, 1.2, 1.7, 1.8): ground alignment, flight kind/ts, cyberware, four binds ----
+ALIGN_CASES = [(6.907, 57), (6.001, 63), (0.0, 63), (-3.25, 47), (312.999, 63), (-0.0005, 63), (64.5, 31)]  # plan section 1.1, in every suite
+
+
+def align_k(z: float) -> int:
+    """The plan's rule, written out here so that this test needs nothing but the document: floorMod(floor(frac(z) * 64 - 0.125), 64)."""
+    return math.floor((z - math.floor(z)) * 64 - 0.125) % 64
+
+
+def test_alignment_cases_in_the_document_match_the_rule():
+    rows = re.findall(r"^\| `(-?[\d.]+)` \| (\d+) \|$", section("Ground alignment (re-test 2)"), re.M)
+    assert [(float(z), int(k)) for z, k in rows] == ALIGN_CASES
+    assert all(align_k(z) == k for z, k in ALIGN_CASES)
+
+
+def test_alignment_rule_leaves_the_floor_a_few_millimetres_above_a_block_boundary():
+    """The document claims e in [1.95 mm, 17.6 mm): the aligned floor maps to N + e, so Steve's feet are never inside the barrier."""
+    import random
+    rng = random.Random(7)
+    for _ in range(5000):
+        z = rng.uniform(-2000, 2000)
+        mapped = z - align_k(z) / 64
+        e = mapped - math.floor(mapped)
+        assert 0.00195 <= e < 0.0176, (z, e)
+
+
+def test_alignment_agrees_with_cbmath_when_it_has_the_rule():
+    from tools import cbmath
+    if not hasattr(cbmath, "align_k"):
+        pytest.skip("tools/cbmath.py has no align_k yet (package D)")
+    assert all(cbmath.align_k(z) == k for z, k in ALIGN_CASES)
+
+
+def test_header_and_block_cells_state_the_offset():
+    head = TEXT.split("## Wire protocol v1")[0]
+    assert "(x, z − off, −y)" in head and "(x, −z, y + off)" in head and "k/64" in head
+    assert "by + k/64" in section("Layer 2 semantics and limits")
+
+
+def test_alignment_section_lists_who_gets_the_offset():
+    text = section("Ground alignment (re-test 2)")
+    for field in ("cam.p", "cam.pl", "dmg.from", "npcs[].p", "scaninfo.p", "explosion.pos", "teleport.p", "lead.anchor", "pull.toward",
+                  "knock.pos", "mobs[].p", "proj[].p", "flight.p", "hit.impulse", "flight.v", "proj[].v"):
+        assert field in text, f"{field} is missing from the offset table"
+    assert "Minecraft y = Cyberpunk z − off" in text and "`k = 0`" in text
+
+
+def test_cyberware_example_lists_the_17_ids_in_the_fixed_order_with_flags():
+    m = next(m for t, m in L36_EXAMPLES if t == "cyberware")
+    assert [e["id"] for e in m["list"]] == CYBERWARE_IDS and {e["on"] for e in m["list"]} == {0, 1}
+
+
+def test_binds_example_carries_the_four_default_keys():
+    m = next(m for t, m in L36_EXAMPLES if t == "binds")
+    assert m["keys"] == {"hack": 0x47, "skills": 0x4B, "cyberware": 0x55, "activate": 0x59}
+
+
+def test_key_examples_show_the_cyberware_and_activate_keys():
+    assert {m["k"] for t, m in L36_EXAMPLES if t == "key"} >= {"hack", "cyberware", "activate"}
+
+
+def test_cam_example_carries_the_alignment_it_was_converted_with():
+    cam = next(m for t, m in L36_EXAMPLES if t == "cam")
+    assert whole(cam["lv"], 0, 63)
+
+
+def test_flight_example_is_a_launch_with_a_sample_clock():
+    flight = next(m for t, m in L36_EXAMPLES if t == "flight")
+    assert flight["kind"] == "launch" and num(flight["ts"], 0, 1e13) and flight["active"] is True
+
+
+def test_rebinding_rule_covers_four_keys_and_the_all_reset_clash():
+    text = " ".join(section("Layers 3–6 semantics and limits").split())  # one line: the document wraps its bullets
+    for phrase in ("`cyberware`", "`activate`", "U (85)", "Y (89)", "all four", "a missing name keeps the current key"):
+        assert phrase in text, f"{phrase!r} is not in the binds limits"
+
+
+def test_validation_rules_of_re_test_2_are_written_down():
+    text = section("Layers 3–6 semantics and limits")
+    for phrase in ("`align.k`", "`cyberware[].id`", "`cyberfx.seconds`", "`flight.ts`", "ignored, not rejected"):
+        assert phrase in text, f"{phrase!r} is not in the limits"
+
+
+def test_flight_row_documents_kind_ts_and_the_new_fly_meaning():
+    flight, cam = rows_by_type(L36_MC_TO_CP)["flight"], rows_by_type(L36_CP_TO_MC)["cam"]
+    assert "`kind`" in flight and "launch" in flight and "`ts`" in flight and "ignored" in flight
+    assert "launch" in cam and "`lv:int`" in cam and "0..63" in cam and "0.5 s" in cam and "Cyberblock_SetFlightFollowing" not in cam
+
+
+def test_delivery_rules_keep_cyberware_and_drop_cyberfx_while_not_active():
+    text = section("Layers 3–6 semantics and limits")
+    delivery = re.search(r"\*\*Delivery in the DLL:\*\*.*?(?=\n- \*\*)", text, re.S).group(0)
+    assert "`cyberware`" in delivery and "`cyberfx`" in delivery
