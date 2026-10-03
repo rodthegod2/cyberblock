@@ -155,6 +155,7 @@ public final class Hacking {
 
 		if (result.ok()) {
 			HackFx.onResult(server, result);
+			CyberAdvancements.hacked(player, p.hack());
 		} else {
 			HackFx.cancel(result.id());
 			refund(player, p.cost());

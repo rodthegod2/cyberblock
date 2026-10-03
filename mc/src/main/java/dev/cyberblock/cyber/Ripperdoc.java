@@ -172,5 +172,6 @@ public final class Ripperdoc {
 		CyberwareEffects.apply(player);
 		PerkEffects.apply(player);
 		sendCyberware(player);
+		CyberAdvancements.cyberwareChanged(player);
 	}
 }

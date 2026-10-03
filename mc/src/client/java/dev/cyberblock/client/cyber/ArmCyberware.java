@@ -129,7 +129,7 @@ public final class ArmCyberware {
 		poseStack.popPose();
 	}
 
-	/** AvatarRenderer.extractRenderState's tail: the local player's arm item into the render state, every other avatar none. */
+	/** AvatarRenderer.extractRenderState's tail: the local player's arm item and cyber look into the render state, every other avatar none. */
 	public static void extract(final Avatar entity, final AvatarRenderState state, final float partialTick) {
 		ItemStackRenderState item = state.getData(ArmCyberwareLayer.ARM);
 		if (!(entity instanceof LocalPlayer player)) {
@@ -137,8 +137,11 @@ public final class ArmCyberware {
 				item.clear();
 			}
 
+			CyberLook.clear(state);
 			return;
 		}
+
+		CyberLook.extract(player, state);
 
 		if (item == null) {
 			item = new ItemStackRenderState();

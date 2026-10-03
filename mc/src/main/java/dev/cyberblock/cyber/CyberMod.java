@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -49,6 +50,8 @@ public class CyberMod implements ModInitializer {
 			PerkShop.sendPerks(handler.player);
 			Ripperdoc.normalize(handler.player);
 			Ripperdoc.sendCyberware(handler.player);
+			ServerPlayer joined = handler.player;
+			server.execute(() -> CyberAdvancements.joined(joined));
 		});
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
 			PerkEffects.reset();
@@ -68,6 +71,12 @@ public class CyberMod implements ModInitializer {
 			}
 
 			return InteractionResult.PASS;
+		});
+		// a Minecraft kill by Steve (a Night City kill comes as `killed`, Kills.onKilled): sandevistan_kill while it runs
+		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
+			if (source.getEntity() instanceof ServerPlayer killer) {
+				CyberAdvancements.killed(killer);
+			}
 		});
 		UseItemCallback.EVENT.register((player, level, hand) -> {
 			ItemStack stack = player.getItemInHand(hand);

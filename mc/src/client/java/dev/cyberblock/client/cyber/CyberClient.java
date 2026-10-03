@@ -28,6 +28,7 @@ public class CyberClient implements ClientModInitializer {
 		HudElementRegistry.attachElementAfter(VanillaHudElements.HOTBAR, RamHud.ID, RamHud::draw);
 		HudElementRegistry.attachElementAfter(VanillaHudElements.HOTBAR, CyberwareHud.ID, CyberwareHud::draw);
 		HudElementRegistry.attachElementAfter(VanillaHudElements.CROSSHAIR, ScanClient.HUD_ID, ScanClient::draw);
+		HudElementRegistry.addLast(SandevistanFx.HUD_ID, SandevistanFx::draw);
 		ClientTickEvents.END_CLIENT_TICK.register(CyberClient::tick);
 		// Steve's arm cyberware in third person (plan retest3 C6): every avatar renderer gets the layer, which draws only the local player's
 		LivingEntityRenderLayerRegistrationCallback.EVENT.register((type, renderer, helper, context) -> {
@@ -48,5 +49,6 @@ public class CyberClient implements ClientModInitializer {
 		HackWheel.tick(minecraft);
 		ScanClient.tick(minecraft);
 		CyberwareClient.tick(minecraft);
+		SandevistanFx.tick(minecraft);
 	}
 }
