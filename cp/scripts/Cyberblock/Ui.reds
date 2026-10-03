@@ -33,6 +33,9 @@ public class CyberblockUiService extends ScriptableService {
   public let bypass: Bool;
   // The pass-through name Minecraft was told last (Restyle.reds).
   public let pass: CName;
+  // Notification controllers waiting for their data (Notifications.reds) and the pump passes each waited.
+  public let pendingNotifications: array<wref<GenericNotificationController>>;
+  public let pendingAges: array<Int32>;
   private let requests: wref<inkISystemRequestsHandler>;
 
   public static func Get() -> ref<CyberblockUiService> {

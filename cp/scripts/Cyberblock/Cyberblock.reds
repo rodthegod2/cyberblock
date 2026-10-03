@@ -115,6 +115,9 @@ public class CyberblockSystem extends ScriptableSystem {
   // layer is not saved). The collision boxes stay: the save never holds them, and V may be standing on one. Ticks leave
   // V and Night City alone while the save is written.
   private cb func OnBeforeSave(event: ref<GameSessionEvent>) {
+    if CyberblockSystem.IsOn(this.state) {
+      Cyberblock_Notify(n"save", "Saving Night City...", "", 3.0);
+    }
     this.saving = true;
     this.savingTicks = 0;
     CyberblockInk.RestoreFor(this.GetGameInstance(), "saving");
@@ -125,6 +128,9 @@ public class CyberblockSystem extends ScriptableSystem {
   }
 
   private cb func OnAfterSave(event: ref<GameSessionEvent>) {
+    if CyberblockSystem.IsOn(this.state) {
+      Cyberblock_Notify(n"save", "Saved", "", 2.0);
+    }
     this.EndSave("after save");
   }
 
@@ -251,6 +257,8 @@ public class CyberblockSystem extends ScriptableSystem {
     // reload in the middle of a session.
     this.hud.Register(game);
     this.hud.Tick(player, live);
+    // Notifications shown while Off are dropped here; while On CyberblockUi.Pump reports them at once.
+    CyberblockNotifications.Poll(game, live);
   }
 
   // Everything of ours in Night City (plan 2026-10-03 section 1.4 Clears). Perk ranks, installed cyberware and the
