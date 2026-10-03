@@ -92,7 +92,7 @@ public class CyberblockSystem extends ScriptableSystem {
     Cyberblock_SetMenu(false);
     Cyberblock_SetChoices(false);
     this.playerState.ShowHud();
-    CyberblockSystem.ClearWorld(this.GetGameInstance());
+    CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
   }
@@ -105,7 +105,7 @@ public class CyberblockSystem extends ScriptableSystem {
     this.savingTicks = 0;
     this.playerState.ClearSaved(GetPlayer(this.GetGameInstance()));
     this.creative.Clear(GetPlayer(this.GetGameInstance()));
-    CyberblockSystem.ClearWorld(this.GetGameInstance());
+    CyberblockSystem.ClearWorld(this.GetGameInstance(), false);
     Cyberblock_Log("before save: effects, god modes and world objects removed");
   }
 
@@ -129,7 +129,7 @@ public class CyberblockSystem extends ScriptableSystem {
       CyberblockPlayerState.ClearLeftovers(player);
       CyberblockCreative.ClearLeftovers(player);
     }
-    CyberblockSystem.ClearWorld(this.GetGameInstance());
+    CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
     Cyberblock_Log("session ready: leftovers removed, Off");
@@ -139,7 +139,7 @@ public class CyberblockSystem extends ScriptableSystem {
     this.saving = false;
     this.playerState.Clear(GetPlayer(this.GetGameInstance()));
     this.creative.Clear(GetPlayer(this.GetGameInstance()));
-    CyberblockSystem.ClearWorld(this.GetGameInstance());
+    CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
     Cyberblock_Log("session end: V restored, world objects removed, Off");
@@ -210,13 +210,15 @@ public class CyberblockSystem extends ScriptableSystem {
   }
 
   // Everything of ours in Night City (plan 2026-10-03 section 1.4 Clears). Perk ranks and the collision registry stay.
-  private static func ClearWorld(game: GameInstance) -> Void {
+  // leaving: Night City stops being live (Off, Lost, load, session end, detach), so Steve's infinite potions are
+  // forgotten too; false before a save, after which they come back.
+  private static func ClearWorld(game: GameInstance, leaving: Bool) -> Void {
     CyberblockCollision.Clear(game);
     CyberblockPuppets.Clear(game);
     CyberblockFlight.Clear(game);
     CyberblockTether.Clear(game);
     CyberblockPerks.Clear(game);
-    CyberblockBuffs.Clear(game);
+    CyberblockBuffs.Clear(game, leaving);
   }
 
   // Crouched as the game's own crouch indicator counts it: Crouch, CrouchDodge or Slide
@@ -311,7 +313,7 @@ public class CyberblockSystem extends ScriptableSystem {
     this.state = next;
     let active = CyberblockSystem.IsOn(next);
     if wasOn && !active {
-      CyberblockSystem.ClearWorld(this.GetGameInstance());
+      CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     }
     Cyberblock_SetActive(active, mounted);
     this.Notify(message);
