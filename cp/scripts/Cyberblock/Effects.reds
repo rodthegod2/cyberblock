@@ -19,10 +19,19 @@
 //     (AttackData SetAttackDefinition, PreAttack, SetAttackPosition, SetAttackTime, SetInstigator/SetSource/AddFlag),
 //     attack record Attacks.Impact (attackType AttackType.Melee, hit-reaction severity min 1, read from tweakdb.bin);
 //     the exact amount is set in DamageSystem.DealDamages, the last stage before StatPoolsManager.ApplyDamage, with
-//     MultAttackValue(0) + SetAttackValue as ProcessVehicleTarget does. Knockback, applied there too (only for a hit
-//     the pipeline accepted): CreateForceRagdollEvent + delayed CreateRagdollApplyImpulseEvent
-//     (AIDeathReactionTask.TurnOnRagdoll) where ScriptedPuppet.CanRagdoll allows; vehicles: PhysicalImpulseEvent
-//     (MotorcycleComponent.OnKnockOverBikeEvent) with VehicleObject.GetTotalMass. Withheld from protected targets:
+//     MultAttackValue(0) + SetAttackValue as ProcessVehicleTarget does. Knockback (re-test 3 F7, plan
+//     2026-10-03-retest3-polish section 1.9: vanilla-like, ragdoll only on strong hits), by the blow's speed s on a
+//     person: s < StaggerSpeed (4) Impact, hit-reaction severity 1/1; < KnockdownSpeed (6.5) Stagger, severity 2/2;
+//     < RagdollSpeed (10) Knockdown, hitFlag.ForceKnockdown + severity 3/3; from 10 Knockdown plus a ragdoll after
+//     the damage lands (AttackData.SetHitReactionSeverityMin/Max after PreAttack, which copies the record's values;
+//     HitReactionComponent reads them and ForceKnockdown, hitReactionComponent.swift:2464-2473). Before, every
+//     Minecraft melee hit (6 m/s and more) ragdolled with speed x 75 over a 10 km influence radius. The ragdoll,
+//     applied in DealDamages (only for a hit the pipeline accepted) unless the hit kills (Health from
+//     StatPoolsSystem.GetStatPoolValue; the death reaction ragdolls then): CreateForceRagdollEvent + delayed
+//     CreateRagdollApplyImpulseEvent (AIDeathReactionTask.TurnOnRagdoll) where ScriptedPuppet.CanRagdoll allows, with
+//     the speed capped at 8 m/s, tilted 0.25 up, x RagdollImpulsePerMs over a 2 m influence radius; vehicles:
+//     PhysicalImpulseEvent (MotorcycleComponent.OnKnockOverBikeEvent) with VehicleShare x VehicleObject.GetTotalMass.
+//     Each blow is logged ('knock: ...'), and a thrown target's speed is read back 0.3 s later. Withheld from protected targets:
 //     GodModeSystem.HasGodMode (Invulnerable, Immortal; DamageSystem.ProcessVehicleTarget), GameObject
 //     .IsFriendlyTowardsPlayer, VehicleComponent.GetVehicle/GetDriver, WorkspotGameSystem.IsActorInWorkspot. Not
 //     SceneSystemInterface.IsEntityInScene: in game (2026-10-03) it was true for V in free open-world play, so it
@@ -211,9 +220,10 @@ public abstract class CyberblockEffects {
       impulse = new Vector4(0.0, 0.0, 0.0, 0.0);
     }
     if frac <= 0.0 {
-      CyberblockEffects.Knock(object, hitPosition, impulse);
+      CyberblockEffects.AfterHit(object, hitPosition, impulse, 0.0);
       return;
     }
+    let tier = IsDefined(object as VehicleObject) ? 0 : CyberblockEffects.Tier(Vector4.Length(impulse));
 
     let amount = ClampF(frac, 0.0, 4.0) * GameInstance.GetStatsSystem(game).GetStatValue(Cast<StatsObjectID>(id), gamedataStatType.Health);
     let context: AttackInitContext;
@@ -235,6 +245,15 @@ public abstract class CyberblockEffects {
     hit.attackData.SetInstigator(attacker);
     hit.attackData.SetSource(attacker);
     hit.attackData.AddFlag(hitFlag.ForceNoCrit, n"Cyberblock");
+    // F7 tiers (header): the hit reaction the blow earns, set after PreAttack (which copies the record's severities).
+    if tier >= 2 {
+      hit.attackData.AddFlag(hitFlag.ForceKnockdown, n"Cyberblock");
+      hit.attackData.SetHitReactionSeverityMin(3);
+      hit.attackData.SetHitReactionSeverityMax(3);
+    } else {
+      hit.attackData.SetHitReactionSeverityMin(tier + 1);
+      hit.attackData.SetHitReactionSeverityMax(tier + 1);
+    }
     hit.hitPosition = hitPosition;
     hit.hitDirection = direction;
     // The push follows the damage (CyberblockEffectsService.Apply), so a hit the pipeline refuses pushes nothing.
@@ -242,8 +261,102 @@ public abstract class CyberblockEffects {
     GameInstance.GetDamageSystem(game).QueueHitEvent(hit, object);
   }
 
-  // Pushes a vehicle, or knocks a person over with a Minecraft-strength blow (melee is 6 m/s and more) as a car hit
-  // would, where the game allows a ragdoll (ScriptedPuppet.CanRagdoll: not seated in a vehicle, not a boss, ...).
+  // F7 knockback tiers by the blow's speed s (m/s) on a person (plan 2026-10-03-retest3-polish section 1.9).
+  public static func StaggerSpeed() -> Float {
+    return 4.0;
+  }
+
+  public static func KnockdownSpeed() -> Float {
+    return 6.5;
+  }
+
+  public static func RagdollSpeed() -> Float {
+    return 10.0;
+  }
+
+  // Ragdoll impulse per m/s of the (capped) blow, the ragdoll's own speed cap (under the 11 m/s impact-kill threshold of
+  // DamageSystem.ProcessRagdollHit), the impulse's influence radius (metres) and the share of a car's mass a blow moves.
+  public static func RagdollImpulsePerMs() -> Float {
+    return 4.0;
+  }
+
+  public static func RagdollMaxSpeed() -> Float {
+    return 8.0;
+  }
+
+  public static func RagdollRadius() -> Float {
+    return 2.0;
+  }
+
+  public static func VehicleShare() -> Float {
+    return 0.5;
+  }
+
+  // 0 Impact, 1 Stagger, 2 Knockdown, 3 Knockdown plus a ragdoll.
+  public static func Tier(s: Float) -> Int32 {
+    if s >= CyberblockEffects.RagdollSpeed() {
+      return 3;
+    }
+    if s >= CyberblockEffects.KnockdownSpeed() {
+      return 2;
+    }
+    return s >= CyberblockEffects.StaggerSpeed() ? 1 : 0;
+  }
+
+  public static func TierName(tier: Int32) -> String {
+    if tier >= 3 {
+      return "ragdoll";
+    }
+    if tier == 2 {
+      return "knockdown";
+    }
+    return tier == 1 ? "stagger" : "impact";
+  }
+
+  // After a blow landed (amount: the damage it dealt, 0 for a push without damage): a car is pushed, a person is
+  // ragdolled only in the top tier and only when the blow does not kill (the game's own death reaction ragdolls then).
+  // Logs 'knock: <id> s=<s> tier=<tier> impulse=<i>', and where the target is thrown, the speed it moved at over the
+  // next 0.3 s (CyberblockKnockProbe).
+  public static func AfterHit(object: ref<GameObject>, hitPosition: Vector4, impulse: Vector4, amount: Float) -> Void {
+    if !IsDefined(object) {
+      return;
+    }
+    let s = Vector4.Length(impulse);
+    let vehicle = object as VehicleObject;
+    let tier = IsDefined(vehicle) ? 0 : CyberblockEffects.Tier(s);
+    let tierName = IsDefined(vehicle) ? "vehicle" : CyberblockEffects.TierName(tier);
+    let applied = 0.0;
+    if IsDefined(vehicle) {
+      applied = s * vehicle.GetTotalMass() * CyberblockEffects.VehicleShare();
+      CyberblockEffects.Knock(object, hitPosition, impulse);
+    } else {
+      if tier >= 3 {
+        let id = object.GetEntityID();
+        let health = GameInstance.GetStatPoolsSystem(object.GetGame()).GetStatPoolValue(Cast<StatsObjectID>(id), gamedataStatPoolType.Health, false);
+        if amount > 0.0 && amount >= health {
+          tierName = "ragdoll (lethal: the death reaction ragdolls)";
+        } else {
+          if ScriptedPuppet.CanRagdoll(object) {
+            applied = Vector4.Length(CyberblockEffects.RagdollImpulse(impulse));
+          }
+          CyberblockEffects.Knock(object, hitPosition, impulse);
+        }
+      }
+    }
+    if s <= 0.0 {
+      return;
+    }
+    let target = CyberblockIds.Hash(object);
+    Cyberblock_Log(s"knock: \(target) s=\(s) tier=\(tierName) impulse=\(applied)");
+    if applied > 0.0 || tier >= 2 {
+      CyberblockKnockProbe.Start(object, target);
+    }
+  }
+
+  // Pushes a vehicle (the impulse times VehicleShare of its mass), or throws a person into a ragdoll where the game
+  // allows one (ScriptedPuppet.CanRagdoll: not seated in a vehicle, not a boss, ...). Hits ragdoll only in the top tier
+  // (AfterHit); leads, rod pulls and wind charges (Tether.reds) call this directly with their own speeds, and nothing
+  // under StaggerSpeed throws a person.
   public static func Knock(object: ref<GameObject>, hitPosition: Vector4, impulse: Vector4) -> Void {
     let speed = Vector4.Length(impulse);
     if !IsDefined(object) || speed <= 0.0 {
@@ -254,18 +367,24 @@ public abstract class CyberblockEffects {
       let push = new PhysicalImpulseEvent();
       push.radius = 1.0;
       push.worldPosition = Vector4.Vector4To3(object.GetWorldPosition() + new Vector4(0.0, 0.0, 0.5, 0.0));
-      push.worldImpulse = Vector4.Vector4To3(impulse * vehicle.GetTotalMass());
+      push.worldImpulse = Vector4.Vector4To3(impulse * (vehicle.GetTotalMass() * CyberblockEffects.VehicleShare()));
       vehicle.QueueEvent(push);
       return;
     }
-    let ragdollSpeed = 4.0;
-    let personMass = 75.0;
-    if speed >= ragdollSpeed && ScriptedPuppet.CanRagdoll(object) {
+    if speed >= CyberblockEffects.StaggerSpeed() && ScriptedPuppet.CanRagdoll(object) {
       object.QueueEvent(CreateForceRagdollEvent(n"Cyberblock"));
-      GameInstance.GetDelaySystem(object.GetGame()).DelayEvent(object, CreateRagdollApplyImpulseEvent(hitPosition, impulse * personMass, 10000.0), 0.10, false);
+      GameInstance.GetDelaySystem(object.GetGame()).DelayEvent(object, CreateRagdollApplyImpulseEvent(hitPosition, CyberblockEffects.RagdollImpulse(impulse), CyberblockEffects.RagdollRadius()), 0.10, false);
     }
   }
 
+  // The ragdoll impulse for a blow: its direction tilted 0.25 up (a level blow: horizontal + 0.25 up), times the blow's
+  // speed capped at RagdollMaxSpeed, times RagdollImpulsePerMs.
+  public static func RagdollImpulse(impulse: Vector4) -> Vector4 {
+    let direction = Vector4.Normalize(new Vector4(impulse.X, impulse.Y, impulse.Z, 0.0));
+    direction.Z += 0.25;
+    let speed = MinF(Vector4.Length(impulse), CyberblockEffects.RagdollMaxSpeed());
+    return direction * (speed * CyberblockEffects.RagdollImpulsePerMs());
+  }
   // Why the push must leave a target alone, n"" when it may be pushed: n"player" (V or V's car), n"godmode" (an
   // Invulnerable or Immortal god mode on it, or on the driver of a car), n"friendly" (friendly towards V, or a car a
   // friend of V drives), n"workspot" (a quest animates it; a forced ragdoll would pull it out). The first three are
@@ -466,7 +585,7 @@ public class CyberblockEffectsService extends ScriptableService {
         if !hitEvent.attackData.HasFlag(hitFlag.DealNoDamage) {
           hitEvent.attackComputed.MultAttackValue(0.0);
           hitEvent.attackComputed.SetAttackValue(amount, gamedataDamageType.Physical);
-          CyberblockEffects.Knock(hitEvent.target, hitEvent.hitPosition, impulse);
+          CyberblockEffects.AfterHit(hitEvent.target, hitEvent.hitPosition, impulse, amount);
         }
         return;
       }
@@ -481,6 +600,27 @@ public class CyberblockEffectsService extends ScriptableService {
   }
 }
 
+// The speed a thrown target moved at over the 0.3 s after a knock (the ragdoll impulse lands 0.1 s in), for the in-game
+// tuning of RagdollImpulsePerMs: 'knock: <id> moved <v> m/s over 0.3 s'.
+public class CyberblockKnockProbe extends DelayCallback {
+  public let target: wref<GameObject>;
+  public let hash: Uint64;
+  public let from: Vector4;
+
+  public static func Start(object: ref<GameObject>, hash: Uint64) -> Void {
+    let probe = new CyberblockKnockProbe();
+    probe.target = object;
+    probe.hash = hash;
+    probe.from = object.GetWorldPosition();
+    GameInstance.GetDelaySystem(object.GetGame()).DelayCallback(probe, 0.3);
+  }
+
+  public func Call() -> Void {
+    if IsDefined(this.target) {
+      Cyberblock_Log(s"knock: \(this.hash) moved \(Vector4.Distance(this.target.GetWorldPosition(), this.from) / 0.3) m/s over 0.3 s");
+    }
+  }
+}
 // Runs for every hit in the game; cheap when no Cyberblock hit is pending.
 @wrapMethod(DamageSystem)
 private final func DealDamages(hitEvent: ref<gameHitEvent>) -> Void {

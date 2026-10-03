@@ -1,6 +1,11 @@
 // Leads, fishing-rod pulls and wind-charge knockback on Night City (plan 2026-10-03 section 1.4, S2.5). All pushes
-// are CyberblockEffects.Knock impulses (m/s, Cyberpunk space): a person is knocked over into a ragdoll by 4 m/s and
-// more (ScriptedPuppet.CanRagdoll), a vehicle gets the impulse times its mass. Targets the effects leave alone (V,
+// are CyberblockEffects.Knock impulses (m/s, Cyberpunk space): a person is knocked over into a ragdoll from
+// CyberblockEffects.StaggerSpeed (4 m/s) up (ScriptedPuppet.CanRagdoll), a vehicle gets the impulse times
+// VehicleShare of its mass. Re-test 3 (F7, plan 2026-10-03-retest3-polish section 1.9) changed what Knock does with a
+// speed, not the speeds here: a person's ragdoll now gets min(speed, 8) x RagdollImpulsePerMs (4) over a 2 m radius
+// (before: speed x 75 over 10 km), so a rod pull of up to 50 m/s throws a person like an 8 m/s blow, and a car moves
+// half as far as before. Both are re-checked in game (leads and wind charges must still pull without flinging).
+// Targets the effects leave alone (V,
 // V's car, god modes, V's friends, workspots: CyberblockEffects.IsProtected, as Hit) are never pushed; the log names
 // each of them at most every 10 s with the reason (CyberblockEffects.Withheld).
 //   Lead: every tick, a target farther than length from its anchor (the knot, or V when Steve holds the lead) is
@@ -198,7 +203,7 @@ public class CyberblockTetherService extends ScriptableService {
     } else {
       this.farSince[slot] = -1.0;
     }
-    // A person moves only as a ragdoll (Knock: 4 m/s and more), and a ragdoll's impact at 11 m/s or more kills it
+    // A person moves only as a ragdoll (Knock: StaggerSpeed, 4 m/s, and more), and a ragdoll's impact at 11 m/s or more kills it
     // (DamageSystem.ProcessRagdollHit, AIGeneralSettings.ragdollImpactKillVelocityThreshold). So a person is tugged
     // only once 0.5 m beyond the lead, at 4 to 8 m/s, at most every 1.5 s (time to land before the next tug).
     let vehicle = IsDefined(object as VehicleObject);
@@ -213,7 +218,7 @@ public class CyberblockTetherService extends ScriptableService {
     }
     this.lastTug[slot] = now;
     let direction = CyberblockTetherService.Toward(position, anchor);
-    let speed = vehicle ? MinF(12.0, 3.0 * excess) : ClampF(3.0 * excess, 4.0, 8.0);
+    let speed = vehicle ? MinF(12.0, 3.0 * excess) : ClampF(3.0 * excess, CyberblockEffects.StaggerSpeed(), CyberblockEffects.RagdollMaxSpeed());
     let impulse = direction * speed;
     CyberblockEffects.Knock(object, position + new Vector4(0.0, 0.0, 1.0, 0.0), new Vector4(impulse.X, impulse.Y, impulse.Z, 0.0));
   }
