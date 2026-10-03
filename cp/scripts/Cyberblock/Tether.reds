@@ -9,7 +9,8 @@
 //     m/s, at most every 1.5 s; below 4 m/s nothing moves a person, from 11 m/s the ragdoll's impact kills.
 //     More than length + 12 m for 2 s, or the target gone: Cyberblock_Unlead.
 //   Pull: one impulse toward the rod at strength, plus 3 m/s up for people.
-//   Knockback: a radial impulse of strength x (1 - d / radius) on every NPC and vehicle within radius; no damage.
+//   Knockback: a radial impulse of strength x (1 - d / radius) on every NPC and vehicle within radius, d measured to
+//     the closest point of a 1.8 m column above its feet; no damage.
 // Tethers are plain data (ids and numbers) with nothing of theirs in Night City, so Clear only restarts their timers;
 // Tick with live false drops them silently (contract); a target that no longer exists is unleaded on the next live
 // tick. A save keeps them: CyberblockSystem does not tick tethers while it is written (only ClearWorld's Clear runs).
@@ -143,7 +144,10 @@ public class CyberblockTetherService extends ScriptableService {
     center = new Vector4(center.X, center.Y, center.Z, 1.0);
     let pushed = 0;
     for object in this.Known() {
-      let middle = object.GetWorldPosition() + new Vector4(0.0, 0.0, 1.0, 0.0);
+      // Measured to the closest point of the body (a 1.8 m column above the feet): a charge bursting at someone's
+      // feet or head is as close as one at their chest.
+      let feet = object.GetWorldPosition();
+      let middle = new Vector4(feet.X, feet.Y, ClampF(center.Z, feet.Z, feet.Z + 1.8), 1.0);
       let d = Vector4.Distance(center, middle);
       if d < radius && CyberblockTetherService.Pushable(game, object, player) {
         let direction = CyberblockTetherService.Toward(center, middle);
