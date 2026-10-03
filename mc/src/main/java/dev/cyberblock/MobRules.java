@@ -58,6 +58,11 @@ public final class MobRules {
 		return !groundBelow || dx * dx + dz * dz > HOLD_RANGE * HOLD_RANGE;
 	}
 
+	/** A proxy this far (horizontally) from Steve is on probed ground: a mob may hunt it, one that left it would be held on the way. */
+	public static boolean proxyInReach(final double dx, final double dz) {
+		return !held(dx, dz, true);
+	}
+
 	/** The wire kind for a mob type path: the path when it fits [a-z0-9_]{1,32}, else "mob". */
 	public static String kind(final String typePath) {
 		return KIND.matcher(typePath).matches() ? typePath : "mob";

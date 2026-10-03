@@ -49,6 +49,16 @@ class MobRulesTest {
 		assertTrue(MobRules.held(-30.0, 0.0, false));
 	}
 
+	/** Mobs only hunt the NPCs on the probed ring around Steve: one that chased further would be held at its edge, and a target beyond it. */
+	@Test
+	void proxiesAreOnlyHuntedWithinTheProbedRing() {
+		assertTrue(MobRules.proxyInReach(0.0, 0.0));
+		assertTrue(MobRules.proxyInReach(-22.0, 0.0), "the edge is still in");
+		assertFalse(MobRules.proxyInReach(0.0, 22.01));
+		assertFalse(MobRules.proxyInReach(16.0, -16.0), "22.6 diagonally");
+		assertFalse(MobRules.proxyInReach(48.0, 0.0), "in the mob's follow range, but off the ground the host probes");
+	}
+
 	@Test
 	void reportsAtMost12NearestFirstWithin48() {
 		List<MobRules.Seen> all = new ArrayList<>();

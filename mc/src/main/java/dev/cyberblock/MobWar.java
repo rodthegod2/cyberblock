@@ -98,11 +98,17 @@ public final class MobWar {
 		}
 	}
 
-	/** Holds a fighter that left the probed ground, and frees it once it is back in range of it. */
+	/**
+	 * Holds a fighter that left the probed ground, and frees it once it is back in range of it. A mob held mid-hunt forgets the NPC
+	 * it was after (the goal does not run while it is held, and the NPC may be far outside the probed ground by the time it is free).
+	 */
 	private static void hold(final ServerLevel level, final Mob mob, final ServerPlayer steve) {
 		if (MobRules.held(mob.getX() - steve.getX(), mob.getZ() - steve.getZ(), groundBelow(level, mob.blockPosition()))) {
 			if (held.add(mob)) {
 				mob.getNavigation().stop();
+				if (mob.getTarget() instanceof ProxyEntity) {
+					mob.setTarget(null);
+				}
 			}
 
 			mob.setDeltaMovement(Vec3.ZERO);
