@@ -13,15 +13,20 @@ universal-modder's Minecraft x GTA V example (see `NOTICE.md`).
 See `docs/superpowers/specs/2026-10-02-minecraft-cyberpunk-passthrough-design.md` (section 2) for details.
 
 ## Use
+**Player guide: [`docs/HOW-TO-PLAY.md`](docs/HOW-TO-PLAY.md)**. It covers setup, ReShade settings, every key, every
+mechanic, quickhacks and RAM, the skill tree, game modes and the kit, what Cyberpunk stops doing, troubleshooting and
+uninstalling.
 ```
-uv run tools/install.py           # install the plugin, scripts and shader into the game
+cmake -S cp/plugin -B cp/plugin/build -G "Visual Studio 17 2022" -A x64
+cmake --build cp/plugin/build --config Release   # build Cyberblock.dll
+uv run tools/install.py           # install the plugin, scripts and shader into the game (Cyberpunk closed)
 uv run tools/play.py              # start the Minecraft dev client, then Cyberpunk 2077
 uv run tools/install.py --remove  # remove exactly what was installed
 ```
-F9 toggles Cyberblock in game.
+F9 toggles Cyberblock in game. Turn frame generation off in Cyberpunk.
 
-Status: layer 1 is verified in game. Layers 2 to 6 are implemented; their in-game acceptance list is
-`docs/superpowers/plans/2026-10-03-layers3-6-complete-mod.md`, section I.2.
+Status: layer 1 is verified in game. Layers 2 to 6 are implemented and pass every automated suite; their in-game
+acceptance list is `docs/superpowers/plans/2026-10-03-layers3-6-complete-mod.md`, section I.2.
 
 ## What you can do
 Cyberpunk moves V, Steve acts. Everything below works on Night City's real NPCs, vehicles and devices.
