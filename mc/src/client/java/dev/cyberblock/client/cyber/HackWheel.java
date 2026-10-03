@@ -100,7 +100,7 @@ public final class HackWheel {
 	private static boolean fire(final Minecraft minecraft) {
 		LocalPlayer player = minecraft.player;
 		IntegratedServer server = minecraft.getSingleplayerServer();
-		if (player == null || server == null || !CyberKeys.hack.isDown()) {
+		if (player == null || server == null || player.isSpectator() || !CyberKeys.hack.isDown()) {
 			return false;
 		}
 
