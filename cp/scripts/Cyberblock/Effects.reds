@@ -121,6 +121,10 @@ public abstract class CyberblockEffects {
   // Moves V to feet (an ender pearl landed), facing Cyberpunk yaw. Only the body turns: the camera pitch is the FPP
   // camera's own and survives a teleport (fast travel calls FPPCameraComponent.ResetPitch explicitly before its
   // TeleportToNode). Falls are not reported for 2 s after it.
+  // The pearl lands on Minecraft's barrier blocks, whose top can lie up to about half a metre off Night City's floor
+  // where the ground alignment does not hold (plan 2026-10-03-retest2 S4): when the floor (CyberblockFlight.GroundBelow,
+  // from 1.5 m above feet) is within (feet - 0.6, feet + 1), V is put on it, so V neither sinks into the street nor
+  // drops onto it. GroundBelow gives its start point back when it finds nothing, which this window leaves out.
   public static func Teleport(game: GameInstance, feet: Vector4, yaw: Float) -> Void {
     let player = GetPlayer(game);
     if !IsDefined(player) {
@@ -134,6 +138,11 @@ public abstract class CyberblockEffects {
     if NotEquals(lock, n"") {
       Cyberblock_Log(s"effects: teleport ignored, V is held (\(NameToString(lock)), scene tier \(CyberblockEffects.SceneTier(player)))");
       return;
+    }
+    let probe = new Vector4(feet.X, feet.Y, feet.Z + 1.0, 1.0);
+    let ground = CyberblockFlight.GroundBelow(game, probe);
+    if ground.Z < probe.Z && ground.Z > feet.Z - 0.6 {
+      feet = ground;
     }
     CyberblockEffectsService.Get().SuppressFall(game, 2.0);
     GameInstance.GetTeleportationFacility(game).Teleport(player, feet, CyberblockEffects.Facing(yaw));
