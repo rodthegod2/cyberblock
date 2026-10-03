@@ -27,6 +27,20 @@ public final class CyberwareRules {
 	/** Projectile launch system: hitscan reach, and the closest it fires. */
 	public static final double PLS_RANGE = 64.0;
 	public static final double PLS_MIN = 4.0;
+	/** Mantis lunge (plan retest3 section 1.8): reach, the hit on arrival, arrival distance, and the flight's ticks. */
+	public static final double LUNGE_RANGE = 10.0;
+	public static final float LUNGE_HIT = 1.5F;
+	public static final double LUNGE_ARRIVE = 2.5;
+	public static final int LUNGE_TICKS = 12;
+	/** Gorilla slam: radius, knockback strength and the small hit that carries it. */
+	public static final double SLAM_RADIUS = 4.0;
+	public static final double SLAM_KNOCKBACK = 1.0;
+	public static final float SLAM_DAMAGE = 2.0F;
+	/** Monowire lash: reach, the half angle of its 120 degree arc, damage, and Slowness II for 60 ticks. */
+	public static final double LASH_RANGE = 5.0;
+	public static final double LASH_HALF_ANGLE = 60.0;
+	public static final float LASH_DAMAGE = 4.0F;
+	public static final int LASH_SLOW_TICKS = 60;
 
 	/**
 	 * The three fire keys (plan retest3 section 1.7): the Operating System implant (Y), the Arms implant (L) and the Optical Camo
@@ -232,6 +246,35 @@ public final class CyberwareRules {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Mantis lunge: Steve's launch towards a target `delta` blocks away (x, y, z): the horizontal part covers it in about six
+	 * ticks (at most 2 blocks a tick), the vertical part lifts him a little (clamped to -0.5..1.0).
+	 */
+	public static double[] lungeVelocity(final double dx, final double dy, final double dz) {
+		double h = Math.hypot(dx, dz);
+		double speed = Math.min(2.0, h / 6.0);
+		double vx = h > 1.0E-6 ? dx / h * speed : 0.0;
+		double vz = h > 1.0E-6 ? dz / h * speed : 0.0;
+		return new double[]{vx, Math.clamp(dy / 6.0 + 0.2, -0.5, 1.0), vz};
+	}
+
+	/** Monowire lash: `to` (target minus eye) is within LASH_RANGE and within LASH_HALF_ANGLE of the look direction, horizontally. */
+	public static boolean inLash(final double lookX, final double lookZ, final double toX, final double toY, final double toZ) {
+		double dist = Math.sqrt(toX * toX + toY * toY + toZ * toZ);
+		double look = Math.hypot(lookX, lookZ);
+		double to = Math.hypot(toX, toZ);
+		if (dist > LASH_RANGE) {
+			return false;
+		}
+
+		if (to < 0.5 || look < 1.0E-6) {
+			return true; // right at his feet, or looking straight up or down: the whip reaches all round
+		}
+
+		double cos = (lookX * toX + lookZ * toZ) / (look * to);
+		return cos >= Math.cos(Math.toRadians(LASH_HALF_ANGLE)) - 1.0E-9;
 	}
 
 	/** The duration with the perks (the Sandevistan perk upgrades the Sandevistan implant). */

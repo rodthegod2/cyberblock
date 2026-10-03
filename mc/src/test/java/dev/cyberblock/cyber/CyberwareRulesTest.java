@@ -21,11 +21,11 @@ class CyberwareRulesTest {
 		"lynx_paws", "sandevistan", "berserk", "cyberdeck", "kerenzikov", "optical_camo", "subdermal_armor", "kiroshi_optics",
 		"biomonitor", "second_heart", "ram_upgrade");
 
-	/** Section 1.7's table: id, slot, kind, duration and cooldown in ticks. */
+	/** Section 1.7's table (retest3 section 1.8: the three melee arms are ACTIVE on L): id, slot, kind, duration and cooldown in ticks. */
 	private static final List<String> TABLE = List.of(
-		"mantis_blades arms PASSIVE 0 0",
-		"gorilla_arms arms PASSIVE 0 0",
-		"monowire arms PASSIVE 0 0",
+		"mantis_blades arms ACTIVE 0 120",
+		"gorilla_arms arms ACTIVE 0 160",
+		"monowire arms ACTIVE 0 100",
 		"projectile_launch_system arms ACTIVE 0 160",
 		"reinforced_tendons legs PASSIVE 0 0",
 		"fortified_ankles legs PASSIVE 0 0",
