@@ -107,3 +107,25 @@ Side effects (audit B.4) stay as in vanilla:
   - Loc keys go through `GetLocalizedTextByKey`.
   - `LocKey#` strings go through `GetLocalizedText`.
   - Everything is clipped to 64 characters with Codeware's `UTF8StrLeft`.
+
+## S3.3 Perks (`Perks.reds`)
+
+Ranks live in `CyberblockPerksService` (a Codeware `ScriptableService`: one per game process, never saved). `Set`
+keeps them while not Active, and accepts only the 20 §1.5 ids. `Clear` keeps them too.
+
+| Perk | Cyberpunk side | Source |
+|---|---|---|
+| `double_jump` | `HasDoubleJump` Additive +1 while Active | audit C.2 `GrantStat`. `DoubleJumpDecisions.EnterCondition` checks `HasStatFlag(HasDoubleJump)` and refuses while `HasChargeJump`/`HasAirHover` are set; S1 zeroes those while Active, so the granted double jump works even with charge-jump legs. |
+| `silent_steps` | `Visibility` Multiplier 0.5 while Active | audit C.4 `Stealth`: `UpdateVisibilityModifier` → `VisibleObjectDetectionMultEvent` |
+| `sandevistan` (`perkfx`) | `SetIgnoreTimeDilationOnLocalPlayerZero(true)` + `SetTimeDilation(n"cyberblockSlowMo", 0.2, s + 1)`; end: `UnsetTimeDilation(…, n"SandevistanEaseOut")` + ignore off | audit C.1 `SlowMo`/`SlowMoEnd` |
+| `dodge` | nothing here: S1 reads `Has(n"dodge")` | plan §1.5 |
+
+How the Sandevistan slow-mo is timed:
+- **End time:** it runs on engine time (`GameInstance.GetEngineTime`, the clock `GameObject.ProcessDamageReceived`
+  stamps damage with), so the slow-mo cannot stretch its own end. The engine duration `s + 1` is only a safety net if
+  ticks stop.
+- **Never stacked:** a second `perkfx` while one is running only moves the end time. `seconds` 0 ends it.
+- **Only while Active:** it starts only when the last Tick was Active.
+
+`Tick(active false)` and `Clear` remove both modifiers (the exact objects, from the entity they were added to) and end
+the slow-mo. A changed V (load) drops the old modifiers first.
