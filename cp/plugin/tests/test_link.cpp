@@ -173,3 +173,116 @@ TEST(game_mode_names_round_trip_and_anything_else_is_none)
 		CHECK(cb::parse_game_mode(name) == GameMode::None);
 	CHECK(std::string(cb::game_mode_name(GameMode::None)).empty()); // the empty CName: n"" before any status
 }
+
+// ---- the outgoing queue (cb::OutQueue): bounded however long Minecraft stops reading ----
+
+namespace
+{
+	std::deque<nlohmann::json> drain(cb::OutQueue &queue)
+	{
+		std::deque<std::string> texts;
+		queue.take(texts);
+		std::deque<nlohmann::json> out;
+		for (const std::string &text : texts)
+			out.push_back(nlohmann::json::parse(text));
+		return out;
+	}
+
+	nlohmann::json key(int n)
+	{
+		return {{"t", "key"}, {"k", "attack"}, {"down", n % 2 == 0}, {"n", n}};
+	}
+}
+
+TEST(out_queue_keeps_only_the_newest_message_of_each_state_stream)
+{
+	cb::OutQueue q;
+	q.push({{"t", "cam"}, {"f", 1}});
+	q.push(key(0));
+	q.push({{"t", "npcs"}, {"list", {1}}});
+	q.push({{"t", "cam"}, {"f", 2}});
+	q.push({{"t", "npcs"}, {"list", {2}}});
+	q.push({{"t", "aim"}, {"d", 1.0}});
+	q.push({{"t", "aim"}, {"d", 2.0}});
+	q.push({{"t", "cursor"}, {"x", 0.1}, {"y", 0.1}});
+	q.push({{"t", "cursor"}, {"x", 0.2}, {"y", 0.3}});
+	q.push({{"t", "pcells"}, {"c", {1, 2, 3}}});
+	q.push({{"t", "pcells"}, {"c", {4, 5, 6}}});
+	CHECK(q.superseded() == 5 && q.dropped() == 0);
+	const auto out = drain(q);
+	CHECK(out.size() == 6);
+	CHECK(out[0]["t"] == "key");
+	CHECK(out[1]["t"] == "cam" && out[1]["f"] == 2);
+	CHECK(out[2]["t"] == "npcs" && out[2]["list"][0] == 2);
+	CHECK(out[3]["t"] == "aim" && out[3]["d"] == 2.0);
+	CHECK(out[4]["t"] == "cursor" && out[4]["y"] == 0.3);
+	CHECK(out[5]["t"] == "pcells" && out[5]["c"][0] == 4);
+	CHECK(q.size() == 0);
+}
+
+TEST(out_queue_adds_look_deltas_up_instead_of_losing_them)
+{
+	cb::OutQueue q;
+	q.push({{"t", "look"}, {"d", {1.0, 2.0}}});
+	q.push(key(0));
+	q.push({{"t", "look"}, {"d", {0.5, -1.0}}});
+	q.push({{"t", "look"}, {"d", {-0.25, 0.5}}});
+	const auto out = drain(q);
+	CHECK(out.size() == 2);
+	CHECK(out[0]["t"] == "key");
+	CHECK(out[1]["t"] == "look" && out[1]["d"][0] == 1.25 && out[1]["d"][1] == 1.5);
+}
+
+TEST(out_queue_clear_replaces_the_queued_ground)
+{
+	cb::OutQueue q;
+	q.push({{"t", "ground"}, {"c", {1, 2, 3, 4}}});
+	q.push({{"t", "unground"}, {"c", {1, 2, 3, 4}}});
+	q.push(key(0));
+	q.push({{"t", "clear"}});
+	q.push({{"t", "ground"}, {"c", {5, 6, 7, 8}}});
+	q.push({{"t", "clear"}});
+	const auto out = drain(q);
+	CHECK(out.size() == 2);
+	CHECK(out[0]["t"] == "key" && out[1]["t"] == "clear");
+	CHECK(q.superseded() == 4 && q.dropped() == 0 && !q.take_ground_lost());
+}
+
+TEST(out_queue_past_its_limit_drops_the_oldest_and_counts_it)
+{
+	cb::OutQueue q;
+	for (int i = 0; i < int(cb::OutQueue::kMax) + 5; ++i)
+		q.push(key(i));
+	CHECK(q.size() == cb::OutQueue::kMax && q.dropped() == 5);
+	CHECK(!q.take_ground_lost()); // only keys went
+	const auto out = drain(q);
+	CHECK(out.front()["n"] == 5 && out.back()["n"] == int(cb::OutQueue::kMax) + 4);
+}
+
+TEST(out_queue_dropping_ground_asks_for_a_ground_restart_once)
+{
+	cb::OutQueue q;
+	q.push({{"t", "ground"}, {"c", {1, 2, 3, 4}}});
+	for (int i = 0; i < int(cb::OutQueue::kMax); ++i)
+		q.push(key(i));
+	CHECK(q.dropped() == 1);
+	CHECK(q.take_ground_lost());
+	CHECK(!q.take_ground_lost());
+}
+
+TEST(out_queue_stays_bounded_under_every_kind_of_message)
+{
+	cb::OutQueue q;
+	for (int i = 0; i < 20000; ++i)
+	{
+		q.push({{"t", "cam"}, {"f", i}});
+		q.push({{"t", "npcs"}, {"list", nlohmann::json::array()}});
+		q.push({{"t", "look"}, {"d", {0.1, 0.1}}});
+		q.push({{"t", "ground"}, {"c", {i, 0, 1, 2}}});
+		q.push(key(i));
+	}
+	CHECK(q.size() <= cb::OutQueue::kMax);
+	CHECK(q.dropped() > 0);
+	q.clear();
+	CHECK(q.size() == 0 && !q.take_ground_lost());
+}

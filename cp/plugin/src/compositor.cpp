@@ -15,6 +15,7 @@
 #include <reshade.hpp>
 #include <d3d12.h>
 #include <dxgi1_4.h>
+#include "link.hpp"
 #include "log.hpp"
 #include "world.hpp"
 
@@ -383,12 +384,15 @@ namespace
 		DXGI_QUERY_VIDEO_MEMORY_INFO info = {};
 		// Minecraft's events queued for redscript: a climbing "dropped" means the scripts are not draining them
 		const cb::world::QueueStats events = cb::world::events().stats();
+		// Our messages waiting for Minecraft: a climbing "dropped" means Minecraft stopped reading (cb::OutQueue)
+		const cb::Link::SendStats sends = cb::link().send_stats();
 		if (SUCCEEDED(adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info)))
 			cb::log::info("memory: vram %llu of %llu MB budget, system commit %llu of %llu MB (frames %s); mc events: "
-				"%zu queued, %llu dropped, %llu rejected",
+				"%zu queued, %llu dropped, %llu rejected; to mc: %zu queued, %llu superseded, %llu dropped",
 				info.CurrentUsage >> 20, info.Budget >> 20, commit_used, mem.ullTotalPageFile >> 20,
 				g_hasFrame ? "arriving" : "none", events.queued, static_cast<unsigned long long>(events.dropped),
-				static_cast<unsigned long long>(events.rejected));
+				static_cast<unsigned long long>(events.rejected), sends.queued,
+				static_cast<unsigned long long>(sends.superseded), static_cast<unsigned long long>(sends.dropped));
 		if (commit_used * 100 > (mem.ullTotalPageFile >> 20) * 92)
 			cb::log::warn("memory: system commit above 92%% of the limit; Windows may start killing programs");
 	}

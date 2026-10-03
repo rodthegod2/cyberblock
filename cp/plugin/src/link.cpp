@@ -2,11 +2,11 @@
 #include "log.hpp"
 #include <algorithm>
 #include <chrono>
+#include <utility>
 
 namespace
 {
 	constexpr char kHost[] = "127.0.0.1";
-	constexpr size_t kMaxQueued = 8;
 
 	int64_t now_ticks()
 	{
@@ -17,10 +17,85 @@ namespace
 	{
 		return message.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 	}
+
+	/// Messages where only the newest counts: each one carries the whole current state.
+	bool is_state_stream(const std::string &type)
+	{
+		return type == "cam" || type == "npcs" || type == "aim" || type == "cursor" || type == "pcells";
+	}
+
+	/// Messages that build Minecraft's Night City ground; a `clear` starts it over.
+	bool is_ground(const std::string &type)
+	{
+		return type == "ground" || type == "unground" || type == "clear";
+	}
 }
 
 namespace cb
 {
+	void OutQueue::push(const nlohmann::json &message)
+	{
+		Entry entry{message.value("t", ""), {}};
+		const auto erase_queued = [this](auto superseded)
+		{
+			const size_t before = m_entries.size();
+			std::erase_if(m_entries, superseded);
+			m_superseded += before - m_entries.size();
+		};
+		if (entry.type == "look")
+		{
+			const auto d = message.find("d");
+			if (d != message.end() && d->is_array() && d->size() == 2 && (*d)[0].is_number() && (*d)[1].is_number())
+			{
+				entry.look[0] = (*d)[0].get<double>();
+				entry.look[1] = (*d)[1].get<double>();
+				const auto queued = std::find_if(m_entries.begin(), m_entries.end(), [](const Entry &e) { return e.type == "look"; });
+				if (queued != m_entries.end())
+				{
+					entry.look[0] += queued->look[0];
+					entry.look[1] += queued->look[1];
+					m_entries.erase(queued);
+					++m_superseded;
+					nlohmann::json merged = message;
+					merged["d"] = {entry.look[0], entry.look[1]};
+					entry.text = dump(merged);
+				}
+			}
+		}
+		else if (is_state_stream(entry.type))
+			erase_queued([&entry](const Entry &e) { return e.type == entry.type; });
+		else if (entry.type == "clear")
+			erase_queued([](const Entry &e) { return is_ground(e.type); });
+		if (entry.text.empty())
+			entry.text = dump(message);
+		m_entries.push_back(std::move(entry));
+		while (m_entries.size() > kMax)
+		{
+			m_groundLost = m_groundLost || is_ground(m_entries.front().type);
+			m_entries.pop_front();
+			++m_dropped;
+		}
+	}
+
+	void OutQueue::take(std::deque<std::string> &out)
+	{
+		out.clear();
+		for (Entry &entry : m_entries)
+			out.push_back(std::move(entry.text));
+		m_entries.clear();
+	}
+
+	void OutQueue::clear()
+	{
+		m_entries.clear();
+		m_groundLost = false;
+	}
+
+	bool OutQueue::take_ground_lost()
+	{
+		return std::exchange(m_groundLost, false);
+	}
+
 	void Link::start(Observer observer, DropHandler onDrop, int port)
 	{
 		m_observer = std::move(observer);
@@ -54,18 +129,23 @@ namespace cb
 	{
 		if (!m_linked)
 			return;
-		const bool cam = message.value("t", "") == "cam";
 		{
 			std::lock_guard<std::mutex> lock(m_lock);
-			m_queue.push_back({dump(message), cam});
-			if (m_queue.size() > kMaxQueued)
-			{
-				const auto oldestCam = std::find_if(m_queue.begin(), m_queue.end(), [](const Outgoing &o) { return o.cam; });
-				if (oldestCam != m_queue.end())
-					m_queue.erase(oldestCam);
-			}
+			m_queue.push(message);
 		}
 		m_wake.notify_one();
+	}
+
+	Link::SendStats Link::send_stats()
+	{
+		std::lock_guard<std::mutex> lock(m_lock);
+		return {m_queue.size(), m_queue.superseded(), m_queue.dropped()};
+	}
+
+	bool Link::take_ground_lost()
+	{
+		std::lock_guard<std::mutex> lock(m_lock);
+		return m_queue.take_ground_lost();
 	}
 
 	void Link::set_view(int width, int height)
@@ -79,7 +159,7 @@ namespace cb
 		int generation = 0;
 		uint32_t viewSent = 0;
 		std::string text;
-		std::deque<Outgoing> sending;
+		std::deque<std::string> sending;
 		while (!m_stop)
 		{
 			if (m_ws.generation() != generation)
@@ -114,11 +194,11 @@ namespace cb
 
 			{
 				std::unique_lock<std::mutex> lock(m_lock);
-				m_wake.wait_for(lock, std::chrono::milliseconds(2), [this] { return !m_queue.empty() || m_stop; });
-				sending.swap(m_queue);
+				m_wake.wait_for(lock, std::chrono::milliseconds(2), [this] { return m_queue.size() > 0 || m_stop; });
+				m_queue.take(sending);
 			}
-			for (const Outgoing &message : sending)
-				m_ws.send(message.text);
+			for (const std::string &message : sending)
+				m_ws.send(message);
 			sending.clear();
 		}
 	}

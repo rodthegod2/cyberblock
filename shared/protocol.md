@@ -171,6 +171,11 @@ Rows marked **extends** add to a layer 1/2 message of the same `t`; the old fiel
   other new Minecraft → Cyberpunk messages, like explosions; a `hello` clears the queue. Block changes are never dropped:
   the DLL keeps the last change per cell (a `reset` forgets the earlier ones) and hands them to the script after the
   other events.
+- **Sending in the DLL:** the queue to a Minecraft that falls behind (or stops reading) is bounded. Only the newest
+  `cam`, `npcs`, `aim`, `cursor` and `pcells` is kept (it replaces the queued one of its type), queued `look` deltas are
+  summed, and a `clear` replaces the queued `ground`, `unground` and `clear`. Past 1024 queued messages the oldest one is
+  dropped and counted in the DLL's 5 s log line; when that was a `ground`, `unground` or `clear`, the DLL starts the
+  ground over with a `clear`. A send that cannot finish within 5 s ends the connection (it reconnects).
 
 ### Layers 3–6 names
 - **Hack names** (`hack.hack`) — `short_circuit`, `overheat`, `reboot_optics`, `cripple_movement`, `contagion`, `synapse_burnout`, `ping`, `memory_wipe`, `cyberpsychosis`, `device`

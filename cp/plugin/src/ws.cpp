@@ -40,6 +40,10 @@ bool WsClient::open()
 	}
 	BOOL noDelay = TRUE;
 	setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char *>(&noDelay), sizeof(noDelay));
+	// A peer that stops reading (a hung Minecraft with its socket still open) must not block the sending thread for
+	// good: a send that cannot finish in 5 s fails, which closes the connection, and run() reconnects.
+	DWORD sendTimeoutMs = 5000;
+	setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char *>(&sendTimeoutMs), sizeof(sendTimeoutMs));
 
 	const std::string request =
 		"GET / HTTP/1.1\r\nHost: " + m_host + ":" + std::to_string(m_port) +

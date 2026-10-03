@@ -16,6 +16,47 @@
 
 namespace cb
 {
+	/// The link's outgoing messages, bounded so that a Minecraft that stops reading cannot grow it without limit:
+	/// - a state stream (`cam`, `npcs`, `aim`, `cursor`, `pcells`) keeps only its newest message, which replaces the
+	///   queued one of its type at the back of the queue;
+	/// - a `look` adds its deltas into the queued `look`;
+	/// - a `clear` replaces every queued `ground`, `unground` and `clear` (Minecraft forgets that ground anyway);
+	/// - everything else keeps its order, and past kMax messages the oldest one goes and is counted as dropped. A dropped
+	///   `ground`, `unground` or `clear` leaves Minecraft's ground wrong, so it raises take_ground_lost().
+	/// Not thread-safe: Link guards it with its lock.
+	class OutQueue
+	{
+	public:
+		static constexpr size_t kMax = 1024;
+
+		/// Queues a message object (`t` names its type).
+		void push(const nlohmann::json &message);
+		/// Moves every queued message, oldest first, into `out` (which is cleared first).
+		void take(std::deque<std::string> &out);
+		/// Forgets every queued message (a new Minecraft session starts); the counts stay.
+		void clear();
+		size_t size() const { return m_entries.size(); }
+		/// Messages a newer one of the same state stream replaced (or a `look` that was merged).
+		uint64_t superseded() const { return m_superseded; }
+		/// Messages that went because the queue was full.
+		uint64_t dropped() const { return m_dropped; }
+		/// True once after a `ground`, `unground` or `clear` was dropped.
+		bool take_ground_lost();
+
+	private:
+		struct Entry
+		{
+			std::string type;
+			std::string text;
+			double look[2] = {0.0, 0.0}; // a `look`'s deltas, for merging
+		};
+
+		std::deque<Entry> m_entries;
+		uint64_t m_superseded = 0;
+		uint64_t m_dropped = 0;
+		bool m_groundLost = false;
+	};
+
 	class Link
 	{
 	public:
@@ -42,18 +83,22 @@ namespace cb
 		/// Seconds since the last `status`; 999 if there was none yet.
 		float seconds_since_status() const;
 
-		/// Queues a message for Minecraft; dropped while not linked. Over 8 queued messages, the oldest `cam` goes.
+		/// Queues a message for Minecraft (an object with `t`); dropped while not linked. The queue is bounded (OutQueue).
 		void send(const nlohmann::json &message);
+		/// What the outgoing queue holds now, and how many messages it replaced or dropped so far (OutQueue).
+		struct SendStats
+		{
+			size_t queued = 0;
+			uint64_t superseded = 0;
+			uint64_t dropped = 0;
+		};
+		SendStats send_stats();
+		/// True once after the queue dropped a `ground`, `unground` or `clear`: Minecraft's ground must start over.
+		bool take_ground_lost();
 		/// Cyberpunk's backbuffer size (0 while unknown): sent as `view` on connect and whenever it changes.
 		void set_view(int width, int height);
 
 	private:
-		struct Outgoing
-		{
-			std::string text;
-			bool cam;
-		};
-
 		void run();
 		void handle(const std::string &text);
 		/// A linked Minecraft is gone: forget its game mode and run the drop handler.
@@ -73,7 +118,7 @@ namespace cb
 		std::atomic<uint32_t> m_view{0};      // width << 16 | height
 		std::mutex m_lock;
 		std::condition_variable m_wake;
-		std::deque<Outgoing> m_queue;
+		OutQueue m_queue;
 	};
 
 	/// The plugin's link. Never destroyed: it may still own threads when the process exits.

@@ -189,8 +189,10 @@ namespace
 			restart_ground();
 		}
 		const cb::Vec3 feet{center.X, center.Y, center.Z};
-		if (g_mashup.lastCenter && std::hypot(feet.x - g_mashup.lastCenter->x, feet.y - g_mashup.lastCenter->y,
-											  feet.z - g_mashup.lastCenter->z) > kTeleportMetres)
+		// the link's queue had to drop ground messages while Minecraft was not reading: its ground starts over
+		const bool groundLost = cb::link().take_ground_lost();
+		if (groundLost || (g_mashup.lastCenter && std::hypot(feet.x - g_mashup.lastCenter->x, feet.y - g_mashup.lastCenter->y,
+														 feet.z - g_mashup.lastCenter->z) > kTeleportMetres))
 			restart_ground();
 		g_mashup.lastCenter = feet;
 
