@@ -70,12 +70,13 @@ class InteractiveItemsTest {
 	}
 
 	@Test
-	void gorillaArmsScalesTheMeleeImpulse() {
-		Vec3 melee = ProxyDamage.melee(1.0, 0.0, 0.0); // 6 m/s
-		assertEquals(12.0, ProxyDamage.gorillaArms(melee, false).x, 1e-9);
-		assertEquals(18.0, ProxyDamage.gorillaArms(melee, true).x, 1e-9);
-		Vec3 strong = ProxyDamage.melee(0.0, 1.0, 10.0); // 66 m/s with knockback
-		assertEquals(ProxyDamage.MAX_IMPULSE, ProxyDamage.gorillaArms(strong, true).length(), 1e-9);
+	void gorillaArmsStrengthensTheMeleeImpulse() {
+		// plan retest3 section 1.9: +1.0 strength on a person, x3 on a vehicle
+		assertEquals(2.0, ProxyDamage.melee(1.0, 0.0, 0.0).x, 1e-9);
+		assertEquals(7.0, ProxyDamage.meleeOn(1.0, 0.0, 0.0, true, false).x, 1e-9);
+		assertEquals(6.0, ProxyDamage.meleeOn(1.0, 0.0, 0.0, true, true).x, 1e-9);
+		Vec3 strong = ProxyDamage.meleeOn(0.0, 1.0, 10.0, true, true); // 52 m/s x 3
+		assertEquals(ProxyDamage.MAX_IMPULSE, strong.length(), 1e-9);
 	}
 
 	@Test
