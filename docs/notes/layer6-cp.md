@@ -13,7 +13,7 @@ the `cyberware` and `cyberfx` messages (which moved the double jump, the visibil
 
 ## Sources and how IDs were confirmed
 
-- **Scripts:** the decompiled 2.31 scripts the audit used (codeberg.org/adamsmasher/cyberpunk at `a2e6bb3 "2.31"`).
+- **Scripts:** the 2.31 script API (NativeDB, redscript) the audit used.
   Each file header cites the functions it relies on.
 - **TweakDB:** read-only from the game's `r6/cache/tweakdb.bin` and `tweakdb_ep1.bin`. A record ID is
   `crc32(name) | len(name) << 32`; the records section of each file lists `(id, type hash)` pairs, so an ID is

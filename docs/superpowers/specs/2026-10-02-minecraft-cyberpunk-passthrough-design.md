@@ -28,7 +28,7 @@ Night City through real Cyberpunk effects (explosions, damage, collision, telepo
 - VR, frame generation.
 
 ## 2. Environment (measured 2026-10-02)
-- Cyberpunk 2077 **2.31** + Phantom Liberty, Steam, `D:\SteamLibrary\steamapps\common\Cyberpunk 2077`.
+- Cyberpunk 2077 **2.31** + Phantom Liberty, Steam (the game folder is found through Steam's libraries).
   Already installed: Cyber Engine Tweaks, RED4ext, redscript, Codeware, ArchiveXL, TweakXL, plus ~40 content
   mods (Nova City 2, vehicles, Virtual Atelier, …) that must keep working.
 - Minecraft Java launcher with Fabric (1.21.11 profile) and 26.x versions.

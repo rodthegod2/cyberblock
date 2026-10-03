@@ -1,124 +1,126 @@
 # Cyberblock
 
-Cyberblock lets you play Cyberpunk 2077 as a Minecraft player: real Minecraft Java (26.3 + a Fabric mod) runs
-next to Cyberpunk 2077 (2.31) and is drawn into Night City every frame with the correct camera, depth and
-Night City collision, while Cyberpunk moves the body and Steve acts. It is a passthrough in the style of
-universal-modder's Minecraft x GTA V example (see `NOTICE.md`).
+**Play Cyberpunk 2077 as a Minecraft player.** Real Minecraft Java (26.3 with a Fabric mod) runs next to Cyberpunk 2077
+(2.31) and is drawn into Night City every frame, with the correct camera, depth and Night City collision. Cyberpunk moves V,
+Steve acts, and **Minecraft draws the whole interface**: radar, quest and waypoint, prompts, dialogue choices, phone,
+journal, map and pause are all Minecraft-styled, while Cyberpunk's own HUD stays hidden. Your blocks stop pedestrians and
+cars, TNT blows up Night City, mobs fight NCPD, you glide over megabuildings with an elytra, hack gangers with quickhack
+chips, and install cyberware (Mantis Blades, Sandevistan, Cyberdeck and more) in ripperdoc slots.
 
-## Prerequisites
-- Cyberpunk 2077 2.31 with RED4ext, redscript, Codeware and Cyber Engine Tweaks.
-- ReShade 6.x **with add-on support**.
-- JDK 25, Visual Studio 2022 Build Tools (C++ x64 + Windows SDK), CMake, Python 3.12 + uv.
+<!-- screenshot: docs/media/hero.png - Steve's hand and hotbar in a Night City street with the Minecraft radar and quest panel -->
+<!-- screenshot: docs/media/quickhacks.png - a quickhack upload beam and the impact on a ganger -->
+<!-- screenshot: docs/media/ui.png - the Minecraft-style dialogue choices and interaction prompt -->
+<!-- screenshot: docs/media/sandevistan.png - the Sandevistan screen effect -->
+<!-- screenshot: docs/media/vehicle-tpp.png - Steve seated in a third-person vehicle camera -->
+*Screenshots pending: they will be added under `docs/media/` before the first release.*
 
-See `docs/superpowers/specs/2026-10-02-minecraft-cyberpunk-passthrough-design.md` (section 2) for details.
+> **Not affiliated.** Cyberblock is an unofficial fan project. It is **not affiliated with, endorsed by or connected to
+> CD PROJEKT RED or Mojang Studios / Microsoft**. Cyberpunk 2077 is a trademark of CD PROJEKT S.A.; Minecraft is a trademark
+> of Mojang Synergies AB. **You need your own legal copies of Cyberpunk 2077 and Minecraft: Java Edition.** No game files,
+> assets, fonts or code from either game are included or redistributed. See [NOTICE.md](NOTICE.md).
 
-## Use
-**Player guide: [`docs/HOW-TO-PLAY.md`](docs/HOW-TO-PLAY.md)**. It covers setup, ReShade settings, every key, every
-mechanic, quickhacks and RAM, the skill tree, game modes and the kit, what Cyberpunk stops doing, troubleshooting and
-uninstalling.
-```
-cmake -S cp/plugin -B cp/plugin/build -G "Visual Studio 17 2022" -A x64
-cmake --build cp/plugin/build --config Release   # build Cyberblock.dll
-uv run tools/install.py           # install the plugin, scripts and shader into the game (Cyberpunk closed)
-uv run tools/play.py              # start the Minecraft dev client, then Cyberpunk 2077
-uv run tools/install.py --remove  # remove exactly what was installed
-```
-F9 toggles Cyberblock in game. Turn frame generation off in Cyberpunk.
+Status: version 1.0.0 is set in the files. Layer 1 (the passthrough) has been verified in game; everything else passes every
+automated suite and is being re-played in game (the checklist is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test 3").
 
-Status: layer 1 is verified in game. Layers 2 to 6 are implemented and pass every automated suite; their in-game
-acceptance list is `docs/superpowers/plans/2026-10-03-layers3-6-complete-mod.md`, section I.2.
+## Install (players)
+You need a Windows PC that can run both games at once (about 64 GB of RAM, see
+[the guide](docs/HOW-TO-PLAY.md#memory-and-the-page-file)).
 
-## What you can do
-Cyberpunk moves V, Steve acts. Everything below works on Night City's real NPCs, vehicles and devices.
+**Requirements:**
+- [Cyberpunk 2077](https://store.steampowered.com/app/1091500/Cyberpunk_2077/) 2.31 on Steam (Phantom Liberty is fine) with
+  - [RED4ext](https://github.com/WopsS/RED4ext), which loads the plugin,
+  - [redscript](https://github.com/jac3km4/redscript), which compiles the scripts,
+  - [Codeware](https://github.com/psiberx/cp2077-codeware),
+  - optionally [Cyber Engine Tweaks](https://github.com/maximegmd/CyberEngineTweaks) (only for its console fallbacks);
+- [ReShade](https://reshade.me) 6.x **with add-on support**, installed for `Cyberpunk2077.exe` with the DirectX 10/11/12 API;
+- [Minecraft: Java Edition](https://www.minecraft.net/) 26.3 through the official launcher, the
+  [Fabric Installer](https://fabricmc.net/use/installer/) (loader 0.19.5 or newer) and
+  [Fabric API](https://modrinth.com/mod/fabric-api) 0.161.0 or newer.
 
-- **Layer 1, passthrough:** Minecraft is drawn into Night City with hand and hotbar; placed blocks sit on Night City's
-  floors and are hidden behind its walls; Night City's floors and walls are solid for Steve, arrows and mobs.
-- **Layer 2, building and explosions:** blocks you place stop pedestrians and cars. TNT, creepers and fireworks explode
-  as Cyberpunk explosions. Swords, arrows, tridents and crossbows hurt NPCs and vehicles (ragdolls, shoves, NCPD heat);
-  flint and steel, fire charges and lava set them alight.
-- **Layer 3, mobs vs Night City:** hostile mobs attack pedestrians as well as Steve. NPCs and NCPD shoot back at up to
-  12 nearest mobs through invisible stand-in puppets; the damage they deal lands on the mob. Fallback if puppets
-  misbehave: `CyberblockPuppets.SetEnabled(false)`.
-- **Layer 4, movement:** open an elytra in free fall (Space) and glide over Night City with firework boosts; touching
-  down gives control back to Cyberpunk movement. An ender pearl teleports V to where it lands. Fallback if the
-  per-frame body moves jitter: `CyberblockFlight.SetCameraOnly(true)`.
-- **Layer 5, interactive items:**
-  - a lead tethers a pedestrian (5 m) or a car (8 m) to Steve and drags it back when it strays; a fishing rod reels one in;
-  - a wind charge knocks back everything around the burst;
-  - a raised shield facing a shooter blocks the bullets;
-  - potions map to Cyberpunk effects: invisibility is optical camo, speed, slowness and jump boost change how V moves,
-    nausea and blindness hit the screen. Damage-over-time potions (poison, wither) are never mapped.
-- **Layer 6, Cyberpunk in Minecraft form:**
-  - hold the hack key to scan: the target gets an outline and a tooltip with name, faction, threat and health;
-  - a RAM bar left of the hotbar (it needs the cyberdeck in your inventory);
-  - quickhack items fire the real Cyberpunk quickhack at the scanned target for RAM:
-
-    | Item | Quickhack | RAM |
-    |---|---|---|
-    | Redstone Charge | Short Circuit | 3 |
-    | Blaze Chip | Overheat | 4 |
-    | Ink Sac Daemon | Reboot Optics | 3 |
-    | Cobweb Daemon | Cripple Movement | 2 |
-    | Spider Eye Virus | Contagion | 4 |
-    | Wither Skull Daemon | Synapse Burnout | 6 |
-    | Compass Ping | Ping | 1 |
-    | Bottle of Forgetting | Memory Wipe | 3 |
-    | Creeper Brain | Cyberpsychosis | 8 |
-    | Redstone Lever | device hack (traffic lights, cameras, vending machines) | 1 |
-
-  - a skill tree with 20 perks in five branches (Body, Reflexes, Technical, Intelligence, Cool), four each, bought with
-    XP levels (3, 5, 8, 12 per tier), each with a Minecraft and a Cyberpunk effect; NPCs you kill drop XP;
-  - `/cyberblock kit` gives the starter kit (cyberdeck, RAM shards, every quickhack item, blocks, weapons, elytra,
-    rockets, potions, spawn eggs).
+**Steps** (the full version, with every setting, is in [docs/HOW-TO-PLAY.md](docs/HOW-TO-PLAY.md#1-setup)):
+1. Download `Cyberblock-1.0.0.zip` from the releases page and unzip it.
+2. Close Cyberpunk and double-click **`install.bat`**. It finds your game, backs up your saves once, never overwrites a file
+   it did not write, and keeps your own ReShade preset. **`uninstall.bat`** removes exactly what it installed.
+3. Run the Fabric Installer for Minecraft 26.3 to create a launcher installation. Edit it in the Minecraft Launcher: game
+   directory `%APPDATA%\.minecraft-cyberblock`, JVM arguments **replaced** with
+   `-Xmx2G -XX:+UseZGC --enable-native-access=ALL-UNNAMED -Dcyberblock.autostart=true`. Copy `minecraft\mods\cyberblock-1.0.0.jar`
+   and the Fabric API jar into `%APPDATA%\.minecraft-cyberblock\mods`.
+4. Start that installation (the title screen has a **Play Cyberblock** button), leave the window open behind Cyberpunk,
+   start Cyberpunk, load a save and press **F9**. Turn frame generation off in Cyberpunk's graphics settings.
 
 ## Keys
-Cyberpunk keeps focus: it keeps the movement keys and the camera; Cyberblock forwards the rest to Minecraft and stops
-Cyberpunk from acting on it. The full conflict-free table, with the dialogue and screen rules, is in
-[docs/HOW-TO-PLAY.md](docs/HOW-TO-PLAY.md#3-controls).
+Cyberpunk keeps focus, the movement keys and the camera; Cyberblock forwards the rest to Minecraft. The full conflict-free
+table is in [docs/HOW-TO-PLAY.md](docs/HOW-TO-PLAY.md#3-controls).
 
 | Key | What it does |
 |---|---|
-| F9 | Toggle Cyberblock on and off, in every state; Cyberpunk's QuickLoad on F9 never fires (the watchdog also turns Cyberblock off if Minecraft goes away) |
-| W A S D, mouse look, C / RCtrl | Cyberpunk moves V; Steve crouches when V crouches (Optical Camo needs it) |
-| Space | V jumps as in Cyberpunk. Pressed while V falls with at least 3 blocks of air below and an elytra on, it opens the elytra (with the Double Jump perk: the 2nd press in the air); a fall faster than 12 m/s for 0.3 s opens it on its own |
-| Left or Right Shift | V sprints as in Cyberpunk. Double-tap either within 300 ms with the Sandevistan perk for Sandevistan Sprint |
-| LMB, RMB, MMB, wheel, 1-9, E, Q, T, /, X | Minecraft: attack, use, pick, hotbar, inventory, drop (Ctrl+Q: stack), chat, command, swap to offhand. In a Cyberpunk dialogue or interaction list with 2+ choices, E, Q, 1-4 and the wheel go to Cyberpunk |
-| LCtrl, Mouse 4, Mouse 5, F, Tab, Alt and Cyberpunk's other keys | Cyberpunk's own (F: interact, talk, exit car) |
-| F5 | Ignored while Active; it no longer quick-saves in Cyberpunk |
-| G (hold) | Hack key: scan and lock the target for 5 s; while held, the wheel picks a quickhack chip and right-click fires it |
-| K | Skill tree |
+| F9 | Toggle Cyberblock on and off, in every state |
+| W A S D, mouse, Space, Shift, C | Cyberpunk moves V (Space opens the elytra in free fall; the glide steers with the mouse) |
+| LMB, RMB, MMB, wheel, 1-9, E, Q, T, / | Minecraft: attack, use, pick, hotbar, inventory, drop, chat, command (E, Q, 1-4 and the wheel go to Cyberpunk in dialogues; **T** answers a ringing phone) |
+| **G** (hold) | Hack: scan and lock a target; the wheel picks a chip, right-click fires it (the chip in your hand wins) |
+| **K** / **U** | Skill tree / Cyberware screen |
+| **Y** / **L** / **O** | Fire the Operating System implant (Sandevistan, Berserk) / the Arms implant / Optical Camo |
+| **F5** | Third person |
+| Esc, M, J, I, P, H | Open Minecraft's pause, atlas, journal, inventory, skill and pause screens instead of Cyberpunk's menus |
+| F | Interact, talk, choose (Cyberpunk's own; the prompt is drawn by Minecraft) |
 
-G and K are the defaults. Rebind them in Minecraft's Controls (category Cyberblock) to G K L O U Y 0 F1-F4 F6-F8 or
-F10-F12; any other key, or both actions on one key, falls back to G and K in Cyberpunk, and a chat message says so.
-While a Minecraft screen is open (inventory, chat, skill tree) every key but F9 goes to it, typing included.
+The six Cyberblock keys (G K U Y L O) can be rebound in Minecraft's Controls (category Cyberblock) to G K L O U Y 0 F1-F4
+F6-F8 F10-F12; a refused key falls back to its own default, and a clash resets all six.
 
-While Cyberblock is active on foot, Cyberpunk's own guns, cyberware, scanner, quickhacks, healing, radial menus, quick
-melee, zoom, crafting (K, while it is the skill-tree key), walk toggle (G) and quick save (F5) are off, and V has no dodge, air dash or double jump
-until you buy the perk. In a vehicle the Cyberpunk HUD and controls return.
+## What you can do
+Everything works on Night City's real NPCs, vehicles and devices.
+- **Passthrough:** Minecraft is drawn into Night City with hand, hotbar and depth; blocks sit on the street and are hidden
+  behind walls; Night City is solid for Steve, arrows and mobs.
+- **Building and explosions:** blocks stop pedestrians and cars; TNT, creepers and fireworks explode as Cyberpunk
+  explosions; weapons hurt people and cars with vanilla-like knockback; fire spreads to NPCs.
+- **Mobs against Night City:** zombies and skeletons attack pedestrians; NPCs and NCPD shoot back.
+- **Movement:** an elytra glide with firework boosts that steers with the camera, wind-charge launches, ender pearls, a
+  third-person view (F5) and Steve riding along in vehicles.
+- **Items:** leads, fishing rods, wind charges, shields and potions work on NPCs and cars.
+- **Netrunning:** a RAM bar, a Cyberdeck implant and ten quickhack chips; each chip has its own Minecraft effect (lightning,
+  flames, ink, real cobwebs, a poison cloud, a wither trail, outlines through walls, a creeper face) and its own Cyberpunk
+  quickhack.
+- **Cyberware:** 17 implants in ripperdoc slots, including two Operating System places (a deck and a Sandevistan together),
+  arm implants with 3D models and abilities (lunge, slam, lash), and a Sandevistan screen effect.
+- **A Minecraft interface for Night City:** radar, eddies, wanted stars, quest and waypoint, prompts, dialogue choices,
+  subtitles, toasts, phone calls, journal, atlas and the pause screen. Menus that cannot be replaced (shops, ripperdoc,
+  settings and similar) are restyled in Minecraft colours and framed.
+- A 20-perk skill tree, a starter kit, free perks in creative (or `/cyberblock perks free on`) and `/cyberblock level`.
 
-## Survival and creative
-Steve's health is the only health. While Cyberblock is on, V is invincible on foot and in vehicles, and every hit V
-would take (bullets, explosions, melee, falls, vehicles, fire, damage over time, instant kills) becomes damage to Steve,
-scaled by V's maximum health. Cyberpunk never shows a game over.
-
-- **Survival** (default): Steve can die and respawns the Minecraft way. The first activation in survival gives the
-  starter kit once, with the elytra on Steve's chest if that slot is empty. Hacks cost RAM, perks cost XP levels.
-  Cyberpunk's fall damage is ignored under an open elytra, for 2 s after touchdown or a pearl teleport, and with Slow
-  Falling; vanilla elytra rules (durability, kinetic damage) still apply.
-- **Creative** (`/gamemode creative`): Steve and V are both invincible, also in vehicles.
-  The kit is not handed out on activation; `/cyberblock kit` still works.
-- In a vehicle, in every game mode, V stays invincible and the hits on V or V's car go to Steve.
-
-## Development
+## Build from source
 ```
-uv run pytest -q                                              # protocol, tools and fake-host tests
+git clone --recurse-submodules <this repository>
+cmake -S cp/plugin -B cp/plugin/build -G "Visual Studio 17 2022" -A x64
+cmake --build cp/plugin/build --config Release   # Cyberblock.dll
+uv run tools/install.py                          # install into the game (Cyberpunk closed)
+uv run tools/play.py                             # start the Minecraft dev client, then Cyberpunk
+uv run python -m tools.package                   # build dist/Cyberblock-1.0.0.zip
+```
+Requirements: JDK 25, Visual Studio 2022 Build Tools (C++ x64 + Windows SDK), CMake, Python 3.12 + [uv](https://docs.astral.sh/uv/),
+git. The repository uses submodules (`third_party/`); the [spec](docs/superpowers/specs/2026-10-02-minecraft-cyberpunk-passthrough-design.md)
+describes the design.
+
+```
+uv run pytest -q                                              # protocol, tools, installer and packaging tests
 cd mc && gradlew.bat test build                               # Minecraft mod (JAVA_HOME = JDK 25)
 cmake --build cp/plugin/build --config Release                # then cp\plugin\build\Release\cb_tests.exe
-uv run python cp/scripts/compile_check.py                     # redscript against the real 2.31 scripts
+uv run python cp/scripts/compile_check.py                     # redscript against the installed game's scripts (a local release gate)
 uv run python -m tools.gen_vectors                            # regenerate shared/vectors.json (no diff expected)
-uv run python -m tools.fakehost --layer3 --layer4 --layer6    # fake Cyberpunk for a running Minecraft client
+uv run python -m tools.fakehost --ui --hacks --seat           # fake Cyberpunk for a running Minecraft client
 ```
-`tools.fakehost` plays Cyberpunk's part of layers 2 to 6 (`--layer2` .. `--layer6`, combinable, `--port` for a client
-on another port, `--cmd` for server commands) and prints what Minecraft reports. The wire format is
-`shared/protocol.md`. The untracked `net/` folder holds decompiled Minecraft source for reference; it is git-ignored and
-must never be committed.
+`tools.fakehost` plays Cyberpunk's part (`--layer2` .. `--layer6`, `--ui`, `--hacks`, `--seat`, combinable, `--port` for a
+client on another port, `--cmd` for server commands) and prints what Minecraft reports. The wire format is
+[shared/protocol.md](shared/protocol.md). Never commit unpacked Minecraft or Cyberpunk sources or assets: the root
+`.gitignore` guards `/net/`, `/com/` and `/META-INF/`, and all art is generated by `art/gen_item_art.py` or hand-authored.
+
+## Credits
+Based on [universal-modder](https://github.com/rehan-remade/universal-modder) by Rehan (MIT), whose Minecraft x GTA V
+passthrough example is the starting point of the mod, the compositor and the shader. Built with RED4ext.SDK, ReShade's
+add-on API, nlohmann/json and Java-WebSocket. Needs RED4ext, redscript, Codeware, ReShade, Fabric Loader and Fabric API at
+runtime. Every credit and its licence text is in [NOTICE.md](NOTICE.md) and
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+## License
+Cyberblock's own code is released under the [MIT License](LICENSE). The third-party components keep their own licences
+([THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)). Minecraft and Cyberpunk 2077 are not part of this project and keep
+theirs.

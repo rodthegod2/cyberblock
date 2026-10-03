@@ -83,7 +83,7 @@ Evidence for the query side:
 | Fact | Source |
 |---|---|
 | World Static QueryDetect is exactly those seven groups (VehicleBlocker is listed twice in the file) | 2.31 `engine\physics\collision_presets.json` (CR2W `physicsCollisionPresetsResource`), decoded again 2026-10-03 in a scratch folder, not kept |
-| `Static`, `PlayerBlocker` and `VehicleBlocker` are group names vanilla scripts pass to `QueryFilter.AddGroup` / `RaycastWithASingleGroup` / `OverlapWithASingleGroup` | decompiled 2.31 scripts (`spatialQueriesSystem.swift`, `defaultTransition.swift`, `locomotionTransitions.swift`) |
+| `Static`, `PlayerBlocker` and `VehicleBlocker` are group names vanilla scripts pass to `QueryFilter.AddGroup` / `RaycastWithASingleGroup` / `OverlapWithASingleGroup` | the 2.31 script API (NativeDB, redscript) (`spatialQueriesSystem.swift`, `defaultTransition.swift`, `locomotionTransitions.swift`) |
 | The native `QueryFilter.AddGroup` looks the name up in the engine's group table and ORs `1 << index` into `mask2` (offset 8); an unknown name adds nothing | 2.31 `Cyberpunk2077.exe`, the native registered under the name `AddGroup` (read-only disassembly, nothing kept) |
 | Colliders keep QueryDetect in the query `mask2` with `mask1 = 0` | entSpawner's World Static constants above (query `0/0x42DC008`) |
 

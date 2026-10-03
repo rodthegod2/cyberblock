@@ -52,7 +52,7 @@ and **building from source** (for developers). Both end in the same installed fi
    `uninstall.bat`, `install.ps1`, this guide, the licence texts, a `game\` folder (the plugin, the scripts and the ReShade
    shader) and `minecraft\mods\cyberblock-1.0.0.jar`.
 2. **Close Cyberpunk**, then double-click **`install.bat`**. (If it cannot find your game, drag your Cyberpunk 2077 folder
-   onto `install.bat`, or run `install.ps1 -Game "D:\...\Cyberpunk 2077"` in PowerShell.) The installer:
+   onto `install.bat`, or run `install.ps1 -Game "<your Cyberpunk 2077 folder>"` in PowerShell.) The installer:
    - finds the game through Steam's libraries and **refuses to run while Cyberpunk is running**;
    - **never overwrites a file it did not write itself**, and records every file it wrote, with a checksum, in
      `red4ext\plugins\Cyberblock\install-manifest.json`;

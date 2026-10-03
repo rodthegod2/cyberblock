@@ -624,7 +624,7 @@ already running still has the old mod. The full key table and the netrunning wal
 ## 0. Before launching
 - Close Roblox Studio (and check Task Manager for leftover `RobloxStudioBeta` processes) — memory headroom.
 - Cyberpunk: Frame Generation **Off**, Resolution Scaling Off for the first run.
-- In `D:\Cyberblock`: `uv run python -m tools.play` (starts Minecraft, waits for it, then starts Cyberpunk).
+- In the repository root: `uv run python -m tools.play` (starts Minecraft, waits for it, then starts Cyberpunk).
 - Load a save outdoors in a busy street (NPCs, cars, NCPD nearby). Press **F9**.
 
 ## 1. Layer 1 acceptance (5 min)

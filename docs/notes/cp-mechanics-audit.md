@@ -11,7 +11,7 @@ use instead. It also covers how to fire quickhacks and perk effects from scripts
 
 | Tag | Source |
 |---|---|
-| **S** | Decompiled 2.31 game scripts: codeberg.org/adamsmasher/cyberpunk at `a2e6bb3 "2.31"` (local clone in `%TEMP%\cbs2\cp231`). Cited as `file.swift:line`. |
+| **S** | The 2.31 script API (NativeDB, redscript): the scripts the game ships and `cp/scripts/compile_check.py` compiles against, read outside this repository. Cited as `file.swift:line`, a position in those scripts. |
 | **T** | The game's TweakDB, `r6/cache/tweakdb_ep1.bin` (the database the game uses when Phantom Liberty is installed). Read-only, with record and flat names from CET's `tweakdbstr.kark`. Every ID cited here also exists in `tweakdb.bin`. |
 | **K** | Installed default bindings: `r6/config/inputUserMappings.xml` (key → mapping) and `inputContexts.xml` (mapping → action and context). These do not include the player's own rebinds. |
 | **N** | NativeDB class dump (gameStatsSystem, gameTimeSystem, gameStatusEffectSystem, gameGodModeSystem, gamedeviceAction). |

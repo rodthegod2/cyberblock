@@ -117,7 +117,7 @@ States Idle, Following, Holding. Constants: hold 1.0 s, quick landing 0.3 s, nea
 
 | Fact | Source |
 |---|---|
-| `DelaySystem.DelayCallbackNextFrame(delayCallback: ref<DelayCallback>) -> Void` exists and vanilla uses it once per request; re-queueing it from inside its own callback **never fired** in 2.31 (R1-a, table above) | decompiled 2.31 scripts `orphans.swift` 11826, `cyberpunk/player/psm/equipment.swift` 524; `Cyberblock.log` 2026-10-03 15:07-15:16 |
+| `DelaySystem.DelayCallbackNextFrame(delayCallback: ref<DelayCallback>) -> Void` exists and vanilla uses it once per request; re-queueing it from inside its own callback **never fired** in 2.31 (R1-a, table above) | the 2.31 script API (NativeDB, redscript) `orphans.swift` 11826, `cyberpunk/player/psm/equipment.swift` 524; `Cyberblock.log` 2026-10-03 15:07-15:16 |
 | `gameTeleportationFacility::Teleport(objectToTeleport, position: Vector4, orientation: EulerAngles)`; scripts reach it through `TeleportationFacility.Teleport(GameObject, Vector4, EulerAngles)` | NativeDB; `orphans.swift` 31935 |
 | `gameSpatialQueriesSystem::SyncRaycastByCollisionGroup(start, end, collisionGroup: CName, out result: physicsTraceResult, staticOnly, dynamicOnly) -> Bool` for the clip and ground rays | NativeDB |
 | Vanilla player teleports that keep the facing pass `Vector4.ToRotation(player.GetWorldForward())` | `cyberpunk/UI/fullscreen/map/worldMap.swift` 949, `cyberpunk/devices/roadBlock/roadBlockTrap.swift` 74 |
