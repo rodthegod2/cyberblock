@@ -16,7 +16,7 @@ add_subdirectory(${ROOT}/third_party/RED4ext.SDK ${CMAKE_BINARY_DIR}/red4ext.sdk
 file(GLOB CB_SOURCES CONFIGURE_DEPENDS src/*.cpp)
 add_library(Cyberblock SHARED ${CB_SOURCES})
 target_include_directories(Cyberblock PRIVATE src ${ROOT}/third_party/reshade/include)
-target_link_libraries(Cyberblock PRIVATE RED4ext::SDK nlohmann_json::nlohmann_json ws2_32 user32)
+target_link_libraries(Cyberblock PRIVATE RED4ext::SDK nlohmann_json::nlohmann_json ws2_32 user32 dxgi)
 
 enable_testing()
 add_executable(cb_tests tests/test_main.cpp tests/test_cbmath.cpp tests/test_probes.cpp tests/test_ws.cpp

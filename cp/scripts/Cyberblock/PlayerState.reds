@@ -24,6 +24,8 @@ public class CyberblockPlayerState {
   private let hudDelay: Int32;
   // V's mesh components we switched off (first-person arms and body would otherwise show over Steve).
   private let hiddenMeshes: array<wref<IComponent>>;
+  // Ticks until the next body check (every 2 s: toggling meshes rebuilds their render proxies on the GPU).
+  private let bodyCheckDelay: Int32;
 
   // Marks our status effects so a load can remove leftovers without touching the game's own restrictions.
   public static func Instigator() -> TweakDBID {
@@ -141,16 +143,34 @@ public class CyberblockPlayerState {
 
   // Switches off every enabled mesh component on V (Codeware Entity.GetComponents; IComponent.Toggle/IsEnabled)
   // and remembers exactly those, so ShowBody restores V as she or he was.
+  // A mesh that is enabled again after we hid it means the game re-enabled it: count it, log it, and never track it
+  // twice, so a game that keeps re-enabling meshes cannot grow the list or churn GPU resources more than every 2 s.
   private func HideBody(player: ref<PlayerPuppet>) -> Void {
+    if this.bodyCheckDelay > 0 {
+      this.bodyCheckDelay -= 1;
+      return;
+    }
+    this.bodyCheckDelay = 20;
+    let hidden = 0;
+    let reenabled = 0;
     for component in player.GetComponents() {
       if (component.IsA(n"entSkinnedMeshComponent") || component.IsA(n"entMeshComponent")) && component.IsEnabled() {
         component.Toggle(false);
-        ArrayPush(this.hiddenMeshes, component);
+        if ArrayContains(this.hiddenMeshes, component) {
+          reenabled += 1;
+        } else {
+          ArrayPush(this.hiddenMeshes, component);
+          hidden += 1;
+        }
       }
+    }
+    if hidden > 0 || reenabled > 0 {
+      Cyberblock_Log(s"body: hid \(hidden) new meshes, \(reenabled) re-enabled by the game, tracking \(ArraySize(this.hiddenMeshes))");
     }
   }
 
   private func ShowBody() -> Void {
+    this.bodyCheckDelay = 0;
     for component in this.hiddenMeshes {
       if IsDefined(component) {
         component.Toggle(true);

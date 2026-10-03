@@ -13,6 +13,9 @@
 #include <cstring>
 #include <mutex>
 #include <reshade.hpp>
+#include <d3d12.h>
+#include <dxgi1_4.h>
+#include "log.hpp"
 
 using namespace reshade::api;
 
@@ -352,10 +355,37 @@ namespace
 		last = info.ftLastWriteTime;
 	}
 
+	/// Logs the game's dedicated video memory use against its budget every 5 s while the add-on runs, so a leak shows
+	/// as a climbing number long before D3D12 runs out (2026-10-02: the game crashed with "D3D12MA: Out of memory").
+	void report_vram(effect_runtime *runtime)
+	{
+		static DWORD next = 0;
+		static IDXGIAdapter3 *adapter = nullptr;
+		if (GetTickCount() < next)
+			return;
+		next = GetTickCount() + 5000;
+		if (adapter == nullptr)
+		{
+			auto *const d3d = reinterpret_cast<ID3D12Device *>(runtime->get_device()->get_native());
+			IDXGIFactory4 *factory = nullptr;
+			if (d3d == nullptr || FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))))
+				return;
+			factory->EnumAdapterByLuid(d3d->GetAdapterLuid(), IID_PPV_ARGS(&adapter));
+			factory->Release();
+			if (adapter == nullptr)
+				return;
+		}
+		DXGI_QUERY_VIDEO_MEMORY_INFO info = {};
+		if (SUCCEEDED(adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info)))
+			cb::log::info("vram: %llu MB used of %llu MB budget (frames %s)", info.CurrentUsage >> 20, info.Budget >> 20,
+				g_hasFrame ? "arriving" : "none");
+	}
+
 	void on_present(effect_runtime *runtime)
 	{
 		signal_upload(runtime);
 		watch_effect_file(runtime); // every frame, even when the effect failed to compile
+		report_vram(runtime);
 	}
 
 	void set_pose_uniform(effect_runtime *runtime, const char *name, const Pose &p)
