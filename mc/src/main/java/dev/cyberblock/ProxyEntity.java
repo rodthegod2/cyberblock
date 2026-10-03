@@ -1,7 +1,11 @@
 package dev.cyberblock;
 
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.DamageTypeTags;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -13,6 +17,8 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
 import net.minecraft.world.entity.projectile.arrow.ThrownTrident;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
@@ -26,6 +32,10 @@ import org.jspecify.annotations.Nullable;
 public final class ProxyEntity extends LivingEntity {
 	/** Vanilla's damage cooldown: for this long only a hit stronger than the last one counts. */
 	private static final int COOLDOWN_TICKS = 10;
+	/** How long flint and steel or a fire charge set an NPC alight. */
+	private static final float ITEM_IGNITE_SECONDS = 8.0F;
+	/** Cyberpunk's NPC burns for the reported time: the same ignition is not reported again until it has run out. */
+	private int igniteCooldown;
 	private int damageCooldown;
 	private float lastDamage;
 	private long proxyId;
@@ -76,6 +86,47 @@ public final class ProxyEntity extends LivingEntity {
 		if (this.damageCooldown > 0) {
 			this.damageCooldown--;
 		}
+
+		if (this.igniteCooldown > 0) {
+			this.igniteCooldown--;
+		}
+	}
+
+	/**
+	 * Every vanilla way to set an entity on fire (lava, a fire block, a flaming arrow, fire aspect, the items below) ends here
+	 * with positive ticks. The proxy never burns in Minecraft: the ignition goes to the host, which burns the real NPC.
+	 */
+	@Override
+	public void setRemainingFireTicks(final int remainingTicks) {
+		if (remainingTicks <= 0 || !(this.level() instanceof ServerLevel)) {
+			super.setRemainingFireTicks(remainingTicks);
+		} else if (this.igniteCooldown <= 0) {
+			ProxyManager.ignite(this, remainingTicks / 20.0);
+			this.igniteCooldown = remainingTicks;
+		}
+	}
+
+	/** Flint and steel and fire charges only light blocks in vanilla; aimed at an NPC they light the NPC. */
+	@Override
+	public InteractionResult interact(final Player player, final InteractionHand hand, final Vec3 location) {
+		ItemStack held = player.getItemInHand(hand);
+		boolean flint = held.is(Items.FLINT_AND_STEEL);
+		if (!flint && !held.is(Items.FIRE_CHARGE)) {
+			return super.interact(player, hand, location);
+		}
+
+		if (this.level() instanceof ServerLevel level) {
+			level.playSound(null, this.getX(), this.getY(), this.getZ(), flint ? SoundEvents.FLINTANDSTEEL_USE : SoundEvents.FIRECHARGE_USE,
+				SoundSource.PLAYERS, 1.0F, level.getRandom().nextFloat() * 0.4F + 0.8F);
+			this.igniteForSeconds(ITEM_IGNITE_SECONDS);
+			if (flint) {
+				held.hurtAndBreak(1, player, hand);
+			} else {
+				held.consume(1, player);
+			}
+		}
+
+		return InteractionResult.SUCCESS;
 	}
 
 	@Override

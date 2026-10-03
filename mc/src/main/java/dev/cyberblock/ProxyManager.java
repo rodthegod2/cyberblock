@@ -118,6 +118,13 @@ public final class ProxyManager {
 		}
 	}
 
+	/** Server thread, from a proxy: it was set on fire (the host accepts 0..120 seconds). */
+	static void ignite(final ProxyEntity proxy, final double seconds) {
+		if (Cyberblock.active) {
+			Cyberblock.events.accept(Wire.ignite(Long.toUnsignedString(proxy.proxyId()), Math.min(seconds, 120.0)));
+		}
+	}
+
 	/** A hostile host could make this a log flood: say it once, then every 100th time. */
 	private static void warn(final String what) {
 		if (bad++ % 100 == 0) {
