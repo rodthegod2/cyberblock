@@ -195,7 +195,8 @@ public class CyberblockSystem extends ScriptableSystem {
       this.events.Tick(game, live);
     }
     if live {
-      CyberblockCollision.Stream(game, player.GetWorldPosition());
+      // Around the flight while V waits at the take-off spot in the camera-only fallback, else around V.
+      CyberblockCollision.Stream(game, CyberblockFlight.Center(game, player));
     }
     CyberblockPuppets.Tick(game, player, live);
     CyberblockFlight.Tick(game, player, live);
