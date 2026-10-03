@@ -160,7 +160,7 @@ public final class CyberwareEffects {
 	public static void sprintSandevistan(final ServerPlayer player) {
 		long now = player.level().getGameTime();
 		if (CyberData.has(player, Perk.SANDEVISTAN) && CyberData.has(player, Cyberware.SANDEVISTAN)
-			&& CyberData.timer(player, Cyberware.SANDEVISTAN).ready(now) && sandevistan(player, now)) {
+			&& CyberData.ready(player, Cyberware.SANDEVISTAN) && sandevistan(player, now)) {
 			Cyberblock.LOG.info("cyberware: activate sandevistan (sprint)");
 		}
 	}
@@ -274,7 +274,7 @@ public final class CyberwareEffects {
 	public static void kerenzikov(final ServerPlayer player) {
 		long now = player.level().getGameTime();
 		boolean airborne = Cyberblock.active ? Bridge.hostAirborne : !player.onGround();
-		if (!airborne || !CyberData.has(player, Cyberware.KERENZIKOV) || !CyberData.timer(player, Cyberware.KERENZIKOV).ready(now)) {
+		if (!airborne || !CyberData.has(player, Cyberware.KERENZIKOV) || !CyberData.ready(player, Cyberware.KERENZIKOV)) {
 			return;
 		}
 
@@ -291,7 +291,7 @@ public final class CyberwareEffects {
 	/** Biomonitor, every tick: at 30 % health or less it heals 8 and gives Regeneration I (then 90 s to recharge). */
 	private static void biomonitor(final ServerPlayer player, final long now) {
 		if (!CyberData.has(player, Cyberware.BIOMONITOR) || !CyberwareRules.biomonitor(player.getHealth(), player.getMaxHealth())
-			|| !CyberData.timer(player, Cyberware.BIOMONITOR).ready(now)) {
+			|| !CyberData.ready(player, Cyberware.BIOMONITOR)) {
 			return;
 		}
 
@@ -312,7 +312,7 @@ public final class CyberwareEffects {
 	public static boolean secondHeart(final ServerPlayer player, final DamageSource source) {
 		long now = player.level().getGameTime();
 		if (source.is(DamageTypeTags.BYPASSES_INVULNERABILITY) || !CyberData.has(player, Cyberware.SECOND_HEART)
-			|| !CyberData.timer(player, Cyberware.SECOND_HEART).ready(now)) {
+			|| !CyberData.ready(player, Cyberware.SECOND_HEART)) {
 			return false;
 		}
 

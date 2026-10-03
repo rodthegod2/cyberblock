@@ -166,11 +166,7 @@ public final class CyberData {
 		player.setAttached(CYBER_READY, Map.copyOf(timers));
 	}
 
-	/** Level game time from which the implant may fire again. */
-	public static long readyAt(final Player player, final Cyberware cyberware) {
-		return timer(player, cyberware).readyAt();
-	}
-
+	/** The implant may fire again (level game time). */
 	public static boolean ready(final Player player, final Cyberware cyberware) {
 		return timer(player, cyberware).ready(player.level().getGameTime());
 	}
