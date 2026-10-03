@@ -274,7 +274,8 @@ namespace
 	}
 
 	// Cyberblock_NextEvent() -> CName: pops the oldest Minecraft event and makes it current: n"explosion", n"hit",
-	// n"ignite", n"block_add" or n"block_remove"; n"" (the empty CName, hash 0) when there is none.
+	// n"ignite", n"block_add", n"block_remove", n"block_reset", n"teleport", n"lead", n"lead_release", n"pull", n"knock",
+	// n"effect", n"hack", n"scan", n"perk" or n"perkfx"; n"" (the empty CName, hash 0) when there is none.
 	void NextEvent(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
 	{
 		++frame->code;
@@ -322,6 +323,30 @@ namespace
 		++frame->code;
 		if (out)
 			*out = cb::world::events().current().flag;
+	}
+
+	// Cyberblock_EventName() -> CName: the effect name | hack name | perk id | perkfx id; n"" for the other kinds.
+	void EventName(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = RED4ext::CName(cb::world::events().current().name.c_str());
+	}
+
+	// Cyberblock_EventExtra() -> Float: the knock strength | effect amplifier; 0 for the other kinds.
+	void EventExtra(IScriptable *, CStackFrame *frame, float *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = float(cb::world::events().current().extra);
+	}
+
+	// Cyberblock_EventId() -> Int32: a hit's mob id (-1 when no mob dealt it) | a hack or scan request id; 0 otherwise.
+	void EventId(IScriptable *, CStackFrame *frame, int32_t *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = cb::world::events().current().id;
 	}
 
 	// Cyberblock_Log(msg: String) -> Void
@@ -382,6 +407,9 @@ namespace cb::natives
 		add(rtti, "Cyberblock_EventAmount", &EventAmount, "Float");
 		add(rtti, "Cyberblock_EventVector", &EventVector, "Vector4");
 		add(rtti, "Cyberblock_EventFlag", &EventFlag, "Bool");
+		add(rtti, "Cyberblock_EventName", &EventName, "CName");
+		add(rtti, "Cyberblock_EventExtra", &EventExtra, "Float");
+		add(rtti, "Cyberblock_EventId", &EventId, "Int32");
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});
 		log::info("redscript natives registered");
 	}

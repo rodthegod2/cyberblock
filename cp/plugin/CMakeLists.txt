@@ -19,7 +19,7 @@ target_include_directories(Cyberblock PRIVATE src ${ROOT}/third_party/reshade/in
 target_link_libraries(Cyberblock PRIVATE RED4ext::SDK nlohmann_json::nlohmann_json ws2_32 user32 dxgi)
 
 enable_testing()
-add_executable(cb_tests tests/test_main.cpp tests/test_cbmath.cpp tests/test_probes.cpp tests/test_world.cpp tests/test_ws.cpp
+add_executable(cb_tests tests/test_main.cpp tests/test_cbmath.cpp tests/test_probes.cpp tests/test_world.cpp tests/test_events.cpp tests/test_ws.cpp
 	src/cbmath.cpp src/log.cpp src/probes.cpp src/world.cpp src/ws.cpp)
 target_include_directories(cb_tests PRIVATE src)
 target_link_libraries(cb_tests PRIVATE nlohmann_json::nlohmann_json ws2_32)
