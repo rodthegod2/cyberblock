@@ -23,13 +23,17 @@ import net.minecraft.world.entity.monster.Enemy;
  * The client side of the implants (plan retest2 section 1.7), every client tick. The legs implants' particles and sounds
  * follow V's own jumps (Cyberpunk does the jump, Steve follows V): reinforced tendons on a jump pressed while V is already in
  * the air, fortified ankles on a charged jump (jump held on the ground at least 10 ticks, V off the ground at most 4 ticks
- * after the release). Kiroshi optics outline hostile NPCs' proxies and hostile mobs within 32 blocks (per-tick gizmos, drawn
- * where they stand in Night City).
+ * after the release). Kiroshi optics outline hostile NPCs' proxies and hostile mobs within 32 blocks, and every proxy a Compass
+ * Ping marked gets a gold outline (per-tick gizmos, drawn where they stand in Night City).
  */
 final class CyberwareClient {
 	private static final double KIROSHI_RANGE = 32.0;
 	private static final int OUTLINE_STROKE = 0xC0FF2B45;
 	private static final int OUTLINE_FILL = 0x10FF2B45;
+	/** Compass Ping (plan retest3 C3): pinged proxies get a gold outline, seen through walls, within this many blocks. */
+	private static final double PING_RANGE = 96.0;
+	private static final int PING_STROKE = 0xF0FFD34A;
+	private static final int PING_FILL = 0x18FFD34A;
 	/** Bridge.hostJumpPresses as last seen (it only ever counts up; nobody consumes it). */
 	private static int lastJumps = Bridge.hostJumpPresses.get();
 	private static boolean wasAirborne;
@@ -54,6 +58,10 @@ final class CyberwareClient {
 
 		if (Cyberblock.active) {
 			legs(level, player, pressed);
+		}
+
+		for (Entity e : level.getEntities(player, player.getBoundingBox().inflate(PING_RANGE), e -> !e.isRemoved() && Bridge.pingedProxy.test(e))) {
+			Gizmos.cuboid(e.getBoundingBox().inflate(0.1), GizmoStyle.strokeAndFill(PING_STROKE, 3.0F, PING_FILL));
 		}
 
 		if (CyberData.has(player, Cyberware.KIROSHI_OPTICS)) {
