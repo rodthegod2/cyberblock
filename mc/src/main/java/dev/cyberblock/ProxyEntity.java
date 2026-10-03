@@ -10,6 +10,7 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.HumanoidArm;
+import net.minecraft.world.entity.Leashable;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -27,11 +28,17 @@ import org.jspecify.annotations.Nullable;
 /**
  * Stands in Minecraft for one Cyberpunk NPC or vehicle: invisible, no gravity, put at the host's position by ProxyManager and
  * never saved. Minecraft weapons and mobs can hit it, but it is never hurt here: a hit becomes a {"t":"hit"} for the host,
- * which applies it to the real NPC. Damage with no player or mob behind it (lava, suffocation, falling) is ignored.
+ * which applies it to the real NPC. Damage with no player or mob behind it (lava, suffocation, falling) is ignored. A lead on it
+ * (layer 5) is reported as {"t":"lead"} and the host drags the NPC; a fishing rod reeling it in is {"t":"pull"}.
  */
-public final class ProxyEntity extends LivingEntity {
+public final class ProxyEntity extends LivingEntity implements Leashable {
 	/** Vanilla's damage cooldown: for this long only a hit stronger than the last one counts. */
 	private static final int COOLDOWN_TICKS = 10;
+	/** Minecraft only breaks a proxy's leash this far from its holder (vanilla: 12); the host gives up at length + 12 m for 2 s. */
+	private static final double LEASH_SNAP = 32.0;
+	private Leashable.@Nullable LeashData leashData;
+	/** Who holds the leash as far as the host knows (null: nobody). */
+	private @Nullable Entity reportedHolder;
 	/** How long flint and steel or a fire charge set an NPC alight. */
 	private static final float ITEM_IGNITE_SECONDS = 8.0F;
 	/** Cyberpunk's NPC burns for the reported time: the same ignition is not reported again until it has run out. */
@@ -89,6 +96,10 @@ public final class ProxyEntity extends LivingEntity {
 
 		if (this.igniteCooldown > 0) {
 			this.igniteCooldown--;
+		}
+
+		if (this.level() instanceof ServerLevel) {
+			this.reportLeash();
 		}
 	}
 
@@ -149,7 +160,15 @@ public final class ProxyEntity extends LivingEntity {
 
 		this.lastDamage = damage;
 		this.damageCooldown = COOLDOWN_TICKS;
-		ProxyManager.hit(this, counted, kind, this.impulse(level, source, kind, medium, attacker, direct, counted));
+		// the headhunter perk: Steve's arrow in a pedestrian's head (its top 0.35 m) counts double
+		if (medium == ProxyDamage.Medium.ARROW && actor == ProxyDamage.Actor.PLAYER && direct != null && this.getType() == ProxyEntities.HUMAN
+			&& ProxyDamage.headshot(direct.getY(), this.getY(), this.getBbHeight()) && perk("headhunter")) {
+			counted *= ProxyDamage.HEADSHOT;
+		}
+
+		// layer 3: a mob's own blow or projectile names the mob, so its puppet in Night City is the attacker
+		int mob = attacker instanceof Mob && (kind.equals("mob") || kind.equals("arrow") || kind.equals("trident")) ? attacker.getId() : -1;
+		ProxyManager.hit(this, counted, kind, this.impulse(level, source, kind, medium, attacker, direct, counted), mob);
 		return true;
 	}
 
@@ -175,7 +194,76 @@ public final class ProxyEntity extends LivingEntity {
 		// vanilla pushes along the attacker's yaw; looking straight up or down there is no direction, then it is away from the attacker
 		Vec3 look = attacker.getLookAngle();
 		Vec3 along = Math.hypot(look.x, look.z) > 1.0E-3 ? look : this.position().subtract(attacker.position());
-		return ProxyDamage.melee(along.x, along.z, attacker instanceof LivingEntity living ? this.knockbackLevel(level, source, living) : 0.0);
+		Vec3 melee = ProxyDamage.melee(along.x, along.z, attacker instanceof LivingEntity living ? this.knockbackLevel(level, source, living) : 0.0);
+		return attacker instanceof Player && perk("gorilla_arms") ? ProxyDamage.gorillaArms(melee, this.getType() == ProxyEntities.VEHICLE) : melee;
+	}
+
+	/** Server thread: Steve owns this perk (plan section 1.5; the cyber track keeps the ranks). */
+	private static boolean perk(final String id) {
+		return Bridge.perkRank.applyAsInt(id) > 0;
+	}
+
+	@Override
+	public Leashable.@Nullable LeashData getLeashData() {
+		return this.leashData;
+	}
+
+	@Override
+	public void setLeashData(final Leashable.@Nullable LeashData leashData) {
+		this.leashData = leashData;
+	}
+
+	/** The host drags the NPC or vehicle along the leash (Tether.reds): the leash never moves the proxy itself. */
+	@Override
+	public boolean checkElasticInteractions(final Entity leashHolder, final Leashable.LeashData leashData) {
+		return false;
+	}
+
+	/** The host decides when a tether snaps ({"t":"unlead"}); this is only the last resort. */
+	@Override
+	public double leashSnapDistance() {
+		return LEASH_SNAP;
+	}
+
+	/** Server thread, every tick: the host hears of every change of who holds the leash (leashed, tied to a fence, untied, broken). */
+	private void reportLeash() {
+		Entity holder = this.isLeashed() ? this.getLeashHolder() : null;
+		if (holder == this.reportedHolder) {
+			return;
+		}
+
+		this.reportedHolder = holder;
+		if (!Cyberblock.active) {
+			return;
+		}
+
+		String id = Long.toUnsignedString(this.proxyId);
+		Cyberblock.events.accept(holder == null ? Wire.leadRelease(id)
+			: Wire.lead(id, holder instanceof Player ? null : new double[] {holder.getX(), holder.getY(), holder.getZ()},
+				Tethers.leadLength(this.getType() == ProxyEntities.VEHICLE)));
+	}
+
+	/** Server thread: the host gave the tether up ({"t":"unlead"}): the leash drops with its item, and the host already knows. */
+	void unlead() {
+		this.reportedHolder = null;
+		if (this.isLeashed()) {
+			this.dropLeash();
+		}
+	}
+
+	/**
+	 * Server thread, from FishingHook.pullEntity: reeling in a hooked proxy pulls the NPC or vehicle toward Steve's eyes in Night City
+	 * (instead of vanilla's pull, which a proxy ignores). False when the host does not hear of it.
+	 */
+	public boolean reelIn(final @Nullable Entity owner) {
+		if (owner == null || !Cyberblock.active || ProxyManager.idOf(this) == 0L) {
+			return false;
+		}
+
+		Vec3 eyes = owner.getEyePosition();
+		Cyberblock.events.accept(Wire.pull(Long.toUnsignedString(this.proxyId), eyes.x, eyes.y, eyes.z,
+			Tethers.pullStrength(this.getType() == ProxyEntities.VEHICLE)));
+		return true;
 	}
 
 	/** What vanilla's LivingEntity.getKnockback (protected) works out for the attacker's weapon, plus the sprint bonus. */

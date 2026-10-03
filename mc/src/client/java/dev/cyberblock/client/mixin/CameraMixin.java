@@ -8,7 +8,6 @@ import net.minecraft.client.Camera;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.phys.Vec3;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.joml.Vector3fc;
@@ -60,15 +59,9 @@ abstract class CameraMixin {
 		UP.rotate(this.rotation, this.up);
 		LEFT.rotate(this.rotation, this.left);
 		this.matrixPropertiesDirty |= 3;
+		// always the host's camera, gliding too (the host moves V to Steve): Minecraft's picture stays registered with Night City's
 		double x = p.x(), y = p.y(), z = p.z();
 		Entity player = Minecraft.getInstance().player;
-		if (p.drive() && player != null) {
-			// flight chase cam: the host framed Steve at p.p*; keep that framing exactly, wherever he is drawn now
-			Vec3 at = player.getPosition(partialTicks);
-			x += at.x - p.px();
-			y += at.y - p.py();
-			z += at.z - p.pz();
-		}
 		this.setPosition(x, y, z);
 		// Cyberpunk pulls its camera in to the head against walls: then Minecraft's camera would be inside Steve's head
 		boolean inside = player != null && player.getEyePosition(partialTicks).distanceToSqr(x, y, z) < 0.8 * 0.8;

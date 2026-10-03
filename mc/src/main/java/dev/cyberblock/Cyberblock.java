@@ -3,6 +3,7 @@ package dev.cyberblock;
 
 import java.util.function.Consumer;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import org.slf4j.Logger;
@@ -19,14 +20,21 @@ public class Cyberblock implements ModInitializer {
 	@Override
 	public void onInitialize() {
 		ProxyEntities.register();
+		Bridge.proxyById = ProxyManager::byId;
+		Bridge.proxyIdOf = ProxyManager::idOf;
 		ServerLifecycleEvents.SERVER_STARTED.register(WorldBridge::attach);
 		// before the world is saved, so Night City's barriers and the proxies are never kept in the save
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
 			ProxyManager.clear();
+			MobWar.clear();
 			WorldBridge.detach();
 		});
+		ServerEntityEvents.ENTITY_LOAD.register(MobWar::onEntityLoad);
 		ServerTickEvents.END_SERVER_TICK.register(WorldBridge::tick);
 		ServerTickEvents.END_SERVER_TICK.register(ProxyManager::tick);
+		ServerTickEvents.END_SERVER_TICK.register(MobWar::tick);
+		ServerTickEvents.END_SERVER_TICK.register(Projectiles::tick);
+		ServerTickEvents.END_SERVER_TICK.register(PlayerEffects::tick);
 		LOG.info("cyberblock loaded");
 	}
 }

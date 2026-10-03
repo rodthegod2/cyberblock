@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -22,12 +23,30 @@ public final class WorldBridge {
 	private static final BlockEvents.Outbox blockEvents = new BlockEvents.Outbox();
 	/** While placing or removing the host's own ground: those changes aren't news to the host (server thread only). */
 	private static boolean placingGround;
+	/** The protocol's limit for one pcells message. */
+	private static final int MAX_PROJECTILE_CELLS = 64;
+	/** Barriers on Night City surfaces in the way of Steve's projectiles, for 3 seconds (server thread only). */
+	private static final TempCells pcells = new TempCells();
+	/** The solid blocks of the world the host plays in (server thread; null while no world runs). */
+	private static PlacedBlocks placed;
+	/** The resync the host gets after its hello (server thread). */
+	private static final BlockSync resync = new BlockSync();
+	/** A host said hello and has not gone: a world that starts now resyncs it. */
+	private static volatile boolean linked;
+	/** A block change the host never heard of (it was not active then): resync once it is again (server thread). */
+	private static boolean missed;
+	private static boolean wasActive;
 
 	private WorldBridge() {
 	}
 
+	/** Server thread, when the world has started. */
 	static void attach(final MinecraftServer s) {
 		server = s;
+		placed = s.overworld().getDataStorage().computeIfAbsent(PlacedBlocks.TYPE);
+		if (linked) {
+			startResync(s);
+		}
 	}
 
 	/** Server thread, before the world is saved: take our barriers out so the save is vanilla. */
@@ -35,9 +54,55 @@ public final class WorldBridge {
 		MinecraftServer s = server;
 		server = null;
 		blockEvents.clear();
+		resync.clear();
+		placed = null;
+		missed = wasActive = false;
+		if (linked) {
+			// this world's blocks are leaving Night City with it
+			Cyberblock.events.accept(Wire.blocks(true, new long[0]));
+		}
+
 		if (s != null) {
 			removeBarriers(s.overworld());
 		}
+	}
+
+	/** Link thread: the host said hello (a new session, or a restart of either side): it gets every block again. */
+	public static void hostHello() {
+		linked = true;
+		MinecraftServer s = server;
+		if (s != null) {
+			s.execute(() -> startResync(s));
+		}
+	}
+
+	/** Link thread: the last host connection closed. */
+	public static void hostGone() {
+		linked = false;
+		MinecraftServer s = server;
+		if (s != null) {
+			s.execute(resync::clear);
+		}
+	}
+
+	/** Server thread: start sending every block again, nearest to Steve first. Pending live events are in the snapshot already. */
+	private static void startResync(final MinecraftServer s) {
+		PlacedBlocks p = placed;
+		if (p == null || server != s) {
+			return;
+		}
+
+		long[] cells = p.snapshot();
+		List<ServerPlayer> players = s.getPlayerList().getPlayers();
+		if (!players.isEmpty()) {
+			BlockPos at = players.get(0).blockPosition();
+			BlockSync.nearestFirst(cells, at.getX(), at.getY(), at.getZ());
+		}
+
+		blockEvents.clear();
+		missed = false;
+		resync.start(cells);
+		Cyberblock.LOG.info("block resync: {} cells", cells.length);
 	}
 
 	/** Night City ground from the host: barriers, only into air. */
@@ -84,6 +149,8 @@ public final class WorldBridge {
 							if (level.getBlockState(pos).isAir()) {
 								level.setBlock(pos, barrier, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
 								barriers.add(pos.immutable());
+							} else if (pcells.promote(pos.asLong()) && level.getBlockState(pos).is(Blocks.BARRIER)) {
+								barriers.add(pos.immutable()); // a projectile's barrier the probes now report as ground stays
 							}
 						} else if (barriers.remove(pos.immutable()) && level.getBlockState(pos).is(Blocks.BARRIER)) {
 							level.setBlock(pos, air, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
@@ -104,7 +171,7 @@ public final class WorldBridge {
 		}
 	}
 
-	/** Server thread only. */
+	/** Server thread only: the ground barriers and the projectiles' ones. */
 	private static void removeBarriers(final ServerLevel level) {
 		placingGround = true;
 		for (BlockPos pos : barriers) {
@@ -115,6 +182,63 @@ public final class WorldBridge {
 
 		placingGround = false;
 		barriers.clear();
+		removeTemp(level, pcells.clear());
+	}
+
+	/**
+	 * Link thread: {"t":"pcells","c":[x,y,z, ...]}: Night City surfaces on the paths of Steve's projectiles. Each becomes a barrier
+	 * (only into air) for 3 seconds, so the projectile hits it. Cells outside the world are skipped.
+	 */
+	public static void projectileCells(final int[] cells) {
+		MinecraftServer s = server;
+		if (s == null || cells.length / 3 > MAX_PROJECTILE_CELLS) {
+			return;
+		}
+
+		s.execute(() -> {
+			if (!Cyberblock.active) {
+				return;
+			}
+
+			ServerLevel level = s.overworld();
+			long now = s.getTickCount();
+			BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+			placingGround = true;
+			try {
+				for (int i = 0; i + 2 < cells.length; i += 3) {
+					pos.set(cells[i], cells[i + 1], cells[i + 2]);
+					if (!level.isInWorldBounds(pos)) {
+						continue;
+					}
+
+					long cell = pos.asLong();
+					if (pcells.contains(cell)) {
+						pcells.put(cell, now); // still on a path: it stays longer
+					} else if (level.getBlockState(pos).isAir()) {
+						level.setBlock(pos, Blocks.BARRIER.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+						pcells.put(cell, now);
+					}
+				}
+			} finally {
+				placingGround = false;
+			}
+		});
+	}
+
+	/** Server thread: takes the given projectile barriers out (unless something else replaced them meanwhile). */
+	private static void removeTemp(final ServerLevel level, final long[] cells) {
+		BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+		placingGround = true;
+		try {
+			for (long cell : cells) {
+				pos.set(BlockPos.getX(cell), BlockPos.getY(cell), BlockPos.getZ(cell));
+				if (level.getBlockState(pos).is(Blocks.BARRIER)) {
+					level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+				}
+			}
+		} finally {
+			placingGround = false;
+		}
 	}
 
 	/** Run a command as the server (op). Results go to the log, not to chat (send_command_feedback is off). */
@@ -135,9 +259,24 @@ public final class WorldBridge {
 		return server;
 	}
 
-	/** Every server tick: a few block changes for the host. */
+	/** Every server tick: expired projectile barriers go; the resync's next message, then a few live block changes for the host. */
 	static void tick(final MinecraftServer s) {
-		if (!Cyberblock.active) {
+		if (pcells.size() > 0) {
+			removeTemp(s.overworld(), pcells.expire(s.getTickCount()));
+		}
+
+		boolean active = Cyberblock.active;
+		if (active && !wasActive && missed && linked) {
+			startResync(s);
+		}
+
+		wasActive = active;
+		String blocks = resync.next();
+		if (blocks != null) {
+			Cyberblock.events.accept(blocks);
+		}
+
+		if (!active) {
 			blockEvents.clear(); // nobody is listening: do not replay stale changes when the host comes back
 			return;
 		}
@@ -150,15 +289,28 @@ public final class WorldBridge {
 		return Cyberblock.active && level == level.getServer().overworld();
 	}
 
-	/** Server thread, from LevelChunk.setBlockState: queue the change when the host's collision is affected. */
+	/**
+	 * Server thread, from LevelChunk.setBlockState: when the host's collision is affected, record the change (PlacedBlocks, always)
+	 * and queue it for the host (while it is active; otherwise it gets a resync when it is again).
+	 */
 	public static void onBlockChanged(final ServerLevel level, final BlockPos pos, final BlockState oldState, final BlockState newState) {
-		if (!hostSees(level)) {
+		PlacedBlocks p = placed;
+		if (p == null || level != level.getServer().overworld()) {
 			return;
 		}
 
 		BlockEvents.Op op = BlockEvents.change(oldState, newState, placingGround ? BlockEvents.Cause.HOST_GROUND : BlockEvents.Cause.WORLD);
-		if (op != null) {
-			blockEvents.put(pos.asLong(), op);
+		if (op == null) {
+			return;
+		}
+
+		long cell = pos.asLong();
+		p.apply(cell, op);
+		resync.forget(cell);
+		if (Cyberblock.active) {
+			blockEvents.put(cell, op);
+		} else {
+			missed = true;
 		}
 	}
 }

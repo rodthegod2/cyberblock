@@ -6,6 +6,7 @@ import java.util.Map;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.phys.Vec3;
@@ -55,7 +56,7 @@ public final class ProxyManager {
 		ProxyDiff.Plan plan = ProxyDiff.apply(kinds, parsed.entries());
 		for (Long id : plan.remove()) {
 			kinds.remove(id);
-			proxies.remove(id).discard();
+			remove(proxies.remove(id));
 		}
 
 		for (ProxyDiff.Entry e : plan.move()) {
@@ -104,17 +105,51 @@ public final class ProxyManager {
 	/** Server thread: remove every proxy (the host left, or the world is about to be saved). */
 	static void clear() {
 		for (ProxyEntity proxy : proxies.values()) {
-			proxy.discard();
+			remove(proxy);
 		}
 
 		proxies.clear();
 		kinds.clear();
 	}
 
-	/** Server thread, from a proxy: it took damage that counts. */
-	static void hit(final ProxyEntity proxy, final float damage, final String kind, final Vec3 impulse) {
+	/** A proxy goes; a lead on it drops as an item, as vanilla's would. */
+	private static void remove(final ProxyEntity proxy) {
+		if (proxy.isLeashed()) {
+			proxy.dropLeash();
+		}
+
+		proxy.discard();
+	}
+
+	/** Link thread: {"t":"unlead","target":"id"}: the host gave the tether up (target gone, or it snapped). */
+	public static void unlead(final JsonObject message) {
+		long id = MobRules.id(message.get("target"));
+		MinecraftServer s = WorldBridge.server();
+		if (id != 0L && s != null) {
+			s.execute(() -> {
+				ProxyEntity proxy = proxies.get(id);
+				if (proxy != null && !proxy.isRemoved()) {
+					proxy.unlead();
+				}
+			});
+		}
+	}
+
+	/** Server thread (Bridge.proxyById): the live proxy standing for a Cyberpunk id, or null. */
+	static Entity byId(final long id) {
+		ProxyEntity proxy = proxies.get(id);
+		return proxy != null && !proxy.isRemoved() ? proxy : null;
+	}
+
+	/** Server thread (Bridge.proxyIdOf): the Cyberpunk id a live proxy stands for, 0 for any other entity. */
+	static long idOf(final Entity entity) {
+		return entity instanceof ProxyEntity proxy && !proxy.isRemoved() && proxies.get(proxy.proxyId()) == proxy ? proxy.proxyId() : 0L;
+	}
+
+	/** Server thread, from a proxy: it took damage that counts (mob: the attacking mob's entity id, -1 for none). */
+	static void hit(final ProxyEntity proxy, final float damage, final String kind, final Vec3 impulse, final int mob) {
 		if (Cyberblock.active) {
-			Cyberblock.events.accept(Wire.hit(Long.toUnsignedString(proxy.proxyId()), Math.min(damage, 1000.0F), kind, impulse.x, impulse.y, impulse.z));
+			Cyberblock.events.accept(Wire.hit(Long.toUnsignedString(proxy.proxyId()), Math.min(damage, 1000.0F), kind, impulse.x, impulse.y, impulse.z, mob));
 		}
 	}
 

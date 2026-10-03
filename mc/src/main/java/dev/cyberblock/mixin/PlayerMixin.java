@@ -12,14 +12,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * The host moves the player, so neither side should collide it with blocks: host terrain arrives as barriers
- * that the player can end up inside, and the server would otherwise reject those moves.
+ * that the player can end up inside, and the server would otherwise reject those moves. Gliding (layer 4) Minecraft moves
+ * him: then vanilla physics, collisions and elytra damage apply.
  */
 @Mixin(Player.class)
 abstract class PlayerMixin {
 	@Inject(method = "tick", at = @At(value = "FIELD", target = "Lnet/minecraft/world/entity/player/Player;noPhysics:Z", opcode = Opcodes.PUTFIELD, shift = At.Shift.AFTER))
 	private void cyberblock$ghost(final CallbackInfo ci) {
-		if (Cyberblock.active) {
-			((Entity) (Object) this).noPhysics = true;
+		Player self = (Player) (Object) this;
+		if (Cyberblock.active && !self.isFallFlying()) {
+			((Entity) self).noPhysics = true;
 		}
 	}
 }

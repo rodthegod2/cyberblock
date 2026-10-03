@@ -25,6 +25,7 @@ final class ClientInput {
 	static void reset(final Minecraft minecraft) {
 		hudHidden = false;
 		HostState.setVehicle(false);
+		HostState.resetKeys();
 		applyHud(minecraft);
 	}
 
@@ -66,6 +67,15 @@ final class ClientInput {
 					return;
 				}
 
+				// Space and Left Shift: Cyberpunk keeps them (V jumps and sprints) and the host moves Steve, so vanilla jump and sprint
+				// are never pressed; they are stored for the glide start and the cyber track (which hears "key" through the Bridge)
+				if (k.equals("jump") || k.equals("sprint")) {
+					HostState.setKey(k, down);
+					return;
+				}
+
+				// F5 ("perspective"): the host drives the camera, Minecraft's own view toggle would only fight it. Other keys ("hack",
+				// "skills") belong to the cyber track's listener.
 				KeyMapping key = switch (k) {
 					case "use" -> minecraft.options.keyUse;
 					case "attack" -> minecraft.options.keyAttack;
@@ -107,6 +117,7 @@ final class ClientInput {
 					player.getInventory().setSelectedSlot(n);
 				}
 			}
+			case "look" -> Flight.look(m);
 			case "cursor" -> HostCursor.move(minecraft, m.get("x").getAsDouble(), m.get("y").getAsDouble());
 			case "click" -> HostCursor.click(minecraft, m.get("b").getAsInt(), !m.has("down") || m.get("down").getAsBoolean());
 			case "scroll" -> {
