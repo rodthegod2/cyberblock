@@ -15,10 +15,20 @@ namespace cb
 		double yaw, pitch; // Minecraft degrees
 	};
 
+	/// Axis-aligned box in Cyberpunk space (metres).
+	struct Aabb
+	{
+		Vec3 min, max;
+	};
+
 	/// Inclusive Minecraft block range of one column: {x, z, yBottom, yTop}, the wire protocol's quadruple.
 	using Range = std::array<int, 4>;
 
 	Vec3 cp_to_mc_pos(double x, double y, double z);
+	/// Inverse of cp_to_mc_pos: Minecraft (x, y, z) -> Cyberpunk (x, -z, y). Directions map the same way.
+	Vec3 mc_to_cp_pos(double x, double y, double z);
+	/// The Cyberpunk box of Minecraft block (bx, by, bz): min (bx, -(bz+1), by), max (bx+1, -bz, by+1).
+	Aabb mc_block_to_cp_aabb(int bx, int by, int bz);
 	/// Cyberpunk camera forward: the quaternion (i, j, k, r) applied to local +Y.
 	Vec3 cp_quat_forward(double i, double j, double k, double r);
 	YawPitch mc_yaw_pitch(double dx, double dy, double dz);

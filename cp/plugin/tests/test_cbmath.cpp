@@ -40,6 +40,88 @@ TEST(position_mapping)
 	CHECK(p.x == 1.0 && p.y == 3.0 && p.z == -2.0);
 }
 
+TEST(mc_position_mapping)
+{
+	// plan layer 2 section 1.1: Minecraft (x, y, z) -> Cyberpunk (x, -z, y)
+	const cb::Vec3 p = cb::mc_to_cp_pos(1.0, 3.0, -2.0);
+	CHECK(p.x == 1.0 && p.y == 2.0 && p.z == 3.0);
+}
+
+TEST(mc_position_round_trips_with_cp_to_mc)
+{
+	const cb::Vec3 cp = cb::mc_to_cp_pos(-12.5, 64.25, 40.75);
+	const cb::Vec3 mc = cb::cp_to_mc_pos(cp.x, cp.y, cp.z);
+	CHECK(mc.x == -12.5 && mc.y == 64.25 && mc.z == 40.75);
+	const cb::Vec3 back = cb::mc_to_cp_pos(mc.x, mc.y, mc.z);
+	CHECK(back.x == cp.x && back.y == cp.y && back.z == cp.z);
+}
+
+TEST(mc_block_aabb_example)
+{
+	// plan layer 2 section 1.1: block (10, 4, -21) -> ((10, 20, 4), (11, 21, 5))
+	const cb::Aabb box = cb::mc_block_to_cp_aabb(10, 4, -21);
+	CHECK(box.min.x == 10.0 && box.min.y == 20.0 && box.min.z == 4.0);
+	CHECK(box.max.x == 11.0 && box.max.y == 21.0 && box.max.z == 5.0);
+}
+
+namespace
+{
+	// Literal cases computed from the section 1.1 formulas (mc_to_cp_pos, mc_block_to_cp_aabb) outside this code base.
+	// tools/cbmath.py + shared/vectors.json own the truth; these keep cb_tests hermetic.
+	struct PosCase
+	{
+		cb::Vec3 mc, cp;
+	};
+	const PosCase kPosCases[] = {
+		{{1.0, 3.0, -2.0}, {1.0, 2.0, 3.0}},
+		{{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}},
+		{{-12.5, 64.25, 40.75}, {-12.5, -40.75, 64.25}},
+		{{1234.5, -10.0, -987.6}, {1234.5, 987.6, -10.0}},
+		{{-0.01, 319.99, 0.01}, {-0.01, -0.01, 319.99}},
+		{{29999999.0, 5.5, -29999999.0}, {29999999.0, 29999999.0, 5.5}},
+	};
+
+	struct BlockCase
+	{
+		int bx, by, bz;
+		cb::Vec3 min, max;
+	};
+	const BlockCase kBlockCases[] = {
+		{10, 4, -21, {10, 20, 4}, {11, 21, 5}},
+		{0, 0, 0, {0, -1, 0}, {1, 0, 1}},
+		{-1, -1, -1, {-1, 0, -1}, {0, 1, 0}},
+		{123, 70, 456, {123, -457, 70}, {124, -456, 71}},
+		{-30, 319, 17, {-30, -18, 319}, {-29, -17, 320}},
+		{29999999, -64, -29999999, {29999999, 29999998, -64}, {30000000, 29999999, -63}},
+	};
+
+	bool same(const cb::Vec3 &a, const cb::Vec3 &b)
+	{
+		return close(a.x, b.x) && close(a.y, b.y) && close(a.z, b.z);
+	}
+}
+
+TEST(mc_position_cases)
+{
+	for (const PosCase &c : kPosCases)
+	{
+		CHECK(same(cb::mc_to_cp_pos(c.mc.x, c.mc.y, c.mc.z), c.cp));
+		CHECK(same(cb::cp_to_mc_pos(c.cp.x, c.cp.y, c.cp.z), c.mc));
+	}
+}
+
+TEST(mc_block_aabb_cases)
+{
+	for (const BlockCase &c : kBlockCases)
+	{
+		const cb::Aabb box = cb::mc_block_to_cp_aabb(c.bx, c.by, c.bz);
+		CHECK(same(box.min, c.min));
+		CHECK(same(box.max, c.max));
+		// a block is a 1 m cube whose Cyberpunk footprint covers the Minecraft cell
+		CHECK(close(box.max.x - box.min.x, 1.0) && close(box.max.y - box.min.y, 1.0) && close(box.max.z - box.min.z, 1.0));
+	}
+}
+
 TEST(vfov_from_hfov)
 {
 	CHECK(std::abs(cb::vfov_from_hfov(90.0, 16.0 / 9.0) - 58.7155) <= 1e-3);
