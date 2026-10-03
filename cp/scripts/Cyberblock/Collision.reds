@@ -1,5 +1,8 @@
 // Invisible 1 m collision boxes for blocks placed in Minecraft (layer 2 plan §1.4, S2.2; method: docs/notes/collision-spike.md).
-// Every box Minecraft reports is registered by its integer AABB min corner; Stream keeps those within 64 m of V spawned,
+// Every box Minecraft reports is registered by its AABB min corner: integer x/y, z = block y + k/64, the world's ground
+// alignment (plan 2026-10-03-retest2 section 1.1, task S4; k is 0..63, so z is exact in Float and FloorF(z) is the
+// block y). The box keeps that exact z, so a block placed on the aligned street sits on it rather than up to 1 m
+// above; the registry key uses FloorF(z). Stream keeps those within 64 m of V spawned,
 // at most 1000 (nearest first). A box is the vanilla engine\fallback\helper_no_entity.ent spawned by Codeware's
 // StaticEntitySystem, whose mesh is switched off and which gets a script-built World Static box collider while it
 // initializes. Spawned boxes are runtime only: Clear despawns them all (deactivate, session end, before save) and keeps
@@ -73,7 +76,7 @@ public class CyberblockCollisionService extends ScriptableService {
     }
     this.slots.Insert(key, ArraySize(this.keys));
     ArrayPush(this.keys, key);
-    ArrayPush(this.mins, new Vector4(Cast<Float>(RoundF(aabbMin.X)), Cast<Float>(RoundF(aabbMin.Y)), Cast<Float>(RoundF(aabbMin.Z)), 1.0));
+    ArrayPush(this.mins, new Vector4(Cast<Float>(RoundF(aabbMin.X)), Cast<Float>(RoundF(aabbMin.Y)), aabbMin.Z, 1.0));
     let none: EntityID;
     ArrayPush(this.spawned, none);
     this.dirty = true;
@@ -334,14 +337,15 @@ public class CyberblockCollisionService extends ScriptableService {
     return this.slots;
   }
 
-  // Packs integer x, y (|v| < 2^21 m) and z (|v| < 2^15 m) into one key. Night City spans about ±10 km.
+  // Packs integer x, y (|v| < 2^21 m) and the block y FloorF(z) (|z| < 2^15 m) into one key. Night City spans about
+  // ±10 km.
   private static func Key(aabbMin: Vector4, out key: Uint64) -> Bool {
     if AbsF(aabbMin.X) >= 2097152.0 || AbsF(aabbMin.Y) >= 2097152.0 || AbsF(aabbMin.Z) >= 32768.0 {
       return false;
     }
     let packed = Cast<Int64>(RoundF(aabbMin.X) + 2097152) * 274877906944l
       + Cast<Int64>(RoundF(aabbMin.Y) + 2097152) * 65536l
-      + Cast<Int64>(RoundF(aabbMin.Z) + 32768);
+      + Cast<Int64>(FloorF(aabbMin.Z) + 32768);
     key = Cast<Uint64>(packed);
     return true;
   }

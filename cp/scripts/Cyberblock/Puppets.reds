@@ -14,7 +14,7 @@
 //   friendly to the player), TransactionSystem.RemoveAllItems/GetItemInSlot, TeleportationFacility.Teleport,
 //   DamageSystem.InvulnerabilityCheck/DealDamages (private final, scripted), AttackData.AddFlag(DealNoDamage)/
 //   GetInstigator, gameAttackComputed.GetTotalAttackValue, StatsSystem.GetStatValue(Health) (max health, as
-//   Health.reds), EntityID.ToHash (Codeware), DynamicEntitySystem.IsTagged (Codeware; tags live from CreateEntity
+//   Health.reds), CyberblockIds.Hash (Ids.reds), DynamicEntitySystem.IsTagged (Codeware; tags live from CreateEntity
 //   until the Despawn spawner event, src/App/World/DynamicEntitySystem.cpp).
 //   Record Character.animals_grunt1_melee1_fists_mb: fists-only Animals grunt, no quest, loot only on death.
 
@@ -209,7 +209,7 @@ public class CyberblockPuppetsService extends ScriptableService {
     let damage = hitEvent.attackComputed.GetTotalAttackValue(gamedataStatPoolType.Health);
     let maxHealth = GameInstance.GetStatsSystem(hitEvent.target.GetGame()).GetStatValue(Cast<StatsObjectID>(hitEvent.target.GetEntityID()), gamedataStatType.Health);
     if damage > 0.0 && maxHealth > 0.0 {
-      let by = IsDefined(attacker) ? EntityID.ToHash(attacker.GetEntityID()) : 0ul;
+      let by = IsDefined(attacker) ? CyberblockIds.Hash(attacker) : 0ul;
       Cyberblock_MobDamage(this.mobs[slot], damage / maxHealth, by, IsDefined(attacker));
       Cyberblock_Log(s"puppets: mobdmg mob \(this.mobs[slot]) \(damage / maxHealth) by \(by)");
     }

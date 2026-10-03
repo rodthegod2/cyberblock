@@ -1,12 +1,15 @@
 // Minecraft's hack key scan (plan 2026-10-03 sections 1.2 scaninfo and 1.4, task S3.2): what Night City has at the
 // requested id (0: whatever V looks at). Every request is answered once with Cyberblock_ScanResult; ok false with empty
-// strings when nothing scannable is there.
+// strings when nothing scannable is there. Both outcomes reach the log (plan 2026-10-03-retest2 S2): a failure here as
+// "scan N: <why> at <id>", a success through the note Scan returns, "scan N: ok <class> <id> (<how>)", whose id is
+// CyberblockIds.Hash's (Ids.reds), the one Minecraft locks for its hacks.
 //
 // 2.31 sources (decompiled 2.31 scripts; compile-checked):
 //   Look-at: TargetingSystem.GetLookAtObject(V, withLOS true, ignoreTransparent true), the call PlayerPuppet
 //     .ReevaluateLookAtTarget makes for V's own look-at target. When it gives nothing, or nothing Minecraft can show,
 //     TargetingSystem.GetObjectClosestToCrosshair(V, out angle distance, TargetSearchQuery) is asked, as
-//     kiroshiHighlightEffector and HUDManager.LookAtNearestCroshairTarget do: query.maxDistance 48 m, the default
+//     kiroshiHighlightEffector and HUDManager.LookAtNearestCroshairTarget do: query.maxDistance 48 m (80 m with the
+//     kiroshi_optics implant, plan 2026-10-03-retest2 section 1.7), the default
 //     testedSet (TargetingSet.Visible), and the hit is kept only within 4 degrees of the crosshair (|Yaw| and |Pitch|
 //     of the EulerAngles distance). The first query uses vanilla's quickhack filter TSF_Quickhackable(); its
 //     St_QuickHackable state follows IsQuickHackAble, which QuickhackModule.IsQuickhackBlockedByScene turns off for
@@ -38,18 +41,20 @@
 //     body never counts. The look-at path already asks GetLookAtObject for line of sight.
 
 public abstract class CyberblockScan {
-  public static func Scan(game: GameInstance, id: Int32, target: Uint64) -> Void {
+  // Answers the scan request. Returns the success note "scan N: ok <class> <id> (requested|look-at|near crosshair)",
+  // which the caller logs (Events.reds Note, rate-limited), or "" when the request failed: that is logged here.
+  public static func Scan(game: GameInstance, id: Int32, target: Uint64) -> String {
     let player = GetPlayer(game);
     let why = "no player";
     if IsDefined(player) {
       if target == 0ul {
         let looked = GameInstance.GetTargetingSystem(game).GetLookAtObject(player, true, true);
         if CyberblockScan.Try(game, id, player, looked) {
-          return;
+          return CyberblockScan.Ok(id, looked, "look-at");
         }
         let near = CyberblockScan.NearCrosshair(game, player);
         if CyberblockScan.Try(game, id, player, near) {
-          return;
+          return CyberblockScan.Ok(id, near, "near crosshair");
         }
         why = CyberblockScan.Refused(player, looked, near);
       } else {
@@ -61,7 +66,7 @@ public abstract class CyberblockScan {
             why = "behind Night City";
           } else {
             if CyberblockScan.Try(game, id, player, object) {
-              return;
+              return CyberblockScan.Ok(id, object, "requested");
             }
             why = CyberblockScan.Refused(player, object, null);
           }
@@ -70,11 +75,17 @@ public abstract class CyberblockScan {
     }
     Cyberblock_ScanResult(id, false, target, "", "", n"none", 0.0, false, new Vector4(0.0, 0.0, 0.0, 1.0), new Vector4(0.0, 0.0, 0.0, 0.0));
     Cyberblock_Log(s"scan \(id): \(why) at \(target)");
+    return "";
   }
 
   // Answers the scan with object when it is something Minecraft can show (never V herself).
   private static func Try(game: GameInstance, id: Int32, player: ref<PlayerPuppet>, object: ref<GameObject>) -> Bool {
     return IsDefined(object) && object != player && CyberblockScan.Answer(game, id, object);
+  }
+
+  // The success note: which object was sent, with the id Minecraft will lock for its hacks.
+  private static func Ok(id: Int32, object: ref<GameObject>, how: String) -> String {
+    return s"scan \(id): ok \(NameToString(object.GetClassName())) \(CyberblockIds.Hash(object)) (\(how))";
   }
 
   // The log's reason for a scan that found nothing to show.
@@ -89,10 +100,11 @@ public abstract class CyberblockScan {
   }
 
   // The fallback when V's look-at target is missing or nothing Minecraft can show: the object closest to the crosshair
-  // within 48 m and 4 degrees (see the header), first among vanilla's quickhack targets, then among any target but V.
+  // within 48 m (80 m with Kiroshi Optics installed, Cyberware.reds) and 4 degrees (see the header), first among
+  // vanilla's quickhack targets, then among any target but V.
   private static func NearCrosshair(game: GameInstance, player: ref<PlayerPuppet>) -> ref<GameObject> {
     let query: TargetSearchQuery;
-    query.maxDistance = 48.0;
+    query.maxDistance = CyberblockCyberware.Has(game, n"kiroshi_optics") ? 80.0 : 48.0;
     query.searchFilter = TSF_Quickhackable();
     let found = CyberblockScan.ClosestInCone(game, player, query);
     if IsDefined(found) {
@@ -140,7 +152,7 @@ public abstract class CyberblockScan {
 
   // Sends the scan of object; false when it is nothing Minecraft can show (not an NPC, vehicle or device).
   private static func Answer(game: GameInstance, id: Int32, object: ref<GameObject>) -> Bool {
-    let hash = EntityID.ToHash(object.GetEntityID());
+    let hash = CyberblockIds.Hash(object);
     let pos = object.GetWorldPosition();
     let puppet = object as ScriptedPuppet;
     if IsDefined(puppet) {

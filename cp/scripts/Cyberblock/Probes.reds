@@ -4,12 +4,12 @@
 //   On foot / in a vehicle, round-robin over
 //     (a) down rays: columns on a 1-m grid within 24 m of V (nearest first), from feet.z + 3 to feet.z - 10;
 //     (b) wall rays: 32 directions x heights 0.5/1.5/2.5 m, 24 m long, from V's feet.
-//   While V glides (CyberblockFlight.IsFlying, plan 2026-10-03 S1.5), with V's speed s from the position change since
-//   the last tick: radius min(64, 24 + s) for both kinds, down rays reaching feet.z - (10 + s), columns on a 1-m grid
-//   within 24 m and a 2-m grid beyond. Each pass over them probes the columns inside a +-60 degree cone ahead of the
-//   horizontal velocity first (nearest first), then the others; the wall rays run before each of the two groups.
-//   "V's feet" is CyberblockFlight.Center: the flight position in the camera-only fallback, where V stays behind at
-//   the take-off spot. The aim ray always starts at the active camera.
+//   While the DLL moves V after Steve's flight (CyberblockFlight.IsFlying, plan 2026-10-03 S1.5 and retest2 S3), with
+//   V's speed s from the position change since the last tick: radius min(64, 24 + s) for both kinds, down rays reaching
+//   feet.z - (10 + s), columns on a 1-m grid within 24 m and a 2-m grid beyond. Each pass over them probes the columns
+//   inside a +-60 degree cone ahead of the horizontal velocity first (nearest first), then the others; the wall rays
+//   run before each of the two groups.
+//   "V's feet" is CyberblockFlight.Center (V's position). The aim ray always starts at the active camera.
 // Our own collision boxes (Collision.reds, Minecraft's blocks) are not Night City: a ray that hits one goes on
 // through it, so the probes and the aim report what is behind (collision-spike "Side effects").
 //
@@ -50,7 +50,6 @@ public class CyberblockProbes {
       this.BuildColumns(24);
     }
 
-    // In the camera-only flight fallback V waits at the take-off spot: the ground is probed around the flight instead.
     let feet = CyberblockFlight.Center(game, player);
     let velocity = this.Velocity(game, feet);
     let flying = CyberblockFlight.IsFlying(game);
@@ -113,22 +112,6 @@ public class CyberblockProbes {
     let result: TraceResult;
     let casts = 0;
     return CyberblockProbes.TraceNightCity(GameInstance.GetSpatialQueriesSystem(game), filter, from, to, result, casts);
-  }
-
-  // The first Night City surface (Static + Terrain, not our collision boxes) between two points (Flight.reds stops V
-  // short of it).
-  public static func FirstHit(game: GameInstance, from: Vector4, to: Vector4, out hit: Vector4) -> Bool {
-    let filter: QueryFilter;
-    QueryFilter.AddGroup(filter, n"Static");
-    QueryFilter.AddGroup(filter, n"Terrain");
-    let result: TraceResult;
-    let casts = 0;
-    if !CyberblockProbes.TraceNightCity(GameInstance.GetSpatialQueriesSystem(game), filter, from, to, result, casts) {
-      return false;
-    }
-    let at = Cast<Vector4>(result.position);
-    hit = new Vector4(at.X, at.Y, at.Z, 1.0);
-    return true;
   }
 
   // Trace's raycast; `casts` counts the rays it took.

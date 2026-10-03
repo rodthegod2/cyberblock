@@ -12,15 +12,17 @@ public native func Cyberblock_Log(msg: String) -> Void;        // to red4ext/log
 public native func Cyberblock_Damage(frac: Float, kind: CName, from: Vector4, hasFrom: Bool) -> Void;
 public native func Cyberblock_SubmitNpcs(ids: array<Uint64>, feet: array<Vector4>, yaws: array<Float>, vehicles: array<Bool>, hostile: array<Bool>) -> Void;
 // Event queue (Minecraft -> Cyberpunk), already converted to Cyberpunk space. NextEvent pops one and makes it current.
-public native func Cyberblock_NextEvent() -> CName;      // n"explosion" | n"hit" | n"ignite" | n"block_add" | n"block_remove" | n"" when empty
-public native func Cyberblock_EventPos() -> Vector4;     // explosion centre; block AABB min corner
+public native func Cyberblock_NextEvent() -> CName;      // n"explosion" | n"hit" | n"ignite" | n"block_add" | n"block_remove" | ...
+                                                         // (Events.reds lists every kind) | n"" when empty
+public native func Cyberblock_EventPos() -> Vector4;     // explosion centre; block AABB min corner (z = block y + k/64)
 public native func Cyberblock_EventTarget() -> Uint64;   // hit/ignite target (EntityID hash)
 public native func Cyberblock_EventAmount() -> Float;    // explosion power | hit dmg/20 (fraction of target max health) | ignite seconds
+                                                         // | cyber 1 installed, 0 not | cyberfx seconds (0 = end)
 public native func Cyberblock_EventVector() -> Vector4;  // hit impulse (Cyberpunk space, m/s)
 public native func Cyberblock_EventFlag() -> Bool;       // explosion fire
 // ---- layers 3-6 (plan 2026-10-03 section 1.3) ----
 // Event fields beyond layer 2's (the current event, after Cyberblock_NextEvent):
-public native func Cyberblock_EventName() -> CName;     // effect name | hack name | perk id | perkfx id
+public native func Cyberblock_EventName() -> CName;     // effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id
 public native func Cyberblock_EventExtra() -> Float;    // knock strength | effect amplifier | (else 0)
 public native func Cyberblock_EventId() -> Int32;       // hit: mob id (-1 none) | hack/scan: request id
 // Stance, menus, game mode
@@ -36,17 +38,22 @@ public native func Cyberblock_MobPos(i: Int32) -> Vector4;           // feet, Cy
 public native func Cyberblock_MobYaw(i: Int32) -> Float;             // Cyberpunk yaw, degrees
 public native func Cyberblock_MobSize(i: Int32) -> Vector4;          // X width, Y height, Z hp, W max hp
 public native func Cyberblock_MobDamage(id: Int32, frac: Float, by: Uint64, hasBy: Bool) -> Void;   // -> mobdmg
-// Layer 4 flight (latest flight message; position extrapolated by v * min(age, 0.05 s); the landing spot once inactive)
-public native func Cyberblock_FlightActive() -> Bool;              // a sample older than 0.5 s counts as ended
+// Layer 4 flight (latest flight message; position extrapolated by v * min(age, 0.05 s); the landing spot once inactive).
+// Since re-test 2 the DLL moves V itself every rendered frame (plan 2026-10-03-retest2 sections 1.3 and 1.4), and the
+// getters below are no longer called by Flight.reds; they stay for the CET console and a follow-up.
+public native func Cyberblock_FlightActive() -> Bool;              // a sample older than 0.5 s counts as ended (Flight.reds' 'ignored' log)
 public native func Cyberblock_FlightSeq() -> Int32;                 // +1 on every start and every end (landing, 0.5 s timeout, reset)
 public native func Cyberblock_FlightTimedOut() -> Bool;             // the last flight ended by the 0.5 s timeout, not a landing
-public native func Cyberblock_SetFlightFollowing(following: Bool) -> Void; // V follows Steve: cam.fly until set again (cleared by a
-                                                                    // landing, SetActive change, hello or link drop; not by a timeout)
 public native func Cyberblock_FlightPos() -> Vector4;               // feet, Cyberpunk space
 public native func Cyberblock_FlightVelocity() -> Vector4;          // m/s, Cyberpunk space
 public native func Cyberblock_FlightYaw() -> Float;                 // Cyberpunk yaw, degrees
 public native func Cyberblock_FlightPitch() -> Float;               // Minecraft pitch, degrees (positive = down)
-public native func Cyberblock_SetLookCapture(on: Bool) -> Void;     // camera-only fallback: raw mouse -> look deltas
+public native func Cyberblock_SetLookCapture(on: Bool) -> Void;     // raw mouse -> look deltas (dead until a follow-up)
+// ---- re-test 2 (plan 2026-10-03-retest2 section 1.3) ----
+// The DLL drive (cb::drive, every rendered frame) is the only writer of cam.fly; Cyberblock_SetFlightFollowing is gone.
+public native func Cyberblock_SetFlightAllowed(allowed: Bool) -> Void; // 10 Hz from CyberblockFlight.Tick: V may be moved (live, not mounted, not locked). Cleared by Clear and by SetActive(false)
+public native func Cyberblock_FlightDriving() -> Bool;                 // the DLL is moving V this flight (same value as cam.fly)
+public native func Cyberblock_SecondsSinceFlight() -> Float;           // 0 while driving, seconds since the last flight ended, 999 if none yet
 // Layer 4 projectiles: Cyberblock_ProjCount takes a snapshot
 public native func Cyberblock_ProjCount() -> Int32;
 public native func Cyberblock_ProjPos(i: Int32) -> Vector4;         // Cyberpunk space

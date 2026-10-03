@@ -7,8 +7,9 @@
 // scanner (and its world slow-down), the radial/weapon wheel (and its freeze), quick melee, zoom and body pickup are
 // blocked by restrictions, and the movement abilities NoCombat leaves on (double/charge jump, hover, dodge and air
 // dodge, superhero landing, Kerenzikov slide, Sandevistan tier 2, camo, sprint harass, dash shoot) are zeroed with our
-// own runtime stat modifiers. Steve's perks keep two of them (CyberblockPerks, S3, re-read every tick): double_jump
-// keeps HasDoubleJump, dodge keeps HasDodge and HasDodgeAir. F5, G and V's perk-gated dash are in Disable.reds.
+// own runtime stat modifiers. Steve's cyberware and perks keep three of them (re-read every tick; plan
+// 2026-10-03-retest2 S5): reinforced_tendons keeps HasDoubleJump, fortified_ankles HasChargeJump (CyberblockCyberware),
+// the dodge perk HasDodge and HasDodgeAir (CyberblockPerks). F5, G and V's perk-gated dash are in Disable.reds.
 //
 // 2.31 sources:
 //   Status effect records and their gameplayTags, read from r6/cache/tweakdb.bin (all six extra ones also exist in
@@ -204,14 +205,18 @@ public class CyberblockPlayerState {
     ];
   }
 
-  // Zeroes every ability stat except the ones Steve's perks grant right now; a perk bought or lost while Active takes
-  // effect on the next tick.
+  // Zeroes every ability stat except the ones Steve's cyberware and perks grant right now: HasDoubleJump with
+  // reinforced_tendons, HasChargeJump with fortified_ankles (Cyberware.reds), HasDodge and HasDodgeAir with the dodge
+  // perk. Everything else stays zeroed, CanUseOpticalCamo too (camo comes through Minecraft's invisibility effect,
+  // Buffs.reds). An implant or perk gained or lost while Active takes effect on the next tick.
   private func ZeroAbilities(player: ref<PlayerPuppet>) -> Void {
     let game = player.GetGame();
-    let doubleJump = CyberblockPerks.Has(game, n"double_jump");
+    let tendons = CyberblockCyberware.Has(game, n"reinforced_tendons");
+    let ankles = CyberblockCyberware.Has(game, n"fortified_ankles");
     let dodge = CyberblockPerks.Has(game, n"dodge");
     for stat in CyberblockPlayerState.AbilityStats() {
-      let kept = (doubleJump && Equals(stat, gamedataStatType.HasDoubleJump))
+      let kept = (tendons && Equals(stat, gamedataStatType.HasDoubleJump))
+        || (ankles && Equals(stat, gamedataStatType.HasChargeJump))
         || (dodge && (Equals(stat, gamedataStatType.HasDodge) || Equals(stat, gamedataStatType.HasDodgeAir)));
       let i = ArrayFindFirst(this.zeroedStats, stat);
       if kept && i >= 0 {

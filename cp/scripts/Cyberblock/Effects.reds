@@ -40,7 +40,8 @@
 //     defaultTransition.swift), BraindanceSystem.GetIsInBraindance (fetched from the scriptable systems container as
 //     PlayerPuppet does), PlayerStateMachine.IsPlayerInsideMovingElevator (settingsMain.swift). Minecraft blocks the
 //     pearl itself while V is held; the 'teleport ignored' log stays as the second line.
-//   Targets: Codeware EntityID.FromHash (inverse of the EntityID hash S1 sends) + GameInstance.FindEntityByID.
+//   Targets: Codeware EntityID.FromHash (inverse of the id hash CyberblockIds.Hash sends, Ids.reds) +
+//   GameInstance.FindEntityByID.
 
 public abstract class CyberblockEffects {
   // Minecraft explosion power (TNT 4, creeper 3, charged creeper 6, firework 1.5) -> Cyberpunk explosion of radius
@@ -120,6 +121,10 @@ public abstract class CyberblockEffects {
   // Moves V to feet (an ender pearl landed), facing Cyberpunk yaw. Only the body turns: the camera pitch is the FPP
   // camera's own and survives a teleport (fast travel calls FPPCameraComponent.ResetPitch explicitly before its
   // TeleportToNode). Falls are not reported for 2 s after it.
+  // The pearl lands on Minecraft's barrier blocks, whose top can lie up to about half a metre off Night City's floor
+  // where the ground alignment does not hold (plan 2026-10-03-retest2 S4): when the floor (CyberblockFlight.GroundBelow,
+  // from 1.5 m above feet) is within (feet - 0.6, feet + 1), V is put on it, so V neither sinks into the street nor
+  // drops onto it. GroundBelow gives its start point back when it finds nothing, which this window leaves out.
   public static func Teleport(game: GameInstance, feet: Vector4, yaw: Float) -> Void {
     let player = GetPlayer(game);
     if !IsDefined(player) {
@@ -133,6 +138,11 @@ public abstract class CyberblockEffects {
     if NotEquals(lock, n"") {
       Cyberblock_Log(s"effects: teleport ignored, V is held (\(NameToString(lock)), scene tier \(CyberblockEffects.SceneTier(player)))");
       return;
+    }
+    let probe = new Vector4(feet.X, feet.Y, feet.Z + 1.0, 1.0);
+    let ground = CyberblockFlight.GroundBelow(game, probe);
+    if ground.Z < probe.Z && ground.Z > feet.Z - 0.6 {
+      feet = ground;
     }
     CyberblockEffectsService.Get().SuppressFall(game, 2.0);
     GameInstance.GetTeleportationFacility(game).Teleport(player, feet, CyberblockEffects.Facing(yaw));
@@ -287,7 +297,7 @@ public abstract class CyberblockEffects {
     if Equals(reason, n"") {
       return false;
     }
-    CyberblockEffectsService.Get().LogWithheld(game, EntityID.ToHash(object.GetEntityID()), reason);
+    CyberblockEffectsService.Get().LogWithheld(game, CyberblockIds.Hash(object), reason);
     return true;
   }
 
@@ -373,7 +383,8 @@ public class CyberblockEffectsService extends ScriptableService {
   private let hits: array<wref<gameHitEvent>>;
   private let amounts: array<Float>;
   private let impulses: array<Vector4>;
-  // Falls are not reported until this simulation time (Teleport, and flight landings in Flight.reds).
+  // Falls are not reported until this simulation time (Teleport; flights count through Cyberblock_SecondsSinceFlight,
+  // CyberblockFlight.SuppressFall).
   private let fallQuietUntil: Float;
   private let fallQuietFor: Float;
   // Targets whose withheld push was logged in the last 10 s, and when (parallel arrays).

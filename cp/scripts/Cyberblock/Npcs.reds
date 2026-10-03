@@ -23,7 +23,8 @@
 // timeSkipPopup: AtanF(dy, dx)).
 // Hostile: GameObject attitude towards V is AIA_Hostile (IsHostileTowardsPlayer); a vehicle is hostile when its
 // driver is (VehicleComponent.GetDriverMounted).
-// EntityID hash: Codeware EntityID.ToHash (the full 64-bit id; EntityID.FromHash is the inverse).
+// EntityID hash: CyberblockIds.Hash (Ids.reds: the full 64-bit id through a local copy; EntityID.FromHash is the
+// inverse), the same hash every other file sends.
 
 public class CyberblockNpcs {
   private let sent: Bool;
@@ -108,7 +109,7 @@ public class CyberblockNpcs {
       let id = object.GetEntityID();
       let forward = object.GetWorldForward();
       let vehicle = object as VehicleObject;
-      ArrayPush(ids, EntityID.ToHash(id));
+      ArrayPush(ids, CyberblockIds.Hash(object));
       ArrayPush(feet, object.GetWorldPosition());
       ArrayPush(yaws, Rad2Deg(AtanF(-forward.X, forward.Y)));
       ArrayPush(vehicles, IsDefined(vehicle));

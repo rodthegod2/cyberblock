@@ -21,7 +21,8 @@
 //
 // Layers 3-6 wiring (plan 2026-10-03 S1.6, section 1.4): every tick with a player also runs CyberblockPuppets,
 // CyberblockFlight, CyberblockTether and CyberblockProjectiles (live: Active or Vehicle, not saving) and
-// CyberblockPerks and CyberblockBuffs (active: Active, not saving), reports whether V is crouched, in the air or held by
+// CyberblockPerks, CyberblockCyberware (re-test 2 plan S5) and CyberblockBuffs (active: Active, not saving), reports
+// whether V is crouched, in the air or held by
 // a vehicle or the game (Cyberblock_SetStance), whether a Cyberpunk menu is open (Cyberblock_SetMenu) and whether a dialogue offers two or more
 // choices while Active (Cyberblock_SetChoices: E, Q, 1-4 and the wheel then stay Cyberpunk's). ClearWorld (every section 1.4
 // Clear) runs before every save, on session ready, at session end and on every transition out of Active/Vehicle; all
@@ -196,7 +197,6 @@ public class CyberblockSystem extends ScriptableSystem {
       this.events.Tick(game, live);
     }
     if live {
-      // Around the flight while V waits at the take-off spot in the camera-only fallback, else around V.
       CyberblockCollision.Stream(game, CyberblockFlight.Center(game, player));
     }
     CyberblockPuppets.Tick(game, player, live);
@@ -206,13 +206,15 @@ public class CyberblockSystem extends ScriptableSystem {
     }
     CyberblockProjectiles.Tick(game, player, live);
     CyberblockPerks.Tick(game, player, active);
+    CyberblockCyberware.Tick(game, player, active);
     CyberblockBuffs.Tick(game, player, active);
     if !this.saving {
       this.npcs.Tick(player, active);
     }
   }
 
-  // Everything of ours in Night City (plan 2026-10-03 section 1.4 Clears). Perk ranks and the collision registry stay.
+  // Everything of ours in Night City (plan 2026-10-03 section 1.4 Clears). Perk ranks, installed cyberware and the
+  // collision registry stay.
   // leaving: Night City stops being live (Off, Lost, load, session end, detach), so Steve's infinite potions are
   // forgotten too; false before a save, after which they come back.
   // The collision boxes stay through a save (leaving false): Codeware's StaticEntitySystem never writes its entities into
@@ -226,6 +228,7 @@ public class CyberblockSystem extends ScriptableSystem {
     CyberblockFlight.Clear(game);
     CyberblockTether.Clear(game);
     CyberblockPerks.Clear(game);
+    CyberblockCyberware.Clear(game);
     CyberblockBuffs.Clear(game, leaving);
   }
 

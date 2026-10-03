@@ -15,7 +15,7 @@
 //     hits, the same history FindAndRewardKiller picks the killer from).
 //   Active test: GodModeSystem.GetGodModeSources(V, Invulnerable) contains n"Cyberblock" (PlayerState.reds source).
 //   Hostile: IsHostileTowardsPlayer (player.swift), for vehicles of the mounted driver (VehicleComponent
-//     .GetDriverMounted). Hash: Codeware EntityID.ToHash.
+//     .GetDriverMounted). Hash: CyberblockIds.Hash (Ids.reds; never EntityID.ToHash of a call result).
 
 public class CyberblockKillsService extends ScriptableService {
   // Entities already reported (bounded: the most recent 64), so each death is sent once.
@@ -42,7 +42,7 @@ public abstract class CyberblockKills {
       return;
     }
     let kills = CyberblockKillsService.Get();
-    let hash = EntityID.ToHash(victim.GetEntityID());
+    let hash = CyberblockIds.Hash(victim);
     if !IsDefined(kills) || ArrayContains(kills.reported, hash) {
       return;
     }
