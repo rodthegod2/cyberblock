@@ -8,7 +8,8 @@ transparent background, a 1px darker outline derived from the neighbouring colou
 top-left light with a 4-tone ramp (highlight / base / shadow / deep), a small shared
 palette and four neon accents (cyan, magenta, yellow, red).
 
-Outputs (next to this file): items/*.png, gui/*.png and preview.png.
+Outputs (next to this file): items/*.png, gui/*.png and preview.png. Copy items/*.png to
+mc/src/main/resources/assets/cyberblock/textures/item/ and gui/*.png to .../textures/gui/ after a run.
 """
 from __future__ import annotations
 
@@ -516,6 +517,224 @@ def skill_cool() -> Sprite:
     return s
 
 
+# --- cyberware (installed in the ripperdoc slots, plan retest2 section 1.7) ----------------
+def heart_mask(cx: float, cy: float, r: float) -> Mask:
+    """Two lobes and a point: a heart centred on (cx, cy), about 2r wide."""
+    lobes = disc(cx - .52 * r, cy - .28 * r, .62 * r) | disc(cx + .52 * r, cy - .28 * r, .62 * r)
+    point = poly([(cx - 1.12 * r, cy - .05 * r), (cx + 1.12 * r, cy - .05 * r), (cx, cy + 1.05 * r)])
+    return lobes | point
+
+
+def chip_frame(s: Sprite) -> None:
+    """The square chip with gold pins that blaze_chip also uses: the body is x/y 3..12."""
+    for p in (4, 6, 9, 11):
+        s.part({(p, 2), (p, 13), (2, p), (13, p)}, "gold", shade=False)
+    s.part(rect(3, 3, 12, 12), "void", sep=True)
+
+
+def mantis_blades() -> Sprite:
+    s = Sprite()
+    s.part(sweep((5.0, 11.8), (3.6, 6.0), (1.8, 0.9), 3.6, 0.6), "steel", sep=True)
+    s.part(sweep((11.0, 11.8), (12.4, 6.0), (14.2, 0.9), 3.6, 0.6), "steel", sep=True)
+    s.dots(line((4, 10), (3, 5)), RAMPS["steel"][0]).dots(line((11, 10), (12, 5)), RAMPS["steel"][0])
+    s.part(rect(2, 11, 13, 14) - {(2, 11), (13, 11), (2, 14), (13, 14)}, "gunmetal", sep=True)
+    s.dots([(4, 12), (11, 12)], RED).dots([(7, 12), (8, 12)], YELLOW).dots([(5, 13), (6, 13), (9, 13), (10, 13)], RAMPS["gunmetal"][3])
+    s.dots([(2, 1), (14, 1)], WHITE)
+    return s
+
+
+def gorilla_arms() -> Sprite:
+    s = Sprite()
+    fist(s, "gunmetal", "steel", "orange", studs=False)
+    s.dots([(3, 3), (6, 2), (9, 2), (12, 3)], RED)
+    s.dots([(5, 13), (7, 13), (9, 13), (11, 13)], CYAN)
+    s.dots([(x, 9) for x in range(9, 13)], RAMPS["steel"][3])
+    return s
+
+
+def monowire() -> Sprite:
+    s = Sprite()
+    s.part(rect(4, 3, 10, 12), "gunmetal", sep=True)
+    for y in (4, 6, 8, 10):
+        s.dots(line((4, y + 1), (10, y)), CYAN)
+    s.dots([(5, 5), (7, 7), (9, 9)], RAMPS["cyan"][0])
+    s.part(rect(3, 2, 11, 3), "steel", sep=True)
+    s.part(rect(3, 12, 11, 13), "steel", sep=True)
+    s.dots(polyline([(11, 8), (12, 7), (13, 5), (12, 3), (13, 1)]), CYAN, top=True)
+    s.dots([(13, 1)], MAGENTA, top=True)
+    return s
+
+
+def projectile_launch_system() -> Sprite:
+    s = Sprite()
+    s.part(bar((2.4, 13.4), (11.0, 5.0), 5.0), "gunmetal", sep=True)
+    s.part(bar((5.5, 10.2), (10.4, 5.5), 2.0), "steel", sep=True)
+    s.part(bar((10.6, 5.8), (12.8, 3.8), 6.2), "steel", sep=True)
+    s.part(poly([(11.4, 5.6), (14.6, 1.4), (13.6, 5.8)]), "orange", shade=False)
+    s.dots([(14, 2)], RAMPS["yellow"][0])
+    s.dots([(3, 12), (4, 13)], RED).dots([(5, 11)], YELLOW)
+    s.dots([(8, 8), (9, 7)], CYAN)
+    return s
+
+
+def reinforced_tendons() -> Sprite:
+    s = Sprite()
+    s.part(sweep((5.2, 3.0), (2.2, 7.5), (5.2, 12.0), 2.6, 2.6), "crimson", sep=True)
+    s.part(sweep((10.8, 3.0), (13.8, 7.5), (10.8, 12.0), 2.6, 2.6), "crimson", sep=True)
+    s.part(bar((8, 3), (8, 12), 2.6), "red", sep=True)
+    s.dots([(8, 5), (8, 7), (8, 9)], RAMPS["red"][0])
+    s.part(rect(3, 1, 12, 3), "steel", sep=True)
+    s.part(rect(3, 12, 12, 14), "steel", sep=True)
+    s.dots([(4, 2), (11, 2), (4, 13), (11, 13)], YELLOW)
+    s.dots([(6, 2), (7, 2), (8, 2), (9, 2)], RAMPS["steel"][3]).dots([(6, 13), (7, 13), (8, 13), (9, 13)], RAMPS["steel"][3])
+    s.dots([(7, 6), (8, 8)], CYAN, top=True)
+    return s
+
+
+def fortified_ankles() -> Sprite:
+    s = Sprite()
+    s.part(rect(4, 1, 8, 9), "ash", sep=True)
+    s.part(rect(4, 9, 13, 12) - {(13, 12)}, "ash", sep=True)
+    s.part(rect(3, 6, 9, 9), "steel", sep=True)
+    s.dots([(4, 7), (8, 7)], YELLOW).dots([(5, 8), (6, 8), (7, 8)], RAMPS["steel"][3])
+    s.part(rect(3, 13, 14, 14) - {(3, 14), (14, 14)}, "gunmetal", sep=True)
+    s.dots([(11, 10), (12, 10)], CYAN)
+    s.dots([(5, 3), (5, 4)], RAMPS["ash"][0])
+    return s
+
+
+def lynx_paws() -> Sprite:
+    s = Sprite()
+    fur = (ellipse(8, 10.4, 4.6, 3.8) | ellipse(3.6, 6.6, 2.2, 2.8) | ellipse(6.2, 3.8, 2.2, 2.8)
+           | ellipse(9.8, 3.8, 2.2, 2.8) | ellipse(12.4, 6.6, 2.2, 2.8))
+    s.part(fur, "steel", sep=True)
+    s.part(ellipse(8, 10.8, 2.8, 2.2), "magenta", sep=True)
+    for cx, cy in ((3.6, 6.8), (6.2, 4.0), (9.8, 4.0), (12.4, 6.8)):
+        s.part(ellipse(cx, cy, 1.1, 1.3), "magenta", sep=True)
+    s.dots([(3, 5), (6, 2), (9, 2), (12, 5)], WHITE, top=True)
+    return s
+
+
+def sandevistan() -> Sprite:
+    s = Sprite()
+    chip_frame(s)
+    s.part(rect(4, 4, 11, 4), "steel", shade=False)
+    s.part(rect(4, 11, 11, 11), "steel", shade=False)
+    s.part(poly([(5, 5), (11, 5), (8, 8.1)]), "cyan", shade=False)
+    s.part(poly([(8, 7.9), (5, 11), (11, 11)]), "magenta", shade=False)
+    s.dots([(8, 8)], WHITE)
+    s.dots([(7, 6), (8, 6)], RAMPS["cyan"][0]).dots([(6, 10), (9, 10), (7, 9)], RAMPS["magenta"][0])
+    return s
+
+
+def berserk() -> Sprite:
+    s = Sprite()
+    chip_frame(s)
+    s.part(ellipse(8, 7.0, 3.8, 3.3) | rect(6, 9, 9, 11), "red", sep=True)
+    s.dots([(6, 6), (6, 7), (9, 6), (9, 7)], RAMPS["void"][3])
+    s.dots([(7, 9), (8, 9)], RAMPS["void"][3])
+    s.dots([(6, 11), (8, 11)], RAMPS["void"][3])
+    s.dots([(5, 4), (6, 4)], RAMPS["red"][0])
+    return s
+
+
+def kerenzikov() -> Sprite:
+    s = Sprite()
+    sway = (0, 1, 1, 0, -1)
+    for i, dx in enumerate(sway):
+        y = 1 + i * 3
+        s.part(rect(5 + dx, y, 10 + dx, y + 1) - {(5 + dx, y), (10 + dx, y)}, "bone", sep=True)
+        s.part(rect(11 + dx, y, 12 + dx, y), "bone", shade=False)
+        s.dots([(7 + dx, y + 1), (8 + dx, y + 1)], RAMPS["bone"][2])
+    s.dots([(7 + dx, 2 + 3 * i) for i, dx in enumerate(sway)] + [(8 + dx, 2 + 3 * i) for i, dx in enumerate(sway)],
+           RAMPS["bone"][3])
+    s.dots(polyline([(8, 0), (8, 3), (9, 5), (9, 8), (9, 11), (8, 13), (7, 15)]), CYAN, top=True)
+    s.dots([(5, 14), (11, 14)], MAGENTA, top=True)
+    return s
+
+
+def optical_camo() -> Sprite:
+    s = Sprite()
+    hexagon = poly([(8, 1), (14, 4.4), (14, 11.6), (8, 15), (2, 11.6), (2, 4.4)])
+    s.part(hexagon, "teal", sep=True)
+    cells = polyline([(8, 1), (8, 4)]) | polyline([(8, 4), (11, 5)]) | polyline([(11, 5), (11, 8)]) \
+        | polyline([(5, 5), (8, 4)]) | polyline([(5, 5), (5, 8)]) | polyline([(5, 8), (8, 9)]) | polyline([(8, 9), (11, 8)])
+    s.dots(cells & hexagon, CYAN)
+    fade = {(x, y) for x, y in hexagon if x + y >= 17 and (x + y) % 2 == 0}
+    s.erase(fade)
+    s.dots([(7, 6), (9, 7)], WHITE)
+    return s
+
+
+def subdermal_armor() -> Sprite:
+    s = Sprite()
+    s.part(rect(2, 2, 13, 13) - {(2, 2), (13, 2), (2, 13), (13, 13)}, "cork", sep=True)
+    for x0, y0 in ((2, 3), (7, 3), (4, 7), (9, 7), (2, 11), (7, 11)):
+        plate = rect(x0, y0, x0 + 4, y0 + 3) - {(x0, y0 + 3), (x0 + 4, y0 + 3)}
+        s.part(plate & rect(2, 2, 13, 13), "steel", sep=True)
+    s.dots([(3, 4), (8, 4), (5, 8), (10, 8), (3, 12), (8, 12)], YELLOW)
+    s.dots([(12, 3), (13, 4)], RAMPS["cork"][0]).dots([(13, 10), (12, 11)], CYAN)
+    return s
+
+
+def kiroshi_optics() -> Sprite:
+    s = Sprite()
+    s.part(disc(8, 8, 6.6), "gunmetal", sep=True)
+    s.part(disc(8, 8, 4.7), "void", flip=True)
+    s.part(disc(8, 8, 3.5), "orange", shade=False)
+    s.part(disc(8, 8, 2.1), "yellow", shade=False)
+    s.part(disc(8, 8, 1.1), "void", shade=False)
+    s.dots([(8, 2), (8, 13), (2, 8), (13, 8)], CYAN)
+    s.dots([(6, 6)], WHITE)
+    s.dots([(10, 10)], RAMPS["yellow"][0])
+    return s
+
+
+def biomonitor() -> Sprite:
+    s = Sprite()
+    s.part(rect(1, 1, 14, 13) - {(1, 1), (14, 1), (1, 13), (14, 13)}, "gunmetal", sep=True)
+    s.part(rect(2, 2, 13, 12), "void", shade=False)
+    heart = glyph([
+        ".##.##.",
+        "#######",
+        "#######",
+        ".#####.",
+        "..###..",
+        "...#...",
+    ], 4, 3, {"#": RAMPS["red"][1]})
+    s.paint(heart)
+    s.dots([(5, 4), (5, 5)], RAMPS["red"][0])
+    s.part(rect(5, 14, 10, 15), "steel", sep=True)
+    s.dots(polyline([(2, 11), (5, 11), (6, 9), (7, 12), (8, 10), (9, 11), (13, 11)]), CYAN, top=True)
+    s.dots([(12, 3)], YELLOW)
+    return s
+
+
+def second_heart() -> Sprite:
+    s = Sprite()
+    s.part(heart_mask(5.6, 5.4, 3.7), "crimson", sep=True)
+    s.part(heart_mask(9.6, 9.2, 4.6), "red", sep=True)
+    s.dots([(7, 7), (8, 7), (7, 8)], RAMPS["red"][0])
+    s.dots([(5, 3), (4, 4)], RAMPS["crimson"][0])
+    s.dots([(13, 3), (14, 2), (12, 2), (13, 1)], YELLOW, top=True)
+    s.dots(polyline([(2, 12), (3, 13), (4, 12), (5, 14)]), CYAN, top=True)
+    return s
+
+
+def ram_upgrade() -> Sprite:
+    s = Sprite()
+    s.part(rect(1, 3, 14, 9), "gunmetal", sep=True)
+    s.part(rect(2, 10, 13, 11), "purple", sep=True)
+    for x in (2, 4, 6, 9, 11, 13):
+        s.part(rect(x, 12, x, 13), "gold", shade=False)
+    s.dots([(x, 4) for x in range(2, 14)], MAGENTA)
+    plus = glyph([".#.", "###", ".#."], 3, 5, {"#": CYAN})
+    four = glyph(["#.#", "#.#", "###", "..#", "..#"], 8, 5, {"#": CYAN})
+    s.paint(plus).paint(four)
+    s.dots([(12, 6), (12, 8)], YELLOW)
+    return s
+
+
 SPRITES = {
     "cyberdeck": cyberdeck, "ram_shard": ram_shard, "redstone_charge": redstone_charge,
     "blaze_chip": blaze_chip, "ink_sac_daemon": ink_sac_daemon, "cobweb_daemon": cobweb_daemon,
@@ -523,6 +742,12 @@ SPRITES = {
     "compass_ping": compass_ping, "creeper_brain": creeper_brain, "bottle_forgetting": bottle_forgetting,
     "redstone_lever": redstone_lever, "mantis_blade": mantis_blade, "gorilla_gauntlet": gorilla_gauntlet,
     "perk_token": perk_token,
+    "mantis_blades": mantis_blades, "gorilla_arms": gorilla_arms, "monowire": monowire,
+    "projectile_launch_system": projectile_launch_system, "reinforced_tendons": reinforced_tendons,
+    "fortified_ankles": fortified_ankles, "lynx_paws": lynx_paws, "sandevistan": sandevistan, "berserk": berserk,
+    "kerenzikov": kerenzikov, "optical_camo": optical_camo, "subdermal_armor": subdermal_armor,
+    "kiroshi_optics": kiroshi_optics, "biomonitor": biomonitor, "second_heart": second_heart,
+    "ram_upgrade": ram_upgrade,
     "skill_body": skill_body, "skill_reflexes": skill_reflexes, "skill_technical": skill_technical,
     "skill_intelligence": skill_intelligence, "skill_cool": skill_cool,
 }
@@ -551,13 +776,38 @@ def ram_bar() -> Image.Image:
     return img
 
 
+PANEL_BASE, PANEL_TRACE, PANEL_NODE = rgb("#1b1f30"), rgb("#262d48"), rgb("#323c60")
+BEVEL_LIT, BEVEL_SHD, BEVEL_EDGE = (rgb("#68729a"), rgb("#4a5478")), (rgb("#10131f"), rgb("#0a0c15")), rgb("#05070d")
+
+
+def bevel(img: Image.Image) -> None:
+    """Dark outer edge, a 2px light bevel on the top/left and a 2px shadow on the bottom/right, and the notched
+    corners of a Minecraft panel."""
+    w, h = img.size
+    px = img.load()
+    for y in range(h):
+        for x in range(w):
+            k = min(x, y, w - 1 - x, h - 1 - y)
+            if k == 0:
+                px[x, y] = (*BEVEL_EDGE, 255)
+            elif k <= 2:
+                lit = min(x, y) <= min(w - 1 - x, h - 1 - y)  # nearer the top/left edge
+                px[x, y] = (*(BEVEL_LIT if lit else BEVEL_SHD)[k - 1], 255)
+    for y in range(h):  # notched corners like a Minecraft panel
+        for x in range(w):
+            dx, dy = min(x, w - 1 - x), min(y, h - 1 - y)
+            if dx + dy <= 1:
+                px[x, y] = (0, 0, 0, 0)
+            elif dx + dy == 2 and dx <= 2 and dy <= 2:
+                px[x, y] = (*BEVEL_EDGE, 255)
+
+
 def skill_tree_bg() -> Image.Image:
     """256x256 beveled dark panel with a faint circuit pattern."""
     n = 256
     img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
     px = img.load()
-    base, trace, node = rgb("#1b1f30"), rgb("#262d48"), rgb("#323c60")
-    lit1, lit2, shd1, shd2, edge = rgb("#68729a"), rgb("#4a5478"), rgb("#10131f"), rgb("#0a0c15"), rgb("#05070d")
+    base, trace, node = PANEL_BASE, PANEL_TRACE, PANEL_NODE
     for y in range(n):
         for x in range(n):
             px[x, y] = (*base, 255)
@@ -597,21 +847,49 @@ def skill_tree_bg() -> Image.Image:
         for x, y in ((sx, sy), (sx + 1, sy), (sx, sy + 1), (sx + 1, sy + 1)):
             px[x, y] = (*node, 255)
 
-    for y in range(n):
-        for x in range(n):
-            k = min(x, y, n - 1 - x, n - 1 - y)
-            if k == 0:
-                px[x, y] = (*edge, 255)
-            elif k <= 2:
-                lit = min(x, y) <= min(n - 1 - x, n - 1 - y)  # nearer the top/left edge
-                px[x, y] = (*((lit1, lit2) if lit else (shd1, shd2))[k - 1], 255)
-    for y in range(n):  # notched corners like a Minecraft panel
-        for x in range(n):
-            s = min(x, n - 1 - x) + min(y, n - 1 - y)
-            if s <= 1:
-                px[x, y] = (0, 0, 0, 0)
-            elif s == 2 and min(x, n - 1 - x) <= 2 and min(y, n - 1 - y) <= 2:
-                px[x, y] = (*edge, 255)
+    bevel(img)
+    return img
+
+
+def cyberware_bg() -> Image.Image:
+    """256x192 notched panel for the cyberware screen: a line-art body in the left half (centred on x = 64, y 20..180),
+    a divider at x = 128 and a recessed field in the right half for the list of implants. The title strip (y < 18) and
+    the bottom strip (y > 174) stay empty for text."""
+    w, h = 256, 192
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, w - 1, h - 1], fill=(*PANEL_BASE, 255))
+    for y in range(8, h - 6, 8):  # blueprint dots
+        for x in range(8, w - 6, 8):
+            img.putpixel((x, y), (*PANEL_TRACE, 255))
+    d.line([(8, 17), (w - 9, 17)], fill=(*PANEL_TRACE, 255))
+    d.line([(8, 175), (w - 9, 175)], fill=(*PANEL_TRACE, 255))
+
+    body, node = rgb("#3b5588"), rgb("#2aa6bd")
+    c = 64
+
+    def both(pts: list[tuple[int, int]]) -> None:  # draw a left-side outline and its mirror around x = c
+        d.polygon(pts, outline=(*body, 255))
+        d.polygon([(2 * c - x, y) for x, y in pts], outline=(*body, 255))
+
+    d.ellipse([c - 11, 21, c + 11, 45], outline=(*body, 255))  # head
+    d.rectangle([c - 4, 45, c + 4, 51], outline=(*body, 255))  # neck
+    d.polygon([(c - 16, 51), (c + 16, 51), (c + 20, 57), (c + 19, 99), (c + 14, 113), (c - 14, 113), (c - 19, 99), (c - 20, 57)],
+              outline=(*body, 255))  # torso
+    both([(c - 21, 54), (c - 28, 58), (c - 33, 70), (c - 37, 101), (c - 39, 123), (c - 33, 126), (c - 30, 104), (c - 24, 77), (c - 21, 70)])
+    both([(c - 14, 114), (c - 1, 114), (c - 2, 144), (c - 4, 177), (c - 15, 177), (c - 16, 144)])
+    d.line([(c - 11, 60), (c - 4, 60)], fill=(*body, 255))  # collarbone ticks
+    d.line([(c + 4, 60), (c + 11, 60)], fill=(*body, 255))
+    for x, y in ((c, 33), (c, 40), (c, 62), (c + 7, 74), (c, 86), (c - 10, 96), (c + 10, 96), (c - 35, 106), (c + 35, 106),
+                 (c - 9, 150), (c + 9, 150)):  # frontal cortex, eyes, nervous, circulatory, OS, skin x2, arms x2, legs x2
+        d.rectangle([x - 1, y - 1, x + 1, y + 1], fill=(*node, 255))
+
+    d.line([(128, 22), (128, 171)], fill=(*BEVEL_SHD[0], 255))
+    d.line([(129, 22), (129, 171)], fill=(*BEVEL_LIT[1], 255))
+    d.rectangle([135, 22, w - 9, 171], fill=rgb("#141828") + (255,), outline=(*BEVEL_SHD[0], 255))  # recessed list
+    d.line([(135, 172), (w - 9, 172)], fill=(*BEVEL_LIT[1], 255))
+    d.line([(w - 8, 22), (w - 8, 172)], fill=(*BEVEL_LIT[1], 255))
+    bevel(img)
     return img
 
 
@@ -619,13 +897,13 @@ def skill_tree_bg() -> Image.Image:
 # PREVIEW
 # =====================================================================================
 def preview(images: dict[str, Image.Image], gui: dict[str, Image.Image]) -> Image.Image:
-    scale, cols, pad, label_h = 8, 5, 16, 26
+    scale, cols, pad, label_h = 8, 6, 16, 26
     cw, ch = SIZE * scale + pad, SIZE * scale + label_h + pad
     rows = math.ceil(len(images) / cols)
     gui_h = 256 + 40
     sheet = Image.new("RGBA", (cols * cw + pad, rows * ch + pad + gui_h), rgb("#2a2d38") + (255,))
     d = ImageDraw.Draw(sheet)
-    font = ImageFont.load_default(size=14)
+    font = ImageFont.load_default(size=12)
     for i, (name, im) in enumerate(images.items()):
         x0, y0 = pad + (i % cols) * cw, pad + (i // cols) * ch
         big = im.resize((SIZE * scale, SIZE * scale), Image.NEAREST)
@@ -638,9 +916,12 @@ def preview(images: dict[str, Image.Image], gui: dict[str, Image.Image]) -> Imag
         sheet.paste(tile, (x0, y0))
         d.text((x0, y0 + SIZE * scale + 4), name, fill=(235, 240, 255), font=font)
     gy = rows * ch + pad + 8
-    for name, im, gx in (("skill_tree_bg", gui["skill_tree_bg"], pad), ("ram_bar", gui["ram_bar"], pad + 256 + pad)):
+    gx = pad
+    for name in ("skill_tree_bg", "cyberware_bg", "ram_bar"):
+        im = gui[name]
         sheet.alpha_composite(im, (gx, gy))
         d.text((gx, gy + im.height + 2), f"{name} {im.width}x{im.height}", fill=(235, 240, 255), font=font)
+        gx += im.width + pad
     return sheet
 
 
@@ -652,7 +933,7 @@ def main() -> None:
         im = fn().render()
         im.save(ITEMS / f"{name}.png")
         images[name] = im
-    gui = {"skill_tree_bg": skill_tree_bg(), "ram_bar": ram_bar()}
+    gui = {"skill_tree_bg": skill_tree_bg(), "ram_bar": ram_bar(), "cyberware_bg": cyberware_bg()}
     for name, im in gui.items():
         im.save(GUI / f"{name}.png")
     preview(images, gui).convert("RGB").save(ART / "preview.png")
