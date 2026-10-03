@@ -83,7 +83,7 @@ Cyberpunk from acting on it.
 | Left Shift | V sprints as in Cyberpunk. Double-tap it within 300 ms with the Sandevistan perk for Sandevistan Sprint |
 | Mouse buttons, wheel, 1-9, E, Q, T, / | Minecraft: attack and use, hotbar, inventory, drop, chat, command. Cyberpunk never sees them |
 | F5 | Minecraft's perspective key (ignored while Cyberpunk drives the camera); it no longer quick-saves in Cyberpunk |
-| G (hold) | Hack key: scan the target under the crosshair, or what V looks at when no mob proxy is hit |
+| G (hold) | Hack key: scan the target under the crosshair, or what V looks at when no person or car proxy is under the crosshair |
 | K | Skill tree |
 
 G and K are the defaults. Rebind them in Minecraft's Controls (category Cyberblock); Cyberpunk only forwards letters,
@@ -91,7 +91,7 @@ digits and F-keys, and not the ones Cyberblock needs elsewhere (W A S D, C, F9 a
 other key works in Cyberpunk as G or K, and a chat message says so.
 
 While Cyberblock is active on foot, Cyberpunk's own guns, cyberware, scanner, quickhacks, healing, radial menus, quick
-melee, zoom, crafting (K), walk toggle (G) and quick save (F5) are off, and V has no dodge, air dash or double jump
+melee, zoom, crafting (K, while it is the skill-tree key), walk toggle (G) and quick save (F5) are off, and V has no dodge, air dash or double jump
 until you buy the perk. In a vehicle the Cyberpunk HUD and controls return.
 
 ## Survival and creative

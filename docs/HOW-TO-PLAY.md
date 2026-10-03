@@ -428,7 +428,8 @@ air dash back.
 
 **Keys:**
 - F5 does not quick-save. Save from the pause menu or turn Cyberblock off first.
-- G does not toggle walking, and K does not open crafting.
+- G does not toggle walking. K does not open crafting while it is the skill-tree key (the default): rebind the skill
+  tree to another key and K opens Cyberpunk's crafting menu again.
 - 1–9, E, Q, T, /, the mouse buttons and the wheel go only to Minecraft.
 
 **Camera:** it is frozen while a Minecraft screen is open.
