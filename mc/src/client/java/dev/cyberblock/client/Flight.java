@@ -111,6 +111,11 @@ public final class Flight {
 
 	/** A client tick while gliding: carry on, call it off when the host does not follow, or land. */
 	private static void drive(final LocalPlayer player, final HostState.@Nullable Pose p) {
+		if (!player.isAlive()) {
+			abort(player, p); // died mid-glide: no landing spot (after the respawn it would be the world spawn)
+			return;
+		}
+
 		if (p == null) {
 			land(player, null); // the host went away
 			return;
