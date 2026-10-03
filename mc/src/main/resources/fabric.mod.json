@@ -9,6 +9,7 @@
 		"Rehan (universal-modder)"
 	],
 	"license": "MIT",
+	"icon": "assets/cyberblock/icon.png",
 	"environment": "*",
 	"entrypoints": {
 		"main": [
@@ -17,7 +18,8 @@
 		],
 		"client": [
 			"dev.cyberblock.client.CyberblockClient",
-			"dev.cyberblock.client.cyber.CyberClient"
+			"dev.cyberblock.client.cyber.CyberClient",
+			"dev.cyberblock.client.ui.UiClient"
 		]
 	},
 	"mixins": [
@@ -30,12 +32,16 @@
 		{
 			"config": "cyberblock.cyber.client.mixins.json",
 			"environment": "client"
+		},
+		{
+			"config": "cyberblock.ui.client.mixins.json",
+			"environment": "client"
 		}
 	],
 	"depends": {
 		"fabricloader": ">=0.19.5",
 		"minecraft": "~26.3",
 		"java": ">=25",
-		"fabric-api": "*"
+		"fabric-api": ">=0.161.0"
 	}
 }

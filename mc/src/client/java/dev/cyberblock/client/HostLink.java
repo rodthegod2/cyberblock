@@ -14,6 +14,7 @@ import dev.cyberblock.ProxyManager;
 import dev.cyberblock.Ranges;
 import dev.cyberblock.WorldBridge;
 import java.net.InetSocketAddress;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import org.java_websocket.WebSocket;
 import org.java_websocket.framing.CloseFrame;
@@ -44,7 +45,7 @@ import org.java_websocket.server.WebSocketServer;
  * <li>{"t":"slot","n":0-8}, {"t":"scroll","d":+-1}, {"t":"hud","hidden":bool}, {"t":"view","w":px,"h":px}</li>
  * <li>{"t":"state","active":bool,"vehicle":bool}: in a vehicle Steve, his hand and the HUD are hidden</li>
  * </ul>
- * <p>Minecraft to host: {"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3"} on connect, {"t":"status",...} (see
+ * <p>Minecraft to host: {"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3","ver":"1.0.0"} on connect, {"t":"status",...} (see
  * StatusReporter). A host hello with another proto closes the link. Unknown "t" values are ignored. After its own handling every
  * message also goes to Bridge.dispatch (the cyber track's listeners), on this thread.
  */
@@ -80,7 +81,23 @@ public final class HostLink extends WebSocketServer {
 		}
 
 		Cyberblock.LOG.info("host connected from {}", conn.getRemoteSocketAddress());
-		conn.send("{\"t\":\"hello\",\"proto\":" + PROTOCOL + ",\"mod\":\"cyberblock\",\"mc\":\"26.3\"}");
+		conn.send(hello(version()));
+	}
+
+	/** This mod's version from fabric.mod.json (gradle.properties fills it in), for hello.ver. */
+	private static String version() {
+		return FabricLoader.getInstance().getModContainer(Cyberblock.ID).map(mod -> mod.getMetadata().getVersion().getFriendlyString()).orElse("unknown");
+	}
+
+	/** Our hello (shared/protocol.md); "ver" is the mod version (plan retest3 section 1.1), which the DLL compares with its own. */
+	static String hello(final String version) {
+		JsonObject hello = new JsonObject();
+		hello.addProperty("t", "hello");
+		hello.addProperty("proto", PROTOCOL);
+		hello.addProperty("mod", Cyberblock.ID);
+		hello.addProperty("mc", "26.3");
+		hello.addProperty("ver", version);
+		return hello.toString();
 	}
 
 	@Override

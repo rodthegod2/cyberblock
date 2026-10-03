@@ -57,6 +57,8 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	 * optics, plan retest2 R6), so it is synced entity data.
 	 */
 	private static final EntityDataAccessor<Boolean> DATA_HOSTILE = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.BOOLEAN);
+	/** Ticks left of a Compass Ping (plan retest3 section 1.5): the client outlines a pinged proxy, so it is synced entity data. */
+	private static final EntityDataAccessor<Integer> DATA_PINGED = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.INT);
 
 	public ProxyEntity(final EntityType<? extends ProxyEntity> type, final Level level) {
 		super(type, level);
@@ -68,6 +70,7 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	protected void defineSynchedData(final SynchedEntityData.Builder entityData) {
 		super.defineSynchedData(entityData);
 		entityData.define(DATA_HOSTILE, false);
+		entityData.define(DATA_PINGED, 0);
 	}
 
 	/** The Cyberpunk entity id hash this proxy stands for. */
@@ -86,6 +89,16 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	/** Hostile to V (the host's latest list); valid on the client too (Bridge.hostileProxy). */
 	public boolean hostile() {
 		return this.entityData.get(DATA_HOSTILE);
+	}
+
+	/** Server thread: pinged for this many ticks (0 or less clears it); Bridge.pingProxy. */
+	public void setPinged(final int ticks) {
+		this.entityData.set(DATA_PINGED, Math.max(0, ticks));
+	}
+
+	/** Pinged by a Compass Ping that has not run out; valid on the client too (Bridge.pingedProxy). */
+	public boolean pinged() {
+		return this.entityData.get(DATA_PINGED) > 0;
 	}
 
 	@Override
@@ -126,6 +139,10 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 
 		if (this.level() instanceof ServerLevel) {
 			this.reportLeash();
+			int ping = this.entityData.get(DATA_PINGED);
+			if (ping > 0) {
+				this.entityData.set(DATA_PINGED, ping - 1);
+			}
 		}
 	}
 

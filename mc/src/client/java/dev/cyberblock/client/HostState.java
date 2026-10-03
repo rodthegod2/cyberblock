@@ -24,12 +24,13 @@ public final class HostState {
 	 * @param menu a Cyberpunk menu is open: the game is paused (cam "menu")
 	 * @param air V is off the ground: jumping or falling (cam "air")
 	 * @param held the game holds V (a scene, workspot, braindance or moving elevator): it cannot be moved (cam "held")
+	 * @param seat V sits in a vehicle (cam "seat", plan retest3 section 1.1): px/py/pz are then V's hips, not the feet
 	 */
 	public record Pose(
 		long hostFrame, double x, double y, double z, float yaw, float pitch, float roll, float fov,
 		boolean firstPerson, double px, double py, double pz, float bodyYaw, long receivedNanos,
 		boolean drive, float lookYaw, float lookPitch, boolean gun,
-		boolean fly, boolean menu, boolean air, boolean held
+		boolean fly, boolean menu, boolean air, boolean held, boolean seat
 	) {
 	}
 
@@ -48,7 +49,7 @@ public final class HostState {
 
 	/**
 	 * {"t":"cam","f":frame,"p":[x,y,z],"r":[yaw,pitch,roll],"fov":deg,"fp":bool,"pl":[x,y,z],"h":bodyYaw}, plus the flags
-	 * "cr", "fly", "menu", "air" and "held" (false when absent or not a boolean: an older host never sends them). Every number is
+	 * "cr", "fly", "menu", "air", "held" and "seat" (false when absent or not a boolean: an older host never sends them). Every number is
 	 * checked before the pose is built, and a bad message throws IllegalArgumentException (the link logs it and carries on, the
 	 * previous pose stays): NaN or a position outside the world would reach player.setPos, whose move packet gets the player
 	 * kicked by the server (that ends the singleplayer session). Pitch is clamped to +-90: the host's asin(-dy) can round past it.
@@ -90,7 +91,7 @@ public final class HostState {
 			m.has("drive") && m.get("drive").getAsBoolean(),
 			lookYaw, lookPitch,
 			m.has("gun") && m.get("gun").getAsBoolean(),
-			fly, flag(m, "menu"), air, held
+			fly, flag(m, "menu"), air, held, flag(m, "seat")
 		);
 		// V crouched (layers 3-6): Steve crouches too (KeyboardInputMixin), and the cyber track reads it for optical camo
 		Bridge.hostCrouching = flag(m, "cr");
