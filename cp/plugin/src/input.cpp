@@ -192,7 +192,7 @@ namespace
 		if (vk == VK_ESCAPE)
 			return screen_open() || g_held.contains(kEscape);
 		if (vk == VK_F9)
-			return false;
+			return true; // Cyberblock's toggle: Cyberpunk's own F9 (QuickLoad) never fires while its window is in front
 		const bool swallowable = forwarding() && cb::keys::is_swallowed(vk, binds());
 		return (down ? g_rawGate.down(vk, swallowable) : g_rawGate.up(vk)) == cb::keys::KeyGate::Verdict::Swallow;
 	}
@@ -240,9 +240,10 @@ namespace
 		const bool repeat = down && (lParam & (1 << 30)) != 0;
 		if (vk == VK_F9)
 		{
+			// the toggle, in every state; Cyberpunk never sees F9 (its default QuickLoad would load a save)
 			if (down && !repeat)
 				cb::natives::togglePressed = true;
-			return false;
+			return true;
 		}
 		if (vk == VK_ESCAPE)
 		{

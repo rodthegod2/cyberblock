@@ -35,7 +35,7 @@ namespace cb::keys
 {
 	bool is_swallowed(uint32_t vk, const Binds &binds)
 	{
-		return in_fixed_swallow_set(vk) || vk == binds.hack || vk == binds.skills;
+		return vk == kF9 || in_fixed_swallow_set(vk) || vk == binds.hack || vk == binds.skills;
 	}
 
 	bool bindable(uint32_t vk)

@@ -62,9 +62,16 @@ TEST(everything_else_reaches_cyberpunk)
 {
 	const Binds defaults;
 	for (uint32_t vk : {uint32_t('W'), uint32_t('A'), uint32_t('S'), uint32_t('D'), kSpace, kShift, kLeftShift, kControl, kLeftControl,
-						uint32_t('C'), kF9, kEscape, uint32_t('X'), uint32_t('R'), uint32_t('F'), uint32_t('V'), uint32_t(0x09) /*Tab*/,
+						uint32_t('C'), kEscape, uint32_t('X'), uint32_t('R'), uint32_t('F'), uint32_t('V'), uint32_t(0x09) /*Tab*/,
 						uint32_t(0x70) /*F1*/, uint32_t(0x61) /*Numpad 1*/, uint32_t(0x12) /*Alt*/})
 		CHECK(!is_swallowed(vk, defaults));
+}
+
+TEST(f9_never_reaches_cyberpunk)
+{
+	// Cyberblock's toggle; Cyberpunk's default F9 is QuickLoad, which loaded a save in the 2026-10-03 session
+	CHECK(is_swallowed(kF9, Binds{}));
+	CHECK(is_swallowed(kF9, binds_of('L', 'O')));
 }
 
 // ---- which keys may be bound -------------------------------------------------------------------------------------------

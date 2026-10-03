@@ -44,7 +44,8 @@ namespace cb::keys
 		bool operator==(const Binds &) const = default;
 	};
 
-	/// Keys Cyberpunk never sees while forwarding: E, Q, T, 1-9, "/", F5 and the two bound keys.
+	/// Keys Cyberpunk never sees while forwarding: E, Q, T, 1-9, "/", F5 and the two bound keys, and F9 (Cyberblock's
+	/// toggle, which input.cpp keeps from Cyberpunk in every state, so its QuickLoad never fires).
 	bool is_swallowed(uint32_t vk, const Binds &binds);
 
 	/// May `vk` be bound to hack or skills: 1..254, and not F9, Esc, a key of the fixed swallow set above, W, A, S, D,
