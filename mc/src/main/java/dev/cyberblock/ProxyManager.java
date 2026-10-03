@@ -16,11 +16,8 @@ import net.minecraft.world.phys.Vec3;
  * moved and removed to match it. Server thread only (the host's message is handed over with MinecraftServer.execute).
  */
 public final class ProxyManager {
-	/** The host sends 10 per second; two seconds of silence mean it has gone, and the proxies with it. */
-	private static final int TIMEOUT_TICKS = 40;
 	private static final Map<Long, ProxyEntity> proxies = new HashMap<>();
 	private static final Map<Long, ProxyDiff.Kind> kinds = new HashMap<>();
-	private static int ticksSinceList;
 	private static int bad;
 
 	private ProxyManager() {
@@ -49,7 +46,6 @@ public final class ProxyManager {
 			warn(parsed.rejected() + " bad npcs entries skipped");
 		}
 
-		ticksSinceList = 0;
 		// a proxy that was killed or unloaded under us is simply gone: it is spawned again below if the host still lists it
 		proxies.values().removeIf(ProxyEntity::isRemoved);
 		kinds.keySet().retainAll(proxies.keySet());
@@ -95,9 +91,13 @@ public final class ProxyManager {
 		}
 	}
 
-	/** Every server tick: no list for two seconds, or the host not driving any more: no proxies. */
+	/**
+	 * Every server tick: the host not driving any more means no proxies. A quiet list does not: the host keeps sending camera
+	 * poses through its menus and saves, so Cyberblock.active only drops when it is really gone, and a list that leaves a proxy
+	 * out removes it by itself.
+	 */
 	static void tick(final MinecraftServer s) {
-		if (!proxies.isEmpty() && (!Cyberblock.active || ++ticksSinceList > TIMEOUT_TICKS)) {
+		if (!proxies.isEmpty() && !Cyberblock.active) {
 			clear();
 		}
 	}
