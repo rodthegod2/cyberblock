@@ -20,9 +20,11 @@
 
 namespace
 {
-	// Scripts cannot read the camera's clip planes (only entBaseCameraComponent.near/farPlaneOverride exist), so
-	// these stand in until task F2 calibrates them against the depth buffer.
-	constexpr float kNearClip = 0.1f;
+	// Scripts cannot read the camera's clip planes (only entBaseCameraComponent.near/farPlaneOverride exist).
+	// Cyberpunk's depth is reversed-Z with an infinite far plane (raw depth is linear in screen row on flat ground,
+	// F1). Near from that ground slope: n = slope * eyeHeight * fy = 1.173e-5 * ~1.7 m * 1062 px (vertical fov
+	// 68.24 deg at 1440p) = 0.021. Fine-tune live with the shader's "Night City depth scale".
+	constexpr float kNearClip = 0.0212f;
 	constexpr float kFarClip = 10000.0f;
 	constexpr int kLoggedPoses = 5;
 

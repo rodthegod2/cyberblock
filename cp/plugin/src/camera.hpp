@@ -5,8 +5,9 @@
 namespace cb::camera
 {
 	/// Whether GetActiveCameraFOV is horizontal (converted to vertical with the camera's aspect) or already vertical.
-	/// Decided by the cube test (task F2).
-	inline constexpr bool fovIsHorizontal = true;
+	/// Cube test (F2, 2026-10-02): it is vertical. Read as horizontal (68.24 -> 41.7 vertical), Minecraft rendered
+	/// about 1.8x zoomed in and blocks looked too big.
+	inline constexpr bool fovIsHorizontal = false;
 
 	/// Call once per frame from the Running game state (the game's main thread).
 	void publish();

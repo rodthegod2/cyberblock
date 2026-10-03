@@ -47,7 +47,7 @@ uniform float DepthBias < ui_type = "drag"; ui_min = 0.0; ui_max = 1.0; ui_step 
 uniform float SlopeBias < ui_type = "drag"; ui_min = 0.0; ui_max = 40.0; ui_step = 0.1; ui_label = "Depth bias per grazing slope";
 	ui_tooltip = "Extra depth bias where Night City's surface is seen at a grazing angle (its depth changes fast down the screen): Minecraft ground laid into Night City's still shows far away."; > = 0.0;
 uniform float MaxBias < ui_type = "drag"; ui_min = 0.1; ui_max = 10.0; ui_step = 0.1; ui_label = "Largest depth bias (m)"; > = 3.0;
-uniform float HostDepthScale < ui_type = "drag"; ui_min = 0.5; ui_max = 2.0; ui_step = 0.001; ui_label = "Night City depth scale";
+uniform float HostDepthScale < ui_type = "drag"; ui_min = 0.25; ui_max = 4.0; ui_step = 0.001; ui_label = "Night City depth scale";
 	ui_tooltip = "Calibration: multiplies Night City's linearised depth."; > = 1.0;
 uniform float LightMatch < ui_type = "drag"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.01; ui_label = "Match Night City lighting";
 	ui_tooltip = "Relight Minecraft by the (blurred) Night City picture around it: darker in shade, tinted by nearby neon."; > = 0.8;

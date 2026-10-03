@@ -22,6 +22,8 @@ public class CyberblockPlayerState {
   private let hudHidden: Bool;
   private let hudWasVisible: Bool;
   private let hudDelay: Int32;
+  // V's mesh components we switched off (first-person arms and body would otherwise show over Steve).
+  private let hiddenMeshes: array<wref<IComponent>>;
 
   // Marks our status effects so a load can remove leftovers without touching the game's own restrictions.
   public static func Instigator() -> TweakDBID {
@@ -42,7 +44,9 @@ public class CyberblockPlayerState {
         this.hudDelay = 20; // 2 s at 10 Hz, so the transition notification is read before the HUD goes away
       }
     }
-    // Re-checked every tick so a restriction the game removes in the meantime comes back.
+    // Re-checked every tick so a restriction the game removes in the meantime comes back, and so meshes the game
+    // adds later (equipping clothes or cyberware) are hidden too.
+    this.HideBody(player);
     this.Own(player, t"GameplayRestriction.NoCombat");
     this.Own(player, t"GameplayRestriction.NoPhone");
     if screenOpen {
@@ -65,6 +69,7 @@ public class CyberblockPlayerState {
 
   // Removes what a save would carry (status effects, god mode). The HUD layer is not saved, so it stays hidden.
   public func ClearSaved(player: ref<PlayerPuppet>) -> Void {
+    this.ShowBody();
     if !IsDefined(player) {
       return;
     }
@@ -132,6 +137,26 @@ public class CyberblockPlayerState {
       GameInstance.GetStatusEffectSystem(player.GetGame()).RemoveStatusEffect(player.GetEntityID(), id);
       ArrayRemove(this.own, id);
     }
+  }
+
+  // Switches off every enabled mesh component on V (Codeware Entity.GetComponents; IComponent.Toggle/IsEnabled)
+  // and remembers exactly those, so ShowBody restores V as she or he was.
+  private func HideBody(player: ref<PlayerPuppet>) -> Void {
+    for component in player.GetComponents() {
+      if (component.IsA(n"entSkinnedMeshComponent") || component.IsA(n"entMeshComponent")) && component.IsEnabled() {
+        component.Toggle(false);
+        ArrayPush(this.hiddenMeshes, component);
+      }
+    }
+  }
+
+  private func ShowBody() -> Void {
+    for component in this.hiddenMeshes {
+      if IsDefined(component) {
+        component.Toggle(true);
+      }
+    }
+    ArrayClear(this.hiddenMeshes);
   }
 
   private func Holster(player: ref<PlayerPuppet>) -> Void {
