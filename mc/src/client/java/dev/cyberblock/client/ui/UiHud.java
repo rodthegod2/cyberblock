@@ -37,6 +37,7 @@ public final class UiHud {
 		before(VanillaHudElements.CHAT, "prompt", PromptHud::draw);
 		HudElementRegistry.attachElementAfter(VanillaHudElements.CROSSHAIR, id("third_person_crosshair"), CrosshairHud::draw);
 		VehicleHud.register();
+		HudElementRegistry.addLast(id("menu_frame"), MenuFrameHud::draw);
 	}
 
 	private static void before(final Identifier vanilla, final String path, final HudElement element) {
