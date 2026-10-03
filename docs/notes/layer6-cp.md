@@ -129,3 +129,37 @@ How the Sandevistan slow-mo is timed:
 
 `Tick(active false)` and `Clear` remove both modifiers (the exact objects, from the entity they were added to) and end
 the slow-mo. A changed V (load) drops the old modifiers first.
+
+## S3.4 Buffs: potions (`Buffs.reds`)
+
+Every record below is in the records section of both TweakDB files (status effects type `0x25107a6d`, stats
+`0x26929cac`).
+
+| `effect.name` | On V while Active | Why this record or stat |
+|---|---|---|
+| `invisibility` | `BaseStatusEffect.OpticalCamoPlayerBuffRare` + `SetInvisible(true)` | audit C.3 |
+| `speed` | `MaxSpeed` Multiplier `min(1 + 0.2(amp+1), 3)` | the stat the player locomotion's own speed modifiers use (`AddMaxSpeedModifier`, `EnableReloadStatModifier`). Player speed buffs scale it (`DetectorRushPlayerBuff*`, `AlcoholDebuff`, `PlayerElectrocuted`). |
+| `slowness` | `MaxSpeed` Multiplier `max(1 − 0.15(amp+1), 0.3)` | same |
+| `jump_boost` | `JumpHeight` Multiplier `min(1 + 0.5(amp+1), 4)` | set per locomotion state by `PlayerLocomotion.JumpJumpHeightModifier` (+1) / `DoubleJumpJumpHeightModifier` (+2.6); `PlayerBleeding` scales it ×0.5 on V |
+| `nausea` | `BaseStatusEffect.Drunk` (1 stack) | `PlayerPuppet.ProcessTieredDrunkEffect` starts the fullscreen `status_drunk_level_1` |
+| `blindness`, `darkness` | `AIQuickHackStatusEffect.HackBlind` | the player-side Reboot Optics: VFX/SFX `status_blinded` plus `hacking_glitch_low` |
+
+**No DoT is mapped.**
+- `Drunk` carries `Debuff`/`DoT`/`Poison` tags, inherited from `Poisoned`, but has no attack. Its packages are only
+  weapon-sway stat groups (`Prereqs.AnyWeaponHeldPrereq`) and the `DrunkSFX` effector. Nothing reaches Health.reds.
+- `HackBlind`'s effectors are VFX, a sway stat group and the HUD weapon-malfunction effector. It has no attack either.
+- Poison and wither are not mapped and are ignored like every other unmapped name. Each unmapped name is logged once.
+
+**Caps.** `speed` and `jump_boost` are capped (×3, ×4). Without the caps, a `/effect` amplifier of 255 would give
+×52 speed. This is a guard beyond the plan's formula. `slowness` keeps the plan's 0.3 floor.
+
+**Lifetime.**
+- **Ending:** each entry ends at engine time + `seconds`. `seconds` 0 removes it, and re-sending refreshes it.
+- **Refreshing:** the remaining duration of an applied status effect is refreshed with
+  `SetStatusEffectRemainingDuration`.
+- **Ownership:** a status effect V already had from the game (a drink) is left alone. Ours is re-applied at most once
+  a second if the game takes it off early (for example camo decay, or a healing item clearing `DoT`-tagged effects).
+- **Stat modifiers:** these are the exact objects, removed from the entity they were added to.
+- **`Tick(active false)`:** takes everything off V and keeps the entries, so a potion survives a vehicle ride or a save.
+- **`Clear`:** does the same and also forgets infinite entries (86400 s). While Cyberblock is off, S1 drops `effect`
+  events, so the removal of an infinite effect could be missed. Timed entries are bounded by their own expiry.
