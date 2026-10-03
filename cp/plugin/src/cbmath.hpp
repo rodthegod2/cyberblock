@@ -27,6 +27,11 @@ namespace cb
 	Vec3 cp_to_mc_pos(double x, double y, double z);
 	/// Inverse of cp_to_mc_pos: Minecraft (x, y, z) -> Cyberpunk (x, -z, y). Directions map the same way.
 	Vec3 mc_to_cp_pos(double x, double y, double z);
+	/// A velocity or impulse (m/s) maps like a position, with no offset. A separate name so callers say what they mean.
+	Vec3 mc_vel_to_cp(double vx, double vy, double vz);
+	/// Minecraft yaw (degrees, 0 = facing +Z) -> Cyberpunk yaw (degrees, 0 = facing +Y, counter-clockwise from above):
+	/// a = 180 - m, normalised to (-180, 180]. The same formula maps back, as world::cp_yaw_to_mc_yaw does.
+	double mc_yaw_to_cp_yaw(double mcYaw);
 	/// The Cyberpunk box of Minecraft block (bx, by, bz): min (bx, -(bz+1), by), max (bx+1, -bz, by+1).
 	Aabb mc_block_to_cp_aabb(int bx, int by, int bz);
 	/// Cyberpunk camera forward: the quaternion (i, j, k, r) applied to local +Y.
