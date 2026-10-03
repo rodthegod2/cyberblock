@@ -50,7 +50,7 @@ final class VehicleHud {
 
 	private static HudElement gate(final HudElement element, final boolean hideInVehicle) {
 		return (graphics, deltaTracker) -> {
-			if (Cyberblock.active && (UiHud.covered() || hideInVehicle && HostState.vehicle())) {
+			if (UiHud.covered() || hideInVehicle && Cyberblock.active && HostState.vehicle()) {
 				return;
 			}
 

@@ -27,7 +27,7 @@ import net.minecraft.world.phys.AABB;
  * vehicles), Minecraft's own mobs, the minimap pins with vanilla map-decoration sprites, Steve's arrow in the middle and an
  * arrow on the edge toward the tracked objective. It turns with the host camera, so straight ahead is up.
  */
-final class RadarHud {
+public final class RadarHud {
 	static final int SIZE = 80;
 	static final int MARGIN = 4;
 	/** The parchment's border at this size: content is clipped inside it. */
@@ -55,7 +55,7 @@ final class RadarHud {
 	}
 
 	static void draw(final GuiGraphicsExtractor graphics, final DeltaTracker deltaTracker) {
-		Player player = UiHud.player();
+		Player player = UiHud.cornerPlayer();
 		if (player == null) {
 			return;
 		}
@@ -139,7 +139,7 @@ final class RadarHud {
 	}
 
 	/** Section 1.1 pin kinds to vanilla map-decoration sprites (ids in the map_decorations atlas of the 26.3 client jar). */
-	static Identifier pinSprite(final String kind) {
+	public static Identifier pinSprite(final String kind) {
 		return Identifier.withDefaultNamespace(switch (kind) {
 			case "quest" -> "target_x";
 			case "vendor" -> "desert_village";

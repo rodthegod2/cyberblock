@@ -53,10 +53,18 @@ public final class UiHud {
 		return minecraft.player;
 	}
 
-	/** A Cyberpunk menu is open and passed through (MenuFrameHud draws the frame; everything else returns early). */
+	/** The player for the big corner elements (radar, stats, job): also null while a Minecraft screen is open over them. */
+	static @Nullable Player cornerPlayer() {
+		return Minecraft.getInstance().gui.screen() != null ? null : player();
+	}
+
+	/**
+	 * A Cyberpunk menu is open and passed through, or Night City is loading: MenuFrameHud draws the frame or the cover, everything
+	 * else returns early.
+	 */
 	static boolean covered() {
 		HostState.Pose pose = HostState.frame();
-		return pose != null && pose.menu();
+		return pose != null && pose.menu() || UiModel.pass.equals("loading") && UiLink.recentlyLinked();
 	}
 
 	/**

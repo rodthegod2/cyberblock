@@ -3,6 +3,10 @@ package dev.cyberblock.client.ui;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.cyber.CyberwareScreen;
 import dev.cyberblock.client.cyber.SkillTreeScreen;
+import dev.cyberblock.client.ui.screen.AtlasScreen;
+import dev.cyberblock.client.ui.screen.JournalScreen;
+import dev.cyberblock.client.ui.screen.NightCityPauseScreen;
+import dev.cyberblock.client.ui.screen.PhoneScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
@@ -45,6 +49,10 @@ final class UiEvents {
 
 	private static @Nullable Screen screenFor(final String name, final LocalPlayer player) {
 		return switch (name) {
+			case "pause" -> new NightCityPauseScreen();
+			case "map" -> new AtlasScreen(null);
+			case "journal" -> new JournalScreen(null);
+			case "phone" -> new PhoneScreen(null);
 			case "inventory" -> new InventoryScreen(player);
 			case "skills" -> new SkillTreeScreen();
 			case "cyberware" -> new CyberwareScreen();

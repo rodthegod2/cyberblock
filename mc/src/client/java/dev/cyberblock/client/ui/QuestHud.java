@@ -29,7 +29,7 @@ final class QuestHud {
 
 	static void draw(final GuiGraphicsExtractor graphics, final DeltaTracker deltaTracker) {
 		UiModel.Quest quest = UiModel.quest;
-		Player player = UiHud.player();
+		Player player = UiHud.cornerPlayer();
 		if (quest == null || player == null) {
 			return;
 		}

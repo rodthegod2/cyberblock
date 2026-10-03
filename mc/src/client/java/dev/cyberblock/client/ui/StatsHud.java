@@ -32,7 +32,7 @@ final class StatsHud {
 
 	static void draw(final GuiGraphicsExtractor graphics, final DeltaTracker deltaTracker) {
 		UiModel.Stats stats = UiModel.stats;
-		if (stats == null || UiHud.player() == null) {
+		if (stats == null || UiHud.cornerPlayer() == null) {
 			return;
 		}
 

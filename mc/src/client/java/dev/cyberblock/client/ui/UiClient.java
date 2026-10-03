@@ -1,5 +1,6 @@
 package dev.cyberblock.client.ui;
 
+import dev.cyberblock.client.StatusReporter;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
@@ -20,5 +21,9 @@ public class UiClient implements ClientModInitializer {
 	private static void tick(final Minecraft minecraft) {
 		UiLink.tick();
 		Waypoints.tick(minecraft);
+		if (minecraft.gui.screen() == null) {
+			// every way out of the pause screen and the screens opened from it ends with no screen: Night City runs again
+			StatusReporter.nightCityPaused = false;
+		}
 	}
 }

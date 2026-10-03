@@ -15,12 +15,14 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Cyberpunk's notifications as Minecraft toasts (F12, section 1.11): every {@code notify} (an item icon per kind on vanilla's
- * system-toast sprite), the phone call (one toast that stays while it rings, "[T] Answer / hold [T] Reject") and the save
+ * advancement-toast sprite), the phone call (one toast that stays while it rings, "[T] Answer / hold [T] Reject") and the save
  * prompts ("Saving Night City..." then "Saved", one toast updated in place). It implements AllowedToast, the marker that lets it
  * past ToastManagerMixin, which still cancels every vanilla toast.
  */
 public final class CyberToast implements Toast, AllowedToast {
-	private static final Identifier BACKGROUND = Identifier.withDefaultNamespace("toast/system"); // nine-sliced, so the toast can grow (gui/sprites/toast/system.png.mcmeta)
+	/** Vanilla's advancement toast (a 160x32 stretch sprite): drawn in three horizontal pieces so a wider toast keeps its ends. */
+	private static final Identifier BACKGROUND = Identifier.withDefaultNamespace("toast/advancement");
+	private static final int SPRITE_W = 160, SPRITE_H = 32, END = 8;
 	private static final Object CALL = new Object();
 	private static final Object SAVE = new Object();
 	private static final long DEFAULT_MS = 5000L;
@@ -140,7 +142,12 @@ public final class CyberToast implements Toast, AllowedToast {
 
 	@Override
 	public void extractRenderState(final GuiGraphicsExtractor graphics, final Font font, final long fullyVisibleForMs) {
-		graphics.blitSprite(RenderPipelines.GUI_TEXTURED, BACKGROUND, 0, 0, this.width(), this.height());
+		if (UiHud.covered()) {
+			// a pass-through menu or the loading cover: only MenuFrameHud draws
+			return;
+		}
+
+		background(graphics, this.width);
 		graphics.fakeItem(this.icon, 8, 8);
 		int room = this.width - TEXT_X - 6;
 		if (this.text.getString().isEmpty()) {
@@ -149,6 +156,18 @@ public final class CyberToast implements Toast, AllowedToast {
 			graphics.text(font, font.substrByWidth(this.title, room).getString(), TEXT_X, 7, this.titleColour, false);
 			graphics.text(font, font.substrByWidth(this.text, room).getString(), TEXT_X, 18, McTheme.WHITE, false);
 		}
+	}
+
+	/** The left part of the sprite, its middle repeated, then its right end: the advancement toast at any width from 160 up. */
+	private static void background(final GuiGraphicsExtractor graphics, final int width) {
+		int left = SPRITE_W - END;
+		graphics.blitSprite(RenderPipelines.GUI_TEXTURED, BACKGROUND, SPRITE_W, SPRITE_H, 0, 0, 0, 0, Math.min(left, width - END), SPRITE_H);
+		for (int x = left; x < width - END; x += left - 2 * END) {
+			int piece = Math.min(left - 2 * END, width - END - x);
+			graphics.blitSprite(RenderPipelines.GUI_TEXTURED, BACKGROUND, SPRITE_W, SPRITE_H, END, 0, x, 0, piece, SPRITE_H);
+		}
+
+		graphics.blitSprite(RenderPipelines.GUI_TEXTURED, BACKGROUND, SPRITE_W, SPRITE_H, left, 0, width - END, 0, END, SPRITE_H);
 	}
 
 	/** Section 1.12 toast titles per kind, for a notification that came without one. */
