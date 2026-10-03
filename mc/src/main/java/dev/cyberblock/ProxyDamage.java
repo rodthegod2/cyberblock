@@ -50,15 +50,17 @@ public final class ProxyDamage {
 		};
 	}
 
-	/** A longer fire than the burn still running must beat vanilla's per-tick re-ignition by this much (ticks) to be reported again. */
+	/** A fire must be longer than the one the host was told of by this much (ticks) to be reported again while that one burns. */
 	static final int REIGNITE_MARGIN = 20;
 
 	/**
-	 * Whether a fire of remainingTicks is for the host to hear: when no earlier ignition is still burning (cooldownTicks left), or when this one
-	 * outlasts it by more than a second (lava after flint and steel). Vanilla sets the same fire again every tick; those are not new.
+	 * Whether a fire of remainingTicks is for the host to hear: when the earlier ignition has burnt out (cooldownTicks left of the
+	 * reportedTicks it was told), or when this one is longer than that by more than a second (lava after flint and steel). Vanilla sets
+	 * the same fire again every tick an entity stands in lava or a flame: measured against the length reported (not what is left of it)
+	 * those are never new, and one that goes on is reported once more when the host's burn has run out.
 	 */
-	public static boolean igniteDue(final int cooldownTicks, final int remainingTicks) {
-		return cooldownTicks <= 0 || remainingTicks > cooldownTicks + REIGNITE_MARGIN;
+	public static boolean igniteDue(final int cooldownTicks, final int reportedTicks, final int remainingTicks) {
+		return cooldownTicks <= 0 || remainingTicks > reportedTicks + REIGNITE_MARGIN;
 	}
 
 	/**

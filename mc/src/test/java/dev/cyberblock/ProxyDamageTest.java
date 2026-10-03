@@ -41,18 +41,29 @@ class ProxyDamageTest {
 
 	@Test
 	void anIgnitionIsReportedOnceUntilItHasBurntOut() {
-		assertTrue(ProxyDamage.igniteDue(0, 160), "flint and steel on a dry NPC");
-		assertFalse(ProxyDamage.igniteDue(160, 160), "the same fire set again the next tick");
-		assertFalse(ProxyDamage.igniteDue(159, 160), "vanilla re-sets it every tick of a flame");
-		assertFalse(ProxyDamage.igniteDue(100, 120), "within a second of what is burning");
+		assertTrue(ProxyDamage.igniteDue(0, 0, 160), "flint and steel on a dry NPC");
+		assertFalse(ProxyDamage.igniteDue(159, 160, 160), "the same fire set again the next tick");
+		assertFalse(ProxyDamage.igniteDue(100, 160, 160), "flint and steel again while it burns");
+		assertFalse(ProxyDamage.igniteDue(100, 160, 180), "within a second of what the host was told");
+		assertFalse(ProxyDamage.igniteDue(100, 300, 160), "a shorter fire while a longer one burns");
+	}
+
+	/** Lava (and a flame block) sets the same fire again every tick: that must not be reported again and again as the report's burn runs down. */
+	@Test
+	void standingInLavaIsReportedOnceUntilTheBurnRunsOut() {
+		for (int tick = 1; tick < 300; tick++) {
+			assertFalse(ProxyDamage.igniteDue(300 - tick, 300, 300), "tick " + tick + " in lava");
+		}
+
+		assertTrue(ProxyDamage.igniteDue(0, 300, 300), "the host's 15 s are up and the NPC is still in the lava");
 	}
 
 	@Test
 	void aLongerFireIsReportedWhileAShorterOneBurns() {
 		// flint and steel (8 s) and then lava (15 s): the host must hear of the 15 s, not wait for the 8 s to end
-		assertTrue(ProxyDamage.igniteDue(100, 300));
-		assertTrue(ProxyDamage.igniteDue(160, 181));
-		assertFalse(ProxyDamage.igniteDue(160, 180));
+		assertTrue(ProxyDamage.igniteDue(100, 160, 300));
+		assertTrue(ProxyDamage.igniteDue(100, 160, 181));
+		assertFalse(ProxyDamage.igniteDue(100, 160, 180));
 	}
 
 	@Test

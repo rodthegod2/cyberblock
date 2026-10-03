@@ -44,6 +44,8 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	private static final float ITEM_IGNITE_SECONDS = 8.0F;
 	/** Cyberpunk's NPC burns for the reported time: the same ignition is not reported again until it has run out (a longer one is). */
 	private int igniteCooldown;
+	/** How long the burn the host was last told of is: a fire has to be longer than this to be reported while it burns. */
+	private int igniteReported;
 	private int damageCooldown;
 	private float lastDamage;
 	private long proxyId;
@@ -122,9 +124,10 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	public void setRemainingFireTicks(final int remainingTicks) {
 		if (remainingTicks <= 0 || !(this.level() instanceof ServerLevel)) {
 			super.setRemainingFireTicks(remainingTicks);
-		} else if (ProxyDamage.igniteDue(this.igniteCooldown, remainingTicks)) {
+		} else if (ProxyDamage.igniteDue(this.igniteCooldown, this.igniteReported, remainingTicks)) {
 			ProxyManager.ignite(this, remainingTicks / 20.0);
 			this.igniteCooldown = remainingTicks;
+			this.igniteReported = remainingTicks;
 		}
 	}
 
