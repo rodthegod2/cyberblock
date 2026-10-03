@@ -579,8 +579,15 @@ namespace cb::ui
 
 		const bool active = cb::natives::active;
 		static bool wasActive = false;
-		if (std::exchange(wasActive, active) && !active)
+		const bool wasOn = std::exchange(wasActive, active);
+		if (wasOn && !active)
 			unpause("off");
+		if (!wasOn && active)
+		{
+			// Minecraft may have dropped the HUD while Cyberblock was Off: the script's next poll sends everything again
+			std::lock_guard<std::mutex> lock(g_lock);
+			g_gates.reset();
+		}
 		actions().set_pause(active && cb::link().linked() && cb::world::minecraft_pause());
 		if (!active && actions().empty())
 			return;

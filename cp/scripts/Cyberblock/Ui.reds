@@ -31,6 +31,8 @@ public class CyberblockUiService extends ScriptableService {
   // The in-game menu controller (Menus.reds) and the one-shot bypass for the escape hatch.
   public let menuController: wref<gameuiInGameMenuGameController>;
   public let bypass: Bool;
+  public let bypassSeenMenu: Bool;
+  public let bypassWait: Int32;
   // The pass-through name Minecraft was told last (Restyle.reds).
   public let pass: CName;
   // Notification controllers waiting for their data (Notifications.reds) and the pump passes each waited.
@@ -53,6 +55,29 @@ public class CyberblockUiService extends ScriptableService {
   public func ForeignPause() -> Bool {
     let requests = this.Requests();
     return IsDefined(requests) && requests.IsGamePaused() && !this.pausedByUs;
+  }
+}
+
+// Called by Cyberblock.dll (cb::ui::pump, game thread, up to 30 Hz, also while the game is paused, while Cyberblock is
+// On or actions wait): drains the UI actions and keeps the ink layers hidden even while the DelaySystem tick stands
+// still (pauses, menus). Menus.reds handles each action.
+public abstract class CyberblockUi {
+  public static func Pump() -> Void {
+    let game = GetGameInstance();
+    let system = CyberblockSystem.Get(game);
+    let on = IsDefined(system) && system.UiOn();
+    let action = Cyberblock_NextUiAction();
+    let guard = 0;
+    while NotEquals(action, n"") && guard < 32 {
+      CyberblockMenus.Act(game, action, on);
+      action = Cyberblock_NextUiAction();
+      guard += 1;
+    }
+    CyberblockMenus.UpdateBypass(game);
+    if IsDefined(GetPlayer(game)) {
+      CyberblockInk.Apply(game, on);
+      CyberblockNotifications.Poll(game, on);
+    }
   }
 }
 
