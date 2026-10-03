@@ -45,6 +45,11 @@ public final class Hacking {
 		locked = new Locked(target, device, System.nanoTime() + LOCK_NANOS);
 	}
 
+	/** A `scaninfo` without ok: the hack key now points at nothing, so quickhacks no longer go to the earlier target. */
+	public static void unlock() {
+		locked = null;
+	}
+
 	/** The locked target, or null when none was scanned in the last 5 s. Wall time: a Sandevistan slowing the ticks does not stretch it. */
 	public static @Nullable Locked locked() {
 		Locked l = locked;

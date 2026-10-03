@@ -126,7 +126,10 @@ final class CyberLink {
 		}
 	}
 
-	/** {"t":"scaninfo",...}: drawn on the client; a target that is there becomes the locked one on the server. */
+	/**
+	 * {"t":"scaninfo",...}: drawn on the client; a target that is there becomes the locked one on the server, and nothing there
+	 * drops the lock (the tooltip goes too), so a quickhack never flies at a target the crosshair has left.
+	 */
 	private static void scanInfo(final JsonObject m) {
 		ScanInfo info = ScanInfo.parse(m);
 		if (info == null) {
@@ -137,6 +140,8 @@ final class CyberLink {
 		ScanClient.onInfo(info);
 		if (info.ok()) {
 			onServer(() -> Hacking.lock(info.target(), info.device()));
+		} else {
+			onServer(Hacking::unlock);
 		}
 	}
 }

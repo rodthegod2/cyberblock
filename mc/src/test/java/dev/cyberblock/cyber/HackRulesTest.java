@@ -65,6 +65,17 @@ class HackRulesTest {
 		}
 	}
 
+	/** A scan that finds the target locks it for 5 s; a scan that finds nothing drops the lock at once (netrun-6). */
+	@Test
+	void aScanOfNothingDropsTheLock() {
+		Hacking.lock(42L, false);
+		Hacking.Locked lock = Hacking.locked();
+		assertNotNull(lock);
+		assertEquals(42L, lock.target());
+		Hacking.unlock();
+		assertNull(Hacking.locked());
+	}
+
 	@Test
 	void hackJson() {
 		assertEquals("{\"t\":\"hack\",\"id\":12,\"target\":\"9876543210\",\"hack\":\"short_circuit\",\"chain\":false}",
