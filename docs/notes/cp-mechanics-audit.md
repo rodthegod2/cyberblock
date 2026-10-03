@@ -49,7 +49,8 @@ Each claim is marked with one of these tags:
    hack's damage, VFX and SFX live in its status effect record, so applying the effect directly also works.
 5. **The damage hook in Health.reds matches 2.31** [C]. There are three gaps: damage-over-time effects never land on
    V (because the god mode makes V immune to debuffs), instant-kill hits bypass the hook, and the death landing
-   needs an in-game check. A fix for the first gap is compile-checked (Appendix, `IsImmune` wrap).
+   needs an in-game check. A fix for the first gap is compile-checked (Appendix, `IsImmune` wrap); the second is
+   wrapped since fix package C (`ProcessInstantKill`, D gap 2), in-game check pending.
 
 ---
 
@@ -371,8 +372,15 @@ Caveats:
    - **Mechanism:** `ProcessInstantKill` sets V's Health pool to its minimum directly
      (`RequestSettingStatPoolMinValue`, `:439–450`) during `PreProcess`, whatever the god mode, and flags the hit
      `DealNoDamage`.
-   - **Effect:** it is never reported to Steve.
-   - **Open question:** whether the native stat-pool system honours god mode is [G-9].
+   - **Who sets the flag:** `Attacks.DriverKill` on the driver of a car under fire (`vehicles.swift:1092`), lethal
+     vehicle impacts (`vehicleComponent.swift:2056`), `CanInstaKillNPCs` (`damageManager.swift:32`, NPC targets).
+   - **Effect:** it was never reported to Steve, and V could die.
+   - **Addressed (fix package C, health-6):** `Health.reds` wraps `private final func ProcessInstantKill(hitEvent:
+     ref<gameHitEvent>) -> Void` (2.31 signature). While `CyberblockHealth.Covers` holds (Active, or the Vehicle
+     state's `n"CyberblockVehicle"` god mode), a non-projected hit with `hitFlag.Kill` gets `DealNoDamage` (source
+     `instant_kill`, as vanilla), V's pool is not touched, and Steve gets `dmg` 4.0 (`other`, from the hit's source or
+     instigator via `From`). With V's `IsInvulnerable` stat set it is only logged. Every other case is vanilla.
+   - **Status:** compile-checked; in-game check pending [G-9, kill test].
 3. **Damage that never goes through the pipeline is not reported** [C]. Examples:
    - Overclock's health payment (`quickHackableHelper.swift:261`). It is disabled while Active.
    - The multiplayer-only `ProcessDamageEvents` (`player.swift:5313`).
@@ -420,10 +428,14 @@ Each check is concrete. Where possible it uses the CET console (Lua) and a save 
   `OpticalCamoPlayerBuffRare` and compare.
 - **G-8 Visibility.** Add `Visibility ×0.5`, crouch-walk towards an idle guard, and compare the detection meter fill
   time with and without it.
-- **G-9 Lethal paths under Cyberblock god mode.**
+- **G-9 Lethal paths under Cyberblock god mode.** The instant-kill path (D gap 2) is now wrapped (fix package C);
+  both tests below are still to be run.
   - **Fall test:** jump from a megabuilding roof (DeathLand). Expect V to survive and Steve to get `fall` damage with
     a frac of about 4.
-  - **Kill test:** find a scripted kill, or apply `BaseStatusEffect.ForceKill` in a throwaway save. Does V die?
+  - **Kill test:** find a scripted kill, or apply `BaseStatusEffect.ForceKill` in a throwaway save; or, in the
+    Vehicle state, let gangers shoot up V's car until `Attacks.DriverKill` fires. Expect V to live, the log line
+    `dmg instant kill reported as other x4 ...` and Steve to die. A kill that does not go through
+    `ProcessInstantKill` (`ForceKill` may not) is another path, to be noted here.
 - **G-10 DoT wrap.** Let an NPC with an incendiary weapon (or a Burning-applicator) hit V. Expect several `dmg fire`
   log lines from one ignition, and V's Health unchanged.
 - **G-11 Camo perks.** With a camo slide or grapple perk owned and `CanUseOpticalCamo ×0` applied: does sliding still

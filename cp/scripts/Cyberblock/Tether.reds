@@ -1,20 +1,26 @@
 // Leads, fishing-rod pulls and wind-charge knockback on Night City (plan 2026-10-03 section 1.4, S2.5). All pushes
 // are CyberblockEffects.Knock impulses (m/s, Cyberpunk space): a person is knocked over into a ragdoll by 4 m/s and
 // more (ScriptedPuppet.CanRagdoll), a vehicle gets the impulse times its mass. Targets the effects leave alone (V,
-// V's car, god modes, V's friends, workspots, scenes: CyberblockEffects.IsProtected, as Hit) are never pushed.
+// V's car, god modes, V's friends, workspots: CyberblockEffects.IsProtected, as Hit) are never pushed; the log names
+// each of them at most every 10 s with the reason (CyberblockEffects.Withheld).
 //   Lead: every tick, a target farther than length from its anchor (the knot, or V when Steve holds the lead) is
-//     tugged toward it at min(12, 3 x excess) m/s, at most every 0.5 s per target (each tug is a velocity change; at
-//     10 Hz they would add up to a throw). More than length + 12 m for 2 s, or the target gone: Cyberblock_Unlead.
+//     tugged toward it (each tug is a velocity change; at 10 Hz they would add up to a throw). A vehicle: at
+//     min(12, 3 x excess) m/s, at most every 0.5 s. A person: only once excess > 0.5 m, at clamp(3 x excess, 4, 8)
+//     m/s, at most every 1.5 s; below 4 m/s nothing moves a person, from 11 m/s the ragdoll's impact kills.
+//     More than length + 12 m for 2 s, or the target gone: Cyberblock_Unlead.
 //   Pull: one impulse toward the rod at strength, plus 3 m/s up for people.
-//   Knockback: a radial impulse of strength x (1 - d / radius) on every NPC and vehicle within radius; no damage.
+//   Knockback: a radial impulse of strength x (1 - d / radius) on every NPC and vehicle within radius, d measured to
+//     the closest point of a 1.8 m column above its feet; no damage.
 // Tethers are plain data (ids and numbers) with nothing of theirs in Night City, so Clear only restarts their timers;
 // Tick with live false drops them silently (contract); a target that no longer exists is unleaded on the next live
 // tick. A save keeps them: CyberblockSystem does not tick tethers while it is written (only ClearWorld's Clear runs).
 //
-// Which NPCs and vehicles exist: no 2.31 script query lists them (see Npcs.reds), so this service keeps its own
-// registry from Codeware's entity lifecycle callbacks Entity/AfterAttach and Entity/Detach, filtered with
-// EntityTarget.Type(n"NPCPuppet" | n"vehicleBaseObject") exactly as Npcs.reds, registered when the service loads
-// (Codeware ScriptableService OnLoad; callbacks registered by a service stay registered, Codeware wiki).
+// Which NPCs and vehicles exist: no 2.31 script query lists them (see Npcs.reds), so this service keeps the registry
+// (Known) from Codeware's entity lifecycle callbacks Entity/AfterAttach and Entity/Detach, filtered with
+// EntityTarget.Type(n"NPCPuppet" | n"vehicleBaseObject"), registered when the service loads (Codeware
+// ScriptableService OnLoad; callbacks registered by a service stay registered, Codeware wiki) with
+// CallbackLifetime.Forever, and re-registered whenever IsRegistered says a handler is gone. The NPC list sent to
+// Minecraft (Npcs.reds) reads the same registry.
 //
 // 2.31 + Codeware APIs (decompiled 2.31 scripts, Codeware.Global.reds; compile-checked): CallbackSystem.
 // RegisterCallback + CallbackSystemHandler.AddTarget/SetLifetime(CallbackLifetime.Forever)/IsRegistered,
@@ -33,7 +39,7 @@ public abstract class CyberblockTether {
   public static func Pull(game: GameInstance, target: Uint64, toward: Vector4, strength: Float) -> Void {
     let object = CyberblockEffects.Find(game, target);
     let player = GetPlayer(game);
-    if !IsDefined(object) || !IsDefined(player) || strength <= 0.0 || CyberblockEffects.IsProtected(game, object, player) {
+    if !IsDefined(object) || !IsDefined(player) || strength <= 0.0 || CyberblockEffects.Withheld(game, object, player) {
       return;
     }
     let impulse = CyberblockTetherService.Toward(object.GetWorldPosition(), toward) * MinF(strength, 50.0);
@@ -137,26 +143,36 @@ public class CyberblockTetherService extends ScriptableService {
     }
     center = new Vector4(center.X, center.Y, center.Z, 1.0);
     let pushed = 0;
+    for object in this.Known() {
+      // Measured to the closest point of the body (a 1.8 m column above the feet): a charge bursting at someone's
+      // feet or head is as close as one at their chest.
+      let feet = object.GetWorldPosition();
+      let middle = new Vector4(feet.X, feet.Y, ClampF(center.Z, feet.Z, feet.Z + 1.8), 1.0);
+      let d = Vector4.Distance(center, middle);
+      if d < radius && CyberblockTetherService.Pushable(game, object, player) {
+        let direction = CyberblockTetherService.Toward(center, middle);
+        if Vector4.IsZero(direction) {
+          direction = new Vector4(0.0, 0.0, 1.0, 0.0);
+        }
+        CyberblockEffects.Knock(object, middle, direction * (MinF(strength, 50.0) * (1.0 - d / radius)));
+        pushed += 1;
+      }
+    }
+    Cyberblock_Log(s"tether: knockback radius \(radius) strength \(strength), \(pushed) pushed");
+  }
+
+  // The NPCs and vehicles attached to the world now: the registry with the entities gone since dropped. CyberblockNpcs
+  // (Npcs.reds) reads it too, so there is one registry.
+  public func Known() -> array<wref<GameObject>> {
+    this.Listen();
     let i = ArraySize(this.known) - 1;
     while i >= 0 {
-      let object = this.known[i];
-      if !IsDefined(object) {
+      if !IsDefined(this.known[i]) {
         ArrayErase(this.known, i);
-      } else {
-        let middle = object.GetWorldPosition() + new Vector4(0.0, 0.0, 1.0, 0.0);
-        let d = Vector4.Distance(center, middle);
-        if d < radius && CyberblockTetherService.Pushable(game, object, player) {
-          let direction = CyberblockTetherService.Toward(center, middle);
-          if Vector4.IsZero(direction) {
-            direction = new Vector4(0.0, 0.0, 1.0, 0.0);
-          }
-          CyberblockEffects.Knock(object, middle, direction * (MinF(strength, 50.0) * (1.0 - d / radius)));
-          pushed += 1;
-        }
       }
       i -= 1;
     }
-    Cyberblock_Log(s"tether: knockback radius \(radius) strength \(strength), \(pushed) pushed");
+    return this.known;
   }
 
   private func Follow(game: GameInstance, player: ref<PlayerPuppet>, slot: Int32, now: Float) -> Void {
@@ -182,16 +198,23 @@ public class CyberblockTetherService extends ScriptableService {
     } else {
       this.farSince[slot] = -1.0;
     }
+    // A person moves only as a ragdoll (Knock: 4 m/s and more), and a ragdoll's impact at 11 m/s or more kills it
+    // (DamageSystem.ProcessRagdollHit, AIGeneralSettings.ragdollImpactKillVelocityThreshold). So a person is tugged
+    // only once 0.5 m beyond the lead, at 4 to 8 m/s, at most every 1.5 s (time to land before the next tug).
+    let vehicle = IsDefined(object as VehicleObject);
     let excess = distance - length;
-    if excess <= 0.0 || now - this.lastTug[slot] < 0.5 && now >= this.lastTug[slot] {
+    let slack = vehicle ? 0.0 : 0.5;
+    let interval = vehicle ? 0.5 : 1.5;
+    if excess <= slack || now - this.lastTug[slot] < interval && now >= this.lastTug[slot] {
       return;
     }
-    if CyberblockEffects.IsProtected(game, object, player) {
+    if CyberblockEffects.Withheld(game, object, player) {
       return;
     }
     this.lastTug[slot] = now;
     let direction = CyberblockTetherService.Toward(position, anchor);
-    let impulse = direction * MinF(12.0, 3.0 * excess);
+    let speed = vehicle ? MinF(12.0, 3.0 * excess) : ClampF(3.0 * excess, 4.0, 8.0);
+    let impulse = direction * speed;
     CyberblockEffects.Knock(object, position + new Vector4(0.0, 0.0, 1.0, 0.0), new Vector4(impulse.X, impulse.Y, impulse.Z, 0.0));
   }
 
@@ -217,7 +240,7 @@ public class CyberblockTetherService extends ScriptableService {
         return false;
       }
     }
-    return !CyberblockEffects.IsProtected(game, object, player);
+    return !CyberblockEffects.Withheld(game, object, player);
   }
 
   // Unit direction from one point to another, w 0 (positions from the DLL and the game may differ in w).
@@ -254,8 +277,8 @@ public class CyberblockTetherService extends ScriptableService {
     ArrayClear(this.lastTug);
   }
 
-  // Registered once when the service loads; re-registered if a handler is ever gone.
-  private func Listen() -> Void {
+  // Registered once when the service loads; re-registered if a handler is ever gone. Cheap to call again.
+  public func Listen() -> Void {
     let callbacks = GameInstance.GetCallbackSystem();
     if !IsDefined(callbacks) {
       return;

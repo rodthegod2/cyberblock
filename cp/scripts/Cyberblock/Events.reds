@@ -23,9 +23,17 @@
 //     answer to every request);
 //   - everything else refers to a moment that has passed and is dropped (counted in the log).
 //
-// 2.31 APIs: none beyond the natives (Natives.reds) and redscript array intrinsics.
+// Hits, leads and pulls are logged with target and amount, at most one line per kind per second (Note).
+//
+// 2.31 APIs: none beyond the natives (Natives.reds), redscript array intrinsics and the simulation clock
+// (CyberblockEffectsService.Now, TimeSystem.GetSimTime).
 
 public class CyberblockEvents {
+  // Rate limit of Note, per event kind (parallel arrays): when the last line was written, and how many were not since.
+  private let noteKinds: array<CName>;
+  private let noteAt: array<Float>;
+  private let noteSkipped: array<Int32>;
+
   // live: state is Active or Vehicle, with a player (never called while a save is written).
   public func Tick(game: GameInstance, live: Bool) -> Void {
     let dropped = 0;
@@ -55,7 +63,7 @@ public class CyberblockEvents {
             dropped += 1;
           }
         } else {
-          CyberblockEvents.Apply(game, kind);
+          this.Apply(game, kind);
         }
       }
     }
@@ -64,21 +72,25 @@ public class CyberblockEvents {
     }
   }
 
-  // The events that act on Night City, only while live.
-  private static func Apply(game: GameInstance, kind: CName) -> Void {
+  // The events that act on Night City, only while live. Hits, leads and pulls are noted in the log (target and
+  // amount), so a proxy that Minecraft hits, leashes or hooks can be followed to its NPC or vehicle.
+  private func Apply(game: GameInstance, kind: CName) -> Void {
     if Equals(kind, n"explosion") {
       CyberblockEffects.Explode(game, Cyberblock_EventPos(), Cyberblock_EventAmount(), Cyberblock_EventFlag());
     } else if Equals(kind, n"hit") {
+      this.Note(game, kind, s"target \(Cyberblock_EventTarget()) amount \(Cyberblock_EventAmount()) by mob \(Cyberblock_EventId())");
       CyberblockEffects.HitFrom(game, Cyberblock_EventTarget(), Cyberblock_EventAmount(), Cyberblock_EventVector(), Cyberblock_EventId());
     } else if Equals(kind, n"ignite") {
       CyberblockEffects.Ignite(game, Cyberblock_EventTarget(), Cyberblock_EventAmount());
     } else if Equals(kind, n"teleport") {
       CyberblockEffects.Teleport(game, Cyberblock_EventPos(), Cyberblock_EventAmount());
     } else if Equals(kind, n"lead") {
+      this.Note(game, kind, s"target \(Cyberblock_EventTarget()) amount \(Cyberblock_EventAmount())");
       CyberblockTether.Lead(game, Cyberblock_EventTarget(), Cyberblock_EventPos(), Cyberblock_EventFlag(), Cyberblock_EventAmount());
     } else if Equals(kind, n"lead_release") {
       CyberblockTether.Release(game, Cyberblock_EventTarget());
     } else if Equals(kind, n"pull") {
+      this.Note(game, kind, s"target \(Cyberblock_EventTarget()) amount \(Cyberblock_EventAmount())");
       CyberblockTether.Pull(game, Cyberblock_EventTarget(), Cyberblock_EventPos(), Cyberblock_EventAmount());
     } else if Equals(kind, n"knock") {
       CyberblockTether.Knockback(game, Cyberblock_EventPos(), Cyberblock_EventAmount(), Cyberblock_EventExtra());
@@ -93,6 +105,30 @@ public class CyberblockEvents {
     } else {
       Cyberblock_Log(s"events: unknown kind \(NameToString(kind)) ignored");
     }
+  }
+
+  // 'events: <kind> <detail>', at most one line per kind per second; the line after a quiet spell counts the events
+  // of that kind it left out, so a fight cannot flood the log.
+  private func Note(game: GameInstance, kind: CName, detail: String) -> Void {
+    let now = CyberblockEffectsService.Now(game);
+    let i = ArrayFindFirst(this.noteKinds, kind);
+    if i < 0 {
+      ArrayPush(this.noteKinds, kind);
+      ArrayPush(this.noteAt, 0.0);
+      ArrayPush(this.noteSkipped, 0);
+      i = ArraySize(this.noteKinds) - 1;
+    } else {
+      // Simulation time restarts with a session: an older stamp ahead of now does not hold the line back.
+      let age = now - this.noteAt[i];
+      if age >= 0.0 && age < 1.0 {
+        this.noteSkipped[i] += 1;
+        return;
+      }
+    }
+    let more = this.noteSkipped[i] > 0 ? s" (\(this.noteSkipped[i]) more \(NameToString(kind)) events not logged before it)" : "";
+    Cyberblock_Log(s"events: \(NameToString(kind)) \(detail)\(more)");
+    this.noteAt[i] = now;
+    this.noteSkipped[i] = 0;
   }
 
   // Answers a hack or scan request that arrives while not live; false for every other kind.

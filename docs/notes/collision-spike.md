@@ -62,21 +62,41 @@ NPC (Static) and vehicles (VehicleBlocker). It is what Night City's buildings us
 would avoid the probe side effect below, but no NPC preset collides with `NPCBlocker`, so pedestrians would walk
 through it.
 
-The explicit masks are the ones entSpawner ships for its default preset (World Static): simulation
-`mask1 = 114696` (0x1C008: 4 type bits), `mask2 = 23627` (0x5C4B: 8 bits, matching the 8 groups of the World Static
-mask), query `mask1 = 0`, `mask2 = 70107400` (0x42DC008: the 4 type bits plus 4 more). Whether the engine resolves
-`preset` at runtime or reads the masks, both describe World Static. `SimulationFilter.SimulationFilter_BuildFromPreset`
-exists (native, unused by vanilla scripts); `Collision.reds` logs its result for World Static once, so the log
-shows whether it matches the constants.
+### The masks (fixed 2026-10-03, fix package C, world-3)
+
+The first version hard-coded the masks entSpawner ships for World Static: simulation `mask1 = 114696` (0x1C008),
+`mask2 = 23627` (0x5C4B), query `mask1 = 0`, `mask2 = 70107400` (0x42DC008). The in-game log of 2026-10-03 showed
+that 2.31 builds different ones: `SimulationFilter.SimulationFilter_BuildFromPreset(f, n"World Static")` gave
+`376836/5070` (0x5C004: 5 type bits, the five CollisionType groups including NPCBlocker; 0x13CE: 8 bits, the eight
+CollisionMask groups). entSpawner's constants are an older group bit layout (Static at bit 3 instead of 2, no
+NPCBlocker), so the boxes carried the wrong groups.
+
+`Collision.reds` now builds both from the engine at runtime and logs them once
+(`collision: World Static filters from the engine: simulation m1/m2, query m1/m2`):
+
+- simulation: `SimulationFilter.SimulationFilter_BuildFromPreset(simulation, n"World Static")`;
+- query: `QueryFilter.ZERO()` plus `QueryFilter.AddGroup` for each World Static QueryDetect group: `Static`,
+  `Visibility`, `Shooting`, `VehicleBlocker`, `PhotoModeCamera`, `TankBlocker`, `PlayerBlocker`.
+
+Evidence for the query side:
+
+| Fact | Source |
+|---|---|
+| World Static QueryDetect is exactly those seven groups (VehicleBlocker is listed twice in the file) | 2.31 `engine\physics\collision_presets.json` (CR2W `physicsCollisionPresetsResource`), decoded again 2026-10-03 in a scratch folder, not kept |
+| `Static`, `PlayerBlocker` and `VehicleBlocker` are group names vanilla scripts pass to `QueryFilter.AddGroup` / `RaycastWithASingleGroup` / `OverlapWithASingleGroup` | decompiled 2.31 scripts (`spatialQueriesSystem.swift`, `defaultTransition.swift`, `locomotionTransitions.swift`) |
+| The native `QueryFilter.AddGroup` looks the name up in the engine's group table and ORs `1 << index` into `mask2` (offset 8); an unknown name adds nothing | 2.31 `Cyberpunk2077.exe`, the native registered under the name `AddGroup` (read-only disassembly, nothing kept) |
+| Colliders keep QueryDetect in the query `mask2` with `mask1 = 0` | entSpawner's World Static constants above (query `0/0x42DC008`) |
+
+So the logged query filter should read `0/<7 bits>`; fewer than seven bits would mean a group name the engine does not
+know. `filter.preset = n"World Static"` is kept as well, as cooked colliders do.
 
 ## Side effects the integrator must know
 
 - **Probes see the boxes.** World Static is query-detected as `Static`, and `Probes.reds` raycasts `Static` +
-  `Terrain`. Down rays will report the tops of Minecraft blocks as ground, wall rays their faces (a face hit at an
+  `Terrain`. Down rays would report the tops of Minecraft blocks as ground, wall rays their faces (a face hit at an
   exact integer coordinate can floor into the air cell in front of the block, so Minecraft may put a barrier there),
-  and `Cyberblock_SetAim` will stop at a block's own face. Fix in `Probes.reds` (S1/integrator, not S2): ignore a hit
-  when `TraceResult.GetHitEntity(result)` (Codeware) is one of ours:
-  `GameInstance.GetStaticEntitySystem().IsTagged(entity.GetEntityID(), n"CyberblockCollision")`.
+  and `Cyberblock_SetAim` would stop at a block's own face. Done: `Probes.reds` and `Projectiles.reds` ignore a hit
+  whose entity (`TraceResult.GetHitEntity`, Codeware) carries the `CyberblockCollision` tag.
   Excluding `Static` from the boxes' query filter instead is not safe: it is unknown whether NPC movement uses the
   query filter, and NPCs are the main target.
 - **Traffic.** Traffic cars follow lanes. `dynamicTrafficSetting.impact = Blocking` is the per-collider switch the
@@ -123,6 +143,11 @@ local g = Game.GetPlayer():GetGame(); local p = Game.GetPlayer():GetWorldPositio
 CyberblockCollision.Add(g, Vector4.new(math.floor(p.x) + 2, math.floor(p.y), math.floor(p.z), 1))
 CyberblockCollision.Stream(g, p)
 ```
+Status 2026-10-03: check 1 seen in the user's session (boxes spawned, nothing reported visible). Checks 2-4 are still
+pending, and must be redone with the engine-built masks of fix package C (the earlier boxes carried an older bit
+layout). Also check that the first box logs `collision: World Static filters from the engine: simulation
+376836/5070, query 0/<mask with 7 bits>`.
+
 1. Nothing is visible 2 m east of V; `red4ext/logs/Cyberblock.log` has the `collision:` lines.
 2. Walking east, V is stopped by the box; jumping on it works.
 3. Repeat with a wall of 5 boxes across a pavement: a pedestrian walking into it stops (does not pass through).

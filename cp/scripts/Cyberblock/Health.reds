@@ -1,6 +1,7 @@
 // Steve's health is the only health. While Active, V is Invulnerable through our god mode (source n"Cyberblock",
-// PlayerState.reds), yet every hit the game aims at V still runs through the damage pipeline to its would-be damage,
-// which goes to Minecraft (Cyberblock_Damage -> dmg {frac, kind, from}) instead of to V.
+// PlayerState.reds), and in the Vehicle state through n"CyberblockVehicle" (CyberblockCreative below), yet every hit
+// the game aims at V still runs through the damage pipeline to its would-be damage, which goes to Minecraft
+// (Cyberblock_Damage -> dmg {frac, kind, from}) instead of to V.
 //
 // 2.31 damage pipeline (decompiled scripts, DamageSystem): ProcessPipeline -> PreProcess -> InvulnerabilityCheck adds
 // hitFlag.DealNoDamage (source n"invulnerable") for an Invulnerable target, and Process returns early on that flag, so
@@ -21,8 +22,9 @@
 // Damage over time (burning, poison, shock) also reaches Steve: the IsImmune wrap below lets DoT debuffs land on V
 // while only our god mode protects V, and their ticks come through DealDamages like any hit.
 //
-// APIs: DamageSystem.InvulnerabilityCheck(ref<gameHitEvent>, ref<CacheData>) and DealDamages(ref<gameHitEvent>)
-// (private final, scripted), AttackData.HasFlag/RemoveFlag(hitFlag, CName)/GetAttackType/GetSource/GetInstigator/
+// APIs: DamageSystem.InvulnerabilityCheck(ref<gameHitEvent>, ref<CacheData>), DealDamages(ref<gameHitEvent>) and
+// ProcessInstantKill(ref<gameHitEvent>) (private final, scripted), gameHitEvent.projectionPipeline,
+// AttackData.HasFlag/AddFlag/RemoveFlag(hitFlag, CName)/GetAttackType/GetSource/GetInstigator/
 // GetAttackDefinition, IAttack.GetRecord() -> wref<Attack_Record>, gameAttackComputed.GetTotalAttackValue(
 // gamedataStatPoolType.Health)/GetDominatingDamageType, GodModeSystem.GetGodModeSources(EntityID, gameGodModeType)
 // -> array<CName>, StatsSystem.GetStatValue(StatsObjectID, gamedataStatType.Health | IsInvulnerable) (max health as in
@@ -46,6 +48,24 @@ private final func InvulnerabilityCheck(hitEvent: ref<gameHitEvent>, cache: ref<
 private final func DealDamages(hitEvent: ref<gameHitEvent>) -> Void {
   if CyberblockHealth.Covers(hitEvent.target) {
     CyberblockHealth.Report(hitEvent);
+    return;
+  }
+  wrappedMethod(hitEvent);
+}
+
+// Audit D gap 2 / G-9 (docs/notes/cp-mechanics-audit.md): for a hit flagged hitFlag.Kill (scripted kills, a vehicle
+// destroyed with its driver inside, ...), vanilla ProcessInstantKill (damageSystem.swift:439, private final, called from
+// ModifyHitData during PreProcess) sets the target's Health pool to its minimum directly
+// (StatPoolsSystem.RequestSettingStatPoolMinValue), whatever the god mode, and flags the hit DealNoDamage, so it never
+// reaches DealDamages. While Covers holds, V's pool is left alone: the hit is flagged DealNoDamage (source
+// n"instant_kill", as vanilla), so Process stops before DealDamages, and Steve gets 4 x his max health instead (unless
+// V's IsInvulnerable stat is set, which keeps Steve unharmed as in the InvulnerabilityCheck wrap). Projected hits (damage
+// previews) are left to vanilla, which ignores them too.
+@wrapMethod(DamageSystem)
+private final func ProcessInstantKill(hitEvent: ref<gameHitEvent>) -> Void {
+  if !hitEvent.projectionPipeline && hitEvent.attackData.HasFlag(hitFlag.Kill) && CyberblockHealth.Covers(hitEvent.target) {
+    hitEvent.attackData.AddFlag(hitFlag.DealNoDamage, n"instant_kill");
+    CyberblockHealth.ReportInstantKill(hitEvent);
     return;
   }
   wrappedMethod(hitEvent);
@@ -79,8 +99,8 @@ private final func IsImmune(target: ref<GameObject>, statusEffectID: TweakDBID, 
 }
 
 public abstract class CyberblockHealth {
-  // True while V's invulnerability comes from Cyberblock alone, i.e. Cyberblock is Active and nothing else in the game
-  // made V invulnerable.
+  // True while V's invulnerability comes from Cyberblock alone, i.e. Cyberblock is Active (n"Cyberblock") or in the
+  // Vehicle state (n"CyberblockVehicle", CyberblockCreative) and nothing else in the game made V invulnerable.
   public static func Covers(target: wref<GameObject>) -> Bool {
     let player = target as PlayerPuppet;
     if !IsDefined(player) {
@@ -91,7 +111,7 @@ public abstract class CyberblockHealth {
       return false;
     }
     for source in sources {
-      if NotEquals(source, n"Cyberblock") {
+      if NotEquals(source, n"Cyberblock") && NotEquals(source, n"CyberblockVehicle") {
         return false;
       }
     }
@@ -109,16 +129,31 @@ public abstract class CyberblockHealth {
     if damage <= 0.0 || maxHealth <= 0.0 {
       return;
     }
-    let from: Vector4;
-    let hasFrom = CyberblockHealth.From(hitEvent, from);
     let kind = CyberblockHealth.Kind(hitEvent);
     // Minecraft owns the fall damage of a glide or an ender pearl teleport (plan 2026-10-03 S1.3, CyberblockFlight).
     if Equals(kind, n"fall") && CyberblockFlight.SuppressFall(target.GetGame()) {
       Cyberblock_Log(s"dmg fall \(damage) of \(maxHealth) not reported: flight or teleport landing");
       return;
     }
+    // A fall comes from nowhere: the landing attacks have V as instigator and source and a hit direction of their own,
+    // which Minecraft would take for a blow from the side (knockback, damage tilt).
+    let from: Vector4;
+    let hasFrom = NotEquals(kind, n"fall") && CyberblockHealth.From(hitEvent, from);
     Cyberblock_Damage(damage / maxHealth, kind, from, hasFrom);
     Cyberblock_Log(s"dmg \(NameToString(kind)) \(damage) of \(maxHealth) from \(hasFrom ? "known" : "unknown") (\(TDBID.ToStringDEBUG(CyberblockHealth.AttackID(hitEvent))))");
+  }
+
+  // An instant kill aimed at V (ProcessInstantKill wrap): Steve takes 4 x his max health, from where the hit came.
+  public static func ReportInstantKill(hitEvent: ref<gameHitEvent>) -> Void {
+    let attack = TDBID.ToStringDEBUG(CyberblockHealth.AttackID(hitEvent));
+    if CyberblockHealth.StatInvulnerable(hitEvent.target) {
+      Cyberblock_Log(s"dmg instant kill not reported: V's IsInvulnerable stat is set (\(attack))");
+      return;
+    }
+    let from: Vector4;
+    let hasFrom = CyberblockHealth.From(hitEvent, from);
+    Cyberblock_Damage(4.0, n"other", from, hasFrom);
+    Cyberblock_Log(s"dmg instant kill reported as other x4 from \(hasFrom ? "known" : "unknown"), V's health left alone (\(attack))");
   }
 
   // Where the hit came from: the attack's source (grenade, vehicle, shooter), else its instigator, unless that is V;
@@ -177,27 +212,28 @@ public abstract class CyberblockHealth {
   }
 }
 
-// Creative (plan 2026-10-03 S1.3): in Minecraft's creative mode Steve cannot be hurt, so neither can V where Steve's
-// health does not cover V: in the Vehicle state (on foot, Active already makes V invulnerable through the report
-// above). The source is n"CyberblockCreative", not n"Cyberblock", so Covers stays false (nothing is reported) and the
-// Active-gated wraps (Disable.reds, IsImmune above) stay off. Removed in every other state or game mode, before
-// saves, on load and at Off. GodModeSystem.AddGodMode/ClearGodMode as PlayerState.reds.
+// Vehicle state (spec: Steve's health is the only health, V never dies while Cyberblock is on). On foot, Active makes
+// V invulnerable through PlayerState's god mode; in a vehicle this one does, in every Minecraft game mode, with the
+// source n"CyberblockVehicle". Covers accepts it, so hits on V in a car (crashes, gunfire, the car exploding) go to
+// Steve exactly as on foot (in creative Minecraft ignores them). The Active-only wraps (Disable.reds, Kills.reds) test
+// n"Cyberblock" alone and stay off in a vehicle. Removed in every other state (the next tick after leaving Vehicle,
+// for Active, Lost or Off), before saves, on load and at session end. GodModeSystem.AddGodMode/ClearGodMode as
+// PlayerState.reds. The class keeps its first name (it was creative-only), which Cyberblock.reds calls.
 public class CyberblockCreative {
   private let applied: Bool;
 
   public static func Source() -> CName {
-    return n"CyberblockCreative";
+    return n"CyberblockVehicle";
   }
 
   // Every tick, except while a save is written. vehicle: the Cyberblock state is Vehicle.
   public func Update(player: ref<PlayerPuppet>, vehicle: Bool) -> Void {
-    let on = vehicle && Equals(Cyberblock_GameMode(), n"creative");
-    if on && !this.applied {
+    if vehicle && !this.applied {
       GameInstance.GetGodModeSystem(player.GetGame()).AddGodMode(player.GetEntityID(), gameGodModeType.Invulnerable, CyberblockCreative.Source());
       this.applied = true;
-      Cyberblock_Log("creative: V invulnerable in the vehicle");
+      Cyberblock_Log("vehicle: V invulnerable in the vehicle, hits go to Steve");
     } else {
-      if !on {
+      if !vehicle {
         this.Clear(player);
       }
     }
@@ -209,11 +245,13 @@ public class CyberblockCreative {
     }
     GameInstance.GetGodModeSystem(player.GetGame()).ClearGodMode(player.GetEntityID(), CyberblockCreative.Source());
     this.applied = false;
-    Cyberblock_Log("creative: V vulnerable again");
+    Cyberblock_Log("vehicle: V's own god mode removed");
   }
 
-  // On load: a save may still carry it.
+  // On load: a save may still carry it (or the creative-only source of earlier versions).
   public static func ClearLeftovers(player: ref<PlayerPuppet>) -> Void {
-    GameInstance.GetGodModeSystem(player.GetGame()).ClearGodMode(player.GetEntityID(), CyberblockCreative.Source());
+    let godModes = GameInstance.GetGodModeSystem(player.GetGame());
+    godModes.ClearGodMode(player.GetEntityID(), CyberblockCreative.Source());
+    godModes.ClearGodMode(player.GetEntityID(), n"CyberblockCreative");
   }
 }

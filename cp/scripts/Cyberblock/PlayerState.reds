@@ -1,6 +1,7 @@
 // V's state while Cyberblock is Active (on foot): weapons holstered, combat, quickhacks and phone blocked, god
-// mode, Cyberpunk HUD hidden, camera frozen while a Minecraft screen is open. Everything is runtime-only and is
-// removed before every save and on every load (see CyberblockSystem in Cyberblock.reds).
+// mode, Cyberpunk HUD hidden (shown again while an interaction prompt or dialogue choices are up, which the HUD layer
+// draws), camera frozen while a Minecraft screen is open. Everything is runtime-only and is removed before every save
+// and on every load (see CyberblockSystem in Cyberblock.reds).
 //
 // DISABLE list (plan 2026-10-03 S1.2, docs/notes/cp-mechanics-audit.md A.2 and A.4): also the healing hotkey, the
 // scanner (and its world slow-down), the radial/weapon wheel (and its freeze), quick melee, zoom and body pickup are
@@ -33,6 +34,8 @@
 //   StatusEffectHelper.RemoveStatusEffectsByInstigatorID, GodModeSystem.AddGodMode/ClearGodMode,
 //   EquipmentSystemWeaponManipulationRequest + EquipmentManipulationAction.UnequipAll (as QuickSlotsManager.HideWeapon).
 //   Codeware: GameInstance.GetInkSystem().GetLayer(n"inkHUDLayer").GetVirtualWindow() (Codeware wiki, ink layers).
+//   UIInteractions blackboard: InteractionChoiceHub (InteractionChoiceHubData: active, choices) and DialogChoiceHubs
+//   (DialogChoiceHubs.choiceHubs), read with FromVariant as PlayerPuppet.RemoveInteractionChoices and settingsMain do.
 
 public class CyberblockPlayerState {
   // Restrictions we applied. One the game already had is left alone and never removed by us.
@@ -87,8 +90,26 @@ public class CyberblockPlayerState {
     if this.hudDelay > 0 {
       this.hudDelay -= 1;
     } else {
-      this.HideHud();
+      // The F prompts and dialogue choices are drawn on the HUD layer too: it shows while they are up and hides
+      // again on the first tick after they are gone.
+      if CyberblockPlayerState.ChoicesShown(player) {
+        this.ShowHud();
+      } else {
+        this.HideHud();
+      }
     }
+  }
+
+  // An interaction prompt or a dialogue choice list is up (UIInteractions blackboard, the test of settingsMain.swift's
+  // noChoiceHubsShown: an active interaction hub with choices, or any dialogue choice hub).
+  private static func ChoicesShown(player: ref<PlayerPuppet>) -> Bool {
+    let bb = GameInstance.GetBlackboardSystem(player.GetGame()).Get(GetAllBlackboardDefs().UIInteractions);
+    if !IsDefined(bb) {
+      return false;
+    }
+    let hub = FromVariant<InteractionChoiceHubData>(bb.GetVariant(GetAllBlackboardDefs().UIInteractions.InteractionChoiceHub));
+    let dialog = FromVariant<DialogChoiceHubs>(bb.GetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs));
+    return (hub.active && ArraySize(hub.choices) > 0) || ArraySize(dialog.choiceHubs) > 0;
   }
 
   // Removes everything this object applied. Cheap when nothing is applied.
