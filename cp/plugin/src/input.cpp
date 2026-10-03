@@ -86,12 +86,17 @@ namespace
 		return forwarding() && cb::link().screen_open();
 	}
 
-	void press(const std::string &id, nlohmann::json down, nlohmann::json up)
+	/// Shift and Ctrl as the key state of the message being handled has them, in SDL bits.
+	int mods()
 	{
-		if (g_held.contains(id))
-			return; // already down (key repeat)
-		cb::link().send(down);
-		g_held[id] = std::move(up);
+		return cb::keys::sdl_mods(GetKeyState(VK_SHIFT) < 0, GetKeyState(VK_CONTROL) < 0);
+	}
+
+	/// Sends `message` with the modifiers held now.
+	void send_with_mods(nlohmann::json message)
+	{
+		message["mods"] = mods();
+		cb::link().send(message);
 	}
 
 	void release(const std::string &id)
@@ -99,8 +104,17 @@ namespace
 		const auto it = g_held.find(id);
 		if (it == g_held.end())
 			return;
-		cb::link().send(it->second);
+		send_with_mods(std::move(it->second));
 		g_held.erase(it);
+	}
+
+	/// Sends `down` (a `key` or `click`, with the modifiers held now) and keeps `up` until the release.
+	void press(const std::string &id, nlohmann::json down, nlohmann::json up)
+	{
+		if (g_held.contains(id))
+			return; // already down (key repeat)
+		send_with_mods(std::move(down));
+		g_held[id] = std::move(up);
 	}
 
 	/// Releases everything but a swallowed Esc, whose own key-up must still be kept from Cyberpunk.
@@ -113,11 +127,12 @@ namespace
 				++it;
 				continue;
 			}
-			cb::link().send(it->second);
+			send_with_mods(std::move(it->second));
 			it = g_held.erase(it);
 		}
 	}
 
+	/// A `key` message; press() and release() add its `mods`.
 	nlohmann::json key(const char *name, bool down)
 	{
 		return {{"t", "key"}, {"k", name}, {"down", down}};

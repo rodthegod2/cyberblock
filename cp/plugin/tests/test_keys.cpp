@@ -226,6 +226,14 @@ TEST(losing_focus_forgets_every_key)
 	CHECK(gate.up('R') == Verdict::Pass);
 }
 
+// ---- modifiers ---------------------------------------------------------------------------------------------------------
+
+TEST(mods_are_sdl_left_shift_and_left_ctrl_bits)
+{
+	static_assert(sdl_mods(false, false) == 0 && sdl_mods(true, false) == 1 && sdl_mods(false, true) == 64);
+	CHECK(sdl_mods(true, true) == (kModShift | kModCtrl) && kModShift == 0x0001 && kModCtrl == 0x0040);
+}
+
 // ---- mouse bits and look deltas ----------------------------------------------------------------------------------------
 
 TEST(strip_removes_the_left_right_middle_down_and_wheel_bits_and_keeps_the_up_bits)

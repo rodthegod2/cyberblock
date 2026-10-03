@@ -97,6 +97,18 @@ namespace cb::keys
 		std::map<uint32_t, State> m_state;
 	};
 
+	// ---- modifiers -----------------------------------------------------------------------------------------------------
+
+	// SDL keymod bits (SDL_KMOD_LSHIFT, SDL_KMOD_LCTRL), as Minecraft 26.3 reads modifiers
+	inline constexpr int kModShift = 0x0001;
+	inline constexpr int kModCtrl = 0x0040;
+
+	/// The `mods` of a `key`, `click` or `skey` message: Shift-click quick-moves a stack, Ctrl+Q drops a whole stack.
+	constexpr int sdl_mods(bool shift, bool ctrl)
+	{
+		return (shift ? kModShift : 0) | (ctrl ? kModCtrl : 0);
+	}
+
 	// ---- mouse ---------------------------------------------------------------------------------------------------------
 
 	// RAWMOUSE.usButtonFlags bits (winuser.h RI_MOUSE_*)
