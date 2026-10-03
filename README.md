@@ -73,31 +73,33 @@ Cyberpunk moves V, Steve acts. Everything below works on Night City's real NPCs,
 
 ## Keys
 Cyberpunk keeps focus: it keeps the movement keys and the camera; Cyberblock forwards the rest to Minecraft and stops
-Cyberpunk from acting on it.
+Cyberpunk from acting on it. The full conflict-free table, with the dialogue and screen rules, is in
+[docs/HOW-TO-PLAY.md](docs/HOW-TO-PLAY.md#3-controls).
 
 | Key | What it does |
 |---|---|
-| F9 | Toggle Cyberblock on and off (the watchdog also turns it off if Minecraft goes away) |
-| W A S D, mouse look, C | Cyberpunk moves V; Steve crouches when V crouches (Optical Camo needs it) |
-| Space | V jumps as in Cyberpunk. Pressed while falling with an elytra, it also opens the elytra: a fall faster than 15 m/s for half a second opens it on its own |
-| Left Shift | V sprints as in Cyberpunk. Double-tap it within 300 ms with the Sandevistan perk for Sandevistan Sprint |
-| Mouse buttons, wheel, 1-9, E, Q, T, / | Minecraft: attack and use, hotbar, inventory, drop, chat, command. Cyberpunk never sees them |
-| F5 | Minecraft's perspective key (ignored while Cyberpunk drives the camera); it no longer quick-saves in Cyberpunk |
-| G (hold) | Hack key: scan the target under the crosshair, or what V looks at when no person or car proxy is under the crosshair |
+| F9 | Toggle Cyberblock on and off, in every state; Cyberpunk's QuickLoad on F9 never fires (the watchdog also turns Cyberblock off if Minecraft goes away) |
+| W A S D, mouse look, C / RCtrl | Cyberpunk moves V; Steve crouches when V crouches (Optical Camo needs it) |
+| Space | V jumps as in Cyberpunk. Pressed while V falls with at least 3 blocks of air below and an elytra on, it opens the elytra (with the Double Jump perk: the 2nd press in the air); a fall faster than 12 m/s for 0.3 s opens it on its own |
+| Left or Right Shift | V sprints as in Cyberpunk. Double-tap either within 300 ms with the Sandevistan perk for Sandevistan Sprint |
+| LMB, RMB, MMB, wheel, 1-9, E, Q, T, /, X | Minecraft: attack, use, pick, hotbar, inventory, drop (Ctrl+Q: stack), chat, command, swap to offhand. In a Cyberpunk dialogue with 2+ choices, E, Q, 1-4 and the wheel go to Cyberpunk |
+| LCtrl, Mouse 4, Mouse 5, F, Tab, Alt and Cyberpunk's other keys | Cyberpunk's own (F: interact, talk, exit car) |
+| F5 | Ignored while Active; it no longer quick-saves in Cyberpunk |
+| G (hold) | Hack key: scan and lock the target for 5 s; while held, the wheel picks a quickhack chip and right-click fires it |
 | K | Skill tree |
 
-G and K are the defaults. Rebind them in Minecraft's Controls (category Cyberblock); Cyberpunk only forwards letters,
-digits and F-keys, and not the ones Cyberblock needs elsewhere (W A S D, C, F9 and the Minecraft keys above), so any
-other key works in Cyberpunk as G or K, and a chat message says so.
+G and K are the defaults. Rebind them in Minecraft's Controls (category Cyberblock) to G K L O U Y 0 F1-F4 F6-F8 or
+F10-F12; any other key, or both actions on one key, falls back to G and K in Cyberpunk, and a chat message says so.
+While a Minecraft screen is open (inventory, chat, skill tree) every key but F9 goes to it, typing included.
 
 While Cyberblock is active on foot, Cyberpunk's own guns, cyberware, scanner, quickhacks, healing, radial menus, quick
 melee, zoom, crafting (K, while it is the skill-tree key), walk toggle (G) and quick save (F5) are off, and V has no dodge, air dash or double jump
 until you buy the perk. In a vehicle the Cyberpunk HUD and controls return.
 
 ## Survival and creative
-Steve's health is the only health. While Cyberblock is active V is invincible on foot, and every hit V would take
-(bullets, explosions, melee, falls, fire, damage over time) becomes damage to Steve, scaled by V's maximum health.
-Cyberpunk never shows a game over.
+Steve's health is the only health. While Cyberblock is on, V is invincible on foot and in vehicles, and every hit V
+would take (bullets, explosions, melee, falls, vehicles, fire, damage over time, instant kills) becomes damage to Steve,
+scaled by V's maximum health. Cyberpunk never shows a game over.
 
 - **Survival** (default): Steve can die and respawns the Minecraft way. The first activation in survival gives the
   starter kit once, with the elytra on Steve's chest if that slot is empty. Hacks cost RAM, perks cost XP levels.
@@ -105,7 +107,7 @@ Cyberpunk never shows a game over.
   Falling; vanilla elytra rules (durability, kinetic damage) still apply.
 - **Creative** (`/gamemode creative`): Steve and V are both invincible, also in vehicles.
   The kit is not handed out on activation; `/cyberblock kit` still works.
-- In a vehicle in survival, plain Cyberpunk damage rules apply.
+- In a vehicle, in every game mode, V stays invincible and the hits on V or V's car go to Steve.
 
 ## Development
 ```

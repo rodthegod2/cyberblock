@@ -1,9 +1,149 @@
 # Cyberblock — in-game test session (2026-10-03)
 
-Everything below is built, unit-tested (Python 182, JUnit 228, C++ 189), compile-checked against the real 2.31 game
-scripts, reviewed and installed — but none of layers 2-6 has run inside Cyberpunk yet. Work top to bottom; each step
-says what should happen. Tell Claude "step N: what you saw" and it reads `red4ext\logs\Cyberblock.log`, Minecraft's
-`mc\run\logs\latest.log` and captures the game window to diagnose.
+Everything below is built, unit-tested (Python 194, JUnit 268, C++ 209), compile-checked against the real 2.31 game
+scripts and reviewed. Work top to bottom; each step says what should happen. Tell Claude "R7: what you saw" (or
+"step N: ...") and it reads `red4ext\logs\Cyberblock.log`, Minecraft's `mc\run\logs\latest.log` and captures the game
+window to diagnose.
+
+## Re-test after the 2026-10-03 fixes (do this first)
+
+The first session found the elytra flying Steve off alone, an empty NPC list, key clashes and netrunning gaps
+(`out/user-issues.md`). Five fix packages are merged on main. Before testing: close Cyberpunk, make sure the install
+ran (`uv run python -m tools.install`), and **restart Minecraft** (`uv run python -m tools.play`): a Minecraft that was
+already running still has the old mod. The full key table and the netrunning walkthrough are in `docs/HOW-TO-PLAY.md`.
+
+**What changed**
+- **Keys (A, E):** F9 is Cyberblock's in every state (no QuickLoad); Mouse 4/5 and LCtrl stay Cyberpunk's; a dialogue
+  with 2+ choices keeps E, Q, 1-4 and the wheel; Minecraft screens get the whole keyboard and real typing; Shift/Ctrl
+  reach Minecraft (Shift-click, Ctrl+Q); X swaps to the offhand; either Shift sprints; Hack/Skill tree binds are limited
+  to G K L O U Y 0 F1-F4 F6-F8 F10-F12 and fall back to G/K; Minecraft's Quick Actions no longer shares G.
+- **Elytra and flight (A, B):** a glide needs 3 blocks of air and a Space while falling (2nd airborne press with Double
+  Jump); cam now says fly/menu/air/held; a glide Cyberpunk does not follow is called off within 0.5 s and Steve returns;
+  menus pause the glide; V stops at unmapped walls; no landing teleport for short glides; held V refuses pearls
+  (refunded, no damage); Steve stands on V's ground with no "standing on air" spam or own fall damage.
+- **Scenes, health, vehicles (C):** only scene tiers 2-5 hold V (free roam no longer counts); V is invincible in
+  vehicles in every mode, hits go to Steve; instant kills go to Steve; falls arrive without a direction; the HUD shows
+  F prompts and dialogue choices; explosions only reveal V when close; infinite potions survive saves.
+- **NPCs and proxies (C, D):** one NPC registry; death judged by the puppet's own flag; the 5 s logs split people and
+  cars and list why NPCs are left out; pushes say why they were withheld; lead tugs ragdoll people without killing
+  them; collision boxes take their filters from the engine; proxies extrapolate (cars are 3 m wide), stay through
+  menus and saves, and Minecraft logs how many exist; mobs prefer hostile NPCs; kill XP drops at Steve; an explosion
+  hurts an NPC once.
+- **Netrunning (E):** car hacks go to the driver; person hacks no longer need a proxy or get refused in free roam;
+  refusals name their gate; scans fall back to the target nearest the crosshair; the lock and its tooltip last 5 s; a
+  tap scans; hold G + wheel picks a chip, right-click fires it; chips show cost, recharge and usage; the kit fills RAM.
+
+**R1. Keys (package A)**
+1. F9 while Active, while Off and in the pause menu: it toggles Cyberblock and never quickloads.
+2. Mouse 4 and 5 (dodge and scanner bindings) work in Cyberpunk while Active.
+3. Talk to an NPC with 2 or more choices while Active: E, Q, 1-4 and the wheel scroll and pick in Cyberpunk, while the
+   mouse buttons, 5-9, G and T still go to Minecraft. With a single-choice prompt, E still opens Steve's inventory.
+4. Open Minecraft chat (T): letters, spaces, accented letters and emoji, plus Enter, Backspace, arrows, Home/End and
+   Delete, all work. Cyberblock.log shows 'typing reaches Minecraft's screens' once. W A S D do not move V while a
+   screen is open.
+5. Close the inventory with E and immediately hold W: if W lands before Minecraft reports the screen closed (about
+   50-100 ms), V does not walk until W is pressed again (the KeyGate first-down rule, by design). Does it feel OK?
+6. Shift-click in a chest moves the whole stack; Ctrl+Q drops the whole stack; X swaps to the offhand; Right Shift
+   also sprints, and a double-tap of either Shift triggers Sandevistan.
+7. Rebind Hack to L and Skills to O in Minecraft Controls: they work, and G/K go back to Cyberpunk. Bind both to the
+   same key, or one to B: both fall back to G/K and Cyberblock.log logs it once.
+8. Open the pause menu, inventory or map while Active: cam.menu becomes true at once and forwarding stops.
+9. Elytra end to end: cam.fly is true while V follows the glide and false after landing. A Minecraft hitch longer than
+   0.5 s sets Cyberblock_FlightTimedOut but keeps cam.fly. cam.air is true while V jumps or falls, cam.held in a
+   vehicle or a scene.
+10. Camera-only flight fallback (`CyberblockFlight.SetCameraOnly(true)`): collision boxes appear around the flight
+    position, not at V's parked spot.
+11. Apply an infinite Minecraft effect (`/effect give @s speed infinite`), then save (quick or auto): the effect is
+    back on V after the save. Leaving Active still forgets it.
+
+**R2. Elytra, pearls, Steve on the ground (package B; `docs/notes/flight-spike.md`)**
+1. F-1 to F-3: per-frame follow is smooth, the look is kept, and a rooftop-to-street landing puts V on the street. If
+   death landings (or their effects) appear, report it (the fix is a LocomotionAirDecisions.ToDeathLand wrap).
+2. F-8: start a glide while V is held (sitting, workspot). Expect 'flight: ignored ... (<reason>)' in Cyberblock.log,
+   'glide called off (the host did not follow)' in the Minecraft log within 0.5 s, and Steve back with V.
+3. F-9: Space at the end of a normal jump never opens the elytra; jumping off a ledge with 3+ blocks of air does. With
+   the Double Jump perk, the 1st airborne Space double-jumps V and the 2nd opens the elytra.
+4. F-10: open the map mid-glide for about 5 s. Expect 'glide paused' then 'glide resumed' in Minecraft, possibly
+   'flight: no samples, holding V' then 'samples back' in Cyberpunk, and the glide continues.
+5. F-11: glide into a building where nothing has been probed. V stops at the wall ('flight: V stopped short of Night
+   City geometry' once) and Steve returns to V after landing.
+6. F-12: throw a pearl while V sits or drives: overlay 'Pearl blocked: V cannot be moved right now', the pearl
+   refunded, no 5 HP lost and no teleport.
+7. health-1: no 'Player standing on air' spam in the Minecraft log, normal mining speed on the ground, no crits on the
+   ground, and fall damage applied once (Cyberpunk's 'fall' only).
+8. Camera-only mode: the probes and collision follow the flight (CyberblockFlight.Center).
+
+**R3. Scenes, NPCs, health, HUD (package C)**
+1. Elytra and pearl in free open-world play: no 'held' log, the glide follows. In a tier-2 quest scene: 'effects:
+   teleport ignored, V is held (scene, scene tier 2)'. While swimming (tier 6), glides are allowed.
+2. NPC list: every 5 s 'npcs: sent H people + C cars; attached H2 people + C2 cars; left out: ...'. Expect H > 0 near
+   pedestrians. If it is still 0, the reasons listed (dead, defeated, mounted, puppet, detached, not_npc, over_cap)
+   give the root cause.
+3. Push withheld logs: hitting or leashing an ordinary pedestrian pushes them. If civilians show '(friendly)', that
+   attitude is why pushes did nothing before. Quest NPCs in workspots show '(workspot)'.
+4. Lead on a person: the tug ragdolls them at 4-8 m/s every 1.5 s, only once more than 0.5 m past the lead length,
+   and the NPC survives. Vehicles are tugged as before.
+5. A wind charge bursting at an NPC's feet or head pushes them; the log shows 'tether: knockback ..., N pushed' with
+   N > 0.
+6. Collision: the first box logs 'collision: World Static filters from the engine: simulation 376836/5070, query
+   0/<mask with 7 bits>'. Then `docs/notes/collision-spike.md` checks 2-4: V is stopped by a box and can stand on it, a
+   pedestrian is stopped by a 5-box wall, a traffic car and V's own car collide with it.
+7. An explosion more than 30 m from V does not draw NPCs to V. One within 10 m reveals V; one at 10-30 m alerts NPCs
+   without revealing V's position.
+8. 'events: hit target <hash> amount <frac> by mob <id>', 'events: lead ...' and 'events: pull ...' appear at most once
+   per second per kind.
+9. While Active: F prompts (doors, talk, exit car) and dialogue choice lists are visible, the HUD hides again once
+   they are gone, and the transition notification still shows for the first 2 s.
+10. Vehicle in survival: 'vehicle: V invulnerable in the vehicle, hits go to Steve'. Crashes and gunfire on V's car
+    give 'dmg vehicle/bullet ...' and V's health is unchanged. Getting out logs 'vehicle: V's own god mode removed'.
+    In a save made in a car and then loaded, V has no leftover god mode.
+11. G-9 kill test: in the Vehicle state, let gangers shoot V's car until Attacks.DriverKill fires (or another
+    hitFlag.Kill hit lands on V). V lives, 'dmg instant kill reported as other x4 ...' is logged, and Steve dies. Also
+    note whether BaseStatusEffect.ForceKill goes through ProcessInstantKill.
+12. Fall damage arrives in Minecraft without a direction (no sideways knockback or tilt); the log reads 'dmg fall ...
+    from unknown'.
+
+**R4. Proxies, mobs, world (package D)**
+1. With Minecraft on, open a Cyberpunk menu or save for longer than 2 s: leads, hooks and proxies are still there.
+2. Cyberblock.log / Minecraft latest.log: the new 'proxies: H people, C cars (spawned n, removed m)' lines are the
+   first direct evidence of whether Minecraft gets proxies at all. 0 people in Minecraft while the DLL says '0 sent of
+   62' means the problem is on the DLL/script side.
+3. A Cyberpunk explosion (own TNT, creeper, grenade) hurts an NPC once, not twice.
+4. Drive or watch a fast car and swing or shoot at it: the proxy stays on the car (extrapolation up to 0.5 s; jumps
+   over 40 m/s count as teleports, so cars above about 144 km/h do not extrapolate) and the 3 m box is easy to hit.
+5. Mobs near real NPCs: zombies prefer hostile NPCs (gang members) over passers-by, never run after an NPC more than
+   22 m from Steve, and mobs killed by NPC fire name the mob.
+6. Kill an NPC far away with a gun: the XP appears at Steve.
+7. Wind charge near a crowd: the knock reaches about 2.4 m, and the Demolitions perk does not widen it.
+8. Flint and steel on a car does nothing and is not used up; on a person it ignites; an NPC standing in lava gets one
+   ignite per 15 s.
+
+**R5. Netrunning (package E; walkthrough in `docs/HOW-TO-PLAY.md`)**
+1. Hold G on a pedestrian, then right-click a chip (in hand, or picked with the wheel while holding G). The hack
+   lands, Cyberblock.log shows 'hack <name> on <id>: ok', and the RAM drops.
+2. Hack an occupied car: the driver gets the effect. An empty car shows 'Hack failed: no driver' and refunds the RAM.
+3. A quest or friendly NPC gives 'Hack failed: not hackable (god mode|friendly|quest character|no quickhack
+   actions)', and the log says the same.
+4. Press G with nothing under the crosshair: the log says 'scan N: nothing under the crosshair'. Aim about 2-3
+   degrees off an NPC: the crosshair fallback still scans it. Note whether the TSF_Quickhackable pass ever finds
+   anything while Active (expected: only the second pass does).
+5. Release G after a scan: the tooltip and outline stay dimmed with 'Locked 5..1 s', then disappear. Moving the
+   crosshair off the target while G is held clears them.
+6. A quick tap of G scans.
+7. With G held, the wheel cycles 'Chip: <name> (<n> RAM)' and does not move the hotbar. Without G, the wheel scrolls
+   the hotbar.
+8. A recharging chip shows 'Still recharging'. The chip tooltip shows the cost (1 lower with Cheap Hacks) and the
+   usage line.
+9. New survival world: the kit gives full RAM (8/8).
+10. Controls screen: Quick Actions is unbound and G shows no conflict.
+11. Rebind Hack to B: a chat note says B cannot be forwarded and G is used. Bind Hack and Skill Tree to the same
+    allowed key: a note says G and K are used. Both notes also appear after a host hello.
+12. With package A: typing in chat while Cyberpunk has focus (char/skey), Shift-click quick-move in a chest, Ctrl+Q
+    with no screen and in an inventory, Esc on the death screen (it must stay open), X swaps to the offhand.
+
+---
+
+# Full pass (first session's plan, updated for the fixes)
 
 ## 0. Before launching
 - Close Roblox Studio (and check Task Manager for leftover `RobloxStudioBeta` processes) — memory headroom.
@@ -27,7 +167,7 @@ says what should happen. Tell Claude "step N: what you saw" and it reads `red4ex
 8. Let NCPD/gangers shoot V: Steve's hearts drop, V never dies.
 9. Jump from ~10 m: fall damage on Steve's hearts. Let a car hit V: damage. Stand near a grenade/fire: damage.
 10. Die in survival: Minecraft's death screen appears; click Respawn with the mouse; play continues.
-11. `/gamemode creative` (Alt+Tab, type in Minecraft, Alt+Tab back): nothing hurts Steve or V.
+11. `/gamemode creative` (press T or /, type it in Cyberpunk, Enter): nothing hurts Steve or V.
 
 ## 4. Layer 2 — blocks, explosions, weapons, fire (10 min)
 12. `/cyberblock kit` (or in survival the kit arrives on first activation). Hotbar 1-9: iron sword, bow, stone, TNT,
@@ -43,8 +183,9 @@ says what should happen. Tell Claude "step N: what you saw" and it reads `red4ex
     kill mobs; a creeper's explosion damages Night City.
 
 ## 6. Layer 4 — elytra & ender pearls (5 min)
-18. From a rooftop with an elytra equipped, jump and press Space while falling: glide; fireworks boost; landing returns
-    normal movement. Open the pause menu mid-air for 2 s, resume: nothing breaks.
+18. From a rooftop with an elytra equipped, jump off the edge (3+ blocks of air below) and press Space while falling:
+    glide; fireworks boost; landing returns normal movement. Open the pause menu mid-air for 2 s, resume: the glide
+    carries on.
 19. Throw an ender pearl: V teleports where it lands; no fall damage spike.
 
 ## 7. Layer 5 — interactive items (5 min)

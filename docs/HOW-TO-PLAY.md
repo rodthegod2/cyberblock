@@ -7,10 +7,12 @@ The split is simple: **Cyberpunk moves V, Steve acts.** You walk, run, jump and 
 place blocks, fight, throw, glide and hack with Minecraft's items, and those act on Night City's real people, cars and
 devices.
 
-> **Status (2026-10-03).** Layer 1 (the passthrough itself) has been verified in game. Layers 2 to 6 are built and
-> pass every automated test, but they have **not been played in game yet**. Their acceptance list is in
-> `docs/superpowers/plans/2026-10-03-layers3-6-complete-mod.md`, section I.2. Expect rough edges. The fallback
-> switches under [Troubleshooting](#troubleshooting) exist for exactly that.
+> **Status (2026-10-03).** Layer 1 (the passthrough itself) has been verified in game. The first in-game session of
+> layers 2 to 6 found bugs (the elytra, the NPC list, key conflicts, netrunning). This version fixes them and passes
+> every automated test, but the fixes have **not been re-played in game yet**: `docs/TESTING-PLAN.md` starts with the
+> re-test list. The fallback switches under [Troubleshooting](#troubleshooting) are still there for rough edges.
+>
+> **Quick links:** [the key table](#3-controls) and [netrunning, step by step](#netrunning-step-by-step).
 
 ---
 
@@ -59,8 +61,9 @@ What the installer guarantees:
 - **Save backup:** before the very first install, it zips your saves folder
   (`%USERPROFILE%\Saved Games\CD Projekt Red\Cyberpunk 2077`) into `%LOCALAPPDATA%\Cyberblock\save-backups`. Use
   `--backups <folder>` to put the zip somewhere else.
-- **Updating:** after you pull a new version, rebuild the DLL and run the same command again. It replaces its own
-  files.
+- **Updating:** after you pull a new version, close Cyberpunk, rebuild the DLL and run the same command again. It
+  replaces its own files. Then restart Minecraft (`tools/play.py` rebuilds the mod): a Minecraft that was already
+  running keeps the old mod.
 
 ### ReShade: one-time settings
 1. Start Cyberpunk and open the ReShade overlay (**Home**).
@@ -102,7 +105,8 @@ Minecraft.
   and the picture in Cyberpunk stutters. Cyberpunk keeps the focus. The Minecraft window resizes itself to
   Cyberpunk's resolution.
 
-Then load a save and press **F9**.
+Then load a save and press **F9**. Cyberblock owns F9 in every state, so Cyberpunk's default QuickLoad on F9 never
+fires. If you want a QuickLoad key, bind one in Cyberpunk's own key settings.
 
 | You see | Meaning |
 |---|---|
@@ -117,53 +121,81 @@ Then load a save and press **F9**.
 
 ## 3. Controls
 
-Cyberpunk keeps the focus. It keeps the movement keys and the camera. Cyberblock forwards the keys below to Minecraft,
-and Cyberpunk never sees the ones marked *swallowed*.
+Cyberpunk keeps the focus, the movement keys and the camera. Cyberblock's DLL reads every key before Cyberpunk does and
+decides who gets it: Cyberpunk, Minecraft, or (for Space and Shift) both on purpose. Every key has exactly one owner
+in every situation, so nothing fires twice.
 
-| Key | While Cyberblock is active on foot |
-|---|---|
-| **F9** | Turn Cyberblock on or off. |
-| **W A S D**, mouse look | Cyberpunk moves V; Steve follows V's feet and camera. |
-| **C** (crouch) | V crouches, and Steve crouches with him. Optical Camo needs this. |
-| **Space** | V jumps, as in Cyberpunk. While falling with an elytra on, it also opens the elytra (see layer 4). |
-| **Left Shift** | V sprints, as in Cyberpunk. With the Sandevistan perk, a double-tap (within 300 ms) fires Sandevistan Sprint. |
-| **Left mouse** *(swallowed)* | Minecraft attack / break. |
-| **Right mouse** *(swallowed)* | Minecraft use / place: blocks, bow, shield, potions, pearls, leads, fishing rod, wind charges, quickhack items. |
-| **Middle mouse** *(swallowed)* | Minecraft pick block. |
-| **Mouse wheel** *(swallowed)* | Scroll the hotbar. |
-| **1–9** *(swallowed)* | Hotbar slots. |
-| **E** *(swallowed)* | Minecraft inventory. |
-| **Q** *(swallowed)* | Drop the held item. |
-| **T** / **/** *(swallowed)* | Open Minecraft chat / a command line (see [Commands](#commands)). |
-| **F5** *(swallowed)* | Minecraft's perspective key. It does nothing while Cyberpunk drives the camera, and it no longer quick-saves Cyberpunk. |
-| **G** (hold) *(swallowed)* | **Hack key**: scan whatever is under the crosshair (layer 6). |
-| **K** *(swallowed)* | **Skill tree** (layer 6). |
-| **Esc** | With a Minecraft screen open, it closes that screen. Otherwise it opens Cyberpunk's pause menu as usual. |
-| **F** | Still Cyberpunk's interact: doors, talking, picking things up. |
+### Final key bindings (Cyberblock Active, V on foot)
 
-**Minecraft screens** (inventory, chest, crafting table, skill tree, death screen):
-- While one is open, the mouse moves Minecraft's cursor, clicks go to the screen, and Cyberpunk's camera is frozen.
-- **Esc** closes it. **E** also closes the inventory and containers, and **K** the skill tree.
-- **Q** drops the hovered stack, and **1–9** swap the hovered stack into that slot.
+| Key | Cyberpunk | Minecraft | Notes |
+|---|---|---|---|
+| **F9** | never reaches Cyberpunk (its default QuickLoad on F9 is blocked; rebind QuickLoad in Cyberpunk if wanted) | - | toggles Cyberblock on/off, in every state |
+| **W A S D**, mouse look | move / look (V) | Steve follows V | swallowed while a Minecraft screen is open (V stands still) |
+| **Space** | jump / double jump | "jump" signal: opens the elytra only while falling with >= 3 blocks of air below (with the Double Jump perk: the 2nd airborne press) | shared on purpose |
+| **Left/Right Shift** | sprint | "sprint" signal: double-tap either Shift = Sandevistan Sprint perk | shared |
+| **C**, **RCtrl** | crouch | Steve crouches with V | - |
+| **LCtrl**, **Mouse4**, **Mouse5** | Cyberpunk's own (dodge/dash, scanner hold etc.; dodge works with Steve's Dodge perk) | - | no longer swallowed |
+| **F** | interact / talk / dialogue choice 1 / exit vehicle | - | never bindable |
+| **LMB / RMB / MMB** | (blocked combat) | attack / use / pick block | Shift/Ctrl held are passed as modifiers in Minecraft screens (Shift-click quick-move) |
+| **Wheel** | - | hotbar scroll; while G held: choose quickhack chip | goes to Cyberpunk while a dialogue with 2+ choices is shown |
+| **1-9** | - | hotbar slots (in inventories: swap hovered stack) | 1-4 go to Cyberpunk while a dialogue with 2+ choices is shown |
+| **E** | - | inventory | goes to Cyberpunk (scroll choices) in a 2+ choice dialogue |
+| **Q** | - | drop item (Ctrl+Q: whole stack) | goes to Cyberpunk in a 2+ choice dialogue |
+| **T** | - (phone answer unavailable while Active: press F9 to take a call) | chat (real typing: letters, Enter, Backspace, arrows reach Minecraft while a screen is open) | - |
+| **/** | - | command line | - |
+| **X** | (healing hotkey, already blocked while Active) | swap item to offhand (NEW) | - |
+| **G** (hold) | (walk toggle, suppressed) | scan / lock target 5 s; while held: wheel = pick chip, right-click = fire chip | Minecraft's own Quick Actions (also G in 26.3) is unbound automatically |
+| **K** | (crafting, swallowed) | skill tree | - |
+| **F5** | (QuickSave, swallowed) | ignored | dead key while Active |
+| **Esc** | pause menu when no Minecraft screen is open | closes the open Minecraft screen (respects screens that refuse Esc) | - |
+| **Tab, CapsLock, Alt, R, B, I, M, J, H, N, P, V, Z** | Cyberpunk's own (scanner/radial/reload/holster are blocked while Active; menus open and pause forwarding) | - | passed through |
 
-**Cyberpunk menus** (map, journal, pause menu, Cyberpunk inventory): input forwarding pauses while one is open, so
-they work as usual.
+### Context rules
+- **A Cyberpunk dialogue or choice list with 2 or more choices:** E, Q, 1-4 and the wheel go to Cyberpunk only, so
+  you scroll and pick choices as usual (F picks the highlighted one). The mouse buttons and the other keys (5-9, G, T,
+  ...) still go to Minecraft. A single-choice prompt ("[F] Talk") does not count: E still opens Steve's inventory.
+- **A Minecraft screen is open** (inventory, chest, chat, skill tree, death screen): every key except F9 goes to
+  Minecraft: the named keys plus typed text, Enter, Backspace, Tab, the arrows, Home/End, PgUp/PgDn and Delete. V
+  stands still, the camera is frozen, and the mouse moves Minecraft's cursor.
+- **A Cyberpunk menu is open** (pause menu, map, journal, Cyberpunk inventory), **V is in a vehicle**, or **Cyberblock
+  is off:** nothing is forwarded except F9. The menus work exactly as in vanilla.
+- Minecraft's own key settings do not matter for the keys above: Cyberpunk sends Minecraft the action (inventory,
+  drop, swap, ...), not the key. Only the two Cyberblock keys below are rebindable.
 
-**Rebinding the hack and skill-tree keys:** Minecraft → Options → Controls → Key Binds → category **Cyberblock**.
-- Cyberpunk can only forward letters, digits and F-keys, and not the ones Cyberblock needs itself: W, A, S, D and C
-  (movement and crouch), E, Q, T, 1–9 and F5 (already forwarded to Minecraft) and F9 (Cyberblock on/off).
-- A binding on any other key (including Space, Shift, Ctrl, Esc and /) works in Cyberpunk as the default (G or K),
-  and a chat message tells you so.
+### In a Minecraft screen
+- **Esc** closes it (the death screen stays: click Respawn). **E** also closes the inventory and containers, and
+  **K** the skill tree.
+- **Shift-click** moves a whole stack, **Q** drops the hovered item, **Ctrl+Q** the hovered stack, **1-9** swap the
+  hovered stack with that hotbar slot, and **X** swaps it into the offhand.
+- **Chat (T) and commands (/)** take real typing, accents and emoji included. Enter sends, Esc cancels. No more
+  Alt+Tab.
+- Closing a screen with E and holding W at once: if W goes down before Minecraft has reported the screen closed (about
+  50-100 ms), V does not walk until you press W again. That is the rule that keeps keys from sticking in Cyberpunk.
+
+### Rebinding the Hack (default G) and Skill tree (default K) keys
+Minecraft → Options → Controls → Key Binds → category **Cyberblock**. The binding is sent to Cyberpunk at once.
+- **Refused** (both sides; `shared/vectors.json`): W A S D C E Q T X F I M J H N B P V Z R, 1-9, F5, F9, Space, Shift,
+  Ctrl, Esc. These are Cyberpunk's own keys or keys Cyberblock already forwards.
+- **Allowed:** G K L O U Y 0 F1-F4 F6-F8 F10-F12.
+- If both keys resolve to the same key, or to a refused one, they fall back to G/K, and Minecraft says so in chat
+  (also after every reconnect). Cyberblock.log logs it once.
+- The keys the two actions use are taken from Cyberpunk. Move Skill tree off K and K opens Cyberpunk's crafting menu
+  again; Cyberpunk's walk toggle stays off while Active whichever key Hack uses.
 
 ---
 
 ## 4. The one health rule
 
 **Steve's health is the only health.**
-- While Cyberblock is active on foot, V is invincible.
+- While Cyberblock is on, V is invincible: on foot, and in a vehicle too, in every Minecraft game mode.
 - Every hit V would have taken becomes damage to Steve: bullets, explosions, melee, falls, vehicles, fire and burning
   damage-over-time. The damage is scaled by V's maximum health. A hit worth a quarter of V's health takes a quarter of
   Steve's.
+- In a car, crashes and gunfire on V's car go to Steve the same way (Cyberblock.log: "vehicle: V invulnerable in the
+  vehicle, hits go to Steve"). Getting out hands over to the on-foot protection.
+- An instant kill aimed at V (a scripted kill, a car destroyed with V inside) kills Steve instead of V.
+- A fall reaches Steve once, from Cyberpunk's landing, and without a direction: no sideways knockback. Minecraft adds
+  no fall damage of its own while it is moving Steve with V.
 - Cyberpunk never shows a game over. If Steve dies, the Minecraft death screen appears: click **Respawn** with the
   mouse.
 - The world keeps your inventory when you die (`keepInventory` is on).
@@ -172,9 +204,12 @@ they work as usual.
 
 ## 5. What you can do, layer by layer
 
-Every Night City person and car within 48 m exists in Minecraft as an invisible **proxy** with a matching hitbox.
-Minecraft weapons, mobs, leads and hooks hit those proxies. The result is applied as real Cyberpunk damage or force,
-so ragdolls, NCPD heat, deaths and explosions are all native.
+Every Night City person and car within 48 m exists in Minecraft as an invisible **proxy** with a matching hitbox
+(people 0.6 × 1.8 m, cars 3 m wide so they are easy to hit). Between Cyberpunk's updates a proxy keeps moving at its
+NPC's speed for up to 0.5 s, so it stays on a driving car. Minecraft weapons, mobs, leads and hooks hit those proxies.
+The result is applied as real Cyberpunk damage or force, so ragdolls, NCPD heat, deaths and explosions are all native.
+Every 5 s, Cyberblock.log says how many were sent ("npcs: sent H people + C cars; attached ...; left out: ...") and
+the Minecraft log how many proxies exist ("proxies: H people, C cars").
 
 ### Layer 1: Minecraft in Night City
 - Steve stands at V's feet. You see his hand, the hotbar and the HUD, drawn over Night City with correct depth:
@@ -194,14 +229,18 @@ so ragdolls, NCPD heat, deaths and explosions are all native.
   - mining a block removes its box;
   - after a restart or reconnect, Minecraft sends all your blocks again.
 - **Explosions** become Cyberpunk explosions scaled by their power (TNT, creepers, firework rockets). Cars blow up
-  and NCPD comes.
+  and NCPD comes. An NPC is hurt once, by the Cyberpunk blast. NPCs hear it: within 10 m of V it reveals V, at 10-30 m
+  it alerts them without giving V away, and further away it does not draw them to V.
 - **Weapons:** melee weapons (swords, axes…), arrows, tridents and crossbows hurt people and cars. People ragdoll,
-  and melee shoves cars.
-- **Fire:** flint and steel, fire charges, lava, Fire Aspect and flaming arrows set people alight.
+  and melee shoves cars. A kill drops its XP at Steve, however far away it happened.
+- **Fire:** flint and steel, fire charges, lava, Fire Aspect and flaming arrows set people alight. Flint and steel or
+  a fire charge on a car does nothing and is not used up. A person standing in lava is set alight once every 15 s.
 
 ### Layer 3: mobs against Night City
 - Hostile Minecraft mobs (zombies, skeletons, creepers, spiders and the like) attack Night City's pedestrians as well
   as Steve. Spawn them with spawn eggs: natural spawning is off.
+- They go for hostile NPCs (gangers) before passers-by, only hunt NPCs that stand on Night City ground Cyberblock has
+  mapped, and never chase one more than 22 m from Steve.
 - Mobs that think with a "brain" (piglins, hoglins, zoglins, breezes, the creaking, the warden) stay vanilla and only
   go for Steve.
 - Night City fights back:
@@ -215,23 +254,35 @@ so ragdolls, NCPD heat, deaths and explosions are all native.
   as V's, and NPCs react to V instead.
 
 ### Layer 4: elytra and ender pearls
-- **Gliding:**
-  - wear an elytra (the starter kit puts one on);
-  - while V falls (jump off a roof or a megabuilding), press **Space** to open it. A fall faster than 15 m/s for half
-    a second opens it on its own;
-  - while gliding, Minecraft physics fly Steve and V follows every frame. You steer with the mouse as usual;
-  - **firework rockets** (right mouse) boost you;
-  - Collision mapping reaches further ahead the faster you fly.
-- **Landing:** when you touch down on a roof or a street, Cyberpunk movement takes over again.
+- **Opening the elytra:**
+  1. Wear an elytra (the starter kit puts one on the chest).
+  2. Get V falling with **at least 3 blocks of free air below V's feet**: step or jump off a roof, a balcony or a
+     megabuilding ledge. Night City's ground counts as solid.
+  3. Press **Space** while V falls. A Space at the top of an ordinary jump on flat ground never opens it.
+  - With Steve's **Double Jump** perk, the 1st Space in the air is V's double jump and the **2nd** opens the elytra.
+  - A fall faster than 12 m/s for 0.3 s opens it on its own (same 3-block rule).
+- **While gliding:** Minecraft physics fly Steve and V follows every frame. Steer with the mouse as usual;
+  **firework rockets** (right mouse) boost you. Collision mapping reaches further ahead the faster you fly.
+- **When no glide starts**, or it ends at once: V is in a vehicle, a Cyberpunk menu is open, or the game holds V (a
+  quest scene of tier 2-5, a seated conversation or other workspot, a braindance, a moving elevator; swimming does not
+  count). A glide Cyberpunk does not follow within 0.5 s is called off and Steve goes straight back to V
+  (Minecraft log: "glide called off"; Cyberblock.log: "flight: ignored ... (<reason>)"). The next try is possible after
+  1 s.
+- **Menus mid-glide:** opening the map or pause menu pauses the glide; Steve waits in the air and it carries on when
+  the menu closes.
+- **Walls:** V never passes through Night City. If Minecraft flies through a building it has not mapped yet, V stops
+  at the wall ("flight: V stopped short of Night City geometry") and Steve comes back to V after landing.
+- **Landing:** touch down on a roof or a street and V is put there, on the real floor; Cyberpunk movement takes over
+  again. If Minecraft stops sending positions mid-air (a hitch longer than 1 s), V is put on the ground below.
 - **Fall damage:**
   - Cyberpunk's fall damage is ignored while gliding and for 2 s after landing; Minecraft's own elytra rules apply
     (durability, crashing into walls);
   - it is always ignored under Slow Falling.
 - **Ender pearls:** throw one (right mouse). Where it lands, V is teleported, with the same 2 s fall grace. Steve
   takes the usual pearl damage.
-- **While the game holds V** (a quest scene or seated conversation, a braindance, a moving elevator), pearls and
-  gliding leave V where V is: a pearl does not move V, no glide starts, and a glide already under way stops (with the
-  same 2 s fall grace). This keeps quests from breaking.
+- **While V cannot be moved** (in a vehicle, or held by the game as above), pearls and gliding leave V where V is: a
+  pearl shows "Pearl blocked: V cannot be moved right now" and is given back (no damage, no teleport), no glide starts,
+  and a glide already under way stops (with the same 2 s fall grace). This keeps quests from breaking.
 - Thrown things (pearls, arrows, tridents, potions, wind charges, the fishing hook) also stop on Night City walls,
   because the walls on their predicted paths are filled in ahead of time.
 - **Fallback** if the per-frame flight jitters: `CyberblockFlight.SetCameraOnly(true)` in CET. Then only the camera
@@ -240,13 +291,16 @@ so ragdolls, NCPD heat, deaths and explosions are all native.
 ### Layer 5: interactive items
 - **Lead (lasso):**
   - right-click a person or a car with a lead. It stays within 5 m (a person) or 8 m (a car) of Steve, and is dragged
-    back when it strays;
+    back when it strays. A person more than 0.5 m past the lead's length is tugged toward you (a short ragdoll at
+    4-8 m/s, at most every 1.5 s) and survives it; a car is dragged;
   - right-click a fence post to tie it there instead;
   - right-click the tethered one again to let go.
   - The lead snaps if the target is pulled more than 12 m past that length for 2 s, or when it despawns.
 - **Fishing rod:** cast at a person or a car, then reel in (right mouse again). It is yanked toward you: people at
   9 m/s with a small hop, cars at 7 m/s.
-- **Wind charge:** the burst knocks back every person and car around it. It causes no damage and no explosion.
+- **Wind charge:** the burst knocks back every person and car within about 2.4 m of it (measured to the closest point
+  of the body, so a burst at the feet or the head counts). It causes no damage and no explosion, and the Demolitions
+  perk does not widen it.
 - **Shield:** raise it (hold right mouse) facing a shooter, and Cyberpunk gunfire and blasts from that side are
   blocked, with vanilla durability and sound.
 - **Potions on Steve also act on V:**
@@ -261,32 +315,96 @@ so ragdolls, NCPD heat, deaths and explosions are all native.
   | Blindness, Darkness | Cyberpunk's blinded screen |
 
   Damage-over-time effects (poison, wither) are never passed to V. Their damage already reaches Steve in Minecraft.
+  Infinite effects (for example `/effect give @s speed infinite`) come back on V after every save, quick or auto;
+  leaving Active forgets them.
 
 ### Layer 6: Cyberpunk in Minecraft form
 
-#### Scanning (G)
-1. Hold **G** and look at a person, a car or a device (camera, traffic light, vending machine, TV…).
-2. A Minecraft-style tooltip shows its name, faction, threat (None / Low / Medium / High / Extreme, colour-coded) and
-   health. A glowing outline marks it in Night City.
+#### Netrunning, step by step
+Netrunning is Minecraft's half of Cyberpunk's quickhacks: Minecraft owns the cyberdeck, the RAM, the chips and their
+recharge; Cyberpunk runs the real quickhack (upload, VFX, damage, AI reaction, NCPD heat) with V as the hacker.
 
-The scanned target stays **locked** for 5 s, so you can switch to a quickhack item and fire. When the crosshair is on
-no person or car, Cyberpunk scans whatever V looks at, which is how you target devices.
+**Step 0: be ready.** Cyberblock Active on foot ("Cyberblock on" after F9). It works in survival and creative (RAM
+costs apply in both), not in spectator, and not from a car (nothing is forwarded in a vehicle).
 
-#### RAM
-- The RAM bar sits above the hotbar. You only have RAM while a **Cyberdeck** is in your inventory: without one, it is
-  0.
-- The maximum is 8, or 12 with the Extra RAM perk.
-- It regenerates 1 point every 3 s (every 1.5 s with Overclock).
-- A **RAM Shard** (right mouse) restores 4 at once.
+**Step 1: get a cyberdeck.**
+- In survival, the starter kit arrives by itself the first time you press F9 in a world ("Cyberblock starter kit
+  received"). It holds the **Cyberdeck**, 2 **RAM Shards** and one of each of the 10 **quickhack chips**, all in the
+  main inventory (open it with **E**), and it starts your RAM full (8/8).
+- At any time: **T** (or **/**), type `/cyberblock kit`, Enter. Or craft a Cyberdeck (recipe below), or take one from
+  the **Cyberblock** creative tab.
+- The deck only has to be somewhere in your inventory (hotbar or main inventory). Without it your maximum RAM is 0 and
+  every chip says "You need a cyberdeck in your inventory".
 
-#### Quickhacks
-To fire one: lock a target with G, hold the item, and right-click. The starter kit puts the chips in the main
-inventory: move one to the hotbar first (E, hover it, press a number key).
-- The RAM is spent and the item recharges, then the real Cyberpunk quickhack fires, with its VFX and its NCPD
-  reaction.
-- If Cyberpunk refuses (the target died; it is protected: quest characters, friends, people in scenes, anyone vanilla
-  Cyberpunk would never let you hack; or V is in a cutscene), your RAM is refunded and the reason shows above the
-  hotbar.
+**Step 2: watch your RAM.** The bar above the hotbar reads "RAM n/m".
+- The maximum is 8, or 12 with the Extra RAM perk. It regenerates 1 point every 3 s (every 1.5 s with Overclock).
+- A **RAM Shard** in your hand plus right-click restores 4 at once ("RAM is already full" when it is). Losing the
+  cyberdeck empties the RAM.
+
+**Step 3: find your chips.** They stay in the main inventory; you do not have to move them, because the hack wheel
+fires chips from anywhere in the inventory. Hover one (E) to read its quickhack, its cost ("Costs n RAM", 1 less with
+Cheap Hacks) and how to use it. You can still put a favourite on the hotbar (E, hover it, press a number key).
+
+**Step 4: scan.** Hold **G** (the Hack key) and put the crosshair on a person, a car or a device.
+- While G is held, Minecraft asks Cyberpunk what is there about 5 times a second (once per second for the same
+  target). A quick tap of G scans once.
+- On a person or a car (their proxy is under the crosshair): that one. Otherwise Cyberpunk scans what V looks at, or
+  the target nearest the crosshair within about 4° and 48 m, which is how **devices** are scanned (cameras, vending
+  machines, TVs, radios, arcades, traffic lights). People do not need a proxy for this.
+- A tooltip appears right of the crosshair: name, faction, "Threat: None / Low / Medium / High / Extreme" (colour
+  coded), an HP bar for people and cars, or "Device". A glowing box marks the target in Night City.
+- A person behind a Night City wall is not scanned (log: "scan N: behind Night City").
+
+**Step 5: lock.** The last target a scan found stays **locked for 5 s**. Let go of G and the tooltip dims and counts
+down "Locked 5..1 s". A scan that finds nothing (crosshair on the sky or a bare wall while G is held) drops the lock.
+
+**Step 6: pick a chip and fire.** Two ways:
+- **The hack wheel (easiest):** keep **G** held, roll the **mouse wheel** to pick a chip (the hotbar does not move
+  while G is held; the tooltip shows "Chip: <name> (<n> RAM)" or "(recharging)"), then **right-click**. The wheel
+  starts at the chip in your hand, else the first one you own, and remembers your pick.
+- **From the hand:** hold a chip on the hotbar, scan with G (you may let go: the lock lasts 5 s) and right-click.
+
+Minecraft then checks, in this order: a cyberdeck, a lock from the last 5 s, the right kind of target (the Redstone
+Lever wants a device, every other chip a person or a car), and enough RAM. If all pass, it spends the RAM, starts the
+chip's recharge (2 s; 10 s for Synapse Burnout and Cyberpsychosis) and Cyberpunk runs the hack:
+- on a **person**: the quickhack itself, after its upload;
+- on a **car**: the hack goes to its driver; an empty car fails with "no driver";
+- with **Chain Hack**: the nearest other hackable living person within 8 m of the target gets the same hack.
+
+A success plays a short beacon sound and Cyberblock.log says "hack <name> on <id>: ok".
+
+**Step 7: read the answer.** Messages appear above the hotbar. Every failure Cyberpunk reports gives the RAM back.
+
+| Message | What to do |
+|---|---|
+| Hold G and look at a target | nothing is locked: scan first (the lock lasts 5 s) |
+| You need a cyberdeck in your inventory | get one (step 1) |
+| Not enough RAM: n of m | wait for it to regenerate, or use a RAM Shard |
+| Still recharging | that chip is on its 2 s (or 10 s) recharge: pick another with the wheel |
+| The Redstone Lever only works on devices | you locked a person or a car |
+| This quickhack needs a person or an occupied car | you locked a device: use the Redstone Lever |
+| Hack failed: no driver | the car is empty |
+| Hack failed: not hackable (friendly / god mode / quest character / no quickhack actions / not a person) | Cyberpunk protects this one (friends, quest characters, story NPCs) |
+| Hack failed: not hackable (V is in a scene) | finish the scene first |
+| Hack failed: target gone | it died or despawned |
+| Hack failed: not hackable (no intersection / camera allows no hack / device allows no hack / not a device) | that device offers nothing to hack |
+| Night City is not connected | Cyberpunk never answered (60 s, or 10 s with the link down) |
+
+**Step 8: devices.** The **Redstone Lever** (1 RAM) is the device chip. Aim at the device itself, not at a person in
+front of it, scan, and fire:
+- a traffic light flips its whole intersection;
+- a camera stops seeing V (it never takes over the view);
+- vending machines, TVs, radios and arcades make a distraction;
+- any other device runs the first quickhack it allows.
+
+**Step 9: perks.** Press **K** and buy the **Intelligence** branch in order (XP levels: 3, 5, 8, 12): **Extra RAM**
+(+4 maximum RAM), **Cheap Hacks** (every chip costs 1 RAM less, at least 1), **Chain Hack** (step 6) and **Overclock**
+(RAM regenerates twice as fast). XP comes from kills in Night City (the orbs drop at Steve) or `/xp add @s 30 levels`.
+
+**A quick run:** F9 (the kit arrives) → hold G on a ganger → roll the wheel to "Redstone Charge" → right-click → let
+go of G. The ganger is electrocuted and your RAM drops by 3.
+
+#### The chips
 
 | Item | Quickhack | RAM | Recharge | Recipe (shapeless) |
 |---|---|---|---|---|
@@ -363,9 +481,9 @@ Switch modes with Minecraft's `/gamemode` (cheats are on in the `cyberblock` wor
 - **Survival** (default):
   - Steve can die and respawns the Minecraft way;
   - hacks cost RAM, and perks cost XP levels;
-  - in a car, V takes normal Cyberpunk damage.
+  - in a car, V stays invincible and the hits go to Steve (see [the health rule](#4-the-one-health-rule)).
 - **Creative:**
-  - Steve cannot be hurt, so neither can V, and V also stays invincible in cars;
+  - Steve cannot be hurt, so neither can V, on foot or in a car;
   - RAM and perk costs still apply. Give yourself levels with `/xp add @s 100 levels`.
 - **Adventure / spectator:** vanilla rules. In adventure you cannot place or break blocks. A spectator takes no
   damage.
@@ -376,8 +494,9 @@ Switch modes with Minecraft's `/gamemode` (cheats are on in the `cyberblock` wor
   rod. The arrows are in the main inventory; the bow finds them there.
 - **Offhand:** the shield. Hold right mouse with the sword (or an empty hand) to raise it.
 - **Chest:** the elytra.
-- **Main inventory (E):** everything else, including the Cyberdeck and the quickhack chips. To use a chip, open the
-  inventory, hover it and press a number key to put it in that hotbar slot.
+- **Main inventory (E):** everything else, including the Cyberdeck and the quickhack chips. Chips work from there
+  with the hack wheel (hold G, wheel, right-click); see [netrunning](#netrunning-step-by-step).
+- RAM is filled to the maximum whenever the kit is handed out.
 - A slot that is already taken sends its kit item to the main inventory instead. A stack Steve already has is topped
   up. Whatever does not fit drops at his feet.
 
@@ -392,11 +511,10 @@ Switch modes with Minecraft's `/gamemode` (cheats are on in the `cyberblock` wor
 | Spawn eggs | 4 zombie, 2 skeleton, 2 creeper |
 
 ### Commands
-Cyberpunk forwards keys, not text. **T** and **/** open Minecraft's chat, but what you type must go into the Minecraft
-window:
-1. Alt+Tab to Minecraft.
-2. Type the command and press Enter.
-3. Alt+Tab back to Cyberpunk.
+Press **T** (chat) or **/** (command line) and type right in Cyberpunk: while a Minecraft screen is open, the text you
+type, Enter, Backspace, Delete, the arrows, Home/End and Tab all go to Minecraft, accents and emoji included. Enter
+sends, Esc cancels. V stands still meanwhile. (Cyberblock.log notes "typing reaches Minecraft's screens" the first
+time.)
 
 Useful commands: `/cyberblock kit`, `/gamemode creative`, `/gamemode survival`, `/xp add @s 30 levels`,
 `/effect clear @s`.
@@ -405,13 +523,14 @@ Useful commands: `/cyberblock kit`, `/gamemode creative`, `/gamemode survival`, 
 
 ## 7. What Cyberpunk stops doing while Cyberblock is active
 
-All of this applies **on foot, while active**. Getting into a car, pressing F9, or "Minecraft lost" restores
-everything. Before every save, all of it is taken off and put back afterwards, so your saves stay vanilla.
+All of this applies **on foot, while active**. Getting into a car (where only V's invincibility stays), pressing F9,
+or "Minecraft lost" restores everything. Before every save, all of it is taken off and put back afterwards, so your saves stay vanilla.
 
 **V:**
 - V is invincible (Steve takes the damage) and invisible: the body meshes are hidden, and Steve stands there instead.
 - Weapons are holstered.
-- The Cyberpunk HUD is hidden on foot.
+- The Cyberpunk HUD is hidden on foot, except while an interaction prompt (F: doors, talking, getting out of a car) or
+  a dialogue choice list is up; it hides again once they are gone. The 2 s transition notifications still show.
 
 **Blocked:**
 - combat: guns, melee, cyberware arms, grenades and gadgets;
@@ -426,11 +545,14 @@ everything. Before every save, all of it is taken off and put back afterwards, s
 **Exceptions:** Steve's **Double Jump** perk gives V the double jump back, and his **Dodge** perk gives the dash and
 air dash back.
 
-**Keys:**
-- F5 does not quick-save. Save from the pause menu or turn Cyberblock off first.
+**Keys** (the full table is in [Controls](#3-controls)):
+- F5 does not quick-save. Save from the pause menu or turn Cyberblock off first. F9 never quick-loads, in any state.
 - G does not toggle walking. K does not open crafting while it is the skill-tree key (the default): rebind the skill
   tree to another key and K opens Cyberpunk's crafting menu again.
-- 1–9, E, Q, T, /, the mouse buttons and the wheel go only to Minecraft.
+- 1–9, E, Q, T, X, /, the left/right/middle mouse buttons and the wheel go only to Minecraft, except that E, Q, 1–4
+  and the wheel go to Cyberpunk while a dialogue offers 2 or more choices.
+- T cannot answer the phone while Active: press F9 to take a call, then F9 again.
+- Mouse 4 and 5 and Left Ctrl stay Cyberpunk's (dodge, scanner hold, whatever you bound there).
 
 **Camera:** it is frozen while a Minecraft screen is open.
 
@@ -488,12 +610,21 @@ Running both games needs a lot of **Windows commit** (RAM plus page file), not j
 - **Gliding jitters:** run `CyberblockFlight.SetCameraOnly(true)` in CET.
 - **A wall of invisible collision is left in Night City:** run
   `CyberblockCollision.Reset(Game.GetPlayer():GetGame())` in CET. This also happens by itself on every reconnect.
-- **You cannot pick a dialogue option, or a Cyberpunk key does nothing:** the key may be one Cyberblock forwards.
-  Press F9 to turn Cyberblock off for the conversation, then back on.
-- **The hack or skill-tree key does nothing:** another key may hold that binding. Rebind it in Minecraft's Controls
-  to a letter, digit or F-key.
+- **You cannot pick a dialogue option:** with 2 or more choices on screen, E/Q or the wheel scroll them, 1–4 pick
+  directly and F confirms. A Minecraft screen left open covers them: close it with Esc. If a conversation still
+  does not react, press F9 to turn Cyberblock off for it, then back on.
+- **A Cyberpunk key does nothing:** check [the key table](#3-controls); the key may be one Minecraft owns while
+  Active.
+- **The elytra does not open:** V must be falling with 3 blocks of free air below, not held by the game and not in a
+  menu (see [layer 4](#layer-4-elytra-and-ender-pearls)). Cyberblock.log says why a glide was ignored
+  ("flight: ignored, V is in a vehicle or held (<reason>)"); the Minecraft log shows "glide called off".
+- **Weapons, leads and mobs ignore people:** look at the 5 s lines "npcs: sent H people + C cars; ... left out: ..."
+  in Cyberblock.log and "proxies: H people, C cars" in the Minecraft log. The left-out reasons (dead, defeated,
+  mounted, puppet, detached, not_npc, over_cap) say why. Scanning and quickhacks on people do not need proxies.
+- **The hack or skill-tree key does nothing:** rebind it in Minecraft's Controls to an allowed key (G K L O U Y 0
+  F1-F4 F6-F8 F10-F12). A refused key, or both actions on one key, falls back to G/K and chat says so.
 - **A hack says "Not enough RAM" or "You need a cyberdeck in your inventory":** keep the Cyberdeck in your inventory.
-  RAM refills over time, or use a RAM Shard.
+  RAM refills over time, or use a RAM Shard. More messages: [netrunning step 7](#netrunning-step-by-step).
 - **"Hold G and look at a target":** scan first. The lock lasts 5 s.
 
 ---
