@@ -19,24 +19,47 @@ the landing behaviour and the camera switch can only be judged in game: the chec
 
 ## Method (`cp/scripts/Cyberblock/Flight.reds`)
 
-1. **Start.** The 10 Hz `CyberblockFlight.Tick` sees `Cyberblock_FlightActive()` turn true (V on foot, live). It
-   remembers `Cyberblock_FlightSeq()`, bumps a loop generation and queues the first frame callback.
+1. **Start.** The 10 Hz `CyberblockFlight.Tick` sees `Cyberblock_FlightActive()` turn true (V on foot, live, not
+   held). It remembers the start time and V's position, calls `Cyberblock_SetFlightFollowing(true)` (Minecraft reads
+   it as `cam.fly`), bumps a loop generation and queues the first frame callback. `FlightSeq` is not used: the loop
+   runs until `Cyberblock_FlightActive()` is false. A refused start (vehicle, `PlayerLocked`) sets following false and
+   logs the lock reason; Minecraft then calls the glide off within 0.5 s and Steve goes back to V.
 2. **Every frame.** The callback stops as soon as its generation is stale (`DelayCallbackNextFrame` returns no id, so
    it cannot be cancelled), then:
-   - **landing:** if `Cyberblock_FlightActive()` is false (`FlightSeq` changed), V is placed at
-     `Cyberblock_FlightPos()` (the landing spot) and the loop ends. If that spot is more than 1 m above the
-     Static/Terrain ground below it, Minecraft went silent in mid-air (the DLL ends a flight whose samples are 0.5 s
-     old), so V is put on that ground instead;
-   - **primary:** otherwise `Teleport(V, Cyberblock_FlightPos(), Vector4.ToRotation(V.GetWorldForward()))`;
+   - **landing:** if `Cyberblock_FlightActive()` is false and the flight was not timed out (Minecraft sent
+     `active:false`), the loop ends at `Cyberblock_FlightPos()` (the landing spot): no teleport when the flight
+     lasted under 0.3 s or the spot is within 1.5 m of V; otherwise the ground is raycast from 1.5 m above the spot
+     and a higher surface wins (V never ends under the real floor), and a spot more than 1 m above the ground goes
+     down to it. In primary mode the spot is first clipped like a frame (below);
+   - **timed out** (`Cyberblock_FlightTimedOut()`: the samples stopped without `active:false`): V is held where it is
+     for up to 1 s and following resumes if the samples come back; after that V is put on the ground below;
+   - **primary:** otherwise V goes to `Cyberblock_FlightPos()`, stopped 0.3 m short of any Night City surface
+     (Static + Terrain, not our collision boxes) between the last position V was put at and it;
    - **camera only:** V is put back at the take-off spot if it drifted more than 5 cm. The camera entity is teleported
      to `FlightPos + (0, 0, 1.6)` looking along `(−sin a·cos p, cos a·cos p, −sin p)` for Cyberpunk yaw `a` and
      Minecraft pitch `p` (positive = down).
-3. **Landing.** The game is told nothing: V is simply teleported to the landing spot. Fall reports are suppressed for
-   2 s after it (`CyberblockFlight.SuppressFall`, which S1's `Health.reds` reads). In camera-only mode the camera is
-   deactivated and despawned, look capture is switched off, and V is turned to the flight yaw.
+   Every frame that follows calls `Cyberblock_SetFlightFollowing(true)` again; while the camera flies,
+   `CyberblockFlight.Center` (the flight position) is where `Probes.reds` probes the ground.
+3. **Landing.** The game is told nothing: V is simply teleported to the landing spot (when the rules above call for a
+   teleport). Fall reports are suppressed for 2 s after it (`CyberblockFlight.SuppressFall`, which S1's `Health.reds`
+   reads). In camera-only mode the camera is deactivated and despawned, look capture is switched off, and V is turned
+   to the flight yaw. Every stop sets following false.
 4. **`Clear`** (before saves, on load, at session end, on leaving Active/Vehicle) stops the loop and restores the
    camera and look capture. A save in mid-flight therefore saves V wherever the last frame put it. The next live tick
    restarts following if Minecraft is still gliding.
+
+## Minecraft side (`Flight.java`, `FlightRules.java`)
+
+- **Start:** a usable elytra, at least 3 blocks of free air straight down from V's feet (a `COLLIDER` ray, so barriers
+  count) and Steve's gliding box at V's feet clear of any collision; then a jump press while V falls faster than
+  1 m/s between the newest two samples, or a fall faster than 12 m/s for 0.3 s. With Steve's Double Jump perk the
+  first press while `cam.air` is V's own double jump and the second opens the elytra. Not while `cam.held` or
+  `cam.menu`, nor for 1 s after a glide was called off.
+- **Following:** a glide whose `cam.fly` does not turn true within 0.5 s, or turns false after it was true, is called
+  off: Steve snaps back to V's feet and the host hears `active:false` at V's own feet (no landing teleport). The host's
+  fall damage is ignored, and the 0.5 s landing settle armed, only once the host followed.
+- **Menus:** while `cam.menu` Steve waits in the air where he was, with no gravity and no flight samples; when it
+  closes he carries on with the velocity he had (the host holds V meanwhile, step 2 "timed out").
 
 ## Evidence
 
@@ -79,7 +102,8 @@ log.
 - **F-2 look kept:** look 45° down, then start a glide. Expected: the pitch stays at 45° down at take-off (not reset
   to level), and the yaw is unchanged.
 - **F-3 landing:** glide from a megabuilding roof down to the street. Expected:
-  - the log has `flight: landed` and no `dmg fall` line within 2 s;
+  - the log has `flight: over, V stays where it is` (primary: V is already at the spot) or `flight: landed`, and no
+    `dmg fall` line within 2 s;
   - V stands at the landing spot and V's Health is unchanged;
   - note which landing plays (sound/camera shake): regular, hard or death. If V dies or the death-landing effects
     play, enable the `ToDeathLand` wrap described above.
@@ -97,3 +121,22 @@ log.
 - **F-7 ender pearl:** throw a pearl onto a rooftop. Expected:
   - V is teleported there facing Steve's yaw, with the camera pitch unchanged;
   - the log has no `dmg fall` within 2 s.
+- **F-8 refused glide (fix B):** start a glide while V is held (a workspot, e.g. sitting) or let it be refused.
+  Expected: `flight: ignored ... (<reason>)` in the Cyberpunk log; Minecraft's log has `glide called off (the host
+  did not follow)` within 0.5 s and Steve is back with V; no 300 m solo flight.
+- **F-9 clearance and double jump (fix B):** Space at the end of a normal jump never opens the elytra; a jump off a
+  ledge with 3+ blocks below does. With Steve's Double Jump perk, the first Space in the air double-jumps V and the
+  second opens the elytra.
+- **F-10 menu mid-glide (fix B):** open the map mid-glide for 5 s, close it. Expected: Minecraft logs `glide paused`
+  then `glide resumed`, the Cyberpunk log may show `flight: no samples, holding V` then `flight: samples back`, and
+  V carries on gliding from where it was.
+- **F-11 walls (fix B):** glide fast into a building away from probed ground. Expected: V stops at the wall
+  (`flight: V stopped short of Night City geometry ...` once) instead of entering it; after the landing Steve comes
+  back to V.
+- **F-12 pearl refused (fix B):** throw a pearl while V sits or drives. Expected: the overlay "Pearl blocked: V cannot
+  be moved right now", the pearl back in the inventory, no 5 HP lost, no `teleport` handled by Cyberpunk.
+
+**Pending in-game (fix B, 2026-10-03):** F-1 to F-3 were never run with a real Cyberpunk, and F-8 to F-12 check the
+fix-B changes; all need package A's `Cyberblock_SetFlightFollowing`, `Cyberblock_FlightTimedOut` and the cam flags
+`fly`, `menu`, `air`, `held`. If F-3 shows death landings (V dies, or the death-landing effects play), ship the
+`LocomotionAirDecisions.ToDeathLand` wrap described above.

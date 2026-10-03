@@ -8,6 +8,7 @@ import java.util.List;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.client.CloudStatus;
@@ -51,18 +52,25 @@ public class CyberblockClient implements ClientModInitializer {
 		EntityRendererRegistry.register(ProxyEntities.VEHICLE, NoopRenderer::new);
 		ClientTickEvents.END_CLIENT_TICK.register(CyberblockClient::tick);
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-			ServerPlayer player = handler.player;
-			// never left gliding from a previous session, and with no host yet Steve hangs where he is instead of falling into the void.
-			// The chest slot is kept: it may hold his elytra (the cyber track's starter kit replaces the old block kit).
-			player.stopFallFlying();
-			player.setNoGravity(true);
+			hang(handler.player);
 			setupIn = 10;
 		});
+		// a respawned player is a new entity without NoGravity: he fell into the void again and died, over and over
+		ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> hang(newPlayer));
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
 			if (setupIn > 0 && --setupIn == 0) {
 				SETUP.forEach(WorldBridge::command);
 			}
 		});
+	}
+
+	/**
+	 * Never left gliding (from a previous session or life), and with no host yet Steve hangs where he is instead of falling into the
+	 * void. The chest slot is kept: it may hold his elytra (the cyber track's starter kit replaces the old block kit).
+	 */
+	private static void hang(final ServerPlayer player) {
+		player.stopFallFlying();
+		player.setNoGravity(true);
 	}
 
 	private static void tick(final Minecraft minecraft) {

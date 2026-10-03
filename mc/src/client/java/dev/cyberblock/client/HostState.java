@@ -20,11 +20,16 @@ public final class HostState {
 	 * @param bodyYaw the player's body yaw (third person)
 	 * @param drive the reference's host-driven flight flag (cam "drive", "look"); unused: Flight decides when Minecraft moves Steve
 	 * @param gun the player holds one of the host's guns (Steve aims it; his own item isn't drawn)
+	 * @param fly the host follows Steve's glide with V (cam "fly")
+	 * @param menu a Cyberpunk menu is open: the game is paused (cam "menu")
+	 * @param air V is off the ground: jumping or falling (cam "air")
+	 * @param held the game holds V (a scene, workspot, braindance or moving elevator): it cannot be moved (cam "held")
 	 */
 	public record Pose(
 		long hostFrame, double x, double y, double z, float yaw, float pitch, float roll, float fov,
 		boolean firstPerson, double px, double py, double pz, float bodyYaw, long receivedNanos,
-		boolean drive, float lookYaw, float lookPitch, boolean gun
+		boolean drive, float lookYaw, float lookPitch, boolean gun,
+		boolean fly, boolean menu, boolean air, boolean held
 	) {
 	}
 
@@ -42,7 +47,8 @@ public final class HostState {
 	}
 
 	/**
-	 * {"t":"cam","f":frame,"p":[x,y,z],"r":[yaw,pitch,roll],"fov":deg,"fp":bool,"pl":[x,y,z],"h":bodyYaw}. Every number is
+	 * {"t":"cam","f":frame,"p":[x,y,z],"r":[yaw,pitch,roll],"fov":deg,"fp":bool,"pl":[x,y,z],"h":bodyYaw}, plus the flags
+	 * "cr", "fly", "menu", "air" and "held" (false when absent or not a boolean: an older host never sends them). Every number is
 	 * checked before the pose is built, and a bad message throws IllegalArgumentException (the link logs it and carries on, the
 	 * previous pose stays): NaN or a position outside the world would reach player.setPos, whose move packet gets the player
 	 * kicked by the server (that ends the singleplayer session). Pitch is clamped to +-90: the host's asin(-dy) can round past it.
@@ -74,10 +80,17 @@ public final class HostState {
 			System.nanoTime(),
 			m.has("drive") && m.get("drive").getAsBoolean(),
 			lookYaw, lookPitch,
-			m.has("gun") && m.get("gun").getAsBoolean()
+			m.has("gun") && m.get("gun").getAsBoolean(),
+			flag(m, "fly"), flag(m, "menu"), flag(m, "air"), flag(m, "held")
 		);
 		// V crouched (layers 3-6): Steve crouches too (KeyboardInputMixin), and the cyber track reads it for optical camo
-		Bridge.hostCrouching = m.get("cr") instanceof JsonPrimitive cr && cr.isBoolean() && cr.getAsBoolean();
+		Bridge.hostCrouching = flag(m, "cr");
+		// V cannot be moved: the server refuses ender pearl teleports (ThrownEnderpearlMixin)
+		Bridge.hostHeld = flag(m, "held");
+	}
+
+	private static boolean flag(final JsonObject m, final String name) {
+		return m.get(name) instanceof JsonPrimitive v && v.isBoolean() && v.getAsBoolean();
 	}
 
 	/** The host's Space and Left Shift (key "jump"/"sprint"): Cyberpunk keeps them too, Minecraft only reads them. Client thread. */
@@ -111,10 +124,11 @@ public final class HostState {
 		return pressed;
 	}
 
-	/** The host went away: no key stays held, and V is not crouching. Client thread. */
+	/** The host went away: no key stays held, and V is neither crouching nor held. Client thread. */
 	static void resetKeys() {
 		jumpDown = sprintDown = jumpPressed = false;
 		Bridge.hostCrouching = false;
+		Bridge.hostHeld = false;
 	}
 
 	/**
@@ -165,6 +179,7 @@ public final class HostState {
 
 	static void setVehicle(final boolean inVehicle) {
 		vehicle = inVehicle;
+		Bridge.hostInVehicle = inVehicle; // the server refuses ender pearl teleports (ThrownEnderpearlMixin)
 	}
 
 	/** The latest pose if the host is still sending, else null. */

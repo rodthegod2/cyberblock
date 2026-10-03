@@ -20,41 +20,80 @@ class FlightRulesTest {
 		return fall;
 	}
 
+	/** Plenty of air below and room for the gliding box. */
+	private static boolean start(final boolean jump, final boolean elytra, final FlightRules.Fall fall) {
+		return FlightRules.start(jump, elytra, fall.speed(), fall.fastNanos(), 5.0, false);
+	}
+
 	@Test
 	void jumpWhileFallingStartsAGlide() {
 		FlightRules.Fall fall = falling(2.0, 4);
-		assertEquals(2.0, fall.speed3(), 1e-9);
-		assertTrue(FlightRules.start(true, true, fall.speed3(), fall.fastNanos()));
+		assertEquals(2.0, fall.speed(), 1e-9);
+		assertTrue(start(true, true, fall));
 	}
 
 	@Test
 	void notWithoutElytraNorWithoutJumpNorStandingStill() {
 		FlightRules.Fall fall = falling(2.0, 4);
-		assertFalse(FlightRules.start(true, false, fall.speed3(), fall.fastNanos()));
-		assertFalse(FlightRules.start(false, true, fall.speed3(), fall.fastNanos()));
-		FlightRules.Fall slow = falling(0.9, 4);
-		assertFalse(FlightRules.start(true, true, slow.speed3(), slow.fastNanos()));
-		FlightRules.Fall rising = falling(-5.0, 4); // a jump going up
-		assertFalse(FlightRules.start(true, true, rising.speed3(), rising.fastNanos()));
+		assertFalse(start(true, false, fall));
+		assertFalse(start(false, true, fall));
+		assertFalse(start(true, true, falling(0.9, 4)));
+		assertFalse(start(true, true, falling(-5.0, 4)), "a jump going up");
+	}
+
+	/** In-game 2026-10-03: glides opened 0.4 m above the ground and touched down within the second. */
+	@Test
+	void needsThreeBlocksOfAirBelow() {
+		FlightRules.Fall fall = falling(6.0, 4);
+		assertFalse(FlightRules.start(true, true, fall.speed(), fall.fastNanos(), 0.4, false));
+		assertFalse(FlightRules.start(true, true, fall.speed(), fall.fastNanos(), 2.99, false));
+		assertTrue(FlightRules.start(true, true, fall.speed(), fall.fastNanos(), 3.0, false));
+		assertTrue(FlightRules.start(true, true, fall.speed(), fall.fastNanos(), 5.0, false));
+		assertFalse(FlightRules.start(true, true, fall.speed(), fall.fastNanos(), Double.NaN, false));
+		FlightRules.Fall fast = falling(20.0, 20);
+		assertFalse(FlightRules.start(false, true, fast.speed(), fast.fastNanos(), 2.0, false), "nor by itself");
+	}
+
+	/** V's feet inside the rounded-up barrier of Night City's ground: the glide would start stuck in it. */
+	@Test
+	void neverWhenTheGlidingBoxOverlapsABlock() {
+		FlightRules.Fall fall = falling(6.0, 4);
+		assertFalse(FlightRules.start(true, true, fall.speed(), fall.fastNanos(), 5.0, true));
+		FlightRules.Fall fast = falling(20.0, 20);
+		assertFalse(FlightRules.start(false, true, fast.speed(), fast.fastNanos(), 5.0, true));
 	}
 
 	@Test
-	void needsThreeTicksOfFalling() {
-		FlightRules.Fall fall = falling(5.0, 3);
-		assertEquals(0.0, fall.speed3());
-		assertFalse(FlightRules.start(true, true, fall.speed3(), fall.fastNanos()));
+	void theJumpUsesTheNewestTwoSamples() {
+		FlightRules.Fall fall = new FlightRules.Fall();
+		assertEquals(0.0, fall.speed());
+		fall.sample(1_000_000_000L, 0.0, 100.0, 0.0);
+		assertEquals(0.0, fall.speed(), "one sample is no speed");
+		fall.sample(1_000_000_000L + TICK, 0.0, 99.9, 0.0);
+		assertEquals(2.0, fall.speed(), 1e-9);
+		assertTrue(start(true, true, fall), "two samples are enough");
+		// the top of a jump: still rising over the last three ticks, already falling in the newest one
+		FlightRules.Fall top = new FlightRules.Fall();
+		double[] y = {100.0, 100.5, 100.7, 100.6};
+		for (int i = 0; i < y.length; i++) {
+			top.sample(i * TICK, 0.0, y[i], 0.0);
+		}
+
+		assertEquals(2.0, top.speed(), 1e-9);
+		assertTrue(start(true, true, top));
 	}
 
 	@Test
 	void aLongFastFallStartsByItself() {
-		FlightRules.Fall short_ = falling(20.0, 10); // 9 intervals: 0.45 s
-		assertFalse(FlightRules.start(false, true, short_.speed3(), short_.fastNanos()));
-		FlightRules.Fall fall = falling(20.0, 11); // 0.5 s
-		assertEquals(500_000_000L, fall.fastNanos());
-		assertTrue(FlightRules.start(false, true, fall.speed3(), fall.fastNanos()));
-		assertFalse(FlightRules.start(false, false, fall.speed3(), fall.fastNanos()));
-		FlightRules.Fall slow = falling(14.0, 40);
-		assertEquals(0L, slow.fastNanos());
+		FlightRules.Fall short_ = falling(13.0, 6); // 5 intervals: 0.25 s
+		assertFalse(start(false, true, short_));
+		FlightRules.Fall fall = falling(13.0, 7); // 0.3 s
+		assertEquals(300_000_000L, fall.fastNanos());
+		assertTrue(start(false, true, fall));
+		assertFalse(start(false, false, fall));
+		FlightRules.Fall slow = falling(11.9, 40);
+		assertEquals(0L, slow.fastNanos(), "12 m/s is the threshold");
+		assertFalse(start(false, true, slow));
 	}
 
 	@Test
@@ -71,7 +110,30 @@ class FlightRulesTest {
 	void staleOrRepeatedSamplesAreIgnored() {
 		FlightRules.Fall fall = falling(2.0, 4);
 		fall.sample(1_000_000_000L, 0.0, 0.0, 0.0); // older than the last
-		assertEquals(2.0, fall.speed3(), 1e-9);
+		assertEquals(2.0, fall.speed(), 1e-9);
+	}
+
+	@Test
+	void withoutDoubleJumpEveryPressInTheAirCounts() {
+		FlightRules.AirJumps jumps = new FlightRules.AirJumps();
+		assertTrue(jumps.press(true, true, false));
+		assertFalse(jumps.press(true, false, false));
+		assertTrue(jumps.press(true, true, false));
+	}
+
+	@Test
+	void withDoubleJumpTheFirstPressInTheAirIsVs() {
+		FlightRules.AirJumps jumps = new FlightRules.AirJumps();
+		assertTrue(jumps.press(false, true, true), "the jump off the ground is passed on (it cannot open the elytra)");
+		assertFalse(jumps.press(true, true, true), "V's double jump");
+		assertFalse(jumps.press(true, false, true));
+		assertTrue(jumps.press(true, true, true), "the second press in the air opens the elytra");
+		assertTrue(jumps.press(true, true, true));
+		assertFalse(jumps.press(false, false, true), "landed: the count starts again");
+		assertFalse(jumps.press(true, true, true));
+		assertTrue(jumps.press(true, true, true));
+		jumps.reset();
+		assertFalse(jumps.press(true, true, true));
 	}
 
 	@Test
@@ -87,6 +149,57 @@ class FlightRulesTest {
 		assertEquals(0.0, v[2], 1e-9);
 		fall.reset();
 		assertArrayEquals(new double[] {0.0, 0.0, 0.0}, fall.velocity());
+	}
+
+	@Test
+	void aGlideTheHostNeverFollowsIsCalledOffAfterHalfASecond() {
+		long start = 1_000_000_000L;
+		FlightRules.Follow follow = new FlightRules.Follow();
+		follow.start(start);
+		assertTrue(follow.ok(start + 100_000_000L, start + 90_000_000L, false));
+		assertTrue(follow.ok(start + 499_999_999L, start + 490_000_000L, false));
+		assertFalse(follow.ok(start + 500_000_000L, start + 490_000_000L, false));
+		assertFalse(follow.seen());
+	}
+
+	@Test
+	void aGlideIsCalledOffWhenTheHostStopsFollowing() {
+		long start = 1_000_000_000L;
+		FlightRules.Follow follow = new FlightRules.Follow();
+		follow.start(start);
+		assertTrue(follow.ok(start + 150_000_000L, start + 140_000_000L, true));
+		assertTrue(follow.seen());
+		assertTrue(follow.ok(start + 5_000_000_000L, start + 4_990_000_000L, true), "no time limit once it follows");
+		assertFalse(follow.ok(start + 5_050_000_000L, start + 5_040_000_000L, false));
+	}
+
+	@Test
+	void aMenuPauseGivesAHostThatHasNotFollowedYetItsTimeAgain() {
+		long start = 1_000_000_000L;
+		FlightRules.Follow follow = new FlightRules.Follow();
+		follow.start(start);
+		follow.restart(start + 3_000_000_000L); // a Cyberpunk menu was open for 3 s
+		assertTrue(follow.ok(start + 3_400_000_000L, start + 3_390_000_000L, false));
+		assertFalse(follow.ok(start + 3_500_000_000L, start + 3_490_000_000L, false));
+		follow.start(start);
+		assertTrue(follow.ok(start + 100_000_000L, start + 90_000_000L, true));
+		follow.restart(start + 3_000_000_000L);
+		assertTrue(follow.seen(), "a host that follows stays followed");
+		assertFalse(follow.ok(start + 3_100_000_000L, start + 3_090_000_000L, false));
+	}
+
+	@Test
+	void onlyPosesAfterTheStartCount() {
+		long start = 1_000_000_000L;
+		FlightRules.Follow follow = new FlightRules.Follow();
+		follow.start(start);
+		// the previous glide's last pose still says fly: it does not count for this one
+		assertTrue(follow.ok(start + 10_000_000L, start - 5_000_000L, true));
+		assertFalse(follow.seen());
+		follow.start(start);
+		assertTrue(follow.ok(start + 20_000_000L, start + 15_000_000L, true));
+		follow.start(start + 1_000_000_000L);
+		assertFalse(follow.seen(), "a new glide starts unfollowed");
 	}
 
 	@Test

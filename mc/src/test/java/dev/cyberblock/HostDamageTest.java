@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import net.minecraft.core.Holder;
+import net.minecraft.world.damagesource.DamageType;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
@@ -52,6 +54,21 @@ class HostDamageTest {
 	void aMissingOrBadKindIsOther() {
 		assertEquals("other", parse("{\"frac\":0.5}").kind());
 		assertEquals("other", parse("{\"frac\":0.5,\"kind\":7}").kind());
+	}
+
+	/** A fall or a fire has no direction: a position would knock Steve back from where V's damage was reported. */
+	@Test
+	void fallAndFireHaveNoSourcePosition() {
+		Holder<DamageType> fall = Holder.direct(new DamageType("fall", 0.0F));
+		assertNull(HostDamage.source(fall, parse("{\"frac\":0.5,\"kind\":\"fall\",\"from\":[1,64,2]}")).getSourcePosition());
+		Holder<DamageType> fire = Holder.direct(new DamageType("onFire", 0.0F));
+		assertNull(HostDamage.source(fire, parse("{\"frac\":0.5,\"kind\":\"fire\",\"from\":[1,64,2]}")).getSourcePosition());
+		Holder<DamageType> explosion = Holder.direct(new DamageType("explosion", 0.1F));
+		assertEquals(new Vec3(1, 64, 2),
+			HostDamage.source(explosion, parse("{\"frac\":0.5,\"kind\":\"explosion\",\"from\":[1,64,2]}")).getSourcePosition());
+		Holder<DamageType> mob = Holder.direct(new DamageType("mob", 0.1F));
+		assertEquals(new Vec3(1, 64, 2),
+			HostDamage.source(mob, parse("{\"frac\":0.5,\"kind\":\"bullet\",\"from\":[1,64,2]}")).getSourcePosition());
 	}
 
 	@Test
