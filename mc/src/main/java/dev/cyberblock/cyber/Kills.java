@@ -1,11 +1,8 @@
 package dev.cyberblock.cyber;
 
 import com.google.gson.JsonObject;
-import dev.cyberblock.Bridge;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.ExperienceOrb;
-import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
 /** {"t":"killed","target":"<id>","kind":"human"|"vehicle","hostile":bool}: Night City lost someone to V (task C8). */
@@ -40,11 +37,12 @@ public final class Kills {
 		return hostile ? HOSTILE_XP : XP;
 	}
 
-	/** Server thread: XP orbs where the proxy stands (at the player when it is gone), and cold blood. */
+	/**
+	 * Server thread: XP orbs at Steve, and cold blood. Not where the proxy stood: a kill is often tens of metres off (a car, a shot from
+	 * afar), beyond the reach of Steve's pickup, and the proxy may be gone from the list by the time the message arrives.
+	 */
 	public static void onKilled(final ServerPlayer player, final Killed killed) {
-		Entity proxy = Bridge.proxyById.apply(killed.target());
-		Vec3 at = proxy != null && !proxy.isRemoved() && proxy.level() == player.level() ? proxy.position() : player.position();
-		ExperienceOrb.award(player.level(), at, xp(killed.hostile()));
+		ExperienceOrb.award(player.level(), player.position(), xp(killed.hostile()));
 		PerkEffects.coldBlood(player);
 	}
 }
