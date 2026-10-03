@@ -58,6 +58,11 @@ public final class MobRules {
 		return !groundBelow || dx * dx + dz * dz > HOLD_RANGE * HOLD_RANGE;
 	}
 
+	/** How much a mob with this base follow range needs on top of it to hunt proxies from RANGE away: 0 when it sees that far already. */
+	public static double followRangeBoost(final double baseRange) {
+		return baseRange < RANGE ? RANGE - baseRange : 0.0;
+	}
+
 	/** A proxy this far (horizontally) from Steve is on probed ground: a mob may hunt it, one that left it would be held on the way. */
 	public static boolean proxyInReach(final double dx, final double dz) {
 		return !held(dx, dz, true);

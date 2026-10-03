@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -17,6 +18,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.GoalSelector;
 import net.minecraft.world.entity.monster.Enemy;
@@ -31,6 +33,8 @@ import net.minecraft.world.phys.Vec3;
  */
 public final class MobWar {
 	private static final EntityTypeTest<Entity, Mob> MOBS = EntityTypeTest.forClass(Mob.class);
+	/** The follow range a fighter gets on top of its own, so that it can hunt proxies from MobRules.RANGE away (never saved). */
+	private static final Identifier PROXY_RANGE = Identifier.fromNamespaceAndPath(Cyberblock.ID, "proxy_range");
 	/** The fighters held right now. Read from every living entity's tick (HeldMobMixin), on both sides: concurrent. */
 	private static final Set<LivingEntity> held = ConcurrentHashMap.newKeySet();
 	private static int ticks;
@@ -58,9 +62,11 @@ public final class MobWar {
 		}
 
 		Mob mob = (Mob) e;
+		// a transient modifier, not a new base value: the mob's saved attributes stay as vanilla wrote them
 		AttributeInstance range = mob.getAttribute(Attributes.FOLLOW_RANGE);
-		if (range != null && range.getBaseValue() < MobRules.RANGE) {
-			range.setBaseValue(MobRules.RANGE);
+		double boost = range == null ? 0.0 : MobRules.followRangeBoost(range.getBaseValue());
+		if (boost > 0.0) {
+			range.addOrUpdateTransientModifier(new AttributeModifier(PROXY_RANGE, boost, AttributeModifier.Operation.ADD_VALUE));
 		}
 
 		GoalSelector targets = ((MobAccessor) mob).cyberblock$targetSelector();

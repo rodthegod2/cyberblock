@@ -59,6 +59,17 @@ class MobRulesTest {
 		assertFalse(MobRules.proxyInReach(48.0, 0.0), "in the mob's follow range, but off the ground the host probes");
 	}
 
+	/** The boost goes on as a modifier on the base, so base + boost is exactly the hunting range; a mob that sees further is left alone. */
+	@Test
+	void followRangeIsRaisedToTheHuntingRangeWithoutChangingTheBase() {
+		assertEquals(13.0, MobRules.followRangeBoost(35.0), 1e-9, "a zombie");
+		assertEquals(32.0, MobRules.followRangeBoost(16.0), 1e-9, "a skeleton");
+		assertEquals(MobRules.RANGE, 16.0 + MobRules.followRangeBoost(16.0), 1e-9);
+		assertEquals(0.0, MobRules.followRangeBoost(MobRules.RANGE));
+		assertEquals(0.0, MobRules.followRangeBoost(64.0));
+		assertEquals(0.0, MobRules.followRangeBoost(Double.NaN));
+	}
+
 	@Test
 	void mobsPreferHostilePedestriansThenTheNearest() {
 		assertTrue(MobRules.preferred(true, 900.0, false, 4.0), "a hostile one far off beats a peaceful one beside it");
