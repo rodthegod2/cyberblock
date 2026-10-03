@@ -17,20 +17,26 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Abilities;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Layer 4 elytra flight. Steve normally hangs at the host's V (PlayerSync). With a usable elytra, the host's jump key while V
  * falls (or a long fast fall) starts a vanilla glide: Minecraft's physics move Steve ("drive mode"), the look comes from the host
  * camera (or from the host's raw look deltas in its camera-only fallback), and every frame the host hears where he is
- * ({"t":"flight"}) and moves V there. Touchdown ends it. Client thread only.
+ * ({"t":"flight"}) and moves V there. Touchdown ends it. The host says in every cam whether it follows (cam.fly): a glide it does
+ * not take up within half a second, or stops following, is called off and Steve goes back to V (in-game 2026-10-03: the host
+ * refused a glide and Steve flew 320 m alone, into the void). Client thread only.
  */
 public final class Flight {
 	private static final long FRAME_NANOS = 1_000_000_000L / 120;
 	private static final FlightRules.Fall fall = new FlightRules.Fall();
+	private static final FlightRules.Follow follow = new FlightRules.Follow();
 	private static long lastPose;
 	private static boolean driving;
 	private static boolean landed;
 	private static long touchdownNanos;
+	/** No glide starts before this (System.nanoTime, compared as a difference) after one was called off. */
+	private static long retryAt = System.nanoTime();
 	/** The host sent look deltas during this flight: they steer, not its camera. */
 	private static boolean lookFromDeltas;
 	private static float lookYaw, lookPitch;
@@ -54,11 +60,7 @@ public final class Flight {
 		boolean jumpPressed = HostState.takeJumpPress();
 		HostState.Pose p = HostState.live();
 		if (driving) {
-			HostDamage.fallFreeUntil = System.nanoTime() + FlightRules.FALL_GRACE_NANOS;
-			if (p == null || FlightRules.touchdown(player.onGround(), player.isFallFlying())) {
-				land(player);
-			}
-
+			drive(player, p);
 			return;
 		}
 
@@ -72,8 +74,32 @@ public final class Flight {
 			fall.sample(lastPose, p.px(), p.py(), p.pz());
 		}
 
-		if (followsCam() && FlightRules.start(jumpPressed, hasElytra(player), fall.speed3(), fall.fastNanos())) {
+		// a host that cannot move V (held by the game, or paused in a menu) would only refuse the glide
+		boolean may = followsCam() && !p.held() && !p.menu() && System.nanoTime() - retryAt >= 0L;
+		if (may && FlightRules.start(jumpPressed, hasElytra(player), fall.speed3(), fall.fastNanos())) {
 			start(player, p);
+		}
+	}
+
+	/** A client tick while gliding: carry on, call it off when the host does not follow, or land. */
+	private static void drive(final LocalPlayer player, final HostState.@Nullable Pose p) {
+		if (p == null) {
+			land(player, null); // the host went away
+			return;
+		}
+
+		long now = System.nanoTime();
+		if (!follow.ok(now, p.receivedNanos(), p.fly())) {
+			abort(player, p);
+			return;
+		}
+
+		if (follow.seen()) {
+			HostDamage.fallFreeUntil = now + FlightRules.FALL_GRACE_NANOS;
+		}
+
+		if (FlightRules.touchdown(player.onGround(), player.isFallFlying())) {
+			land(player, p);
 		}
 	}
 
@@ -117,24 +143,60 @@ public final class Flight {
 		landed = false;
 		lookFromDeltas = false;
 		lastSent = 0L;
-		HostDamage.fallFreeUntil = System.nanoTime() + FlightRules.FALL_GRACE_NANOS;
+		// V's fall damage is only ignored once the host follows (drive): a refused glide leaves V falling for real
+		follow.start(System.nanoTime());
 		Cyberblock.LOG.info("glide started at {} with {} m/s", player.position(), Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]));
 	}
 
-	/** Touchdown (or the host went away mid-air): the host hears where, and Steve hangs there again until the host has placed V. */
-	private static void land(final LocalPlayer player) {
+	/**
+	 * Touchdown (or the host went away mid-air): the host hears where, and Steve hangs there again until the host has placed V. A
+	 * glide the host never followed has no landing spot for V: it is called off instead.
+	 */
+	private static void land(final LocalPlayer player, final HostState.@Nullable Pose p) {
+		if (!follow.seen()) {
+			abort(player, p);
+			return;
+		}
+
 		driving = false;
 		landed = true;
 		touchdownNanos = System.nanoTime();
 		HostDamage.fallFreeUntil = touchdownNanos + FlightRules.FALL_GRACE_NANOS;
 		Vec3 feet = player.position();
 		Cyberblock.events.accept(Wire.flight(false, feet.x, feet.y, feet.z, 0.0, 0.0, 0.0, player.getYRot(), player.getXRot()));
+		endGlide(player);
+		Cyberblock.LOG.info("glide ended at {}", feet);
+	}
+
+	/**
+	 * The host did not take the glide up in time, or stopped following it (V held by the game, refused, left in mid-air): there is
+	 * no landing spot to move V to. Steve goes straight back to V, and the host only hears that the flight is over, at V's own
+	 * feet, so a host that still follows leaves V where it is.
+	 */
+	private static void abort(final LocalPlayer player, final HostState.@Nullable Pose p) {
+		boolean followed = follow.seen();
+		long now = System.nanoTime();
+		driving = false;
+		landed = false; // followsCam at once
+		// a host that does not follow would otherwise get a new glide every second of a long fall
+		retryAt = now + FlightRules.RETRY_NANOS;
+		HostDamage.fallFreeUntil = followed ? now + FlightRules.FALL_GRACE_NANOS : Long.MIN_VALUE;
+		Vec3 at = p == null ? player.position() : new Vec3(p.px(), p.py(), p.pz());
+		Cyberblock.events.accept(Wire.flight(false, at.x, at.y, at.z, 0.0, 0.0, 0.0, player.getYRot(), player.getXRot()));
+		endGlide(player);
+		player.setPos(at);
+		player.xo = player.xOld = at.x;
+		player.yo = player.yOld = at.y;
+		player.zo = player.zOld = at.z;
+		Cyberblock.LOG.info("glide called off ({}), Steve back at {}", followed ? "the host stopped following" : "the host did not follow", at);
+	}
+
+	/** Steve hangs with no gravity again. Vanilla ends a glide only on the ground: in mid-air he would hover gliding. */
+	private static void endGlide(final LocalPlayer player) {
 		gravity(player, false);
-		// vanilla ends a glide only on the ground: when the host went away mid-air Steve would hover gliding with no gravity
 		player.stopFallFlying();
 		player.setDeltaMovement(Vec3.ZERO);
 		fall.reset();
-		Cyberblock.LOG.info("glide ended at {}", feet);
 	}
 
 	/**

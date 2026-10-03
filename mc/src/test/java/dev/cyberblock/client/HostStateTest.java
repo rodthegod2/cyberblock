@@ -117,6 +117,35 @@ class HostStateTest {
 	}
 
 	@Test
+	void flightFlagsFollowTheCam() {
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'fly':true,'menu':true,'air':true,'held':true}"));
+		HostState.Pose p = HostState.live();
+		assertTrue(p.fly());
+		assertTrue(p.menu());
+		assertTrue(p.air());
+		assertTrue(p.held());
+		assertTrue(Bridge.hostHeld);
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'fly':false,'air':true}"));
+		p = HostState.live();
+		assertFalse(p.fly());
+		assertFalse(p.menu(), "absent: an older host never sends it");
+		assertTrue(p.air());
+		assertFalse(p.held());
+		assertFalse(Bridge.hostHeld);
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'fly':'yes','menu':1,'air':null,'held':[true]}"));
+		p = HostState.live();
+		assertFalse(p.fly() || p.menu() || p.air() || p.held(), "only a JSON boolean counts");
+	}
+
+	@Test
+	void theHostGoingAwayReleasesV() {
+		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'held':true}"));
+		assertTrue(Bridge.hostHeld);
+		HostState.resetKeys();
+		assertFalse(Bridge.hostHeld);
+	}
+
+	@Test
 	void eachJumpPressIsTakenOnce() {
 		HostState.resetKeys();
 		HostState.setKey("jump", true);

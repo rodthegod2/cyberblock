@@ -90,6 +90,42 @@ class FlightRulesTest {
 	}
 
 	@Test
+	void aGlideTheHostNeverFollowsIsCalledOffAfterHalfASecond() {
+		long start = 1_000_000_000L;
+		FlightRules.Follow follow = new FlightRules.Follow();
+		follow.start(start);
+		assertTrue(follow.ok(start + 100_000_000L, start + 90_000_000L, false));
+		assertTrue(follow.ok(start + 499_999_999L, start + 490_000_000L, false));
+		assertFalse(follow.ok(start + 500_000_000L, start + 490_000_000L, false));
+		assertFalse(follow.seen());
+	}
+
+	@Test
+	void aGlideIsCalledOffWhenTheHostStopsFollowing() {
+		long start = 1_000_000_000L;
+		FlightRules.Follow follow = new FlightRules.Follow();
+		follow.start(start);
+		assertTrue(follow.ok(start + 150_000_000L, start + 140_000_000L, true));
+		assertTrue(follow.seen());
+		assertTrue(follow.ok(start + 5_000_000_000L, start + 4_990_000_000L, true), "no time limit once it follows");
+		assertFalse(follow.ok(start + 5_050_000_000L, start + 5_040_000_000L, false));
+	}
+
+	@Test
+	void onlyPosesAfterTheStartCount() {
+		long start = 1_000_000_000L;
+		FlightRules.Follow follow = new FlightRules.Follow();
+		follow.start(start);
+		// the previous glide's last pose still says fly: it does not count for this one
+		assertTrue(follow.ok(start + 10_000_000L, start - 5_000_000L, true));
+		assertFalse(follow.seen());
+		follow.start(start);
+		assertTrue(follow.ok(start + 20_000_000L, start + 15_000_000L, true));
+		follow.start(start + 1_000_000_000L);
+		assertFalse(follow.seen(), "a new glide starts unfollowed");
+	}
+
+	@Test
 	void touchdown() {
 		assertFalse(FlightRules.touchdown(false, true));
 		assertTrue(FlightRules.touchdown(true, true));

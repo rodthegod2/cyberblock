@@ -1,6 +1,6 @@
 // Elytra flight (plan 2026-10-03 section 1.4, S2.4; method and evidence: docs/notes/flight-spike.md). While Steve
 // glides, Minecraft's physics move him; the DLL keeps the latest flight sample (Cyberblock_Flight*). From the moment
-// Cyberblock_FlightActive() turns true until FlightSeq changes with it false, a per-frame loop follows it:
+// Cyberblock_FlightActive() turns true until it turns false again, a per-frame loop follows it:
 //   primary: V is teleported to the flight position every frame, keeping V's own yaw and camera pitch (mouse look);
 //   camera only (CyberblockFlight.SetCameraOnly(true) from CET, the fallback if that jitters): V waits at the take-off
 //     spot (hidden by PlayerState while Active), a vanilla free camera flies at the flight position + 1.6 m looking
@@ -10,6 +10,10 @@
 // the ground below, so leaving Cyberblock in mid-glide does not drop V from the sky. No flight starts while V is in a
 // vehicle or held by the game (CyberblockEffects.PlayerLocked: a scene, workspot, braindance or moving elevator), and
 // one that is under way when that happens stops where V is, without the landing teleport.
+// Minecraft hears whether V follows: Cyberblock_SetFlightFollowing(true) at the start and every frame while following
+// puts cam.fly in every cam message, and every stop or refusal turns it false. A glide that is refused, or not
+// followed within 0.5 s, is called off on the Minecraft side and Steve goes back to V (in-game 2026-10-03: a refused
+// glide flew Steve 320 m alone, into the void).
 //
 // 2.31 + Codeware 1.20.3 APIs (decompiled 2.31 scripts, Codeware.Global.reds; compile-checked):
 //   DelaySystem.DelayCallbackNextFrame(ref<DelayCallback>) (no DelayID: a generation number stops the loop),
@@ -19,7 +23,7 @@
 //   (gameFreeCamera: gameCameraComponent, dynamic sphere collider, editor box mesh), CameraComponent.Activate/
 //   Deactivate(0.0, true) (as devices take and return the view, deviceBase.swift), IComponent.IsA/Toggle,
 //   Entity.SetWorldTransform (Codeware), SpatialQueriesSystem.SyncRaycastByQueryFilter (Static + Terrain, as
-//   Probes.reds), VehicleComponent.IsMountedToVehicle.
+//   Probes.reds), VehicleComponent.IsMountedToVehicle. Cyberblock_SetFlightFollowing is the DLL's (Natives.reds).
 
 public abstract class CyberblockFlight {
   // 10 Hz; starts the per-frame loop when a flight starts. live false: stop following and restore.
@@ -111,6 +115,8 @@ public class CyberblockFlightService extends ScriptableService {
       return;
     }
     if VehicleComponent.IsMountedToVehicle(game, player) || CyberblockEffects.PlayerLocked(game, player) {
+      // cam.fly stays false: Minecraft calls the glide off and puts Steve back at V
+      Cyberblock_SetFlightFollowing(false);
       if !this.ignoredLogged {
         this.ignoredLogged = true;
         Cyberblock_Log(s"flight: ignored, V is in a vehicle or held (\(NameToString(CyberblockEffects.LockReason(game, player))))");
@@ -124,6 +130,7 @@ public class CyberblockFlightService extends ScriptableService {
       Cyberblock_SetLookCapture(true);
     }
     Cyberblock_Log(this.usingCamera ? "flight: start (camera only)" : "flight: start (primary)");
+    Cyberblock_SetFlightFollowing(true);
     this.Loop(game);
   }
 
@@ -159,6 +166,8 @@ public class CyberblockFlightService extends ScriptableService {
       Cyberblock_Log("flight: landed");
       return;
     }
+    // Still following (cam.fly): Minecraft calls a glide off when this turns false.
+    Cyberblock_SetFlightFollowing(true);
     if this.usingCamera {
       if Vector4.DistanceSquared(player.GetWorldPosition(), this.anchor) > 0.0025 {
         teleport.Teleport(player, this.anchor, Vector4.ToRotation(player.GetWorldForward()));
@@ -180,7 +189,7 @@ public class CyberblockFlightService extends ScriptableService {
       }
     }
     let wasFlying = this.flying;
-    this.Stop(game);
+    this.Stop(game); // cam.fly false, also when nothing was flying
     // A camera of an earlier session (ids do not survive a load) goes too.
     let entities = GameInstance.GetStaticEntitySystem();
     if IsDefined(entities) {
@@ -202,6 +211,7 @@ public class CyberblockFlightService extends ScriptableService {
     this.flying = false;
     this.usingCamera = false;
     this.generation += 1;
+    Cyberblock_SetFlightFollowing(false);
   }
 
   private func Loop(game: GameInstance) -> Void {

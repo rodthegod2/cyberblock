@@ -2,8 +2,8 @@ package dev.cyberblock;
 
 /**
  * Layer 4 elytra flight (plan 2026-10-03 M3), the rules as plain numbers so they can be tested: when a glide starts from the
- * host's falling V, when it ends, and how long the host's own fall damage is ignored around it. The client's Flight applies
- * them.
+ * host's falling V, when the host is following it, when it ends, and how long the host's own fall damage is ignored around
+ * it. The client's Flight applies them.
  */
 public final class FlightRules {
 	/** With a jump press, V's feet must have fallen faster than this (m/s) over the last 3 ticks. */
@@ -11,6 +11,10 @@ public final class FlightRules {
 	/** Without one, a glide starts by itself after falling faster than this (m/s) for AUTO_NANOS. */
 	static final double AUTO_FALL_SPEED = 15.0;
 	static final long AUTO_NANOS = 500_000_000L;
+	/** The host must say it follows a glide (cam.fly) this soon after the start, or the glide is called off. */
+	static final long FOLLOW_NANOS = 500_000_000L;
+	/** After a glide was called off, no new one starts for this long. */
+	public static final long RETRY_NANOS = 1_000_000_000L;
 	/** After touchdown the host's camera positions are ignored this long, until the host has placed V at the landing spot. */
 	public static final long SETTLE_NANOS = 500_000_000L;
 	/** The host's "fall" damage is ignored while gliding and this long after touchdown. */
@@ -43,6 +47,44 @@ public final class FlightRules {
 
 		double k = speed > MAX_SPEED ? MAX_SPEED / speed : 1.0;
 		return new double[] {vx * k, vy * k, vz * k};
+	}
+
+	/**
+	 * Whether the host follows the glide: its cam.fly must turn true within FOLLOW_NANOS of the start, and stay true. Only poses
+	 * that arrived after the start count (an older one says nothing about this glide).
+	 */
+	public static final class Follow {
+		private long start;
+		private boolean seen;
+
+		public void start(final long nanos) {
+			this.start = nanos;
+			this.seen = false;
+		}
+
+		/** The host has said it follows this glide. */
+		public boolean seen() {
+			return this.seen;
+		}
+
+		/**
+		 * False when the glide must be called off: the host stopped following (fly false after it was true), or it never followed
+		 * within FOLLOW_NANOS.
+		 *
+		 * @param poseNanos when the latest pose arrived
+		 * @param fly that pose's cam.fly
+		 */
+		public boolean ok(final long now, final long poseNanos, final boolean fly) {
+			if (poseNanos - this.start > 0L) {
+				if (fly) {
+					this.seen = true;
+				} else if (this.seen) {
+					return false;
+				}
+			}
+
+			return this.seen || now - this.start < FOLLOW_NANOS;
+		}
 	}
 
 	/**
