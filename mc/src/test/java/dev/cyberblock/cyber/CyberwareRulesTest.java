@@ -15,11 +15,11 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class CyberwareRulesTest {
-	/** Plan retest2 section 1.7, copied by hand: the wire ids in their fixed order. */
+	/** Plan retest2 section 1.7, copied by hand: the wire ids in their fixed order, then megaplan section 1.17's firewall (Phase 6). */
 	private static final List<String> PLAN = List.of(
 		"mantis_blades", "gorilla_arms", "monowire", "projectile_launch_system", "reinforced_tendons", "fortified_ankles",
 		"lynx_paws", "sandevistan", "berserk", "cyberdeck", "kerenzikov", "optical_camo", "subdermal_armor", "kiroshi_optics",
-		"biomonitor", "second_heart", "ram_upgrade");
+		"biomonitor", "second_heart", "ram_upgrade", "firewall");
 
 	/** Section 1.7's table (retest3 section 1.8: the three melee arms are ACTIVE on L): id, slot, kind, duration and cooldown in ticks. */
 	private static final List<String> TABLE = List.of(
@@ -39,7 +39,8 @@ class CyberwareRulesTest {
 		"kiroshi_optics eyes PASSIVE 0 0",
 		"biomonitor circulatory AUTO 0 1800",
 		"second_heart circulatory AUTO 0 6000",
-		"ram_upgrade frontal_cortex PASSIVE 0 0");
+		"ram_upgrade frontal_cortex PASSIVE 0 0",
+		"firewall frontal_cortex PASSIVE 0 0");
 
 	@Test
 	void idsAreThePlansInItsOrder() {
@@ -179,6 +180,21 @@ class CyberwareRulesTest {
 		assertEquals("key.cyberblock.arms", CyberwareRules.Trigger.ARMS.keyName());
 		assertEquals("key.cyberblock.camo", CyberwareRules.Trigger.CAMO.keyName());
 		assertEquals("arms", CyberwareRules.Trigger.ARMS.id());
+	}
+
+	/** Megaplan section 1.17: the firewall comes after the 17 of retest2, is passive, and takes the frontal cortex from the RAM upgrade. */
+	@Test
+	void theFirewallIsAppendedAndSharesTheFrontalCortex() {
+		assertEquals(Cyberware.values().length - 1, Cyberware.FIREWALL.ordinal());
+		assertTrue(Cyberware.values().length <= CyberwareRules.MAX_IDS);
+		assertSame(Cyberware.FIREWALL, Cyberware.byId("firewall"));
+		assertNull(CyberwareRules.Trigger.of(Cyberware.FIREWALL));
+		assertEquals(0, CyberwareRules.firewallRank(EnumSet.of(Cyberware.RAM_UPGRADE)));
+		assertEquals(1, CyberwareRules.firewallRank(EnumSet.of(Cyberware.FIREWALL, Cyberware.CYBERDECK)));
+		CyberwareRules.Installed in = CyberwareRules.install(Map.of("frontal_cortex/0", "ram_upgrade"), Cyberware.FIREWALL);
+		assertEquals(CyberwareRules.Install.REPLACED, in.outcome());
+		assertSame(Cyberware.RAM_UPGRADE, in.replaced());
+		assertEquals("firewall", in.slots().get("frontal_cortex/0"));
 	}
 
 	@Test
