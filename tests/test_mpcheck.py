@@ -210,7 +210,8 @@ def test_default_ports_are_package_1t_and_stay_in_the_phase_1_ranges():
     p.check()
     servers = {name: p.server(name) for name in mpcheck.SCENARIOS}
     assert servers == {"singleplayer": 25914, "guest": 25914, "versions": 25915, "flood": 25916, "reconnect": 25917, "twohosts": 25918, "joinpassword": 25915,
-                       "replica": 25914, "twohosts2": 25916, "meetup": 25915, "devices": 25917, "figures": 25917, "breach": 25917, "hub": 25916}
+                       "replica": 25914, "twohosts2": 25916, "meetup": 25915, "devices": 25917, "figures": 25917, "breach": 25917, "hub": 25916,
+                       "match": 25914, "heat": 25914, "overlord": 25914}
     assert {p.client(n) for n in mpcheck.OFFLINE_NAMES} == {25754, 25755, 25756, 25757} and 25600 not in servers.values()
     assert [p.frame(n) for n in mpcheck.OFFLINE_NAMES] == ["Local\\CyberblockFrame1TH", "Local\\CyberblockFrame1TH2", "Local\\CyberblockFrame1TG", "Local\\CyberblockFrame1TG2"]
 
@@ -234,7 +235,7 @@ def test_a_frame_prefix_that_makes_the_users_frame_name_is_refused():
 def test_every_scenario_has_a_function_and_a_server_slot():
     assert set(mpcheck.SCENARIOS) == set(mpcheck.SCENARIO_FUNCS) == set(mpcheck.SERVER_SLOT)
     assert mpcheck.SCENARIOS == ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup", "devices",
-                                 "figures", "breach", "hub")
+                                 "figures", "breach", "hub", "match", "heat", "overlord")
 
 
 # ---- logs ------------------------------------------------------------------------------------------------------------------
@@ -1778,7 +1779,7 @@ def test_hub_scenario_asks_a_fake_host_for_the_vendor_mode_with_no_layer_and_use
     sim = Sim7Env(tmp_path)
     run_scenario(sim, "hub")
     assert {(name, layers, modes) for name, layers, modes, _ in sim.started} == {("CbHost1", (), ("vendor",))}  # the guest is a plain client: no fake host
-    assert mpcheck.Ports().server("hub") == mpcheck.SERVER_BASE + 2 and mpcheck.SCENARIOS[-1] == "hub" and mpcheck.SCENARIO_MODES["hub"] == ("vendor",)
+    assert mpcheck.Ports().server("hub") == mpcheck.SERVER_BASE + 2 and mpcheck.SCENARIOS[-4] == "hub" and mpcheck.SCENARIO_MODES["hub"] == ("vendor",)
     assert mpcheck.main(["hub", "--dry-run", "--client-port-base", "25814", "--server-port-base", "25975", "--frame-prefix", "Local\\CyberblockFrame7PM"]) == 0
     out = capsys.readouterr().out
     assert "-Pcyberblock.serverPort=25977" in out and "--vendor" in out and "--layer" not in out and "Local\\CyberblockFrame7PMH" in out

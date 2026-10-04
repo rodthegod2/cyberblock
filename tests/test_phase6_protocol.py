@@ -308,12 +308,12 @@ def test_p6_the_names_have_the_plan_values():
 
 
 def test_p6_the_firewall_implant_is_the_18th_cyberware_id_in_every_place_the_document_lists_it():
-    assert CYBERWARE == CYBERWARE_IDS and len(CYBERWARE_IDS) == 18 and CYBERWARE_IDS[-1] == "firewall" and CYBERWARE_IDS[:17][-1] == "ram_upgrade"
+    assert CYBERWARE == CYBERWARE_IDS and len(CYBERWARE_IDS) == 19 and CYBERWARE_IDS[17] == "firewall" and CYBERWARE_IDS[:17][-1] == "ram_upgrade"  # Phase 8 appended the 19th
     cw = next(m for t, m in P6_OLD_EXAMPLES if t == "cyberware")
     assert [e["id"] for e in cw["list"]] == CYBERWARE_IDS
     flat = " ".join(TEXT.split())
-    assert "one of the 18 cyberware ids" in flat and "`firewall` is the 18th, Phase 6" in flat and "a DLL that does not know it drops that one entry" in flat
-    assert "one of the 17 cyberware ids" not in flat
+    assert "one of the 19 cyberware ids" in flat and "`firewall` is the 18th, Phase 6" in flat and "a DLL that does not know it drops that one entry" in flat
+    assert "one of the 17 cyberware ids" not in flat and "one of the 18 cyberware ids" not in flat
 
 
 def _old_examples():

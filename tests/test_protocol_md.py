@@ -114,7 +114,7 @@ BIND_NAMES = {"hack", "skills", "cyberware", "activate"}
 FLIGHT_KINDS = {"glide", "launch"}
 CYBERWARE_IDS = ["mantis_blades", "gorilla_arms", "monowire", "projectile_launch_system", "reinforced_tendons", "fortified_ankles",
                  "lynx_paws", "sandevistan", "berserk", "cyberdeck", "kerenzikov", "optical_camo", "subdermal_armor",
-                 "kiroshi_optics", "biomonitor", "second_heart", "ram_upgrade", "firewall"]  # plan section 1.7, in this fixed order; `firewall` is the 18th (Phase 6, section 1.17)
+                 "kiroshi_optics", "biomonitor", "second_heart", "ram_upgrade", "firewall", "netrunner"]  # plan section 1.7, in this fixed order; `firewall` is the 18th (Phase 6) and `netrunner` the 19th (Phase 8), section 1.17
 CYBERFX_IDS = ["sandevistan", "kerenzikov", "berserk"]
 KIND_RE, EFFECT_RE = re.compile(r"[a-z0-9_]{1,32}"), re.compile(r"[a-z_]{1,32}")
 
@@ -252,7 +252,7 @@ L36_EXAMPLES = [(m["t"], m) for first in (L36_CP_EXAMPLES, L36_MC_EXAMPLES) for 
 
 def test_layer36_name_lists_have_the_plan_counts():
     assert len(HACKS) == 10 and len(set(HACKS)) == 10 and len(PERKS) == 20 and len(set(PERKS)) == 20
-    assert CYBERWARE == CYBERWARE_IDS and CYBERFX == CYBERFX_IDS  # re-test 2: 17 implants in the fixed order (18 with Phase 6's `firewall`), 3 timed effects
+    assert CYBERWARE == CYBERWARE_IDS and CYBERFX == CYBERFX_IDS  # re-test 2: 17 implants in the fixed order (18 with Phase 6's `firewall`, 19 with Phase 8's `netrunner`), 3 timed effects
     assert {"short_circuit", "device", "cyberpsychosis"} <= set(HACKS) and {"iron_skin", "sandevistan", "silent_steps"} <= set(PERKS)
 
 
@@ -1063,7 +1063,7 @@ SESSION_REASON_BYTES = 128
 MP_CP_CLASSES = {
     **dict.fromkeys(("hello", "state", "aim", "npcs", "stats"), "BOTH"),
     **dict.fromkeys(("ground", "unground", "clear", "dmg", "mobdmg", "pcells", "unlead", "killed", "scaninfo", "hackresult", "hackspread",
-                     "env", "vteleported", "parked", "devices", "devstate", "devresult"), "UP"),  # env .. parked: Phase 3; the last three: Phase 4
+                     "env", "vteleported", "parked", "devices", "devstate", "devresult", "spawnresult"), "UP"),  # env .. parked: Phase 3; devices .. devresult: Phase 4; spawnresult: Phase 8
     "feed": "BOTH",  # Phase 6: the photo feed, shown locally and relayed UP
     **dict.fromkeys(("cam", "view", "hud", "key", "slot", "scroll", "cursor", "click", "char", "skey", "look", "quest", "pins", "prompt",
                      "choices", "sub", "call", "notify", "screen", "reply", "terrain", "surveystate", "cmd"), "LOCAL"),
@@ -1072,7 +1072,7 @@ MP_MC_CLASSES = {
     **dict.fromkeys(("hello", "status", "binds", "uiact", "persp", "flight", "survey", "prefs"), "LOCAL"),
     **dict.fromkeys(("block", "blocks", "align", "explosion", "knock", "hit", "ignite", "lead", "pull", "mobs", "proj", "teleport", "effect",
                      "scan", "hack", "perks", "cyberware", "cyberfx", "pteleport", "vteleport", "park", "devact",
-                     "rhack", "daemon", "feedreq", "hub"), "DOWN"),  # vteleport and park: Phase 3; devact: Phase 4; rhack, daemon, feedreq: Phase 6; hub: Phase 7
+                     "rhack", "daemon", "feedreq", "hub", "spawn", "heat", "attitude", "glitch"), "DOWN"),  # vteleport and park: Phase 3; devact: Phase 4; rhack, daemon, feedreq: Phase 6; hub: Phase 7; spawn, heat, attitude, glitch: Phase 8
 }
 MP_RATES = {  # plan section 1.6: type -> (tokens per second, burst)
     **dict.fromkeys(("ground", "unground", "clear"), (40, 120)), "npcs": (15, 30), "dmg": (20, 40), "aim": (15, 30),
@@ -1081,6 +1081,7 @@ MP_RATES = {  # plan section 1.6: type -> (tokens per second, burst)
     "stats": (2, 4), "terrain": (30, 200), "hello": (1, 3), **dict.fromkeys(("devices", "devstate", "devresult"), (10, 40)),
     "env": (2, 4), "vteleported": (2, 4), "feed": (2, 4),  # feed: Phase 6; the others: Phase 3, as 3E's RelayGuard (section 1.6 names no rate for them)
     "parked": (2, 4),  # Phase 7: the DLL builds it from Phase 3, the server relays it from the hub on; as `vteleported` (a reply, one at a time)
+    "spawnresult": (10, 40),  # Phase 8: a reply per `spawn`, as `devresult` (section 1.6 names no rate for it; the protocol document fixes it)
 }
 MP_PAYLOADS_EXPECTED = {  # plan section 1.3: id -> direction
     "hs": "C2S", "hs_ack": "S2C", "up": "C2S", "down": "S2C", "roster": "S2C", "perms": "C2S", "content": "S2C", "act": "C2S", "ui": "S2C",
@@ -1201,8 +1202,8 @@ def test_mp_class_tables_classify_every_wire_message_once_with_the_plan_class():
 
 
 def test_mp_class_tables_cover_every_documented_type_of_the_wire():
-    cp = documented(CP_TO_MC) | documented(L36_CP_TO_MC) | documented(R3_CP_TO_MC) | documented(AT_CP_TO_MC) | documented(P3_CP_TO_MC) | documented(P4_CP_TO_MC) | documented("Phase 6: Cyberpunk → Minecraft")
-    mc = documented(MC_TO_CP) | documented(L36_MC_TO_CP) | documented(R3_MC_TO_CP) | documented(AT_MC_TO_CP) | documented(PQ_MC_TO_CP) | documented(P3_MC_TO_CP) | documented(P4_MC_TO_CP) | documented("Phase 6: Minecraft → Cyberpunk") | documented(P7_MC_TO_CP)
+    cp = documented(CP_TO_MC) | documented(L36_CP_TO_MC) | documented(R3_CP_TO_MC) | documented(AT_CP_TO_MC) | documented(P3_CP_TO_MC) | documented(P4_CP_TO_MC) | documented("Phase 6: Cyberpunk → Minecraft") | documented("Phase 8: Cyberpunk → Minecraft")
+    mc = documented(MC_TO_CP) | documented(L36_MC_TO_CP) | documented(R3_MC_TO_CP) | documented(AT_MC_TO_CP) | documented(PQ_MC_TO_CP) | documented(P3_MC_TO_CP) | documented(P4_MC_TO_CP) | documented("Phase 6: Minecraft → Cyberpunk") | documented(P7_MC_TO_CP) | documented("Phase 8: Minecraft → Cyberpunk")
     assert set(MP_CP_CLASSES) == cp | {"cmd"}  # `cmd` is the test tools' command, documented only here
     assert set(MP_MC_CLASSES) == (mc - {"perkfx"}) | {"pteleport"}  # `perkfx` is superseded and never sent; `pteleport` was undocumented
     assert {"hello"} <= set(MP_CP_CLASSES) & set(MP_MC_CLASSES)
@@ -1211,7 +1212,7 @@ def test_mp_class_tables_cover_every_documented_type_of_the_wire():
 def test_mp_up_types_fit_the_envelope_and_all_have_a_rate_limit():
     up = {t for t, c in MP_CP_CLASSES.items() if c in ("UP", "BOTH")} | {"hstate"}
     assert all(len(t) <= 16 for t in up)  # `cyberblock:up` t is at most 16 characters
-    assert up <= set(rate_rows())  # `parked` joined them in Phase 7
+    assert up <= set(rate_rows())  # `parked` joined them in Phase 7, `spawnresult` in Phase 8
 
 
 def test_mp_rate_limits_are_the_plan_table():

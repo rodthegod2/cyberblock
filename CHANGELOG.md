@@ -82,6 +82,37 @@ side; the mod, plugin and scripts of Phase 7 have their own entries. The in-game
   Cyberpunk's buy rules: a ware locked by Street Cred or level, or cyberware V cannot equip, shows "(locked)" and is refused; grenades, injectors and
   inhalers buy one at a time and ammo stops at V's cap ("Ammo full").
 
+### Unreleased additions: Phase 8 (multiplayer plan, package 8P)
+Phase 8 of the multiplayer plan: **roles and modes**: the Hacker in the Van, the Overlord, matches with PvP and Gang Wars, player hacks and their counterplay, Server
+Heat, going down and the Trauma Team, and the spectator and caster mode. This entry is the protocol, tools and docs side; the mod, plugin and scripts of Phase 8 have
+their own entries. The in-game list is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test: Wave C, Phase 8".
+- **Protocol.** `shared/protocol.md` "Phase 8": `spawn` (DOWN to the owner's session only: a record `ganger`, `ncpd`, `ncpd_heavy`, `maxtac` or `drone`, a position, `n` 1..8,
+  `hostile` and a `faction`) with its `spawnresult` (UP, one for every `spawn`: `ok`, `n` 0..8, a reason of at most 64 characters; rate row 10 per second, burst 40),
+  `heat` (the wanted level 0..5 the server chose for each active host from the Server Heat tier, its real wanted level, sent when it changes and again after every host
+  `hello`), `attitude` (a faction's stance toward V after a Gang Wars match, to the hosts of its teams: `friendly`, `neutral` or `hostile`) and `glitch` (`seconds` 0..10: the ReShade glitch of a hacked linked player). Every effect ends with the session, a link
+  drop and a `hello`: spawned NPCs are deleted, attitudes and the wanted stage restored, the glitch ended. The fairness rules (the 3 second warning, the minimum distance,
+  the caps, the intensity) and the opt-in rule stay on the server; the host's `spawns` toggle (off by default) gates `spawn` only, and with it off or for a
+  Minecraft-only player the same enemies are Minecraft squads, which is also the written fallback of Phase 0 check (d). The plan's `turret` is not a `rec`
+  (a turret is a device: Minecraft-side only). `hs_ack.features` bit 32 (modes), the 19th cyberware id `netrunner` (resists player hacks, as the 18th, `firewall`, blocks
+  them), class rows, validators, names and examples in `tests/test_phase8_protocol.py` (and the class, rate and id tables of `tests/test_protocol_md.py`). A section of
+  differences from megaplan section 1 lists what the integrator confirms: no `turret`, `ncpd_heavy` as a fifth `rec` (never a `heavy` flag), `attitude` says `toward`, the rate
+  of `spawnresult`, the `spawns` toggle gating only `spawn`, `heat.tier` as a wanted level, `heat` again after every `hello`, and the test commands.
+- **Fake host.** `tools.fakehost --modes`: the Night City side of the modes on the street of `--hacks2`. Every valid `spawn` is answered with one `spawnresult` and the
+  enemies join the `npcs` list (`unsupported` for any record but the five, `no ground` outside the world's height, `too many` past 24 live ones); `heat` is written as the
+  wanted level in the next `stats`; `attitude` (known groups) and `glitch` are kept; a session that leaves `host` deletes the spawned enemies and puts the stars back; all four
+  are ignored without a host session. It prints `spawn`, `heat`, `attitude`, `glitch` and `spawnresult`.
+- **Harness.** `tools.mpcheck match`, `heat` and `overlord`. `match`: PvP is off by default, a Minecraft-only guest cannot create a match, the linked host's match turns PvP
+  on for its players and off again after the 15 second lock, `/cyberblock spectate` puts the guest in spectator mode and `spectate stop` brings it back. `heat`: with the
+  `spawns` switch off, the Server Heat wanted level reaches the host's DLL in order up to 5, falls back to 0 and is told again to a new session. `overlord`: no spawn near a player in
+  no match or before `/cyberblock overlord optin on`, then the Overlord's spawn of a palette entry reaches the DLL after its warning with an answered `spawnresult`, and `guests
+  spawns off` keeps it out. They need the Phase 8 server (8M, 8T, 8O) and the commands that `PHASE8_COMMANDS` names (8T's `heat set`, 8M's `test match`, 8O's `test overlord spawn`)
+  (the one table to edit if the packages named them otherwise); they are tested against a simulated server with a bug list each, and with `--all` a scenario whose package folder is
+  not in the checkout is reported as SKIP (never as a pass).
+- **Docs.** HOW-TO-PLAY "Modes: the Van, the Overlord, matches and more (Phase 8)" (the Van, the Overlord, matches and the PvP rule, Gang Wars, hacking players and counterplay,
+  Server Heat, going down and the Trauma Team, spectating, and the limits), "Re-test: Wave C, Phase 8" in `docs/TESTING-PLAN.md` (P8-1 to P8-11), and the descopes of Phase 0
+  checks (d) and (e) in `docs/notes/phase8-descopes.md`: Minecraft squads when spawning fails or the spawned NPCs stay passive, no real wanted level and no reputation effect when the
+  writes are not available.
+
 ### Unreleased additions: Wave B integration (Phases 3, 4 and 5 together)
 Phases 4 and 5 merged on top of Phase 3 (and the Wave A leftovers) for one combined in-game test,
 [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md) "Re-test: Wave B (Phases 3, 4, 5)".
