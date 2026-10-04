@@ -1399,6 +1399,8 @@ Phase 6 examples, server to client (`cyberblock:ui`, `t:"feed"`):
 Phase 6 examples, server to client (`cyberblock:ui`, `t:"comms"`):
 ```jsonl
 {"from":"CbGuest1","text":"Meet me at the Afterlife","pos":[-1240,64,806]}
+```
+
 ## Phase 7 (NPC interaction, the Afterlife hub and the Holo-Table)
 
 Same wire, same conventions; `proto` stays 1 and older builds ignore the new `t` values, actions and fields. Plan:

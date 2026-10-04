@@ -33,6 +33,7 @@ side; the mod, plugin and scripts of Phase 6 have their own entries. The in-game
 - **Docs.** [HOW-TO-PLAY](docs/HOW-TO-PLAY.md#redstone-hacking-phase-6) has "Redstone hacking", "Breach Protocol" and "The interaction map"; the
   Re-test 6 list is at the top of [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md); the descopes (the remote range, the traffic and blackout fallbacks,
   the replica camera view, the low-resolution or replica photo feed) are in `docs/notes/phase6-descopes.md`.
+
 ### Unreleased additions: Phase 7 (multiplayer plan, package 7P)
 Phase 7 of the multiplayer plan: **talking to Night City's people, the Afterlife hub and the Holo-Table**. This entry is the protocol, tools and docs
 side; the mod, plugin and scripts of Phase 7 have their own entries. The in-game list is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md),

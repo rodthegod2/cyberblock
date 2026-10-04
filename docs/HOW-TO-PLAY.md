@@ -1316,6 +1316,7 @@ behind the `hacks` toggle too: when the host turns it off, every guest watching 
 **Which way is it working? (for the test.)** The scripts and the plugin write **one line** for every Phase 6 feature that has a fallback: which
 traffic path, which blackout path, how vehicle calls are made, and whether the photo feed uses the compositor copy or the fallback. The server
 logs each remote hack it routed or refused and each Breach. [Re-test 6](TESTING-PLAN.md) lists what to search for.
+
 ### Talking to Night City (Phase 7)
 With Phase 7 Night City's people are not only scenery: **right-click a figure that has a job** and Minecraft opens a screen with that
 person's own words and wares. Every line of dialogue is original text from the server's content files (`data/cyberblock/cyberblock/dialogue/`),

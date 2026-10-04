@@ -140,6 +140,7 @@ The remote range depends on Phase 0's check (h): until it is run, only the strea
 back to the Phase 4 devices. A true Cyberpunk **camera view is replaced by a replica view** from the camera's position and facing. The
 **photo feed** is low-resolution by design and may fall back to a replica render if the copy costs too much. The Heat Sensor's Server Heat mode and the Heat a
 failed Breach costs wait for Phase 8's meter. Details: `docs/notes/phase6-descopes.md`.
+
 ## Re-test: Wave C, Phase 7 (NPC interaction, the Afterlife hub and the Holo-Table)
 
 The Phase 7 part of the Wave C session. Play it on the local test server (a host with Cyberpunk and a guest, as in Wave B) after the Wave B sections it
