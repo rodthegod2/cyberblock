@@ -11,6 +11,7 @@ import dev.cyberblock.device.DeviceRegistry;
 import dev.cyberblock.device.block.NetPortBlock;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
+import dev.cyberblock.net.JoinLock;
 import dev.cyberblock.net.Permissions;
 import dev.cyberblock.net.ServerNet;
 import java.util.HashMap;
@@ -51,7 +52,8 @@ import org.jspecify.annotations.Nullable;
  * {@code devices}, its type bit and {@code hacks}; quest-locked ports refuse). Uploaded daemons go to the owner as one {@code daemon}
  * DOWN; a failure sends {@code ["alarm"]} and adds {@link BreachResults#FAILURE_HEAT} through {@link #heat} (Phase 8's meter; until it is
  * installed the alarm daemon carries the host's wanted +1, see the start-up line). A Net Port with no device behind it (a creative or
- * test block) opens a practice breach with no effect.</li>
+ * test block) opens a practice breach with no effect. The rate limits of {@link BreachLimits} apply: a breached device waits 30 s, a
+ * player whose breach failed waits 30 s for any device, and an owner gets at most one alarm a minute.</li>
  * <li>6R's Breach Port: {@link #openOnDevice} with the linked device.</li>
  * <li>Phase 8's player hacks: {@link #open} with {@link Spec#shortBreach} (4x4, 5 s) or the defender's {@link #firewallRank}, and its
  * own outcome handler.</li>
@@ -75,13 +77,11 @@ public final class Breach {
 	public static volatile @Nullable Heat heat;
 	/** Blocks between the player's eyes and the breached device before the breach ends (a screen's reach plus a margin). */
 	static final double REACH = 8.0;
-	/** A device breached (or failed) is closed to breaches for this long (server ticks: 30 s). */
-	static final long COOLDOWN_TICKS = 600;
 	/** A daemon DOWN with no hackresult after this long is forgotten (server ticks: 60 s). */
 	static final long ANSWER_TICKS = 1200;
 	private static final Identifier EARLY = Identifier.fromNamespaceAndPath(Cyberblock.ID, "breach");
 	private static final Map<UUID, Session> sessions = new HashMap<>();
-	private static final Map<DeviceRegistry.Key, Long> cooldowns = new HashMap<>();
+	private static final BreachLimits limits = new BreachLimits();
 	private static final Map<DeviceRegistry.Key, Answer> answers = new HashMap<>();
 	private static int nextId = 1;
 	private static volatile @Nullable MinecraftServer server;
@@ -123,7 +123,7 @@ public final class Breach {
 
 	private static void stopping() {
 		sessions.clear();
-		cooldowns.clear();
+		limits.clear();
 		answers.clear();
 		server = null;
 	}
@@ -140,11 +140,17 @@ public final class Breach {
 
 	/**
 	 * Opens a breach for the player: a new seeded puzzle for the spec, the screen on the player's client, and {@code onEnd} with the
-	 * outcome once it ends (aborted ones too). False (nothing opened) while the player is in another breach.
+	 * outcome once it ends (aborted ones too). False (nothing opened) while the player is in another breach or is locked by the
+	 * join password (megaplan 1.6: no interaction before /login, whoever the caller is).
 	 *
 	 * @param anchor where the player must stay within {@link #REACH} (null: anywhere)
 	 */
 	public static boolean open(final ServerPlayer player, final Spec spec, final @Nullable Vec3 anchor, final Consumer<BreachResults.Outcome> onEnd) {
+		if (JoinLock.locked(player)) {
+			Cyberblock.LOG.info("breach: {} refused (locked by the join password)", player.getPlainTextName());
+			return false;
+		}
+
 		if (busy(player)) {
 			tell(player, Component.translatableWithFallback("cyberblock.breach.busy", "You are already in a breach"));
 			return false;
@@ -177,9 +183,14 @@ public final class Breach {
 			Cyberblock.LOG.info("breach: {} on {} {} -> blocked (the host's guest toggle)", player.getPlainTextName(), device.type().id(), device.idText());
 		} else if (session == null || session.state() == HostSession.State.NONE) {
 			tell(player, Component.translatableWithFallback("cyberblock.device.no_link", "Night City is not connected: devices cannot be used"));
-		} else if (cooldowns.getOrDefault(key, Long.MIN_VALUE) > ticks()) {
-			long seconds = (cooldowns.get(key) - ticks() + 19) / 20;
-			tell(player, Component.translatableWithFallback("cyberblock.breach.locked_out", "This device is locked out for %s s", seconds));
+		} else if (limits.playerWait(player.getUUID(), ticks()) > 0) {
+			long seconds = seconds(limits.playerWait(player.getUUID(), ticks()));
+			tell(player, Component.translatableWithFallback("cyberblock.breach.player_locked_out", "Your last breach failed: no breaches for %s s", seconds));
+			Cyberblock.LOG.info("breach: {} on {} {} -> refused (locked out for {} s more after a failed breach)", player.getPlainTextName(),
+				device.type().id(), device.idText(), seconds);
+		} else if (limits.deviceWait(key, ticks()) > 0) {
+			tell(player, Component.translatableWithFallback("cyberblock.breach.locked_out", "This device is locked out for %s s",
+				seconds(limits.deviceWait(key, ticks()))));
 		} else {
 			Spec spec = new Spec(device.type().id(), BreachContent.security(device), 0, false, device.idText());
 			return open(player, spec, Vec3.atCenterOf(pos), o -> deviceOutcome(player.getUUID(), key, device, o));
@@ -188,7 +199,10 @@ public final class Breach {
 		return false;
 	}
 
-	/** A device breach ended: the daemon DOWN to the owner (nothing when aborted), Heat on failure, the cooldown, the player told. */
+	/**
+	 * A device breach ended: the limits ({@link BreachLimits}), then the daemon DOWN to the owner (nothing when aborted; a failure
+	 * within the owner's alarm window is merged into the alarm already raised), Heat with the alarm, the player told.
+	 */
 	private static void deviceOutcome(final UUID playerId, final DeviceRegistry.Key key, final Device device, final BreachResults.Outcome o) {
 		ServerPlayer player = player(playerId);
 		HostSession session = HostSessions.of(key.owner());
@@ -198,10 +212,17 @@ public final class Breach {
 			return;
 		}
 
-		cooldowns.put(key, ticks() + COOLDOWN_TICKS);
+		limits.ended(key, playerId, o.failed(), ticks());
 		if (session == null || session.state() == HostSession.State.NONE) {
 			tell(player, Component.translatableWithFallback("cyberblock.device.no_link", "Night City is not connected: devices cannot be used"));
 			Cyberblock.LOG.info("breach: {} ended ({}) but the owner is gone: nothing sent", who, o.state());
+			return;
+		}
+
+		if (o.failed() && !limits.alarm(key.owner(), ticks())) {
+			tell(player, Component.translatableWithFallback("cyberblock.breach.alarm", "Alarm raised: the cameras around it are alerted"));
+			Cyberblock.LOG.info("breach: {} {} on {} {} of {} -> alarm merged (one alarm per owner every {} s): nothing sent", who, o.state(),
+				device.type().id(), device.idText(), session.name(), BreachLimits.ALARM_TICKS / 20);
 			return;
 		}
 
@@ -244,8 +265,11 @@ public final class Breach {
 
 	/** A right-click on a Net Port block opens Breach (server side; the client's use goes on to the server unchanged). */
 	private static InteractionResult onUse(final Player player, final Level level, final InteractionHand hand, final BlockHitResult hit) {
-		if (!(level instanceof ServerLevel) || !(player instanceof ServerPlayer actor) || hand != InteractionHand.MAIN_HAND || actor.isSpectator()
-			|| !(level.getBlockState(hit.getBlockPos()).getBlock() instanceof NetPortBlock) || actor.isShiftKeyDown() && !actor.getMainHandItem().isEmpty()) {
+		// a player locked by the join password falls through to JoinLock's own handler (DEFAULT phase), which refuses the use:
+		// Fabric stops at the first result that is not PASS, so returning anything else here would skip it
+		if (!(level instanceof ServerLevel) || !(player instanceof ServerPlayer actor) || JoinLock.locked(actor) || hand != InteractionHand.MAIN_HAND
+			|| actor.isSpectator() || !(level.getBlockState(hit.getBlockPos()).getBlock() instanceof NetPortBlock)
+			|| actor.isShiftKeyDown() && !actor.getMainHandItem().isEmpty()) {
 			return InteractionResult.PASS;
 		}
 
@@ -263,6 +287,18 @@ public final class Breach {
 
 		Cyberblock.LOG.info("breach: {} on a Net Port with no Night City device at {}: practice", player.getPlainTextName(), pos.toShortString());
 		practice(player, 1, false, Vec3.atCenterOf(pos));
+	}
+
+	/**
+	 * The devtools bypass of the test command ({@code /cyberblock test breach <x> <y> <z> solve|fail}): the lockouts of the Net Port's
+	 * device and of the player are cleared, so a scenario may breach the same device again at once. The owner's alarm window stays.
+	 */
+	static void clearLockoutsForTest(final ServerPlayer player, final BlockPos pos) {
+		DeviceRegistry.Tracked t = DeviceModule.at(pos);
+		if (t != null) {
+			limits.clear(t.key(), player.getUUID());
+			Cyberblock.LOG.info("breach: test bypass: lockouts of {} and {} {} cleared", player.getPlainTextName(), t.device().type().id(), t.device().idText());
+		}
 	}
 
 	/** A breach with no device behind it (a lone Net Port, the test command): the result is only shown. */
@@ -356,7 +392,7 @@ public final class Breach {
 
 		if (s.getTickCount() % 20 == 0) {
 			long t = s.getTickCount();
-			cooldowns.values().removeIf(until -> until <= t);
+			limits.prune(t);
 			answers.values().removeIf(a -> t - a.tick() >= ANSWER_TICKS);
 		}
 	}
@@ -365,6 +401,11 @@ public final class Breach {
 
 	private static long now() {
 		return System.nanoTime() / 1_000_000L;
+	}
+
+	/** Whole seconds, rounded up, of a wait in ticks. */
+	private static long seconds(final long ticks) {
+		return (ticks + 19) / 20;
 	}
 
 	private static long ticks() {
