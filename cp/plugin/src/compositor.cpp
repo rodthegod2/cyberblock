@@ -19,7 +19,9 @@
 #include "feed_capture.hpp"
 #include "link.hpp"
 #include "log.hpp"
+#include "modes.hpp"
 #include "natives.hpp"
+#include "probes.hpp"
 #include "screenfx.hpp"
 #include "world.hpp"
 
@@ -51,6 +53,7 @@ namespace
 	// re-test 3: the Sandevistan / Kerenzikov screen effect (cb_slowmo)
 	std::mutex g_slowmoLock;
 	cb::screenfx::SlowMo g_slowmo;
+	std::atomic<bool> g_glitchMissingLogged{false}; // Phase 8: the effect has no cb_glitch (logged once)
 
 	double steady_seconds()
 	{
@@ -511,6 +514,13 @@ namespace
 			}
 			runtime->set_uniform_value_float(v, slowmo.data(), 4);
 		}
+		// Phase 8 (8-D1): the Reboot Optics glitch; an older Cyberblock.fx without it shows none (said once per load)
+		const std::array<float, 4> glitch = cb::modes::glitch_uniform(cb::steady_seconds(), cb::natives::menuOpen.load());
+		if (const effect_uniform_variable v = uniform("cb_glitch"); v.handle != 0)
+			runtime->set_uniform_value_float(v, glitch.data(), 4);
+		else if (glitch[0] > 0.0f && !g_glitchMissingLogged.exchange(true))
+			cb::log::warn("glitch: Cyberblock.fx has no cb_glitch (an older shader is installed); Reboot Optics shows no "
+						  "screen glitch until tools.install copies the new one");
 
 		// Re-projection (done by the effect) from Minecraft's pose to Cyberpunk's latest, extrapolated by the effect's
 		// PosePrediction frames. Without a host pose, a locked camera or test frames, the host pose is Minecraft's own:
@@ -613,6 +623,7 @@ namespace compositor
 		{
 			std::lock_guard<std::mutex> lock(g_slowmoLock);
 			g_slowmo.clear();
+			cb::modes::glitch_clear(); // Phase 8: the glitch belongs to the mashup too
 		}
 	}
 

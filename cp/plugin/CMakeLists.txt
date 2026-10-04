@@ -33,6 +33,7 @@ target_sources(cb_tests PRIVATE src/devices.cpp tests/test_devices.cpp) # Phase 
 target_sources(cb_tests PRIVATE tests/test_figures.cpp) # Phase 5 (megaplan 2026-10-04 task 5-D1)
 target_sources(cb_tests PRIVATE src/rhack.cpp tests/test_rhack.cpp) # Phase 6 (megaplan 2026-10-04 task 6-D1)
 target_sources(cb_tests PRIVATE src/feed.cpp tests/test_feed.cpp) # Phase 6: the photo feed (task 6-D1)
+target_sources(cb_tests PRIVATE src/modes.cpp tests/test_modes.cpp) # Phase 8: roles and modes (task 8-D1)
 target_include_directories(cb_tests PRIVATE src)
 target_link_libraries(cb_tests PRIVATE nlohmann_json::nlohmann_json ws2_32)
 # The UI bridge's pure builders (package U, plan 2026-10-03-retest3-polish section 1.3); ui.cpp includes no RED4ext.

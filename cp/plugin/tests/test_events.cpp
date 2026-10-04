@@ -574,23 +574,24 @@ TEST(cyberware_becomes_one_cyber_event_per_entry_in_order)
 	CHECK(approx(one(R"({"t":"cyberware","list":[{"id":"cyberdeck","on":1.0}]})").amount, 1)); // a whole float
 }
 
-TEST(all_seventeen_cyberware_ids_are_accepted_in_the_section_1_7_order)
+// The 17 of section 1.7, then `firewall` (Phase 6) and `netrunner` (Phase 8): shared/protocol.md's 19, in its order.
+TEST(all_nineteen_cyberware_ids_are_accepted_in_the_protocol_order)
 {
 	const char *const expected[] = {"mantis_blades",  "gorilla_arms",   "monowire",     "projectile_launch_system",
 									"reinforced_tendons", "fortified_ankles", "lynx_paws", "sandevistan",
 									"berserk",        "cyberdeck",      "kerenzikov",   "optical_camo",
 									"subdermal_armor", "kiroshi_optics", "biomonitor",  "second_heart",
-									"ram_upgrade"};
-	CHECK(std::size(cb::world::kCyberwareIds) == 17 && std::size(expected) == 17);
+									"ram_upgrade",    "firewall",       "netrunner"};
+	CHECK(std::size(cb::world::kCyberwareIds) == 19 && std::size(expected) == 19);
 	json list = json::array();
-	for (size_t i = 0; i < 17; ++i)
+	for (size_t i = 0; i < 19; ++i)
 	{
 		CHECK(std::string(cb::world::kCyberwareIds[i]) == expected[i]);
 		list.push_back({{"id", expected[i]}, {"on", int(i % 2)}});
 	}
 	const cb::world::Parsed p = cb::world::parse_event({{"t", "cyberware"}, {"list", list}});
-	CHECK(p.status == Status::Event && p.events.size() == 17 && p.droppedEntries == 0);
-	for (size_t i = 0; i < 17; ++i)
+	CHECK(p.status == Status::Event && p.events.size() == 19 && p.droppedEntries == 0);
+	for (size_t i = 0; i < 19; ++i)
 		CHECK(p.events[i].name == expected[i] && approx(p.events[i].amount, double(i % 2)));
 }
 

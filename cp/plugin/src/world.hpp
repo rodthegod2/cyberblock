@@ -57,12 +57,16 @@ namespace cb::world
 		DevAct,    // Phase 4 (megaplan sections 1.8 and 1.9, task 4-D1): act on a device; parsed by devices.cpp
 		RHack,     // Phase 6 (megaplan task 6-D1): a remote hack; parsed by rhack.cpp
 		Daemon,    // Phase 6: a solved Breach's daemons for a device; parsed by rhack.cpp
+		Spawn,     // Phase 8 (megaplan task 8-D1): spawn Night City NPCs near V; parsed by modes.cpp
+		Heat,      // Phase 8: the server's Heat tier for this host (state: the newest queued one wins)
+		Attitude,  // Phase 8: a faction's attitude toward V
+		Glitch,    // Phase 8: Reboot Optics on this host (the DLL also draws cb_glitch); transient
 	};
 
 	/// The CName redscript sees from Cyberblock_NextEvent: "explosion", "hit", "ignite", "block_add", "block_remove",
 	/// "block_reset", "teleport", "lead", "lead_release", "pull", "knock", "effect", "hack", "scan", "perk", "perkfx",
-	/// "cyber", "cyberfx", "prefs", "session", "vteleport", "park", "hub", "devact", "rhack", "daemon"; "" (the empty
-	/// CName) for None.
+	/// "cyber", "cyberfx", "prefs", "session", "vteleport", "park", "hub", "devact", "rhack", "daemon", "spawn", "heat",
+	/// "attitude", "glitch"; "" (the empty CName) for None.
 	const char *event_name(EventKind kind);
 
 	/// One Minecraft event, already in Cyberpunk space. Which fields each kind fills is the event table of plan
@@ -86,6 +90,10 @@ namespace cb::world
 		int32_t id = 0;      // hit: the mob that dealt it (-1 none) | hack, scan, vteleport, devact: the request id
 		std::string text;    // session: the reason (Cyberblock_EventText) | daemon: the daemon ids joined by ',' |
 							 // rhack: the district (pos the area's centre, amount its seconds, extra its radius)
+		// Phase 8 (modes.hpp): spawn: id the request, name the record kind, pos the spot, amount the count, flag hostile,
+		// text the faction ("" none) | heat: amount the tier | attitude: name the faction, text the direction, amount +1
+		// friendly, 0 neutral, -1 hostile | glitch: amount the seconds
+		double received = 0; // cb::steady_seconds() when the link thread queued it (0: not stamped); spawn uses it
 	};
 
 	/// The ten hack names of plan section 1.5 (`hack.hack`) and the twenty perk ids (`perks[].id`, `perkfx.id`).
@@ -97,12 +105,14 @@ namespace cb::world
 											   "field_medic",  "demolitions",  "extra_ram",  "cheap_hacks",  "chain_hack",
 											   "overclock",    "optical_camo", "headhunter", "cold_blood",   "silent_steps"};
 
-	/// Re-test 2 (plan section 1.7): the 17 cyberware ids, in the wire order, for `cyberware.list[].id`, and the three
-	/// implant effects of `cyberfx.id`.
+	/// Re-test 2 (plan section 1.7): the cyberware ids, in the wire order, for `cyberware.list[].id` (the 17 of section 1.7,
+	/// then `firewall` from Phase 6 and `netrunner` from Phase 8: shared/protocol.md's 19; the scripts ignore the two they
+	/// have no Night City effect for), and the three implant effects of `cyberfx.id`.
 	inline constexpr const char *kCyberwareIds[] = {
 		"mantis_blades", "gorilla_arms", "monowire",     "projectile_launch_system", "reinforced_tendons", "fortified_ankles",
 		"lynx_paws",     "sandevistan",  "berserk",      "cyberdeck",                "kerenzikov",         "optical_camo",
-		"subdermal_armor", "kiroshi_optics", "biomonitor", "second_heart",           "ram_upgrade"};
+		"subdermal_armor", "kiroshi_optics", "biomonitor", "second_heart",           "ram_upgrade",        "firewall",
+		"netrunner"};
 	inline constexpr const char *kCyberFxIds[] = {"sandevistan", "kerenzikov", "berserk"};
 	/// Most entries one `cyberware` message may hold (17 ids: a sane bound, the rest is dropped).
 	inline constexpr size_t kMaxCyberwareEntries = 32;
@@ -169,7 +179,8 @@ namespace cb::world
 		/// `block_remove`, `block_reset`, `perk`, `cyber`, `scan`, `hack`, `session`, `vteleport`, `park` and `devact` are
 		/// always kept: redscript's block registry, perk ranks and installed cyberware need every one of them, a scan, a
 		/// hack, a vteleport, a park or a devact must be answered, and a session change must clean Night City whatever the
-		/// state.
+		/// state. Later phases keep `hub`, `rhack`, `daemon`, `spawn` (answered), `heat` and `attitude` (state) too; a
+		/// `heat`, like a `prefs`, replaces the one already queued.
 		/// Returns whether the state changed.
 		bool set_active(bool active);
 		void push(const Event &event);

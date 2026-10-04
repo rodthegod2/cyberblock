@@ -5,6 +5,7 @@
 #include "drive.hpp"
 #include "link.hpp"
 #include "log.hpp"
+#include "modes.hpp"
 #include "native_reg.hpp"
 #include "probes.hpp"
 #include "snapshots.hpp"
@@ -677,11 +678,30 @@ namespace
 	// length IN SECONDS (0 = the scripts' own), EventText a district name or "") and n"daemon"
 	// (Phase 6: EventId the request id, EventTarget the device id, EventAmount the strength 1..3, EventName the first
 	// daemon id, EventText every daemon id joined by ','), both kept while not Active and answered with
-	// Cyberblock_HackResult; n"" (the empty CName, hash 0) when there is none.
+	// Cyberblock_HackResult; Phase 8 (modes.hpp): n"spawn" (EventId the request id, EventName the kind of
+	// modes::kSpawnRecords, EventPos the spot, EventAmount the count 1..8, EventFlag hostile, EventText the faction or "";
+	// kept while not Active: Cyberblock_SpawnResult answers it), n"heat" (EventAmount the tier 0..5; kept while not
+	// Active, the newest wins), n"attitude" (EventName the faction, EventText friendly|neutral|hostile, EventAmount +1 / 0
+	// / -1; kept while not Active) and n"glitch" (EventAmount the seconds 0..10, 0 = cured; dropped while not Active; the
+	// DLL draws the screen glitch itself); n"" (the empty CName, hash 0) when there is none. A `spawn` that waited longer
+	// than modes::kMaxSpawnQueueSeconds (the tick stood still: pause menu, loading, saving) never reaches the scripts: the
+	// DLL answers it `expired` itself, since the server has (or soon will have) sent its Minecraft squad instead.
 	void NextEvent(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
 	{
 		++frame->code;
-		const cb::world::EventKind kind = cb::world::events().next();
+		cb::world::EventKind kind = cb::world::events().next();
+		while (kind == cb::world::EventKind::Spawn)
+		{
+			const cb::world::Event e = cb::world::events().current();
+			const double now = cb::steady_seconds();
+			const auto expired = cb::modes::expired_spawn(e, now);
+			if (!expired)
+				break;
+			cb::link().send(*expired);
+			cb::log::info("spawn: %d expired after %.1f s in the queue (the game was not ticking); spawnresult expired", e.id,
+						  now - e.received);
+			kind = cb::world::events().next();
+		}
 		if (kind == cb::world::EventKind::VTeleport || kind == cb::world::EventKind::Park)
 		{
 			const cb::world::Event e = cb::world::events().current();
@@ -1482,6 +1502,37 @@ namespace
 		add(rtti, "Cyberblock_DeviceResult", &DeviceResult, nullptr, {{"Int32", "id"}, {"Bool", "ok"}, {"String", "reason"}});
 	}
 	// ---- end of Phase 4 ----------------------------------------------------------------------------------------------
+
+	// ---- Phase 8 (megaplan 2026-10-04 section 1.8, task 8-D1): the pure parts are modes.cpp ------------------------------
+
+	// Cyberblock_SpawnResult(id: Int32, ok: Bool, count: Int32, reason: String) -> Void (declared in Spawns.reds, 8S): the
+	// answer to event n"spawn" `id`: how many came (`count`, 0..8) and, on a failure, why. Sent as `spawnresult`.
+	void SpawnResult(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		int32_t id = 0, count = 0;
+		bool ok = false;
+		RED4ext::CString reason;
+		RED4ext::GetParameter(frame, &id);
+		RED4ext::GetParameter(frame, &ok);
+		RED4ext::GetParameter(frame, &count);
+		RED4ext::GetParameter(frame, &reason);
+		++frame->code;
+
+		static bool warned = false;
+		const auto message = cb::modes::make_spawnresult(id, ok, count, reason.c_str());
+		send_or_warn(message, warned, "Cyberblock_SpawnResult", "the request id is negative");
+		static std::atomic<int> logged{0};
+		if (message && log_budget(logged, 50))
+			cb::log::info("spawnresult: %d %s, %d came%s%s", id, ok ? "ok" : "failed", (*message)["n"].get<int>(),
+						  ok ? "" : ": ", (*message)["reason"].get<std::string>().c_str());
+	}
+
+	void register_mode_natives(RED4ext::CRTTISystem *rtti)
+	{
+		cb::natives::add(rtti, "Cyberblock_SpawnResult", &SpawnResult, nullptr,
+						 {{"Int32", "id"}, {"Bool", "ok"}, {"Int32", "count"}, {"String", "reason"}});
+	}
+	// ---- end of Phase 8 ----------------------------------------------------------------------------------------------
 }
 
 namespace cb::natives
@@ -1588,6 +1639,7 @@ namespace cb::natives
 		add(rtti, "Cyberblock_SetPhonePrompt", &SetPhonePrompt, nullptr, {{"Bool", "open"}});
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});
 		register_device_natives(rtti); // Phase 4 (task 4-D1)
+		register_mode_natives(rtti);   // Phase 8 (task 8-D1)
 		log::info("redscript natives registered");
 		ui::register_natives(rtti); // the UI bridge's natives (ui_game.cpp, re-test 3 plan section 1.3)
 		survey_game::register_natives(rtti); // the Atlas survey's natives (survey_game.cpp)
