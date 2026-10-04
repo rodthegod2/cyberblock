@@ -16,14 +16,19 @@ side; the mod, plugin and scripts of Phase 6 have their own entries. The in-game
 - **Protocol.** `shared/protocol.md` "Phase 6": `rhack` (DOWN to the owner only: five vehicle hacks, `cam_feed` and five area hacks with `p`, `r` and
   `secs`), `daemon` (a solved Breach's daemons at strength 1..3, or exactly `["alarm"]` for a failed one), `feedreq`, `feed` (a 128 x 128 picture
   of map colours, BOTH: shown locally and relayed UP, at most once a second, rate 2 per second), `hackresult` extended to answer `rhack` and
-  `daemon`, the four `cyberblock:act` payloads (`rhack`, `breach`, `feedreq`, `comms`) and the three `cyberblock:ui` payloads (`breach`, `feed`,
-  `comms`), the 50 m range (the written fallback of Phase 0's check (h), `cyberblock.hack.out_of_range`), the `hs_ack` feature bit 8, and the 18th
+  `daemon`, the six `cyberblock:act` payloads (`rhack`, `breach`, `feed`, `feedmap`, `netmap`, `comms`) and the ten `cyberblock:ui` payloads
+  (`breach`, `feed`, `comms`, `ract`, `netmap`, `vpanel`, `camfeed`, `outline`, `netping`, `scanowner`) as the server builds them, the 50 m range (the written fallback of Phase 0's check (h), `cyberblock.hack.out_of_range`), the `hs_ack` feature bit 8, and the 18th
   cyberware id `firewall`; class rows, a rate row, validators, names and examples in `tests/test_phase6_protocol.py` (and the class tables of
   `tests/test_protocol_md.py`). Every Cyberpunk effect is timed (`secs` on every vehicle hack, never 0 on a blackout, traffic switch or gridlock)
   and restored on the session end, a link drop and before a save (a save lock while one is pending); the photo feed needs the owner's `hacks`
   toggle; an abort after the first pick is a failed Breach (the same puzzle is kept otherwise, and a failure has a 10 s cooldown; an owner hears
   at most one alarm a minute; the screen's `size` is 4 and `dev` `"0"` for Phase 8's short breach on a player); only hand uses
   are checked against the player's reach, the Net Map and the Traffic Tool are bounded by the 50 m from V.
+- **One `rhack` contract (6I review).** The server's DOWN `rhack` now has exactly the documented shape (`target` null and whole `p`, `r`, `secs` on
+  every area hack, the district hacks centred on V, `secs` 30 on every vehicle hack), so the fake host and a DLL built to the document answer it;
+  `shared/rhack-vectors.json` holds all eleven, checked by the mod's tests and by pytest against the fake host. The feed map item no longer
+  stores the picture: each frame is sent to each holder the owner's `hacks` toggle (and the join password) admits at that frame, and a holder
+  turned away gets a blank picture.
 - **Fake host.** `tools.fakehost --hacks2`: the `--devices` scene plus a Net Port; every valid `rhack` and `daemon` is answered with one `hackresult`
   (vehicle hacks change the car until their `secs` run out, `cam_feed` needs a camera, a blackout switches the devices of an area off and gives them back, `outline` and
   `ping_area` reveal the hostile people with `hackspread`, `open_door` and `disable_cameras` change the devices, `unsupported`, `unsupported daemon`,

@@ -1,6 +1,7 @@
-"""Phase 6 protocol (megaplan task 6-P1): the rows, examples and validators of `rhack`, `daemon`, `feedreq`, `feed`, the extended `hackresult`, the four
-`cyberblock:act` payloads (`rhack`, `breach`, `feedreq`, `comms`), the three `cyberblock:ui` payloads (`breach`, `feed`, `comms`) and the 18th cyberware id,
-`firewall`. Plan 2026-10-04 megaplan sections 1.8 and 1.9 (rows 6), 1.17 and 10, with the Phase 0 amendment (fallback (h): only streamed targets)."""
+"""Phase 6 protocol (megaplan task 6-P1): the rows, examples and validators of `rhack`, `daemon`, `feedreq`, `feed`, the extended `hackresult`, the six
+`cyberblock:act` payloads (`rhack`, `breach`, `feed`, `feedmap`, `netmap`, `comms`), the ten `cyberblock:ui` payloads (`breach`, `feed`, `comms`, `ract`,
+`netmap`, `vpanel`, `camfeed`, `outline`, `netping`, `scanowner`), as the server (6I's ActWire, 6B's BreachWire) builds and parses them, and the 18th
+cyberware id, `firewall`. Plan 2026-10-04 megaplan sections 1.8 and 1.9 (rows 6), 1.17 and 10, with the Phase 0 amendment (fallback (h): only streamed targets)."""
 import base64
 import binascii
 import copy
@@ -14,8 +15,10 @@ from test_protocol_md import (CYBERWARE, CYBERWARE_IDS, TEXT, class_rows, docume
 P6_CP_TO_MC, P6_MC_TO_CP = "Phase 6: Cyberpunk → Minecraft", "Phase 6: Minecraft → Cyberpunk"
 P6_CP_EXAMPLES, P6_MC_EXAMPLES = "Phase 6 examples, Cyberpunk to Minecraft:", "Phase 6 examples, Minecraft to Cyberpunk:"
 P6_SECTION, P6_PAYLOADS = "Phase 6 semantics and limits", "Phase 6: payloads (client ↔ server)"
-ACT_EXAMPLES = {t: f"Phase 6 examples, client to server (`cyberblock:act`, `t:\"{t}\"`):" for t in ("rhack", "breach", "feedreq", "comms")}
-UI_EXAMPLES = {t: f"Phase 6 examples, server to client (`cyberblock:ui`, `t:\"{t}\"`):" for t in ("breach", "feed", "comms")}
+ACT_TYPES = ("rhack", "breach", "feed", "feedmap", "netmap", "comms")
+UI_TYPES = ("breach", "feed", "comms", "ract", "netmap", "vpanel", "camfeed", "outline", "netping", "scanowner")
+ACT_EXAMPLES = {t: f"Phase 6 examples, client to server (`cyberblock:act`, `t:\"{t}\"`):" for t in ACT_TYPES}
+UI_EXAMPLES = {t: f"Phase 6 examples, server to client (`cyberblock:ui`, `t:\"{t}\"`):" for t in UI_TYPES}
 
 
 def names6(label: str) -> list[str]:
@@ -29,7 +32,7 @@ BREACH_CODES, BREACH_STATES, BREACH_OPS, RESERVED = names6("Breach codes"), name
 VEHICLE_HACKS = ["veh_lock", "veh_engine_off", "veh_brake", "veh_start", "veh_jam"]
 DAEMON_ID = re.compile(r"[a-z0-9_]{1,32}")
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-POS_LIMIT, FEED_BYTES, TEXT_CAP = 30_000_000, 128 * 128, 80
+POS_LIMIT, Y_LIMIT, FEED_BYTES, TEXT_CAP = 30_000_000, 20_000, 128 * 128, 64
 
 
 # ---- validators ---------------------------------------------------------------------------------------------------------------------
@@ -91,14 +94,28 @@ def hackresult_ok(m) -> bool:
 P6_VALIDATORS = {"hackresult": hackresult_ok, "feed": feed_ok, "rhack": rhack_ok, "daemon": daemon_ok, "feedreq": feedreq_ok}
 
 
+def uuid_ok(x) -> bool:
+    return isinstance(x, str) and UUID.fullmatch(x) is not None
+
+
+def point_ok(p) -> bool:
+    """A `p` the server parses (ActWire.position): three finite numbers, |x| and |z| below 3e7, |y| below 20000."""
+    return vec3(p) and abs(p[0]) < POS_LIMIT and abs(p[1]) < Y_LIMIT and abs(p[2]) < POS_LIMIT
+
+
 def act_rhack_ok(m) -> bool:
-    """`cyberblock:act` `t:"rhack"`: the client names a car figure's entity id, a camera's block or an area's centre block and radius, never an owner."""
+    """`cyberblock:act` `t:"rhack"`: the client names a car figure's entity id, a camera's host and id, a district hack's host (and a blackout's length) or
+    a point, never the owner of a car or a point."""
     hack = m.get("hack")
     if hack in VEHICLE_HACKS:
-        return set(m) == {"hack", "target"} and whole(m["target"])
+        return set(m) == {"hack", "eid"} and whole(m["eid"])
     if hack == "cam_feed":
-        return set(m) == {"hack", "pos"} and block_pos_ok(m["pos"])
-    return hack in AREA_HACKS and set(m) == {"hack", "pos", "r"} and block_pos_ok(m["pos"]) and whole(m["r"], 1, 150)
+        return set(m) == {"hack", "host", "dev"} and uuid_ok(m["host"]) and dev_id_ok(m["dev"])
+    if hack == "traffic_switch":
+        return set(m) == {"hack", "host"} and uuid_ok(m["host"])
+    if hack == "blackout":
+        return set(m) in ({"hack", "host"}, {"hack", "host", "secs"}) and uuid_ok(m["host"]) and ("secs" not in m or whole(m["secs"], 60, 300))
+    return hack in ("gridlock", "outline", "ping_area") and set(m) == {"hack", "p"} and point_ok(m["p"])
 
 
 def act_breach_ok(m) -> bool:
@@ -107,8 +124,16 @@ def act_breach_ok(m) -> bool:
     return m.get("op") == "abort" and set(m) == {"op", "id"} and whole(m["id"])
 
 
-def act_feedreq_ok(m) -> bool:
-    return set(m) == {"owner", "on"} and isinstance(m["owner"], str) and UUID.fullmatch(m["owner"]) is not None and isinstance(m["on"], bool)
+def act_feed_ok(m) -> bool:
+    return set(m) == {"host", "on"} and uuid_ok(m["host"]) and isinstance(m["on"], bool)
+
+
+def act_feedmap_ok(m) -> bool:
+    return set(m) == {"host"} and uuid_ok(m["host"])
+
+
+def act_netmap_ok(m) -> bool:
+    return m == {}
 
 
 def text_ok(s) -> bool:
@@ -116,8 +141,8 @@ def text_ok(s) -> bool:
 
 
 def act_comms_ok(m) -> bool:
-    return (set(m) == {"to", "text", "pos"} and isinstance(m["to"], str) and UUID.fullmatch(m["to"]) is not None and text_ok(m["text"])
-            and (m["pos"] is None or block_pos_ok(m["pos"])) and not (m["text"] == "" and m["pos"] is None))
+    return (set(m) - {"p"} == {"to", "text"} and uuid_ok(m["to"]) and text_ok(m["text"]) and ("p" not in m or point_ok(m["p"]))
+            and not (m["text"] == "" and "p" not in m))
 
 
 def seq_ok(s, buffer) -> bool:
@@ -138,17 +163,50 @@ def ui_breach_ok(m) -> bool:
 
 
 def ui_feed_ok(m) -> bool:
-    return (set(m) == {"owner", "w", "h", "px"} and isinstance(m["owner"], str) and UUID.fullmatch(m["owner"]) is not None and m["w"] == 128 and m["h"] == 128
-            and px_ok(m["px"]))
+    return set(m) == {"host", "px"} and uuid_ok(m["host"]) and px_ok(m["px"])
 
 
 def ui_comms_ok(m) -> bool:
-    return (set(m) == {"from", "text", "pos"} and isinstance(m["from"], str) and 1 <= len(m["from"]) <= 32 and text_ok(m["text"])
-            and (m["pos"] is None or block_pos_ok(m["pos"])))
+    return (set(m) - {"p"} == {"from", "text"} and isinstance(m["from"], str) and 1 <= len(m["from"]) <= 32 and text_ok(m["text"])
+            and ("p" not in m or block_pos_ok(m["p"])))
 
 
-ACT_VALIDATORS = {"rhack": act_rhack_ok, "breach": act_breach_ok, "feedreq": act_feedreq_ok, "comms": act_comms_ok}
-UI_VALIDATORS = {"breach": ui_breach_ok, "feed": ui_feed_ok, "comms": ui_comms_ok}
+def ui_ract_ok(m) -> bool:
+    return (set(m) == {"hack", "ok", "reason"} and m["hack"] in REMOTE_HACKS and isinstance(m["ok"], bool) and isinstance(m["reason"], str)
+            and (m["reason"] == "") == m["ok"])
+
+
+def ui_netmap_ok(m) -> bool:
+    hosts, cams = m.get("hosts"), m.get("cams")
+    return (set(m) == {"hosts", "cams", "range"} and isinstance(hosts, list) and isinstance(cams, list) and len(cams) <= 512 and m["range"] in (0, 50)
+            and all(set(h) == {"id", "name", "p", "district", "active", "blackout"} and uuid_ok(h["id"]) and isinstance(h["name"], str) and vec3(h["p"])
+                    and isinstance(h["district"], str) and isinstance(h["active"], bool) and whole(h["blackout"], 0, 300) for h in hosts)
+            and all(set(c) == {"h", "id", "p", "yaw"} and uuid_ok(c["h"]) and dev_id_ok(c["id"]) and vec3(c["p"]) and num(c["yaw"], -360, 360) for c in cams))
+
+
+def ui_vpanel_ok(m) -> bool:
+    return set(m) == {"eid", "name"} and whole(m["eid"]) and isinstance(m["name"], str)
+
+
+def ui_camfeed_ok(m) -> bool:
+    return set(m) == {"p", "yaw", "name"} and vec3(m["p"]) and num(m["yaw"], -360, 360) and isinstance(m["name"], str)
+
+
+def ui_outline_ok(m) -> bool:
+    return set(m) == {"ids", "secs"} and isinstance(m["ids"], list) and all(whole(i) for i in m["ids"]) and whole(m["secs"], 1, 600)
+
+
+def ui_netping_ok(m) -> bool:
+    return set(m) == {"p", "secs", "by"} and vec3(m["p"]) and whole(m["secs"], 1, 120) and isinstance(m["by"], str)
+
+
+def ui_scanowner_ok(m) -> bool:
+    return set(m) == {"name"} and isinstance(m["name"], str)
+
+
+ACT_VALIDATORS = {"rhack": act_rhack_ok, "breach": act_breach_ok, "feed": act_feed_ok, "feedmap": act_feedmap_ok, "netmap": act_netmap_ok, "comms": act_comms_ok}
+UI_VALIDATORS = {"breach": ui_breach_ok, "feed": ui_feed_ok, "comms": ui_comms_ok, "ract": ui_ract_ok, "netmap": ui_netmap_ok, "vpanel": ui_vpanel_ok,
+                 "camfeed": ui_camfeed_ok, "outline": ui_outline_ok, "netping": ui_netping_ok, "scanowner": ui_scanowner_ok}
 P6_EXAMPLES = [(m["t"], m) for first in (P6_CP_EXAMPLES, P6_MC_EXAMPLES) for m in examples(first)]
 
 
@@ -242,9 +300,10 @@ def test_p6_the_act_and_ui_payload_examples_are_valid():
     for t, check in UI_VALIDATORS.items():
         got = examples(UI_EXAMPLES[t])
         assert len(got) == 1 and check(got[0]), t
-    assert [m["hack"] for m in examples(ACT_EXAMPLES["rhack"])] == ["veh_brake", "cam_feed", "blackout"]
+    assert set(ACT_VALIDATORS) == set(ACT_TYPES) and set(UI_VALIDATORS) == set(UI_TYPES)
+    assert [m["hack"] for m in examples(ACT_EXAMPLES["rhack"])] == ["veh_brake", "cam_feed", "blackout", "gridlock"]  # a car, a camera, a district, a point
     assert [m["op"] for m in examples(ACT_EXAMPLES["breach"])] == ["pick", "abort"]
-    for m in (*examples(ACT_EXAMPLES["rhack"]), *examples(ACT_EXAMPLES["breach"]), *examples(ACT_EXAMPLES["feedreq"]), *examples(ACT_EXAMPLES["comms"])):
+    for m in (m for t in ACT_TYPES for m in examples(ACT_EXAMPLES[t])):
         assert len(json_text(m).encode()) <= 8000  # every `act` json is at most 8000 bytes
 
 
@@ -273,7 +332,7 @@ def test_p6_the_feed_examples_are_one_frame_of_map_colours_without_the_transpare
 
 def test_p6_payload_rows_name_every_example_field():
     rows = {(m.group(1), m.group(2)): m.group(0) for m in re.finditer(r'^\| `cyberblock:(act|ui)` `t:"(\w+)"` \|.*$', section(P6_PAYLOADS), re.M)}
-    assert set(rows) == {("act", "rhack"), ("act", "breach"), ("act", "feedreq"), ("act", "comms"), ("ui", "breach"), ("ui", "feed"), ("ui", "comms")}
+    assert set(rows) == {("act", t) for t in ACT_TYPES} | {("ui", t) for t in UI_TYPES}
     for t in ACT_EXAMPLES:
         for key in {k for m in examples(ACT_EXAMPLES[t]) for k in m}:
             assert re.search(rf"`{key}\b", rows[("act", t)]), f"act {t}.{key}"
@@ -292,7 +351,7 @@ def test_p6_rules_are_stated_in_the_document():
                    "exactly one `hackresult`", "must carry an id the session issued", "the owner's `hacks` toggle", "`/cyberblock guests hacks on|off`",
                    "the owner's `devices` toggle", "`cyberblock.guest.blocked`", "never trusted with a result", "within 1 s of the request", "at most one `feed` per second",
                    "0.5 ms of frame time", "top-down replica view", "sends no other message", "no `feed` within 3 s of `feedreq` `on:true`", "`base × 4 + shade`", "transparent colour", "`hs_ack.features` bit 8 (hacking)", "an 18th id, `firewall`",
-                   "never names an owner or an id", "validates **every** pick", "the first pick is in row 0", "no cell twice", "`daemon` with `[\"alarm\"]`",
+                   "The client names no owner except `host`", "the **nearest** active host whose V is within 150 m of the point", "validates **every** pick", "the first pick is in row 0", "no cell twice", "`daemon` with `[\"alarm\"]`",
                    "`/cyberblock test breach <x> <y> <z> solve|fail`", "the written fallback is the Phase 4 devices", "150 m of V", "never fatal", "Every `act` is at most 8000 bytes",
                    "Minecraft's own use path", "at most 4 per second", "at most one every 2 s", "the camera's position and facing are already in the `devices` list"):
         assert phrase in text, f"{phrase!r} is not stated"
@@ -305,8 +364,8 @@ def test_p6_reach_effects_feed_and_abort_rules_close_the_review_gaps():
     for phrase in (
             # reach: only hand uses are checked against the player; the Net Map and the Traffic Tool are not
             "The player-reach rule covers only the acts that stand for a hand use:", "a Breach pick (the player's eyes within 8 blocks of the Net Port block)",
-            "a Vehicle Panel opened by right-clicking a car figure", "**Net Map and Traffic Tool `rhack` acts (the `cam_feed` `pos`, an area's `pos`, a vehicle target picked on the map) and the `comms` `pos` are not checked against the player's position**",
-            "bounded only by the V-based 50 m rule above and by the owning host's sanity radius (160 blocks)",
+            "a Vehicle Panel opened by right-clicking a car figure", "**Net Map and Traffic Tool `rhack` acts (a district hack, an area's `p`, a vehicle target picked on the map) and the `comms` `p` are not checked against the player's position**",
+            "bounded only by the V-based range rule above", "The one exception is `cam_feed`: the camera must lie within the player's view distance",
             # every effect ends
             "a **vehicle** hack also carries `secs` (a whole number 1..600", "1..600 for `traffic_switch`, `gridlock` and `blackout`", "`secs` 0 is accepted only for `outline` and `ping_area`",
             "restore **every pending effect at once** when the session goes to `none`, `guest` or `refused` and on a link drop", "**a save never holds one**",
@@ -314,6 +373,7 @@ def test_p6_reach_effects_feed_and_abort_rules_close_the_review_gaps():
             # the photo feed
             "A guest's `feedreq` needs the owner's `hacks` toggle; the host's own client is always allowed", "removes that host's guest viewers **at once**",
             "stops forwarding `cyberblock:ui` `feed` to them", "sends the DLL `feedreq` `on:false`",
+            "**The feed map item** is held to the same rule at **every frame**", "the item's saved map colours stay blank", "a holder turned away gets a blank picture at once",
             # abort
             "an `aborted` Breach after the first pick send the `daemon` with `[\"alarm\"]`", "**An abort is not a free re-roll.**", "the server **keeps that puzzle**",
             "for **10 s**", "`cyberblock.breach.cooldown`", "The puzzle's timer starts when the screen opens"):
@@ -397,17 +457,22 @@ def test_p6_validators_accept_the_limits_themselves():
 
 def _bad_acts():
     hack = lambda **kw: act("rhack", 0, **kw)  # noqa: E731
+    cam, blackout, point = act("rhack", 1), act("rhack", 2), act("rhack", 3)
     return [
-        ("rhack", hack(target=-1)), ("rhack", hack(target="212")), ("rhack", hack(target=1.5)), ("rhack", {**hack(), "owner": "x"}), ("rhack", {"hack": "veh_brake"}),
-        ("rhack", {"hack": "cam_feed", "target": 5}), ("rhack", {"hack": "cam_feed", "pos": [1, 2]}), ("rhack", {"hack": "cam_feed", "pos": [0.5, 2, 3]}),
-        ("rhack", {"hack": "cam_feed", "pos": [POS_LIMIT + 1, 0, 0]}), ("rhack", act("rhack", 2, r=0)), ("rhack", act("rhack", 2, r=151)), ("rhack", act("rhack", 2, r=1.5)),
-        ("rhack", {k: v for k, v in act("rhack", 2).items() if k != "r"}), ("rhack", {**act("rhack", 2), "secs": 60}), ("rhack", {"hack": "nuke", "pos": [0, 0, 0], "r": 5}),
+        ("rhack", hack(eid=-1)), ("rhack", hack(eid="212")), ("rhack", hack(eid=1.5)), ("rhack", {**hack(), "owner": "x"}), ("rhack", {"hack": "veh_brake"}),
+        ("rhack", {**hack(), "target": 212}), ("rhack", {"hack": "cam_feed", "dev": cam["dev"]}), ("rhack", {**cam, "dev": "0"}), ("rhack", {**cam, "dev": 5}),
+        ("rhack", {**cam, "host": "x"}), ("rhack", {**cam, "pos": [1, 2, 3]}), ("rhack", {**blackout, "secs": 59}), ("rhack", {**blackout, "secs": 301}),
+        ("rhack", {**blackout, "secs": 1.5}), ("rhack", {"hack": "blackout"}), ("rhack", {"hack": "traffic_switch", "host": cam["host"], "secs": 60}),
+        ("rhack", {**point, "p": [0, 0]}), ("rhack", {**point, "p": [POS_LIMIT, 0, 0]}), ("rhack", {**point, "p": [0, Y_LIMIT, 0]}), ("rhack", {**point, "r": 24}),
+        ("rhack", {"hack": "nuke", "p": [0, 0, 0]}), ("rhack", {"hack": "gridlock", "host": cam["host"]}),
         ("breach", {"op": "pick", "id": 12}), ("breach", act("breach", 0, cell=49)), ("breach", act("breach", 0, cell=-1)), ("breach", act("breach", 0, cell=1.5)),
         ("breach", act("breach", 0, id=-1)), ("breach", {"op": "abort", "id": 12, "cell": 3}), ("breach", {"op": "solve", "id": 12}), ("breach", {"op": "pick", "cell": 1}),
-        ("feedreq", act("feedreq", owner="3F2A8D1C-5B7E-4C1A-9D3E-0A1B2C3D4E5F")), ("feedreq", act("feedreq", owner="3f2a8d1c5b7e4c1a9d3e0a1b2c3d4e5f")),
-        ("feedreq", act("feedreq", owner=None)), ("feedreq", act("feedreq", on=1)), ("feedreq", {"on": True}), ("feedreq", {**act("feedreq"), "x": 1}),
-        ("comms", act("comms", text="x" * 81)), ("comms", act("comms", text="", pos=None)), ("comms", act("comms", pos=[1, 2])), ("comms", act("comms", pos=[0.5, 0, 0])),
-        ("comms", act("comms", to="nobody")), ("comms", act("comms", text=None)), ("comms", {k: v for k, v in act("comms").items() if k != "pos"}),
+        ("feed", act("feed", host="3F2A8D1C-5B7E-4C1A-9D3E-0A1B2C3D4E5F")), ("feed", act("feed", host="3f2a8d1c5b7e4c1a9d3e0a1b2c3d4e5f")),
+        ("feed", act("feed", host=None)), ("feed", act("feed", on=1)), ("feed", {"on": True}), ("feed", {**act("feed"), "x": 1}), ("feed", {"owner": cam["host"], "on": True}),
+        ("feedmap", {}), ("feedmap", act("feedmap", host="x")), ("feedmap", {**act("feedmap"), "on": True}), ("netmap", {"x": 1}),
+        ("comms", act("comms", text="x" * 65)), ("comms", {k: v for k, v in act("comms", text="").items() if k != "p"}), ("comms", act("comms", p=[1, 2])),
+        ("comms", act("comms", p=[POS_LIMIT, 0, 0])), ("comms", act("comms", to="nobody")), ("comms", act("comms", text=None)),
+        ("comms", {k: v for k, v in act("comms").items() if k != "text"}), ("comms", {**act("comms"), "pos": [1, 2, 3]}),
     ]
 
 
@@ -421,10 +486,13 @@ def test_p6_act_validators_reject_out_of_limit_payloads(t, m):
 
 
 def test_p6_act_validators_accept_the_limits_themselves():
-    assert act_comms_ok({"to": "0" * 8 + "-" + "0000-" * 3 + "0" * 12, "text": "x" * TEXT_CAP, "pos": None}) and act_comms_ok(act("comms", text="", pos=[-POS_LIMIT, 0, POS_LIMIT]))
+    assert act_comms_ok({"to": "0" * 8 + "-" + "0000-" * 3 + "0" * 12, "text": "x" * TEXT_CAP}) and act_comms_ok(act("comms", text="", p=[-POS_LIMIT + 1, 0, POS_LIMIT - 1]))
     assert act_breach_ok(act("breach", 0, cell=0, id=0)) and act_breach_ok(act("breach", 0, cell=48)) and act_breach_ok({"op": "abort", "id": 2**31 - 1})
-    assert all(act_rhack_ok({"hack": h, "pos": [0, 0, 0], "r": r}) for h in AREA_HACKS for r in (1, 150)) and act_rhack_ok({"hack": "veh_start", "target": 0})
-    assert act_feedreq_ok(act("feedreq", on=False))
+    host = act("feed")["host"]
+    assert all(act_rhack_ok({"hack": h, "p": [0.5, -64, 29_999_999.5]}) for h in ("gridlock", "outline", "ping_area")) and act_rhack_ok({"hack": "veh_start", "eid": 0})
+    assert act_rhack_ok({"hack": "blackout", "host": host}) and all(act_rhack_ok({"hack": "blackout", "host": host, "secs": s}) for s in (60, 300))
+    assert act_rhack_ok({"hack": "traffic_switch", "host": host}) and act_rhack_ok({"hack": "cam_feed", "host": host, "dev": "18446744073709551615"})
+    assert act_feed_ok(act("feed", on=False)) and act_feedmap_ok({"host": host}) and act_netmap_ok({})
 
 
 def _bad_ui():
@@ -437,9 +505,12 @@ def _bad_ui():
         b(strength=-1), b(dev="-1"), b(dev="00"), b(id=-1), b(size=3, dev="0", grid=["1C"] * 9, picks=[]),
         b(size=4, grid=["1C"] * 16, picks=[], seqs=[{"id": "a", "codes": ["BD", "1C"], "ok": False}]), ("breach", {k: v for k, v in ui("breach").items() if k != "left"}), ("breach", {**ui("breach"), "extra": 1}),
     ] + [
-        ("feed", ui("feed", owner="x")), ("feed", ui("feed", w=127)), ("feed", ui("feed", px="AA==")), ("feed", {k: v for k, v in ui("feed").items() if k != "owner"}),
-        ("comms", ui("comms", text="x" * 81)), ("comms", ui("comms", **{"from": ""})), ("comms", ui("comms", **{"from": "x" * 33})), ("comms", ui("comms", pos=[1, 2, 3.5])),
-        ("comms", {k: v for k, v in ui("comms").items() if k != "pos"}),
+        ("feed", ui("feed", host="x")), ("feed", ui("feed", w=128)), ("feed", ui("feed", px="AA==")), ("feed", {k: v for k, v in ui("feed").items() if k != "host"}),
+        ("comms", ui("comms", text="x" * 65)), ("comms", ui("comms", **{"from": ""})), ("comms", ui("comms", **{"from": "x" * 33})), ("comms", ui("comms", p=[1, 2, 3.5])),
+        ("comms", ui("comms", p=None)), ("comms", {**ui("comms"), "pos": [1, 2, 3]}),
+        ("ract", ui("ract", hack="nuke")), ("ract", ui("ract", ok=False)), ("ract", ui("ract", reason="busy")), ("netmap", ui("netmap", range=10)),
+        ("netmap", ui("netmap", cams=[{"h": "x", "id": "1", "p": [0, 0, 0], "yaw": 0}])), ("vpanel", ui("vpanel", eid=-1)), ("camfeed", ui("camfeed", p=[0, 0])),
+        ("outline", ui("outline", secs=0)), ("outline", ui("outline", ids=[1.5])), ("netping", ui("netping", secs=0)), ("scanowner", ui("scanowner", name=None)),
     ]
 
 
@@ -458,4 +529,5 @@ def test_p6_ui_validators_accept_the_limits_themselves():
     assert ui_breach_ok(seven) and all(ui_breach_ok(ui("breach", state=s)) for s in BREACH_STATES) and ui_breach_ok(ui("breach", picks=[], left=0))
     short = ui("breach", dev="0", size=4, grid=["1C", "55", "BD", "E9"] * 4, buffer=4, picks=[], seqs=[{"id": "a", "codes": ["BD", "1C"], "ok": False}], total=5, left=5)
     assert ui_breach_ok(short) and ui_breach_ok({**short, "size": 5, "grid": ["1C"] * 25})  # Phase 8's 4x4 and a practice, both with no device
-    assert ui_comms_ok(ui("comms", text="", pos=None, **{"from": "x" * 32})) and ui_comms_ok(ui("comms", text="x" * TEXT_CAP))
+    assert ui_comms_ok({"from": "x" * 32, "text": ""}) and ui_comms_ok(ui("comms", text="x" * TEXT_CAP)) and ui_scanowner_ok({"name": ""})
+    assert ui_ract_ok(ui("ract", ok=False, reason="That camera is gone")) and ui_netmap_ok(ui("netmap", hosts=[], cams=[], range=50))

@@ -2,6 +2,7 @@ package dev.cyberblock.hack.actions;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import java.util.Base64;
 import java.util.Collection;
@@ -16,9 +17,9 @@ import org.jspecify.annotations.Nullable;
  * <li>`cyberblock:act t:"rhack"` {"hack":"veh_lock","eid":n} (a car figure's entity id), {"hack":"cam_feed","host":"&lt;uuid&gt;",
  * "dev":"&lt;id&gt;"}, {"hack":"blackout","host":"&lt;uuid&gt;","secs":120}, {"hack":"traffic_switch","host":"&lt;uuid&gt;"} or
  * {"hack":"gridlock|outline|ping_area","p":[x,y,z]}</li>
- * <li>`rhack` DOWN {"t":"rhack","id":n,"target":"&lt;id&gt;"|"","hack":"...", "district":"...", "p":[x,y,z], "r":m, "secs":s}: the
- * section 1.9 shape `{id, target, hack}`; `district` for the district hacks, `p` and `r` for the point hacks, `secs` for the timed
- * ones (each only where it applies)</li>
+ * <li>`rhack` DOWN, exactly the shapes of shared/protocol.md "Phase 6: Minecraft → Cyberpunk": a vehicle hack
+ * {"t":"rhack","id":n,"target":"&lt;id&gt;","hack":"...","secs":30}, `cam_feed` {"t","id","target","hack"} and an area hack
+ * {"t","id","target":null,"hack","p":[x,y,z],"r":m,"secs":s} (`r` and `secs` whole numbers; the district hacks are centred on V)</li>
  * <li>`cyberblock:act t:"comms"` {"to":"&lt;uuid&gt;","text":"...","p":[x,y,z]}: a short message and/or a waypoint for a host</li>
  * <li>`cyberblock:act t:"netmap"` {}: the Net Map's state, answered by `cyberblock:ui t:"netmap"`</li>
  * <li>`cyberblock:act t:"feed"` {"host":"&lt;uuid&gt;","on":bool} and `t:"feedmap"` {"host":"&lt;uuid&gt;"}: watch a host's photo
@@ -102,7 +103,7 @@ public final class ActWire {
 			return switch (hack.target()) {
 				case VEHICLE -> {
 					int eid = m.get("eid").getAsInt();
-					yield eid >= 0 ? new Request(hack, eid, null, 0L, null, 0) : null;
+					yield eid >= 0 ? new Request(hack, eid, null, 0L, null, hack.seconds()) : null;
 				}
 				case CAMERA -> {
 					UUID host = uuid(m.get("host"));
@@ -111,7 +112,7 @@ public final class ActWire {
 				}
 				case DISTRICT -> {
 					UUID host = uuid(m.get("host"));
-					int secs = hack == RemoteHack.BLACKOUT ? m.has("secs") ? m.get("secs").getAsInt() : hack.seconds() : 0;
+					int secs = hack == RemoteHack.BLACKOUT && m.has("secs") ? m.get("secs").getAsInt() : hack.seconds();
 					boolean ok = host != null && (hack != RemoteHack.BLACKOUT || secs >= RemoteHack.MIN_BLACKOUT && secs <= RemoteHack.MAX_BLACKOUT);
 					yield ok ? new Request(hack, -1, host, 0L, null, secs) : null;
 				}
@@ -207,26 +208,30 @@ public final class ActWire {
 	// ---- DOWN (server to the owner's Cyberpunk) ---------------------------------------------------------------------------
 
 	/**
-	 * {"t":"rhack","id":n,"target":"&lt;id&gt;"|"","hack":"..."} plus `district` (district hacks), `p` and `r` (point hacks) and `secs`
-	 * (gridlock, blackout, outline, ping) where they apply.
+	 * The DOWN `rhack` (shared/protocol.md "Phase 6: Minecraft → Cyberpunk" and its validation rules): a vehicle hack carries the car's
+	 * id and `secs`, `cam_feed` the camera's id and nothing else, an area hack `target` null and always `p` (its centre: the point, or
+	 * V for the district hacks), `r` and `secs` as whole numbers. `secs` is {@link RemoteHack#downSeconds}.
 	 */
-	public static String rhack(final int id, final long target, final RemoteHack hack, final @Nullable String district, final @Nullable Vec3 p,
-		final int secs) {
+	public static String rhack(final int id, final long target, final RemoteHack hack, final @Nullable Vec3 p, final int secs) {
 		JsonObject m = new JsonObject();
 		m.addProperty("t", "rhack");
 		m.addProperty("id", id);
-		m.addProperty("target", target == 0L ? "" : Long.toUnsignedString(target));
-		m.addProperty("hack", hack.wire());
-		if (district != null) {
-			m.addProperty("district", district);
-		}
+		if (hack.area()) {
+			if (p == null) {
+				throw new IllegalArgumentException(hack.wire() + " is an area hack: it needs its centre");
+			}
 
-		if (p != null) {
+			m.add("target", JsonNull.INSTANCE);
+			m.addProperty("hack", hack.wire());
 			m.add("p", vec(p));
 			m.addProperty("r", hack.radius());
+			m.addProperty("secs", secs);
+			return m.toString();
 		}
 
-		if (secs > 0) {
+		m.addProperty("target", Long.toUnsignedString(target));
+		m.addProperty("hack", hack.wire());
+		if (hack.target() == RemoteHack.Target.VEHICLE) {
 			m.addProperty("secs", secs);
 		}
 
