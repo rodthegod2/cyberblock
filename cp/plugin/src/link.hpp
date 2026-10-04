@@ -67,6 +67,12 @@ namespace cb
 	};
 	HelloNote describe_hello(const nlohmann::json &hello, const std::string &dllVersion);
 
+	/// Longest `hello.ver` (megaplan 2026-10-04 section 1.2).
+	inline constexpr size_t kMaxVersion = 32;
+	/// The DLL's `hello`, sent first on every connection: {"t":"hello","proto":1,"game":"cp2077","build":"2.31","ver"}
+	/// with `ver` = `dllVersion` (CB_VERSION) cut to 32 chars, so Minecraft's handshake can compare it with its mod.
+	nlohmann::json make_hello(const std::string &dllVersion);
+
 	class Link
 	{
 	public:

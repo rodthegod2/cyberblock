@@ -95,6 +95,47 @@ namespace fakeserver
 			return send_bytes(peer, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n");
 		}
 
+		/// Reads the next text frame the client sent and returns its payload (clients mask their frames, RFC 6455 5.3);
+		/// "" on a timeout or a closed connection.
+		std::string read_text()
+		{
+			const auto read = [this](void *out, uint64_t size)
+			{
+				char *bytes = static_cast<char *>(out);
+				for (uint64_t got = 0; got < size;)
+				{
+					const int n = readable(peer) ? recv(peer, bytes + got, static_cast<int>(size - got), 0) : 0;
+					if (n <= 0)
+						return false;
+					got += static_cast<uint64_t>(n);
+				}
+				return true;
+			};
+			unsigned char head[2];
+			if (!read(head, 2))
+				return {};
+			uint64_t size = head[1] & 0x7F;
+			const int extended = size == 126 ? 2 : size == 127 ? 8 : 0;
+			if (extended > 0)
+			{
+				unsigned char length[8];
+				if (!read(length, extended))
+					return {};
+				size = 0;
+				for (int i = 0; i < extended; ++i)
+					size = size << 8 | length[i];
+			}
+			unsigned char mask[4] = {};
+			if ((head[1] & 0x80) != 0 && !read(mask, 4))
+				return {};
+			std::string payload(static_cast<size_t>(size), '\0');
+			if (!read(payload.data(), size))
+				return {};
+			for (size_t i = 0; i < payload.size(); ++i)
+				payload[i] = static_cast<char>(payload[i] ^ mask[i % 4]);
+			return payload;
+		}
+
 		/// True once the client has closed this connection (anything it still sends is skipped).
 		bool client_hung_up()
 		{

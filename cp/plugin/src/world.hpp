@@ -49,11 +49,12 @@ namespace cb::world
 		PerkFx,
 		Cyber,   // re-test 2: one installed/removed implant (plan section 1.3)
 		CyberFx, // re-test 2: an implant effect starts or ends
+		Session, // Phase 1 (megaplan 2026-10-04 sections 1.2 and 1.8): the Minecraft server's verdict on this host changed
 	};
 
 	/// The CName redscript sees from Cyberblock_NextEvent: "explosion", "hit", "ignite", "block_add", "block_remove",
 	/// "block_reset", "teleport", "lead", "lead_release", "pull", "knock", "effect", "hack", "scan", "perk", "perkfx",
-	/// "cyber", "cyberfx"; "" (the empty CName) for None.
+	/// "cyber", "cyberfx", "session"; "" (the empty CName) for None.
 	const char *event_name(EventKind kind);
 
 	/// One Minecraft event, already in Cyberpunk space. Which fields each kind fills is the event table of plan
@@ -68,9 +69,10 @@ namespace cb::world
 							 // effect seconds | perk rank | perkfx seconds | cyber 1 installed, 0 not | cyberfx seconds
 		Vec3 vector{};       // hit impulse, m/s
 		bool flag = false;   // explosion fire | lead has a fixed anchor | hack chains
-		std::string name;    // effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id
-		double extra = 0;    // knock strength | effect amplifier
+		std::string name;    // effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id | session state
+		double extra = 0;    // knock strength | effect amplifier | session perms bitmask
 		int32_t id = 0;      // hit: the mob that dealt it (-1 none) | hack, scan: the request id
+		std::string text;    // session: the reason (Cyberblock_EventText)
 	};
 
 	/// The ten hack names of plan section 1.5 (`hack.hack`) and the twenty perk ids (`perks[].id`, `perkfx.id`).
@@ -147,8 +149,9 @@ namespace cb::world
 		/// Whether the mashup is Active. While it is not, the transient events (explosion, hit, ignite, teleport, lead,
 		/// lead_release, pull, knock, effect, perkfx, cyberfx) are discarded (nothing can act on them), and each change of
 		/// state discards the ones already queued, so a stale blast never replays on the next activation. `block_add`,
-		/// `block_remove`, `block_reset`, `perk`, `cyber`, `scan` and `hack` are always kept: redscript's block registry,
-		/// perk ranks and installed cyberware need every one of them, and a scan or a hack must be answered.
+		/// `block_remove`, `block_reset`, `perk`, `cyber`, `scan`, `hack` and `session` are always kept: redscript's block
+		/// registry, perk ranks and installed cyberware need every one of them, a scan or a hack must be answered, and a
+		/// session change must clean Night City whatever the state.
 		void set_active(bool active);
 		void push(const Event &event);
 		/// Counts a message parse_event rejected.
@@ -193,7 +196,8 @@ namespace cb::world
 	/// The link's observer (runs on the link thread for every message from Minecraft): queues the events of the valid
 	/// messages in events() (converted with the current alignment), counts and logs invalid ones (the first 10 only: a
 	/// misbehaving peer must not fill the log), forgets the old session's events and resets k to 0 on each `hello`, and
-	/// takes k from `align` (an integer 0..63; a bad one is counted and the old k kept; a change is logged).
+	/// takes k from `align` (an integer 0..63; a bad one is counted and the old k kept; a change is logged), and hands
+	/// `session` to on_session (Phase 1).
 	void on_minecraft_message(const nlohmann::json &message);
 	/// Counts `count` invalid messages or list entries (events().stats().rejected) and logs `reason` for the first 10 only.
 	void note_invalid(size_t count, const std::string &reason);
@@ -325,4 +329,55 @@ namespace cb::world
 
 	/// {"t":"killed","target","kind","hostile"}: an NPC or vehicle that V damaged died or was destroyed.
 	nlohmann::json make_killed(uint64_t target, bool vehicle, bool hostile);
+
+	// ---- Phase 1 (megaplan 2026-10-04 sections 1.2 and 1.8, task 1-H1): the server session ---------------------------
+
+	/// What the Minecraft server made of this host (`session.state`). Unknown before the first `session` of a Minecraft
+	/// (a mod older than Phase 1 never sends one) and again after every `hello` and link drop; it acts like Host, so a
+	/// singleplayer game with an older mod behaves as before.
+	enum class SessionState
+	{
+		Unknown,
+		None,
+		Host,
+		Guest,
+		Refused,
+	};
+	/// "none", "host", "guest", "refused"; "" for Unknown.
+	const char *session_state_name(SessionState state);
+	/// Longest `session.reason`, in UTF-8 bytes.
+	inline constexpr size_t kMaxSessionReason = 128;
+	/// The keys of `session.perms`, in bit order (1 explosions, 2 damage, 4 hacks, 8 devices, 16 spawns), as `hs_ack.perms`.
+	inline constexpr const char *kSessionPerms[] = {"explosions", "damage", "hacks", "devices", "spawns"};
+
+	struct Session
+	{
+		SessionState state = SessionState::Unknown;
+		std::string reason;
+		int32_t perms = 0;
+		bool operator==(const Session &) const = default;
+	};
+
+	/// {"t":"session","state","reason","perms"}: `state` one of "none", "host", "guest", "refused"; `reason` a string of
+	/// at most 128 UTF-8 bytes ("" when absent); `perms` an object whose five kSessionPerms keys are booleans when present
+	/// (an absent key is false, other keys are ignored; no `perms` at all is 0). nullopt, with `why` saying which field
+	/// failed, for anything else. Never throws.
+	std::optional<Session> parse_session(const nlohmann::json &message, std::string *why = nullptr);
+
+	/// Takes a valid `session` (on_minecraft_message, link thread). When it differs from the last one it logs
+	/// `session: <state> (<reason>)`, queues a `session` event (name = state, text = reason, extra = perms; kept while not
+	/// Active), bumps ground_epoch() on a change to Host, and on a change from Host or Unknown to None, Guest or Refused
+	/// raises take_session_cleanup(). A repeat of the last one does nothing.
+	void on_session(const Session &session);
+	/// The last valid `session` (state Unknown before one, after a `hello` and after a link drop).
+	Session session();
+	/// +1 each time this host becomes the server's host: the ground Minecraft got before belongs to another server session,
+	/// so the probe state must be forgotten and `clear` sent (natives.cpp SubmitProbes and restart_ground).
+	int ground_epoch();
+	/// Whether the ground was last restarted for an older epoch; then `seen` becomes the current one. natives.cpp keeps
+	/// `seen` with its probe state.
+	bool take_ground_restart(int &seen);
+	/// True once after a `session` moved this host away from Host (or Unknown): the DLL does what a link drop does on its
+	/// side (main.cpp: unpause, flight stop) while the WebSocket stays open.
+	bool take_session_cleanup();
 }

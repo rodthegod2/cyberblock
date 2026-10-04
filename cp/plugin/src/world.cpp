@@ -5,6 +5,8 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <iterator>
+#include <utility>
 #include <vector>
 
 namespace
@@ -54,6 +56,18 @@ namespace
 	std::atomic<bool> g_thirdPerson{false};
 	/// Re-test 3: the last `status.pause`.
 	std::atomic<bool> g_pause{false};
+	/// Phase 1: the last valid `session` (link thread writes, the natives read), the ground epoch and the cleanup flag.
+	std::mutex g_sessionLock;
+	cb::world::Session g_session;
+	std::atomic<int> g_groundEpoch{0};
+	std::atomic<bool> g_sessionCleanup{false};
+
+	/// A new Minecraft (hello) or none (link drop): its server session is not known yet.
+	void forget_session()
+	{
+		std::lock_guard<std::mutex> lock(g_sessionLock);
+		g_session = {};
+	}
 
 	void set_pause(bool pause)
 	{
@@ -325,6 +339,7 @@ namespace
 		case EventKind::Cyber: // the install state, like a perk rank
 		case EventKind::Scan:
 		case EventKind::Hack:
+		case EventKind::Session: // the cleanup must happen whatever the state
 			return true;
 		default:
 			return false;
@@ -361,6 +376,7 @@ namespace cb::world
 		case EventKind::PerkFx: return "perkfx";
 		case EventKind::Cyber: return "cyber";
 		case EventKind::CyberFx: return "cyberfx";
+		case EventKind::Session: return "session";
 		case EventKind::None: break;
 		}
 		return "";
@@ -533,6 +549,16 @@ namespace cb::world
 			set_level_k(0);
 			g_thirdPerson = false; // the new session sends `persp` again after its hello
 			set_pause(false);
+			forget_session(); // and its `session` after its handshake with the server
+			return;
+		}
+		if (type != message.end() && *type == "session")
+		{
+			std::string why;
+			if (const auto session = parse_session(message, &why))
+				on_session(*session);
+			else
+				note_invalid(1, "session: " + why);
 			return;
 		}
 		if (type != message.end() && *type == "status")
@@ -599,6 +625,7 @@ namespace cb::world
 	{
 		g_thirdPerson = false;
 		set_pause(false);
+		forget_session();
 	}
 
 	void note_invalid(size_t count, const std::string &reason)
@@ -801,5 +828,109 @@ namespace cb::world
 	json make_killed(uint64_t target, bool vehicle, bool hostile)
 	{
 		return {{"t", "killed"}, {"target", std::to_string(target)}, {"kind", vehicle ? "vehicle" : "human"}, {"hostile", hostile}};
+	}
+
+	// ---- Phase 1: the server session ----
+
+	const char *session_state_name(SessionState state)
+	{
+		switch (state)
+		{
+		case SessionState::None: return "none";
+		case SessionState::Host: return "host";
+		case SessionState::Guest: return "guest";
+		case SessionState::Refused: return "refused";
+		case SessionState::Unknown: break;
+		}
+		return "";
+	}
+
+	std::optional<Session> parse_session(const json &message, std::string *why)
+	{
+		try
+		{
+			if (!message.is_object())
+				throw Bad{"not an object"};
+			constexpr const char *kStates[] = {"none", "host", "guest", "refused"};
+			const std::string state = one_of(message, "state", kStates);
+			Session out;
+			out.state = state == "none" ? SessionState::None : state == "host" ? SessionState::Host
+													 : state == "guest"   ? SessionState::Guest
+																		  : SessionState::Refused;
+			if (const auto reason = message.find("reason"); reason != message.end())
+			{
+				if (!reason->is_string())
+					throw Bad{"reason is not a string"};
+				out.reason = reason->get<std::string>();
+				if (out.reason.size() > kMaxSessionReason)
+					throw Bad{"reason is longer than 128 bytes"};
+			}
+			if (const auto perms = message.find("perms"); perms != message.end())
+			{
+				if (!perms->is_object())
+					throw Bad{"perms is not an object"};
+				for (size_t bit = 0; bit < std::size(kSessionPerms); ++bit)
+					if (optional_bool(*perms, kSessionPerms[bit]))
+						out.perms |= int32_t(1) << bit;
+			}
+			return out;
+		}
+		catch (const Bad &bad)
+		{
+			if (why)
+				*why = bad.why;
+			return std::nullopt;
+		}
+	}
+
+	void on_session(const Session &session)
+	{
+		Session previous;
+		{
+			std::lock_guard<std::mutex> lock(g_sessionLock);
+			if (session == g_session)
+				return; // the client repeats its last verdict (every handshake result, reconnect, ...)
+			previous = std::exchange(g_session, session);
+		}
+		std::string shown = session.reason; // the log gets no control characters from a peer
+		for (char &c : shown)
+			if (static_cast<unsigned char>(c) < 0x20)
+				c = '?';
+		log::info("session: %s (%s)", session_state_name(session.state), shown.c_str());
+
+		Event e;
+		e.kind = EventKind::Session;
+		e.name = session_state_name(session.state);
+		e.text = session.reason;
+		e.extra = session.perms;
+		events().push(e);
+
+		const bool wasHost = previous.state == SessionState::Host;
+		if (session.state == SessionState::Host && !wasHost)
+			++g_groundEpoch; // a new server session: it has none of the ground sent before
+		if (session.state != SessionState::Host && (wasHost || previous.state == SessionState::Unknown))
+			g_sessionCleanup = true;
+	}
+
+	Session session()
+	{
+		std::lock_guard<std::mutex> lock(g_sessionLock);
+		return g_session;
+	}
+
+	int ground_epoch()
+	{
+		return g_groundEpoch.load();
+	}
+
+	bool take_ground_restart(int &seen)
+	{
+		const int epoch = g_groundEpoch.load();
+		return std::exchange(seen, epoch) != epoch;
+	}
+
+	bool take_session_cleanup()
+	{
+		return g_sessionCleanup.exchange(false);
 	}
 }
