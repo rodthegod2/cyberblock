@@ -1,7 +1,9 @@
 // Layer 2 in the DLL: parsing and converting Minecraft's events, the bounded event queue, and the dmg / npcs messages.
 #include "test.hpp"
 #include "world.hpp"
+#include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
 #include <string>
 #include <vector>
@@ -771,4 +773,178 @@ TEST(a_slider_burst_of_prefs_keeps_one_queued_prefs_event_with_the_newest_stepup
 	CHECK(q.next() == EventKind::None);
 	cb::world::on_link_dropped();
 	q.clear();
+}
+
+// ---- Phase 3 (megaplan 2026-10-04 sections 1.8 and 1.9 with the Phase 0 amendment, task 3-D1) --------------------------
+
+TEST(vteleport_becomes_an_event_in_cyberpunk_space)
+{
+	const double off = 57.0 / 64.0;
+	const cb::world::Parsed p = cb::world::parse_event(
+		json::parse(R"({"t":"vteleport","id":7,"p":[1.5,64,-2.5],"yaw":90,"why":"meetup"})"), off);
+	CHECK(p.status == Status::Event && p.events.size() == 1);
+	const Event &e = p.events.at(0);
+	CHECK(e.kind == EventKind::VTeleport);
+	CHECK(e.id == 7);
+	const cb::Vec3 cp = cb::mc_to_cp_pos(1.5, 64.0, -2.5, off);
+	CHECK(approx(e.pos, cp.x, cp.y, cp.z));
+	CHECK(approx(e.amount, cb::mc_yaw_to_cp_yaw(90.0)));
+	CHECK(e.name == "meetup");
+	for (const char *why : {"holo", "hub_exit"})
+	{
+		json m = json::parse(R"({"t":"vteleport","id":0,"p":[0,0,0],"yaw":0})");
+		m["why"] = why;
+		CHECK(cb::world::parse_event(m).events.at(0).name == why);
+	}
+	CHECK(std::string(cb::world::event_name(EventKind::VTeleport)) == "vteleport");
+}
+
+TEST(a_bad_vteleport_is_rejected)
+{
+	CHECK(rejected(R"({"t":"vteleport","p":[0,0,0],"yaw":0,"why":"meetup"})"));            // no id
+	CHECK(rejected(R"({"t":"vteleport","id":-1,"p":[0,0,0],"yaw":0,"why":"meetup"})"));    // negative id
+	CHECK(rejected(R"({"t":"vteleport","id":1.5,"p":[0,0,0],"yaw":0,"why":"meetup"})"));   // not whole
+	CHECK(rejected(R"({"t":"vteleport","id":1,"yaw":0,"why":"meetup"})"));                 // no p
+	CHECK(rejected(R"({"t":"vteleport","id":1,"p":[0,0],"yaw":0,"why":"meetup"})"));       // p not a triple
+	CHECK(rejected(R"({"t":"vteleport","id":1,"p":[0,4e7,0],"yaw":0,"why":"meetup"})"));   // out of range
+	CHECK(rejected(R"({"t":"vteleport","id":1,"p":[0,0,0],"why":"meetup"})"));             // no yaw
+	CHECK(rejected(R"({"t":"vteleport","id":1,"p":[0,0,0],"yaw":0,"why":"party"})"));      // unknown why
+	CHECK(rejected(R"({"t":"vteleport","id":1,"p":[0,0,0],"yaw":0})"));                    // no why
+}
+
+TEST(park_becomes_an_event_with_its_flag)
+{
+	const cb::world::Parsed on = parse(R"({"t":"park","on":true})");
+	CHECK(on.status == Status::Event && on.events.size() == 1);
+	CHECK(on.events.at(0).kind == EventKind::Park && on.events.at(0).flag);
+	const cb::world::Parsed off = parse(R"({"t":"park","on":false})");
+	CHECK(off.events.at(0).kind == EventKind::Park && !off.events.at(0).flag);
+	CHECK(rejected(R"({"t":"park"})"));
+	CHECK(rejected(R"({"t":"park","on":1})"));
+	CHECK(std::string(cb::world::event_name(EventKind::Park)) == "park");
+}
+
+TEST(vteleport_and_park_are_kept_while_not_active)
+{
+	// the server waits for `vteleported` / `parked`: the scripts must see the request (and refuse it) whatever the state
+	cb::world::EventQueue q; // not Active
+	Event v;
+	v.kind = EventKind::VTeleport;
+	v.id = 3;
+	q.push(v);
+	Event p;
+	p.kind = EventKind::Park;
+	p.flag = true;
+	q.push(p);
+	q.set_active(true);
+	q.set_active(false); // a state change drops transient events only
+	CHECK(q.next() == EventKind::VTeleport && q.current().id == 3);
+	CHECK(q.next() == EventKind::Park && q.current().flag);
+	CHECK(q.next() == EventKind::None);
+}
+
+TEST(teleport_reasons_follow_the_contract)
+{
+	for (const char *good : {"", "no ground", "timeout", "blocked (in a vehicle)", "blocked (combat)"})
+		CHECK(cb::world::valid_teleport_reason(good));
+	for (const char *bad : {"nope", "blocked", "blocked ()", "blocked (x", "blocked x)", "Timeout", "no ground ",
+							"blocked (a\nb)"})
+		CHECK(!cb::world::valid_teleport_reason(bad));
+	CHECK(!cb::world::valid_teleport_reason("blocked (" + std::string(60, 'x') + ")")); // over 64 bytes
+}
+
+TEST(vteleported_carries_the_snapped_feet_in_minecraft_space)
+{
+	const double off = 0.5;
+	const auto ok = cb::world::make_vteleported(7, true, "", {10.0, 20.0, 5.25}, off);
+	CHECK(ok.has_value());
+	CHECK((*ok)["t"] == "vteleported" && (*ok)["id"] == 7 && (*ok)["ok"] == true && (*ok)["reason"] == "");
+	const cb::Vec3 mc = cb::cp_to_mc_pos(10.0, 20.0, 5.25, off);
+	CHECK(approx((*ok)["p"][0].get<double>(), mc.x) && approx((*ok)["p"][1].get<double>(), mc.y) &&
+		  approx((*ok)["p"][2].get<double>(), mc.z));
+	// ok sends no reason even if one was given
+	CHECK((*cb::world::make_vteleported(7, true, "timeout", {}, 0.0))["reason"] == "");
+	const auto failed = cb::world::make_vteleported(8, false, "blocked (in a vehicle)", {}, 0.0);
+	CHECK(failed && (*failed)["ok"] == false && (*failed)["reason"] == "blocked (in a vehicle)");
+	CHECK(!cb::world::make_vteleported(8, false, "", {}, 0.0));         // a failure must say why
+	CHECK(!cb::world::make_vteleported(8, false, "it broke", {}, 0.0)); // not a contract reason
+	CHECK(!cb::world::make_vteleported(-1, true, "", {}, 0.0));
+	CHECK(!cb::world::make_vteleported(1, true, "", {kNaN, 0.0, 0.0}, 0.0));
+}
+
+TEST(parked_answers_a_park)
+{
+	const auto on = cb::world::make_parked(true, true, "");
+	CHECK(on && *on == json({{"t", "parked"}, {"on", true}, {"ok", true}, {"reason", ""}}));
+	const auto refused = cb::world::make_parked(true, false, "blocked (in combat)");
+	CHECK(refused && (*refused)["ok"] == false && (*refused)["reason"] == "blocked (in combat)");
+	CHECK((*cb::world::make_parked(false, true, "timeout"))["reason"] == "");
+	CHECK(!cb::world::make_parked(false, false, ""));
+	CHECK(!cb::world::make_parked(false, false, "whatever"));
+}
+
+TEST(weather_presets_map_to_the_env_enum)
+{
+	const auto w = [](const char *preset) { return std::string(cb::world::weather_from_preset(preset)); };
+	CHECK(w("24h_weather_sunny") == "clear");
+	CHECK(w("24H_Weather_Sunny") == "clear");
+	CHECK(w("24h_weather_deep_blue") == "clear");
+	CHECK(w("24h_weather_light_clouds") == "cloudy");
+	CHECK(w("24h_weather_heavy_clouds") == "cloudy");
+	CHECK(w("24h_weather_rain") == "rain");
+	CHECK(w("24h_weather_toxic_rain") == "rain");
+	CHECK(w("q306_rainy_night") == "rain");
+	CHECK(w("24h_weather_storm") == "storm");
+	CHECK(w("24h_weather_fog") == "fog");
+	CHECK(w("24h_weather_pollution") == "smog");
+	CHECK(w("24h_weather_sandstorm") == "sandstorm");
+	bool known = true;
+	CHECK(std::string(cb::world::weather_from_preset("q302_squat_morning", &known)) == "other" && !known);
+	known = false;
+	CHECK(std::string(cb::world::weather_from_preset("", &known)) == "other" && known); // nothing read: nothing to log
+	for (const char *preset : {"24h_weather_sunny", "x", "24h_weather_fog"})
+	{
+		const std::string out = cb::world::weather_from_preset(preset);
+		CHECK(std::find(std::begin(cb::world::kWeathers), std::end(cb::world::kWeathers), out) != std::end(cb::world::kWeathers));
+	}
+}
+
+TEST(env_carries_the_game_time_and_the_weather)
+{
+	const auto env = cb::world::make_env(21, 7, "24h_weather_rain");
+	CHECK(env && *env == json({{"t", "env"}, {"time", {21, 7}}, {"weather", "rain"}}));
+	bool known = true;
+	CHECK((*cb::world::make_env(0, 0, "mystery", &known))["weather"] == "other" && !known);
+	CHECK(cb::world::make_env(23, 59, "").has_value());
+	CHECK(!cb::world::make_env(24, 0, ""));
+	CHECK(!cb::world::make_env(-1, 0, ""));
+	CHECK(!cb::world::make_env(12, 60, ""));
+	CHECK(!cb::world::make_env(12, -1, ""));
+}
+
+TEST(a_long_blocked_reason_is_shortened_not_dropped)
+{
+	const auto v = cb::world::make_vteleported(2, false, "blocked (" + std::string(100, 'x') + ")", {}, 0.0);
+	CHECK(v.has_value());
+	const std::string reason = (*v)["reason"];
+	CHECK(reason.size() <= cb::world::kMaxTextBytes && reason.starts_with("blocked (xxx") && reason.ends_with("x)"));
+	CHECK(cb::world::valid_teleport_reason(reason));
+	CHECK(!cb::world::make_vteleported(2, false, std::string(100, 'x'), {}, 0.0)); // not a contract reason at any length
+}
+
+TEST(park_log_lines_become_parked_answers)
+{
+	using cb::world::parked_from_log;
+	const auto on = parked_from_log("park: on (invisible, invulnerable, saving locked, movement and camera locked)");
+	CHECK(on && *on == json({{"t", "parked"}, {"on", true}, {"ok", true}, {"reason", ""}}));
+	CHECK((*parked_from_log("park: on (fallback: nearest fast-travel point X, 12 m away; unavailable: unseen)"))["ok"] == true);
+	CHECK((*parked_from_log("park: on (already parked)"))["ok"] == true);
+	const auto refused = parked_from_log("park: on refused (in a vehicle)");
+	CHECK(refused && (*refused)["on"] == true && (*refused)["ok"] == false && (*refused)["reason"] == "blocked (in a vehicle)");
+	const auto off = parked_from_log("park: off (requested)");
+	CHECK(off && (*off)["on"] == false && (*off)["ok"] == true);
+	CHECK((*parked_from_log("park: off (Cyberblock off, V back from the fast-travel point)"))["on"] == false);
+	CHECK(!parked_from_log("teleport: 3 done at (1, 2, 3) after 2 s"));
+	CHECK(!parked_from_log("park: maybe"));
+	CHECK(!parked_from_log("park: on refused ()")); // "blocked ()" says nothing
 }

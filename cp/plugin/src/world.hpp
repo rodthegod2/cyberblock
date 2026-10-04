@@ -51,11 +51,13 @@ namespace cb::world
 		CyberFx, // re-test 2: an implant effect starts or ends
 		Prefs,   // Phase Q (megaplan Q-D1): a `prefs` arrived; `flag` is its `stepup`
 		Session, // Phase 1 (megaplan 2026-10-04 sections 1.2 and 1.8): the Minecraft server's verdict on this host changed
+		VTeleport, // Phase 3 (megaplan sections 1.8 and 1.9): move V to a spot (Meet Up, Holo-Table, hub exit)
+		Park,      // Phase 3: park V (on) or bring V back (off)
 	};
 
 	/// The CName redscript sees from Cyberblock_NextEvent: "explosion", "hit", "ignite", "block_add", "block_remove",
 	/// "block_reset", "teleport", "lead", "lead_release", "pull", "knock", "effect", "hack", "scan", "perk", "perkfx",
-	/// "cyber", "cyberfx", "prefs", "session"; "" (the empty CName) for None.
+	/// "cyber", "cyberfx", "prefs", "session", "vteleport", "park"; "" (the empty CName) for None.
 	const char *event_name(EventKind kind);
 
 	/// One Minecraft event, already in Cyberpunk space. Which fields each kind fills is the event table of plan
@@ -63,16 +65,18 @@ namespace cb::world
 	struct Event
 	{
 		EventKind kind = EventKind::None;
-		Vec3 pos{};          // explosion centre | block AABB min corner | teleport feet | lead anchor | pull toward | knock centre
+		Vec3 pos{};          // explosion centre | block AABB min corner | teleport / vteleport feet | lead anchor | pull toward |
+							 // knock centre
 		uint64_t target = 0; // hit / ignite / lead / pull / hack / scan target: the EntityID hash (scan: 0 = look-at)
 		double amount = 0;   // explosion power | hit dmg / 20 (fraction of the target's max health) | ignite seconds |
-							 // teleport yaw (Cyberpunk degrees) | lead length | pull strength | knock radius |
+							 // teleport / vteleport yaw (Cyberpunk degrees) | lead length | pull strength | knock radius |
 							 // effect seconds | perk rank | perkfx seconds | cyber 1 installed, 0 not | cyberfx seconds
 		Vec3 vector{};       // hit impulse, m/s
-		bool flag = false;   // explosion fire | lead has a fixed anchor | hack chains | prefs stepup
-		std::string name;    // effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id | session state
+		bool flag = false;   // explosion fire | lead has a fixed anchor | hack chains | prefs stepup | park on
+		std::string name;    // effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id | session state |
+							 // vteleport why
 		double extra = 0;    // knock strength | effect amplifier | session perms bitmask
-		int32_t id = 0;      // hit: the mob that dealt it (-1 none) | hack, scan: the request id
+		int32_t id = 0;      // hit: the mob that dealt it (-1 none) | hack, scan, vteleport: the request id
 		std::string text;    // session: the reason (Cyberblock_EventText)
 	};
 
@@ -122,7 +126,8 @@ namespace cb::world
 	/// on 0|1} (at most 32; a bad one is dropped and counted), `cyberfx` {id of kCyberFxIds, seconds 0..30}. `hit` without `impulse` gets a zero impulse, and `hit`
 	/// without `mob` the mob id -1. Positions (block AABBs, explosion, teleport, lead anchor, pull toward, knock centre)
 	/// get `+off`; the hit impulse does not. The production caller passes the current level_offset; the 0.0 default is
-	/// for tests. Never throws.
+	/// for tests. Phase 3: `vteleport` {id 0..2^31-1, p (feet, `+off`), yaw, why of kVTeleportWhy} and `park` {on bool}.
+	/// Never throws.
 	Parsed parse_event(const nlohmann::json &message, double off = 0.0);
 
 	struct QueueStats
@@ -151,9 +156,9 @@ namespace cb::world
 		/// Whether the mashup is Active. While it is not, the transient events (explosion, hit, ignite, teleport, lead,
 		/// lead_release, pull, knock, effect, perkfx, cyberfx) are discarded (nothing can act on them), and each change of
 		/// state discards the ones already queued, so a stale blast never replays on the next activation. `block_add`,
-		/// `block_remove`, `block_reset`, `perk`, `cyber`, `scan`, `hack` and `session` are always kept: redscript's block
-		/// registry, perk ranks and installed cyberware need every one of them, a scan or a hack must be answered, and a
-		/// session change must clean Night City whatever the state.
+		/// `block_remove`, `block_reset`, `perk`, `cyber`, `scan`, `hack`, `session`, `vteleport` and `park` are always
+		/// kept: redscript's block registry, perk ranks and installed cyberware need every one of them, a scan, a hack, a
+		/// vteleport or a park must be answered, and a session change must clean Night City whatever the state.
 		void set_active(bool active);
 		void push(const Event &event);
 		/// Counts a message parse_event rejected.
@@ -417,4 +422,35 @@ namespace cb::world
 	/// True once after a `session` moved this host away from Host (or Unknown): the DLL does what a link drop does on its
 	/// side (main.cpp: unpause, flight stop) while the WebSocket stays open.
 	bool take_session_cleanup();
+
+	// ---- Phase 3 (megaplan 2026-10-04 sections 1.8 and 1.9 with the Phase 0 amendment, task 3-D1) --------------------
+
+	/// `vteleport.why`: what moves V. The event carries it as its name.
+	inline constexpr const char *kVTeleportWhy[] = {"meetup", "holo", "hub_exit"};
+	/// `env.weather`.
+	inline constexpr const char *kWeathers[] = {"clear", "cloudy", "rain", "storm", "fog", "smog", "sandstorm", "other"};
+
+	/// The `env.weather` of a weather preset name (`worldWeatherState.name`, case ignored) by its words: sandstorm,
+	/// storm / thunder, rain, fog, pollution / smog / toxic, cloud / overcast, sunny / clear / blue; anything else is
+	/// "other" with `known` false. An empty name (nothing read) is "other" and known.
+	const char *weather_from_preset(std::string_view preset, bool *known = nullptr);
+	/// {"t":"env","time":[h,m],"weather"}: the game time and the mapped weather (`known` as weather_from_preset). nullopt
+	/// unless h is 0..23 and m 0..59.
+	std::optional<nlohmann::json> make_env(int32_t hour, int32_t minute, std::string_view preset, bool *known = nullptr);
+
+	/// A `vteleported` / `parked` reason (section 1.9 amendment item 3): "", "no ground", "timeout" or "blocked (<why>)"
+	/// with a non-empty <why>, at most 64 UTF-8 bytes in all and no control characters.
+	bool valid_teleport_reason(std::string_view reason);
+	/// {"t":"vteleported","id","ok","reason","p"}: the answer to `vteleport` `id`; `feetCp` is V's snapped feet (Cyberpunk
+	/// space, sent in Minecraft space with `-off`). `reason` is "" when `ok`; a failure needs a valid non-empty reason (a
+	/// "blocked (<why>)" over 64 bytes has its <why> shortened to fit). nullopt when `id` is negative, the feet are not
+	/// finite or the reason is not valid.
+	std::optional<nlohmann::json> make_vteleported(int32_t id, bool ok, std::string_view reason, Vec3 feetCp, double off);
+	/// {"t":"parked","on","ok","reason"}: the answer to `park` `on`; the reason rule of make_vteleported. nullopt when a
+	/// failure has no valid reason.
+	std::optional<nlohmann::json> make_parked(bool on, bool ok, std::string_view reason);
+	/// The `parked` answer a Park.reds log line stands for (3S names no native for it; its lines are the contract):
+	/// "park: on refused (<why>)" -> on, failed, "blocked (<why>)"; "park: on (...)" -> on, ok; "park: off (...)" -> off,
+	/// ok. nullopt for any other line.
+	std::optional<nlohmann::json> parked_from_log(std::string_view line);
 }
