@@ -173,6 +173,16 @@ def test_step_up_follows_the_prefs_event_whatever_the_state():
     assert "CyberblockLocomotion.Clear(game);" in system
 
 
+# Megaplan Q-S3: the third-person gate names why it changed, and the vehicle camera perspective is probed for Q-D1.
+def test_view_gate_logs_its_reason_and_probes_the_vehicle_camera():
+    code = strip_comments((SCRIPTS / "View.reds").read_text(encoding="utf-8"))
+    assert 's"view: gate \\(reason)"' in code
+    assert "GetCameraManager().GetActivePerspective()" in code or "cameras.GetActivePerspective()" in code
+    assert 's"view: vehicle camera ' in code
+    for reason in ('"braindance"', '"photo mode"', '"menu"', '"vehicle"'):
+        assert reason in code, reason
+
+
 # Every native the scripts declare is registered by the DLL with the same parameter count (cb::natives::add), so a script
 # call can never reach a missing function or read its arguments wrongly (the Atlas survey natives included).
 DECL = re.compile(r"native func (Cyberblock_\w+)\(([^)]*)\)")
