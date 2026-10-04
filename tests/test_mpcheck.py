@@ -6,12 +6,13 @@ import re
 import socket
 import struct
 import threading
+import time
 from pathlib import Path
 
 import pytest
 from websockets.asyncio.server import serve
 
-from tools import fakehost, mpcheck
+from tools import cbmath, fakehost, mpcheck
 from tools.mpcheck import LogFile, MpError
 
 REPO = Path(__file__).resolve().parents[1]
@@ -23,7 +24,7 @@ SESSION_HOST = {"t": "session", "state": "host", "reason": "", "perms": {"explos
 def quick(monkeypatch):
     """Every wait of the scenarios shrinks to a fraction of a second (the real values are minutes)."""
     for name, value in (("T_QUIET", 0.05), ("T_EFFECT", 0.6), ("T_JOIN", 0.6), ("T_SERVER", 0.6), ("T_CLIENT", 0.6), ("FLOOD_S", 0.1), ("T_STOP", 0.05),
-                        ("LOGIN_GAP_S", 0.0)):
+                        ("LOGIN_GAP_S", 0.0), ("T_ENV", 1.0), ("T_POLL", 0.01), ("COOLDOWN_S", 0.7)):
         monkeypatch.setattr(mpcheck, name, value)
 
 
@@ -206,7 +207,8 @@ def test_default_ports_are_package_1t_and_stay_in_the_phase_1_ranges():
     p = mpcheck.Ports()
     p.check()
     servers = {name: p.server(name) for name in mpcheck.SCENARIOS}
-    assert servers == {"singleplayer": 25914, "guest": 25914, "versions": 25915, "flood": 25916, "reconnect": 25917, "twohosts": 25918, "joinpassword": 25915}
+    assert servers == {"singleplayer": 25914, "guest": 25914, "versions": 25915, "flood": 25916, "reconnect": 25917, "twohosts": 25918, "joinpassword": 25915,
+                       "replica": 25914, "twohosts2": 25916, "meetup": 25915}
     assert {p.client(n) for n in mpcheck.OFFLINE_NAMES} == {25754, 25755, 25756, 25757} and 25600 not in servers.values()
     assert [p.frame(n) for n in mpcheck.OFFLINE_NAMES] == ["Local\\CyberblockFrame1TH", "Local\\CyberblockFrame1TH2", "Local\\CyberblockFrame1TG", "Local\\CyberblockFrame1TG2"]
 
@@ -229,7 +231,7 @@ def test_a_frame_prefix_that_makes_the_users_frame_name_is_refused():
 
 def test_every_scenario_has_a_function_and_a_server_slot():
     assert set(mpcheck.SCENARIOS) == set(mpcheck.SCENARIO_FUNCS) == set(mpcheck.SERVER_SLOT)
-    assert mpcheck.SCENARIOS == ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword")
+    assert mpcheck.SCENARIOS == ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup")
 
 
 # ---- logs ------------------------------------------------------------------------------------------------------------------
@@ -850,7 +852,7 @@ def test_dry_run_prints_every_command_and_starts_nothing(capsys, monkeypatch):
     out = capsys.readouterr().out
     for name in mpcheck.SCENARIOS:
         assert f"== {name}" in out
-    assert out.count("runServer") == 6 and "-Pcyberblock.serverPort=25918" in out and "JAVA_TOOL_OPTIONS=-Dcyberblock.devtools=true" in out
+    assert out.count("runServer") == 9 and "-Pcyberblock.serverPort=25918" in out and "JAVA_TOOL_OPTIONS=-Dcyberblock.devtools=true" in out
     assert "--quickPlaySingleplayer" in out and "--quickPlayMultiplayer 127.0.0.1:25915" in out and "tools.fakehost" in out
 
 
@@ -906,3 +908,330 @@ def test_the_module_never_prints_or_logs_the_password_by_construction():
     assert not re.findall(r"(?:print|say)\(.*(?:password|_password)", src)
     assert "field(repr=False)" in src and 'env.pop("APEX_FTP_PASS", None)' in src
     assert src.count("self._password") == 3  # created, written to server.properties, handed to the Server object
+
+
+# ---- Phase 3 scenarios (replica, twohosts2, meetup) against a simulated server --------------------------------------------------
+# The simulation is the megaplan's server for Phase 3 as far as RCON can see it: replica blocks from `ground` (air cells only), the
+# `seen` rule, `clear` leaving them alone, the world kept when a host leaves, the primary host's clock and weather, Meet Up with its
+# cooldown, a guest's blocks reaching a returning host. One simulated second of the fake host's script is SIM real seconds.
+SIM = 0.02
+SIM_TOL = 40  # the scenarios' tolerance (ticks) for the clock
+
+
+class Sim3Server(SimServer):
+    def __init__(self, tmp, port, env_sim, bugs, join_password=""):
+        super().__init__(tmp, port, env_sim, bugs, join_password)
+        self.world, self.replica, self.pos, self.player_blocks, self.changes = {}, set(), {}, [], []
+        self.pending_meet, self.cool, self.arrivals, self.meet_ids = {}, {}, [], 0
+        self.ticks, self.weather = 18000, "clear"
+
+    # -- the world -------------------------------------------------------------------------------------------------------------
+    def place(self, msg):
+        c, m = msg["c"], msg.get("m", [0] * (len(msg["c"]) // 4))
+        for i in range(0, len(c), 4):
+            x, z, lo, hi = c[i:i + 4]
+            block = cbmath.material_block(m[i // 4])
+            for y in range(lo, hi + 1):
+                if block and (x, y, z) not in self.world:  # air cells only
+                    self.world[(x, y, z)] = block
+                    self.replica.add((x, y, z))
+
+    def unground(self, msg):
+        if msg.get("seen") is not True and "unseen-removes" not in self.bugs:
+            return  # only left the probe radius: the replica stays
+        if "seen-ignored" in self.bugs:
+            return
+        c = msg["c"]
+        for i in range(0, len(c), 4):
+            x, z, lo, hi = c[i:i + 4]
+            for y in range(lo, hi + 1):
+                if (x, y, z) in self.replica:
+                    self.replica.discard((x, y, z))
+                    self.world.pop((x, y, z), None)
+
+    def apply(self, msg):
+        if msg["t"] == "ground":
+            self.place(msg)
+        elif msg["t"] == "unground":
+            self.unground(msg)
+        elif msg["t"] == "clear" and "clear-wipes" in self.bugs:
+            for cell in self.replica:
+                self.world.pop(cell, None)
+            self.replica.clear()
+
+    def advance(self):
+        sim, now = self.sim, time.monotonic()
+        linked = [(n, h) for n, h in sim.hosts.items() if h["linked"] and h.get("replica")]
+        for _, host in linked:
+            due = [e for e in host["script"] if host["t0"] + e[0] * SIM <= now]
+            host["script"] = [e for e in host["script"] if e not in due]
+            for _, m in due:
+                self.apply(m)
+        if "replica-leaves" in self.bugs and any(h.get("replica") and not h["linked"] for h in sim.hosts.values()):
+            for cell in self.replica:
+                self.world.pop(cell, None)
+            self.replica.clear()
+        for arrival in [a for a in self.arrivals if a[0] <= now]:
+            self.arrivals.remove(arrival)
+            self.pos[arrival[1]] = list(arrival[2])
+        if linked:  # the primary host (the first one) drives the clock; the bug lets the last one do it
+            _, host = linked[-1] if "second-host-env" in self.bugs else linked[0]
+            env = fakehost.replica_env((now - host["t0"]) / SIM, host["env_hours"])
+            self.ticks, self.weather = cbmath.env_ticks(*env["time"]), env["weather"]
+            if "daylight-runs" in self.bugs:
+                self.ticks += int((now - host["t0"]) / SIM * 20)
+
+    # -- commands --------------------------------------------------------------------------------------------------------------
+    def rcon(self, command):
+        self.advance()
+        if match := re.fullmatch(r"execute if block (-?\d+) (-?\d+) (-?\d+) (\S+)", command):
+            if match.group(4) != "minecraft:barrier":
+                cell = tuple(int(v) for v in match.groups()[:3])
+                return "Test passed" if self.world.get(cell) == match.group(4) else "Test failed"
+        if command == "execute if entity @e[type=cyberblock:proxy_human]":
+            n = sum(2 if h.get("replica") else 3 for h in self.sim.hosts.values() if h["linked"])
+            return f"Test passed, count: {n}" if n else "Test failed"
+        if command == "time query daytime":
+            return f"The time is {self.ticks}"
+        if match := re.match(r'execute if predicate \{condition:"minecraft:weather_check",(raining|thundering):true\}', command):
+            on = self.weather in ("rain", "storm") if match.group(1) == "raining" else self.weather == "storm"
+            return "Test passed" if on else "Test failed"
+        if match := re.fullmatch(r"data get entity (\S+) Pos", command):
+            p = self.pos.get(match.group(1))
+            return f"{match.group(1)} has the following entity data: [{p[0]}d, {p[1]}d, {p[2]}d]" if p else "No entity was found"
+        actor, inner = None, command
+        if match := re.fullmatch(r"execute as (\S+) run (.*)", command):
+            actor, inner = match.groups()
+        if inner.startswith("setblock "):
+            _, x, y, z, block = inner.split()
+            cell = (int(x), int(y), int(z))
+            self.world[cell] = block
+            self.player_blocks.append(cell)
+            self.changes.append((actor, cell))
+            for name, host in self.sim.hosts.items():
+                if host["linked"]:
+                    append(host["log"], f'[{name}] block: {{"t": "block", "op": "add", "pos": [{x}, {y}, {z}]}}')
+            return "Changed the block"
+        if inner == "cyberblock changes":
+            return f"While you were away: {len(self.changes)} blocks placed by " + ", ".join(sorted({a for a, _ in self.changes})) if self.changes else "No changes."
+        if inner == "cyberblock meetup accept":
+            asker = self.pending_meet.pop(actor, None)
+            return self.meet(asker, actor) if asker else ""
+        if inner.startswith("cyberblock meetup "):
+            if self.cool.get(actor, 0) <= time.monotonic() or "no-cooldown" in self.bugs:
+                self.pending_meet[inner.split()[2]] = actor
+            return ""
+        return super().rcon(command)
+
+    def meet(self, asker, target):
+        now, host = time.monotonic(), self.sim.hosts.get(asker)
+        if host and host["linked"]:  # a host asks: its DLL gets `vteleport` at the target's position and answers two seconds later
+            self.meet_ids += 1
+            p = list(self.pos[target])
+            if "no-teleport" not in self.bugs:
+                append(host["log"], f'[{asker}] vteleport: {json.dumps({"t": "vteleport", "id": self.meet_ids, "p": p, "yaw": 0.0, "why": "meetup"})}')
+            if "no-follow" not in self.bugs:
+                self.arrivals.append((now + fakehost.TELEPORT_DELAY * SIM, asker, p))
+        elif target in self.sim.hosts and self.sim.hosts[target]["linked"]:  # a guest asks a host: next to the host's Steve
+            self.pos[asker] = [self.pos[target][0] + 1.5, self.pos[target][1], self.pos[target][2]]
+        self.cool[asker] = now + 30 * SIM
+        return ""
+
+
+class Sim3Env(SimEnv):
+    def __init__(self, tmp, bugs=()):
+        super().__init__(tmp, bugs)
+        self.extra = {}
+
+    def server(self, scenario, max_hosts=1, join_password=False):
+        self.max_hosts = max_hosts
+        self.server_obj = Sim3Server(self.tmp, self.ports.server(scenario), self, self.bugs)
+        self.server_obj.log.path.write_text("Done (1s)!\n", encoding="utf-8")
+        self.logs["server"] = self.server_obj.log
+        return self.server_obj
+
+    def client(self, name, **kw):
+        c = super().client(name, **kw)
+        if name.startswith("CbGuest"):
+            self.server_obj.pos[name] = [3.5, 64.0, 2.5]
+        return c
+
+    def fakehost(self, client, *, shift=0, env_hours=0, **kw):
+        self.extra[client.name] = {"shift": shift, "env_hours": env_hours}
+        return super().fakehost(client, **kw)
+
+    def grant(self, name, host, layers, modes, ids_from):
+        super().grant(name, host, layers, modes, ids_from)
+        if "replica" not in modes:
+            return
+        srv, extra = self.server_obj, self.extra.get(name, {})
+        shift = extra.get("shift", 0)
+        cp = fakehost.Cyberpunk(frozenset(layers), frozenset(modes), ids_from, name, shift, extra.get("env_hours", 0))
+        for m in cp.reply(SESSION_HOST):
+            if m["t"] == "ground":
+                srv.place(m)
+        base = ids_from if ids_from is not None else 9007199254740993
+        host.update(replica=True, t0=time.monotonic(), script=list(cp.script()), ids=host["ids"] | {str(base + 3)}, env_hours=extra.get("env_hours", 0))
+        srv.pos[name] = [fakehost.REPLICA_FEET[0] + shift, fakehost.REPLICA_FEET[1], fakehost.REPLICA_FEET[2]]
+        cells = list(srv.player_blocks) + (sorted(srv.replica) if "replica-to-host" in self.bugs else [])
+        if cells:  # the resync after `blocks reset:true`: every player block (a bug adds the replica)
+            append(host["log"], f'[{name}] blocks: {json.dumps({"t": "blocks", "reset": False, "c": [v for cell in cells for v in cell]})}')
+
+
+def run3(tmp, name, bugs=()):
+    return run_scenario(Sim3Env(tmp, bugs), name)
+
+
+def test_replica_scenario_passes_against_an_ideal_server(tmp_path):
+    sim = Sim3Env(tmp_path)
+    rep = run_scenario(sim, "replica")
+    assert rep.ok, failed(rep)
+    labels = [label for label, _, _ in rep.checks]
+    assert len(labels) == 25 and sum(label.startswith("the clock and weather follow Cyberpunk") for label in labels) == 4
+    assert ("the clock and weather follow Cyberpunk: 23:00 rain (tick 17000)") in labels and sim.max_hosts == 1
+
+
+@pytest.mark.parametrize("bug, expected", [
+    ("seen-ignored", {"an `unground` with `seen:true` takes its scaffold away"}),
+    ("unseen-removes", {"an `unground` without `seen` keeps its scaffold (it only left the probe radius)"}),
+    ("clear-wipes", {"`clear` and the ground sent again change nothing: the street stands, the removed scaffold stays removed, the other stays"}),
+    ("replica-leaves", {"the replica stays while the host is away"}),
+    ("replica-to-host", {"the replica is host ground: it never comes back to the host as a player block", "the resync carries no replica block"}),
+    ("daylight-runs", {"the daylight cycle is off: the time stands between two env messages"}),
+])
+def test_replica_scenario_notices_each_replica_bug(tmp_path, bug, expected):
+    rep = run3(tmp_path, "replica", [bug])
+    assert expected <= set(failed(rep)) and not rep.ok
+
+
+def test_replica_scenario_checks_the_wall_the_guest_builds_and_the_changes_list(tmp_path):
+    sim = Sim3Env(tmp_path)
+    rep = run_scenario(sim, "replica")
+    assert rep.ok and sim.server_obj.player_blocks == [(2, 64, 0), (2, 65, 0)] and {a for a, _ in sim.server_obj.changes} == {"CbGuest1"}
+    host_log = sim.hosts["CbHost1"]["log"].text()
+    assert "2, 64, 0" in host_log and "nc_" not in host_log  # the returning host heard of the wall, and of nothing else
+
+
+def test_replica_scenario_runs_the_guest_actions_as_the_guest(tmp_path, monkeypatch):
+    sent = []
+    real = Sim3Server.rcon
+    monkeypatch.setattr(Sim3Server, "rcon", lambda self, c: sent.append(c) or real(self, c))
+    assert run3(tmp_path, "replica").ok
+    assert [c for c in sent if "setblock" in c] == [f"execute as CbGuest1 run setblock {x} {y} {z} minecraft:stone" for x, y, z in mpcheck.REPLICA_WALL]
+    assert "execute as CbHost1 run cyberblock changes" in sent
+
+
+def test_twohosts2_scenario_passes_and_the_second_host_is_shifted_with_the_same_ids_and_another_sky(tmp_path):
+    sim = Sim3Env(tmp_path)
+    rep = run_scenario(sim, "twohosts2")
+    assert rep.ok, failed(rep)
+    assert sim.max_hosts == 2 and sim.extra["CbHost2"] == {"shift": 8, "env_hours": 12} and sim.extra["CbHost1"] == {"shift": 0, "env_hours": 0}
+    assert sim.hosts["CbHost1"]["ids"] == sim.hosts["CbHost2"]["ids"] and "5000" in sim.hosts["CbHost1"]["ids"] and len(rep.checks) == 13
+
+
+@pytest.mark.parametrize("bug, expected", [
+    ("leak-hits", {"a hit on id 5000 of host 1 reaches only host 1"}),
+    ("second-host-env", {"only the first host's clock drives the world (the second host's is 12 hours off and never shows)"}),
+])
+def test_twohosts2_scenario_notices_a_leaking_hit_and_a_second_clock(tmp_path, bug, expected):
+    rep = run3(tmp_path, "twohosts2", [bug])
+    assert expected <= set(failed(rep)) and not rep.ok
+
+
+def test_meetup_scenario_passes_and_checks_both_directions_and_the_cooldown(tmp_path):
+    sim = Sim3Env(tmp_path)
+    rep = run_scenario(sim, "meetup")
+    assert rep.ok, failed(rep)
+    assert len(rep.checks) == 9 and sim.server_obj.meet_ids == 2  # the cooldown-refused request never reached the DLL
+    host_log = sim.hosts["CbHost1"]["log"].text()
+    assert host_log.count("vteleport:") == 2 and '"why": "meetup"' in host_log
+
+
+@pytest.mark.parametrize("bug, expected", [
+    ("no-teleport", {"a Meet Up from a host to a guest sends `vteleport` (why meetup) to the host's DLL, at the guest's position"}),
+    ("no-follow", {"after `vteleported ok` Steve follows V to that spot"}),
+    ("no-cooldown", {"a second request inside the 30 s cooldown sends no new `vteleport`"}),
+])
+def test_meetup_scenario_notices_each_meetup_bug(tmp_path, bug, expected):
+    rep = run3(tmp_path, "meetup", [bug])
+    assert expected <= set(failed(rep)) and not rep.ok
+
+
+def test_the_phase_3_scenarios_ask_a_fake_host_for_the_replica_mode_with_no_layer(tmp_path):
+    seen = []
+
+    class Spy(Sim3Env):
+        def fakehost(self, client, **kw):
+            seen.append((client.name, kw.get("layers"), kw.get("modes"), kw.get("wait_host"), kw.get("shift"), kw.get("env_hours")))
+            return super().fakehost(client, **kw)
+
+    for name in ("replica", "twohosts2", "meetup"):
+        run_scenario(Spy(fresh(tmp_path / name)), name)
+    assert {s[1:3] for s in seen} == {((), ("replica",))} and all(s[3] == mpcheck.T_JOIN for s in seen)
+    assert [s for s in seen if s[0] == "CbHost2"] == [("CbHost2", (), ("replica",), mpcheck.T_JOIN, 8, 12)]
+
+
+def test_the_phase_3_scenarios_use_the_borrowed_phase_7_block_when_asked(capsys):
+    argv = ["replica", "twohosts2", "meetup", "--dry-run", "--client-port-base", "25814", "--server-port-base", "25975",
+            "--frame-prefix", "Local\\CyberblockFrame3PM"]
+    assert mpcheck.main(argv) == 0
+    out = capsys.readouterr().out
+    assert "-Pcyberblock.serverPort=25975" in out and "-Pcyberblock.serverPort=25976" in out and "-Pcyberblock.serverPort=25977" in out
+    assert "-Pcyberblock.port=25814" in out and "Local\\CyberblockFrame3PMH" in out and out.count("--replica") == 3 and "--layer" not in out
+    ports = mpcheck.Ports(25814, 25975, "Local\\CyberblockFrame3PM")
+    ports.check()
+    assert {ports.server(n) for n in mpcheck.SCENARIOS} <= set(range(25975, 25980)) and {ports.client(n) for n in mpcheck.OFFLINE_NAMES} <= set(range(25810, 25820))
+
+
+def test_replica_argv_carries_shift_and_env_hours_only_when_set():
+    base = dict(port=25814, name="CbHost2", ver="1.0.0", frame="Local\\F", out_dir=Path("o"), modes=("replica",), layers=())
+    plain, shifted = mpcheck.fakehost_argv(**base), mpcheck.fakehost_argv(**base, shift=8, env_hours=12)
+    assert "--shift" not in plain and "--env-hours" not in plain and "--replica" in plain and not any(a.startswith("--layer") for a in plain)
+    assert shifted[shifted.index("--shift") + 1] == "8" and shifted[shifted.index("--env-hours") + 1] == "12"
+
+
+def test_the_replica_argv_parses_with_the_real_fakehost(monkeypatch):
+    seen = []
+
+    async def fake_run(*args, **kwargs):
+        seen.append((args, kwargs))
+        return 1
+
+    monkeypatch.setattr(fakehost, "run", fake_run)
+    argv = mpcheck.fakehost_argv(port=25814, name="CbHost2", ver="1.0.0", frame="Local\\F", out_dir=Path("o"), ids_from=5000, layers=(), modes=("replica",),
+                                 wait_host=150.0, shift=8, env_hours=12)
+    monkeypatch.setattr("sys.argv", ["fakehost", *argv[4:]])  # after `python -u -m tools.fakehost`
+    assert fakehost.main() == 0
+    args, kwargs = seen[0]
+    assert args[9] == frozenset({"replica"}) and args[8] == frozenset() and kwargs == {"wait_host": 150.0, "shift": 8, "env_hours": 12}
+
+
+def test_reported_cells_reads_the_blocks_and_block_lines_of_a_log_written_with_windows_line_ends():
+    text = ('[CbHost1] session: {"t": "session"}\r\n[CbHost1] blocks: {"t": "blocks", "reset": true, "c": [2, 64, 0, 2, 65, 0]}\r\n'
+            '[CbHost1] block: {"t": "block", "op": "add", "pos": [5, 64, 5]}\r\n[CbHost2] block: {"t": "block", "op": "add", "pos": [9, 9, 9]}\r\n'
+            '[CbHost1] blocks: not json\r\n')
+    assert mpcheck.reported_cells(text, "CbHost1") == {(2, 64, 0), (2, 65, 0), (5, 64, 5)}
+    assert mpcheck.reported_cells(text.replace("\r\n", "\n"), "CbHost1") == {(2, 64, 0), (2, 65, 0), (5, 64, 5)} and mpcheck.reported_cells("", "CbHost1") == set()
+
+
+def test_the_replica_helpers_read_the_answers_rcon_gives():
+    class S:
+        def __init__(self, answers):
+            self.answers = answers
+
+        def rcon(self, command):
+            return self.answers.get(command, "")
+
+        def passes(self, command):
+            return mpcheck.passed(self.rcon(command))
+
+    assert mpcheck.daytime(S({"time query daytime": "The time is 16500"})) == 16500 and mpcheck.daytime(S({})) is None
+    assert mpcheck.time_is(S({"time query daytime": "The time is 16520"}), 16500) and not mpcheck.time_is(S({"time query daytime": "The time is 17000"}), 16500)
+    pos = S({"data get entity CbGuest1 Pos": "CbGuest1 has the following entity data: [3.5d, 64.0d, -2.25d]"})
+    assert mpcheck.player_pos(pos, "CbGuest1") == (3.5, 64.0, -2.25) and mpcheck.near_player(pos, "CbGuest1", (5.0, 64.0, -2.25), 2.0)
+    assert not mpcheck.near_player(pos, "CbGuest1", (50.0, 64.0, 0.0), 2.0) and not mpcheck.near_player(pos, "Nobody", (0, 0, 0)) and mpcheck.player_pos(S({}), "x") is None
+    assert mpcheck.proxy_count(S({"execute if entity @e[type=cyberblock:proxy_human]": "Test passed, count: 4"})) == 4
+    assert mpcheck.proxy_count(S({"execute if entity @e[type=cyberblock:proxy_human]": "Test passed"})) == 1 and mpcheck.proxy_count(S({})) == 0
+    weather = S({'execute if predicate {condition:"minecraft:weather_check",raining:true}': "Test passed"})
+    assert mpcheck.weather_is(weather, rain=True, thunder=False) and not mpcheck.weather_is(weather, rain=False, thunder=False)
+    assert [s[:3] for s in mpcheck.ENV_STATES] == [(16500, False, False), (17000, True, False), (17500, True, True), (23750, False, False)]
