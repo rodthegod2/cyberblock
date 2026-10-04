@@ -46,7 +46,8 @@ folder (it is never printed, logged or put on a command line); APEX_FTP_PASS is 
 port 25600 and `Local\\CyberblockFrame` are never used. The scenarios assume the plan's devtools commands (task 1-N4,
 `-Dcyberblock.devtools=true`): `/cyberblock test hit <host> <id> <dmg>`, `/cyberblock test explode <x> <y> <z> <power>` and
 `/cyberblock test place <x> <y> <z> <block>` (Phase 4's `devices` scenario adds `/cyberblock test device <x> <y> <z> <act>`: the same
-use of the device block that a right-click is)
+use of the device block that a right-click is; Phase 7's `hub` scenario uses the real player command `/cyberblock hub`, run again or as
+`/cyberblock hub leave` to come back, and reads each player's `Dimension` with `data get entity`)
 run as the guest with `/execute as CbGuest1 run ...` (from the RCON console alone there is no player behind them, and an action
 with no player behind it is always allowed), and `/execute as <host> run cyberblock guests <toggle> on|off` flips that host's
 toggle. They also assume that `runServer` and `runClient` honour `-Pcyberblock.runDir` (task 1-L1) and that the dedicated
