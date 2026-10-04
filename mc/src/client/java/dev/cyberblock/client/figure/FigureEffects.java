@@ -30,7 +30,7 @@ final class FigureEffects {
 	static final int FLASH_TICKS = 8;
 	/** CyberwareClient's Kiroshi range: within it, a player with the optics already sees hostiles outlined. */
 	private static final double KIROSHI_RANGE = 32.0;
-	private static final int OUTLINE_STROKE = 0xE0FF2B45, OUTLINE_FILL = 0x14FF2B45;
+	private static final int OUTLINE_STROKE = 0xE0FF2B45, OUTLINE_FILL = 0x0CFF2B45;
 	private static final Map<Entity, Fx> FX = new WeakHashMap<>();
 	/** What the log last said about where walk and run come from (null: nothing yet). */
 	private static @Nullable Boolean loggedBits;
