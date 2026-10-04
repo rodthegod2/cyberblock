@@ -6,32 +6,25 @@ import dev.cyberblock.device.DeviceRegistry;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
+/** protocol.md "Phase 6": 10 s for the same player and device after a failure; one alarm per owner a minute. */
 class BreachLimitsTest {
 	private static final UUID HOST = new UUID(1, 1);
 	private static final UUID GUEST = new UUID(2, 2);
 	private static final DeviceRegistry.Key CAMERA = new DeviceRegistry.Key(HOST, 10);
 	private static final DeviceRegistry.Key TERMINAL = new DeviceRegistry.Key(HOST, 11);
+	private static final BreachLimits.Hold GUEST_CAMERA = new BreachLimits.Hold(GUEST, CAMERA);
 
 	@Test
-	void aBreachedDeviceWaitsThirtySecondsWhateverTheOutcome() {
+	void aFailureCoolsDownThatPlayerOnThatDeviceForTenSeconds() {
 		BreachLimits l = new BreachLimits();
-		assertEquals(0, l.deviceWait(CAMERA, 100));
-		l.ended(CAMERA, GUEST, false, 100);
-		assertEquals(600, l.deviceWait(CAMERA, 100));
-		assertEquals(1, l.deviceWait(CAMERA, 699));
-		assertEquals(0, l.deviceWait(CAMERA, 700));
-		assertEquals(0, l.deviceWait(TERMINAL, 100), "another device is free");
-		assertEquals(0, l.playerWait(GUEST, 100), "a solved breach does not lock the player out");
-	}
-
-	@Test
-	void aFailedBreachLocksThePlayerOutOfEveryDevice() {
-		BreachLimits l = new BreachLimits();
-		l.ended(CAMERA, GUEST, true, 100);
-		assertEquals(BreachLimits.PLAYER_TICKS, l.playerWait(GUEST, 100));
-		assertEquals(300, l.playerWait(GUEST, 400), "still locked out halfway, for the other terminal too");
-		assertEquals(0, l.playerWait(GUEST, 700));
-		assertEquals(0, l.playerWait(HOST, 100), "only the player who failed");
+		assertEquals(0, l.cooldown(GUEST_CAMERA, 100));
+		l.failed(GUEST_CAMERA, 100);
+		assertEquals(200, BreachLimits.COOLDOWN_TICKS, "10 s");
+		assertEquals(200, l.cooldown(GUEST_CAMERA, 100));
+		assertEquals(1, l.cooldown(GUEST_CAMERA, 299));
+		assertEquals(0, l.cooldown(GUEST_CAMERA, 300));
+		assertEquals(0, l.cooldown(new BreachLimits.Hold(GUEST, TERMINAL), 100), "another device is free");
+		assertEquals(0, l.cooldown(new BreachLimits.Hold(new UUID(3, 3), CAMERA), 100), "another player is free");
 	}
 
 	@Test
@@ -46,41 +39,39 @@ class BreachLimitsTest {
 	}
 
 	@Test
-	void aGuestFailingBreachAfterBreachRaisesOneAlarm() {
+	void aGuestFailingBreachAfterBreachRaisesOneAlarmAMinute() {
 		BreachLimits l = new BreachLimits();
 		int alarms = 0;
 		long t = 0;
-		// a guest fails one device after another: each failure locks them out for 30 s, every alarm after the first within a minute merges
-		for (int i = 0; i < 6; i++) {
-			assertEquals(0, l.playerWait(GUEST, t));
-			DeviceRegistry.Key device = new DeviceRegistry.Key(HOST, 100 + i);
-			l.ended(device, GUEST, true, t);
+		// a guest fails one device after another as fast as the cooldown allows: every alarm after the first within a minute merges
+		for (int i = 0; i < 24; i++) {
+			BreachLimits.Hold hold = new BreachLimits.Hold(GUEST, new DeviceRegistry.Key(HOST, 100 + i % 2));
+			t += l.cooldown(hold, t);
+			l.failed(hold, t);
 			alarms += l.alarm(HOST, t) ? 1 : 0;
-			t += l.playerWait(GUEST, t);
+			t += 100;
 		}
 
-		assertEquals(3, alarms, "six failures, 30 s apart: one alarm a minute");
+		assertEquals(2, alarms, "twenty-four failures in two minutes: one alarm a minute");
 	}
 
 	@Test
-	void theTestBypassClearsTheDeviceAndThePlayerButNotTheAlarmWindow() {
+	void theTestBypassClearsTheCooldownButNotTheAlarmWindow() {
 		BreachLimits l = new BreachLimits();
-		l.ended(CAMERA, GUEST, true, 100);
+		l.failed(GUEST_CAMERA, 100);
 		assertTrue(l.alarm(HOST, 100));
-		l.clear(CAMERA, GUEST);
-		assertEquals(0, l.deviceWait(CAMERA, 101));
-		assertEquals(0, l.playerWait(GUEST, 101));
+		l.clear(GUEST_CAMERA);
+		assertEquals(0, l.cooldown(GUEST_CAMERA, 101));
 		assertFalse(l.alarm(HOST, 101));
 	}
 
 	@Test
 	void pruneForgetsWhatRanOut() {
 		BreachLimits l = new BreachLimits();
-		l.ended(CAMERA, GUEST, true, 0);
+		l.failed(GUEST_CAMERA, 0);
 		assertTrue(l.alarm(HOST, 0));
 		l.prune(BreachLimits.ALARM_TICKS);
-		assertEquals(0, l.deviceWait(CAMERA, 0), "forgotten, so free even at an earlier tick");
-		assertEquals(0, l.playerWait(GUEST, 0));
+		assertEquals(0, l.cooldown(GUEST_CAMERA, 0), "forgotten, so free even at an earlier tick");
 		assertTrue(l.alarm(HOST, BreachLimits.ALARM_TICKS));
 	}
 }

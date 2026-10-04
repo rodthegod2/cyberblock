@@ -75,7 +75,8 @@ others, on the same test server, with the same host and guest.
 4. Fail on purpose (let the timer run out or fill the buffer with wrong picks): **expect** an **alarm in the host's game** (the cameras of the
    area alert, V may see people react). A failure also costs Heat; with no Heat meter yet, the host's wanted level may go up by one if the game
    allows it: tell Claude what happened.
-   **No free re-roll:** open a Breach, make one pick and close the screen: **expect** the same alarm. Open another one and close it without a
+   **No free re-roll:** open a Breach, make one pick and close the screen: **expect** the same alarm (within a minute of the last alarm the
+   server merges the two: the action bar still says so and the server log says `alarm merged`). Open another one and close it without a
    pick, then right-click again: **expect** the **same grid** with the timer still running. Right after a failure a new right-click on that
    Net Port says to wait (10 s).
 5. Server log (grep `breach`): the puzzle, every daemon solved and `strength`, or the failure.

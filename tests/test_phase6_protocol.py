@@ -127,7 +127,8 @@ def seq_ok(s, buffer) -> bool:
 
 def ui_breach_ok(m) -> bool:
     keys = {"id", "dev", "size", "grid", "buffer", "picks", "seqs", "total", "left", "state", "strength"}
-    if set(m) != keys or not (whole(m["id"]) and dev_id_ok(m["dev"]) and whole(m["size"], 5, 7) and whole(m["buffer"], 4, 8)):
+    no_device = m.get("dev") == "0"  # a practice on a lone Net Port, Phase 8's short breach on a player
+    if set(m) != keys or not ((no_device or dev_id_ok(m["dev"])) and whole(m["id"]) and whole(m["size"], 4 if no_device else 5, 7) and whole(m["buffer"], 4, 8)):
         return False
     size, buffer = m["size"], m["buffer"]
     return (isinstance(m["grid"], list) and len(m["grid"]) == size * size and all(c in BREACH_CODES for c in m["grid"])
@@ -433,7 +434,8 @@ def _bad_ui():
         b(picks=[2, 2]), b(picks=[0, 1, 2, 3, 4, 5, 6]), b(seqs=[]), b(seqs=[{"id": "a", "codes": ["BD"], "ok": False}]), b(seqs=[{"id": "A", "codes": ["BD", "1C"], "ok": False}]),
         b(seqs=[{"id": "a", "codes": ["BD", "1C"], "ok": 1}]), b(seqs=[{"id": "a", "codes": ["BD", "1C", "55", "7A", "E9", "FF", "55"], "ok": False}]),
         b(seqs=[{"id": f"d{i}", "codes": ["BD", "1C"], "ok": False} for i in range(4)]), b(total=0), b(total=301), b(left=-1), b(left=46), b(state="won"), b(strength=4),
-        b(strength=-1), b(dev="0"), b(id=-1), ("breach", {k: v for k, v in ui("breach").items() if k != "left"}), ("breach", {**ui("breach"), "extra": 1}),
+        b(strength=-1), b(dev="-1"), b(dev="00"), b(id=-1), b(size=3, dev="0", grid=["1C"] * 9, picks=[]),
+        b(size=4, grid=["1C"] * 16, picks=[], seqs=[{"id": "a", "codes": ["BD", "1C"], "ok": False}]), ("breach", {k: v for k, v in ui("breach").items() if k != "left"}), ("breach", {**ui("breach"), "extra": 1}),
     ] + [
         ("feed", ui("feed", owner="x")), ("feed", ui("feed", w=127)), ("feed", ui("feed", px="AA==")), ("feed", {k: v for k, v in ui("feed").items() if k != "owner"}),
         ("comms", ui("comms", text="x" * 81)), ("comms", ui("comms", **{"from": ""})), ("comms", ui("comms", **{"from": "x" * 33})), ("comms", ui("comms", pos=[1, 2, 3.5])),
@@ -454,4 +456,6 @@ def test_p6_ui_validators_accept_the_limits_themselves():
     seven = ui("breach", size=7, grid=(["1C", "55", "BD", "E9", "7A", "FF", "1C"] * 7), buffer=8, picks=list(range(8)), total=300, left=300.0, state="solved", strength=3,
               seqs=[{"id": f"d{i}", "codes": ["BD"] * 8, "ok": True} for i in range(3)])
     assert ui_breach_ok(seven) and all(ui_breach_ok(ui("breach", state=s)) for s in BREACH_STATES) and ui_breach_ok(ui("breach", picks=[], left=0))
+    short = ui("breach", dev="0", size=4, grid=["1C", "55", "BD", "E9"] * 4, buffer=4, picks=[], seqs=[{"id": "a", "codes": ["BD", "1C"], "ok": False}], total=5, left=5)
+    assert ui_breach_ok(short) and ui_breach_ok({**short, "size": 5, "grid": ["1C"] * 25})  # Phase 8's 4x4 and a practice, both with no device
     assert ui_comms_ok(ui("comms", text="", pos=None, **{"from": "x" * 32})) and ui_comms_ok(ui("comms", text="x" * TEXT_CAP))

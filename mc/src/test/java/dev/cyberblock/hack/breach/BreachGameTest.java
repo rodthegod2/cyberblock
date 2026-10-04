@@ -65,31 +65,33 @@ class BreachGameTest {
 	}
 
 	@Test
-	void theTimerStartsAtTheFirstPickAndEndsTheBreach() {
-		BreachGame g = new BreachGame(puzzle(), 0);
-		assertEquals(-1, g.leftMs(5_000));
-		assertFalse(g.expire(50_000), "no timer before the first pick (idle is 60 s)");
-		assertTrue(g.pick(0, 50_000));
-		assertEquals(20_000, g.leftMs(50_000));
-		assertEquals(5_000, g.leftMs(65_000));
-		assertFalse(g.pick(10, 70_000), "a pick after the deadline is refused");
+	void theTimerStartsWhenTheBreachOpensAndEndsIt() {
+		BreachGame g = new BreachGame(puzzle(), 1_000);
+		assertEquals(20_000, g.leftMs(1_000), "protocol.md: the timer starts when the screen opens");
+		assertEquals(5_000, g.leftMs(16_000), "studying the grid costs time too");
+		assertTrue(g.pick(0, 16_000));
+		assertEquals(5_000, g.leftMs(16_000), "a pick does not restart it");
+		assertFalse(g.pick(10, 21_000), "a pick after the deadline is refused");
 		assertEquals(BreachGame.End.TIMEOUT, g.end());
+		assertEquals(0, g.leftMs(30_000));
 		assertTrue(g.failed(), "picks, nothing uploaded");
 		assertFalse(g.cancelled());
 	}
 
 	@Test
-	void idleBeforeTheFirstPickCancels() {
-		BreachGame g = new BreachGame(puzzle(), 1_000);
-		assertFalse(g.expire(1_000 + BreachGame.IDLE_MS - 1));
-		assertTrue(g.expire(1_000 + BreachGame.IDLE_MS));
-		assertEquals(BreachGame.End.IDLE, g.end());
-		assertTrue(g.cancelled());
-		assertFalse(g.failed());
+	void runningOutOfTimeBeforeAPickIsAFailure() {
+		BreachGame g = new BreachGame(puzzle(), 0);
+		assertFalse(g.expire(19_999));
+		assertTrue(g.expire(20_000));
+		assertFalse(g.expire(20_001), "ended once");
+		assertEquals(BreachGame.End.TIMEOUT, g.end());
+		assertFalse(g.started());
+		assertFalse(g.cancelled(), "only a quit before a pick cancels");
+		assertTrue(g.failed(), "a kept device breach that runs out is a failure");
 	}
 
 	@Test
-	void quittingBeforeAPickCancelsAfterAPickFails() {
+	void quittingBeforeAPickCancelsAfterAPickFailsWhateverWasUploaded() {
 		BreachGame early = new BreachGame(puzzle(), 0);
 		early.quit();
 		assertTrue(early.cancelled());
@@ -97,6 +99,7 @@ class BreachGameTest {
 
 		BreachGame late = new BreachGame(puzzle(), 0);
 		late.pick(0, 0);
+		assertTrue(late.started());
 		late.quit();
 		assertEquals(BreachGame.End.QUIT, late.end());
 		assertTrue(late.failed());
@@ -106,7 +109,26 @@ class BreachGameTest {
 		some.pick(1, 0);
 		some.pick(21, 0);
 		some.quit();
-		assertFalse(some.failed(), "one daemon uploaded is a success");
-		assertEquals(1, some.strength());
+		assertTrue(some.failed(), "protocol.md: an abort after the first pick is a failure, even with a daemon uploaded");
+		assertFalse(some.cancelled());
+	}
+
+	@Test
+	void anUploadIsKeptWhenTheBufferFillsOrTheTimerRunsOut() {
+		BreachGame full = new BreachGame(puzzle(), 0);
+		full.pick(1, 0); // 5
+		full.pick(21, 0); // 3 -> A
+		full.pick(20, 0); // row 4 -> 4
+		full.pick(0, 0); // column 0 -> 0, the buffer is full
+		assertEquals(BreachGame.End.BUFFER_FULL, full.end());
+		assertFalse(full.failed());
+		assertEquals(1, full.strength());
+
+		BreachGame late = new BreachGame(puzzle(), 0);
+		late.pick(1, 0);
+		late.pick(21, 0);
+		late.expire(20_000);
+		assertEquals(BreachGame.End.TIMEOUT, late.end());
+		assertFalse(late.failed(), "the daemon was uploaded before the time ran out");
 	}
 }

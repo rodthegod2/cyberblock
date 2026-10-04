@@ -48,15 +48,17 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>The ways in:
  * <ul>
- * <li>A right-click on a Net Port block (Phase 4's terminal): {@link #openOnDevice} with the device's owner (the guest toggles
- * {@code devices}, its type bit and {@code hacks}; quest-locked ports refuse). Uploaded daemons go to the owner as one {@code daemon}
- * DOWN; a failure sends {@code ["alarm"]} and adds {@link BreachResults#FAILURE_HEAT} through {@link #heat} (Phase 8's meter; until it is
- * installed the alarm daemon carries the host's wanted +1, see the start-up line). A Net Port with no device behind it (a creative or
- * test block) opens a practice breach with no effect. The rate limits of {@link BreachLimits} apply: a breached device waits 30 s, a
- * player whose breach failed waits 30 s for any device, and an owner gets at most one alarm a minute.</li>
+ * <li>A right-click on a Net Port block (Phase 4's terminal): {@link #openOnDevice} with the device's owner (quest-locked ports
+ * refuse). Uploaded daemons go to the owner as one {@code daemon} DOWN; a failure sends {@code ["alarm"]} and adds
+ * {@link BreachResults#FAILURE_HEAT} through {@link #heat} (Phase 8's meter; until it is installed the alarm daemon carries the host's
+ * wanted +1, see the start-up line). When the owner's guest toggles ({@code hacks}, or the device type's bit) refuse the guest, the breach
+ * still plays out in Minecraft and nothing is sent (megaplan 1.6). An abort is not a free re-roll (protocol.md "Phase 6"): closing it
+ * before the first pick keeps that puzzle, its timer running, for that player and device, and the next right-click reopens it; its timeout
+ * is a failure. The rate limits of {@link BreachLimits} apply: 10 s for the same player and device after a failure, and an owner gets at
+ * most one alarm a minute. A Net Port with no device behind it (a creative or test block) opens a practice breach with no effect.</li>
  * <li>6R's Breach Port: {@link #openOnDevice} with the linked device.</li>
- * <li>Phase 8's player hacks: {@link #open} with {@link Spec#shortBreach} (4x4, 5 s) or the defender's {@link #firewallRank}, and its
- * own outcome handler.</li>
+ * <li>Phase 8's player hacks: {@link #open} with {@link Spec#shortBreach} (4x4, 5 s from the opening) or the defender's
+ * {@link #firewallRank}, and its own outcome handler; {@link #close} ends it early.</li>
  * </ul>
  */
 public final class Breach {
@@ -81,13 +83,19 @@ public final class Breach {
 	static final long ANSWER_TICKS = 1200;
 	private static final Identifier EARLY = Identifier.fromNamespaceAndPath(Cyberblock.ID, "breach");
 	private static final Map<UUID, Session> sessions = new HashMap<>();
+	/** Device breaches closed before their first pick: kept, timer running, until reopened or timed out. */
+	private static final Map<BreachLimits.Hold, Session> kept = new HashMap<>();
 	private static final BreachLimits limits = new BreachLimits();
 	private static final Map<DeviceRegistry.Key, Answer> answers = new HashMap<>();
 	private static int nextId = 1;
 	private static volatile @Nullable MinecraftServer server;
 
-	/** A breach in play: its puzzle id, the player, the game, where it must stay near, and who hears the outcome. */
-	private record Session(int id, String dev, UUID player, BreachGame game, @Nullable Vec3 anchor, Level level, Consumer<BreachResults.Outcome> onEnd) {
+	/**
+	 * A breach in play: its puzzle id, the player, the game, where it must stay near, who hears the outcome, and for a device breach the
+	 * player and device it is kept under when closed before a pick (null: a practice or Phase 8 breach, cancelled instead).
+	 */
+	private record Session(int id, String dev, UUID player, BreachGame game, @Nullable Vec3 anchor, Level level, Consumer<BreachResults.Outcome> onEnd,
+		BreachLimits.@Nullable Hold hold) {
 	}
 
 	/** A daemon DOWN waiting for the owner's hackresult (keyed by owner and request id): the player to tell. */
@@ -123,6 +131,7 @@ public final class Breach {
 
 	private static void stopping() {
 		sessions.clear();
+		kept.clear();
 		limits.clear();
 		answers.clear();
 		server = null;
@@ -139,13 +148,19 @@ public final class Breach {
 	}
 
 	/**
-	 * Opens a breach for the player: a new seeded puzzle for the spec, the screen on the player's client, and {@code onEnd} with the
-	 * outcome once it ends (aborted ones too). False (nothing opened) while the player is in another breach or is locked by the
-	 * join password (megaplan 1.6: no interaction before /login, whoever the caller is).
+	 * Opens a breach for the player: a new seeded puzzle for the spec, its timer running from now, the screen on the player's client,
+	 * and {@code onEnd} with the outcome once it ends (cancelled ones too). False (nothing opened) while the player is in another breach
+	 * or is locked by the join password (megaplan 1.6: no interaction before /login, whoever the caller is).
 	 *
 	 * @param anchor where the player must stay within {@link #REACH} (null: anywhere)
 	 */
 	public static boolean open(final ServerPlayer player, final Spec spec, final @Nullable Vec3 anchor, final Consumer<BreachResults.Outcome> onEnd) {
+		return open(player, spec, anchor, null, onEnd);
+	}
+
+	/** {@link #open}; with a hold, the breach this player kept on this device (closed before a pick) reopens instead of a new one. */
+	private static boolean open(final ServerPlayer player, final Spec spec, final @Nullable Vec3 anchor, final BreachLimits.@Nullable Hold hold,
+		final Consumer<BreachResults.Outcome> onEnd) {
 		if (JoinLock.locked(player)) {
 			Cyberblock.LOG.info("breach: {} refused (locked by the join password)", player.getPlainTextName());
 			return false;
@@ -156,63 +171,93 @@ public final class Breach {
 			return false;
 		}
 
+		Session old = hold == null ? null : kept.remove(hold);
+		if (old != null) {
+			// a new screen id: the client never reopens a puzzle id it closed
+			Session s = new Session(nextId++, old.dev(), old.player(), old.game(), anchor, player.level(), old.onEnd(), hold);
+			sessions.put(player.getUUID(), s);
+			show(player, s);
+			Cyberblock.LOG.info("breach: {} reopened the kept {}x{} on {} ({} s left, the same puzzle: an abort is not a re-roll)", player.getPlainTextName(),
+				old.game().puzzle().size(), old.game().puzzle().size(), old.dev(), (old.game().leftMs(now()) + 999) / 1000);
+			return true;
+		}
+
 		long seed = ThreadLocalRandom.current().nextLong();
 		BreachPuzzle.Tier tier = spec.shortBreach() ? BreachContent.SHORT : BreachContent.tierFor(spec.security(), spec.firewall());
 		BreachPuzzle puzzle = BreachPuzzle.generate(seed, tier, BreachContent.daemonsFor(spec.kind(), spec.security()));
-		Session s = new Session(nextId++, spec.dev(), player.getUUID(), new BreachGame(puzzle, now()), anchor, player.level(), onEnd);
+		Session s = new Session(nextId++, spec.dev(), player.getUUID(), new BreachGame(puzzle, now()), anchor, player.level(), onEnd, hold);
 		sessions.put(player.getUUID(), s);
 		show(player, s);
-		Cyberblock.LOG.info("breach: {} opened {}x{} on {} {} (security {}, firewall {}{}, buffer {}, {} s, daemons {}, seed {})", player.getPlainTextName(),
-			puzzle.size(), puzzle.size(), spec.kind(), spec.dev(), spec.security(), spec.firewall(), spec.shortBreach() ? ", short" : "", puzzle.buffer(),
-			puzzle.seconds(), puzzle.daemons().stream().map(BreachPuzzle.Daemon::id).toList(), seed);
+		Cyberblock.LOG.info("breach: {} opened {}x{} on {} {} (security {}, firewall {}{}, buffer {}, {} s from now, daemons {}, seed {})",
+			player.getPlainTextName(), puzzle.size(), puzzle.size(), spec.kind(), spec.dev(), spec.security(), spec.firewall(),
+			spec.shortBreach() ? ", short" : "", puzzle.buffer(), puzzle.seconds(), puzzle.daemons().stream().map(BreachPuzzle.Daemon::id).toList(), seed);
 		return true;
 	}
 
 	/**
-	 * A breach on a host's device (a Net Port right-click, 6R's Breach Port): checks the device and the owner's guest toggles, then
-	 * opens the breach at the device's security; at the end the owner gets the {@code daemon} DOWN (uploaded daemons, or the alarm).
-	 * False when refused (the player was told why).
+	 * A breach on a host's device (a Net Port right-click, 6R's Breach Port): checks the device, the session and the cooldown, then
+	 * reopens the puzzle this player kept on this device or opens a new one at the device's security; at the end the owner gets the
+	 * {@code daemon} DOWN (uploaded daemons, or the alarm) unless the owner's guest toggles refuse this player. False when refused (the
+	 * player was told why).
 	 */
 	public static boolean openOnDevice(final ServerPlayer player, final BlockPos pos, final UUID owner, final Device device) {
-		DeviceRegistry.Key key = new DeviceRegistry.Key(owner, device.id());
+		BreachLimits.Hold hold = new BreachLimits.Hold(player.getUUID(), new DeviceRegistry.Key(owner, device.id()));
 		HostSession session = HostSessions.of(owner);
+		long cooldown = limits.cooldown(hold, ticks());
 		if (device.questLocked()) {
 			tell(player, Component.translatableWithFallback("cyberblock.device.quest_locked", "Night City is holding this device for a quest"));
-		} else if (!Permissions.allowsDevice(owner, player.getUUID(), device.type()) || !Permissions.allows(owner, player.getUUID(), Permissions.Toggle.HACKS)) {
-			tell(player, Component.translatableWithFallback("cyberblock.guest.blocked", "That host does not let guests do this to their Night City"));
-			Cyberblock.LOG.info("breach: {} on {} {} -> blocked (the host's guest toggle)", player.getPlainTextName(), device.type().id(), device.idText());
 		} else if (session == null || session.state() == HostSession.State.NONE) {
 			tell(player, Component.translatableWithFallback("cyberblock.device.no_link", "Night City is not connected: devices cannot be used"));
-		} else if (limits.playerWait(player.getUUID(), ticks()) > 0) {
-			long seconds = seconds(limits.playerWait(player.getUUID(), ticks()));
-			tell(player, Component.translatableWithFallback("cyberblock.breach.player_locked_out", "Your last breach failed: no breaches for %s s", seconds));
-			Cyberblock.LOG.info("breach: {} on {} {} -> refused (locked out for {} s more after a failed breach)", player.getPlainTextName(),
-				device.type().id(), device.idText(), seconds);
-		} else if (limits.deviceWait(key, ticks()) > 0) {
-			tell(player, Component.translatableWithFallback("cyberblock.breach.locked_out", "This device is locked out for %s s",
-				seconds(limits.deviceWait(key, ticks()))));
+		} else if (cooldown > 0 && !kept.containsKey(hold)) {
+			tell(player, Component.translatableWithFallback("cyberblock.breach.cooldown", "Wait %s s before breaching this device again", seconds(cooldown)));
+			Cyberblock.LOG.info("breach: {} on {} {} -> refused (cooldown: {} s more after a failed breach)", player.getPlainTextName(), device.type().id(),
+				device.idText(), seconds(cooldown));
 		} else {
+			if (!allowed(owner, player.getUUID(), device)) {
+				Cyberblock.LOG.info("breach: {} on {} {} of {}: the host's guest toggle refuses it, so it plays out in Minecraft only (nothing will be sent)",
+					player.getPlainTextName(), device.type().id(), device.idText(), session.name());
+			}
+
 			Spec spec = new Spec(device.type().id(), BreachContent.security(device), 0, false, device.idText());
-			return open(player, spec, Vec3.atCenterOf(pos), o -> deviceOutcome(player.getUUID(), key, device, o));
+			return open(player, spec, Vec3.atCenterOf(pos), hold, o -> deviceOutcome(hold, device, o));
 		}
 
 		return false;
 	}
 
+	/** Does the owner let this player's breach reach their game: the {@code hacks} toggle and the device type's bit (the host always)? */
+	private static boolean allowed(final UUID owner, final UUID player, final Device device) {
+		return Permissions.allowsDevice(owner, player, device.type()) && Permissions.allows(owner, player, Permissions.Toggle.HACKS);
+	}
+
 	/**
-	 * A device breach ended: the limits ({@link BreachLimits}), then the daemon DOWN to the owner (nothing when aborted; a failure
-	 * within the owner's alarm window is merged into the alarm already raised), Heat with the alarm, the player told.
+	 * A device breach ended: the cooldown after a failure ({@link BreachLimits}), then, when the owner's guest toggles allow it, the
+	 * daemon DOWN to the owner (a failure within the owner's alarm window is merged into the alarm already raised), Heat with the alarm,
+	 * the player told.
 	 */
-	private static void deviceOutcome(final UUID playerId, final DeviceRegistry.Key key, final Device device, final BreachResults.Outcome o) {
+	private static void deviceOutcome(final BreachLimits.Hold hold, final Device device, final BreachResults.Outcome o) {
+		UUID playerId = hold.player();
+		DeviceRegistry.Key key = hold.device();
 		ServerPlayer player = player(playerId);
 		HostSession session = HostSessions.of(key.owner());
 		String who = player == null ? playerId.toString() : player.getPlainTextName();
 		if (o.cancelled()) {
+			// not reached: a device breach closed before its first pick is kept, not cancelled
 			Cyberblock.LOG.info("breach: {} aborted on {} {} before a pick: nothing sent", who, device.type().id(), device.idText());
 			return;
 		}
 
-		limits.ended(key, playerId, o.failed(), ticks());
+		if (o.failed()) {
+			limits.failed(hold, ticks());
+		}
+
+		if (!allowed(key.owner(), playerId, device)) {
+			tell(player, Component.translatableWithFallback("cyberblock.guest.blocked", "That host does not let guests do this to their Night City"));
+			Cyberblock.LOG.info("breach: {} {} on {} {} -> blocked (the host's guest toggle): played out in Minecraft only, nothing sent", who, o.state(),
+				device.type().id(), device.idText());
+			return;
+		}
+
 		if (session == null || session.state() == HostSession.State.NONE) {
 			tell(player, Component.translatableWithFallback("cyberblock.device.no_link", "Night City is not connected: devices cannot be used"));
 			Cyberblock.LOG.info("breach: {} ended ({}) but the owner is gone: nothing sent", who, o.state());
@@ -290,14 +335,18 @@ public final class Breach {
 	}
 
 	/**
-	 * The devtools bypass of the test command ({@code /cyberblock test breach <x> <y> <z> solve|fail}): the lockouts of the Net Port's
-	 * device and of the player are cleared, so a scenario may breach the same device again at once. The owner's alarm window stays.
+	 * The devtools bypass of the test command ({@code /cyberblock test breach <x> <y> <z> solve|fail}): the player's cooldown on the Net
+	 * Port's device and a puzzle kept there are dropped, so a scenario may breach the same device again at once with a fresh puzzle. The
+	 * owner's alarm window stays.
 	 */
 	static void clearLockoutsForTest(final ServerPlayer player, final BlockPos pos) {
 		DeviceRegistry.Tracked t = DeviceModule.at(pos);
 		if (t != null) {
-			limits.clear(t.key(), player.getUUID());
-			Cyberblock.LOG.info("breach: test bypass: lockouts of {} and {} {} cleared", player.getPlainTextName(), t.device().type().id(), t.device().idText());
+			BreachLimits.Hold hold = new BreachLimits.Hold(player.getUUID(), t.key());
+			limits.clear(hold);
+			kept.remove(hold);
+			Cyberblock.LOG.info("breach: test bypass: the cooldown and kept puzzle of {} on {} {} cleared", player.getPlainTextName(), t.device().type().id(),
+				t.device().idText());
 		}
 	}
 
@@ -326,8 +375,11 @@ public final class Breach {
 		}
 
 		if (r.abort()) {
-			s.game().quit();
-		} else if (!s.game().pick(r.cell(), now())) {
+			stop(s);
+			return;
+		}
+
+		if (!s.game().pick(r.cell(), now())) {
 			Cyberblock.LOG.debug("breach: {} pick {} refused", player.getPlainTextName(), r.cell());
 		}
 
@@ -351,12 +403,43 @@ public final class Breach {
 		return s == null ? null : s.game();
 	}
 
+	/**
+	 * Ends the player's breach now, as an abort (Phase 8: the intrusion it defends against landed or was blocked): the screen shows it
+	 * ended and {@code onEnd} hears the outcome (cancelled before a pick, a failure after one). Nothing when the player is in no breach.
+	 */
+	public static void close(final ServerPlayer player) {
+		abort(player.getUUID());
+	}
+
 	static void abort(final UUID player) {
 		Session s = sessions.get(player);
 		if (s != null) {
-			s.game().quit();
-			update(s);
+			stop(s);
 		}
+	}
+
+	/**
+	 * The player stops the breach (an abort, the screen closed, walking away, leaving, {@link #close}). A device breach before its first
+	 * pick is kept for that player and device, its timer running (protocol.md: an abort is not a free re-roll); anything else quits.
+	 */
+	private static void stop(final Session s) {
+		BreachGame g = s.game();
+		BreachLimits.Hold hold = s.hold();
+		if (g.expire(now()) || hold == null || g.started()) {
+			g.quit();
+			update(s);
+			return;
+		}
+
+		sessions.remove(s.player(), s);
+		kept.put(hold, s);
+		ServerPlayer p = player(s.player());
+		if (p != null) {
+			ServerNet.ui(p, BreachWire.T, BreachWire.screen(s.id(), s.dev(), g, now(), true));
+		}
+
+		Cyberblock.LOG.info("breach: {} closed the breach of {} before a pick: the puzzle is kept with its timer ({} s left) for the next right-click",
+			p == null ? s.player().toString() : p.getPlainTextName(), s.dev(), (g.leftMs(now()) + 999) / 1000);
 	}
 
 	private static void show(final ServerPlayer player, final Session s) {
@@ -375,18 +458,24 @@ public final class Breach {
 		}
 	}
 
-	/** Each tick: timers and idle breaches end; a player who walked away or changed level aborts. */
+	/** Each tick: timers end breaches, kept ones too (a failure); a player who walked away or changed level stops. */
 	private static void tick(final MinecraftServer s) {
 		long now = now();
 		for (Session session : List.copyOf(sessions.values())) {
 			ServerPlayer p = s.getPlayerList().getPlayer(session.player());
 			if (p == null || p.level() != session.level()
 				|| session.anchor() != null && p.getEyePosition().distanceToSqr(session.anchor()) > REACH * REACH) {
-				session.game().quit();
-			}
-
-			if (session.game().expire(now) || session.game().ended()) {
+				stop(session);
+			} else if (session.game().expire(now) || session.game().ended()) {
 				update(session);
+			}
+		}
+
+		for (Map.Entry<BreachLimits.Hold, Session> e : List.copyOf(kept.entrySet())) {
+			Session session = e.getValue();
+			if (session.game().expire(now) && kept.remove(e.getKey(), session)) {
+				Cyberblock.LOG.info("breach: the kept breach of {} by {} ran out of time", session.dev(), session.player());
+				session.onEnd().accept(BreachResults.Outcome.of(session.game()));
 			}
 		}
 
