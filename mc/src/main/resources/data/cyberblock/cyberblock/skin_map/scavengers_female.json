@@ -1,0 +1,12 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/scavengers_f.png",
+	"model": "slim",
+	"faction": [
+		"Scavengers",
+		"ScavengersAndroid",
+		"Wraiths",
+		"WraithsAndroid"
+	],
+	"gender": "female"
+}

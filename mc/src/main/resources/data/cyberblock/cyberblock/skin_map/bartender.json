@@ -1,0 +1,10 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/bartender_m.png",
+	"model": "classic",
+	"role": [
+		"Drinks",
+		"bartender"
+	],
+	"priority": 20
+}

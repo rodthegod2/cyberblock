@@ -1,0 +1,6 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/ncpd_patrol_m.png",
+	"model": "classic",
+	"faction": "NCPD"
+}

@@ -1,0 +1,6 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/cyber_skin/v_female.png",
+	"model": "slim",
+	"cyber": "female"
+}

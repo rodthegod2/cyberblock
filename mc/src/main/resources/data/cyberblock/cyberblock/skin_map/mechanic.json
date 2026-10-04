@@ -1,0 +1,7 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/civ_worker_m.png",
+	"model": "classic",
+	"role": "mechanic",
+	"priority": 20
+}

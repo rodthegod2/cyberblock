@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "vehicle_map",
+  "description": "The `vehicle_map` content kind (megaplan 1.7, 1.12, tasks 5-A2 and 5-F1): which of the 12 vehicle figure models a Night City vehicle is drawn as, and its default colour. One row per file. A vehicle matches a row when every match key the row has holds: `vc` (the `npcs` entry's `vc`, \"<type>/<model>\" from 2.31 Vehicle_Record.Type() and Model(), e.g. \"Car/Turbo\"), `type` (the part of `vc` before the slash: Car, Bike, Panzer) and `faction` (the vehicle's Affiliation().EnumName(), 2.31 `gamedataAffiliation`, when the figure carries one). A key's value is one name or a list of names (any of them). Of the matching rows the highest `priority` (default 0) wins, then the row with more match keys, then the lowest id. A row with no match keys matches every vehicle (the shipped `default` row: an unknown vehicle is a sedan in the Car class colour). `model` is the figure model (textures `cyberblock:textures/entity/vehicle/<model>.png`, `<model>_detail.png`, see art/gen_vehicle_art.py for the UV layout); `colour` (#RRGGBB) tints the model's paint layer when the host sends no `col`; with `keepColour` true the row's colour is used even when it does (liveries such as the police cruiser). A file with the same id as a default replaces it.",
+  "$defs": {
+    "name": {"type": "string", "pattern": "^[A-Za-z0-9_]+$", "minLength": 1, "maxBytes": 32},
+    "vc": {"type": "string", "pattern": "^[A-Za-z0-9_]+/[A-Za-z0-9_]+$", "maxBytes": 32},
+    "names": {"anyOf": [{"$ref": "#/$defs/name"}, {"type": "array", "items": {"$ref": "#/$defs/name"}, "minItems": 1, "maxItems": 32, "uniqueItems": true}]},
+    "vcs": {"anyOf": [{"$ref": "#/$defs/vc"}, {"type": "array", "items": {"$ref": "#/$defs/vc"}, "minItems": 1, "maxItems": 64, "uniqueItems": true}]}
+  },
+  "type": "object",
+  "required": ["schema", "model", "colour"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": 1},
+    "id": {"type": "string", "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$", "maxBytes": 128},
+    "model": {"enum": ["sedan", "sports_car", "truck", "van", "bike", "taxi", "police_cruiser", "armoured_van", "trauma_aerodyne", "ncpd_aerodyne", "delivery_truck", "pickup"]},
+    "colour": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+    "vc": {"$ref": "#/$defs/vcs"},
+    "type": {"$ref": "#/$defs/names"},
+    "faction": {"$ref": "#/$defs/names"},
+    "keepColour": {"type": "boolean"},
+    "priority": {"type": "integer", "minimum": -1000, "maximum": 1000}
+  }
+}

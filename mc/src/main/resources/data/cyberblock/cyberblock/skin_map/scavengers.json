@@ -1,0 +1,11 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/scavengers_m.png",
+	"model": "classic",
+	"faction": [
+		"Scavengers",
+		"ScavengersAndroid",
+		"Wraiths",
+		"WraithsAndroid"
+	]
+}

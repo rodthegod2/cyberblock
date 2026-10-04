@@ -1,0 +1,10 @@
+{
+	"schema": 1,
+	"model": "pickup",
+	"colour": "#6d4f3a",
+	"vc": [
+		"Car/Colby",
+		"Car/Mackinaw"
+	],
+	"priority": 10
+}

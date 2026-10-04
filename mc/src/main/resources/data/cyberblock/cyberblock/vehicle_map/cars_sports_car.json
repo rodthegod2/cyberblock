@@ -1,0 +1,15 @@
+{
+	"schema": 1,
+	"model": "sports_car",
+	"colour": "#c23b3b",
+	"vc": [
+		"Car/Aerondight",
+		"Car/Alvarado",
+		"Car/Deleon",
+		"Car/Riptide",
+		"Car/Shion",
+		"Car/Turbo",
+		"Car/Type66"
+	],
+	"priority": 10
+}

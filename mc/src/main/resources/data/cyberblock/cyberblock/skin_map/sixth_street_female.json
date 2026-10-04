@@ -1,0 +1,10 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/sixth_street_f.png",
+	"model": "slim",
+	"faction": [
+		"SixthStreet",
+		"SixthStreetAndroid"
+	],
+	"gender": "female"
+}

@@ -1,0 +1,21 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/vendor_m.png",
+	"model": "classic",
+	"role": [
+		"Armorsmith",
+		"Clothes",
+		"Clothing",
+		"Food",
+		"GrilledFood",
+		"PackedFood",
+		"Gunsmith",
+		"Junk",
+		"Kiosk",
+		"Market",
+		"Tech",
+		"TechJunk",
+		"SkillTrainer"
+	],
+	"priority": 20
+}

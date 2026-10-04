@@ -1,0 +1,7 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/aldecaldos_f.png",
+	"model": "slim",
+	"faction": "Aldecaldos",
+	"gender": "female"
+}

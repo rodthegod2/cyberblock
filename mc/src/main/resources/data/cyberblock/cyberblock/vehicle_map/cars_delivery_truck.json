@@ -1,0 +1,7 @@
+{
+	"schema": 1,
+	"model": "delivery_truck",
+	"colour": "#d8d2c4",
+	"vc": "Car/Zeya",
+	"priority": 10
+}

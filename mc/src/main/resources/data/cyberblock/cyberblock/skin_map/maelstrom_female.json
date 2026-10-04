@@ -1,0 +1,10 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/maelstrom_f.png",
+	"model": "slim",
+	"faction": [
+		"Maelstrom",
+		"MaelstromAndroid"
+	],
+	"gender": "female"
+}

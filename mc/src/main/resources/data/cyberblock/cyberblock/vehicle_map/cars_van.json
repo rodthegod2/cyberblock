@@ -1,0 +1,11 @@
+{
+	"schema": 1,
+	"model": "van",
+	"colour": "#d9d9d4",
+	"vc": [
+		"Car/Columbus",
+		"Car/Hearse",
+		"Car/Supron"
+	],
+	"priority": 10
+}

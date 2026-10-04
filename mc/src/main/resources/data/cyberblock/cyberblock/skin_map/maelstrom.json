@@ -1,0 +1,9 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/maelstrom_m.png",
+	"model": "classic",
+	"faction": [
+		"Maelstrom",
+		"MaelstromAndroid"
+	]
+}

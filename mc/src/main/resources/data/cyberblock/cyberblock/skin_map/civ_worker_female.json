@@ -1,0 +1,10 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/civ_worker_f.png",
+	"model": "slim",
+	"faction": [
+		"Civilian",
+		"Unaffiliated"
+	],
+	"gender": "female"
+}

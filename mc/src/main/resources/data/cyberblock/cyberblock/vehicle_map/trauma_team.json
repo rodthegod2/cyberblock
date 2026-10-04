@@ -1,0 +1,8 @@
+{
+	"schema": 1,
+	"model": "trauma_aerodyne",
+	"colour": "#e8ecef",
+	"faction": "TraumaTeam",
+	"keepColour": true,
+	"priority": 20
+}

@@ -1,0 +1,12 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/ripperdoc_m.png",
+	"model": "classic",
+	"role": [
+		"RipperDoc",
+		"Cyberware",
+		"Medical",
+		"medic"
+	],
+	"priority": 20
+}

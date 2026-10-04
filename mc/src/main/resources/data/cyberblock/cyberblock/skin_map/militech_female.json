@@ -1,0 +1,11 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/militech_f.png",
+	"model": "slim",
+	"faction": [
+		"Militech",
+		"Barghest",
+		"NUSA"
+	],
+	"gender": "female"
+}

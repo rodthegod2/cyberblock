@@ -1,0 +1,6 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/trauma_team_m.png",
+	"model": "classic",
+	"faction": "TraumaTeam"
+}
