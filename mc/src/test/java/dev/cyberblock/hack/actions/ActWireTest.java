@@ -120,4 +120,66 @@ class ActWireTest {
 		assertEquals(new ActWire.FeedWatch(HOST, false), ActWire.parseFeedWatch(json(ActWire.feedWatch(HOST, false))));
 		assertNull(ActWire.parseFeedWatch(json("{\"host\":\"" + HOST + "\",\"on\":1}")));
 	}
+
+	/**
+	 * shared/phase6-messages.json: the DOWN `rhack` strings are exactly what {@link ActWire#rhack} builds from the arguments
+	 * RemoteActions passes for each hack (a target only for a car or camera, the district only for a district hack, `p` only for a
+	 * point hack, `secs` the blackout's request or the hack's own), and every act string parses and builds back to itself. The DLL's
+	 * cb_tests and the Python suites read the same file, so the four sides cannot drift apart.
+	 */
+	@Test
+	void sharedPhase6MessagesAreWhatTheServerBuilds() throws java.io.IOException {
+		JsonObject all = json(java.nio.file.Files.readString(java.nio.file.Path.of("..", "shared", "phase6-messages.json")));
+		java.util.Set<RemoteHack> seen = java.util.EnumSet.noneOf(RemoteHack.class);
+		for (var e : all.getAsJsonArray("down_rhack")) {
+			JsonObject a = e.getAsJsonObject().getAsJsonObject("args");
+			RemoteHack hack = RemoteHack.byWire(a.get("hack").getAsString());
+			assertNotNull(hack, a.toString());
+			seen.add(hack);
+			long target = Long.parseUnsignedLong(a.get("target").getAsString());
+			String district = a.get("district").isJsonNull() ? null : a.get("district").getAsString();
+			Vec3 p = a.get("p").isJsonNull() ? null : ActWire.position(a.get("p"));
+			int secs = a.get("secs").getAsInt();
+			RemoteHack.Target kind = hack.target();
+			assertEquals(kind == RemoteHack.Target.VEHICLE || kind == RemoteHack.Target.CAMERA, target != 0L, hack + ": a target only for a car or camera");
+			assertEquals(kind == RemoteHack.Target.DISTRICT, district != null, hack + ": the district only for a district hack");
+			assertEquals(kind == RemoteHack.Target.POINT, p != null, hack + ": p only for a point hack");
+			assertEquals(hack == RemoteHack.BLACKOUT ? 120 : hack.seconds(), secs, hack + ": secs as RemoteActions sends it");
+			assertEquals(e.getAsJsonObject().get("json").getAsString(), ActWire.rhack(a.get("id").getAsInt(), target, hack, district, p, secs), hack.wire());
+		}
+
+		assertEquals(java.util.EnumSet.allOf(RemoteHack.class), seen, "every remote hack has a DOWN line");
+		for (var e : all.getAsJsonArray("act_rhack")) {
+			String text = e.getAsString();
+			ActWire.Request r = ActWire.parse(json(text));
+			assertNotNull(r, text);
+			String built = switch (r.hack().target()) {
+				case VEHICLE -> ActWire.vehicle(r.hack(), r.eid());
+				case CAMERA -> ActWire.camera(r.host(), r.dev());
+				case DISTRICT -> ActWire.district(r.hack(), r.host(), r.secs());
+				case POINT -> ActWire.point(r.hack(), r.p());
+			};
+			assertEquals(text, built);
+		}
+
+		for (var e : all.getAsJsonArray("act_comms")) {
+			ActWire.Comms c = ActWire.parseComms(json(e.getAsString()));
+			assertNotNull(c);
+			assertEquals(e.getAsString(), ActWire.comms(c.to(), c.text(), c.p()));
+		}
+
+		for (var e : all.getAsJsonArray("act_feed")) {
+			ActWire.FeedWatch w = ActWire.parseFeedWatch(json(e.getAsString()));
+			assertEquals(e.getAsString(), ActWire.feedWatch(w.host(), w.on()));
+		}
+
+		for (var e : all.getAsJsonArray("act_feedmap")) {
+			assertEquals(e.getAsString(), ActWire.host(ActWire.parseHost(json(e.getAsString()))));
+		}
+
+		assertEquals(List.of(ActWire.feedReq(true), ActWire.feedReq(false)),
+			all.getAsJsonArray("down_feedreq").asList().stream().map(com.google.gson.JsonElement::getAsString).toList());
+		assertTrue(ActWire.isFeedFallback(json(all.getAsJsonObject("up_feed_fallback").get("json").getAsString())), "the DLL's feed fallback notice is known");
+		assertNull(ActWire.parseFeed(json(all.getAsJsonObject("up_feed_fallback").get("json").getAsString())), "and carries no picture");
+	}
 }

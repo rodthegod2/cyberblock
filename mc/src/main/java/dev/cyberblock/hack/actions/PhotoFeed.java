@@ -37,6 +37,8 @@ final class PhotoFeed {
 	static final FeedViewers viewers = new FeedViewers();
 	/** The feed map of each host (created on the first "take the feed map"). */
 	private static final Map<UUID, MapId> maps = new HashMap<>();
+	/** Hosts whose DLL sent the feed fallback notice this session (logged once each). */
+	private static final java.util.Set<UUID> fellBack = new java.util.HashSet<>();
 	private static int bad;
 
 	private PhotoFeed() {
@@ -44,7 +46,10 @@ final class PhotoFeed {
 
 	static void init() {
 		HostSessions.listen("feed", PhotoFeed::onFeed);
-		HostSessions.onStart(session -> viewers.restarted(session.uuid()));
+		HostSessions.onStart(session -> {
+			viewers.restarted(session.uuid());
+			fellBack.remove(session.uuid()); // a new session's DLL tries its picture copy again
+		});
 		HostSessions.onEnd(session -> viewers.ended(session.uuid()));
 	}
 
@@ -140,6 +145,16 @@ final class PhotoFeed {
 
 	/** `feed` UP: the frame goes to the host's Net Map viewers and into its feed map. */
 	static void onFeed(final HostSession session, final com.google.gson.JsonObject m) {
+		if (ActWire.isFeedFallback(m)) {
+			// the DLL gave up its picture copy this session; Minecraft has no replica stand-in for the feed (docs/notes/phase6-descopes.md)
+			if (fellBack.add(session.uuid())) {
+				Cyberblock.LOG.info("feed: {} has no photo feed this session ({}); the viewers get no picture", session.name(),
+					m.get("fallback").getAsString());
+			}
+
+			return;
+		}
+
 		byte[] px = ActWire.parseFeed(m);
 		ServerPlayer host = session.player();
 		if (px == null || host == null) {
@@ -178,5 +193,6 @@ final class PhotoFeed {
 	static void clear() {
 		viewers.clear();
 		maps.clear();
+		fellBack.clear();
 	}
 }

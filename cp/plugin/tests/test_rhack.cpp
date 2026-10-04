@@ -2,6 +2,7 @@
 #include "rhack.hpp"
 #include "test.hpp"
 #include "world.hpp"
+#include <fstream>
 #include <string>
 
 namespace
@@ -240,4 +241,33 @@ TEST(rhack_observer_queues_events_and_counts_bad_ones)
 	CHECK(q.next() == EventKind::Daemon && q.current().target == 9);
 	CHECK(q.next() == EventKind::None);
 	q.clear();
+}
+
+// shared/phase6-messages.json (the server's ActWire.rhack output, checked by ActWireTest): the DLL takes every DOWN `rhack` the
+// server builds, with the fields the scripts read, and builds its `hackresult` answers byte for byte as listed.
+TEST(rhack_takes_every_down_rhack_the_server_builds)
+{
+	std::ifstream file(CB_P6_MESSAGES);
+	const json all = json::parse(file);
+	int n = 0;
+	for (const json &entry : all.at("down_rhack"))
+	{
+		const json &args = entry.at("args");
+		const Request r = cb::rhack::parse_rhack(json::parse(entry.at("json").get<std::string>()), 0.0);
+		CHECK(r.status == Request::Status::Event && r.event.kind == EventKind::RHack);
+		CHECK(r.event.id == args.at("id").get<int>() && r.event.name == args.at("hack").get<std::string>());
+		CHECK(r.event.target == std::stoull(args.at("target").get<std::string>()));
+		CHECK(r.event.text == (args.at("district").is_null() ? std::string() : args.at("district").get<std::string>()));
+		CHECK(r.event.amount == args.at("secs").get<double>());
+		CHECK((r.event.extra > 0.0) == !args.at("p").is_null()); // `r` comes with `p` (a point hack), as a double
+		++n;
+	}
+	CHECK(n == 11);
+	for (const json &entry : all.at("up_hackresult"))
+	{
+		const json &args = entry.at("args");
+		const auto built = cb::world::make_hackresult(args.at("id").get<int>(), args.at("ok").get<bool>(), args.at("reason").get<std::string>(), 0.0,
+													  args.at("kind").get<std::string>());
+		CHECK(built && built->dump() == entry.at("json").get<std::string>());
+	}
 }

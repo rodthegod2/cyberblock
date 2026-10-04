@@ -4,29 +4,37 @@ Plan: `docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 10 (de
 amendment after section 1.9. Written by package 6P with the docs; the integrator adds what the other packages found.
 
 ## Descoped by the Phase 0 research (written fallbacks, applied now)
-- **Remote range (check (h)).** The in-game CET lines have not been run, so a remote action only reaches what the host's game streams to the
-  server: a target in the `npcs` or `devices` list, and nothing farther than 50 m from V. A target or a centre past that answers
-  `cyberblock.hack.out_of_range`, and the server checks the same range before it sends, so a guest sees the message on the action bar. The real
-  reach is a number to find in game.
-- **Traffic and blackout fall back to the device layer.** If the scripts cannot prove the traffic system's calls, a traffic switch and a gridlock use
-  the Phase 4 traffic-light devices, and a district blackout switches off the devices within 150 m of V instead of a whole district. Each path prints
-  one log line saying which one is active.
+- **Remote range (check (h)).** The in-game CET lines have not been run, so the mod runs on the desk verdict: a remote action reaches **every target
+  the host's game streams** (a car figure, a device in the `devices` list, a point within 150 m of an active V), however far from V. The written
+  fallback, **nothing farther than 50 m from V** (`cyberblock.hack.out_of_range`), switches itself on from in-game evidence: on the server
+  (`RangeRule`) when Cyberpunk refuses a target past 50 m for range or sight, in the scripts when a car hack past 50 m took no effect by either
+  path. Each side logs which path is active (`hack range: ...`, `rhack: remote range: ...`). The real reach is a number to find in game.
+- **Traffic and blackout fall back to the device layer.** No 2.31 script call switches traffic lights or lists a district's devices, so a traffic
+  switch flips the intersection of the traffic light nearest V (one intersection, not a district), a gridlock stops the cars within 25 m of the
+  point, and a blackout switches off the lights and devices within 150 m of V instead of a whole district. Each path prints one log line saying which
+  one is active.
 - **No true Cyberpunk camera view.** A Cyberpunk camera view would take over the host's screen. `cam_feed` only reports success, and Minecraft draws
   the replica of Night City from the camera device's position and facing (both are already in the `devices` list), with the figures that are
-  streamed.
-- **The photo feed is low-resolution by design, and may be a replica.** The DLL scales Cyberpunk's picture to 128 x 128 map colours, at most once a
-  second and only while someone asks for it. If the copy costs more than 0.5 ms of frame time it stops and Minecraft draws a top-down replica render
-  on the map item instead. Either way the picture is small and the colours are the map palette's.
+  streamed; the camera must be within the asker's view distance.
+- **The photo feed is low-resolution by design, and may be absent.** The DLL scales Cyberpunk's picture to 128 x 128 map colours, at most once a
+  second and only while someone asks for it. If the copy costs more than 0.5 ms of frame time (three times in a row) or cannot run, it stops for the
+  session and sends the fallback notice; the server logs it and **Minecraft shows no picture**. The top-down replica render the plan names as the
+  stand-in is **not built** (a known gap: a later task can draw the replica on the feed map when the notice comes).
 
 ## Limits of this version of the contract
-- **Shapes the plan left open, fixed by 6P** (the integrator confirms them against 6B, 6I, 6R, 6S and 6D): the optional `p`, `r` and `secs` of an
-  area `rhack` (`target` is `null` there), the reserved daemon id `alarm` (a failed Breach sends exactly `["alarm"]`), `hackresult` answering `rhack`
-  and `daemon` with the same `id` and no `upload` or `kind`, the four `cyberblock:act` payloads, the three `cyberblock:ui` payloads, the
-  `breach` payload with a puzzle id and `pick`/`abort`, and the 50 m range. After the 6P review: `secs` on every vehicle hack (the server sends 30)
-  and never 0 on `traffic_switch`, `gridlock` and `blackout`, every timed effect restored on the session end, a link drop and before a save (save
-  lock `n"CyberblockHack"`), the photo feed behind the owner's `hacks` toggle, an abort after the first pick as a failure (the puzzle kept
-  otherwise, a 10 s cooldown after a failure), and the player-reach rule only for hand uses (a Breach pick, a right-clicked car figure). A later change on either side must change `shared/protocol.md` and
-  `tests/test_phase6_protocol.py` together.
+- **The shapes are the merged code's.** The 6P review found that the first contract (a `null` target, `p`, `r` and `secs` on every area hack, `secs`
+  30 on every vehicle hack, the act fields `target`/`pos`/`owner`, an 80-character Comms text, a save lock, a 10 s Breach cooldown) did not match what
+  6I, 6B, 6D and 6S built, and the fake host dropped six of the seven real `rhack` shapes. `shared/protocol.md` "Phase 6" now describes the shipped
+  shapes (`target:""` for an area hack, `district` for `traffic_switch` and `blackout`, `p` with a fractional `r` and `secs` only for the point hacks,
+  `secs` for a blackout, no `secs` on a vehicle hack, the six act and nine ui types, the feed fallback notice, `hackresult.kind` on a success) and
+  `shared/phase6-messages.json` holds real messages that the Java, C++ and Python tests all check, so a later change on any side must change the
+  builder, the DLL, the document and that file together. The `hs_ack` feature bit 8 is now set by the server.
+- **Every effect ends.** The scripts time each effect themselves (a lock 120 s, an engine hold 30 s, a brake about 5 to 6 s, a jam 3 s; 15 s and
+  10 s on V's own car; a gridlock 60 s; a blackout its `secs`) and restore everything at once before every save, on leaving live, on load, on the
+  session end and a link drop (there is no save lock). `veh_start` and a flipped intersection are not undone.
+- **Breach.** The timer starts with the first pick; an abort before it sends nothing (a new grid next time), one after it is a failure, and a failure sends the reserved daemon id `alarm` alone (`["alarm"]`). The limits:
+  a device is locked 30 s after any Breach that ended with a pick, a player 30 s after a failure, and an owner gets one alarm a minute (a later failure
+  sends nothing and costs no Heat). The devtools `test breach` clears the device's and player's lockouts, not the alarm window.
 - **Daemon ids are content.** The examples use `open_door`, `disable_cameras`, `reveal_enemies` and `overload` (the megaplan's words); the shipped
   set belongs to the `daemon` files of package 6A, and the scripts answer `unsupported daemon` for any id they do not run while the others still run.
 - **Heat.** The Heat Sensor reads the nearest host's wanted level; its Server Heat mode and the Heat a failed Breach costs (+5) belong to Phase 8's
@@ -38,8 +46,9 @@ amendment after section 1.9. Written by package 6P with the docs; the integrator
 ## Risks
 - **The first real run is the test.** Nothing of Phase 6 has run against a live Cyberpunk game: the vehicle calls, the traffic and district
   calls, the alarm and the back-buffer copy are the Phase 0 paper verdicts. Re-test 6 (P6-9) prints which path is active.
-- **Devtools command.** `tools.mpcheck breach` drives the guest with `/cyberblock test breach <x> <y> <z> solve|fail` (6B); without it that scenario
-  cannot run (the harness says so). It is tested against a simulated server only.
+- **Devtools command.** `tools.mpcheck breach` drives the guest with `/cyberblock test breach <x> <y> <z> solve|fail` (6B), and since the 6P fix with
+  `/cyberblock test eid <targets>` and `/cyberblock test act <t> <json>` for a Vehicle Panel and a Net Map hack through the real server; without them
+  that scenario cannot run (the harness says so).
 - **Loops.** A redstone clock wired to a Device Relay toggles a door twice a second at most and freezes after 8 toggles in 4 s (30 s); the harness
   does not build circuits, so Re-test 6 (P6-1) is where it is seen.
 - **Frame cost.** A feed that costs frame time makes the DLL stop sending it; the in-game check is that the host does not notice.

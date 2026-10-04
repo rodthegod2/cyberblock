@@ -23,7 +23,8 @@ import org.jspecify.annotations.Nullable;
  * <li>`cyberblock:act t:"netmap"` {}: the Net Map's state, answered by `cyberblock:ui t:"netmap"`</li>
  * <li>`cyberblock:act t:"feed"` {"host":"&lt;uuid&gt;","on":bool} and `t:"feedmap"` {"host":"&lt;uuid&gt;"}: watch a host's photo
  * feed, or take its map item</li>
- * <li>`feed` UP {"t":"feed","w":128,"h":128,"px":"&lt;base64 of 16384 map colour bytes&gt;"} and `feedreq` DOWN {"t":"feedreq","on":bool}</li>
+ * <li>`feed` UP {"t":"feed","w":128,"h":128,"px":"&lt;base64 of 16384 map colour bytes&gt;"} (or the DLL's fallback notice, w and h 0
+ * with `fallback`) and `feedreq` DOWN {"t":"feedreq","on":bool}</li>
  * </ul>
  */
 public final class ActWire {
@@ -235,6 +236,15 @@ public final class ActWire {
 
 	public static String feedReq(final boolean on) {
 		return "{\"t\":\"feedreq\",\"on\":" + on + "}";
+	}
+
+	/**
+	 * The DLL's feed fallback notice {"t":"feed","w":0,"h":0,"px":"","fallback":"&lt;why&gt;"} (cp/plugin/src/feed.hpp): it has no
+	 * picture this session. Not a bad message, but no frame either.
+	 */
+	public static boolean isFeedFallback(final JsonObject m) {
+		JsonElement why = m.get("fallback");
+		return why != null && why.isJsonPrimitive() && why.getAsJsonPrimitive().isString();
 	}
 
 	/** The `feed` UP's picture: 16384 map colour bytes, or null when the message breaks the rules (size, base64, colour ids). */

@@ -13,26 +13,30 @@ Version 1.0.0 is set in the files on 2026-10-03; it is tagged and published only
 Phase 6 of the multiplayer plan: **Redstone Hacking, Breach Protocol and the interaction map**. This entry is the protocol, tools and docs
 side; the mod, plugin and scripts of Phase 6 have their own entries. The in-game list is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md),
 "Re-test 6".
-- **Protocol.** `shared/protocol.md` "Phase 6": `rhack` (DOWN to the owner only: five vehicle hacks, `cam_feed` and five area hacks with `p`, `r` and
-  `secs`), `daemon` (a solved Breach's daemons at strength 1..3, or exactly `["alarm"]` for a failed one), `feedreq`, `feed` (a 128 x 128 picture
-  of map colours, BOTH: shown locally and relayed UP, at most once a second, rate 2 per second), `hackresult` extended to answer `rhack` and
-  `daemon`, the four `cyberblock:act` payloads (`rhack`, `breach`, `feedreq`, `comms`) and the three `cyberblock:ui` payloads (`breach`, `feed`,
-  `comms`), the 50 m range (the written fallback of Phase 0's check (h), `cyberblock.hack.out_of_range`), the `hs_ack` feature bit 8, and the 18th
-  cyberware id `firewall`; class rows, a rate row, validators, names and examples in `tests/test_phase6_protocol.py` (and the class tables of
-  `tests/test_protocol_md.py`). Every Cyberpunk effect is timed (`secs` on every vehicle hack, never 0 on a blackout, traffic switch or gridlock)
-  and restored on the session end, a link drop and before a save (a save lock while one is pending); the photo feed needs the owner's `hacks`
-  toggle; an abort after the first pick is a failed Breach (the same puzzle is kept otherwise, and a failure has a 10 s cooldown); only hand uses
-  are checked against the player's reach, the Net Map and the Traffic Tool are bounded by the 50 m from V.
-- **Fake host.** `tools.fakehost --hacks2`: the `--devices` scene plus a Net Port; every valid `rhack` and `daemon` is answered with one `hackresult`
-  (vehicle hacks change the car until their `secs` run out, `cam_feed` needs a camera, a blackout switches the devices of an area off and gives them back, `outline` and
-  `ping_area` reveal the hostile people with `hackspread`, `open_door` and `disable_cameras` change the devices, `unsupported`, `unsupported daemon`,
-  `vehicle gone` and `device gone` say why, a target past 50 m is out of range); `feedreq on` streams a 128 x 128 test card once a second.
+- **Protocol.** `shared/protocol.md` "Phase 6", in the shapes the merged code sends: `rhack` (DOWN to the owner only: five vehicle hacks and `cam_feed`
+  with the target's id, five area hacks with `target:""`, `district` for `traffic_switch` and `blackout`, `p` and a fractional `r` for the point
+  hacks, `secs` only for the point hacks and a blackout), `daemon` (a solved Breach's daemons at strength 1..3, or exactly `["alarm"]` for a failed
+  one), `feedreq`, `feed` (a 128 x 128 picture of map colours, or the DLL's fallback notice; BOTH: shown locally and relayed UP, at most once a
+  second, rate 2 per second), `hackresult` extended to answer `rhack` and `daemon` (`upload` 0 and its `kind` on a success), the six `cyberblock:act`
+  payloads (`rhack`, `breach`, `feed`, `feedmap`, `netmap`, `comms`) and the nine `cyberblock:ui` payloads (`ract`, `netmap`, `feed`, `vpanel`,
+  `camfeed`, `outline`, `netping`, `comms`, `breach`), the range rule (every streamed target, the 50 m fallback of Phase 0's check (h) switching itself
+  on, `cyberblock.hack.out_of_range`), the `hs_ack` feature bit 8 (now set by the server), and the 18th cyberware id `firewall`. Every Cyberpunk
+  effect has the scripts' own time and is restored before every save and on the session end; the Breach timer starts with the first pick, a device
+  is locked 30 s after a Breach, a player 30 s after a failure, and a host gets one alarm a minute. `shared/phase6-messages.json` holds real messages
+  that the Java, C++ and Python tests all check (validators, names and examples in `tests/test_phase6_protocol.py`).
+- **Fake host.** `tools.fakehost --hacks2`: the `--devices` scene plus a Net Port and a traffic light; every `rhack` the real DLL takes and every
+  valid `daemon` is answered with one `hackresult` the way the scripts answer (vehicle hacks change the car for the scripts' own times, `cam_feed`
+  needs a camera that is on, a traffic switch and a gridlock need a light or cars, a blackout switches the devices around V off and gives them back,
+  `outline` and `ping_area` reveal figures with `hackspread` before the result, `open_door` and `disable_cameras` change the devices; `unsupported`,
+  `no such hack`, `target gone`, `unsupported daemon` and `device gone` say why); `feedreq on` streams a 128 x 128 test card once a second.
 - **Harness.** `tools.mpcheck breach`: a guest's solved Breach sends the owner's DLL a `daemon` that it answers, a failed one the alarm, `guests hacks
-  off` blocks it and `on` brings it back, and the Net Port goes with the session. It needs `/cyberblock test breach <x> <y> <z> solve|fail`
-  (6B); the scenario is tested against a simulated server, and the real run is the integrator's.
+  off` blocks it and `on` brings it back, a guest's Vehicle Panel and Net Map hacks reach the DLL as one `rhack` each in the server's shape and are
+  answered, and the Net Port goes with the session. It needs `/cyberblock test breach <x> <y> <z> solve|fail` (6B) and the new devtools
+  `/cyberblock test act <t> <json>` and `/cyberblock test eid <targets>`; the scenario is tested against a simulated server.
 - **Docs.** [HOW-TO-PLAY](docs/HOW-TO-PLAY.md#redstone-hacking-phase-6) has "Redstone hacking", "Breach Protocol" and "The interaction map"; the
-  Re-test 6 list is at the top of [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md); the descopes (the remote range, the traffic and blackout fallbacks,
-  the replica camera view, the low-resolution or replica photo feed) are in `docs/notes/phase6-descopes.md`.
+  Re-test 6 list is at the top of [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), each expected result tied to the log line the code prints; the
+  descopes (the remote range, the traffic and blackout fallbacks, the replica camera view, the photo feed with no stand-in picture when it falls
+  back) are in `docs/notes/phase6-descopes.md`.
 
 ### Unreleased additions: Phase 7 (multiplayer plan, package 7P)
 Phase 7 of the multiplayer plan: **talking to Night City's people, the Afterlife hub and the Holo-Table**. This entry is the protocol, tools and docs

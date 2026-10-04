@@ -1252,7 +1252,7 @@ widgets and font, and it is **played on the server**, so no client can cheat.
   `breach_tier`); each cell is one of the codes `1C`, `55`, `BD`, `E9`, `7A` and `FF`.
 - **The picks.** You pick cells with the mouse. The **first pick is in the top row**, the next one in the **column** of the first, the next in
   the **row** of that one, and so on, as in the classic game; a cell cannot be picked twice. Every pick goes into the **buffer** (4 to 8
-  codes), and the timer bar runs down.
+  codes). The timer bar starts running with your **first pick**; a Breach left open without a pick closes after a minute.
 - **The daemons.** One to three sequences of codes are on the list (the daemon files of the device kind decide which). A daemon is **solved**
   when its codes come one after another in your buffer. More daemons and longer sequences mean a **stronger effect** (strength 1 to 3).
 - **What a solved daemon does.** It is **a real action in the host's Night City**, sent to the host's game: open a door, **disable the
@@ -1261,14 +1261,15 @@ widgets and font, and it is **played on the server**, so no client can cheat.
 - **Failing.** Running out of buffer or time **raises an alarm in the host's game** (the cameras of the area alert): breaching is a risk.
   A failure also costs **Heat**; the Heat meter belongs to a later phase, and until it exists the host's wanted level goes up by one **only
   if the game allows that** (the plugin says which in the log).
-- **No walking away from a bad grid.** The timer starts when the screen opens. **Closing the screen after your first pick is a failure** (the
-  alarm and the Heat). Closing it before any pick costs nothing yet, but the puzzle stays: the next right-click opens **the same grid with the
-  same timer still running**, and if it runs out that is a failure too. After a failure you must wait **10 seconds** before you breach that
-  device again (the action bar says so).
+- **No walking away from a bad grid.** **Closing the screen after your first pick is a failure** (the alarm and the Heat), and so is walking
+  more than 8 blocks away from the Net Port. Closing it before any pick costs nothing, and the next right-click shows a new grid. After a Breach
+  that ended with a pick, **that device is locked for 30 seconds** for everyone; after a **failure you cannot breach any device for 30 seconds**
+  (the action bar says so); and a host gets **at most one alarm a minute**: a second failure inside that minute raises no new alarm and costs no
+  Heat.
 - **The Firewall implant.** A new 18th piece of [cyberware](#cyberware-u-y-l-and-o), the **Firewall**, makes breaching **you** harder (the
   grid grows). It does nothing in Cyberpunk itself, and it only matters once players can hack players (a later phase).
-- **Who may.** A guest needs the host's `hacks` toggle (`/cyberblock guests hacks on|off`); a daemon that switches devices also needs the
-  `devices` toggle. A refused Breach still plays out in Minecraft, nothing reaches the host's game.
+- **Who may.** A guest needs the host's `hacks` toggle (`/cyberblock guests hacks on|off`) and the `devices` toggle with
+  that kind of device (`/cyberblock guests devices ...`). A refused Breach does not open: the action bar says blocked, and nothing reaches the host's game.
 Check it with [Re-test 6](TESTING-PLAN.md), P6-4.
 
 ### The interaction map (Phase 6)
@@ -1277,10 +1278,10 @@ Every kind of thing you can do to Night City from Minecraft has **one tool**, an
 | What you want | Your tool | What it does | Needs |
 |---|---|---|---|
 | Hack a person | the **Hack Wheel** (the hack key, G) on any figure you can see | the quickhacks you already know ([What each chip does](#what-each-chip-does)), now for guests too | the host's `hacks` toggle |
-| Stop or steal a car | the **Vehicle Panel** (right-click a car figure with the Cyberdeck Link, or open it from the Net Map) | **lock the doors, kill the engine, force a brake, start it remotely, jam it**, each for **30 seconds**, then the car is as it was | the host's `hacks` toggle |
-| Control traffic | the **Traffic Tool** (an item) | **switch a district's traffic lights**, **gridlock a road** (the cars on that stretch stop for a minute) | the host's `hacks` toggle |
-| Black out a district, scout | the **Net Map** (an item and a screen built on the [Atlas](#the-atlas-map)) | **black out a district for minutes** (lights and devices off, then back on), see a **camera's feed**, **outline** the figures of an area for your team, **ping** an area, and watch the host's **photo feed** on a map item | the host's `hacks` toggle (also for the photo feed), and `devices` for blackouts and camera feeds |
-| Talk to a host | the **Comms Panel** (an item) | sends the host a **waypoint** or a short message: it shows as a **toast and a locator-bar waypoint** on the host's Minecraft HUD | nothing (it never reaches Cyberpunk) |
+| Stop or steal a car | the **Vehicle Panel** (right-click a car figure with the Cyberdeck Link, or click a car in the Net Map's vehicle mode; it is a screen, not an item) | **lock the doors** (2 minutes), **kill the engine** (30 seconds), **force a brake** (a few seconds), **jam it** (3 seconds), then the car is as it was (shorter on the host's own car); **start it remotely** (that one stays) | the host's `hacks` toggle |
+| Control traffic | the **Traffic Tool** (an item) | **switch the lights** of the intersection nearest V, **gridlock a road** (the cars within 25 blocks of where you aim stop for a minute) | the host's `hacks` and `devices` toggles |
+| Black out a district, scout | the **Net Map** (an item and a screen built on the [Atlas](#the-atlas-map)) | **black out the lights around V for 1, 2 or 5 minutes** (lights and devices off, then back on), see a **camera's feed**, **outline** the figures of an area for your team, **ping** an area, and watch the host's **photo feed** (in the Net Map or on a feed map item) | the host's `hacks` toggle (also for the photo feed), and `devices` for traffic, blackouts and camera feeds |
+| Talk to a host | the **Comms Panel** (an item) | sends the host a **waypoint** or a short message (up to 64 characters): it shows as a **toast and a locator-bar waypoint** on the host's Minecraft HUD | nothing (it never reaches Cyberpunk) |
 | Break into a terminal | a **Net Port** | the [Breach Protocol](#breach-protocol-phase-6) | the host's `hacks` toggle |
 | Run the city | the **Overlord Console** | a later phase (Phase 8) | - |
 | Build and blow things up | your hands and TNT | the normal game, [Layer 2](#layer-2-building-explosions-weapons) | the host's `explosions` toggle |
@@ -1288,34 +1289,36 @@ Every kind of thing you can do to Night City from Minecraft has **one tool**, an
 Every action is the same chain: **the tool asks the server, the server checks the host's permissions, the host's game does it, Night City
 answers, and you see the result** (a message on the action bar, a changed block, a toast).
 
-**How far a remote hack reaches.** A remote action only reaches **what the host's game is showing the server**: figures and devices within
-about **50 metres of V** (this is the written fallback of Phase 0's check (h); the real reach is found in the in-game run). Anything farther
-says it is **out of range** and nothing happens in Night City. The distance is measured **from V, not from you**: the Net Map and the
-Traffic Tool work from anywhere in the world (only the Breach needs you at the Net Port, and right-clicking a car figure needs the car nearby).
+**How far a remote hack reaches.** A remote action reaches **everything the host's game is showing the server**: the car figures, the devices it
+lists and any point within 150 blocks of a host's V, however far from V that is (this is the desk verdict of Phase 0's check (h); the in-game run
+confirms it). If the host's game ever refuses a far target, the mod switches to the written fallback by itself: from then on only targets within
+**50 metres of V** are reached, and anything farther says it is **out of range**. The distance is measured **from V, not from you**: the Net Map and
+the Traffic Tool work from anywhere in the world. Only the Breach needs you at the Net Port, right-clicking a car figure needs the car in reach,
+and a camera's feed needs the camera within your view distance (the view is drawn from what your client has loaded).
 
-**Nothing a hack does lasts.** Every car hack wears off after 30 seconds, a blackout after its few minutes and a traffic switch or gridlock after
-a minute: the host's game puts everything back as it was. It also puts everything back **at once** when the host leaves, Cyberpunk loses its
-link or the host's game is no longer the host, and the host cannot **save** while a hack is still running (the save waits until it is over),
-so a save never keeps a locked car or a dark street.
+**Nothing a hack does lasts.** Each car hack wears off after its own time (the doors after 2 minutes, the engine after 30 seconds, a brake or a
+jam after a few seconds; a remote start simply stays), a blackout after its minutes and a gridlock after a minute: the host's game puts
+everything back as it was. It also puts everything back **at once** before **every save**, when the host leaves, when Cyberpunk loses its link
+or when the host's game is no longer the host, so a save never keeps a locked car or a dark street.
 
 **What the tools do behind the scenes, and what falls back.**
-- **Traffic and blackouts** use the game's traffic and district calls where the plugin has proven them; otherwise they **fall back to the
-  device layer**: the traffic lights near V and the devices within 150 metres of V. The log says which way is active.
+- **Traffic and blackouts** would use the game's traffic and district calls, but the game's scripts have none, so they **fall back to the device
+  layer**: the traffic light nearest V (one intersection) and the lights and devices within 150 metres of V. The log says which way is active.
 - **Camera feeds** are **not** Cyberpunk's own camera view (that would take over the host's screen): Minecraft draws the **replica of Night City
   from the camera's position and facing**, with the people and cars the figures show.
 - **The photo feed** is the host's own view, shrunk to **128 x 128 map colours**, at most **once a second** and **only while someone is
   watching it**. It is **low-resolution by design**. If copying the picture would cost the host's game more than half a millisecond a frame,
-  the plugin stops sending it and Minecraft draws a **top-down replica view** instead (the fallback, with the same map item).
+  the plugin stops sending it for the session and there is **no picture** (a stand-in replica view for the feed is not built yet).
 - **Comms** needs no Cyberpunk change at all: it is Minecraft's own HUD.
 
 **Who may do what.** The host's switches: `/cyberblock guests hacks on|off` (every hack, Breach and remote action),
-`/cyberblock guests devices on|off` (device control, also blackouts and camera feeds) and `/cyberblock guests explosions on|off`. A blocked
-action leaves Minecraft as it was and shows "blocked" on the action bar. The host's own actions are never blocked. The **photo feed** is
+`/cyberblock guests devices on|off` (device control, also the traffic hacks, blackouts and camera feeds) and `/cyberblock guests explosions on|off`.
+A blocked action leaves Minecraft as it was and shows "blocked" on the action bar. The host's own actions are never blocked. The **photo feed** is
 behind the `hacks` toggle too: when the host turns it off, every guest watching the feed loses it at once.
 
 **Which way is it working? (for the test.)** The scripts and the plugin write **one line** for every Phase 6 feature that has a fallback: which
-traffic path, which blackout path, how vehicle calls are made, and whether the photo feed uses the compositor copy or the fallback. The server
-logs each remote hack it routed or refused and each Breach. [Re-test 6](TESTING-PLAN.md) lists what to search for.
+traffic path, which blackout path, how vehicle calls are made, how far remote hacks reach, and whether the photo feed uses the compositor copy or
+gives no picture. The server logs each remote hack it routed or refused and each Breach. [Re-test 6](TESTING-PLAN.md) lists what to search for.
 
 ### Talking to Night City (Phase 7)
 With Phase 7 Night City's people are not only scenery: **right-click a figure that has a job** and Minecraft opens a screen with that

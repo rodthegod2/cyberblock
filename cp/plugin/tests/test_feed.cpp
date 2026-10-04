@@ -5,6 +5,7 @@
 #include "world.hpp"
 #include <cstdint>
 #include <deque>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -280,4 +281,12 @@ TEST(feed_fallback_notice_only_while_requested_and_fallen_back_at_most_once_a_se
 	CHECK(!gate.fallback_notice(30.0) && !gate.fallen_back());
 	CHECK(gate.fall_back("new"));
 	CHECK(gate.fallback_notice(30.0)); // the throttle started over too
+}
+
+// shared/phase6-messages.json: the fallback notice is byte for byte the one the protocol and the server (ActWire.isFeedFallback) know.
+TEST(feed_fallback_notice_matches_shared_messages)
+{
+	std::ifstream file(CB_P6_MESSAGES);
+	const nlohmann::json notice = nlohmann::json::parse(file).at("up_feed_fallback");
+	CHECK(cb::feed::make_feed_fallback(notice.at("why").get<std::string>()).dump() == notice.at("json").get<std::string>());
 }
