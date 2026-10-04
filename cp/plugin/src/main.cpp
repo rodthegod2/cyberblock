@@ -49,7 +49,7 @@ namespace
 			cb::log::info("compositor registered with ReShade");
 		}
 		int width = 0, height = 0;
-		compositor::backbuffer_size(width, height);
+		compositor::frame_size(width, height); // the backbuffer's size times Performance mode's prefs.scale (megaplan 9-F1)
 		cb::link().set_view(width, height);
 		// the mouse X of this frame: the drive turns V by it during a glide (it owns V's yaw), the camera learns the rate
 		const int64_t dx = cb::input::take_mouse_x();

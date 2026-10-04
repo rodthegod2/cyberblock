@@ -107,6 +107,8 @@ namespace
 	int g_ringPending = -1; // ring slot whose copies are recorded but not yet followed by a fence signal
 	bool g_hasFrame = false;
 	std::chrono::steady_clock::time_point g_frameTime; // when the shown frame was uploaded
+	/// Megaplan 9-F1: frames staged into the upload buffers and the CPU time it took, since the last memory line
+	std::atomic<uint64_t> g_stagedFrames{0}, g_stagedNanos{0};
 	float g_mcNear = 0.05f, g_mcFar = 1024.0f;
 	int32_t g_mcFlags = 7;
 
@@ -330,8 +332,11 @@ namespace
 		Layer *const layers[3] = {&g_world, &g_depth, &g_overlay};
 		const uint8_t *base = g_view + kHeader + g_stride * slot;
 		const size_t layer_bytes = size_t(w) * h * 4;
+		const auto staging = std::chrono::steady_clock::now();
 		for (int i = 0; i < 3; ++i)
 			stage_layer(layers[i]->mapped[ring], base + i * layer_bytes, w, h);
+		g_stagedFrames.fetch_add(1);
+		g_stagedNanos.fetch_add(uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - staging).count()));
 		std::atomic_thread_fence(std::memory_order_acquire);
 		if (read<int64_t>(desc) != seq)
 			return; // Minecraft rewrote the slot while we copied it: the textures and pose keep the last good frame
@@ -414,13 +419,17 @@ namespace
 		const cb::world::QueueStats events = cb::world::events().stats();
 		// Our messages waiting for Minecraft: a climbing "dropped" means Minecraft stopped reading (cb::OutQueue)
 		const cb::Link::SendStats sends = cb::link().send_stats();
+		// Minecraft's frames uploaded in these 5 s, at what size, and the CPU time their staging took (megaplan 9-F1)
+		const uint64_t staged = g_stagedFrames.exchange(0), stagedNanos = g_stagedNanos.exchange(0);
 		if (SUCCEEDED(adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info)))
 			cb::log::info("memory: vram %llu of %llu MB budget, system commit %llu of %llu MB (frames %s); mc events: "
-				"%zu queued, %llu dropped, %llu rejected; to mc: %zu queued, %llu superseded, %llu dropped",
+				"%zu queued, %llu dropped, %llu rejected; to mc: %zu queued, %llu superseded, %llu dropped; "
+				"uploads: %.1f a second at %ux%u, staging %.2f ms each",
 				info.CurrentUsage >> 20, info.Budget >> 20, commit_used, mem.ullTotalPageFile >> 20,
 				g_hasFrame ? "arriving" : "none", events.queued, static_cast<unsigned long long>(events.dropped),
 				static_cast<unsigned long long>(events.rejected), sends.queued,
-				static_cast<unsigned long long>(sends.superseded), static_cast<unsigned long long>(sends.dropped));
+				static_cast<unsigned long long>(sends.superseded), static_cast<unsigned long long>(sends.dropped),
+				staged / 5.0, g_width, g_height, staged == 0 ? 0.0 : stagedNanos / 1e6 / double(staged));
 		if (commit_used * 100 > (mem.ullTotalPageFile >> 20) * 92)
 			cb::log::warn("memory: system commit above 92%% of the limit; Windows may start killing programs");
 	}
@@ -643,6 +652,23 @@ namespace compositor
 	{
 		width = int(g_bbWidth.load());
 		height = int(g_bbHeight.load());
+	}
+
+	void frame_size(int &width, int &height)
+	{
+		static int loggedW = -1, loggedH = -1;
+		int bw = 0, bh = 0;
+		backbuffer_size(bw, bh);
+		const double scale = cb::world::view_prefs().scale;
+		width = scaled_side(bw, scale);
+		height = scaled_side(bh, scale);
+		if (width > 0 && (width != loggedW || height != loggedH))
+		{
+			loggedW = width;
+			loggedH = height;
+			cb::log::info("compositor: Minecraft renders at %.2f of the screen (%dx%d for %dx%d)%s", scale, width, height, bw, bh,
+						  width < bw ? "; the effect upscales it" : "");
+		}
 	}
 
 	void set_camera_locked(bool locked)

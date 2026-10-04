@@ -9,8 +9,8 @@ Run it from a git worktree (it runs Gradle, rule 0.2). Ports (megaplan section 1
 `Local\\CyberblockFrame9F` + H, H2 (hosts) and G, G2, ... (guests). The commit charge is checked before each start (rule 0.7);
 everything started is stopped at the end.
 
-The run: every client joins first (one at a time: concurrent Gradle runs of one project wait on each other anyway), the whitelist is
-turned off (the guests 3 and 4 are not among mpcheck's offline names), then both load hosts link at once. Their sessions start with the
+The run: the server takes up to MAX_PLAYERS and whitelists the extra guests (3 and 4 are not among mpcheck's offline names), every
+client joins first (one at a time: concurrent Gradle runs of one project wait on each other anyway), then both load hosts link at once. Their sessions start with the
 whole street at once (the burst), then V walks. `/tick query` (vanilla: the last 100 ticks' average and percentiles) is read every
 SAMPLE_S seconds over BURST_S seconds of burst and `--seconds` of steady walking; the guests are teleported to their host every
 FOLLOW_S seconds. Each client's run folder gets an options.txt (no vsync, no frame limit when unfocused) and
@@ -35,6 +35,7 @@ GUEST_NAMES = ("CbGuest1", "CbGuest2", "CbGuest3", "CbGuest4")
 STREET_Z = {"CbHost1": 0, "CbHost2": 160}  # each host walks its own street, 160 m apart
 IDS_FROM = {"CbHost1": 7_000_000_000_000_000_000, "CbHost2": 7_100_000_000_000_000_000}
 SAMPLE_S, FOLLOW_S, BURST_S = 5.0, 15.0, 15.0
+CLIENT_HEAP, MAX_PLAYERS = "-Xmx1536m", 8
 OPTIONS = ("enableVsync:false", "maxFps:260", 'inactivityFpsLimit:"minimized"', "pauseOnLostFocus:false", "renderDistance:8")
 TICK_AVG = re.compile(r"Average time per tick: ([\d.]+) ?ms")
 TICK_PCT = re.compile(r"P50: ([\d.]+) ?ms P95: ([\d.]+) ?ms P99: ([\d.]+) ?ms\. Sample: (\d+)")
@@ -64,6 +65,24 @@ class PerfPorts(mpcheck.Ports):
             raise mpcheck.MpError(f"unusable ports {ports}")
         if not self.frame_prefix.startswith("Local\\") or self.frame_prefix == "Local\\CyberblockFrame":
             raise mpcheck.MpError("the frame prefix must start with Local\\ and differ from the real game's")
+
+
+class PerfEnv(mpcheck.Env):
+    """mpcheck's Env with the clients' Java heap capped (CLIENT_HEAP): six clients must fit under the commit limit (rule 0.7). The
+    server keeps its own JAVA_TOOL_OPTIONS (the devtools switch); its server.properties takes MAX_PLAYERS and its whitelist the extra
+    guests too (the test template holds four)."""
+
+    def _child_env(self, extra: dict[str, str] | None = None) -> dict[str, str]:
+        return super()._child_env(extra if extra is not None else {"JAVA_TOOL_OPTIONS": CLIENT_HEAP})
+
+    def server(self, scenario: str, max_hosts: int = 1, join_password: bool = False) -> mpcheck.Server:
+        render, names = mpcheck.render_properties, mpcheck.OFFLINE_NAMES
+        mpcheck.render_properties = lambda template, overrides: render(template, {**overrides, "max-players": MAX_PLAYERS})
+        mpcheck.OFFLINE_NAMES = tuple(dict.fromkeys((*names, *HOST_PORTS, *GUEST_NAMES)))
+        try:
+            return super().server(scenario, max_hosts, join_password)
+        finally:
+            mpcheck.render_properties, mpcheck.OFFLINE_NAMES = render, names
 
 
 def parse_tick_query(text: str) -> dict | None:
@@ -123,7 +142,6 @@ def loadhost_argv(name: str, port: int, frame: str, seconds: float) -> list[str]
 
 def measure(env: mpcheck.Env, args: argparse.Namespace) -> dict:
     server = env.server("perf", max_hosts=2)
-    server.rcon("whitelist off")
     names = [*HOST_PORTS, *GUEST_NAMES[:args.guests]]
     clients = {}
     for name in names:
@@ -188,7 +206,7 @@ def main(argv: list[str] | None = None, repo: Path = mpcheck.ROOT) -> int:
     if java is None:
         print("no JDK found: set JAVA_HOME", file=sys.stderr)
         return 1
-    env = mpcheck.Env(repo, PerfPorts(), java, keep=args.keep)
+    env = PerfEnv(repo, PerfPorts(), java, keep=args.keep)
     try:
         report = measure(env, args)
     except KeyboardInterrupt:
