@@ -104,12 +104,14 @@ namespace cb::world
 											   "field_medic",  "demolitions",  "extra_ram",  "cheap_hacks",  "chain_hack",
 											   "overclock",    "optical_camo", "headhunter", "cold_blood",   "silent_steps"};
 
-	/// Re-test 2 (plan section 1.7): the 17 cyberware ids, in the wire order, for `cyberware.list[].id`, and the three
-	/// implant effects of `cyberfx.id`.
+	/// Re-test 2 (plan section 1.7): the cyberware ids, in the wire order, for `cyberware.list[].id` (the 17 of section 1.7,
+	/// then `firewall` from Phase 6 and `netrunner` from Phase 8: shared/protocol.md's 19; the scripts ignore the two they
+	/// have no Night City effect for), and the three implant effects of `cyberfx.id`.
 	inline constexpr const char *kCyberwareIds[] = {
 		"mantis_blades", "gorilla_arms", "monowire",     "projectile_launch_system", "reinforced_tendons", "fortified_ankles",
 		"lynx_paws",     "sandevistan",  "berserk",      "cyberdeck",                "kerenzikov",         "optical_camo",
-		"subdermal_armor", "kiroshi_optics", "biomonitor", "second_heart",           "ram_upgrade"};
+		"subdermal_armor", "kiroshi_optics", "biomonitor", "second_heart",           "ram_upgrade",        "firewall",
+		"netrunner"};
 	inline constexpr const char *kCyberFxIds[] = {"sandevistan", "kerenzikov", "berserk"};
 	/// Most entries one `cyberware` message may hold (17 ids: a sane bound, the rest is dropped).
 	inline constexpr size_t kMaxCyberwareEntries = 32;
