@@ -1,6 +1,7 @@
 // Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
 package dev.cyberblock.client.mixin;
 
+import dev.cyberblock.client.Flight;
 import dev.cyberblock.client.HostState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.HumanoidModel;
@@ -15,7 +16,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Holding one of the host's guns (drawn by the host): Steve aims with both arms forward, and holds nothing of his own. In a vehicle he
- * takes vanilla's riding pose (HumanoidRenderState.isPassenger: legs forward), sitting where V sits (plan retest3 M2, F3).
+ * takes vanilla's riding pose (HumanoidRenderState.isPassenger: legs forward), sitting where V sits (plan retest3 M2, F3). Flying in third
+ * person he is drawn at V's feet.
  */
 @Mixin(AvatarRenderer.class)
 abstract class AvatarRendererMixin {
@@ -31,6 +33,16 @@ abstract class AvatarRendererMixin {
 		}
 
 		HostState.Pose p = HostState.frame();
+		// gliding or launched in third person: drawn at V's feet of this frame's cam (cam.pl), where the camera that frames him
+		// follows, not where Minecraft's physics have him (up to a few blocks ahead: the host plays the flight out a little late
+		// and the link adds its own delay), which made the third-person glide look like the camera lagged behind him
+		// (in-game 2026-10-03). The compositor then moves him with V (Cyberblock.fx cb_body_*).
+		if (p != null && Flight.driving() && !p.firstPerson() && !p.seat()) {
+			state.x = p.px();
+			state.y = p.py();
+			state.z = p.pz();
+		}
+
 		if (p == null || !p.gun()) {
 			return;
 		}

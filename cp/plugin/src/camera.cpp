@@ -15,6 +15,7 @@
 #include "link.hpp"
 #include "log.hpp"
 #include "natives.hpp"
+#include "snapshots.hpp"
 #include "view.hpp"
 #include "world.hpp"
 #include <RED4ext/GameEngine.hpp>
@@ -139,6 +140,8 @@ namespace cb::camera
 		// V-local hips offset) and `fp` says which vehicle camera is on
 		const bool seated = natives::seated;
 		Vec3 body{feet.X, feet.Y, feet.Z};
+		// a frame the drive teleported V: the feet that match the camera read above (drive.hpp), not the new ones
+		drive::feet_before_teleport(body);
 		if (seated)
 		{
 			RED4ext::Quaternion orientation{0.0f, 0.0f, 0.0f, 0.0f};
@@ -173,6 +176,13 @@ namespace cb::camera
 		const Vec3 facingMc = cp_dir_to_mc(facing.X, facing.Y, facing.Z);
 		const double bodyYaw = std::hypot(facingMc.x, facingMc.z) > 1e-6 ? mc_yaw_pitch(facingMc.x, 0.0, facingMc.z).yaw : look.yaw;
 
+		// Steve's body for the compositor (view.hpp): drawn at `pl` of this cam in third person, so the re-projection
+		// moves it with V instead of leaving it where V was when Minecraft rendered the frame
+		const view::BodyPose pose = firstPerson                                              ? view::BodyPose::None
+									: seated                                                 ? view::BodyPose::Seated
+									: natives::flightFollowing && !snap::flight().launch(snap::Clock::now()) ? view::BodyPose::Gliding
+																							 : view::BodyPose::Standing;
+		const view::Body steve{g_frame, feetMc, view::body_capsule(pose, feetMc, look.yaw, look.pitch)};
 		link().send(world::make_cam(g_frame++, position, look, vfov, feetMc, bodyYaw,
 									{.crouched = natives::crouched,
 									 .flying = natives::flightFollowing,
@@ -180,7 +190,7 @@ namespace cb::camera
 									 .air = natives::inAir,
 									 .held = natives::held},
 									firstPerson, seated, levelK));
-		compositor::set_host_pose(float(look.yaw), float(look.pitch), 0.0f, float(vfov), position.x, position.y, position.z);
+		compositor::set_host_pose(float(look.yaw), float(look.pitch), 0.0f, float(vfov), position.x, position.y, position.z, steve);
 		compositor::set_host_planes(kNearClip, kFarClip);
 		learn_turn_rate(look.yaw, mouseX);
 		drive::note_pitch(look.pitch);

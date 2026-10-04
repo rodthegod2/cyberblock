@@ -11,6 +11,7 @@
 // "view: applied, eye moved D m (expected E m)", which checks it). Every function is resolved once; if one is missing,
 // "view: disabled: ... missing" is logged and the view never applies (cam.fp stays true).
 #include "view.hpp"
+#include "drive.hpp"
 #include "link.hpp"
 #include "log.hpp"
 #include "natives.hpp"
@@ -55,6 +56,7 @@ namespace
 	RED4ext::WeakHandle<RED4ext::IScriptable> g_component; // the camera component the offset sits on
 	RED4ext::Vector4 g_base{};                               // its own local position, restored when the view ends
 	Vec3 g_offset{};                                         // the local offset applied last frame
+	cb::Quat g_offsetQ{0.0, 0.0, 0.0, 1.0};                  // V's orientation when it was applied
 	cb::view::Boom g_boom;
 	const cb::view::Orbit g_orbit;
 	std::chrono::steady_clock::time_point g_lastFrame{};
@@ -303,8 +305,12 @@ namespace cb::view
 			return;
 		}
 
-		// the eye: the camera without last frame's offset
-		const Vec3 applied = rotate(q, g_offset);
+		// the eye: the camera without last frame's offset, turned as V was for that camera. On foot that is V's
+		// orientation now (the game turned V and computed the camera in the same update); in a frame the drive teleported
+		// V (a glide) it is the orientation before this frame's teleport, the one the offset went on with: the turn since
+		// would put the eye off by the turn, and the boom ray and the aim wobbled with it while steering a glide.
+		Vec3 feetBefore{};
+		const Vec3 applied = rotate(drive::feet_before_teleport(feetBefore) ? g_offsetQ : q, g_offset);
 		const Vec3 eye{cam.x - applied.x, cam.y - applied.y, cam.z - applied.z};
 		set_eye(eye);
 		if (g_before && !g_measured && (g_offset.x != 0.0 || g_offset.y != 0.0 || g_offset.z != 0.0))
@@ -323,6 +329,7 @@ namespace cb::view
 			target = std::min(g_orbit.distance, g_orbit.distance * collision_distance(*hit) / length);
 		const double boom = dt > 0.0 ? g_boom.step(target, dt) : g_boom.step(target, 1e-3);
 		g_offset = desired_local(g_orbit, pitch, boom);
+		g_offsetQ = q;
 		RED4ext::Vector4 local{float(g_base.X + g_offset.x), float(g_base.Y + g_offset.y), float(g_base.Z + g_offset.z), g_base.W};
 		if (!set_local(component.GetPtr(), local))
 			restore("SetLocalPosition failed");

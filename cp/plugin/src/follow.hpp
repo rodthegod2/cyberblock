@@ -66,26 +66,40 @@ namespace cb::follow
 
 	/// Idle -> Following on a start; Following <-> Holding on a timeout and when samples come back; back to Idle on
 	/// Land, Ground and Stop. Rules:
-	/// - Start: Idle, gate open, flight active, no menu -> Following, Move(target), "flight: start (glide|launch)".
+	/// - Start: Idle, gate open, flight active, no menu, and re-armed -> Following, Move(target),
+	///   "flight: start (glide|launch)". Re-armed: Minecraft's flight was seen not active at least once since the last
+	///   flight ended. A glide this follower ended itself (a collision, the watchdog, the gate) goes on in Minecraft
+	///   until Minecraft sees cam.fly false and calls it off; following it again would put V back beyond the wall it hit
+	///   (in-game 2026-10-03: V held at a wall every frame while Steve glided on for 11 s, until a save was loaded).
 	/// - The gate closes while Following or Holding -> Stop, no teleport, "flight: stopped, V is held, ...".
-	/// - A menu -> None, and every timer (start, hold, end) moves forward by the frame time: frozen.
+	/// - A menu -> None, and every timer (start, hold, end, watchdog) moves forward by the frame time: frozen.
 	/// - Active -> Move(target); from Holding also "flight: samples back".
+	/// - Watchdog: Following while Steve's target or V's feet are more than kDivergence from where V was last put, for
+	///   kWatchdog in a row -> Ground(last applied position), "flight: watchdog: ...": V could not follow (stopped at
+	///   geometry, a teleport the game did not carry out, something else moving V), so V is released, not held.
 	/// - Landing (not active, not timed out): Stop "flight: over, V stays where it is" when the flight lasted under
 	///   kQuickLand or V's feet are within kNearLand of the spot; else Land(target) "flight: landed (...) after X s".
 	/// - Timeout (not active, timed out): Move(last applied position) for up to kHold ("flight: no samples, holding V"),
 	///   then Ground(last applied position).
+	/// - blocked(): the drive stopped V short of Night City geometry -> Ground(where V was stopped), "flight: V hit ...".
 	class Follower
 	{
 	public:
-		static constexpr double kHold = 1.0;      // s V is held in place while Minecraft is silent
-		static constexpr double kQuickLand = 0.3; // s: a flight shorter than this leaves V where it is
-		static constexpr double kNearLand = 1.5;  // m: V this close to the landing spot stays where it is
-		static constexpr double kClipMargin = 0.3; // m the drive stops V short of Night City geometry
-		static constexpr double kBodyLift = 0.9;   // m above the feet the drive casts its clip rays (the body's middle)
+		static constexpr double kHold = 1.0;       // s V is held in place while Minecraft is silent
+		static constexpr double kQuickLand = 0.3;  // s: a flight shorter than this leaves V where it is
+		static constexpr double kNearLand = 1.5;   // m: V this close to the landing spot stays where it is
+		static constexpr double kClipMargin = 0.5; // m the drive stops V short of Night City geometry (V's capsule stays clear)
+		static constexpr double kBodyLift = 0.9;   // m above the feet of the middle clip ray (the body's middle)
+		static constexpr double kClipLifts[3] = {0.3, kBodyLift, 1.6}; // m above the feet of every clip ray: shins, middle, head
+		static constexpr double kWatchdog = 1.0;   // s an inconsistent follow may last before V is released
+		static constexpr double kDivergence = 4.0; // m between where V was put and Steve (or V's feet) that is inconsistent
 
 		Out step(const In &in);
 		/// The drive moved V to `to` (after clipping): held there on a timeout, and the start of the next step.
 		void applied(Vec3 to);
+		/// The drive stopped V short of Night City geometry at `at` this frame: the flight ends there, Ground(at)
+		/// "flight: V hit Night City geometry, ...". None when not driving.
+		Out blocked(Vec3 at, double now);
 		/// Following or Holding: the drive moves V this flight (cam.fly).
 		bool driving() const;
 		/// 0 while driving, the seconds since the last flight ended (menus excluded), 999 before any flight.
@@ -106,8 +120,10 @@ namespace cb::follow
 		Out end(Act act, Vec3 to, std::string log, double now);
 
 		State m_state = State::Idle;
+		bool m_armed = true;      // a start may follow: Minecraft's flight was seen not active since the last end
 		double m_start = 0;       // when this flight started (moved forward by menus)
 		double m_holdSince = 0;   // when the hold started (moved forward by menus)
+		double m_oddSince = -1;   // when the follow became inconsistent (moved forward by menus); < 0: it is not
 		double m_endedAt = -1;    // when the last flight ended (moved forward by menus); < 0: none yet
 		double m_lastNow = -1;    // the previous step's time; < 0: none yet
 		bool m_launch = false;    // the flight's kind, for the logs

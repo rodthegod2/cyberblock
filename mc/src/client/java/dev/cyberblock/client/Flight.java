@@ -203,6 +203,13 @@ public final class Flight {
 			return;
 		}
 
+		double apart = player.position().distanceTo(new Vec3(p.px(), p.py(), p.pz()));
+		if (follow.tooFarApart(now, apart)) {
+			Cyberblock.LOG.info("{}: the host's V stayed {} blocks from Steve for a second", mode == Mode.LAUNCH ? "launch" : "glide", Math.round(apart));
+			abort(player, p);
+			return;
+		}
+
 		if (follow.seen()) {
 			HostDamage.fallFreeUntil = now + FlightRules.FALL_GRACE_NANOS;
 		}

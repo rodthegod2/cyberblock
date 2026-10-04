@@ -19,13 +19,18 @@ public final class ProxyDamage {
 
 	/**
 	 * Vanilla's knockback strength of every hit (LivingEntity.hurt pushes with 0.4) and how many m/s Cyberpunk gets per unit of
-	 * strength (plan retest3 section 1.9, F7): a plain hit is 2 m/s, sprint or Knockback I 4.5, Knockback II, the gauntlet or Gorilla
-	 * Arms 7, Gorilla Arms and sprint 9.5, gauntlet and Gorilla Arms 12. Cyberpunk only ragdolls the strongest of these.
+	 * strength (plan retest3 section 1.9, F7): a plain hit is 2 m/s (a flinch in Cyberpunk), sprint, Knockback I or Gorilla Arms 4.5
+	 * (a stagger), Knockback II, the gauntlet or Gorilla Arms and sprint 7 (a knockdown), gauntlet and Gorilla Arms 9.5 (a knockdown),
+	 * gauntlet, Gorilla Arms and sprint 12 (Cyberpunk ragdolls only from 10 m/s).
 	 */
 	static final double BASE_KNOCKBACK = 0.4;
 	static final double PUSH_PER_STRENGTH = 5.0;
-	/** Gorilla Arms on a person: one more unit of strength. On a vehicle the push is tripled instead. */
-	static final double GORILLA_STRENGTH = 1.0;
+	/**
+	 * Gorilla Arms on a person: half a unit more strength, as much as a sprint. In-game 2026-10-03 the full unit of the plan made
+	 * every plain swing with the perk 7 m/s, a knockdown on every hit; a stagger is what a stronger plain blow earns. On a vehicle
+	 * the push is tripled instead.
+	 */
+	static final double GORILLA_STRENGTH = 0.5;
 	static final double GORILLA_VEHICLE = 3.0;
 	/** Each Punch level of the bow adds this much strength to an arrow (vanilla AbstractArrow.doKnockback: punch x 0.6). */
 	static final double PUNCH_STRENGTH = 0.6;

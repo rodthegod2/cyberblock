@@ -16,6 +16,11 @@
 // The gate (when V may be moved) is Cyberblock active, not in a vehicle, not held, Cyberblock_SetFlightAllowed and V
 // found. A dropped link is not in it: on_link_dropped resets the flight to a landing at the last place Steve was seen
 // (Flight::reset), and that lands V on the ground instead of leaving it in mid-air.
+//
+// A collision ends the flight (in-game 2026-10-03: a glide into a building left V held 0.3 m from the wall every frame
+// while Steve glided on in Minecraft, mouse and keys dead, until a save was loaded): the first frame a clip ray meets
+// Night City, V is put on the ground below the point it was stopped at, the follower stops (cam.fly false, so
+// Minecraft calls its glide off and puts Steve back at V) and does not take the same glide up again (follow.hpp).
 #include "drive.hpp"
 #include "follow.hpp"
 #include "log.hpp"
@@ -70,6 +75,8 @@ namespace
 
 	std::atomic<bool> g_driving{false};
 	std::atomic<float> g_sinceEnd{999.0f};
+	bool g_teleportedThisFrame = false; // main thread: tick teleported V this frame, from g_feetBefore
+	Vec3 g_feetBefore{};
 
 	double seconds(cb::snap::Clock::time_point t)
 	{
@@ -222,20 +229,23 @@ namespace
 		return std::hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 	}
 
-	/// V's feet moved from -> to, stopped kClipMargin short of Night City Static and Terrain geometry crossed at body
-	/// height (kBodyLift); `clipped` says whether anything was in the way.
+	/// V's feet moved from -> to, stopped kClipMargin short of the nearest Night City Static or Terrain surface that any
+	/// of the clip rays (shins, middle and head: Follower::kClipLifts) crosses; `clipped` says whether anything was in the
+	/// way. One ray at the middle let a kerb or a low wall through at the shins, and V's head through a ceiling.
 	Vec3 clip(const Game &game, const Vec3 &from, const Vec3 &to, bool &clipped)
 	{
 		clipped = false;
-		const Vec3 lift{0.0, 0.0, Follower::kBodyLift};
-		const Vec3 a{from.x + lift.x, from.y + lift.y, from.z + lift.z};
-		const Vec3 b{to.x + lift.x, to.y + lift.y, to.z + lift.z};
-		if (distance(a, b) < 1e-4)
+		if (distance(from, to) < 1e-4)
 			return to;
 		double nearest = INFINITY;
-		for (const char *group : kGroups)
-			if (const auto hit = raycast(game.spatial, a, b, group))
-				nearest = std::min(nearest, distance(a, *hit));
+		for (const double lift : Follower::kClipLifts)
+		{
+			const Vec3 a{from.x, from.y, from.z + lift};
+			const Vec3 b{to.x, to.y, to.z + lift};
+			for (const char *group : kGroups)
+				if (const auto hit = raycast(game.spatial, a, b, group))
+					nearest = std::min(nearest, distance(a, *hit));
+		}
 		if (!std::isfinite(nearest))
 			return to;
 		clipped = true;
@@ -275,6 +285,8 @@ namespace
 	/// the mouse-X turn the game never saw (input.cpp strips it) is applied here instead of being undone every frame.
 	bool teleport(Game &game, const Vec3 &feet, double yaw)
 	{
+		g_teleportedThisFrame = true;
+		g_feetBefore = game.feet;
 		RED4ext::EulerAngles rotation{0.0f, 0.0f, float(yaw)};
 		RED4ext::Vector4 position = to_vector4(feet);
 		RED4ext::WeakHandle<RED4ext::IScriptable> weak(game.player);
@@ -326,6 +338,7 @@ namespace cb::drive
 {
 	void tick(int64_t mouseX, double degreesPerCount)
 	{
+		g_teleportedThisFrame = false;
 		if (g_api.state == Api::State::Disabled)
 			return;
 		const snap::Clock::time_point now = snap::Clock::now();
@@ -381,8 +394,19 @@ namespace cb::drive
 		{
 			bool clipped = false;
 			const Vec3 to = clip(game, g_follower.last(), out.to, clipped);
-			if (clipped && !std::exchange(g_clipped, true))
-				log::info("flight: V stopped short of Night City geometry");
+			if (clipped)
+			{
+				// a collision ends the flight: V goes onto the ground below the point it was stopped at, and the
+				// follower lets the glide go (Minecraft calls it off when it sees cam.fly false)
+				g_clipped = true;
+				const follow::Out ended = g_follower.blocked(to, in.now);
+				log::info("%s", ended.log.c_str());
+				const std::optional<double> ground = ground_z(game, to, Follower::kBodyLift);
+				teleport(game, {to.x, to.y, ground ? *ground : to.z}, g_yaw.now);
+				natives::flightFollowing = false;
+				summary();
+				break;
+			}
 			if (teleport(game, to, g_yaw.now))
 			{
 				g_follower.applied(to);
@@ -422,6 +446,9 @@ namespace cb::drive
 			summary();
 			break;
 		}
+		// never "following" while the follower is idle: cam.fly would keep Minecraft's glide alive with no V under it
+		if (!g_follower.driving() && natives::flightFollowing)
+			natives::flightFollowing = false;
 		mirror(in.now);
 	}
 
@@ -441,5 +468,13 @@ namespace cb::drive
 	float seconds_since_end()
 	{
 		return g_sinceEnd;
+	}
+
+	bool feet_before_teleport(Vec3 &feet)
+	{
+		if (!g_teleportedThisFrame)
+			return false;
+		feet = g_feetBefore;
+		return true;
 	}
 }

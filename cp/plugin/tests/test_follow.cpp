@@ -35,16 +35,21 @@ namespace
 		return out.log.find(text) != std::string::npos;
 	}
 
-	/// Starts a glide at `now` and follows it for `frames` frames along +x (1 m per frame), applying every move.
+	/// Starts a glide at `now` and follows it for `frames` frames along +x (1 m per frame), applying every move; V's feet
+	/// are where the last move put them, as in the game.
 	double follow_for(Follower &f, double now, int frames, bool launch = false)
 	{
+		cb::Vec3 feet{0, 0, 100};
 		for (int i = 0; i < frames; ++i, now += kFrame)
 		{
-			In in = flying(now, {double(i), 0, 100});
+			In in = flying(now, {double(i), 0, 100}, feet);
 			in.launch = launch;
 			const Out out = f.step(in);
 			if (out.act == Act::Move)
+			{
 				f.applied(out.to);
+				feet = out.to;
+			}
 		}
 		return now;
 	}
@@ -280,4 +285,118 @@ TEST(turned_yaw_wraps_to_minus_180_exclusive_180_inclusive)
 		const double yaw = turned_yaw(33.0, counts, 0.15);
 		CHECK(yaw > -180.0 && yaw <= 180.0);
 	}
+}
+
+// ---- in-game 2026-10-03: a glide into a wall left V stuck; collisions end the flight, a watchdog releases V ----------------
+
+TEST(follow_blocked_ends_the_flight_on_the_ground_below_the_stop)
+{
+	Follower f;
+	double now = follow_for(f, 0.0, 30);
+	const Out ended = f.blocked({29.5, 0, 100}, now);
+	CHECK(ended.act == Act::Ground && at(ended.to, 29.5, 0, 100) && says(ended, "flight: V hit Night City geometry"));
+	CHECK(!f.driving() && f.seconds_since_end(now) == 0.0);
+	CHECK(f.blocked({1, 2, 3}, now).act == Act::None); // only once, and never while idle
+}
+
+TEST(follow_does_not_take_up_the_glide_it_ended_until_minecraft_ends_it)
+{
+	Follower f;
+	double now = follow_for(f, 0.0, 30);
+	f.blocked({29.5, 0, 100}, now);
+	// Steve glides on in Minecraft (beyond the wall) until it sees cam.fly false: V stays where it was put
+	for (int i = 0; i < 60; ++i)
+	{
+		now += kFrame;
+		const Out out = f.step(flying(now, {40.0 + i, 0, 100}, {29.5, 0, 100}));
+		CHECK(out.act == Act::None && !f.driving());
+	}
+	// Minecraft called it off (its flight is no longer active): the next glide is a new one
+	In over = flying(now += kFrame, {29.5, 0, 100}, {29.5, 0, 100});
+	over.active = false;
+	CHECK(f.step(over).act == Act::None);
+	const Out again = f.step(flying(now += kFrame, {29.5, 0, 100}, {29.5, 0, 100}));
+	CHECK(again.act == Act::Move && says(again, "flight: start (glide)") && f.driving());
+}
+
+TEST(follow_a_gate_stop_is_not_taken_up_again_by_the_same_flight)
+{
+	Follower f;
+	double now = follow_for(f, 0.0, 10);
+	In closed = flying(now, {10, 0, 100}, {9, 0, 100});
+	closed.gate = false;
+	CHECK(f.step(closed).act == Act::Stop);
+	// the gate opens again while Minecraft still glides: no teleport to Steve
+	CHECK(f.step(flying(now += kFrame, {30, 0, 100}, {9, 0, 100})).act == Act::None);
+	In over = flying(now += kFrame, {9, 0, 100}, {9, 0, 100});
+	over.active = false;
+	f.step(over);
+	CHECK(f.step(flying(now += kFrame, {9, 0, 100}, {9, 0, 100})).act == Act::Move);
+}
+
+TEST(follow_watchdog_releases_v_when_steve_runs_away_for_1_s)
+{
+	Follower f;
+	double now = follow_for(f, 0.0, 10); // V put at (9, 0, 100)
+	// the moves stop landing (V stays at 9) while Steve goes on: inconsistent from 4 m on
+	double x = 10.0;
+	Out out;
+	double firstOdd = -1;
+	for (int i = 0; i < 200; ++i, now += kFrame, x += 0.5)
+	{
+		out = f.step(flying(now, {x, 0, 100}, {9, 0, 100}));
+		if (out.act != Act::Move)
+			break;
+		if (firstOdd < 0 && x - 9.0 > Follower::kDivergence)
+			firstOdd = now;
+	}
+	CHECK(out.act == Act::Ground && at(out.to, 9, 0, 100) && says(out, "flight: watchdog: V could not follow"));
+	CHECK(firstOdd > 0 && now - firstOdd >= Follower::kWatchdog && now - firstOdd < Follower::kWatchdog + 2 * kFrame);
+	CHECK(!f.driving());
+}
+
+TEST(follow_watchdog_releases_v_when_v_is_not_where_it_was_put)
+{
+	Follower f;
+	double now = follow_for(f, 0.0, 10);
+	Out out;
+	for (int i = 0; i < 200; ++i, now += kFrame)
+	{
+		out = f.step(flying(now, {9, 0, 100}, {9, 0, 90})); // the game keeps V 10 m below every teleport
+		if (out.act != Act::Move)
+			break;
+		f.applied(out.to);
+	}
+	CHECK(out.act == Act::Ground && says(out, "V 10.0 m off"));
+}
+
+TEST(follow_watchdog_forgives_a_short_divergence_and_freezes_behind_a_menu)
+{
+	Follower f;
+	double now = follow_for(f, 0.0, 10);
+	// 0.5 s apart, then caught up again: no release
+	for (int i = 0; i < 30; ++i, now += kFrame)
+		CHECK(f.step(flying(now, {20, 0, 100}, {9, 0, 100})).act == Act::Move);
+	const Out caught = f.step(flying(now += kFrame, {9.5, 0, 100}, {9, 0, 100}));
+	CHECK(caught.act == Act::Move);
+	f.applied(caught.to);
+	// apart again for 0.5 s, a 3 s menu, then 0.4 s more: 0.9 s in all, still following
+	for (int i = 0; i < 30; ++i, now += kFrame)
+		CHECK(f.step(flying(now, {30, 0, 100}, {9.5, 0, 100})).act == Act::Move);
+	for (int i = 0; i < 180; ++i, now += kFrame)
+	{
+		In menu = flying(now, {30, 0, 100}, {9.5, 0, 100});
+		menu.menu = true;
+		CHECK(f.step(menu).act == Act::None);
+	}
+	for (int i = 0; i < 24; ++i, now += kFrame)
+		CHECK(f.step(flying(now, {30, 0, 100}, {9.5, 0, 100})).act == Act::Move);
+	CHECK(f.driving());
+}
+
+TEST(follow_a_long_consistent_glide_never_trips_the_watchdog)
+{
+	Follower f;
+	follow_for(f, 0.0, 600); // 10 s at 60 m/s
+	CHECK(f.driving() && f.summary().frames == 600);
 }

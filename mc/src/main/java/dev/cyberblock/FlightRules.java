@@ -39,6 +39,14 @@ public final class FlightRules {
 	public static final long LAUNCH_SETTLE_NANOS = 100_000_000L;
 	/** After touchdown, V standing this close to the landing spot (no longer following) ends the settle early (the DLL's kNearLand). */
 	public static final double NEAR_LAND = 1.5;
+	/**
+	 * While the host follows, its V more than this many blocks from Steve for APART_NANOS in a row means V is not with him (V stopped
+	 * at Night City geometry Minecraft does not have, or a host that says it follows but cannot): the glide is called off and Steve
+	 * goes back to V. In-game 2026-10-03 V was held at a wall while Steve glided on alone for 11 s. A dive at 70 m/s trails V by
+	 * about 10 blocks (the host plays the samples out up to 60 ms late, plus the link), so the bound sits above that.
+	 */
+	public static final double MAX_APART = 16.0;
+	public static final long APART_NANOS = 1_000_000_000L;
 
 	private FlightRules() {
 	}
@@ -150,10 +158,13 @@ public final class FlightRules {
 	public static final class Follow {
 		private long start;
 		private boolean seen;
+		private boolean apart;
+		private long apartSince;
 
 		public void start(final long nanos) {
 			this.start = nanos;
 			this.seen = false;
+			this.apart = false;
 		}
 
 		/** The host has said it follows this glide. */
@@ -166,6 +177,27 @@ public final class FlightRules {
 			if (!this.seen) {
 				this.start = nanos;
 			}
+
+			this.apart = false;
+		}
+
+		/**
+		 * True when the glide must be called off because the host's V, though it follows, has been more than MAX_APART blocks from
+		 * Steve for APART_NANOS: one call per client tick with the distance between Steve and the latest pose's feet. Before the host
+		 * follows, or with a distance that is not a number, nothing is apart.
+		 */
+		public boolean tooFarApart(final long now, final double distance) {
+			if (!this.seen || !(distance > MAX_APART)) {
+				this.apart = false;
+				return false;
+			}
+
+			if (!this.apart) {
+				this.apart = true;
+				this.apartSince = now;
+			}
+
+			return now - this.apartSince >= APART_NANOS;
 		}
 
 		/**

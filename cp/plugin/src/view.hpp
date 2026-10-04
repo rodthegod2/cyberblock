@@ -9,6 +9,7 @@
 #include "cbmath.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace cb::view
 {
@@ -87,6 +88,103 @@ namespace cb::view
 	private:
 		double m_distance = 0.0;
 		double m_velocity = 0.0;
+	};
+
+	// ---- Steve's body for the compositor's re-projection (in-game 2026-10-03: third person "lags behind") ---------------
+	//
+	// The compositor re-projects Minecraft's (older) frame onto Cyberpunk's newer camera as if everything in it stood still.
+	// Steve does not: he is drawn at V's feet of the cam the frame was rendered for, and V has moved on with the camera since,
+	// so a still-standing Steve slid back by V's motion over the frame's age (a few cm walking, a metre or more gliding).
+	// The body is the capsule Steve is drawn in; the effect moves what lies inside it by V's motion instead (Cyberblock.fx).
+
+	/// How Steve is drawn: not at all (first person), standing (feet at `cam.pl`), seated (`cam.pl` is V's hips) or gliding
+	/// (his body lies along his look, from the feet: vanilla's fall-flying pose pivots there).
+	enum class BodyPose
+	{
+		None,
+		Standing,
+		Seated,
+		Gliding,
+	};
+
+	/// A capsule in Minecraft coordinates (y up): the segment a-b grown by `radius`. `valid` false: no body.
+	struct Capsule
+	{
+		Vec3 a{}, b{};
+		double radius = 0.0;
+		bool valid = false;
+	};
+
+	/// Steve's capsule for a cam: `feet` is the cam's `pl` (Minecraft coordinates), `yawDeg`/`pitchDeg` his look in
+	/// Minecraft's convention (a gliding body lies along it). Standing: 1.9 m tall, 0.5 m around (arms swing out); seated:
+	/// from 0.7 m under the hips to 1.35 m over them, 0.6 m around (legs forward); gliding: 0.35..1.45 m along the look
+	/// from the feet, 0.75 m around (the wings).
+	inline Capsule body_capsule(BodyPose pose, Vec3 feet, double yawDeg, double pitchDeg)
+	{
+		Capsule c;
+		switch (pose)
+		{
+		case BodyPose::None:
+			return c;
+		case BodyPose::Standing:
+			c.a = {feet.x, feet.y + 0.5, feet.z};
+			c.b = {feet.x, feet.y + 1.4, feet.z};
+			c.radius = 0.5;
+			break;
+		case BodyPose::Seated:
+			c.a = {feet.x, feet.y - 0.1, feet.z};
+			c.b = {feet.x, feet.y + 0.75, feet.z};
+			c.radius = 0.6;
+			break;
+		case BodyPose::Gliding:
+		{
+			constexpr double kDeg = 3.14159265358979323846 / 180.0;
+			const double cp = std::cos(pitchDeg * kDeg);
+			const Vec3 d{-std::sin(yawDeg * kDeg) * cp, -std::sin(pitchDeg * kDeg), std::cos(yawDeg * kDeg) * cp};
+			c.a = {feet.x + d.x * 0.35, feet.y + d.y * 0.35, feet.z + d.z * 0.35};
+			c.b = {feet.x + d.x * 1.45, feet.y + d.y * 1.45, feet.z + d.z * 1.45};
+			c.radius = 0.75;
+			break;
+		}
+		}
+		c.valid = std::isfinite(c.a.x) && std::isfinite(c.a.y) && std::isfinite(c.a.z) && std::isfinite(c.b.x) &&
+				  std::isfinite(c.b.y) && std::isfinite(c.b.z);
+		return c;
+	}
+
+	/// The body of one published cam: its frame number (`cam.f`, which Minecraft echoes in every exported frame), V's feet
+	/// (`cam.pl`, Minecraft coordinates) and the capsule Steve is drawn in.
+	struct Body
+	{
+		int64_t frame = -1;
+		Vec3 feet{};
+		Capsule capsule;
+	};
+
+	/// The bodies of the last kSize published cams, found again by frame number when Minecraft's frame names the cam it
+	/// was rendered for. Not thread-safe (the compositor holds its pose lock).
+	class BodyRing
+	{
+	public:
+		static constexpr int kSize = 64; // a second of cams at 60 fps: Minecraft's frames are never older
+
+		void put(const Body &body)
+		{
+			m_ring[m_next] = body;
+			m_next = (m_next + 1) % kSize;
+		}
+		/// The body published with `frame`; an invalid one (frame -1) when it is not among the last kSize.
+		Body find(int64_t frame) const
+		{
+			for (const Body &b : m_ring)
+				if (b.frame == frame && frame >= 0)
+					return b;
+			return {};
+		}
+
+	private:
+		Body m_ring[kSize];
+		int m_next = 0;
 	};
 
 	// ---- the game part (view.cpp) -----------------------------------------------------------------------------------

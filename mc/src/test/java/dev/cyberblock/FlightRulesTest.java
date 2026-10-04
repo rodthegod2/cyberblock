@@ -189,6 +189,34 @@ class FlightRulesTest {
 	}
 
 	@Test
+	void aGlideIsCalledOffWhenTheHostsVStaysFarFromSteveForASecond() {
+		long start = 1_000_000_000L;
+		FlightRules.Follow follow = new FlightRules.Follow();
+		follow.start(start);
+		assertFalse(follow.tooFarApart(start + 10_000_000L, 100.0), "nothing is apart before the host follows");
+		assertTrue(follow.ok(start + 100_000_000L, start + 90_000_000L, true));
+		long t = start + 200_000_000L;
+		assertFalse(follow.tooFarApart(t, 10.0), "a fast dive trails V by about 10 blocks");
+		assertFalse(follow.tooFarApart(t, 16.5));
+		assertFalse(follow.tooFarApart(t + 999_999_999L, 30.0));
+		assertTrue(follow.tooFarApart(t + 1_000_000_000L, 30.0), "a second apart: called off");
+		// a moment together starts the clock again
+		follow.start(start);
+		assertTrue(follow.ok(start + 100_000_000L, start + 90_000_000L, true));
+		assertFalse(follow.tooFarApart(t, 20.0));
+		assertFalse(follow.tooFarApart(t + 600_000_000L, 2.0));
+		assertFalse(follow.tooFarApart(t + 700_000_000L, 20.0));
+		assertFalse(follow.tooFarApart(t + 1_600_000_000L, 20.0));
+		assertTrue(follow.tooFarApart(t + 1_700_000_000L, 20.0));
+		assertFalse(follow.tooFarApart(t + 1_800_000_000L, Double.NaN), "not a number: not apart");
+		// a menu pause (V cannot follow while Cyberpunk is paused) starts it again too
+		assertFalse(follow.tooFarApart(t + 2_000_000_000L, 20.0));
+		follow.restart(t + 2_500_000_000L);
+		assertFalse(follow.tooFarApart(t + 3_400_000_000L, 20.0));
+		assertTrue(follow.tooFarApart(t + 4_400_000_000L, 20.0));
+	}
+
+	@Test
 	void onlyPosesAfterTheStartCount() {
 		long start = 1_000_000_000L;
 		FlightRules.Follow follow = new FlightRules.Follow();

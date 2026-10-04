@@ -59,6 +59,7 @@ namespace
 		float yaw = 0, pitch = 0, roll = 0, fov = 70;
 		double x = 0, y = 0, z = 0;
 		bool valid = false;
+		cb::view::Body body; // Steve's body for this camera (host poses), or for the uploaded frame's camera (g_mcPose)
 	};
 	std::mutex g_poseLock;
 	// Cyberpunk's recent camera poses, newest last. The caller may read the camera Cyberpunk is about to render (the
@@ -67,6 +68,9 @@ namespace
 	unsigned g_hostPoseCount = 0;
 	std::atomic<int> g_poseLag{0};
 	Pose g_mcPose;
+	cb::view::BodyRing g_bodies; // the bodies of the recent cams, by frame number (g_poseLock)
+	// V moved further than this since the uploaded frame (a teleport, fast travel): Steve is not moved with it
+	constexpr double kMaxBodyMove = 8.0;
 
 	HANDLE g_mapping = nullptr;
 	const uint8_t *g_view = nullptr;
@@ -272,6 +276,7 @@ namespace
 		const uint32_t w = read<uint32_t>(desc + 24), h = read<uint32_t>(desc + 28);
 		const float mc_near = read<float>(desc + 32), mc_far = read<float>(desc + 36);
 		const int32_t mc_flags = read<int32_t>(desc + 44);
+		const int64_t hostFrame = read<int64_t>(desc + 16); // the cam Minecraft rendered this frame for (cam.f)
 		Pose pose;
 		pose.fov = read<float>(desc + 40);
 		pose.yaw = read<float>(desc + 72);
@@ -340,6 +345,10 @@ namespace
 		g_mcNear = mc_near;
 		g_mcFar = mc_far;
 		g_mcFlags = mc_flags;
+		{
+			std::lock_guard<std::mutex> lock(g_poseLock);
+			pose.body = g_bodies.find(hostFrame);
+		}
 		g_mcPose = pose;
 		g_hasFrame = true;
 		g_frameTime = std::chrono::steady_clock::now();
@@ -527,6 +536,32 @@ namespace
 		}
 		set_pose_uniform(runtime, "cb_host_pose", host);
 		set_pose_uniform(runtime, "cb_mc_pose", g_mcPose);
+
+		// Steve's body: the capsule he was drawn in for the uploaded frame, and how far V has moved since (to the pose the
+		// frame is re-projected to, extrapolated as that pose is)
+		const cb::view::Capsule &drawn = g_mcPose.body.capsule;
+		std::array<float, 4> bodyA{0.0f, 0.0f, 0.0f, 0.0f}, bodyB{0.0f, 0.0f, 0.0f, 0.0f};
+		std::array<float, 3> move{0.0f, 0.0f, 0.0f};
+		if (warp && drawn.valid && host.body.capsule.valid)
+		{
+			cb::Vec3 feet = host.body.feet;
+			if (prev.valid && prev.body.capsule.valid && predict != 0.0f)
+				feet = {feet.x + (feet.x - prev.body.feet.x) * predict, feet.y + (feet.y - prev.body.feet.y) * predict,
+						feet.z + (feet.z - prev.body.feet.z) * predict};
+			const cb::Vec3 d{feet.x - g_mcPose.body.feet.x, feet.y - g_mcPose.body.feet.y, feet.z - g_mcPose.body.feet.z};
+			if (std::hypot(d.x, d.y, d.z) <= kMaxBodyMove)
+			{
+				bodyA = {float(drawn.a.x), float(drawn.a.y), float(drawn.a.z), float(drawn.radius)};
+				bodyB = {float(drawn.b.x), float(drawn.b.y), float(drawn.b.z), 1.0f};
+				move = {float(d.x), float(d.y), float(d.z)};
+			}
+		}
+		if (const effect_uniform_variable v = uniform("cb_body_a"); v.handle != 0)
+			runtime->set_uniform_value_float(v, bodyA.data(), 4);
+		if (const effect_uniform_variable v = uniform("cb_body_b"); v.handle != 0)
+			runtime->set_uniform_value_float(v, bodyB.data(), 4);
+		if (const effect_uniform_variable v = uniform("cb_body_move"); v.handle != 0)
+			runtime->set_uniform_value_float(v, move.data(), 3);
 	}
 
 	void on_reloaded_effects(effect_runtime *runtime)
@@ -618,11 +653,13 @@ namespace compositor
 		g_lookSlope = slope_bias;
 	}
 
-	void set_host_pose(float yaw, float pitch, float roll, float fov, double x, double y, double z)
+	void set_host_pose(float yaw, float pitch, float roll, float fov, double x, double y, double z, const cb::view::Body &body)
 	{
 		std::lock_guard<std::mutex> lock(g_poseLock);
-		g_hostPoses[g_hostPoseCount & 3] = {yaw, pitch, roll, fov, x, y, z, true};
+		g_hostPoses[g_hostPoseCount & 3] = {yaw, pitch, roll, fov, x, y, z, true, body};
 		++g_hostPoseCount;
+		if (body.frame >= 0)
+			g_bodies.put(body);
 	}
 
 	void set_pose_lag(int frames)
