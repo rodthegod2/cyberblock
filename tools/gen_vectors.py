@@ -46,6 +46,24 @@ def off(k):
 survey_hits = [(2.0, -2.0, 40.5), (1.999, -1.999, 40.49), (-0.5, 0.5, -3.5), (-1245.5, 812.25, 66.62), (3999.9, -3999.9, 455.0)]
 survey_cells = [(0, 0), (-1, -1), (5, -3), (-623, -407), (1999, 1999)]
 
+# Phase Q `prefs` (megaplan 2026-10-04 section 1.9): messages applied to the defaults or to a custom set, with the
+# `debug` flag that turns `cam.vdbg` on and off; the C++ parse_prefs runs them (non-finite numbers: C++ tests only)
+CUSTOM_PREFS = {"dist": 5.0, "shoulder": -0.3, "fov": 90.0, "recenter": False, "vdist": 6.5, "stepup": False, "debug": True}
+prefs_given = [
+    ({}, cbmath.PREFS_DEFAULTS),                                                          # nothing given: nothing changes
+    ({k: v for k, v in CUSTOM_PREFS.items() if k != "debug"}, cbmath.PREFS_DEFAULTS),     # a six-field prefs keeps debug
+    (dict(cbmath.PREFS_DEFAULTS), CUSTOM_PREFS),                                          # all seven, as Minecraft sends them
+    ({"debug": True}, cbmath.PREFS_DEFAULTS),                                             # /cyberblock debug view on
+    ({"debug": False}, CUSTOM_PREFS),                                                     # ... off
+    ({"dist": 0.5, "shoulder": -4, "fov": 20, "vdist": 1}, cbmath.PREFS_DEFAULTS),        # raised to the lower bounds
+    ({"dist": 80, "shoulder": 4, "fov": 170, "vdist": 99}, cbmath.PREFS_DEFAULTS),        # lowered to the upper bounds
+    ({"fov": -5, "vdist": -1}, CUSTOM_PREFS),                                             # 0 or below: the game's own
+    ({"fov": 0, "vdist": 0}, CUSTOM_PREFS),
+    ({"dist": "far", "shoulder": True, "fov": None, "recenter": 1, "stepup": "yes", "vdist": [3], "debug": "on"}, CUSTOM_PREFS),
+    ({"debug": 1, "dist": 2.5}, cbmath.PREFS_DEFAULTS),                                   # a bad debug is counted, dist applies
+    ({"scale": 0.75, "dist": 4}, cbmath.PREFS_DEFAULTS),                                  # an unknown field is ignored
+]
+
 
 # re-test 3 (plan section 1.7): `binds` messages applied to a current set of six keys, with the clash rule. Every given
 # key is a whole number (the C++ tests cover non-numbers). F1..F6 = 0x70..0x75 (F5 is refused), F10..F12 = 0x79..0x7B.
@@ -88,9 +106,12 @@ out = {
     # the Atlas survey: hits -> (cx, cz, h) at k 0 and 57, and cells -> their Cyberpunk column centre
     "survey": [{"hit": list(h), "k": k, "cell": list(cbmath.survey_cell(*h, off(k)))} for k in pos_ks for h in hits + survey_hits],
     "survey_column": [{"cell": list(c), "cp": list(cbmath.survey_column(*c))} for c in survey_cells],
+    "prefs_apply": [{"given": given, "current": current, "expect": expect, "bad": bad}
+                    for given, current in prefs_given for expect, bad in [cbmath.apply_prefs(given, current)]],
 }
 Path("shared/vectors.json").write_text(json.dumps(out, indent=1), newline="\n")
 print(f"wrote {len(out['quat'])} quat, {len(out['down'])} down, {len(out['wall'])} wall, "
       f"{len(out['mc_pos'])} mc_pos, {len(out['mc_block'])} mc_block, {len(out['align'])} align, "
       f"{len(out['mc_yaw'])} mc_yaw, {len(out['mc_vel'])} mc_vel, {len(out['binds'])} binds, "
-      f"{len(out['binds_apply'])} binds_apply, {len(out['survey'])} survey, {len(out['survey_column'])} survey_column cases")
+      f"{len(out['binds_apply'])} binds_apply, {len(out['survey'])} survey, {len(out['survey_column'])} survey_column, "
+      f"{len(out['prefs_apply'])} prefs_apply cases")

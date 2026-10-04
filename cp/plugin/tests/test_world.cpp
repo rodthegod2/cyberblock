@@ -1,7 +1,9 @@
 // Layer 2 in the DLL: parsing and converting Minecraft's events, the bounded event queue, and the dmg / npcs messages.
 #include "test.hpp"
 #include "world.hpp"
+#include <array>
 #include <cmath>
+#include <fstream>
 #include <limits>
 #include <string>
 #include <vector>
@@ -694,6 +696,66 @@ TEST(prefs_keep_a_missing_or_bad_field_and_count_the_bad_ones)
 	CHECK(bad == 2 && approx(p.dist, 4) && approx(p.shoulder, 0.2) && approx(p.fov, 75));
 	p = prefs_of(json::array({1, 2}), current, bad); // not an object
 	CHECK(bad == 0 && p == current);
+}
+
+// shared/vectors.json `prefs_apply` (tools/cbmath.py apply_prefs): the same rules as tools and Minecraft's protocol tests
+TEST(parse_prefs_matches_the_shared_prefs_apply_vectors_and_their_debug_flag_drives_vdbg)
+{
+	std::ifstream file(CB_VECTORS);
+	const json cases = json::parse(file).at("prefs_apply");
+	CHECK(cases.size() >= 12);
+	const auto prefs_from = [](const json &o)
+	{
+		return ViewPrefs{.dist = o.at("dist").get<double>(),
+						 .shoulder = o.at("shoulder").get<double>(),
+						 .fov = o.at("fov").get<double>(),
+						 .recenter = o.at("recenter").get<bool>(),
+						 .vdist = o.at("vdist").get<double>(),
+						 .stepup = o.at("stepup").get<bool>(),
+						 .debug = o.at("debug").get<bool>()};
+	};
+	constexpr std::array<double, 3> kValues{3.2, 2.85, 14.0};
+	size_t debugOn = 0;
+	for (const auto &c : cases)
+	{
+		size_t bad = 99;
+		std::string why;
+		const ViewPrefs got = cb::world::parse_prefs(c.at("given"), prefs_from(c.at("current")), bad, why);
+		const ViewPrefs expect = prefs_from(c.at("expect"));
+		CHECK(approx(got.dist, expect.dist) && approx(got.shoulder, expect.shoulder) && approx(got.fov, expect.fov) &&
+			  approx(got.vdist, expect.vdist) && got.recenter == expect.recenter && got.stepup == expect.stepup &&
+			  got.debug == expect.debug);
+		CHECK(bad == c.at("bad").get<size_t>());
+		if (prefs_from(c.at("current")) == ViewPrefs{})
+		{
+			// the same message through the link after a hello (the defaults): vdbg follows the resulting flag
+			cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1})"));
+			json message = c.at("given");
+			message["t"] = "prefs";
+			cb::world::on_minecraft_message(message);
+			CHECK(cb::world::vdbg_to_send(kValues).has_value() == expect.debug);
+			debugOn += expect.debug ? 1 : 0;
+		}
+	}
+	CHECK(debugOn >= 1);
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1})"));
+	cb::world::events().clear();
+}
+
+TEST(the_prefs_event_carries_vdist_as_its_amount_for_the_vehicle_camera_scripts)
+{
+	cb::world::EventQueue &q = cb::world::events();
+	q.clear();
+	q.set_active(false);
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1})"));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"prefs","vdist":6.5})"));
+	CHECK(q.next() == EventKind::Prefs && approx(q.current().amount, 6.5) && q.current().flag);
+	cb::world::on_minecraft_message(json::parse(R"({"t":"prefs","vdist":99})")); // clamped like the prefs
+	CHECK(q.next() == EventKind::Prefs && approx(q.current().amount, 14));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"prefs","vdist":0})")); // the game's own
+	CHECK(q.next() == EventKind::Prefs && approx(q.current().amount, 0));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1})"));
+	q.clear();
 }
 
 TEST(prefs_reach_the_scripts_as_the_event_prefs_with_stepup_and_reset_on_hello_and_drop)

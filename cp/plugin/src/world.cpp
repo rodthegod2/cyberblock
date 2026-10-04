@@ -597,6 +597,7 @@ namespace cb::world
 			Event e;
 			e.kind = EventKind::Prefs;
 			e.flag = prefs.stepup;
+			e.amount = prefs.vdist; // View.reds picks the nearest vehicle camera preset (0: the game's own)
 			events().push(e);
 			return;
 		}
