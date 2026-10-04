@@ -65,11 +65,24 @@ Phase Q modes (shared/protocol.md "Phase Q"; combinable with the layer flags exc
            V walks up it at 1.5 m/s in first person, each step lifting V by 1 m in 0.15 s as the step-up assist does, then stands on top.
            `aim` is sent at 10 Hz at the face of the block under the crosshair (looking 20 degrees down), 2 mm in front of it: the
            Cyberblock box in front of the block, the case Phase Q's aim margin has to tolerate; `persp back` makes `fp` false.
+Multiplayer (shared/protocol.md "Multiplayer (Phase 1)"; tools/mpcheck.py starts one fake host per host client):
+  --name NAME      prefixes every line this tool prints with `[NAME] `, so the output of two fake hosts can be told apart.
+  --ver VERSION    the DLL version in the `hello` (`ver`, at most 32 characters). The default is this checkout's version, the
+                   mod's own: a host whose DLL differs from its mod version is a guest ("versions" scenario). `--ver ""` sends
+                   no `ver`, like a DLL from before Phase 1.
+  --ids-from N     numbers the three `npcs` N, N+1 and N+2 instead of the protocol.md example ids (1 <= N <= 2**64 - 3): two fake
+                   hosts given the same N send the same ids, to force an id collision between two owners ("twohosts").
+Minecraft's `session` message (the client tells the DLL its role after every handshake) is printed with every run, like `align`.
+A change to `session state:host` is answered as the real DLL does (protocol.md `session`): `clear`, the whole `ground` slab
+again and, when a layer or mode runs, the `npcs` list. The client drops what the DLL sends before it is the host, so the
+ground sent when the link opened (at the title screen, before a server join) never reached the server.
+A dedicated server refuses the reference-mod `cmd` commands: against a real client pass `--no-setup`.
 """
 import argparse
 import asyncio
 import json
 import math
+import re
 import sys
 import time
 from collections.abc import Sequence
@@ -80,7 +93,7 @@ from PIL import Image
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
-from tools import cbmath, shm
+from tools import cbmath, package, shm
 
 DEFAULT_PORT = 25600
 VIEW = (1280, 720)
@@ -88,7 +101,7 @@ CENTER = (0.0, 65.0, 0.0)
 RADIUS, EYE_Y, FOV = 6.0, 66.5, 70.0
 SLAB_HALF, SLAB_Y = 8, 63
 SAVE_EVERY = 30
-LAYER2_EVENTS = {"block", "explosion", "hit", "ignite", "blocks", "align"}  # what Minecraft reports back to Cyberpunk in layer 2, the resync and the ground alignment
+LAYER2_EVENTS = {"block", "explosion", "hit", "ignite", "blocks", "align", "session"}  # what Minecraft reports back to Cyberpunk in layer 2, the resync, the ground alignment and (Phase 1) the session role
 LAYER_EVENTS = {  # ... and in layers 3-6 (printed only when the layer's flag is given)
     3: {"mobs"},
     4: {"flight", "teleport", "proj"},
@@ -125,6 +138,8 @@ HACK_UPLOAD = {"short_circuit": 0.6, "overheat": 1.0, "reboot_optics": 0.8, "cri
                "synapse_burnout": 3.0, "ping": 0.5, "memory_wipe": 1.0, "cyberpsychosis": 4.0, "device": 0.0}  # canned upload seconds
 DEVICE_KINDS = ("camera", "traffic", "distract", "device")
 DEPTH_RANGE_M = 32.0
+NPC_IDS = ("9007199254740993", "18446744073709551615", "4503599627370497")  # the protocol.md example ids: two humans, a vehicle
+NAME_RE, MAX_VER = re.compile(r"[A-Za-z0-9_.-]{1,32}"), 32  # --name: a log prefix that stays easy to grep; --ver: protocol.md `hello.ver`
 BACKGROUND = np.array([40, 40, 48], np.float64)
 SETUP_COMMANDS = [  # a gold block at the centre and four coloured blocks on the axes: +x red, -x blue, +z lime, -z yellow
     f"fill -{SLAB_HALF} {SLAB_Y} -{SLAB_HALF} {SLAB_HALF} {SLAB_Y} {SLAB_HALF} minecraft:stone",
@@ -150,13 +165,24 @@ def orbit_cam(f: int, frames: int) -> dict:
             "pl": [eye[0], SLAB_Y + 1.0, eye[2]], "h": yaw, "cr": False}
 
 
-def npcs_message() -> dict:
-    """The `npcs` list: two humans and a vehicle on the slab, clear of the setup blocks. Ids are the examples of protocol.md."""
+def npc_ids(ids_from: int | None = None) -> tuple[str, str, str]:
+    """The ids of the three NPCs: the examples of protocol.md, or `ids_from`, +1 and +2 (--ids-from; uint64 decimal strings)."""
+    if ids_from is None:
+        return NPC_IDS
+    if not 1 <= ids_from <= 2**64 - 3:
+        raise ValueError(f"--ids-from must be 1..{2**64 - 3} so that all three ids are non-zero uint64 values, not {ids_from}")
+    return tuple(str(ids_from + i) for i in range(3))
+
+
+def npcs_message(ids_from: int | None = None) -> dict:
+    """The `npcs` list: two humans and a vehicle on the slab, clear of the setup blocks. Ids are the examples of protocol.md,
+    or numbered from `ids_from` (two fake hosts with the same `ids_from` collide on purpose)."""
     feet = SLAB_Y + 1.0
+    hostile, friendly, car = npc_ids(ids_from)
     return {"t": "npcs", "list": [
-        {"id": "9007199254740993", "p": [2.5, feet, 2.5], "yaw": 135.0, "kind": "human", "hostile": True},
-        {"id": "18446744073709551615", "p": [-2.5, feet, 2.5], "yaw": -135.0, "kind": "human", "hostile": False},
-        {"id": "4503599627370497", "p": [-4.5, feet, -4.5], "yaw": 180.0, "kind": "vehicle", "hostile": False},
+        {"id": hostile, "p": [2.5, feet, 2.5], "yaw": 135.0, "kind": "human", "hostile": True},
+        {"id": friendly, "p": [-2.5, feet, 2.5], "yaw": -135.0, "kind": "human", "hostile": False},
+        {"id": car, "p": [-4.5, feet, -4.5], "yaw": 180.0, "kind": "vehicle", "hostile": False},
     ]}
 
 
@@ -166,14 +192,14 @@ def dmg_message() -> dict:
     return {"t": "dmg", "frac": 0.25, "kind": "bullet", "from": [x, y + 1.3, z]}
 
 
-def hostile_human() -> dict:
+def hostile_human(ids_from: int | None = None) -> dict:
     """The hostile human of `npcs_message`: the canned scan target, the `mobdmg` attacker and the kill."""
-    return next(e for e in npcs_message()["list"] if e["kind"] == "human" and e["hostile"])
+    return next(e for e in npcs_message(ids_from)["list"] if e["kind"] == "human" and e["hostile"])
 
 
-def scaninfo_message(request: int) -> dict:
+def scaninfo_message(request: int, ids_from: int | None = None) -> dict:
     """The canned reply to a `scan`: the hostile human, Officer Test of the NCPD."""
-    h = hostile_human()
+    h = hostile_human(ids_from)
     return {"t": "scaninfo", "id": request, "ok": True, "target": h["id"], "name": "Officer Test", "faction": "NCPD",
             "threat": "high", "hp": 0.8, "device": False, "p": h["p"], "size": [0.6, 1.8]}
 
@@ -196,10 +222,10 @@ def pcells_message(projectiles: list) -> dict | None:
     return {"t": "pcells", "c": flat} if flat else None
 
 
-def hack_kind(name: str, target: str, request: int) -> str:
+def hack_kind(name: str, target: str, request: int, ids_from: int | None = None) -> str:
     """The `hackresult.kind` of a canned answer: devices rotate through the four device kinds by request id, the vehicle's
     driver is hacked, the hostile human is a squad member and the other human a crowd pedestrian."""
-    npc = next((e for e in npcs_message()["list"] if e["id"] == target), None)
+    npc = next((e for e in npcs_message(ids_from)["list"] if e["id"] == target), None)
     if name == "device":
         return DEVICE_KINDS[request % len(DEVICE_KINDS)]
     if npc is None or npc["kind"] == "vehicle":
@@ -207,12 +233,12 @@ def hack_kind(name: str, target: str, request: int) -> str:
     return "squad" if npc["hostile"] else "crowd"
 
 
-def hack_replies(m: dict) -> tuple[list[dict], list[dict], float]:
+def hack_replies(m: dict, ids_from: int | None = None) -> tuple[list[dict], list[dict], float]:
     """The canned answer to a `hack`: (messages to send at once, messages to send `upload` seconds later, that upload).
     `chain` and `spread` spreads come before the `hackresult`, `ping` and `frenzy` come after the upload, as the DLL does."""
     request, target, name = m["id"], m["target"], m["hack"]
     upload = HACK_UPLOAD.get(name, 0.0)
-    humans = [e for e in npcs_message()["list"] if e["kind"] == "human"]
+    humans = [e for e in npcs_message(ids_from)["list"] if e["kind"] == "human"]
     others = [e["id"] for e in humans if e["id"] != target]
 
     def spread(why: str, ids: list[str]) -> list[dict]:
@@ -220,10 +246,15 @@ def hack_replies(m: dict) -> tuple[list[dict], list[dict], float]:
 
     now = spread("chain", others[:1]) if m.get("chain") is True else []
     now += spread("spread", others[:2]) if name == "contagion" else []
-    result = {"t": "hackresult", "id": request, "ok": True, "reason": "", "upload": upload, "kind": hack_kind(name, target, request)}
+    result = {"t": "hackresult", "id": request, "ok": True, "reason": "", "upload": upload, "kind": hack_kind(name, target, request, ids_from)}
     later = spread("ping", [e["id"] for e in humans if e["hostile"]]) if name == "ping" else []
     later += spread("frenzy", others[:1]) if name == "cyberpsychosis" else []
     return [*now, result], later, upload
+
+
+def hello_message(ver: str | None = None) -> dict:
+    """The DLL's `hello`; since Phase 1 it carries `ver` (the DLL version). None leaves it out, like an older DLL."""
+    return {"t": "hello", "proto": 1, "game": "cp2077", "build": "2.31", **({"ver": ver} if ver is not None else {})}
 
 
 def ui_script() -> list[tuple[float, dict]]:
@@ -422,13 +453,15 @@ class Body:
 class Cyberpunk:
     """Cyberpunk's side of layers 2-6 once the orbit is over: the timed messages it sends by itself and its answers."""
 
-    def __init__(self, layers: frozenset[int], modes: frozenset[str] = frozenset()) -> None:
+    def __init__(self, layers: frozenset[int], modes: frozenset[str] = frozenset(), ids_from: int | None = None, name: str | None = None) -> None:
         self.layers, self.modes, self.mobdmg_sent = layers, modes, False
         self.body = Body(GLIDE_FROM if "view" in modes else FALL_FROM)
         self.prefs = dict(PREFS_DEFAULT)  # Phase Q: what Minecraft's last `prefs` set (--view and --stairs place the camera by it)
         self.aim_at, self.aim_d = None, None  # --stairs: when (scenario seconds) the aim was last looked at, and the last `aim.d` sent
+        self.ids_from, self.tag = ids_from, f"[{name}] " if name else ""  # --ids-from and the --name log prefix
         self.view_back = False  # --ui: Minecraft asked for the third-person view (`persp back`), so `cam.fp` is false
         self.delayed: list[tuple[float, dict]] = []  # (perf_counter due time, message): the `ping` and `frenzy` spreads of --hacks
+        self.session: str | None = None  # the last `session` state Minecraft sent (a change to host re-sends the ground)
 
     def script(self) -> list[tuple[float, dict]]:
         """(seconds after the scenario starts, message), in time order: the layer 4 jump tap, the layer 6 keys and kill."""
@@ -441,7 +474,7 @@ class Cyberpunk:
         if 6 in self.layers:
             events += [(HACK_KEY[0], key("hack", True)), (HACK_KEY[1], key("hack", False)),
                        (SKILLS_KEY[0], key("skills", True)), (SKILLS_KEY[1], key("skills", False)),
-                       (KILLED_AT, {"t": "killed", "target": hostile_human()["id"], "kind": "human", "hostile": True})]
+                       (KILLED_AT, {"t": "killed", "target": hostile_human(self.ids_from)["id"], "kind": "human", "hostile": True})]
             for down, up in CYBERWARE_KEYS:  # U twice: the first press opens the Cyberware screen, the second closes it
                 events += [(down, key("cyberware", True)), (up, key("cyberware", False))]
             events += [(ACTIVATE_KEY[0], key("activate", True)), (ACTIVATE_KEY[1], key("activate", False))]
@@ -522,6 +555,11 @@ class Cyberpunk:
     def reply(self, m: dict) -> list[dict]:
         """What Cyberpunk answers to Minecraft's message `m` (only for the layers that were asked for)."""
         t, items, rid = m.get("t"), m.get("list"), m.get("id")
+        if t == "session":
+            was, self.session = self.session, m.get("state")
+            if self.session == "host" and was != "host":  # a new server session: it needs the whole ground and the NPCs again
+                return [{"t": "clear"}, {"t": "ground", "c": ground_slab()}, *([npcs_message(self.ids_from)] if self.layers or self.modes else [])]
+            return []
         if t == "persp" and m.get("mode") in ("first", "back"):
             self.view_back = m["mode"] == "back"
         if t == "prefs":
@@ -531,7 +569,7 @@ class Cyberpunk:
         if "ui" in self.modes and t == "uiact":
             return ui_replies(m)
         if "hacks" in self.modes and t == "hack" and isinstance(rid, int) and isinstance(m.get("target"), str) and m.get("hack") in HACK_UPLOAD:
-            now, later, upload = hack_replies(m)
+            now, later, upload = hack_replies(m, self.ids_from)
             due = time.perf_counter() + upload * SCRIPT_SCALE
             self.delayed += [(due, d) for d in later]
             return now
@@ -543,10 +581,10 @@ class Cyberpunk:
             mob = items[0].get("id") if isinstance(items[0], dict) else None
             if isinstance(mob, int):
                 self.mobdmg_sent = True
-                return [{"t": "mobdmg", "id": mob, "frac": 0.5, "by": hostile_human()["id"]}]
+                return [{"t": "mobdmg", "id": mob, "frac": 0.5, "by": hostile_human(self.ids_from)["id"]}]
         if 6 in self.layers and isinstance(rid, int):
             if t == "scan":
-                return [scaninfo_message(rid)]
+                return [scaninfo_message(rid, self.ids_from)]
             if t == "hack":
                 return [{"t": "hackresult", "id": rid, "ok": True, "reason": ""}]
         return []
@@ -577,14 +615,14 @@ async def listen(ws, host: Cyberpunk) -> None:
     async for raw in ws:
         m = json.loads(raw)
         if m.get("t") == "hello":
-            print("hello:", m)
+            print(f"{host.tag}hello:", m)
             if m.get("proto") != 1:
-                print(f"warning: Minecraft speaks protocol {m.get('proto')}, this tool speaks 1", file=sys.stderr)
+                print(f"{host.tag}warning: Minecraft speaks protocol {m.get('proto')}, this tool speaks 1", file=sys.stderr)
         elif m.get("t") == "status" and m != last:
-            print("status:", m)
+            print(f"{host.tag}status:", m)
             last = m
         elif m.get("t") in printed:
-            print(f"{m['t']}: {json.dumps(m)}")
+            print(f"{host.tag}{m['t']}: {json.dumps(m)}")
         for reply in host.reply(m):
             await ws.send(json.dumps(reply))
 
@@ -592,12 +630,12 @@ async def listen(ws, host: Cyberpunk) -> None:
 async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, commands: Sequence[str], host: Cyberpunk) -> None:
     """Cyberpunk's side of layers 2-6: the NPC list, the layer 2 bullet hit, the commands; then for `hold` seconds the
     camera (`host.cam`: `cam` held, or V's body in layer 4), the NPC list at 10 Hz and the layers' timed messages."""
-    npcs = npcs_message()
+    npcs = npcs_message(host.ids_from)
     commands = [*host.setup_commands(), *commands]
     for m in (npcs, *([dmg_message()] if 2 in host.layers else []), *({"t": "cmd", "c": c} for c in commands)):
         await ws.send(json.dumps(m))
     label = ", ".join([*(f"layer {n}" for n in sorted(host.layers)), *(f"--{m}" for m in sorted(host.modes))])
-    print(f"{label}: sent {len(npcs['list'])} npcs, {len(commands)} command(s)"
+    print(f"{host.tag}{label}: sent {len(npcs['list'])} npcs, {len(commands)} command(s)"
           f"{' and a bullet dmg' if 2 in host.layers else ''}; listening {hold:g} s for {', '.join(sorted(printed_events(host.layers, host.modes)))}")
     npcs_every = max(1, round(fps / NPC_HZ))
     timeline = host.script()
@@ -618,14 +656,16 @@ async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, com
 
 async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str = shm.NAME, setup: bool = True,
               hold: float | None = None, commands: Sequence[str] = (), layers: frozenset[int] = frozenset({2}),
-              modes: frozenset[str] = frozenset()) -> int:
+              modes: frozenset[str] = frozenset(), name: str | None = None, ver: str | None = None, ids_from: int | None = None) -> int:
     """Returns the number of frame sets saved. `hold` (seconds) runs the scripts of `layers` (2 to 6) and of the re-test 3
-    `modes` (ui, hacks, seat) after the orbit."""
+    `modes` (ui, hacks, seat) after the orbit. Multiplayer: `name` prefixes every printed line, `ver` is the DLL version in
+    the `hello` (None: no `ver`, a DLL from before Phase 1), `ids_from` numbers the NPCs (None: the protocol.md example ids)."""
     out.mkdir(parents=True, exist_ok=True)
-    host = Cyberpunk(layers if hold is not None else frozenset(), modes if hold is not None else frozenset())
+    npc_ids(ids_from)  # a bad --ids-from fails here, before anything is sent
+    host = Cyberpunk(layers if hold is not None else frozenset(), modes if hold is not None else frozenset(), ids_from, name)
     async with connect(url, max_size=None) as ws:
         listener = asyncio.create_task(listen(ws, host))
-        for m in ({"t": "hello", "proto": 1, "game": "cp2077", "build": "2.31"}, {"t": "view", "w": VIEW[0], "h": VIEW[1]},
+        for m in (hello_message(ver), {"t": "view", "w": VIEW[0], "h": VIEW[1]},
                   {"t": "clear"}, {"t": "state", "active": True, "vehicle": False}, {"t": "hud", "hidden": False}):
             await ws.send(json.dumps(m))
         for command in SETUP_COMMANDS if setup else []:
@@ -639,7 +679,7 @@ async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str
             pending = pending or f % SAVE_EVERY == 0
             if pending and (frame := shm.read_latest(shm_name)):
                 save_frame(frame, out, f)
-                print(f"saved frame_{f:03d}: Minecraft frame {frame['pose']['mc_frame']} for host frame "
+                print(f"{host.tag}saved frame_{f:03d}: Minecraft frame {frame['pose']['mc_frame']} for host frame "
                       f"{frame['pose']['host_frame']} ({f - frame['pose']['host_frame']} behind), {frame['width']}x{frame['height']}")
                 saved, pending = saved + 1, False
             await asyncio.sleep(max(0.0, t0 + f / fps - time.perf_counter()))
@@ -676,7 +716,18 @@ def main() -> int:
     ap.add_argument("--stairs", action="store_true", help="after the orbit: place a staircase of five blocks, walk V up it (step-up assist lifts), send aim at the block faces (box 2 mm in front); print prefs")
     ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs: seconds to keep the link up and listen (default 10)")
     ap.add_argument("--cmd", action="append", default=[], metavar="COMMAND", help='--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs: a server command to send after the npcs, e.g. "summon tnt 0 64 0" (repeatable)')
+    ap.add_argument("--name", default=None, help="a log prefix: every printed line starts with [NAME] (letters, digits, _ . -, at most 32), for two fake hosts at once")
+    ap.add_argument("--ver", default=None, help=f"the DLL version in the hello (at most {MAX_VER} characters; default: this checkout's version; an empty value sends no ver, like a DLL from before Phase 1)")
+    ap.add_argument("--ids-from", type=int, default=None, metavar="N", help="number the three NPCs N, N+1 and N+2 instead of the protocol.md example ids, to force an id collision between two fake hosts (1 <= N <= 2**64 - 3)")
     args = ap.parse_args()
+    if args.name is not None and not NAME_RE.fullmatch(args.name):
+        ap.error("--name must be 1 to 32 letters, digits, '_', '.' or '-'")
+    if args.ver is not None and len(args.ver) > MAX_VER:
+        ap.error(f"--ver must be at most {MAX_VER} characters")
+    if args.ids_from is not None and not 1 <= args.ids_from <= 2**64 - 3:
+        ap.error("--ids-from must be between 1 and 2**64 - 3")
+    ver = None if args.ver == "" else args.ver if args.ver is not None else package.version()
+    tag = f"[{args.name}] " if args.name else ""
     layers = frozenset(n for n in range(2, 7) if getattr(args, f"layer{n}"))
     modes = frozenset(m for m in MODES if getattr(args, m))
     url = args.url or f"ws://127.0.0.1:{args.port}"
@@ -690,14 +741,14 @@ def main() -> int:
         ap.error("--view, --stairs, --seat and --layer4 each drive the camera: use only one of them")
     try:
         saved = asyncio.run(run(url, args.frames, args.out, args.fps, args.shm, not args.no_setup,
-                                args.hold if layers or modes else None, args.cmd, layers, modes))
+                                args.hold if layers or modes else None, args.cmd, layers, modes, args.name, ver, args.ids_from))
     except (ConnectionError, TimeoutError, ConnectionClosed) as e:
-        print(f"no connection to Minecraft at {url} ({e}); start the dev client first:\n"
+        print(f"{tag}no connection to Minecraft at {url} ({e}); start the dev client first:\n"
               '  mc\\gradlew.bat runClient --args="--quickPlaySingleplayer cyberblock"', file=sys.stderr)
         return 1
-    print(f"saved {saved} frame set(s) to {args.out}")
+    print(f"{tag}saved {saved} frame set(s) to {args.out}")
     if not saved:
-        print(f"no frames in the shared memory {args.shm}: is the mod exporting?", file=sys.stderr)
+        print(f"{tag}no frames in the shared memory {args.shm}: is the mod exporting?", file=sys.stderr)
     return 0 if saved else 1
 
 

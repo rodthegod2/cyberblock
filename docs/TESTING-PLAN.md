@@ -118,6 +118,66 @@ notes and in the integrator's report.
 
 <!-- end of Re-test Q. The Wave A integrator appends "## Re-test 1 (Wave A, after Re-test Q)" and the Phase 2 tool checks directly below this line, above "In-game fixes 3". -->
 
+## Re-test 1 (multiplayer Phase 1: do this first; it goes directly below Re-test Q, one combined test for Wave A)
+
+**What to try (one screen):**
+1. Play singleplayer as usual (blocks, TNT, a hack, the glide, the UI): nothing should have changed.
+2. Only with a second player who has a real Minecraft account (see the note below steps 2 to 4): open the world to LAN; the
+   guest places TNT next to V and it explodes in Night City.
+3. Same guest: `/cyberblock guests explosions off`: the same TNT no longer reaches Night City; `on` brings it back.
+4. Same guest: they hit an NPC's hitbox (F3+B shows the proxy boxes): the NPC flinches. `/cyberblock guests damage off` stops it.
+5. Quit and reopen the world: no collision left in Night City, and the ground comes back.
+
+| What changed | Where |
+|---|---|
+| The mod is a client relay plus a server with one session per host; singleplayer uses the same path | all of `mc/` |
+| A guest's explosions, hits, blocks, scans and hacks reach the host's Cyberpunk game, switchable with `/cyberblock guests` | server |
+| Version handshake and messages; reconnect with the "Reconnecting to ..." screen; rate limits and the overflow kick | client and server |
+| The DLL's `hello` carries `ver`; a new `session` message tells it its role and cleans Cyberpunk when it is not host | `cp/` |
+| `tools/mpcheck.py`, `tools/content_check.py`, fake host `--name`, `--ver`, `--ids-from`, the test server templates | `tools/`, `server/` |
+
+`<integration worktree>` below is the worktree the integrator names in its report (Gradle must never run in the folder you
+play from). The automatic scenarios (`uv run python -m tools.mpcheck --all`: singleplayer, guest, versions, flood, reconnect,
+twohosts) were run by the integrator, not by you; the `guest` scenario covers steps 2 to 4 with an offline guest on a local
+test server.
+
+**Steps 2 to 4 need a second real account.** A world opened to LAN checks every player's Minecraft login, so the offline test
+guest of the harness (`tools.mpcheck --guest <port>`, name `CbGuest1`) is refused with "Failed to log in: Invalid session".
+Do steps 2 to 4 with a friend (or a second PC) signed in with their own Minecraft account on your network; without one, skip
+them (the integrator's `guest` scenario covered them on the test server).
+
+1. **Singleplayer, as before.** Start Minecraft and Cyberpunk, F9 on, and play a short pass of Re-test 3 (place blocks, set
+   off TNT, one hack, one glide, open the journal). Expected: everything behaves as before.
+   Log: latest.log `handshake: <name> mod X dll X -> host` (server) and `handshake: server X -> host` (client);
+   `session: <name> started`.
+2. **A guest's TNT (needs a second real account, see above).** Esc, Open to LAN, Start LAN World; note the port in chat.
+   Your guest joins with Multiplayer, Direct Connection, `<your PC's address>:<port>`. The guest places TNT next to V and
+   lights it. Expected: it explodes in Night City too (V reacts, NPCs flee). Log: latest.log `handshake: <guest> mod X dll  ->
+   guest`; Cyberblock.log shows the explosion event.
+3. **The explosions toggle.** Type `/cyberblock guests explosions off`, repeat the TNT. Expected: Minecraft blocks break, but
+   nothing happens in Night City, and the guest's action bar says the action was blocked. `/cyberblock guests explosions on`
+   brings it back.
+4. **A guest's hit.** The guest hits an NPC's hitbox (F3+B shows the proxy boxes). Expected: the NPC flinches or staggers.
+   With `/cyberblock guests damage off` it does not; with `on` it does again.
+5. **Quit and rejoin.** Close the guest, quit the world, reopen it (and the LAN world again). Expected: no leftover collision
+   in Night City, and the ground comes back around V. Log: `session: <name> ended (...)` on the way out, then
+   `session: <name> started`; Cyberblock.log shows the probes starting over (`clear`).
+6. **Operators.** `/cyberblock hosts` lists the sessions with role, versions and message rates (it should show you as the
+   one host).
+7. **A mismatched plugin (only if you have one).** If your Cyberpunk plugin and Minecraft mod were ever from different
+   releases, Minecraft says "Cyberblock: your Cyberpunk plugin is X but your mod is Y; you can play as a guest. Reinstall both
+   from the same release." and Cyberpunk is cleaned up. Not needed when the versions match: the harness covered it
+   (`tools.mpcheck versions`).
+
+**Descopes and risks:** `maxHosts` stays 1 until Phase 3, so a second linked player joins as a guest; the payload size cap may
+force more splitting of `ground` and `npcs` than planned (measured in 1-N1); a guest cannot see NPCs yet (figures come in
+Phase 3); the harness scenarios assume the devtools commands of 1-N4 and that `runServer` honours `-Pcyberblock.runDir`;
+the guest-side "blocked" action-bar message can only be seen in game. The harness's offline `--guest` client cannot join
+a LAN world (26.3 authenticates every LAN login); the integrator decides between a devtools way to open a LAN world without
+authentication, the user joining an offline test server, or a second real account (escalated by package 1T).
+
+**needsInGame appendix:** the integrator copies each package's `needsInGame` list here (1N, 1W, 1C, 1L, 1H) before the test.
+
 ## In-game fixes 3 (2026-10-03 evening; do these first)
 
 Three things from the 20:05-20:16 session (`fix/ingame3`):

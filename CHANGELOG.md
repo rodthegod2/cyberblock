@@ -73,6 +73,17 @@ server/client split and the Apex tools) add their lines below.
 - **Release 1.0.0.** A release zip with an installer (`install.bat`, `uninstall.bat`, `install.ps1`), a launcher install
   with a "Play Cyberblock" button, GitHub Actions CI, this changelog, licence and third-party notices.
 - **Tools.** `tools.fakehost` modes `--ui`, `--hacks` and `--seat`; `tools.package` builds the release zip.
+- **Playing together (LAN), Phase 1 of the multiplayer plan.** The Minecraft mod is split into a client relay and a server
+  with one session per Cyberpunk host; singleplayer goes through the same path, so opening a world to LAN lets a friend join
+  as a guest. A guest's TNT, explosions, hits and blocks reach the host's Cyberpunk game; the host switches what guests may
+  do with `/cyberblock guests <explosions|damage|hacks|devices|spawns> on|off`. A version handshake with clear messages, a
+  reconnect that cleans Night City and brings the ground back, and per-type rate limits. Wire contract: `shared/protocol.md`
+  "Multiplayer (Phase 1)" (new `hstate`, `session`, `survey_cmd`, the DLL's `hello.ver` and the documented `pteleport`).
+- **Content as data.** `tools/content_check.py` validates content files (`data/<namespace>/cyberblock/<kind>/<name>.json`) against
+  the JSON Schemas in `shared/content-schemas/`.
+- **Multiplayer test tools.** `tools/mpcheck.py` runs a dedicated test server, offline clients and fake hosts through the
+  scenarios singleplayer, guest, versions, flood, reconnect and twohosts (`--guest <LAN port>` starts one test guest for a
+  world opened to LAN); `tools/fakehost.py` gains `--name`, `--ver` and `--ids-from`; `server/` holds the test server templates.
 
 ### Changed
 - Cyberpunk's HUD no longer comes back for prompts, dialogues or vehicles: Minecraft draws them.
@@ -80,6 +91,7 @@ server/client split and the Apex tools) add their lines below.
   strong hits) instead of flinging everyone.
 - The glide steers with the camera like the vanilla elytra (the DLL owns the glide's yaw).
 - Implants no longer share one activation key or a tap-and-hold selection.
+- Online play is now a goal of the design (spec section 1.1); the spec's non-goal "online play of any kind" is reversed.
 
 ### Fixed
 - Re-test 3: every hack looked the same because the hack wheel preferred its remembered pick over the chip in the hand.

@@ -3,7 +3,8 @@
 Date: 2026-10-02 · Status: approved in brainstorming, awaiting spec review · Amended 2026-10-03 after the second
 in-game re-test (ground alignment in §3.2, the flight drive and launches in §5 layer 4, cyberware in §5) and after the
 third (re-test 3: Minecraft draws every piece of interface, vehicles keep Steve, third person, distinct quickhacks, six
-keys, release packaging: §4.3, §4.8, §5 layers 4 and 6)
+keys, release packaging: §4.3, §4.8, §5 layers 4 and 6) · Amended 2026-10-04 for online play (the multiplayer megaplan:
+§1 non-goals and §1.1 below)
 
 ## 1. What we are building
 
@@ -20,8 +21,33 @@ Night City through real Cyberpunk effects (explosions, damage, collision, telepo
 | Game mode | **Both, switchable** with Minecraft's `/gamemode`. Survival spawns with a starter kit (`/cyberblock kit` refills); creative makes both Steve and V invincible. |
 | Priorities | Building + TNT/creepers → mobs vs Night City → elytra + ender pearls → interactive items (lead/lasso, fishing rod, …) → Cyberpunk-as-Minecraft (quickhack items, hack key, skill tree). Nether and day/night sync are out of scope. |
 
+### 1.1 Online play (amended 2026-10-04: now a goal)
+The first version of this spec listed "online play of any kind" as a non-goal. **That is reversed.** The multiplayer megaplan
+(`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md`) builds an Apex-hosted Fabric 26.3 Minecraft world in which
+Cyberpunk-linked players (**hosts**) and Minecraft-only friends (**guests**, who need the Cyberblock mod and resource pack)
+play together; what either side does reaches the other through the game's own server. The design rules that follow from it:
+
+- **Each Cyberpunk game owns its own Night City** (NPCs, devices, V's body and camera); **the Minecraft server owns the shared
+  world** (blocks, items, mobs, players, perks, RAM). Only a host's own Minecraft client ever talks to that host's DLL.
+- **The wire between the DLL and its client does not change** (`proto` 1). The client keeps LOCAL messages on the PC (camera,
+  keys, interface, frame export) and relays the rest to the server as `cyberblock:up` payloads; the server sends a host's
+  DOWN messages back as `cyberblock:down`. One server session per host, keyed by the player's UUID; Night City ids are scoped
+  by their owner. [`shared/protocol.md`](../../../shared/protocol.md) "Multiplayer (Phase 1)" is the contract.
+- **There is no separate relay service and no second code path.** Singleplayer is the integrated server reached through the
+  same payloads; opening the world to LAN makes it a small multiplayer server with no other change.
+- **Hosts decide what guests may do to their Cyberpunk game** (explosions, damage, hacks, devices, spawns), and the server
+  checks every UP message (type, size, rate, position sanity) before any handler sees it.
+- **Content is data** from Phase 1 on (datapacks under `data/<namespace>/cyberblock/<kind>/`, hot-reloaded), so friends add
+  content without code; `tools/content_check.py` validates it.
+- A no-install "Lite" tier for friends without the mod is a later version; the data layer leaves room for it and nothing is
+  built for it now.
+
+The rest of this document describes the single-player architecture, which is exactly what a host runs; sections that say
+"one JVM" or "the local world" describe the mechanism the relay now carries over the network.
+
 ### Non-goals
-- Online play of any kind. Cyberpunk is single-player; the Minecraft world is a local singleplayer world.
+- A separate relay service, or any online play that bypasses the game's own server (see 1.1). Cyberpunk itself stays
+  single-player: every host plays its own copy.
 - Replacing Cyberpunk's movement with Minecraft's on foot.
 - Copying or redistributing game files: no Minecraft or Cyberpunk assets in this repo. Item textures are
   original 16×16 pixel art.

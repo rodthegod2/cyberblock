@@ -1046,6 +1046,90 @@ def pq_example(t, **changes):
     return m
 
 
+# ---- Multiplayer (Phase 1): the class tables, the new messages, the payloads and the rate limits ----------------------
+# Plan 2026-10-04-multiplayer-megaplan sections 1.2 (classes and new messages), 1.3 (payloads), 1.5 (handshake), 1.6 (limits).
+MP_CP, MP_MC = "Multiplayer: Cyberpunk → Minecraft classes", "Multiplayer: Minecraft → Cyberpunk classes"
+MP_NEW, MP_PAYLOADS = "Multiplayer: new messages", "Multiplayer: payloads (client ↔ server)"
+MP_SECURITY, MP_SESSIONS = "Multiplayer: security, rate limits and guest toggles", "Multiplayer: handshake and sessions"
+MP_CP_EXAMPLES, MP_MC_EXAMPLES = "Multiplayer examples, Cyberpunk to Minecraft:", "Multiplayer examples, Minecraft to Cyberpunk:"
+MP_UP_EXAMPLES = "Multiplayer examples, client to server (`cyberblock:up`):"
+MP_DOWN_EXAMPLES = "Multiplayer examples, server to client only (`cyberblock:down`):"
+SESSION_STATES, ROLES, SURVEY_CMD_OPS = names("Session states"), names("Roles"), names("Survey commands")
+PAYLOAD_IDS, GUEST_TOGGLES = names("Payload ids"), names("Guest toggles")
+HSTATE_FLAGS = ("active", "vehicle", "air", "cr", "held", "fly", "launch", "seat")
+SESSION_REASON_BYTES = 128
+
+MP_CP_CLASSES = {
+    **dict.fromkeys(("hello", "state", "aim", "npcs", "stats"), "BOTH"),
+    **dict.fromkeys(("ground", "unground", "clear", "dmg", "mobdmg", "pcells", "unlead", "killed", "scaninfo", "hackresult", "hackspread"), "UP"),
+    **dict.fromkeys(("cam", "view", "hud", "key", "slot", "scroll", "cursor", "click", "char", "skey", "look", "quest", "pins", "prompt",
+                     "choices", "sub", "call", "notify", "screen", "reply", "terrain", "surveystate", "cmd"), "LOCAL"),
+}
+MP_MC_CLASSES = {
+    **dict.fromkeys(("hello", "status", "binds", "uiact", "persp", "flight", "survey", "prefs"), "LOCAL"),
+    **dict.fromkeys(("block", "blocks", "align", "explosion", "knock", "hit", "ignite", "lead", "pull", "mobs", "proj", "teleport", "effect",
+                     "scan", "hack", "perks", "cyberware", "cyberfx", "pteleport"), "DOWN"),
+}
+MP_RATES = {  # plan section 1.6: type -> (tokens per second, burst)
+    **dict.fromkeys(("ground", "unground", "clear"), (40, 120)), "npcs": (15, 30), "dmg": (20, 40), "aim": (15, 30),
+    **dict.fromkeys(("hstate", "state"), (10, 20)), **dict.fromkeys(("mobdmg", "pcells"), (30, 60)),
+    **dict.fromkeys(("scaninfo", "hackresult", "hackspread"), (40, 80)), **dict.fromkeys(("killed", "unlead"), (10, 20)),
+    "stats": (2, 4), "terrain": (30, 200), "hello": (1, 3), **dict.fromkeys(("devices", "devstate", "devresult"), (10, 40)),
+}
+MP_PAYLOADS_EXPECTED = {  # plan section 1.3: id -> direction
+    "hs": "C2S", "hs_ack": "S2C", "up": "C2S", "down": "S2C", "roster": "S2C", "perms": "C2S", "content": "S2C", "act": "C2S", "ui": "S2C",
+}
+
+
+def class_rows(heading: str) -> list[tuple[str, str]]:
+    return re.findall(r"^\| `(\w+)` \| (LOCAL|UP|DOWN|BOTH) \|", section(heading), re.M)
+
+
+def rate_rows() -> dict[str, tuple[int, int]]:
+    rows = {}
+    for m in re.finditer(r"^\| ((?:`\w+`(?:, )?)+) \| (\d+) \| (\d+) \|", section(MP_SECURITY), re.M):
+        rows.update({t: (int(m.group(2)), int(m.group(3))) for t in re.findall(r"`(\w+)`", m.group(1))})
+    return rows
+
+
+def payload_rows() -> dict[str, str]:
+    return {m.group(1): m.group(2) for m in re.finditer(r"^\| `cyberblock:(\w+)` \| (C2S|S2C) \|", section(MP_PAYLOADS), re.M)}
+
+
+def mp_hello_ok(m) -> bool:
+    """The DLL's `hello` gains `ver` (the DLL version, 1..32 chars)."""
+    return (set(m) == {"t", "proto", "game", "build", "ver"} and m["proto"] == 1 and m["game"] == "cp2077" and isinstance(m["build"], str)
+            and isinstance(m["ver"], str) and 1 <= len(m["ver"]) <= 32)
+
+
+def hstate_ok(m) -> bool:
+    return (set(m) - {"feetCpZ"} == {"t", *HSTATE_FLAGS, "lv"} and all(isinstance(m[f], bool) for f in HSTATE_FLAGS) and whole(m["lv"], 0, 63)
+            and ("feetCpZ" not in m or (num(m["feetCpZ"], -3e7, 3e7) and abs(m["feetCpZ"]) < 3e7)))
+
+
+def session_ok(m) -> bool:
+    perms = m["perms"]
+    return (set(m) == {"t", "state", "reason", "perms"} and m["state"] in SESSION_STATES and isinstance(m["reason"], str)
+            and len(m["reason"].encode("utf-8")) <= SESSION_REASON_BYTES and isinstance(perms, dict) and list(perms) == GUEST_TOGGLES
+            and all(isinstance(v, bool) for v in perms.values()))
+
+
+MP_VALIDATORS = {
+    "hello": mp_hello_ok,
+    "hstate": hstate_ok,
+    "session": session_ok,
+    "pteleport": lambda m: set(m) == {"t", "pos"} and vec3(m["pos"]),
+    "survey_cmd": lambda m: set(m) == {"t", "op"} and m["op"] in SURVEY_CMD_OPS,
+}
+MP_EXAMPLES = [(m["t"], m) for first in (MP_CP_EXAMPLES, MP_MC_EXAMPLES, MP_UP_EXAMPLES, MP_DOWN_EXAMPLES) for m in examples(first)]
+
+
+def mp_example(t, **changes):
+    m = copy.deepcopy(next(m for u, m in MP_EXAMPLES if u == t))
+    m.update(changes)
+    return m
+
+
 def test_phase_q_every_type_has_a_row_an_example_and_a_validator():
     assert documented(PQ_CP_TO_MC) == {"cam"} and documented(PQ_MC_TO_CP) == {"prefs"}
     assert {m["t"] for m in examples(PQ_CP_EXAMPLES)} == {"cam"} and {m["t"] for m in examples(PQ_MC_EXAMPLES)} == {"prefs"}
@@ -1093,6 +1177,122 @@ PQ_OUT_OF_LIMITS = [
 def test_phase_q_validators_reject_out_of_limit_messages(t, m):
     try:
         ok = PQ_VALIDATORS[t](m)
+    except (KeyError, TypeError):
+        ok = False
+    assert not ok
+
+
+def test_mp_names_have_the_plan_values():
+    assert PAYLOAD_IDS == list(MP_PAYLOADS_EXPECTED) and SESSION_STATES == ["none", "host", "guest", "refused"] and ROLES == ["host", "guest"]
+    assert SURVEY_CMD_OPS == ["start", "redo", "stop", "status"] and GUEST_TOGGLES == ["explosions", "damage", "hacks", "devices", "spawns"]
+
+
+def test_mp_class_tables_classify_every_wire_message_once_with_the_plan_class():
+    for heading, expected in ((MP_CP, MP_CP_CLASSES), (MP_MC, MP_MC_CLASSES)):
+        rows = class_rows(heading)
+        assert len(rows) == len({t for t, _ in rows}), f"{heading}: a type is listed twice"
+        assert dict(rows) == expected, heading
+
+
+def test_mp_class_tables_cover_every_documented_type_of_the_wire():
+    cp = documented(CP_TO_MC) | documented(L36_CP_TO_MC) | documented(R3_CP_TO_MC) | documented(AT_CP_TO_MC)
+    mc = documented(MC_TO_CP) | documented(L36_MC_TO_CP) | documented(R3_MC_TO_CP) | documented(AT_MC_TO_CP) | documented(PQ_MC_TO_CP)
+    assert set(MP_CP_CLASSES) == cp | {"cmd"}  # `cmd` is the test tools' command, documented only here
+    assert set(MP_MC_CLASSES) == (mc - {"perkfx"}) | {"pteleport"}  # `perkfx` is superseded and never sent; `pteleport` was undocumented
+    assert {"hello"} <= set(MP_CP_CLASSES) & set(MP_MC_CLASSES)
+
+
+def test_mp_up_types_fit_the_envelope_and_all_have_a_rate_limit():
+    up = {t for t, c in MP_CP_CLASSES.items() if c in ("UP", "BOTH")} | {"hstate"}
+    assert all(len(t) <= 16 for t in up)  # `cyberblock:up` t is at most 16 characters
+    assert up <= set(rate_rows())
+
+
+def test_mp_rate_limits_are_the_plan_table():
+    assert rate_rows() == MP_RATES
+    text = " ".join(section(MP_SECURITY).split())
+    for phrase in ("at most 20000 cells per second", "the burst is 200 during a survey", "`rate` multiplier", "five times its rate for 10 s",
+                   "Cyberblock: too many messages from your Cyberpunk link", "160 blocks horizontally", "`terrain` 400 blocks",
+                   "50 of them within a minute kick the player", "counters are logged every 5 s", "`cyberblock.guest.blocked`",
+                   "never relayed and a dedicated server refuses it"):
+        assert phrase in text, f"{phrase!r} is not stated"
+
+
+def test_mp_payload_table_lists_the_nine_payloads_with_their_directions_and_caps():
+    assert payload_rows() == MP_PAYLOADS_EXPECTED
+    text = section(MP_PAYLOADS)
+    rows = {m.group(1): m.group(0) for m in re.finditer(r"^\| `cyberblock:(\w+)` \|.*$", text, re.M)}
+    for pid, cap in (("hs", "`mod` ≤ 32"), ("hs", "`dll` ≤ 32"), ("hs_ack", "`reason` ≤ 256"), ("up", "`t` ≤ 16"), ("up", "30000 bytes"),
+                     ("down", "1 000 000 bytes"), ("roster", "≤ 200"), ("content", "`kind` ≤ 32"), ("act", "8000"), ("ui", "1 000 000")):
+        assert cap in rows[pid], f"cyberblock:{pid} does not state {cap!r}"
+    flat = " ".join(text.split())
+    for phrase in ("1 `explosions`, 2 `damage`, 4 `hacks`, 8 `devices`, 16 `spawns`",
+                   "1 replica, 2 devices, 4 figures, 8 hacking, 16 hub, 32 modes", "bounded at 2048 messages", "in `seq` order",
+                   "whole quadruples", "`npcs` lists"):
+        assert phrase in flat, f"{phrase!r} is not stated"
+
+
+def test_mp_handshake_and_session_rules_are_written_down():
+    text = " ".join(section(MP_SESSIONS).split())
+    for phrase in ("Cyberblock version mismatch: server X, your mod Y. Update from the modpack.", "differ in major.minor", "within 10 s",
+                   "`requireMod:true`", "5, 10, 20, 40 and then every 60 s for 10 minutes", "`NONE`", "`LINKED`", "`ACTIVE`",
+                   "`align` immediately followed by `blocks reset:true`", "`maxHosts`", "handshake: <name> mod X dll Y -> host|guest",
+                   "session: <name> started|active|ended (<reason>)", "relay: <name> dropped <t> x N (<why>)", "session: cleaned (<reason>)"):
+        assert phrase in text, f"{phrase!r} is not stated"
+
+
+def test_mp_new_messages_have_a_row_an_example_and_a_validator():
+    rows = rows_by_type(MP_NEW)
+    assert set(rows) == set(MP_VALIDATORS) == {t for t, _ in MP_EXAMPLES}
+    assert "**extends layer 1**" in rows["hello"] and "`ver`" in rows["hello"]
+    for t in ("hstate", "session", "pteleport", "survey_cmd"):
+        assert "**extends" not in rows[t]
+
+
+def test_mp_every_example_field_is_named_in_its_row():
+    rows = rows_by_type(MP_NEW)
+    for t, m in MP_EXAMPLES:
+        for key in set(m) - {"t"} - ({"proto", "game", "build"} if t == "hello" else set()):  # the old hello fields live in layer 1
+            assert re.search(rf"\b{key}\b", rows[t]), f"{t}.{key} is not described in its Multiplayer row"
+
+
+@pytest.mark.parametrize("t, m", MP_EXAMPLES, ids=[f"{t}-{i}" for i, (t, _) in enumerate(MP_EXAMPLES)])
+def test_mp_example_obeys_the_documented_limits(t, m):
+    assert MP_VALIDATORS[t](m)
+
+
+def test_mp_examples_show_every_session_state_and_both_hstate_forms():
+    sessions = [m for t, m in MP_EXAMPLES if t == "session"]
+    assert sorted(m["state"] for m in sessions) == sorted(SESSION_STATES)
+    assert any(m["perms"]["explosions"] for m in sessions) and all(m["reason"] for m in sessions if m["state"] == "refused")
+    hstates = [m for t, m in MP_EXAMPLES if t == "hstate"]
+    assert any("feetCpZ" in m for m in hstates) and any("feetCpZ" not in m for m in hstates)  # feetCpZ is optional
+    assert mp_example("hello")["ver"] and mp_example("hello")["proto"] == 1
+
+
+MP_OUT_OF_LIMITS = [
+    ("hello", mp_example("hello", ver="")), ("hello", mp_example("hello", ver="v" * 33)), ("hello", mp_example("hello", ver=1)),
+    ("hello", {k: v for k, v in mp_example("hello").items() if k != "ver"}),
+    ("hstate", mp_example("hstate", lv=64)), ("hstate", mp_example("hstate", lv=-1)), ("hstate", mp_example("hstate", lv=1.5)),
+    ("hstate", mp_example("hstate", active=1)), ("hstate", mp_example("hstate", seat="yes")), ("hstate", mp_example("hstate", feetCpZ=float("inf"))),
+    ("hstate", mp_example("hstate", feetCpZ=3e7)), ("hstate", mp_example("hstate", feetCpZ="64")),
+    ("hstate", {k: v for k, v in mp_example("hstate").items() if k != "launch"}), ("hstate", {**mp_example("hstate"), "extra": True}),
+    ("session", mp_example("session", state="spectator")), ("session", mp_example("session", reason="r" * 129)),
+    ("session", mp_example("session", reason="é" * 65)), ("session", mp_example("session", reason=None)),
+    ("session", mp_example("session", perms={"explosions": True})),
+    ("session", mp_example("session", perms={**mp_example("session")["perms"], "damage": 1})),
+    ("session", mp_example("session", perms={**mp_example("session")["perms"], "extra": True})),
+    ("pteleport", mp_example("pteleport", pos=[1, 2])), ("pteleport", mp_example("pteleport", pos=[0, float("nan"), 0])),
+    ("pteleport", mp_example("pteleport", pos=[3e7, 0, 0])), ("pteleport", mp_example("pteleport", pos=None)),
+    ("survey_cmd", mp_example("survey_cmd", op="pause")), ("survey_cmd", mp_example("survey_cmd", op=None)),
+    ("survey_cmd", {"t": "survey_cmd"}),
+]
+
+
+@pytest.mark.parametrize("t, m", MP_OUT_OF_LIMITS, ids=[f"{t}-{i}" for i, (t, _) in enumerate(MP_OUT_OF_LIMITS)])
+def test_mp_validators_reject_out_of_limit_messages(t, m):
+    try:
+        ok = MP_VALIDATORS[t](m)
     except (KeyError, TypeError):
         ok = False
     assert not ok
@@ -1191,3 +1391,34 @@ def test_changelog_has_an_unreleased_entry_for_phase_q_at_the_top_of_the_1_0_0_s
     for phrase in ("Survival mining", "Stairs", "step-up assist", "third-person camera", "Outline blocks in creative", "settings screen",
                    "`prefs`", "`cam.vdbg`", "--view", "--stairs", "tests/test_hygiene.py"):
         assert phrase in text, f"CHANGELOG Unreleased does not say {phrase!r}"
+
+
+def test_mp_validators_accept_the_limits_themselves():
+    assert mp_hello_ok(mp_example("hello", ver="v" * 32)) and mp_hello_ok(mp_example("hello", ver="1"))
+    assert hstate_ok(mp_example("hstate", lv=0)) and hstate_ok(mp_example("hstate", lv=63, feetCpZ=-29_999_999.5))
+    assert session_ok(mp_example("session", reason="r" * 128)) and session_ok(mp_example("session", reason="é" * 64))
+    assert session_ok(mp_example("session", state="none", reason=""))
+    assert MP_VALIDATORS["pteleport"](mp_example("pteleport", pos=[-29_999_999, 0.0, 29_999_999]))
+    assert all(MP_VALIDATORS["survey_cmd"](mp_example("survey_cmd", op=op)) for op in SURVEY_CMD_OPS)
+
+
+def test_mp_refused_reason_of_the_plan_fits_the_cap_for_five_character_versions():
+    """Section 1.5's mismatch text with `X.Y.Z` versions is exactly 128 bytes: longer version strings are cut by the sender."""
+    msg = "Cyberblock: your Cyberpunk plugin is 1.0.0 but your mod is 1.1.0; you can play as a guest. Reinstall both from the same release."
+    assert len(msg.encode("utf-8")) == SESSION_REASON_BYTES
+    assert msg == next(m for t, m in MP_EXAMPLES if t == "session" and m["state"] == "refused")["reason"]
+    assert "cuts `reason` at 128 bytes" in " ".join(section(MP_NEW).split())
+
+
+def test_mp_session_and_survey_cmd_rules_are_written_down():
+    text = " ".join(section(MP_NEW).split())
+    for phrase in ("clean Cyberpunk state exactly as on a link drop", "collision boxes reset", "puppets despawned", "tethers released",
+                   "Minecraft pause released", "survey stopped", "parked V released", "keeping the WebSocket", "forgets its probe state and sends `clear`",
+                   "never forwards it to the DLL", "never on the DLL wire", "`Bridge.hostAirborne`", "`Cyberblock.launching`", "Undocumented until Phase 1",
+                   "the DLL ignores it today", "(≤ 128 UTF-8 bytes", "`hs_ack.perms`"):
+        assert phrase in text, f"{phrase!r} is not stated"
+
+
+def test_mp_section_sits_before_the_shared_memory_section_and_points_at_the_plan():
+    assert TEXT.index("## Multiplayer (Phase 1)") < TEXT.index("## Shared memory")
+    assert "2026-10-04-multiplayer-megaplan.md" in TEXT.split("## Multiplayer (Phase 1)", 1)[1].split("###", 1)[0]

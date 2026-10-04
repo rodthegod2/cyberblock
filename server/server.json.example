@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "allowHosts": true,
+  "hosts": [],
+  "maxHosts": 1,
+  "requireMod": true,
+  "joinHelp": "",
+  "rate": 1.0,
+  "sanityRadius": 160,
+  "creativeErasesReplica": false,
+  "pvpDefault": false,
+  "backups": {"daily": true, "keep": 7, "hour": 5},
+  "webMap": false
+}
