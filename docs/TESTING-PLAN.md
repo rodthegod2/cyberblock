@@ -131,6 +131,91 @@ Material accuracy depends on Phase 0 (b): without the real material names the pa
 the weather depends on the Codeware reader; the replica grows with exploration (disk; Phase 9 measures it); a host's client
 needs a re-mesh when Cyberblock is switched On or Off; the web map is optional. Details: `docs/notes/phase3-descopes.md`.
 
+## Re-test: Wave B, Phase 5 (figures and skins)
+
+The Phase 5 part of the Wave B session. Play it **after the Phase 3 section above and the Phase 4 section** (it needs the same
+local test server, a host with Cyberpunk and a guest). Guests see Night City's people and cars in their own look and moving like
+the real ones, and every linked player appears as V (or Lucy) with a `[V]` tag. Plan:
+`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 9. The player guide is
+[Figures and skins](HOW-TO-PLAY.md#figures-and-skins-phase-5) and [Your cyber skin](HOW-TO-PLAY.md#your-cyber-skin-phase-5). Tell Claude
+"P5-2: what you saw" and it reads `Cyberblock.log`, the server log, `latest.log` and the game window.
+
+**Before you start.**
+- Phase 0's CET lines **F1** (a pedestrian, a ganger and a vendor in turn) and **F2** (a parked car) decide which way the tags are
+  read. If you have not run them, run them first (Re-test Q, Q7) and paste the `CBP0` lines to Claude. Without them everything
+  below still works, with the written fallbacks.
+- The first minute of the host's session writes the "which way" lines (P5-6): keep `red4ext\logs\Cyberblock.log` open.
+
+**What to try (one screen):**
+1. **As the guest, watch people** near the host: gangers in their gang's colours, cops, a vendor, women on slim models (P5-1).
+2. **Start a fight** and watch from the guest's side: aiming, firing, crouching, a ragdoll, a body lying down (P5-2).
+3. **Look at the cars:** the right colours, a police car flashing in a chase, a dark wreck for 5 s (P5-3).
+4. **A hostile person behind a wall:** a red outline through it, a threat-coloured name tag, a red flash when hurt (P5-4).
+5. **Look at the host as the guest:** V with a coloured `[V]`, a marker in the Tab list (P5-5).
+6. **`/cyberblock body female`:** the host turns into Lucy on every client; `/cyberblock body male` turns back (P5-5).
+7. **Read the "which way" lines** and paste them to Claude (P5-6).
+8. **No Cyberpunk at hand?** `tools.fakehost --figures` shows every skin group, pose and car (P5-7).
+
+| Item | What changed |
+|---|---|
+| Tags | `npcs` entries carry `role`, `fac`, `arch`, `g`, `anim`, `vc`, `col`, `hp` through the new native `Cyberblock_SubmitNpcs2`; the DLL adds walk and run from the movement |
+| Figures | about 30 NPC skins (slim for women), about 12 vehicle models, poses, red outline for hostile people |
+| Cyber skin | every linked player is V or Lucy on every client, `[V]` prefix, list marker, `/cyberblock body male\|female` |
+| Tools | `tools.fakehost --figures`; `tools.mpcheck figures` |
+
+### P5-1. People look like their faction
+1. Stand as the guest where the host walks past a gang, the police and a vendor or ripperdoc.
+2. **Expect:** each person wears the skin of their group (a Maelstrom ganger looks different from an NCPD officer or a civilian), a
+   vendor or ripperdoc has the role skin, women are on the **slim** model (3-pixel arms), men on the classic one.
+3. If everyone looks alike by faction only and women are classic, the plugin is on the fallback: see P5-6 (`tags faction only`).
+
+### P5-2. Poses and animations
+1. Watch a person stroll and one run (a chase): the legs follow the pace, no sliding, no jumping at 10 updates a second.
+2. Start a fight (shoot a ganger, or let the police chase you). **Expect:** a figure that aims raises its arms, one that fires shows a
+   muzzle flash, a crouching one crouches, a knocked-over one tumbles limp, a dead one lies down about 3 s and then goes.
+3. Walk and run come from the movement (fallback), so a figure that stands still in a cutscene shows idle.
+
+### P5-3. Cars
+1. As the guest look at parked and moving cars: each model has its colour (a red car is red); a car with no colour template wears
+   its model's default colour.
+2. Start a police chase: the **hostile police car flashes** its lights. Destroy a car V damaged: a dark wreck for about 5 s.
+
+### P5-4. Hostile figures
+1. Have a hostile person stand behind a wall as seen by the guest. **Expect:** a red outline through the wall, a name tag in the
+   threat colour, a red flash and heart particles when it is hurt, explosion particles when it is blown up.
+
+### P5-5. Your cyber skin
+1. As the guest, look at the host: **male V** in the cyber skin, a coloured **`[V]`** before the name, and a marker next to the host in
+   the Tab list. In the host's own third-person view the same skin shows.
+2. The host types `/cyberblock body female`: every client shows **Lucy on the slim model** at once. `/cyberblock body male` returns.
+   Rejoin: the choice is kept.
+3. The guest (no Cyberpunk link) keeps the normal Minecraft skin and gets no `[V]`.
+4. NPC figures keep their own gender; they do not follow the host's body.
+
+### P5-6. Which way is it working? (the runtime paths)
+Open `red4ext\logs\Cyberblock.log` and copy these lines to Claude. The right column says what each result means.
+
+| Search for | The line says |
+|---|---|
+| `npcs: tags` | `npcs: tags full` = people arrive with gender or archetype; `npcs: tags faction only` = only the faction arrived (fallback: skins by faction and threat, women classic) |
+| `npcs: colour format` | `npcs: colour format hsb (unconfirmed)`: the three template numbers are read as hue, saturation, brightness. If F2's `main=` numbers look like red, green, blue (for example `200,30,30` for a red car) and the cars come out the wrong colour, tell Claude: it is a one-line change |
+| `npcs: ` followed by a count | every 10 s: people, how many have a faction, role, archetype, the gender counts (male, female, unknown) and how many walk or run, and cars with a colour. All people "unknown" gender means the gender names of F1 did not match: paste the F1 line |
+| `Cyberblock_SubmitNpcs2` | only a warning when the script and the plugin disagree on the array lengths: it should not appear |
+
+Fallbacks in force when a line says so (Phase 0 f): no role from the game (fixer, bartender, medic and mechanic come from the
+server's content), walk and run from the movement, car colour from the model's default.
+
+### P5-7. Without Cyberpunk: the fake host
+1. Start the dev client or the test server as in Wave A, then in a terminal: `uv run python -m tools.fakehost --figures --no-setup
+   --hold 120` (for a client in a world) or let `uv run python -m tools.mpcheck figures` do it on a throw-away server.
+2. **Expect** (with the Phase 5 renderer): 46 figures on the slab: three rows of people, one per skin group (five in both genders), a
+   row of poses, a walker and a runner, four parked cars (three coloured), and a hostile police car chasing another car. A fighter
+   falls at 8 s and lies down.
+
+### Phase 5 descopes and risks (short)
+Role, gender and animation accuracy depend on Phase 0 (f) and on what the game's data really contains; the faction and archetype
+names in the fake host are stand-ins; the colour format is unconfirmed until F2; skin quality is procedural pixel art.
+
 ## Re-test: Wave A (Phase Q + Phase 1 + Phase 2 tools)
 
 One combined session for everything Wave A built: **Phase Q** (quick wins), **Phase 1** (the server/client split: every

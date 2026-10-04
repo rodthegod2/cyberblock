@@ -103,6 +103,9 @@ Everything works on Night City's real NPCs, vehicles and devices.
   blocks (neon glows) that are saved in the world, the people and cars as figures at real speed, Cyberpunk's time of day and
   weather, can build while the host is away, and `/cyberblock meetup <player>` takes you to a friend
   ([details](docs/HOW-TO-PLAY.md#night-city-as-minecraft-phase-3); a [web map](docs/WEBMAP.md) is possible with BlueMap).
+- **Figures and skins (Phase 5):** guests see Night City's people in their faction's skin (women on the slim model), posed and
+  moving like the real ones, cars in their colours, and every linked player as V (or Lucy with `/cyberblock body female`) with a `[V]` tag
+  ([details](docs/HOW-TO-PLAY.md#figures-and-skins-phase-5)).
 
 ## Build from source
 ```
