@@ -1,6 +1,10 @@
 package dev.cyberblock;
 
-import java.util.List;
+import dev.cyberblock.net.HostSession;
+import dev.cyberblock.net.HostSessions;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 import net.minecraft.core.Holder;
 import net.minecraft.resources.Identifier;
@@ -10,16 +14,18 @@ import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 
 /**
- * Layer 5 potions: Steve's status effects for the host ({"t":"effect"}), which gives V the matching Cyberpunk buffs. Every change
- * while active (ServerPlayerMixin), and the whole set again after each host hello, once the host is active (it drops effects
- * while it is not). Server thread only.
+ * Layer 5 potions: a host's Steve's status effects for that host ({"t":"effect"}), which gives V the matching Cyberpunk buffs. Every
+ * change while its session is active (ServerPlayerMixin), and the whole set again after each host hello, once the session is active
+ * (the host drops effects while it is not), in the same tick as the block resync. Server thread only.
  */
 public final class PlayerEffects {
 	/** The protocol's "infinite". */
 	static final double INFINITE_SECONDS = 86400.0;
 	private static final Pattern NAME = Pattern.compile("[a-z_]{1,32}");
-	private static volatile boolean resendDue;
-	private static boolean wasActive;
+	/** Sessions that said hello and have not had the whole set since. */
+	private static final Set<UUID> resendDue = new HashSet<>();
+	/** Sessions that were active on the last tick. */
+	private static final Set<UUID> wasActive = new HashSet<>();
 
 	private PlayerEffects() {
 	}
@@ -37,41 +43,53 @@ public final class PlayerEffects {
 		return Wire.effect(id.getPath(), seconds, amplifier);
 	}
 
-	/** Server thread, from ServerPlayerMixin: an effect on Steve was added or changed (removed: true when it went). */
-	public static void changed(final MobEffectInstance effect, final boolean removed) {
-		if (Cyberblock.active) {
-			send(effect, removed);
+	/** From ServerPlayerMixin: an effect on this player was added or changed (removed: true when it went). */
+	public static void changed(final ServerPlayer player, final MobEffectInstance effect, final boolean removed) {
+		HostSession s = HostSessions.of(player);
+		if (s != null && s.active()) {
+			send(s, effect, removed);
 		}
 	}
 
-	private static void send(final MobEffectInstance effect, final boolean removed) {
+	private static void send(final HostSession s, final MobEffectInstance effect, final boolean removed) {
 		Holder<MobEffect> holder = effect.getEffect();
 		holder.unwrapKey().ifPresent(key -> {
 			String m = message(key.identifier(), removed, effect.getDuration(), effect.isInfiniteDuration(), effect.getAmplifier());
 			if (m != null) {
-				Cyberblock.events.accept(m);
+				s.send(m);
 			}
 		});
 	}
 
-	/** Link thread: a host hello: it gets every effect again. */
-	public static void hostHello() {
-		resendDue = true;
+	/** A host hello: it gets every effect again once it is active. */
+	static void hello(final HostSession s) {
+		resendDue.add(s.uuid());
 	}
 
-	/** Every server tick: the whole set once the host is active after a hello, and whenever it becomes active again. */
-	static void tick(final MinecraftServer s) {
-		boolean active = Cyberblock.active;
-		boolean resend = active && (resendDue || !wasActive);
-		wasActive = active;
-		List<ServerPlayer> players = s.getPlayerList().getPlayers();
-		if (!resend || players.isEmpty()) {
-			return;
-		}
+	/** The session ended. */
+	static void end(final UUID owner) {
+		resendDue.remove(owner);
+		wasActive.remove(owner);
+	}
 
-		resendDue = false;
-		for (MobEffectInstance effect : players.get(0).getActiveEffects()) {
-			send(effect, false);
+	/** Every server tick: the whole set once a session is active after a hello, and whenever it becomes active again. */
+	static void tick(final MinecraftServer server) {
+		for (HostSession s : HostSessions.all()) {
+			UUID owner = s.uuid();
+			boolean active = s.active();
+			boolean resend = active && (resendDue.contains(owner) || !wasActive.contains(owner));
+			if (active) {
+				wasActive.add(owner);
+			} else {
+				wasActive.remove(owner);
+			}
+
+			if (resend) {
+				resendDue.remove(owner);
+				for (MobEffectInstance effect : s.player().getActiveEffects()) {
+					send(s, effect, false);
+				}
+			}
 		}
 	}
 }

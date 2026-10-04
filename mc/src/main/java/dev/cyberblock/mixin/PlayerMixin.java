@@ -2,6 +2,7 @@
 package dev.cyberblock.mixin;
 
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.WorldModule;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
@@ -17,14 +18,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * that the player can end up inside, and the server would otherwise reject those moves. Gliding (layer 4) or launched (a
  * wind charge, plan retest2 R5) Minecraft moves him: then vanilla physics, collisions, fall and elytra damage apply. While the
  * host moves him his falls are V's: V's fall damage reaches Steve as the host's "fall" damage (HostDamage), so Minecraft's own
- * fall distance and fall damage would count it twice.
+ * fall distance and fall damage would count it twice. Both sides: Cyberblock.hostActive asks the session on the server and the
+ * client's own host state on the client (plan 2026-10-04 section 1.4).
  */
 @Mixin(Player.class)
 abstract class PlayerMixin {
 	@Inject(method = "tick", at = @At(value = "FIELD", target = "Lnet/minecraft/world/entity/player/Player;noPhysics:Z", opcode = Opcodes.PUTFIELD, shift = At.Shift.AFTER))
 	private void cyberblock$ghost(final CallbackInfo ci) {
 		Player self = (Player) (Object) this;
-		if (Cyberblock.active && !self.isFallFlying() && !Cyberblock.launching) {
+		if (Cyberblock.hostActive(self) && !self.isFallFlying() && !WorldModule.launching(self)) {
 			((Entity) self).noPhysics = true;
 			self.resetFallDistance();
 		}
@@ -34,7 +36,7 @@ abstract class PlayerMixin {
 	private void cyberblock$hostFalls(final double fallDistance, final float damageModifier, final DamageSource damageSource,
 		final CallbackInfoReturnable<Boolean> cir) {
 		Player self = (Player) (Object) this;
-		if (Cyberblock.active && self.noPhysics && !self.isSpectator()) {
+		if (Cyberblock.hostActive(self) && self.noPhysics && !self.isSpectator()) {
 			self.resetFallDistance();
 			cir.setReturnValue(false);
 		}

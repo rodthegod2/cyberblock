@@ -1,5 +1,6 @@
 package dev.cyberblock;
 
+import java.util.UUID;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -33,7 +34,9 @@ import org.jspecify.annotations.Nullable;
  * never saved. Minecraft weapons and mobs can hit it, but it is never hurt here: a hit becomes a {"t":"hit"} for the host,
  * which applies it to the real NPC. Damage with no player or mob behind it (lava, suffocation, falling) is ignored, and so is every
  * explosion (the host's own Cyberpunk explosion hurts the NPC). A lead on it
- * (layer 5) is reported as {"t":"lead"} and the host drags the NPC; a fishing rod reeling it in is {"t":"pull"}.
+ * (layer 5) is reported as {"t":"lead"} and the host drags the NPC; a fishing rod reeling it in is {"t":"pull"}. Everything it reports
+ * goes to its owner, the host whose game the NPC is in, and a guest's hits, fire, leads and pulls only with that host's damage toggle
+ * (plan 2026-10-04 sections 1.4 and 1.6).
  */
 public final class ProxyEntity extends LivingEntity implements Leashable {
 	/** Vanilla's damage cooldown: for this long only a hit stronger than the last one counts. */
@@ -52,6 +55,15 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	private int damageCooldown;
 	private float lastDamage;
 	private long proxyId;
+	/** The host whose Cyberpunk game the NPC or vehicle is in (plan 2026-10-04 section 1.4). */
+	private @Nullable UUID owner;
+	/** Who last struck or used an item on it, and on which tick: the player behind a fire that starts with the blow. */
+	private @Nullable Entity lastActor;
+	private int lastActorTick = Integer.MIN_VALUE;
+	/** The last player who held the leash: a lead tied to a fence is still theirs. */
+	private @Nullable Entity leashActor;
+	/** A new burn (seconds) to report on the next tick, once the blow that lit it (it may come after: arrows) has named its player. */
+	private double pendingIgnite;
 	/**
 	 * Hostile to V as far as the host knows (its latest list): the mobs hunt these first, and the client outlines them (Kiroshi
 	 * optics, plan retest2 R6), so it is synced entity data.
@@ -80,6 +92,20 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 
 	long proxyId() {
 		return this.proxyId;
+	}
+
+	void setOwner(final UUID owner) {
+		this.owner = owner;
+	}
+
+	/** The host whose game this proxy belongs to (server side; null on the client). */
+	public @Nullable UUID owner() {
+		return this.owner;
+	}
+
+	/** The player or mob that struck it this tick or the last, else null. */
+	private @Nullable Entity recentActor() {
+		return this.tickCount - this.lastActorTick <= 1 ? this.lastActor : null;
 	}
 
 	void setHostile(final boolean hostile) {
@@ -138,6 +164,11 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 		}
 
 		if (this.level() instanceof ServerLevel) {
+			if (this.pendingIgnite > 0.0) {
+				ProxyManager.ignite(this, this.pendingIgnite, this.recentActor());
+				this.pendingIgnite = 0.0;
+			}
+
 			this.reportLeash();
 			int ping = this.entityData.get(DATA_PINGED);
 			if (ping > 0) {
@@ -155,7 +186,7 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 		if (remainingTicks <= 0 || !(this.level() instanceof ServerLevel)) {
 			super.setRemainingFireTicks(remainingTicks);
 		} else if (ProxyDamage.igniteDue(this.igniteCooldown, this.igniteReported, remainingTicks)) {
-			ProxyManager.ignite(this, remainingTicks / 20.0);
+			this.pendingIgnite = remainingTicks / 20.0;
 			this.igniteCooldown = remainingTicks;
 			this.igniteReported = remainingTicks;
 		}
@@ -172,6 +203,8 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 		}
 
 		if (this.level() instanceof ServerLevel level) {
+			this.lastActor = player;
+			this.lastActorTick = this.tickCount;
 			level.playSound(null, this.getX(), this.getY(), this.getZ(), flint ? SoundEvents.FLINTANDSTEEL_USE : SoundEvents.FIRECHARGE_USE,
 				SoundSource.PLAYERS, 1.0F, level.getRandom().nextFloat() * 0.4F + 0.8F);
 			this.igniteForSeconds(ITEM_IGNITE_SECONDS);
@@ -188,6 +221,8 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	@Override
 	public boolean hurtServer(final ServerLevel level, final DamageSource source, final float damage) {
 		Entity attacker = source.getEntity();
+		this.lastActor = attacker;
+		this.lastActorTick = this.tickCount;
 		ProxyDamage.Actor actor = attacker instanceof Player ? ProxyDamage.Actor.PLAYER : attacker instanceof Mob ? ProxyDamage.Actor.MOB : ProxyDamage.Actor.OTHER;
 		Entity direct = source.getDirectEntity();
 		ProxyDamage.Medium medium = direct instanceof ThrownTrident ? ProxyDamage.Medium.TRIDENT
@@ -214,7 +249,7 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 
 		// layer 3: whatever a mob deals (blow, arrow, trident, a ghast's fireball) names the mob, so its puppet in Night City is the attacker
 		int mob = attacker instanceof Mob ? attacker.getId() : -1;
-		ProxyManager.hit(this, counted, kind, this.impulse(level, source, kind, medium, attacker, direct), mob);
+		ProxyManager.hit(this, counted, kind, this.impulse(level, source, kind, medium, attacker, direct), mob, attacker);
 		return true;
 	}
 
@@ -293,22 +328,23 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 		}
 
 		this.reportedHolder = holder;
-		if (!Cyberblock.active) {
-			return;
+		if (holder instanceof Player) {
+			this.leashActor = holder;
 		}
 
 		String id = Long.toUnsignedString(this.proxyId);
-		Cyberblock.events.accept(holder == null ? Wire.leadRelease(id)
+		// letting go is never a guest's harm: a release always goes
+		ProxyManager.toOwner(this, holder == null ? Wire.leadRelease(id)
 			: Wire.lead(id, holder instanceof Player ? null : new double[] {holder.getX(), holder.getY(), holder.getZ()},
-				Tethers.leadLength(this.getType() == ProxyEntities.VEHICLE)));
+				Tethers.leadLength(this.getType() == ProxyEntities.VEHICLE)), holder == null ? null : this.leashActor);
 	}
 
 	/** Server thread, as ProxyManager removes the proxy: a leash the host was told of is reported released. */
 	void reportRemoved() {
 		Entity holder = this.reportedHolder;
 		this.reportedHolder = null;
-		if (holder != null && Cyberblock.active) {
-			Cyberblock.events.accept(Wire.leadRelease(Long.toUnsignedString(this.proxyId)));
+		if (holder != null) {
+			ProxyManager.toOwner(this, Wire.leadRelease(Long.toUnsignedString(this.proxyId)), null);
 		}
 	}
 
@@ -324,15 +360,14 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	 * Server thread, from FishingHook.pullEntity: reeling in a hooked proxy pulls the NPC or vehicle toward Steve's eyes in Night City
 	 * (instead of vanilla's pull, which a proxy ignores). False when the host does not hear of it.
 	 */
-	public boolean reelIn(final @Nullable Entity owner) {
-		if (owner == null || !Cyberblock.active || ProxyManager.idOf(this) == 0L) {
+	public boolean reelIn(final @Nullable Entity angler) {
+		if (angler == null || ProxyManager.idOf(this) == 0L) {
 			return false;
 		}
 
-		Vec3 eyes = owner.getEyePosition();
-		Cyberblock.events.accept(Wire.pull(Long.toUnsignedString(this.proxyId), eyes.x, eyes.y, eyes.z,
-			Tethers.pullStrength(this.getType() == ProxyEntities.VEHICLE)));
-		return true;
+		Vec3 eyes = angler.getEyePosition();
+		return ProxyManager.toOwner(this, Wire.pull(Long.toUnsignedString(this.proxyId), eyes.x, eyes.y, eyes.z,
+			Tethers.pullStrength(this.getType() == ProxyEntities.VEHICLE)), angler);
 	}
 
 	/**

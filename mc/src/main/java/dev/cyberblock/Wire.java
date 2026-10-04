@@ -109,6 +109,11 @@ public final class Wire {
 		return String.format(Locale.ROOT, "{\"t\":\"teleport\",\"p\":[%.3f,%.3f,%.3f],\"yaw\":%.2f}", fin(x), fin(y), fin(z), fin(yaw));
 	}
 
+	/** {"t":"pteleport","pos":[x,y,z]}: a command (/tp) moved Steve; the host moves V there. */
+	public static String pteleport(final double x, final double y, final double z) {
+		return String.format(Locale.ROOT, "{\"t\":\"pteleport\",\"pos\":[%.3f,%.3f,%.3f]}", fin(x), fin(y), fin(z));
+	}
+
 	/** {"t":"lead","target":"id","anchor":[x,y,z]|null,"length":m}: a proxy was leashed, to Steve (anchor null) or to a fence knot. */
 	public static String lead(final String target, final double[] anchor, final double length) {
 		String at = anchor == null ? "null" : String.format(Locale.ROOT, "[%.3f,%.3f,%.3f]", fin(anchor[0]), fin(anchor[1]), fin(anchor[2]));
