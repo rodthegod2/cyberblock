@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.hack.actions.RangeRule;
+import dev.cyberblock.mode.pvphack.PvpHacks;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.ServerNet;
@@ -156,6 +157,18 @@ public final class Hacking {
 			e = hint(player, scan, reach);
 		}
 
+		// megaplan 8-X1: a player nearer along the ray than the NPC (or within reach when there is none) becomes the lock instead
+		ServerPlayer victim = PvpHacks.pick(player, scan.eye(), scan.look(), e == null ? reach : scan.eye().distanceTo(e.getBoundingBox().getCenter()));
+		if (victim != null) {
+			unlock(uuid);
+			if (throttle.shouldSend(nowMs, victim.getId())) {
+				PvpHacks.scanned(player, victim);
+			}
+
+			return;
+		}
+
+		PvpHacks.unlock(uuid);
 		UUID owner = e == null ? null : Bridge.proxyOwnerOf.apply(e);
 		long target = owner == null ? 0L : Bridge.proxyIdOf.applyAsLong(e);
 		if (target == 0L) {
@@ -280,6 +293,10 @@ public final class Hacking {
 	 * owner of the locked target. True when it was sent.
 	 */
 	static boolean use(final ServerPlayer player, final ItemStack stack, final Hack hack) {
+		if (PvpHacks.locked(player.getUUID())) {
+			return PvpHacks.use(player, stack, hack); // megaplan 8-X1: the scan locked a player
+		}
+
 		Locked lock = locked(player.getUUID());
 		int ram = CyberData.ram(player);
 		int cost = Ram.cost(hack, CyberData.has(player, Perk.CHEAP_HACKS));
@@ -334,6 +351,20 @@ public final class Hacking {
 		HackFx.start(key, player, hack, lock);
 		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.hack.fired", "Hack: %s", stack.getHoverName())
 			.withColor(HackFxRules.colour(hack)));
+		return true;
+	}
+
+	/**
+	 * Megaplan 8-X1: the target's Firewall stops a player hack when it is installed and charged (CyberwareRules.firewallBlocks); it then
+	 * recharges (its timer, shown on the HUD). True when it blocked.
+	 */
+	public static boolean firewallBlocks(final ServerPlayer target) {
+		long now = target.level().getGameTime();
+		if (!CyberwareRules.firewallBlocks(CyberData.installed(target), CyberData.timer(target, Cyberware.FIREWALL), now)) {
+			return false;
+		}
+
+		CyberData.setTimer(target, Cyberware.FIREWALL, CyberwareRules.Timer.fire(now, 0, Cyberware.FIREWALL.cooldownTicks()));
 		return true;
 	}
 

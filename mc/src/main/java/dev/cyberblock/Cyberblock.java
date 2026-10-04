@@ -116,6 +116,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.npc.NpcModule.init();
 		// Phase 7T: the Holo-Table and Spawn Beacon blocks, the table's pins, layers and spawns, the landmark content kind (7-T1)
 		dev.cyberblock.holo.HoloModule.init();
+		// Phase 8X: hacking players (opt-in and war zones, the Intrusion warning with a short Breach, Firewall and Netrunner) (8-X1)
+		dev.cyberblock.mode.pvphack.PvpHacks.init();
 		LOG.info("cyberblock loaded");
 	}
 
