@@ -32,7 +32,7 @@ public final class NightCityPauseScreen extends Screen {
 
 	/** The buttons of the screen. Which of them work depends on the link and on nothing else (see {@link #usable}). */
 	public enum Item {
-		BACK, MAP, JOURNAL, MESSAGES, CP_MENU, SAVE, LOAD_LAST, OPTIONS, CYBERBLOCK, QUIT
+		BACK, MAP, JOURNAL, MESSAGES, CP_MENU, SAVE, SAVES, OPTIONS, CYBERBLOCK, QUIT
 	}
 
 	/**
@@ -78,7 +78,8 @@ public final class NightCityPauseScreen extends Screen {
 		}, linked);
 		y += ROW;
 		this.act(Item.SAVE, left, y, HALF, ui("pause.save", "Save Game"), "save", false, linked);
-		this.act(Item.LOAD_LAST, left + FULL - HALF, y, HALF, ui("pause.load_last", "Load Last Save"), "loadlast", true, linked);
+		// the saves screen (megaplan 9-U1) lists, loads and makes saves, and still has "Load Last Save"
+		this.child(Item.SAVES, left + FULL - HALF, y, HALF, ui("pause.saves", "Saves..."), () -> new SavesScreen(this), linked);
 		y += ROW + 4;
 		this.child(Item.OPTIONS, left, y, FULL, ui("pause.options", "Minecraft Options..."), () -> new OptionsScreen(this, this.minecraft.options), linked);
 		y += ROW;

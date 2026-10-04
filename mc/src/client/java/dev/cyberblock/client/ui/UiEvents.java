@@ -21,18 +21,21 @@ final class UiEvents {
 
 	/**
 	 * {@code screen.open} (section 1.11 per-menu table): Cyberpunk intercepted one of its menus, Minecraft shows its own screen
-	 * instead. A Minecraft screen the player already has open (chat, a container) is left alone.
+	 * instead. A Minecraft screen the player already has open (chat, a container) is left alone. Cyberpunk already swallowed the
+	 * key, so a screen Minecraft cannot open (the DLL's view of Minecraft's screen was a moment old, or no world is loaded) opens
+	 * Cyberpunk's own menu instead through the escape hatch (megaplan 9-U1): the key is never lost.
 	 */
 	static void open(final String name) {
 		Minecraft minecraft = Minecraft.getInstance();
 		LocalPlayer player = minecraft.player;
 		if (player == null || minecraft.gameMode == null) {
+			hatch(name, "no world");
 			return;
 		}
 
 		Screen current = minecraft.gui.screen();
 		if (current != null) {
-			Cyberblock.LOG.info("ui: screen {} not opened over {}", name, current.getClass().getSimpleName());
+			hatch(name, "over " + current.getClass().getSimpleName());
 			return;
 		}
 
@@ -45,7 +48,23 @@ final class UiEvents {
 		Screen screen = screenFor(name, player);
 		if (screen != null) {
 			minecraft.gui.setScreen(screen);
+		} else {
+			hatch(name, "no Minecraft screen");
 		}
+	}
+
+	/** Cyberpunk's own menu for a screen Minecraft could not open ({@code uiact cpmenu}). */
+	private static void hatch(final String name, final String why) {
+		Cyberblock.LOG.info("ui: screen {} not opened ({}): Night City opens its own menu", name, why);
+		UiLink.act("cpmenu", hatchFor(name), 0L, 0);
+	}
+
+	/** The {@code cpmenu} arg for a screen name: the hub menus Cyberpunk opens by name (Menus.reds), else its pause menu. */
+	static String hatchFor(final String name) {
+		return switch (name) {
+			case "map", "journal", "inventory", "skills" -> name;
+			default -> "pause";
+		};
 	}
 
 	private static @Nullable Screen screenFor(final String name, final LocalPlayer player) {
