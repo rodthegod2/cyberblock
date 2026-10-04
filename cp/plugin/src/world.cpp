@@ -386,6 +386,8 @@ namespace
 		case EventKind::VTeleport: // the server waits for `vteleported`: the scripts answer (or refuse) whatever the state
 		case EventKind::Park:      // likewise `parked`
 		case EventKind::DevAct:    // Phase 4: likewise `devresult`
+		case EventKind::RHack:     // Phase 6: likewise `hackresult`
+		case EventKind::Daemon:    // Phase 6: likewise `hackresult`
 			return true;
 		default:
 			return false;
@@ -427,6 +429,8 @@ namespace cb::world
 		case EventKind::VTeleport: return "vteleport";
 		case EventKind::Park: return "park";
 		case EventKind::DevAct: return "devact";
+		case EventKind::RHack: return "rhack";
+		case EventKind::Daemon: return "daemon";
 		case EventKind::None: break;
 		}
 		return "";

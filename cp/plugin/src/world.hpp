@@ -54,11 +54,14 @@ namespace cb::world
 		VTeleport, // Phase 3 (megaplan sections 1.8 and 1.9): move V to a spot (Meet Up, Holo-Table, hub exit)
 		Park,      // Phase 3: park V (on) or bring V back (off)
 		DevAct,    // Phase 4 (megaplan sections 1.8 and 1.9, task 4-D1): act on a device; parsed by devices.cpp
+		RHack,     // Phase 6 (megaplan task 6-D1): a remote hack; parsed by rhack.cpp
+		Daemon,    // Phase 6: a solved Breach's daemons for a device; parsed by rhack.cpp
 	};
 
 	/// The CName redscript sees from Cyberblock_NextEvent: "explosion", "hit", "ignite", "block_add", "block_remove",
 	/// "block_reset", "teleport", "lead", "lead_release", "pull", "knock", "effect", "hack", "scan", "perk", "perkfx",
-	/// "cyber", "cyberfx", "prefs", "session", "vteleport", "park", "devact"; "" (the empty CName) for None.
+	/// "cyber", "cyberfx", "prefs", "session", "vteleport", "park", "devact", "rhack", "daemon"; "" (the empty CName) for
+	/// None.
 	const char *event_name(EventKind kind);
 
 	/// One Minecraft event, already in Cyberpunk space. Which fields each kind fills is the event table of plan
@@ -80,7 +83,7 @@ namespace cb::world
 							 // vteleport why | devact act
 		double extra = 0;    // knock strength | effect amplifier | session perms bitmask
 		int32_t id = 0;      // hit: the mob that dealt it (-1 none) | hack, scan, vteleport, devact: the request id
-		std::string text;    // session: the reason (Cyberblock_EventText)
+		std::string text;    // session: the reason (Cyberblock_EventText) | daemon: the daemon ids joined by ','
 	};
 
 	/// The ten hack names of plan section 1.5 (`hack.hack`) and the twenty perk ids (`perks[].id`, `perkfx.id`).
