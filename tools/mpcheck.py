@@ -37,8 +37,10 @@ Scenarios (megaplan task 1-T2). Each one starts what it needs on its own test po
   breach        Phase 6: one fake host `--hacks2` (the devices plus a Net Port, and the DLL's answers to `daemon`) and a guest: a solved Breach on the Net Port
                 sends the owner's DLL a `daemon` (1 to 3 known daemon ids, strength 1..3, for that device) that it answers with `hackresult ok`, a failed Breach
                 sends the alarm (`daemon` with exactly `["alarm"]`), `guests hacks off` blocks the guest's Breach and `guests hacks on` brings it back, and the
-                Net Port goes with the session. Needs the devtools command `/cyberblock test breach <x> <y> <z> solve|fail` (task 6-B1: the same server path as
-                a right-click on the Net Port and the picks of a solver or of a player who only picks wrong), run as the guest
+                Net Port goes with the session; a guest's Vehicle Panel act on the car figure and a Net Map act at a point each reach the owner's DLL as one
+                `rhack` in the server's shape that the fake host answers with one `hackresult ok:true`. Needs the devtools commands `/cyberblock test breach
+                <x> <y> <z> solve|fail` (task 6-B1: the same server path as a right-click on the Net Port and the picks of a solver or of a player who only
+                picks wrong), `/cyberblock test eid <targets>` and `/cyberblock test act <t> <json>` (the same handler as a client's act), run as the guest
   hub           Phase 7, on a server with the join password: a locked host's and a locked guest's `/cyberblock hub` change nothing; after /login, one fake
                 host `--vendor` and a guest: `/cyberblock hub` sends the host's DLL `hub in:true` and then `park on:true` (once each), puts Steve in
                 `cyberblock:afterlife` and the DLL's `parked` reaches the hub, a guest's trip sends the DLL nothing, leaving sends `park on:false` and then
@@ -1263,10 +1265,14 @@ def scenario_figures(env: Env, rep: Report) -> None:
 # the scripts' business (Re-test 6 checks it on screen); this scenario checks what reaches the owner and what does not.
 DAEMON_EVENT = r"\[CbHost1\] daemon: (\{.*\})"
 HACK_RESULT = r"\[CbHost1\] hackresult: (\{.*\})"
+RHACK_EVENT = r"\[CbHost1\] rhack: (\{.*\})"
 BREACH_IDS = fakehost.device_ids(fakehost.HACKS2_SCENE)
 BREACH_GUEST_AT = (4.5, 64.0, 6.0)  # the guest stands on the street, 2.5 blocks from the Net Port
 RESERVED_DAEMON = "alarm"
-BREACH_COOLDOWN_S = 11.0  # after a failed Breach the same player cannot breach that device again for 10 s (shared/protocol.md "Phase 6")
+# `test breach` clears the device's and the player's 30 s lockouts (shared/protocol.md "Phase 6", Breach limits), so the scenario needs no wait between
+# Breaches; the owner's one-alarm-a-minute window is not cleared, and the scenario fails only once.
+CAR_ID = fakehost.NPC_IDS[2]  # the car of the fake host's `npcs`
+NETMAP_POINT = (4.5, 64.0, 3.5)  # a Net Map point on the street (V stands 11 blocks west of it): `ping_area` reveals the hostile person there
 
 
 def netport_stands(server: Server, shift: int = 0) -> bool:
@@ -1297,6 +1303,56 @@ def answered_ok(host: FakeHost, daemon_events: list[dict], since: int) -> bool:
     """Every daemon in `daemon_events` was answered with a `hackresult ok:true` of the same id after `since`."""
     ok_ids = {m.get("id") for m in logged_events(host.log, HACK_RESULT, since) if m.get("ok") is True}
     return bool(daemon_events) and all(m.get("id") in ok_ids for m in daemon_events)
+
+
+def car_figure_eid(server: Server) -> int | None:
+    """The Minecraft entity id of the car figure (`/cyberblock test eid`), or None while it is not there."""
+    match = re.search(r"test: eid (\d+) cyberblock:proxy_vehicle", server.test("eid @e[type=cyberblock:proxy_vehicle]"))
+    return int(match.group(1)) if match else None
+
+
+def guest_sends_act(server: Server, t: str, payload: dict) -> str:
+    """As the guest: one `cyberblock:act` through the server's own handler (`/cyberblock test act`), as his client would send it."""
+    time.sleep(GUEST_GAP_S)
+    return server.test(f"act {t} {json.dumps(payload, separators=(',', ':'))}", as_player="CbGuest1")
+
+
+def rhacks_since(host: FakeHost, since: int) -> list[dict]:
+    return logged_events(host.log, RHACK_EVENT, since)
+
+
+def rhack_answered_ok(host: FakeHost, sent: list[dict], since: int) -> bool:
+    """Each `rhack` in `sent` got exactly one `hackresult` of its id after `since`, and it is ok."""
+    results = logged_events(host.log, HACK_RESULT, since)
+    return bool(sent) and all([r.get("ok") for r in results if r.get("id") == m.get("id")] == [True] for m in sent)
+
+
+def is_vehicle_rhack(m: dict) -> bool:
+    """The server's shape of a Vehicle Panel hack (ActWire.rhack): the car's Night City id as the target and nothing else."""
+    return set(m) == {"t", "id", "target", "hack"} and m["hack"] == "veh_brake" and m["target"] == CAR_ID and isinstance(m["id"], int)
+
+
+def is_point_rhack(m: dict) -> bool:
+    """The server's shape of a Net Map point hack: no target, the point, its radius and its seconds."""
+    return (set(m) == {"t", "id", "target", "hack", "p", "r", "secs"} and m["hack"] == "ping_area" and m["target"] == "" and isinstance(m["r"], (int, float))
+            and isinstance(m["secs"], int) and isinstance(m["p"], list) and len(m["p"]) == 3 and math.dist(m["p"], NETMAP_POINT) < 0.01)
+
+
+def remote_hacks(server: Server, host: FakeHost, rep: Report) -> None:
+    """A guest's Vehicle Panel act on the car figure and a Net Map act at a point, through the real server's routing (owner, toggles, range rule)."""
+    eid = poll(lambda: car_figure_eid(server), T_EFFECT, T_POLL, "the car figure")
+    mark = host.log.mark()
+    guest_sends_act(server, "rhack", {"hack": "veh_brake", "eid": eid})
+    rep.step("a guest's Vehicle Panel act sends the owner's DLL one `rhack` with the car's Night City id (no `secs`, no `p`)",
+             lambda: poll(lambda: [m for m in rhacks_since(host, mark) if is_vehicle_rhack(m)], T_EFFECT, T_POLL, "the vehicle rhack"))
+    sent = [m for m in rhacks_since(host, mark) if is_vehicle_rhack(m)]
+    rep.step("... answered with exactly one `hackresult ok:true` of the same id", lambda: poll(lambda: rhack_answered_ok(host, sent, mark), T_EFFECT, T_POLL, "the hackresult"))
+    mark = host.log.mark()
+    guest_sends_act(server, "rhack", {"hack": "ping_area", "p": list(NETMAP_POINT)})
+    rep.step("a guest's Net Map act at a point sends one `rhack` with `target:\"\"`, `p`, `r` and `secs` to the host whose V is near it",
+             lambda: poll(lambda: [m for m in rhacks_since(host, mark) if is_point_rhack(m)], T_EFFECT, T_POLL, "the point rhack"))
+    sent = [m for m in rhacks_since(host, mark) if is_point_rhack(m)]
+    rep.step("... answered with exactly one `hackresult ok:true` of the same id", lambda: poll(lambda: rhack_answered_ok(host, sent, mark), T_EFFECT, T_POLL, "the hackresult"))
 
 
 def guest_breach(server: Server, how: str) -> None:
@@ -1335,7 +1391,6 @@ def scenario_breach(env: Env, rep: Report) -> None:
     rep.step("... answered with `hackresult ok:true` too, and no solved daemon came with it",
              lambda: poll(lambda: answered_ok(host, alarms, mark), T_EFFECT, T_POLL, "the hackresult")
              and not any(daemon_is_a_solved_breach(m) for m in daemons_since(host, mark)))
-    time.sleep(BREACH_COOLDOWN_S)  # wait out the failure's cooldown, so the toggle (not the cooldown) is what blocks the next Breach
     guests_hacks(server, False)
     mark = host.log.mark()
     guest_breach(server, "solve")
@@ -1346,7 +1401,8 @@ def scenario_breach(env: Env, rep: Report) -> None:
     guest_breach(server, "solve")
     rep.step("with `guests hacks on` the Breach works again",
              lambda: poll(lambda: any(daemon_is_a_solved_breach(m) for m in daemons_since(host, mark)), T_EFFECT, T_POLL, "the daemon"))
-    rep.step("every answer of the fake host to a `daemon` is a valid `hackresult` (a request id, `ok`, a reason of at most 64 characters)",
+    remote_hacks(server, host, rep)
+    rep.step("every answer of the fake host to a `daemon` or `rhack` is a valid `hackresult` (a request id, `ok`, a reason of at most 64 characters)",
              lambda: all(isinstance(m.get("id"), int) and isinstance(m.get("ok"), bool) and isinstance(m.get("reason"), str) and len(m["reason"]) <= 64
                          for m in logged_events(host.log, HACK_RESULT)))
     rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))

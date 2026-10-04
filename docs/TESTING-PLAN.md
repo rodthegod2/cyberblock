@@ -17,14 +17,17 @@ server log, `latest.log` and the game window. Wave C is **one test session for P
 others, on the same test server, with the same host and guest.
 
 **Before you start.**
-- A server with **one host** (Cyberpunk running, Cyberblock On, V standing in a street with a few doors, lights, cameras and a terminal within
-  50 metres) and **one guest** (Minecraft only, survival). The host must be allowed to be a host (the join password, if the server has one).
+- A server with **one host** (Cyberpunk running, Cyberblock On, V standing in a street with a few doors, lights, cameras, a traffic light and a
+  terminal nearby) and **one guest** (Minecraft only, survival). The host must be allowed to be a host (the join password, if the server has one).
 - The guest needs the items of Phase 6: **Cyberdeck Link**, **Device Relay**, **Proximity Sensor**, **Charge**, **Breach Port**, **Cyberdeck
-  block**, **Vehicle Panel**, **Traffic Tool**, **Net Map** (an item), **Comms Panel**, and redstone and a lever and a button. Take them from the
-  Cyberblock creative tab or let an operator `/give` them; the recipes come with the art package.
-- Phase 0's CET lines decide how far a remote hack reaches (check (h)) and which device and vehicle calls exist (check (c)). If you have not
-  run them (Wave A, W-A8), the **written fallbacks** are used: remote actions reach only what the host's game streams and **50 metres** from V,
-  traffic and blackouts use the Phase 4 devices, the camera view is a replica, and the "which way" lines (P6-9) say so.
+  block**, **Traffic Tool**, **Net Map** (an item), **Comms Panel**, and redstone and a lever and a button. Take them from the Cyberblock creative
+  tab or let an operator `/give` them; the recipes come with the art package. There is **no Vehicle Panel item**: the panel opens when you
+  right-click a car figure with the Cyberdeck Link, or click a car in the Net Map's vehicle mode.
+- Phase 0's CET lines decide how far a remote hack reaches (check (h)) and which device and vehicle calls exist (check (c)). They have not been
+  run, so the mod starts on the desk verdict: a remote action reaches **every target the host's game streams**, however far from V. If the host's
+  game refuses a far target, the **written 50 metre fallback** switches itself on (the server logs `hack range: fallback active`, the scripts
+  `rhack: remote range: 50 m of V`). Traffic and blackouts use the Phase 4 devices, the camera view is a replica, and the "which way" lines (P6-9)
+  say so.
 - Everything the host switches off (P6-10) is on at the start: `hacks`, `devices` and `explosions`.
 
 **What to try (one screen):**
@@ -33,7 +36,7 @@ others, on the same test server, with the same host and guest.
 3. **Boom:** a Charge with a button blows up in Night City (P6-3).
 4. **Breach a terminal:** a 5 x 5 Breach on a Net Port; solve it; the cameras go off (P6-4).
 5. **Stop a car:** the Vehicle Panel kills a car's engine in Night City (P6-5).
-6. **Blackout:** the Net Map blacks out a district for a few minutes (P6-6).
+6. **Blackout:** the Net Map blacks out the lights around V for 1, 2 or 5 minutes (P6-6).
 7. **Waypoint:** the Comms Panel puts a waypoint on the host's HUD (P6-7).
 8. **Photo feed:** the host's view on a map item, once a second (P6-8).
 9. **Read the "which way" lines** and paste them to Claude (P6-9).
@@ -42,10 +45,10 @@ others, on the same test server, with the same host and guest.
 | Item | What changed |
 |---|---|
 | Redstone | the Cyberdeck Link, Device Relay, Proximity Sensor, Heat Sensor, Breach Port, Charge and Cyberdeck block; at most 2 actions a second per block; a link chain that toggles one device more than 8 times in 4 s freezes for 30 s |
-| Breach | a server-made puzzle (5 x 5 to 7 x 7 by the device's security, a buffer of 4 to 8, 1 to 3 daemons, a timer), every pick checked by the server; solved daemons are real actions, a failure is an alarm |
-| Interaction map | Hack Wheel for guests, Vehicle Panel, Traffic Tool, Net Map (blackout, camera feed, outlines, pings, photo feed), Comms Panel; each action is `act`, permission check, `rhack`, `hackresult`, feedback |
-| Wire | `rhack`, `daemon`, `feedreq` (down) and `feed` (a 128 x 128 map-colour picture, at most once a second) in `shared/protocol.md` "Phase 6"; `hackresult` also answers `rhack` and `daemon`; the 18th cyberware id `firewall` |
-| Tools | `tools.fakehost --hacks2`, `tools.mpcheck breach` (a guest's solved and failed Breach, the `hacks` toggle, the session end) |
+| Breach | a server-made puzzle (5 x 5 to 7 x 7 by the device's security, a buffer of 4 to 8, 1 to 3 daemons, a timer from the opening), every pick checked by the server; solved daemons are real actions, a failure is an alarm; no free re-roll (a puzzle closed before the first pick is kept), a 10 s cooldown after a failure and one alarm a minute per host |
+| Interaction map | Hack Wheel for guests, Vehicle Panel (from a car figure), Traffic Tool, Net Map (blackout, camera feed, outlines, pings, photo feed), Comms Panel; each action is `act`, permission check, `rhack`, `hackresult`, feedback |
+| Wire | `rhack`, `daemon`, `feedreq` (down) and `feed` (a 128 x 128 map-colour picture, at most once a second; none when the copy falls back, and the server draws its replica stand-in) in `shared/protocol.md` "Phase 6"; `hackresult` also answers `rhack` and `daemon`; the 18th cyberware id `firewall`; real messages in `shared/phase6-messages.json` and `shared/rhack-vectors.json` |
+| Tools | `tools.fakehost --hacks2`, `tools.mpcheck breach` (a guest's solved and failed Breach, the `hacks` toggle, a Vehicle Panel and a Net Map hack through the server, the session end) |
 
 ### P6-1. A Device Relay opens a door with a lever
 1. Host: stand a few metres from an ordinary door (one that is a device block in Minecraft, see Re-test 4).
@@ -69,7 +72,7 @@ others, on the same test server, with the same host and guest.
 ### P6-4. A 5 x 5 Breach on a Net Port disables the cameras
 1. Host: stand near a **terminal** and a **security camera**.
 2. Guest: right-click the **Net Port** block. **Expect:** a **Breach screen**: a 5 x 5 grid of the codes `1C 55 BD E9 7A FF`, a buffer, one
-   to three daemons and a timer bar. (A secure device may be 6 x 6 or 7 x 7.)
+   to three daemons and a timer bar that **runs from the moment the screen opens**. (A secure device may be 6 x 6 or 7 x 7.)
 3. Guest: pick a cell in the **top row**, then in the column of that pick, then in the row of that one, and so on. **Solve the daemon "disable
    cameras":** **expect** the camera **goes off in Night City** (it stops turning), then Minecraft's eye block follows.
 4. Fail on purpose (let the timer run out or fill the buffer with wrong picks): **expect** an **alarm in the host's game** (the cameras of the
@@ -80,71 +83,87 @@ others, on the same test server, with the same host and guest.
    server merges the two: the action bar still says so and the server log says `alarm merged`). Open another one and close it without a
    pick, then right-click again: **expect** the **same grid** with the timer still running. Right after a failure a new right-click on that
    Net Port says to wait (10 s).
-5. Server log (grep `breach`): the puzzle, every daemon solved and `strength`, or the failure.
+5. Server log (grep `breach`): `breach: <guest> opened 5x5 on ...`, every daemon sent with its `strength`, or `-> daemon <id> [alarm]` for the
+   failure. `Cyberblock.log` (grep `daemon`): `daemon: <id> [...] strength <n> on device <id> handed to the scripts` and the scripts' answer.
 
 ### P6-5. The Vehicle Panel stops a car
-1. Host: stand near a **car** (parked or driving) that is within about 50 metres.
-2. Guest: right-click the **car figure** with the Cyberdeck Link (or open the Vehicle Panel from the Net Map). Pick **Kill engine**.
-3. **Expect:** the car's engine **dies in Night City** and it rolls to a halt. Try **Lock doors**, **Brake**, **Remote start** and **Jam**
-   too, and a car that is farther away than 50 metres: it says it is **out of range** and nothing happens.
+1. Host: stand near a **car** (parked or driving).
+2. Guest: right-click the **car figure** with the Cyberdeck Link (or open the **Net Map**, switch it to the vehicle mode and click a car).
+   Pick **Kill engine**.
+3. **Expect:** the car's engine **dies in Night City** and it rolls to a halt. Try **Lock doors**, **Brake**, **Remote start** and **Jam** too.
+   `Cyberblock.log` (grep `rhack`): `rhack veh_engine_off on <id>: ok (...)` for each; the server log: `rhack: <guest> -> <host> veh_engine_off
+   <id> (<n> m from V)` and `rhack: <host> answered veh_engine_off ok`.
 4. If the guest stops **the host's own car**, the host feels it: say so, that is the headline check of this phase.
-5. **Every effect wears off:** about **30 seconds** after each hack the car is as it was (the doors unlock, the engine and brake come back,
-   the jam ends). Lock or jam the host's car, then have the host try to **save**: the save waits until the effect is over. Lock a car and
-   have the host leave the Minecraft server: the car is back to normal at once (the session cleanup). Lock **V's own parked car**, then have
-   the host fast travel away at once: when V comes back to it later (also after a save and load), its doors open normally.
+5. **Every effect wears off, each after its own time:** the doors unlock after **120 s** (15 s on the car V is in and on V's own car), the
+   engine comes back after **30 s** (10 s on the host's car), a brake lasts about **5 to 6 s** and a jam **3 s**. **Remote start is not undone**
+   (the car simply stays on). Lock a car, then have the host **save**: the save happens at once and the car is **unlocked first** (the scripts
+   put back every hack before every save; `Cyberblock.log` says `rhack: cleared`). Lock a car and have the host leave the Minecraft server: the
+   car is back to normal at once (the session cleanup). Lock **V's own parked car**, then have the host fast travel away at once: when V comes
+   back to it later (also after a save and load), its doors open normally.
    A car a quest uses (or whose engine a quest keeps off) answers **not hackable (quest)** or **not hackable (engine locked)** and is left alone.
-6. Open the Vehicle Panel **from the Net Map** while the guest stands far from V (more than 50 blocks away): it still works, because the
-   reach is measured from V.
+6. **A far car:** try a car that is **more than 50 metres from V** but still shown as a figure. **Expect** it works (every streamed target is in
+   reach). If the host's game refuses it, the server switches to the **50 m fallback** (server log `hack range: fallback active: ...`) and from then
+   on a far car says **out of range**: tell Claude which one happened. The guest's own position does not matter: the reach is measured from V.
 
 ### P6-6. A district blackout
-1. Guest: open the **Net Map**, pick a district around V and choose **Blackout**. The guest may stand anywhere: the reach is measured from V.
-2. **Expect:** the **lights and devices go off in Night City** around V for a few minutes (the street goes dark), the device blocks in
-   Minecraft follow (the lamps are off), and then **everything comes back**. If the game's district call is unproven, the fallback blacks out
-   the **devices within 150 m of V** and the `blackout` log line says so.
-3. Also try **Traffic Tool: switch lights** and **gridlock a road** (the cars on the stretch stop for about a minute); the Phase 4
-   traffic-light devices are the fallback.
+1. Guest: open the **Net Map**, pick the host (click the host's marker), set the length (**1, 2 or 5 minutes**) and choose **Blackout**. The guest
+   may stand anywhere: the reach is measured from V.
+2. **Expect:** the **lights, screens, cameras, vending machines and traffic lights go off in Night City within 150 m of V** (the street goes
+   dark, doors are left alone), the device blocks in Minecraft follow (the lamps are off), and when the time is up **everything comes back**
+   (`Cyberblock.log`: `rhack: blackout over (...)`). A second blackout while one runs is refused on the action bar (`already running there`).
+3. Also try the **Traffic Tool**: **Switch the lights** flips **one intersection**, the one of the traffic light nearest V (within 40 m; `no
+   traffic light near` when there is none), and **Gridlock this road** stops the cars within 25 m of where you aim for about a minute (`no traffic
+   near` when none is there). The Phase 4 traffic-light devices are the fallback; the `traffic` and `gridlock` path lines (P6-9) say which is used.
 
 ### P6-7. A Comms waypoint on the host's HUD
-Guest: use the **Comms Panel**, pick the host, write "Meet me at the Afterlife" and a waypoint. **Expect:** on the **host's Minecraft HUD** a
-**toast** with the message and a **locator-bar waypoint**. Nothing changes in Night City (it is Minecraft's own HUD).
+Guest: use the **Comms Panel**, pick the host, write "Meet me at the Afterlife" (at most 64 characters) and a waypoint. **Expect:** on the
+**host's Minecraft HUD** a **toast** with the message and a **locator-bar waypoint**. Nothing changes in Night City (it is Minecraft's own HUD).
+Server log: `comms: <guest> -> <host> (message and waypoint)`.
 
 ### P6-8. The photo feed on a map item
-1. Guest: use the **Net Map** (or a map item bound to the host) and ask for the **photo feed**.
+1. Guest: open the **Net Map**, pick the host and press **Photo feed** (the picture shows in the Net Map), or **take the feed map** (a map item of
+   the host's view; hold it).
 2. **Expect:** a **128 x 128 picture of the host's view in map colours**, refreshed about **once a second**, only while the guest looks at it.
-   It is low-resolution by design. Look away or close it: the host's `Cyberblock.log` says the feed went off (`feedreq off`).
+   It is low-resolution by design. Server log: `feed: <host> feedreq on`; the host's `Cyberblock.log`: `feed: on (path: back-buffer read-back
+   ...)`. Close the Net Map or put the map away: within a few seconds the server logs `feed: <host> feedreq off` and `Cyberblock.log` says
+   `feed: off (Minecraft stopped asking)`.
 3. If the host's `Cyberblock.log` says the back-buffer feed is off (the copy cost more than 0.5 ms a frame, or could not run), the plugin used
    the fallback: after about **3 seconds** the Net Map panel and the map item show a **top-down replica view** around V (map colours, V a red mark
    in the middle) instead, and the server log says `the top-down replica render around V (the fallback)`. Tell Claude which one you saw.
 
 ### P6-9. Which way is it working? (the runtime paths)
 The scripts and the plugin write **one line** for each Phase 6 feature that has a fallback. Open `red4ext\logs\Cyberblock.log` (and the server
-log) and copy these lines to Claude. The exact wording belongs to the packages that print them: **search for the word**.
+log) and copy these lines to Claude: **search for the word** in the second column.
 
 | Feature | Search for | The line says |
 |---|---|---|
-| Traffic | `traffic` | which path switches lights and gridlocks a road: the game's traffic calls, or the Phase 4 traffic-light devices (fallback) |
-| Blackout | `blackout` | the district call, or the devices within 150 m of V (fallback) |
-| Vehicle hacks | `rhack` | each remote hack the host's game ran (`ok` or `refused (reason)`), `cyberblock.hack.out_of_range` for a target past the range |
-| Breach | `breach` | on the server: the puzzle (size, daemons, timer), each pick refused, each daemon solved with its `strength`, a failure; in the game: each `daemon` it ran |
-| Photo feed | `feed` | `feedreq on` and `off`, the cost of the copy in milliseconds, and whether the compositor copy or the replica fallback is used |
+| Traffic | `traffic` | `rhack: traffic path: ...` and `rhack: gridlock path: ...`: the nearest traffic light's intersection (the Phase 4 device path, as 2.31 has no light call) and how the cars stop (`(fallback)` when the engine hold took over) |
+| Blackout | `blackout` | `rhack: blackout path: ...` and `rhack: citylights path: ...`: the devices within 150 m of V switched off (the district call does not exist in 2.31) and whether the city lights could be forced off |
+| Vehicle hacks | `rhack` | each remote hack the host's game ran (`rhack <hack> on <id>: ok (...)` or the reason), the vehicle call paths, and `cyberblock.hack.out_of_range` for a target past the range once the fallback is on |
+| Range | `hack range` | on the server: `hack range: every streamed target (...)`, or `hack range: fallback active: ...` with the refusal that switched it; in the scripts `rhack: remote range: ...` |
+| Breach | `breach` | on the server: the puzzle (size, daemons, timer), each daemon sent with its `strength`, a failure, the 10 s cooldown, `alarm merged`; in the game: each `daemon` it ran |
+| Photo feed | `feed` | `feed: on (path: ...)` and `feed: off (...)` in `Cyberblock.log`, `feed: <host> feedreq on` and `off` on the server, the cost of a frame (`render-thread cost`), and whether the compositor copy or the server's top-down replica stand-in (the fallback) is used |
 | Redstone | `redstone` | a block frozen by a loop (`cyberblock.redstone.loop`) and the links that did not resolve |
 
 ### P6-10. Permissions and ranges
 1. Host: `/cyberblock guests hacks off`. Guest: breach the Net Port, use the Vehicle Panel, the Net Map and a Breach Port: the action bar says
-   **blocked**, nothing reaches Night City (a Breach still plays out in Minecraft). Comms still works (it is Minecraft's own HUD).
-2. Host: `/cyberblock guests hacks on`: they work again. `/cyberblock guests devices off` also stops the Device Relays, blackouts and camera
-   feeds. The host's own actions are never blocked.
+   **blocked**, nothing reaches Night City (a blocked Breach does not open). Comms still works (it is Minecraft's own HUD).
+2. Host: `/cyberblock guests hacks on`: they work again. `/cyberblock guests devices off` also stops the Device Relays, the traffic hacks,
+   blackouts and camera feeds. The host's own actions are never blocked.
 3. **Photo feed:** while the guest watches the host's photo feed (P6-8), the host types `/cyberblock guests hacks off`: **expect** the
-   guest's picture **stops at once**, the guest sees **blocked**, and the host's `Cyberblock.log` says `feedreq off` (no viewer left). A new
-   request from the guest is blocked too; the host can still watch the own feed. `/cyberblock guests hacks on` lets the guest watch again.
-4. A target or a centre **more than 50 metres** from V answers **out of range** (the fallback of Phase 0's check (h)); tell Claude how far a
-   hack really reached if you can measure it.
+   guest's picture **stops at once**, the guest sees **blocked**, and within about 5 seconds the server logs `feed: <host> feedreq off` and the
+   host's `Cyberblock.log` says `feed: off (Minecraft stopped asking)` (no viewer left). A new request from the guest is blocked too; the host
+   can still watch the own feed. `/cyberblock guests hacks on` lets the guest watch again.
+4. **Range:** a target the host's game streams works however far from V it is; the camera feed also needs the camera **within the guest's view
+   distance** (`Move within <n> blocks of the camera to watch it`). Only after the 50 m fallback switched on (P6-5 step 6, Phase 0's check (h))
+   does a target or a centre **more than 50 metres** from V answer **out of range**; tell Claude how far a hack really reached if you can measure it.
 
 ### Phase 6 descopes and risks (short)
-The remote range depends on Phase 0's check (h): until it is run, only the streamed area and 50 m from V. Traffic and blackout calls may fall
-back to the Phase 4 devices. A true Cyberpunk **camera view is replaced by a replica view** from the camera's position and facing. The
-**photo feed** is low-resolution by design and may fall back to a replica render if the copy costs too much. The Heat Sensor's Server Heat mode and the Heat a
-failed Breach costs wait for Phase 8's meter. Details: `docs/notes/phase6-descopes.md`.
+The remote range depends on Phase 0's check (h): until it is run, every streamed target, with the 50 m fallback switching on by itself if the game
+refuses a far one. Traffic and blackout calls fall back to the Phase 4 devices (one intersection, the devices within 150 m of V). A true Cyberpunk
+**camera view is replaced by a replica view** from the camera's position and facing. The **photo feed** is low-resolution by design, and if the
+copy costs too much the server draws a **top-down replica view** around V instead. The Heat Sensor's Server Heat mode and the Heat a failed Breach costs
+wait for Phase 8's meter. Details: `docs/notes/phase6-descopes.md`.
 
 ## Re-test: Wave C, Phase 7 (NPC interaction, the Afterlife hub and the Holo-Table)
 

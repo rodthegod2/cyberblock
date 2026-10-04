@@ -99,14 +99,19 @@ Phase 5 mode (shared/protocol.md "Phase 5"; combinable with the layer flags and 
 Phase 6 mode (shared/protocol.md "Phase 6"; stands on the street like --devices, which it may be combined with, so the same restrictions and the same --hold,
 --cmd, --port, --name, --shift and NPC resend apply; prints `devact` and `devresult` like --devices, plus `rhack`, `daemon` and `feedreq` (what Minecraft asks) and
 `hackresult` (what this fake DLL answered)):
-  --hacks2   the device scene of --devices plus a Net Port (a `Terminal`, id ...770, the terminal a Breach opens on) and the default `npcs` (two people and a car).
-             Every valid `rhack` is answered with a `hackresult`: the five vehicle hacks need `secs` 1..600 and change the car's state until it runs out (a
-             `veh_*` on a car that is not in the list is `vehicle gone`), `cam_feed` needs a camera, the five area hacks need `p`, `r` and `secs` (1..600 for
-             `traffic_switch`, `gridlock` and `blackout`; `blackout` switches the powered devices within `r` of `p` off, `devstate by:script`, and back after
-             `secs`; `outline` and `ping_area` reveal the hostile people of the area with `hackspread why:ping`); a `session` that is not `host` puts every
-             pending blackout and car effect back at once; a hack
-             name outside the eleven is `unsupported`, and a target or centre farther than 50 m from V (the fallback of Phase 0 check (h)) is
-             `cyberblock.hack.out_of_range`. Every valid `daemon` is answered with one `hackresult`: `open_door` opens the doors, `disable_cameras` disables the
+  --hacks2   the device scene of --devices plus a Net Port (a `Terminal`, id ...770, the terminal a Breach opens on), a traffic light (id ...771) and the default
+             `npcs` (two people and a car).
+             Every `rhack` the real DLL takes (rhack.cpp: `target` a decimal id, or absent, null, "" or "0" for none; `p`, `r` 0..150, `secs` 0..600
+             and `district` optional) is answered with one `hackresult` the way the scripts answer it (RemoteHacks.reds), with `upload` 0 and its
+             `kind` when ok, after the `hackspread`s it revealed. The range is every streamed target (Phase 0 check (h), the scripts' primary path):
+             an id in no list is `target gone`. The five vehicle hacks change the car (the lock for 120 s, the engine for 30 s, the brake for 5 s, the
+             jam for 3 s, then it is as before; `veh_start` is not undone) and need a car (`not hackable (not a car)`); `cam_feed` needs a camera that
+             is on (`camera off`); `traffic_switch` flips the traffic light within 40 m of the centre (`no traffic light near` when none); `gridlock` holds the
+             cars within 25 m 60 s (`no traffic near` when none); `blackout` switches the lights, cameras and vending machines that are on within `r`
+             (0: 150 m) of `p` (absent: V) off for `secs` (0: 120 s, else 30..600), `devstate by:script`, and back, a new one ending the last;
+             `outline` reveals the people and cars within 25 m and `ping_area` the hostile people within 30 m with `hackspread why:ping`. A
+             `session` that is not `host` puts every pending blackout and car effect back at once; a hack name outside the eleven is `unsupported`
+             (a quickhack name `no such hack`). Every valid `daemon` is answered with one `hackresult`: `open_door` opens the doors, `disable_cameras` disables the
              cameras (both `devstate by:script`), `reveal_enemies` pings the hostile people, the other shipped ids (`overload`, `disable_turrets`, `lights_out`, `make_friendly`,
              `distract`, `traffic_switch`) and the reserved `alarm` change nothing, any other id is
              `unsupported daemon` (the others still run), and a device that is not in the table is `device gone`. `feedreq on:true` starts a `feed` (a 128 x 128
@@ -663,7 +668,8 @@ DEVICE_SCENE = (  # key, id offset, class, kind, cell (x, y, z) relative to the 
 DOOR_GROUND_KEY = "door"  # --devices also sends one `ground` column through this door: a DLL that did not filter its hit (the server must keep the door)
 
 
-HACKS2_SCENE = (*DEVICE_SCENE, ("netport", 10, "Terminal", "terminal", (4, DEVICE_FEET, 3), 180.0, 1, FL_POWERED))  # --hacks2: + the Net Port a Breach opens on
+HACKS2_SCENE = (*DEVICE_SCENE, ("netport", 10, "Terminal", "terminal", (4, DEVICE_FEET, 3), 180.0, 1, FL_POWERED),  # --hacks2: + the Net Port a Breach opens on
+                ("traffic", 11, "TrafficLight", "traffic", (-3, DEVICE_FEET, 4), 90.0, 1, FL_POWERED))  # and a traffic light for the Traffic Tool
 
 
 def device_ids(scene=DEVICE_SCENE) -> dict[str, str]:
@@ -754,19 +760,27 @@ def npc_door_step(u: float) -> int:
 
 
 # ---- Phase 6: --hacks2 (megaplan 6-P1, shared/protocol.md "Phase 6") --------------------------------------------------------------------
-# The DLL's side of the remote hacks, the Breach daemons and the photo feed on top of the --devices scene (plus a Net Port): every valid `rhack` and
-# `daemon` is answered with one `hackresult`, the effects show in the device table (`devstate by:script`) and in `hackspread`, and `feedreq` turns a
-# 128 x 128 map-colour `feed` on and off. Deterministic. The checks the scripts make (range 50 m, a camera for `cam_feed`) are the written fallback of
-# Phase 0 check (h).
+# The DLL's side of the remote hacks, the Breach daemons and the photo feed on top of the --devices scene (plus a Net Port): every `rhack` the real DLL takes
+# (cp/plugin/src/rhack.cpp parse_rhack) and every valid `daemon` is answered with one `hackresult` the way the scripts answer it
+# (cp/scripts/Cyberblock/RemoteHacks.reds, Daemons.reds), the effects show in the device table (`devstate by:script`) and in `hackspread`, and `feedreq`
+# turns a 128 x 128 map-colour `feed` on and off. Deterministic. The range is the scripts' primary path of Phase 0 check (h): every streamed target, no
+# distance limit (their 50 m fallback switches on only after a hack took no effect in game, which no fake scene can show).
 REMOTE_HACKS = ("veh_lock", "veh_engine_off", "veh_brake", "veh_start", "veh_jam", "traffic_switch", "gridlock", "blackout", "cam_feed", "outline", "ping_area")
 VEHICLE_HACKS = ("veh_lock", "veh_engine_off", "veh_brake", "veh_start", "veh_jam")
-AREA_HACKS = ("traffic_switch", "gridlock", "blackout", "outline", "ping_area")
-TIMED_AREA_HACKS = ("traffic_switch", "gridlock", "blackout")  # they change Night City, so `secs` is 1..600 (never 0) and the scripts put it back
-SECS_MAX = 600
-VEHICLE_EFFECT = {"veh_lock": {"locked": True}, "veh_engine_off": {"engine": False}, "veh_brake": {"braked": True}, "veh_start": {"engine": True},
-                  "veh_jam": {"jammed": True}}
-HACK_RANGE_M = 50.0  # a target or an area's centre farther than this from V is out of range (the fallback of Phase 0 check (h))
-OUT_OF_RANGE = "cyberblock.hack.out_of_range"
+AREA_HACKS = ("traffic_switch", "gridlock", "blackout", "outline", "ping_area")  # they may come without a target ("" from the server)
+QUICKHACK_NAMES = ("short_circuit", "overheat", "reboot_optics", "cripple_movement", "contagion", "synapse_burnout", "ping", "memory_wipe", "cyberpsychosis",
+                   "device")  # the DLL takes these in `rhack` too (world::kHackNames); the scripts answer "no such hack"
+NO_TARGET = (None, "", "0")  # `target` absent, null, "" or "0": no target (the server sends "" for an area hack)
+REQUEST_ID_MAX, R_MAX, SECS_MAX = 2**31 - 1, 150.0, 600
+# what each vehicle hack does to the car and for how long (RemoteHacks.reds on a car that is not V's): the lock 120 s, the engine 30 s, the brake about 5 s,
+# the jam 3 s; `veh_start` is never undone (it also ends a pending engine hold). The wire carries no `secs` for them: these are the scripts' own times.
+VEHICLE_EFFECT = {"veh_lock": ({"locked": True}, 120), "veh_engine_off": ({"engine": False}, 30), "veh_brake": ({"braked": True}, 5),
+                  "veh_start": ({"engine": True}, 0), "veh_jam": ({"jammed": True}, 3)}
+GRIDLOCK_SECS, GRIDLOCK_R, LIGHT_R, OUTLINE_R, PING_R = 60, 25.0, 40.0, 25.0, 30.0  # the scripts' radii and the gridlock's hold
+BLACKOUT_R, BLACKOUT_SECS, BLACKOUT_MIN, BLACKOUT_MAX = 150.0, 120, 30, 600  # `r` 0 or absent: 150 m; `secs` 0 or absent: 120 s, else clamped 30..600
+BLACKOUT_KINDS = ("light", "screen", "camera", "turret", "vending", "traffic")  # never doors, gates, terminals or lifts
+HACK_KINDS = {"traffic_switch": "traffic", "gridlock": "traffic", "blackout": "device", "cam_feed": "camera"}  # `hackresult.kind` when ok (the rest none)
+DAEMON_KIND = "device"
 ALARM_DAEMON = "alarm"  # the reserved daemon id of a failed Breach
 # the shipped `daemon` content ids (and the alarm) that Daemons.reds runs but that change nothing in this fake scene: answered ok
 QUIET_DAEMONS = frozenset({"overload", "disable_turrets", "lights_out", "make_friendly", "distract", "traffic_switch", ALARM_DAEMON})
@@ -774,7 +788,6 @@ DAEMON_RE = re.compile(r"[a-z0-9_]{1,32}")
 HACKS2_REQUESTS = ("rhack", "daemon", "feedreq")
 FEED_SIZE, FEED_EVERY = 128, 1.0  # the photo feed: 128 x 128, at most one `feed` per second
 MAX_SPREADS = 16
-NO_POWER_KINDS = ("door", "gate")  # a blackout leaves doors alone: their -1 is `LOCKED`, not `UNPOWERED`
 
 
 def is_request_id(x) -> bool:
@@ -789,20 +802,27 @@ def finite_vec3(p) -> bool:
     return isinstance(p, list) and len(p) == 3 and all(isinstance(c, (int, float)) and not isinstance(c, bool) and math.isfinite(c) and abs(c) < 3e7 for c in p)
 
 
-def rhack_valid(m: dict) -> bool:
-    """A DOWN `rhack` the DLL accepts: a request id, a hack name (any string: an unknown one is answered `unsupported`) and a `target` that is a decimal id or null."""
-    return "target" in m and is_request_id(m.get("id")) and isinstance(m.get("hack"), str) and (m["target"] is None or is_device_id(m["target"]))
-
-
 def whole_in(x, low: int, high: int) -> bool:
     return isinstance(x, int) and not isinstance(x, bool) and low <= x <= high
 
 
-def area_valid(m: dict) -> bool:
-    """The three fields every area hack carries: `p` a finite position, `r` a whole number 1..150, `secs` a whole number 1..600 for the timed hacks and
-    0..600 for `outline` and `ping_area` (and `target` null)."""
-    low = 1 if m.get("hack") in TIMED_AREA_HACKS else 0
-    return m.get("target") is None and finite_vec3(m.get("p")) and whole_in(m.get("r"), 1, 150) and whole_in(m.get("secs"), low, SECS_MAX)
+def number_in(x, low: float, high: float) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) and low <= x <= high
+
+
+def rhack_valid(m: dict) -> bool:
+    """A DOWN `rhack` the DLL takes (rhack.cpp parse_rhack): `id` a whole number 0..2^31-1, `hack` a string, `target` a decimal id or absent, null, "" or
+    "0" (no target). A name the DLL does not know is answered `unsupported`; a known one needs a target unless it is an area hack, and its optional extras
+    must keep their rules: `p` a finite position, `r` any number 0..150, `secs` a whole number 0..600, `district` a string."""
+    if not (whole_in(m.get("id"), 0, REQUEST_ID_MAX) and isinstance(m.get("hack"), str)):
+        return False
+    target, hack = m.get("target"), m["hack"]
+    if target not in NO_TARGET and not is_device_id(target):
+        return False
+    if hack not in REMOTE_HACKS and hack not in QUICKHACK_NAMES:
+        return True
+    return ((target not in NO_TARGET or hack in AREA_HACKS) and ("p" not in m or finite_vec3(m["p"])) and ("r" not in m or number_in(m["r"], 0.0, R_MAX))
+            and ("secs" not in m or whole_in(m["secs"], 0, SECS_MAX)) and ("district" not in m or isinstance(m["district"], str)))
 
 
 def daemon_valid(m: dict) -> bool:
@@ -812,14 +832,19 @@ def daemon_valid(m: dict) -> bool:
             and (ALARM_DAEMON not in lst or lst == [ALARM_DAEMON]))
 
 
-def hack_result(rid: int, ok: bool, reason: str = "") -> dict:
-    return {"t": "hackresult", "id": rid, "ok": ok, "reason": reason}
+def hack_result(rid: int, ok: bool, reason: str = "", kind: str = "") -> dict:
+    """The DLL's `hackresult` (world::make_hackresult): a success also carries `upload` 0 and, for a traffic, device or camera hack, its `kind`."""
+    if not ok:
+        return {"t": "hackresult", "id": rid, "ok": False, "reason": reason}
+    return {"t": "hackresult", "id": rid, "ok": True, "reason": "", "upload": 0.0, **({"kind": kind} if kind else {})}
 
 
-def ping_spreads(rid: int, npcs: list[dict], centre: Sequence[float] | None, radius: float) -> list[dict]:
-    """`hackspread why:ping` for the hostile people within `radius` of `centre` (anywhere when `centre` is None), as the Ping chip reveals them."""
-    found = [e["id"] for e in npcs if e.get("kind") == "human" and e.get("hostile") and (centre is None or math.dist(e["p"], centre) <= radius)]
-    return [{"t": "hackspread", "id": rid, "target": i, "why": "ping"} for i in found[:MAX_SPREADS]]
+def ping_spreads(rid: int, npcs: list[dict], centre: Sequence[float] | None, radius: float, everyone: bool = False) -> list[dict]:
+    """`hackspread why:ping` for the hostile people within `radius` of `centre` (anywhere when `centre` is None), nearest first, as the Ping chip reveals them;
+    `everyone`: every person and car there (the outline)."""
+    found = [e for e in npcs if (everyone or e.get("kind") == "human" and e.get("hostile")) and (centre is None or math.dist(e["p"], centre) <= radius)]
+    found.sort(key=lambda e: 0.0 if centre is None else math.dist(e["p"], centre))
+    return [{"t": "hackspread", "id": rid, "target": e["id"], "why": "ping"} for e in found[:MAX_SPREADS]]
 
 
 def feed_message(n: int) -> dict:
@@ -1210,16 +1235,16 @@ class Cyberpunk:
                 self.arrived = m["p"]
         return [m for _, m in ready] + self.restore_effects(now)
 
-    def restore_effects(self, now: float = math.inf) -> list[dict]:
-        """--hacks2: put back every blackout device and car field whose timer ran out by `now` (all of them by default: the session ended), as
-        the scripts must (shared/protocol.md "Phase 6": every effect ends). The devices come back as `devstate by:script`."""
+    def restore_effects(self, now: float = math.inf, cars: bool = True) -> list[dict]:
+        """--hacks2: put back every blackout device and (with `cars`) car field whose timer ran out by `now` (all of them by default: the session ended),
+        as the scripts do (shared/protocol.md "Phase 6": every effect ends). The devices come back as `devstate by:script`."""
         out = []
         for _, dev_id in sorted(r for r in self.restores if r[0] <= now):
             dev = self.dev_table[dev_id]
             dev["st"], dev["fl"] = self.blacked.pop(dev_id)
             out.append(devstate_message(dev_id, dev, "script"))
         self.restores = [r for r in self.restores if r[0] > now]
-        for field in [f for f, due in self.car_due.items() if due <= now]:
+        for field in [f for f, due in self.car_due.items() if cars and due <= now]:
             self.car[field] = self.car_before.pop(field)
             del self.car_due[field]
         return out
@@ -1230,54 +1255,78 @@ class Cyberpunk:
         return REPLICA_FEET[0] + self.shift, REPLICA_FEET[1], REPLICA_FEET[2]
 
     def on_rhack(self, m: dict) -> list[dict]:
-        """The DLL's answer to a DOWN `rhack`: one `hackresult` (then the `devstate`s and `hackspread`s the hack caused); a message with a bad type is dropped."""
+        """The DLL's and the scripts' answer to a DOWN `rhack`: one `hackresult` (after the `hackspread`s the hack revealed, then the `devstate`s it caused);
+        a message the DLL would not take is dropped."""
         if not rhack_valid(m):
             return []
-        rid, hack, target = m["id"], m["hack"], m["target"]
+        rid, hack = m["id"], m["hack"]
         if hack not in REMOTE_HACKS:
-            return [hack_result(rid, False, "unsupported")]
-        npcs, v = self.npcs(self.clock)["list"], self.v_feet()
-        if hack in VEHICLE_HACKS or hack == "cam_feed":
-            if target is None:
-                return []  # the wrong shape: a target hack needs its target
-            if hack == "cam_feed":
-                dev = self.dev_table.get(target)
-                if dev is None:
-                    return [hack_result(rid, False, "device gone")]
-                if dev["kind"] != "camera":
-                    return [hack_result(rid, False, "not a camera")]
-                where = dev["p"]
-            else:
-                if not whole_in(m.get("secs"), 1, SECS_MAX):
-                    return []  # every vehicle effect is timed: no `secs` (or 0) is the wrong shape
-                car = next((e for e in npcs if e["id"] == target and e["kind"] == "vehicle"), None)
-                if car is None:
-                    return [hack_result(rid, False, "vehicle gone")]
-                where = car["p"]
-            if math.dist(where, v) > HACK_RANGE_M:
-                return [hack_result(rid, False, OUT_OF_RANGE)]
-            due = time.perf_counter() + m.get("secs", 0) * SCRIPT_SCALE
-            for field, value in VEHICLE_EFFECT.get(hack, {}).items():  # the first hack's state is kept; a second one restarts the timer
-                self.car_before.setdefault(field, self.car[field])
-                self.car[field], self.car_due[field] = value, due
+            return [hack_result(rid, False, "no such hack" if hack in QUICKHACK_NAMES else "unsupported")]
+        npcs = self.npcs(self.clock)["list"]
+        target = None if m.get("target") in NO_TARGET else m["target"]
+        figure = next((e for e in npcs if e["id"] == target), None)
+        device = self.dev_table.get(target)
+        if target is not None and figure is None and device is None:
+            return [hack_result(rid, False, "target gone")]  # not streamed; the server reads it as out of range
+        # the centre of an area hack: the target, else `p`, else V (RemoteHacks.reds Center)
+        centre = figure["p"] if figure else device["p"] if device else m["p"] if "p" in m else list(self.v_feet())
+        if hack in VEHICLE_HACKS:
+            if figure is None or figure["kind"] != "vehicle":
+                return [hack_result(rid, False, "not hackable (not a car)")]
+            effect, secs = VEHICLE_EFFECT[hack]
+            self.hold_car(effect, secs)
             return [hack_result(rid, True)]
-        if not area_valid(m):
-            return []
-        if math.dist(m["p"], v) > HACK_RANGE_M:
-            return [hack_result(rid, False, OUT_OF_RANGE)]
-        extras = ping_spreads(rid, npcs, m["p"], m["r"]) if hack in ("outline", "ping_area") else []
+        if hack == "cam_feed":
+            if device is None or device["kind"] != "camera":
+                return [hack_result(rid, False, "not hackable (not a camera)")]
+            return [hack_result(rid, True, kind="camera")] if device["st"] == 1 else [hack_result(rid, False, "camera off")]
+        if hack == "traffic_switch":
+            return [hack_result(rid, False, "no traffic light near")] if not self.traffic_light(centre) else [hack_result(rid, True, kind="traffic")]
+        if hack == "gridlock":
+            cars = [e for e in npcs if e["kind"] == "vehicle" and math.dist(e["p"], centre) <= GRIDLOCK_R]
+            if not cars and not self.traffic_light(centre):
+                return [hack_result(rid, False, "no traffic near")]
+            if cars:
+                self.hold_car({"braked": True}, GRIDLOCK_SECS)
+            return [hack_result(rid, True, kind="traffic")]
         if hack == "blackout":
-            for dev_id, dev in self.dev_table.items():
-                if dev["kind"] in NO_POWER_KINDS or dev["fl"] & FL_QUEST or not dev["fl"] & FL_POWERED or math.dist(dev["p"], m["p"]) > m["r"]:
-                    continue
+            return [hack_result(rid, True, kind="device"), *self.blackout(centre, m.get("r", 0), m.get("secs", 0))]
+        spreads = ping_spreads(rid, npcs, centre, OUTLINE_R, everyone=True) if hack == "outline" else ping_spreads(rid, npcs, centre, PING_R)
+        return [*spreads, hack_result(rid, True)]
+
+    def traffic_light(self, centre) -> bool:
+        """A traffic light device within 40 m of `centre` (the --devices scene has none, so the scripts' refusals show)."""
+        return any(d["kind"] == "traffic" and math.dist(d["p"], centre) <= LIGHT_R for d in self.dev_table.values())
+
+    def hold_car(self, effect: dict, secs: int) -> None:
+        """A vehicle hack on the scene's car: the first hack's state is kept for the restore and a second one restarts the timer; `secs` 0 is never undone
+        (`veh_start`, which also ends a pending engine hold)."""
+        for field, value in effect.items():
+            if secs:
+                self.car_before.setdefault(field, self.car[field])
+                self.car_due[field] = time.perf_counter() + secs * SCRIPT_SCALE
+            else:
+                self.car_before.pop(field, None)
+                self.car_due.pop(field, None)
+            self.car[field] = value
+
+    def blackout(self, centre, r: float, secs: int) -> list[dict]:
+        """The devices of the blackout kinds that are on and powered within `r` (0: 150 m) of `centre` go off for `secs` (0: 120 s, else 30..600); a
+        running blackout ends first (its devices come back). The `devstate`s of both."""
+        out = self.restore_effects(math.inf, cars=False)
+        radius = min(r, BLACKOUT_R) if r > 0 else BLACKOUT_R
+        due = time.perf_counter() + (min(max(secs, BLACKOUT_MIN), BLACKOUT_MAX) if secs > 0 else BLACKOUT_SECS) * SCRIPT_SCALE
+        for dev_id, dev in self.dev_table.items():
+            if dev["kind"] in BLACKOUT_KINDS and dev["st"] == 1 and dev["fl"] & FL_POWERED and not dev["fl"] & FL_QUEST and math.dist(dev["p"], centre) <= radius:
                 self.blacked[dev_id] = (dev["st"], dev["fl"])
                 dev["st"], dev["fl"] = -1, dev["fl"] & ~FL_POWERED  # UNPOWERED
-                extras.append(devstate_message(dev_id, dev, "script"))
-                self.restores.append((time.perf_counter() + m["secs"] * SCRIPT_SCALE, dev_id))  # `secs` is never 0 for a blackout
-        return [hack_result(rid, True), *extras]
+                out.append(devstate_message(dev_id, dev, "script"))
+                self.restores.append((due, dev_id))
+        return out
 
     def on_daemon(self, m: dict) -> list[dict]:
-        """The DLL's answer to a DOWN `daemon`: each known id's action, then one `hackresult` for the whole message (ok only when every id ran)."""
+        """The DLL's answer to a DOWN `daemon`: each known id's action, one `hackresult` for the whole message (ok only when every id ran) after the
+        reveals and before the `devstate`s."""
         if not daemon_valid(m):
             return []
         rid = m["id"]
@@ -1299,7 +1348,8 @@ class Cyberpunk:
                 extras += ping_spreads(rid, self.npcs(self.clock)["list"], None, 0.0)
             elif daemon not in QUIET_DAEMONS:
                 failure = failure or "unsupported daemon"
-        return [hack_result(rid, not failure, failure), *extras]
+        spreads = [e for e in extras if e["t"] == "hackspread"]  # the scripts report the reveals before the one result (RemoteHacks.reds Answer)
+        return [*spreads, hack_result(rid, not failure, failure, DAEMON_KIND), *(e for e in extras if e["t"] != "hackspread")]
 
     def on_feedreq(self, m: dict) -> list[dict]:
         """`feedreq on:true` starts the photo feed (the first frame with the next frame message, then one per second), `on:false` stops it."""
@@ -1534,7 +1584,7 @@ def main() -> int:
     ap.add_argument("--replica", action="store_true", help="after the orbit: the Phase 3 replica script: a street of ground with materials (`ground.m`), `unground seen`, walking and driving figures, `env` changes, `vteleport` answered after 2 s; print vteleport/park")
     ap.add_argument("--devices", action="store_true", help="after the orbit: the Phase 4 device scene on the --replica street's ground (a door, a light, a camera, a vending machine, an elevator, a sealed quest door and a door a Night City person opens and closes every 4 s): `devices` lists, `devstate`, every `devact` answered with `devresult` (ok for the supported acts, unsupported for call/buy/breach); print devact/devresult")
     ap.add_argument("--figures", action="store_true", help="after the orbit: the Phase 5 `npcs` list with the figure tags: one person per skin group, every animation bit, cars with colours, a hostile police cruiser chasing a car; print nothing extra")
-    ap.add_argument("--hacks2", action="store_true", help="after the orbit: the Phase 6 hacking scene: the --devices scene plus a Net Port, `rhack` (vehicle, camera and area hacks, range 50 m), `daemon` (Breach results) and `feedreq` (a 128 x 128 `feed` once a second) answered; print devact/devresult/rhack/daemon/feedreq/hackresult/feed")
+    ap.add_argument("--hacks2", action="store_true", help="after the orbit: the Phase 6 hacking scene: the --devices scene plus a Net Port, `rhack` (vehicle, camera and area hacks as the server sends them, every streamed target), `daemon` (Breach results) and `feedreq` (a 128 x 128 `feed` once a second) answered; print devact/devresult/rhack/daemon/feedreq/hackresult/feed")
     ap.add_argument("--vendor", action="store_true", help="after the orbit: the Phase 7 gun shop and hub: `stats` with V's money, the shop's screen from 2 s to 8 s with its unrequested `reply kind:vendor` stock, `uiact buy` and `sell` answered (`notify`, `stats` and the stock again), `atlasreq arg:fasttravel` answered with the fast-travel list, `park` answered with `parked`, `vteleport` after 2 s; print uiact/hub/park/vteleport")
     ap.add_argument("--park-refuse", action="store_true", help="--vendor or --replica: answer `park on:true` with `parked ok:false` (\"blocked (in a vehicle)\"), as the scripts do when V cannot be parked")
     ap.add_argument("--shift", type=int, default=None, metavar="DX", help="--replica, --devices or --hacks2: move the street, the figures, the devices and V DX blocks east (a second fake host that overlaps the first)")

@@ -35,10 +35,11 @@ import org.jspecify.annotations.Nullable;
  */
 public final class ServerNet {
 	/**
-	 * Phase features this server has (hs_ack.features): figures from Phase 3 (task 3-F1), devices from Phase 4 (task 4-M1), the
-	 * Afterlife hub from Phase 7 (task 7-H1: the client shows its pause-screen button).
+	 * Phase features this server has (hs_ack.features): figures from Phase 3 (task 3-F1), devices from Phase 4 (task 4-M1), hacking
+	 * from Phase 6 (Breach, remote hacks and the photo feed; shared/protocol.md "Phase 6"), the Afterlife hub from Phase 7 (task 7-H1:
+	 * the client shows its pause-screen button).
 	 */
-	static final int FEATURES = Payloads.FEATURE_FIGURES | Payloads.FEATURE_DEVICES | Payloads.FEATURE_HUB;
+	static final int FEATURES = Payloads.FEATURE_FIGURES | Payloads.FEATURE_DEVICES | Payloads.FEATURE_HACKING | Payloads.FEATURE_HUB;
 	private static final Map<UUID, Conn> conns = new ConcurrentHashMap<>();
 	private static final Map<String, BiConsumer<ServerPlayer, JsonObject>> actHandlers = new ConcurrentHashMap<>();
 	private static volatile @Nullable MinecraftServer server;
@@ -313,18 +314,28 @@ public final class ServerNet {
 	}
 
 	private static void onAct(final ServerPlayer player, final Payloads.Act act) {
-		BiConsumer<ServerPlayer, JsonObject> handler = actHandlers.get(act.t());
-		JsonObject m = parse(act.json());
+		dispatchAct(player, act.t(), act.json());
+	}
+
+	/**
+	 * One cyberblock:act from this player to its handler (also the devtools {@code /cyberblock test act}, the same path). False when it
+	 * was dropped: no handler for `t`, json that is not an object, or a player still locked by the join password.
+	 */
+	static boolean dispatchAct(final ServerPlayer player, final String t, final String json) {
+		BiConsumer<ServerPlayer, JsonObject> handler = actHandlers.get(t);
+		JsonObject m = parse(json);
 		if (handler == null || m == null || JoinLock.locked(player)) {
-			Cyberblock.LOG.debug("act {} from {} dropped", act.t(), player.getPlainTextName());
-			return;
+			Cyberblock.LOG.debug("act {} from {} dropped", t, player.getPlainTextName());
+			return false;
 		}
 
 		try {
 			handler.accept(player, m);
 		} catch (RuntimeException e) {
-			Cyberblock.LOG.warn("act {} from {} failed: {}", act.t(), player.getPlainTextName(), e.toString());
+			Cyberblock.LOG.warn("act {} from {} failed: {}", t, player.getPlainTextName(), e.toString());
 		}
+
+		return true;
 	}
 
 	static @Nullable JsonObject parse(final String json) {

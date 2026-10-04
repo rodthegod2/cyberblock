@@ -33,8 +33,9 @@ def test_every_server_rhack_obeys_the_protocol(case):
 def test_the_fake_dll_answers_every_server_rhack_ok(case):
     host = fakehost.Cyberpunk(frozenset(), frozenset({"hacks2"}))
     answers = host.reply(case["down"])
-    assert answers and answers[0]["t"] == "hackresult" and hackresult_ok(answers[0]), answers
-    assert answers[0] == {"t": "hackresult", "id": case["id"], "ok": True, "reason": ""}
+    results = [m for m in answers if m["t"] == "hackresult"]
+    assert len(results) == 1 and hackresult_ok(results[0]), answers  # the scripts' reveals (`hackspread`) may come before it
+    assert results[0]["id"] == case["id"] and results[0]["ok"] is True and results[0]["reason"] == "", answers
 
 
 def test_one_vehicle_and_one_area_hack_change_the_fake_scene():
