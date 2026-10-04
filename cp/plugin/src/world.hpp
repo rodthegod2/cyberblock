@@ -49,11 +49,12 @@ namespace cb::world
 		PerkFx,
 		Cyber,   // re-test 2: one installed/removed implant (plan section 1.3)
 		CyberFx, // re-test 2: an implant effect starts or ends
+		Prefs,   // Phase Q (megaplan Q-D1): a `prefs` arrived; `flag` is its `stepup`
 	};
 
 	/// The CName redscript sees from Cyberblock_NextEvent: "explosion", "hit", "ignite", "block_add", "block_remove",
 	/// "block_reset", "teleport", "lead", "lead_release", "pull", "knock", "effect", "hack", "scan", "perk", "perkfx",
-	/// "cyber", "cyberfx"; "" (the empty CName) for None.
+	/// "cyber", "cyberfx", "prefs"; "" (the empty CName) for None.
 	const char *event_name(EventKind kind);
 
 	/// One Minecraft event, already in Cyberpunk space. Which fields each kind fills is the event table of plan
@@ -67,7 +68,7 @@ namespace cb::world
 							 // teleport yaw (Cyberpunk degrees) | lead length | pull strength | knock radius |
 							 // effect seconds | perk rank | perkfx seconds | cyber 1 installed, 0 not | cyberfx seconds
 		Vec3 vector{};       // hit impulse, m/s
-		bool flag = false;   // explosion fire | lead has a fixed anchor | hack chains
+		bool flag = false;   // explosion fire | lead has a fixed anchor | hack chains | prefs stepup
 		std::string name;    // effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id
 		double extra = 0;    // knock strength | effect amplifier
 		int32_t id = 0;      // hit: the mob that dealt it (-1 none) | hack, scan: the request id
@@ -135,7 +136,8 @@ namespace cb::world
 	/// Block changes are state, so they are never lost to a burst: they are kept per cell (the last add or remove of each
 	/// cell wins, and a `block_reset` forgets every change before it), so memory is bounded by the cells that changed, at
 	/// most kMaxBlockCells. Every other kind is a FIFO of at most kCapacity events; when it is full the oldest transient
-	/// event goes first (a perk, cyber, scan or hack only when nothing else is left). next() hands out that FIFO first, then a
+	/// event goes first (a perk, cyber, scan or hack only when nothing else is left); a `prefs` replaces the one already
+	/// queued, if any (the newest setting wins in its place). next() hands out that FIFO first, then a
 	/// pending `block_reset`, then the block changes (by cell, not by arrival: their order does not matter once each cell
 	/// has one change).
 	class EventQueue
@@ -209,8 +211,37 @@ namespace cb::world
 	/// status, when a status has no boolean `pause` (older Minecraft builds), after every `hello` and after a link drop.
 	/// Any thread. The UI bridge turns it into pause/resume actions (plan section 1.1: level-triggered).
 	bool minecraft_pause();
-	/// A linked Minecraft went away (main.cpp's drop handler, link thread): forgets `persp` and the pause.
+	/// A linked Minecraft went away (main.cpp's drop handler, link thread): forgets `persp`, the pause and the `prefs`.
 	void on_link_dropped();
+
+	// ---- Phase Q (megaplan sections 1.9 and Q-D1): `prefs`, the third-person camera preferences ----
+
+	/// What `prefs` sets. The defaults hold before any `prefs`, after every `hello` and after a link drop.
+	struct ViewPrefs
+	{
+		double dist = 3.2;      // m behind V on foot, 1.5..8
+		double shoulder = 0.45; // m to the right (negative: left), -1..1
+		double fov = 0.0;       // 0 = the game's own, else 50..110 (gameCameraComponent.SetFOV units)
+		bool recenter = true;   // swing the shoulder offset to the centre while a wall is on that side
+		double vdist = 0.0;     // 0 = the game's own, else 3..14 m (2.31 has no settable vehicle camera distance: unused)
+		bool stepup = true;     // the step-up assist (scripts, through the event `prefs`)
+		// CONTRACT DEVIATION, pending the integrator (megaplan section 1.9 defines prefs as the six fields above and gives
+		// Minecraft no way to tell the DLL that `/cyberblock debug view` is on, yet `cam.vdbg` is sent only while it is):
+		// an optional `debug` bool, Minecraft's view debug flag, so `cam` carries `vdbg`. A six-field `prefs` keeps it.
+		bool debug = false;
+		bool operator==(const ViewPrefs &) const = default;
+	};
+
+	/// `prefs` applied on top of `current`: every number is clamped into its range (`fov` and `vdist`: below 0 is 0, above
+	/// 0 but under the lower bound is raised to it); a field that is missing keeps its current value; a field that is not
+	/// finite or of the wrong type keeps its current value and is counted in `bad` (its name in `why`, the first one only);
+	/// `debug` (the deviation above) is optional like every field; any other field is ignored. Never throws.
+	ViewPrefs parse_prefs(const nlohmann::json &message, const ViewPrefs &current, size_t &bad, std::string &why);
+	/// The prefs in effect (on_minecraft_message keeps them). Any thread.
+	ViewPrefs view_prefs();
+	/// The `vdbg` the next `cam` carries: `values` while Minecraft's view debug flag is on (today the `debug` deviation
+	/// above, the one place to change when the integrator picks the channel), else none. Any thread.
+	std::optional<std::array<double, 3>> vdbg_to_send(const std::array<double, 3> &values);
 
 	// ---- Cyberpunk -> Minecraft -------------------------------------------------------------------------------------
 
@@ -256,8 +287,11 @@ namespace cb::world
 	/// `menu`, `air` and `held` are `flags`; `lv` is `levelK`, the alignment the positions were converted with. Re-test 3
 	/// (plan section 1.1): `fp` is `firstPerson` (false in a third-person vehicle camera and while the on-foot third-person
 	/// view is applied) and `seat` is `seat` (V sits in a vehicle; `feet` is then V's hips point). Numbers are not rounded.
+	/// Phase Q (megaplan section 1.9): `vdbg` [collide m, smooth m, age ms] is added when given (the view debug flag is on),
+	/// each value clamped to its protocol range (0..100 m, 0..60000 ms; not finite: 0) and rounded to 1 mm / 0.1 ms.
 	nlohmann::json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, CamFlags flags,
-							bool firstPerson, bool seat, int levelK);
+							bool firstPerson, bool seat, int levelK,
+							const std::optional<std::array<double, 3>> &vdbg = std::nullopt);
 
 	/// {"t":"look","d":[dyaw,dpitch]}: raw mouse movement as Minecraft look deltas in degrees (right and down are positive).
 	nlohmann::json make_look(double dyaw, double dpitch);

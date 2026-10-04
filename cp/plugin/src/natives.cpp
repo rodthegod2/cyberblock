@@ -346,8 +346,9 @@ namespace
 	// Cyberblock_NextEvent() -> CName: pops the oldest Minecraft event and makes it current: n"explosion", n"hit",
 	// n"ignite", n"block_add", n"block_remove", n"block_reset", n"teleport", n"lead", n"lead_release", n"pull", n"knock",
 	// n"effect", n"hack", n"scan", n"perk", n"perkfx", n"cyber" or n"cyberfx" (re-test 2: one `cyber` per entry of a
-	// `cyberware` message, kept while not Active like n"perk"; n"cyberfx" is dropped while not Active); n"" (the empty
-	// CName, hash 0) when there is none.
+	// `cyberware` message, kept while not Active like n"perk"; n"cyberfx" is dropped while not Active), n"prefs" (Phase Q:
+	// Minecraft's camera prefs arrived, kept while not Active; Cyberblock_EventFlag is `stepup`); n"" (the empty CName,
+	// hash 0) when there is none.
 	void NextEvent(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
 	{
 		++frame->code;
@@ -389,7 +390,7 @@ namespace
 			*out = to_vector4(cb::world::events().current().vector, 0.0f);
 	}
 
-	// Cyberblock_EventFlag() -> Bool: whether the explosion burns.
+	// Cyberblock_EventFlag() -> Bool: whether the explosion burns | prefs: the step-up assist is on (world.hpp Event::flag).
 	void EventFlag(IScriptable *, CStackFrame *frame, bool *out, int64_t)
 	{
 		++frame->code;

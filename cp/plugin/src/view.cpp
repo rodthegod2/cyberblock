@@ -6,7 +6,13 @@
 //   entEntity.GetWorldOrientation() -> Quaternion (core/entity/entity.swift);
 //   gameCameraSystem.GetActiveCameraWorldTransform(out transform: Transform) -> Bool (as camera.cpp);
 //   gameSpatialQueriesSystem.SyncRaycastByCollisionGroup (as drive.cpp), groups n"Static" and n"Terrain": Minecraft's
-//     collision boxes are real Static entities in Night City, so blocks stop the camera too.
+//     collision boxes are real Static entities in Night City, so blocks stop the camera too;
+//   Phase Q (megaplan Q-D1): CameraComponent.SetFOV(fov: Float), GetFOV() -> Float (gameCameraComponent, which
+//     FPPCameraComponent extends; the 2.31 scripts call SetFOV on vehicle cinematic cameras in
+//     vehicleCinematicCameraComponent.swift). The FOV is optional: without it the view works with the game's FOV.
+// No 2.31 script or native API sets a vehicle camera's distance (vehicleTPPCameraComponent exposes no functions or fields;
+// VehicleTPPCameraPresetParams_Record and TPPCameraSetup_Record are read-only TweakDB records; only the discrete
+// vehicleRequestCameraPerspectiveEvent exists), so `prefs.vdist` is logged and the game's vehicle cameras stay.
 // The offset is in V's local axes, assuming the component's parent frame is V's (logged on the first applied frame as
 // "view: applied, eye moved D m (expected E m)", which checks it). Every function is resolved once; if one is missing,
 // "view: disabled: ... missing" is logged and the view never applies (cam.fp stays true).
@@ -23,6 +29,7 @@
 #include <RED4ext/Scripting/Natives/Generated/physics/TraceResult.hpp>
 #include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
 #include <RED4ext/Scripting/Natives/Transform.hpp>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -46,7 +53,7 @@ namespace
 		};
 		State state = State::Unresolved;
 		RED4ext::CBaseFunction *fpp = nullptr, *getLocal = nullptr, *setLocal = nullptr, *orientation = nullptr,
-							   *cameraTransform = nullptr, *raycast = nullptr;
+							   *cameraTransform = nullptr, *raycast = nullptr, *getFov = nullptr, *setFov = nullptr;
 		RED4ext::CClass *cameraClass = nullptr, *spatialClass = nullptr, *spatialInterface = nullptr;
 	};
 	Api g_api;
@@ -58,7 +65,11 @@ namespace
 	Vec3 g_offset{};                                         // the local offset applied last frame
 	cb::Quat g_offsetQ{0.0, 0.0, 0.0, 1.0};                  // V's orientation when it was applied
 	cb::view::Boom g_boom;
-	const cb::view::Orbit g_orbit;
+	cb::view::Shoulder g_shoulder;
+	constexpr double kHeight = 0.25; // m above the eye (Orbit's default)
+	std::optional<float> g_fovBase;   // the component's FOV before ours went on; set while ours is on
+	cb::view::ViewLine g_line;        // the last `view:` line
+	std::chrono::steady_clock::time_point g_lineAt{};
 	std::chrono::steady_clock::time_point g_lastFrame{};
 	std::optional<Vec3> g_before; // the camera's world position the frame before the view applied (for the check line)
 	bool g_measured = false;
@@ -67,6 +78,9 @@ namespace
 	std::atomic<bool> g_appliedFlag{false};
 	std::mutex g_eyeLock;
 	Vec3 g_eye{};
+	// cam.vdbg (any thread reads)
+	std::atomic<double> g_dbgCollide{0.0}, g_dbgSmooth{0.0};
+	std::atomic<int64_t> g_dbgAt{0}; // steady_clock ticks of the view's last tick
 
 	void set_eye(const Vec3 &eye)
 	{
@@ -95,6 +109,8 @@ namespace
 		g_api.orientation = function("entEntity", "GetWorldOrientation");
 		g_api.cameraTransform = function("gameCameraSystem", "GetActiveCameraWorldTransform");
 		g_api.raycast = function("gameSpatialQueriesSystem", "SyncRaycastByCollisionGroup");
+		g_api.getFov = function("gameCameraComponent", "GetFOV");
+		g_api.setFov = function("gameCameraComponent", "SetFOV");
 		g_api.cameraClass = rtti->GetClass("gameCameraSystem");
 		g_api.spatialClass = rtti->GetClass("gameSpatialQueriesSystem");
 		g_api.spatialInterface = rtti->GetClass("gameISpatialQueriesSystem");
@@ -118,6 +134,12 @@ namespace
 			cb::log::error("view: disabled: %s missing", missing.c_str());
 			g_api.state = Api::State::Disabled;
 			return false;
+		}
+		if (g_api.getFov == nullptr || g_api.getFov->returnType == nullptr || g_api.setFov == nullptr ||
+			g_api.setFov->params.Size() != 1)
+		{
+			g_api.getFov = g_api.setFov = nullptr;
+			cb::log::warn("view: CameraComponent.GetFOV/SetFOV(1) missing; prefs fov is ignored, the game's FOV stays");
 		}
 		g_api.state = Api::State::Ready;
 		return true;
@@ -181,10 +203,57 @@ namespace
 		return nearest;
 	}
 
+	std::optional<double> raycast(const cb::view::Ray &ray)
+	{
+		return raycast(ray.from, ray.to);
+	}
+
 	bool set_local(RED4ext::IScriptable *component, RED4ext::Vector4 position)
 	{
 		RED4ext::StackArgs_t args{{nullptr, &position}};
 		return RED4ext::ExecuteFunction(component, g_api.setLocal, nullptr, args);
+	}
+
+	bool set_fov(RED4ext::IScriptable *component, float fov)
+	{
+		RED4ext::StackArgs_t args{{nullptr, &fov}};
+		return RED4ext::ExecuteFunction(component, g_api.setFov, nullptr, args);
+	}
+
+	/// Puts the component's own FOV back if ours is on.
+	void restore_fov(RED4ext::IScriptable *component)
+	{
+		if (!g_fovBase)
+			return;
+		if (component != nullptr)
+			set_fov(component, *g_fovBase);
+		cb::log::info("view: FOV back to the game's %.1f", *g_fovBase);
+		g_fovBase.reset();
+	}
+
+	/// `prefs.fov` on the camera component while the view is applied: 0 leaves (or puts back) the game's own.
+	void apply_fov(RED4ext::IScriptable *component, double fov)
+	{
+		if (g_api.setFov == nullptr)
+			return;
+		if (fov <= 0.0)
+			return restore_fov(component);
+		if (!g_fovBase)
+		{
+			float base = 0.0f;
+			RED4ext::StackArgs_t none;
+			if (!RED4ext::ExecuteFunction(component, g_api.getFov, &base, none) || !std::isfinite(base) || base <= 0.0f)
+				return;
+			g_fovBase = base;
+			cb::log::info("view: FOV %.0f on (the game's was %.1f)", fov, base);
+		}
+		set_fov(component, float(fov)); // every frame: the game may set its own again
+	}
+
+	void clear_debug()
+	{
+		g_dbgCollide = 0.0;
+		g_dbgSmooth = 0.0;
 	}
 
 	/// Takes the offset off again (the component's own local position back), if it is still there.
@@ -196,8 +265,11 @@ namespace
 		g_appliedFlag = false;
 		g_offset = {};
 		g_before.reset();
-		if (const RED4ext::Handle<RED4ext::IScriptable> component = g_component.Lock())
+		clear_debug();
+		const RED4ext::Handle<RED4ext::IScriptable> component = g_component.Lock();
+		if (component)
 			set_local(component.GetPtr(), g_base);
+		restore_fov(component.GetPtr());
 		g_component = {};
 		cb::log::info("view: first person (%s)", reason);
 	}
@@ -232,6 +304,13 @@ namespace cb::view
 							  ? 0.0
 							  : std::min(std::chrono::duration<double>(now - g_lastFrame).count(), 0.1);
 		g_lastFrame = now;
+		g_dbgAt = now.time_since_epoch().count();
+		const world::ViewPrefs prefs = world::view_prefs();
+		static bool vdistLogged = false;
+		if (prefs.vdist > 0.0 && !std::exchange(vdistLogged, true))
+			log::info("view: vehicle camera distance %.1f m asked; 2.31 has no settable vehicle camera distance, the "
+					  "game's vehicle cameras stay (logged once)",
+					  prefs.vdist);
 
 		if (!natives::active)
 		{
@@ -292,8 +371,10 @@ namespace cb::view
 			g_appliedFlag = true;
 			g_offset = {};
 			g_before = cam;
-			g_boom.reset(g_orbit.distance);
-			log::info("view: third person on (distance %.2f m)", g_orbit.distance);
+			g_boom.reset(prefs.dist);
+			g_shoulder.reset(prefs.shoulder);
+			g_line = {};
+			log::info("view: third person on (distance %.2f m, shoulder %.2f m)", prefs.dist, prefs.shoulder);
 		}
 
 		const RED4ext::Handle<RED4ext::IScriptable> component = g_component.Lock();
@@ -301,6 +382,8 @@ namespace cb::view
 		{
 			g_applied = false;
 			g_appliedFlag = false;
+			g_fovBase.reset();
+			clear_debug();
 			log::info("view: first person (the camera component went away)");
 			return;
 		}
@@ -320,19 +403,49 @@ namespace cb::view
 					  std::hypot(g_offset.x, g_offset.y, g_offset.z));
 		}
 
-		// the boom: as long as the orbit wants, shortened where the ray from the eye meets Night City or a block
-		const Vec3 want = desired_local(g_orbit, pitch);
+		// the shoulder: swung to the centre while a wall is close on its side (one probe ray, only when it can matter)
+		const double step = dt > 0.0 ? dt : 1e-3;
+		const Vec3 right = rotate(q, {1.0, 0.0, 0.0});
+		std::optional<double> wall;
+		if (prefs.recenter && prefs.shoulder != 0.0)
+			wall = raycast(view::shoulder_probe(eye, right, prefs.shoulder));
+		const double shoulder = g_shoulder.step(prefs.shoulder, prefs.recenter, wall, step);
+
+		// the boom: cast as long as the orbit wants (or as the boom still is, while it comes in after a shorter `dist`), the
+		// four corner rays from the eye shorten it where they meet Night City or a block; the camera stays on that segment
+		const Orbit orbit{prefs.dist, kHeight, shoulder};
+		const double reach = std::max(prefs.dist, g_boom.distance());
+		const Vec3 want = desired_local(orbit, pitch, reach);
 		const Vec3 wantWorld = rotate(q, want);
-		const double length = std::hypot(want.x, want.y, want.z);
-		double target = g_orbit.distance;
-		if (const auto hit = raycast(eye, {eye.x + wantWorld.x, eye.y + wantWorld.y, eye.z + wantWorld.z}); hit && length > 0.0)
-			target = std::min(g_orbit.distance, g_orbit.distance * collision_distance(*hit) / length);
-		const double boom = dt > 0.0 ? g_boom.step(target, dt) : g_boom.step(target, 1e-3);
-		g_offset = desired_local(g_orbit, pitch, boom);
+		const auto rays = view::corner_rays(eye, {eye.x + wantWorld.x, eye.y + wantWorld.y, eye.z + wantWorld.z}, right,
+											rotate(q, view::camera_up_local(pitch)));
+		std::array<double, 4> lengths{};
+		std::array<std::optional<double>, 4> hits{};
+		for (size_t i = 0; i < rays.size(); ++i)
+		{
+			lengths[i] = rays[i].length();
+			hits[i] = raycast(rays[i]);
+		}
+		const double limit = view::collide_distance(reach, lengths, hits).value_or(INFINITY);
+		const double collide = std::min(prefs.dist, limit);
+		const double boom = g_boom.step(collide, limit, step);
+		const double scale = reach > 0.0 ? boom / reach : 0.0;
+		g_offset = {want.x * scale, want.y * scale, want.z * scale};
 		g_offsetQ = q;
+		g_dbgCollide = collide;
+		g_dbgSmooth = boom;
+		const view::ViewLine line{boom, collide, shoulder, g_shoulder.recentering()};
+		if (line.changed(g_line) && now - g_lineAt >= std::chrono::milliseconds(250))
+		{
+			g_line = line;
+			g_lineAt = now;
+			log::info("view: dist %.2f collide %.2f shoulder %.2f recenter %s", line.dist, line.collide, line.shoulder,
+					  line.recenter ? "on" : "off");
+		}
 		RED4ext::Vector4 local{float(g_base.X + g_offset.x), float(g_base.Y + g_offset.y), float(g_base.Z + g_offset.z), g_base.W};
 		if (!set_local(component.GetPtr(), local))
-			restore("SetLocalPosition failed");
+			return restore("SetLocalPosition failed");
+		apply_fov(component.GetPtr(), prefs.fov);
 	}
 
 	bool applied()
@@ -349,5 +462,14 @@ namespace cb::view
 	void set_allowed(bool allowed)
 	{
 		g_allowed = allowed;
+	}
+
+	std::array<double, 3> vdbg()
+	{
+		const auto at = std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(g_dbgAt.load()));
+		const double age = at.time_since_epoch().count() == 0
+							   ? 0.0
+							   : std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - at).count();
+		return {g_dbgCollide.load(), g_dbgSmooth.load(), age};
 	}
 }

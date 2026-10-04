@@ -4,12 +4,19 @@
 // (FPPCameraComponent.SetLocalPosition), shortened by a raycast so Night City and Minecraft's collision boxes stop it.
 // Everything else restores the component's own local position. Cyberpunk's vehicle cameras are never touched.
 //
-// The pure parts (the orbit and the boom's smoothing) are inline here, so cb_tests needs no game; view.cpp is the game.
+// Phase Q (megaplan Q-D1): Minecraft's `prefs` (world::view_prefs) set the distance, the shoulder offset, the FOV and
+// the auto-recenter; four corner rays keep the camera out of walls; the boom and the shoulder move critically damped.
+//
+// The pure parts (the orbit, the rays, the smoothing, the recenter) are inline here, so cb_tests needs no game; view.cpp
+// is the game.
 #pragma once
 #include "cbmath.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <optional>
+#include <span>
 
 namespace cb::view
 {
@@ -34,22 +41,100 @@ namespace cb::view
 		return desired_local(orbit, pitchDeg, orbit.distance);
 	}
 
-	/// Metres the camera stops short of a surface the boom ray hit, and the shortest boom.
-	inline constexpr double kWallMargin = 0.25;
-	inline constexpr double kMinDistance = 0.4;
+	// ---- Phase Q (megaplan Q-D1): collision from four corner rays, smoothing, the shoulder and its auto-recenter ----------
+	//
+	// The camera sits on the segment from V's eye to where the orbit wants it, scaled by boom / R (R the length the rays
+	// were cast for): the segment up to the nearest hit minus the margin is clear, so the camera never goes into a wall.
 
-	/// How long the boom may be when its ray hit something `hitDistance` metres from the eye: hit - 0.25 m, at least 0.4 m.
-	inline double collision_distance(double hitDistance)
+	/// Metres the camera stops short of a surface a ray hit. There is no shortest boom: with V's back to a wall the camera
+	/// comes all the way in to the eye rather than past the hit (a 0.4 m floor put it inside the wall; the margin keeps the
+	/// 2 cm near plane clear of it).
+	inline constexpr double kWallMargin = 0.25;
+	/// Half the width and height of the small box around the camera whose corners the four rays aim at (m): wider than
+	/// the near plane (2 cm away, about 3 cm across) so the picture's edges never reach into a wall either.
+	inline constexpr double kCornerHalfWidth = 0.2;
+	inline constexpr double kCornerHalfHeight = 0.12;
+	/// The shoulder swings to the centre while a wall is within kRecenterNear of the eye on the shoulder side and back
+	/// once none is within kRecenterFar (the gap keeps it from flapping along a wall at 0.6 m).
+	inline constexpr double kRecenterNear = 0.6;
+	inline constexpr double kRecenterFar = 0.7;
+
+	/// One step of a critically damped spring (the usual SmoothDamp: no overshoot for a still target) of `value` toward
+	/// `target` over about `smoothTime` seconds. Never passes the target.
+	inline void smooth_damp(double &value, double &velocity, double target, double smoothTime, double dt)
 	{
-		return std::max(hitDistance - kWallMargin, kMinDistance);
+		const double omega = 2.0 / smoothTime;
+		const double x = omega * dt;
+		const double decay = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x);
+		const double change = value - target;
+		const double temp = (velocity + omega * change) * dt;
+		const bool above = value > target;
+		velocity = (velocity - omega * temp) * decay;
+		value = target + (change + temp) * decay;
+		if (above ? value < target : value > target)
+		{
+			value = target;
+			velocity = 0.0;
+		}
 	}
 
-	/// The boom's length over time: it snaps in at once when a wall comes closer (the camera never goes through it) and
-	/// grows back out critically damped (no overshoot) over about kSmoothTime.
+	/// The camera's up in V's local axes (X right, Y forward, Z up) at Minecraft pitch `pitchDeg` (positive looks down):
+	/// perpendicular to its forward (0, cos p, -sin p).
+	inline Vec3 camera_up_local(double pitchDeg)
+	{
+		const double p = pitchDeg * 3.14159265358979323846 / 180.0;
+		return {0.0, std::sin(p), std::cos(p)};
+	}
+
+	struct Ray
+	{
+		Vec3 from{}, to{};
+		double length() const { return std::hypot(to.x - from.x, to.y - from.y, to.z - from.z); }
+	};
+
+	/// The four collision rays: from the eye to the corners of the kCornerHalfWidth x kCornerHalfHeight box around the
+	/// camera (`right`, `up`: the camera's unit axes in the same space). Order: right-up, left-up, right-down, left-down.
+	inline std::array<Ray, 4> corner_rays(Vec3 eye, Vec3 camera, Vec3 right, Vec3 up)
+	{
+		std::array<Ray, 4> rays;
+		int i = 0;
+		for (const double v : {1.0, -1.0})
+			for (const double h : {1.0, -1.0})
+			{
+				const double x = h * kCornerHalfWidth, y = v * kCornerHalfHeight;
+				rays[i++] = {eye, {camera.x + right.x * x + up.x * y, camera.y + right.y * x + up.y * y,
+								   camera.z + right.z * x + up.z * y}};
+			}
+		return rays;
+	}
+
+	/// How long the boom may be when it was cast `reach` metres long and corner ray i (length lengths[i]) hit something
+	/// hits[i] metres from the eye: reach x the smallest (hit - 0.25 m) / length, within 0..reach (0: the camera at the eye,
+	/// a hit closer than the margin). nullopt when no ray hit anything (or none of them is usable): the boom is free.
+	inline std::optional<double> collide_distance(double reach, std::span<const double> lengths,
+												  std::span<const std::optional<double>> hits)
+	{
+		std::optional<double> fraction;
+		for (size_t i = 0; i < lengths.size() && i < hits.size(); ++i)
+		{
+			if (!hits[i] || !std::isfinite(*hits[i]) || !(lengths[i] > 1e-6))
+				continue;
+			const double f = (*hits[i] - kWallMargin) / lengths[i];
+			if (!fraction || f < *fraction)
+				fraction = f;
+		}
+		if (!fraction || !(reach > 0.0))
+			return std::nullopt;
+		return std::clamp(reach * *fraction, 0.0, reach);
+	}
+
+	/// The boom's length over time, critically damped: in fast (kInTime), out slower (kOutTime), and never past `limit`
+	/// (the collision distance): a wall coming closer pulls the camera in at once, so it never goes through it.
 	class Boom
 	{
 	public:
-		static constexpr double kSmoothTime = 0.2; // s
+		static constexpr double kInTime = 0.05; // s
+		static constexpr double kOutTime = 0.3; // s
 
 		/// Restarts at `distance` (the view was just applied).
 		void reset(double distance)
@@ -57,28 +142,15 @@ namespace cb::view
 			m_distance = distance;
 			m_velocity = 0.0;
 		}
-		/// One frame of `dt` seconds toward `target` metres.
-		double step(double target, double dt)
+		/// One frame of `dt` seconds toward `target` metres, held under `limit` (infinity: no wall).
+		double step(double target, double limit, double dt)
 		{
-			if (!(dt > 0.0) || !std::isfinite(target))
+			if (!(dt > 0.0) || !std::isfinite(target) || std::isnan(limit))
 				return m_distance;
-			if (target <= m_distance)
+			smooth_damp(m_distance, m_velocity, target, target < m_distance ? kInTime : kOutTime, dt);
+			if (m_distance > limit)
 			{
-				m_distance = target;
-				m_velocity = 0.0;
-				return m_distance;
-			}
-			// critically damped spring (the usual SmoothDamp): omega = 2 / smooth time
-			const double omega = 2.0 / kSmoothTime;
-			const double x = omega * dt;
-			const double decay = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x);
-			const double change = m_distance - target;
-			const double temp = (m_velocity + omega * change) * dt;
-			m_velocity = (m_velocity - omega * temp) * decay;
-			m_distance = target + (change + temp) * decay;
-			if (m_distance > target) // never overshoots past the target
-			{
-				m_distance = target;
+				m_distance = limit;
 				m_velocity = 0.0;
 			}
 			return m_distance;
@@ -88,6 +160,63 @@ namespace cb::view
 	private:
 		double m_distance = 0.0;
 		double m_velocity = 0.0;
+	};
+
+	/// The ray that looks for a wall on the shoulder side: from the eye kRecenterFar metres along `right` (unit) times the
+	/// sign of `shoulder`.
+	inline Ray shoulder_probe(Vec3 eye, Vec3 right, double shoulder)
+	{
+		const double s = shoulder < 0.0 ? -kRecenterFar : kRecenterFar;
+		return {eye, {eye.x + right.x * s, eye.y + right.y * s, eye.z + right.z * s}};
+	}
+
+	/// The over-the-shoulder offset over time (critically damped over kSmoothTime) with the auto-recenter.
+	class Shoulder
+	{
+	public:
+		static constexpr double kSmoothTime = 0.25; // s
+
+		void reset(double offset)
+		{
+			m_offset = offset;
+			m_velocity = 0.0;
+			m_recentering = false;
+		}
+		/// One frame toward `wanted` (prefs `shoulder`); with `recenter` on, toward 0 while the shoulder probe finds a wall
+		/// `wall` metres from the eye (nullopt: none within kRecenterFar) closer than kRecenterNear, and back to `wanted`
+		/// once none is within kRecenterFar.
+		double step(double wanted, bool recenter, std::optional<double> wall, double dt)
+		{
+			if (!std::isfinite(wanted))
+				return m_offset;
+			if (!recenter || wanted == 0.0 || !wall || *wall >= kRecenterFar)
+				m_recentering = false;
+			else if (*wall < kRecenterNear)
+				m_recentering = true;
+			if (dt > 0.0)
+				smooth_damp(m_offset, m_velocity, m_recentering ? 0.0 : wanted, kSmoothTime, dt);
+			return m_offset;
+		}
+		double offset() const { return m_offset; }
+		bool recentering() const { return m_recentering; }
+
+	private:
+		double m_offset = 0.0;
+		double m_velocity = 0.0;
+		bool m_recentering = false;
+	};
+
+	/// What the `view:` log line shows. changed() says when it is worth a new line: a distance moved by 0.1 m or more, or
+	/// the recenter flipped.
+	struct ViewLine
+	{
+		double dist = 0.0, collide = 0.0, shoulder = 0.0;
+		bool recenter = false;
+		bool changed(const ViewLine &last) const
+		{
+			return std::abs(dist - last.dist) >= 0.1 || std::abs(collide - last.collide) >= 0.1 ||
+				   std::abs(shoulder - last.shoulder) >= 0.1 || recenter != last.recenter;
+		}
 	};
 
 	// ---- Steve's body for the compositor's re-projection (in-game 2026-10-03: third person "lags behind") ---------------
@@ -197,4 +326,7 @@ namespace cb::view
 	Vec3 eye();
 	/// Cyberblock_SetViewAllowed: the scripts allow the view now. Any thread.
 	void set_allowed(bool allowed);
+	/// `cam.vdbg` (megaplan section 1.9): [collision distance m, smoothed distance m, ms since the view's last tick]; the
+	/// distances are 0 while the view is not applied. Any thread.
+	std::array<double, 3> vdbg();
 }

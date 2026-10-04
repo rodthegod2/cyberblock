@@ -61,6 +61,21 @@ namespace
 			cb::log::info("pause: Minecraft's Night City pause screen %s", pause ? "opened" : "closed");
 	}
 
+	/// Phase Q: the `prefs` in effect (link thread writes, the game's threads read).
+	std::mutex g_prefsLock;
+	cb::world::ViewPrefs g_prefs;
+
+	void set_prefs(const cb::world::ViewPrefs &prefs)
+	{
+		std::lock_guard<std::mutex> lock(g_prefsLock);
+		if (prefs == g_prefs)
+			return;
+		g_prefs = prefs;
+		cb::log::info("prefs: dist %.2f shoulder %.2f fov %.0f recenter %s vdist %.1f stepup %s debug %s", prefs.dist,
+					  prefs.shoulder, prefs.fov, prefs.recenter ? "on" : "off", prefs.vdist, prefs.stepup ? "on" : "off",
+					  prefs.debug ? "on" : "off");
+	}
+
 	void set_level_k(int k)
 	{
 		if (g_levelK.exchange(k) != k)
@@ -323,6 +338,7 @@ namespace
 		case EventKind::BlockReset:
 		case EventKind::Perk:
 		case EventKind::Cyber: // the install state, like a perk rank
+		case EventKind::Prefs: // a setting: the scripts need the last one whenever they start acting
 		case EventKind::Scan:
 		case EventKind::Hack:
 			return true;
@@ -361,6 +377,7 @@ namespace cb::world
 		case EventKind::PerkFx: return "perkfx";
 		case EventKind::Cyber: return "cyber";
 		case EventKind::CyberFx: return "cyberfx";
+		case EventKind::Prefs: return "prefs";
 		case EventKind::None: break;
 		}
 		return "";
@@ -453,6 +470,15 @@ namespace cb::world
 			m_blocks[cell] = event.kind;
 			return;
 		}
+		if (event.kind == EventKind::Prefs) // a setting: one queued is enough, the newest wins (a slider sends many)
+		{
+			const auto queued = std::ranges::find_if(m_queue, [](const Event &e) { return e.kind == EventKind::Prefs; });
+			if (queued != m_queue.end())
+			{
+				*queued = event;
+				return;
+			}
+		}
 		if (m_queue.size() >= kCapacity)
 		{
 			++m_dropped;
@@ -533,6 +559,21 @@ namespace cb::world
 			set_level_k(0);
 			g_thirdPerson = false; // the new session sends `persp` again after its hello
 			set_pause(false);
+			set_prefs({}); // and its `prefs`
+			return;
+		}
+		if (type != message.end() && *type == "prefs")
+		{
+			size_t bad = 0;
+			std::string why;
+			const ViewPrefs prefs = parse_prefs(message, view_prefs(), bad, why);
+			if (bad > 0)
+				note_invalid(bad, "prefs: " + why);
+			set_prefs(prefs);
+			Event e;
+			e.kind = EventKind::Prefs;
+			e.flag = prefs.stepup;
+			events().push(e);
 			return;
 		}
 		if (type != message.end() && *type == "status")
@@ -599,6 +640,60 @@ namespace cb::world
 	{
 		g_thirdPerson = false;
 		set_pause(false);
+		set_prefs({});
+	}
+
+	ViewPrefs parse_prefs(const json &message, const ViewPrefs &current, size_t &bad, std::string &why)
+	{
+		ViewPrefs out = current;
+		bad = 0;
+		why.clear();
+		if (!message.is_object())
+			return out;
+		const auto wrong = [&](const char *key)
+		{
+			if (bad++ == 0)
+				why = std::string(key) + " is not a finite number or a boolean as it should be";
+		};
+		// a number clamped into lo..hi; `zeroOff`: also 0 (the game's own), so -x..0 is 0 and 0..lo is raised to lo
+		const auto number = [&](const char *key, double &field, double lo, double hi, bool zeroOff)
+		{
+			const auto it = message.find(key);
+			if (it == message.end())
+				return;
+			const double v = it->is_number() ? it->get<double>() : NAN;
+			if (!std::isfinite(v))
+				return wrong(key);
+			field = zeroOff && v <= 0.0 ? 0.0 : std::clamp(v, lo, hi);
+		};
+		const auto boolean = [&](const char *key, bool &field)
+		{
+			const auto it = message.find(key);
+			if (it == message.end())
+				return;
+			if (!it->is_boolean())
+				return wrong(key);
+			field = it->get<bool>();
+		};
+		number("dist", out.dist, 1.5, 8.0, false);
+		number("shoulder", out.shoulder, -1.0, 1.0, false);
+		number("fov", out.fov, 50.0, 110.0, true);
+		number("vdist", out.vdist, 3.0, 14.0, true);
+		boolean("recenter", out.recenter);
+		boolean("stepup", out.stepup);
+		boolean("debug", out.debug);
+		return out;
+	}
+
+	ViewPrefs view_prefs()
+	{
+		std::lock_guard<std::mutex> lock(g_prefsLock);
+		return g_prefs;
+	}
+
+	std::optional<std::array<double, 3>> vdbg_to_send(const std::array<double, 3> &values)
+	{
+		return view_prefs().debug ? std::optional(values) : std::nullopt;
 	}
 
 	void note_invalid(size_t count, const std::string &reason)
@@ -660,23 +755,30 @@ namespace cb::world
 	}
 
 	json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, CamFlags flags,
-				  bool firstPerson, bool seat, int levelK)
+				  bool firstPerson, bool seat, int levelK, const std::optional<std::array<double, 3>> &vdbg)
 	{
-		return {{"t", "cam"},
-				{"f", frame},
-				{"p", {position.x, position.y, position.z}},
-				{"r", {look.yaw, look.pitch, 0.0}},
-				{"fov", vfov},
-				{"fp", firstPerson},
-				{"seat", seat},
-				{"pl", {feet.x, feet.y, feet.z}},
-				{"h", bodyYaw},
-				{"cr", flags.crouched},
-				{"fly", flags.flying},
-				{"menu", flags.menu},
-				{"air", flags.air},
-				{"held", flags.held},
-				{"lv", levelK}};
+		json cam = {{"t", "cam"},
+					{"f", frame},
+					{"p", {position.x, position.y, position.z}},
+					{"r", {look.yaw, look.pitch, 0.0}},
+					{"fov", vfov},
+					{"fp", firstPerson},
+					{"seat", seat},
+					{"pl", {feet.x, feet.y, feet.z}},
+					{"h", bodyYaw},
+					{"cr", flags.crouched},
+					{"fly", flags.flying},
+					{"menu", flags.menu},
+					{"air", flags.air},
+					{"held", flags.held},
+					{"lv", levelK}};
+		if (vdbg)
+		{
+			const auto clamp = [](double v, double hi, double scale)
+			{ return std::isfinite(v) ? rounded(std::clamp(v, 0.0, hi), scale) : 0.0; };
+			cam["vdbg"] = {clamp((*vdbg)[0], 100.0, 1e3), clamp((*vdbg)[1], 100.0, 1e3), clamp((*vdbg)[2], 60000.0, 1e1)};
+		}
+		return cam;
 	}
 
 	json make_look(double dyaw, double dpitch)

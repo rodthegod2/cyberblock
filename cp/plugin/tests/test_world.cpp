@@ -634,3 +634,141 @@ TEST(the_observer_converts_with_the_current_alignment)
 	CHECK(cb::world::parse_event(json::parse(R"({"t":"align","k":5})")).status == Status::Ignored); // not an event
 	q.clear();
 }
+
+// ---- Phase Q (megaplan sections 1.9 and Q-D1): prefs ------------------------------------------------------------------
+
+namespace
+{
+	using cb::world::ViewPrefs;
+
+	ViewPrefs prefs_of(const json &message, const ViewPrefs &current, size_t &bad)
+	{
+		std::string why;
+		const ViewPrefs p = cb::world::parse_prefs(message, current, bad, why);
+		CHECK((bad == 0) == why.empty());
+		return p;
+	}
+}
+
+TEST(prefs_defaults_are_3_2_m_0_45_m_right_game_fov_recenter_on_game_vehicle_distance_stepup_on)
+{
+	const ViewPrefs d;
+	CHECK(approx(d.dist, 3.2) && approx(d.shoulder, 0.45) && approx(d.fov, 0) && d.recenter && approx(d.vdist, 0) &&
+		  d.stepup && !d.debug);
+}
+
+TEST(prefs_parse_every_field_and_ignore_others)
+{
+	size_t bad = 9;
+	const ViewPrefs p = prefs_of(json::parse(R"({"t":"prefs","dist":5,"shoulder":-0.3,"fov":90,"recenter":false,
+		"vdist":6.5,"stepup":false,"debug":true,"scale":0.75})"), {}, bad);
+	CHECK(bad == 0);
+	CHECK(approx(p.dist, 5) && approx(p.shoulder, -0.3) && approx(p.fov, 90) && !p.recenter && approx(p.vdist, 6.5) &&
+		  !p.stepup && p.debug);
+}
+
+TEST(prefs_numbers_are_clamped_into_their_ranges)
+{
+	size_t bad = 0;
+	ViewPrefs p = prefs_of(json::parse(R"({"dist":0.5,"shoulder":-4,"fov":20,"vdist":1})"), {}, bad);
+	CHECK(bad == 0 && approx(p.dist, 1.5) && approx(p.shoulder, -1) && approx(p.fov, 50) && approx(p.vdist, 3));
+	p = prefs_of(json::parse(R"({"dist":80,"shoulder":4,"fov":170,"vdist":99})"), {}, bad);
+	CHECK(bad == 0 && approx(p.dist, 8) && approx(p.shoulder, 1) && approx(p.fov, 110) && approx(p.vdist, 14));
+	p = prefs_of(json::parse(R"({"fov":-5,"vdist":-1})"), {}, bad); // below 0: the game's own
+	CHECK(bad == 0 && approx(p.fov, 0) && approx(p.vdist, 0));
+	p = prefs_of(json::parse(R"({"fov":0,"vdist":0})"), ViewPrefs{.fov = 80, .vdist = 5}, bad);
+	CHECK(bad == 0 && approx(p.fov, 0) && approx(p.vdist, 0));
+}
+
+TEST(prefs_keep_a_missing_or_bad_field_and_count_the_bad_ones)
+{
+	const ViewPrefs current{.dist = 4, .shoulder = 0.2, .fov = 70, .recenter = false, .vdist = 5, .stepup = false};
+	size_t bad = 0;
+	ViewPrefs p = prefs_of(json::parse(R"({"t":"prefs"})"), current, bad); // nothing given: nothing changes
+	CHECK(bad == 0 && p == current);
+	p = prefs_of(json::parse(R"({"dist":"far","shoulder":true,"fov":null,"recenter":1,"stepup":"yes","vdist":[3]})"),
+				 current, bad);
+	CHECK(bad == 6 && p == current);
+	json nan = {{"dist", kNaN}, {"shoulder", kInf}, {"fov", 75}};
+	p = prefs_of(nan, current, bad);
+	CHECK(bad == 2 && approx(p.dist, 4) && approx(p.shoulder, 0.2) && approx(p.fov, 75));
+	p = prefs_of(json::array({1, 2}), current, bad); // not an object
+	CHECK(bad == 0 && p == current);
+}
+
+TEST(prefs_reach_the_scripts_as_the_event_prefs_with_stepup_and_reset_on_hello_and_drop)
+{
+	cb::world::EventQueue &q = cb::world::events();
+	q.clear();
+	q.set_active(false); // a setting: kept while Cyberblock is off
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1})"));
+	CHECK(cb::world::view_prefs() == ViewPrefs{});
+	cb::world::on_minecraft_message(json::parse(R"({"t":"prefs","dist":2,"shoulder":0,"fov":0,"recenter":true,"vdist":0,"stepup":false})"));
+	CHECK(approx(cb::world::view_prefs().dist, 2) && approx(cb::world::view_prefs().shoulder, 0) && !cb::world::view_prefs().stepup);
+	CHECK(q.next() == EventKind::Prefs && !q.current().flag);
+	CHECK(std::string(cb::world::event_name(EventKind::Prefs)) == "prefs");
+	q.set_active(true);
+	const uint64_t rejectedBefore = q.stats().rejected;
+	cb::world::on_minecraft_message(json::parse(R"({"t":"prefs","dist":"x","stepup":true})")); // one bad field: counted
+	CHECK(q.stats().rejected == rejectedBefore + 1);
+	CHECK(approx(cb::world::view_prefs().dist, 2) && cb::world::view_prefs().stepup);
+	CHECK(q.next() == EventKind::Prefs && q.current().flag);
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1})"));
+	CHECK(cb::world::view_prefs() == ViewPrefs{});
+	cb::world::on_minecraft_message(json::parse(R"({"t":"prefs","dist":6})"));
+	cb::world::on_link_dropped();
+	CHECK(cb::world::view_prefs() == ViewPrefs{});
+	CHECK(cb::world::parse_event(json::parse(R"({"t":"prefs","dist":6})")).status == Status::Ignored); // not parse_event's
+	q.set_active(false);
+	q.clear();
+}
+
+TEST(a_contract_exact_six_field_prefs_leaves_the_debug_flag_and_only_the_debug_signal_turns_vdbg_on)
+{
+	constexpr std::array<double, 3> kValues{3.2, 2.85, 14.0};
+	const json six = json::parse(R"({"t":"prefs","dist":3.2,"shoulder":0.45,"fov":0,"recenter":true,"vdist":0,"stepup":true})");
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1})"));
+	cb::world::on_minecraft_message(six);
+	CHECK(!cb::world::view_prefs().debug && !cb::world::vdbg_to_send(kValues)); // default: off
+	cb::world::on_minecraft_message(json::parse(R"({"t":"prefs","debug":true})")); // the (pending) debug signal
+	CHECK(cb::world::view_prefs().debug && cb::world::vdbg_to_send(kValues) == kValues);
+	cb::world::on_minecraft_message(six); // a six-field prefs after it keeps the flag
+	CHECK(cb::world::view_prefs().debug && cb::world::vdbg_to_send(kValues));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"prefs","debug":false})"));
+	CHECK(!cb::world::vdbg_to_send(kValues));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"prefs","debug":true})"));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1})")); // a new session starts with it off
+	CHECK(!cb::world::vdbg_to_send(kValues));
+	cb::world::events().clear();
+}
+
+TEST(cam_carries_vdbg_only_when_given_and_clamped_to_its_ranges)
+{
+	const json plain = cb::world::make_cam(1, {}, {}, 70.0, {}, 0.0, {}, false, false, 0);
+	CHECK(!plain.contains("vdbg"));
+	const json debug = cb::world::make_cam(2, {}, {}, 70.0, {}, 0.0, {}, false, false, 0, std::array<double, 3>{3.2, 2.85, 14.0});
+	CHECK(debug["vdbg"].size() == 3 && approx(debug["vdbg"][0].get<double>(), 3.2) &&
+		  approx(debug["vdbg"][1].get<double>(), 2.85) && approx(debug["vdbg"][2].get<double>(), 14.0));
+	const json wild = cb::world::make_cam(3, {}, {}, 70.0, {}, 0.0, {}, false, false, 0, std::array<double, 3>{-1.0, 500.0, kNaN});
+	CHECK(approx(wild["vdbg"][0].get<double>(), 0) && approx(wild["vdbg"][1].get<double>(), 100) &&
+		  approx(wild["vdbg"][2].get<double>(), 0));
+	CHECK(approx(cb::world::make_cam(4, {}, {}, 70.0, {}, 0.0, {}, false, false, 0, std::array<double, 3>{0, 0, 1e9})["vdbg"][2].get<double>(), 60000));
+}
+
+TEST(a_slider_burst_of_prefs_keeps_one_queued_prefs_event_with_the_newest_stepup)
+{
+	cb::world::EventQueue &q = cb::world::events();
+	q.clear();
+	q.set_active(false);
+	const uint64_t droppedBefore = q.stats().dropped;
+	cb::world::on_minecraft_message(json::parse(R"({"t":"perks","list":[{"id":"dodge","rank":1}]})"));
+	for (int i = 0; i < 500; ++i) // more than the queue holds: the perk must survive
+		cb::world::on_minecraft_message(json{{"t", "prefs"}, {"dist", 2.0 + i * 0.01}, {"stepup", i % 2 == 0}});
+	cb::world::on_minecraft_message(json{{"t", "prefs"}, {"stepup", false}});
+	CHECK(q.stats().queued == 2 && q.stats().dropped == droppedBefore);
+	CHECK(q.next() == EventKind::Perk);
+	CHECK(q.next() == EventKind::Prefs && !q.current().flag);
+	CHECK(q.next() == EventKind::None);
+	cb::world::on_link_dropped();
+	q.clear();
+}
