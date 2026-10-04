@@ -1,6 +1,7 @@
 // redscript natives, registered as RTTI global functions like RED4ext.SDK's examples/native_globals_redscript.
 #include "natives.hpp"
 #include "compositor.h"
+#include "devices.hpp"
 #include "drive.hpp"
 #include "link.hpp"
 #include "log.hpp"
@@ -271,6 +272,10 @@ namespace
 		g_mashup.pendingMaterials.emplace(codes(down), codes(wall));
 	}
 
+	/// Phase 4 (the block at the end): drops the hits inside device boxes, with their material codes. g_lock held.
+	void filter_device_hits(std::vector<cb::Vec3> &down, std::vector<cb::Vec3> &wall,
+							std::pair<std::vector<int>, std::vector<int>> *codes);
+
 	// Cyberblock_SubmitProbes(center: Vector4, downHits: array<Vector4>, wallHits: array<Vector4>, radius: Float)
 	void SubmitProbes(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
@@ -286,7 +291,7 @@ namespace
 
 		std::lock_guard<std::mutex> lock(g_lock);
 		// the materials belong to this tick only, whatever happens to it
-		const auto pending = std::exchange(g_mashup.pendingMaterials, std::nullopt);
+		auto pending = std::exchange(g_mashup.pendingMaterials, std::nullopt);
 		if (!g_mashup.active || !cb::link().linked())
 			return;
 		if (g_mashup.session != cb::link().session())
@@ -325,7 +330,11 @@ namespace
 		}
 		log_material_path(materials ? 1 : 0);
 
-		const cb::Delta delta = g_mashup.probes.submit(feet, to_vec3(downHits), to_vec3(wallHits), radius,
+		std::vector<cb::Vec3> down = to_vec3(downHits), wall = to_vec3(wallHits);
+		filter_device_hits(down, wall, materials ? &*pending : nullptr); // Phase 4: doors are not walls
+		if (materials)
+			materials = cb::ProbeMaterials{pending->first, pending->second};
+		const cb::Delta delta = g_mashup.probes.submit(feet, down, wall, radius,
 													   cb::world::level_offset(levelK), cb::steady_seconds(),
 													   materials ? &*materials : nullptr);
 		// Phase 3 (megaplan section 1.9): cells observed empty carry `seen` (the replica drops them); cells that only
@@ -548,7 +557,9 @@ namespace
 	// Minecraft's camera prefs arrived, kept while not Active; Cyberblock_EventFlag is `stepup`), n"session" (Phase 1: the
 	// server's verdict on this host changed; kept while not Active), n"vteleport" (Phase 3: move V; EventPos the target
 	// feet, EventAmount the yaw, EventId the request id, EventName why; kept while not Active: Cyberblock_TeleportDone
-	// answers it), n"park" (Phase 3: EventFlag on; kept while not Active); n"" (the empty CName, hash 0) when there is none.
+	// answers it), n"park" (Phase 3: EventFlag on; kept while not Active), n"devact" (Phase 4: EventId the request id,
+	// EventTarget the device id, EventName the act; kept while not Active: Cyberblock_DeviceResult answers it); n"" (the
+	// empty CName, hash 0) when there is none.
 	void NextEvent(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
 	{
 		++frame->code;
@@ -1162,6 +1173,197 @@ namespace
 		}
 	}
 
+	// ---- Phase 4 (megaplan 2026-10-04 sections 1.8, 1.9 and 1.11 with the Phase 0 amendment items 5-6, task 4-D1) ------
+	// The pure parts are devices.cpp; `devact` comes in through devices::on_minecraft_message (main.cpp) as the event
+	// n"devact": EventId the request id, EventTarget the device id, EventName the act; kept while not Active.
+
+	/// The `devices` stream and what it was last reset for; touched only under g_devLock (never taken with g_lock held
+	/// the other way round: SubmitDevices reads g_lock first and lets it go).
+	std::mutex g_devLock;
+	cb::devices::Stream g_devStream;
+	int g_devSession = -1, g_devEpoch = -1, g_devLevelK = -1;
+
+	/// Logs the first `limit` calls of a kind (a native's per-change line) and then stays quiet.
+	bool log_budget(std::atomic<int> &count, int limit)
+	{
+		return count++ < limit;
+	}
+
+	void filter_device_hits(std::vector<cb::Vec3> &down, std::vector<cb::Vec3> &wall,
+							std::pair<std::vector<int>, std::vector<int>> *codes)
+	{
+		const std::vector<cb::Aabb> boxes = cb::devices::boxes().current(cb::steady_seconds());
+		if (boxes.empty())
+			return;
+		static bool logged = false;
+		if (!std::exchange(logged, true))
+			cb::log::info("probes: device-box filter active (%zu boxes)", boxes.size());
+		cb::drop_hits_in_boxes(down, codes ? &codes->first : nullptr, boxes);
+		cb::drop_hits_in_boxes(wall, codes ? &codes->second : nullptr, boxes);
+	}
+
+	// Cyberblock_SubmitDevices(ids: array<Uint64>, classes: array<CName>, kinds: array<CName>, pos: array<Vector4>,
+	// yaws: array<Float>, sizes: array<Vector4>, states: array<Int32>, flags: array<Int32>) -> Void (Devices.reds, every
+	// 0.5 s): the devices near V (amendment item 5: ids from CyberblockIds.Hash or the position+class fallback, the RTTI
+	// class, the kind of section 1.11, the world position and yaw, sizes always zero, EDeviceStatus or EDoorStatus, the
+	// 1.9 flags). Sent as `devices` (the nearest 64 within 48 m, deltas plus a full list every 5 s); every valid device
+	// also gets a box for the probe filter.
+	void SubmitDevices(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		RED4ext::DynArray<uint64_t> ids;
+		RED4ext::DynArray<RED4ext::CName> classes;
+		RED4ext::DynArray<RED4ext::CName> kinds;
+		RED4ext::DynArray<RED4ext::Vector4> pos;
+		RED4ext::DynArray<float> yaws;
+		RED4ext::DynArray<RED4ext::Vector4> sizes;
+		RED4ext::DynArray<int32_t> states;
+		RED4ext::DynArray<int32_t> flags;
+		RED4ext::GetParameter(frame, &ids);
+		RED4ext::GetParameter(frame, &classes);
+		RED4ext::GetParameter(frame, &kinds);
+		RED4ext::GetParameter(frame, &pos);
+		RED4ext::GetParameter(frame, &yaws);
+		RED4ext::GetParameter(frame, &sizes);
+		RED4ext::GetParameter(frame, &states);
+		RED4ext::GetParameter(frame, &flags);
+		++frame->code;
+		if (!cb::natives::active)
+			return;
+
+		std::vector<std::string> classList, kindList;
+		classList.reserve(classes.Size());
+		for (const RED4ext::CName &name : classes)
+			classList.push_back(name_text(name));
+		kindList.reserve(kinds.Size());
+		static std::atomic<int> unknownKinds{0};
+		for (const RED4ext::CName &name : kinds)
+		{
+			const std::string_view kind = known_name(name, cb::devices::kKinds);
+			if (kind.empty() && log_budget(unknownKinds, 10))
+				cb::log::info("devices: kind %s is not a device_map kind; that device is left out",
+							  name.IsNone() ? "(none)" : name_text(name).c_str());
+			kindList.emplace_back(kind);
+		}
+		const auto valid = cb::devices::validate(to_vector<uint64_t>(ids), classList, kindList, to_vec3(pos),
+												 to_vector<double>(yaws), to_vec3(sizes), to_vector<int32_t>(states),
+												 to_vector<int32_t>(flags));
+		if (!valid)
+		{
+			static bool warned = false;
+			if (!std::exchange(warned, true))
+				cb::log::warn("Cyberblock_SubmitDevices: arrays differ in length (ids %u, classes %u, kinds %u, pos %u, "
+							  "yaws %u, sizes %u, states %u, flags %u); dropping the list (logged once)",
+							  ids.Size(), classes.Size(), kinds.Size(), pos.Size(), yaws.Size(), sizes.Size(), states.Size(),
+							  flags.Size());
+			return;
+		}
+		if (valid->dropped > 0)
+		{
+			static bool warned = false;
+			if (!std::exchange(warned, true))
+				cb::log::warn("Cyberblock_SubmitDevices: %zu invalid entries left out (first: %s; logged once)", valid->dropped,
+							  valid->reason.c_str());
+		}
+		const double now = cb::steady_seconds();
+		cb::devices::boxes().set(valid->devices, now);
+
+		std::optional<cb::Vec3> center;
+		{
+			std::lock_guard<std::mutex> lock(g_lock);
+			center = g_mashup.lastCenter;
+		}
+		if (!center)
+			center = player_feet();
+		const std::vector<cb::devices::Device> nearby = cb::devices::nearest(valid->devices, center);
+		if (!cb::link().linked())
+			return;
+
+		std::lock_guard<std::mutex> lock(g_devLock);
+		// a Minecraft that (re)connected, a new server session or a new ground alignment needs the whole list again
+		const int session = cb::link().session(), epoch = cb::world::ground_epoch(), levelK = cb::world::level_k();
+		if (std::exchange(g_devSession, session) != session || std::exchange(g_devEpoch, epoch) != epoch ||
+			std::exchange(g_devLevelK, levelK) != levelK)
+			g_devStream.reset();
+		const auto message = g_devStream.submit(nearby, cb::world::level_offset(levelK), now);
+		if (!message)
+			return;
+		cb::link().send(*message);
+		static bool first = true;
+		if (std::exchange(first, false))
+			cb::log::info("devices: path scripts (Cyberblock_SubmitDevices: %zu valid, %zu sent of the nearest within 48 m%s; "
+						  "deltas plus a full list every 5 s)",
+						  valid->devices.size(), (*message)["list"].size(), center ? "" : ", V's position unknown");
+	}
+
+	// Cyberblock_DeviceState(id: Uint64, state: Int32, flags: Int32, by: CName) -> Void (Devices.reds): a device changed;
+	// `by` is n"host" (V executed the action), n"npc" or n"script" (no executor). Sent as `devstate`, with by "guest" when
+	// a guest's `devact` for this device came within 2 s (amendment item 5).
+	void DeviceState(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		uint64_t id = 0;
+		int32_t state = 0, flags = 0;
+		RED4ext::CName by;
+		RED4ext::GetParameter(frame, &id);
+		RED4ext::GetParameter(frame, &state);
+		RED4ext::GetParameter(frame, &flags);
+		RED4ext::GetParameter(frame, &by);
+		++frame->code;
+		if (!cb::natives::active || !cb::link().linked())
+			return;
+
+		const std::string_view scripts = known_name(by, cb::devices::kBy);
+		const bool guest = cb::devices::guest_window().recent(id, cb::steady_seconds());
+		const std::string_view sent = cb::devices::attribute(scripts, guest);
+		static bool warned = false;
+		const auto message = cb::devices::make_devstate(id, state, flags, sent);
+		send_or_warn(message, warned, "Cyberblock_DeviceState",
+					 "an id of 0, a state outside -2..1, flags outside 0..31 or a by that is not npc, host, guest or script");
+		if (!message)
+			return;
+		{
+			std::lock_guard<std::mutex> lock(g_devLock);
+			g_devStream.note_state(id, state, flags);
+		}
+		static std::atomic<int> logged{0};
+		if (log_budget(logged, 50))
+			cb::log::info("devstate: %llu st %d fl %d by %s%s", static_cast<unsigned long long>(id), state, flags,
+						  std::string(sent).c_str(), guest && scripts != "guest" ? " (a guest's devact within 2 s)" : "");
+	}
+
+	// Cyberblock_DeviceResult(id: Int32, ok: Bool, reason: String) -> Void (Devices.reds): the answer to event n"devact"
+	// `id`. Sent as `devresult`; a failed request is no longer the guest's window (no change follows it).
+	void DeviceResult(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		int32_t id = 0;
+		bool ok = false;
+		RED4ext::CString reason;
+		RED4ext::GetParameter(frame, &id);
+		RED4ext::GetParameter(frame, &ok);
+		RED4ext::GetParameter(frame, &reason);
+		++frame->code;
+
+		if (!ok)
+			cb::devices::guest_window().forget(id);
+		static bool warned = false;
+		const auto message = cb::devices::make_devresult(id, ok, reason.c_str());
+		send_or_warn(message, warned, "Cyberblock_DeviceResult", "the request id is negative");
+		static std::atomic<int> logged{0};
+		if (message && log_budget(logged, 50))
+			cb::log::info("devresult: %d %s%s%s", id, ok ? "ok" : "failed", ok ? "" : ": ",
+						  (*message)["reason"].get<std::string>().c_str());
+	}
+
+	void register_device_natives(RED4ext::CRTTISystem *rtti)
+	{
+		using cb::natives::add;
+		add(rtti, "Cyberblock_SubmitDevices", &SubmitDevices, nullptr,
+			{{"array:Uint64", "ids"}, {"array:CName", "classes"}, {"array:CName", "kinds"}, {"array:Vector4", "pos"},
+			 {"array:Float", "yaws"}, {"array:Vector4", "sizes"}, {"array:Int32", "states"}, {"array:Int32", "flags"}});
+		add(rtti, "Cyberblock_DeviceState", &DeviceState, nullptr,
+			{{"Uint64", "id"}, {"Int32", "state"}, {"Int32", "flags"}, {"CName", "by"}});
+		add(rtti, "Cyberblock_DeviceResult", &DeviceResult, nullptr, {{"Int32", "id"}, {"Bool", "ok"}, {"String", "reason"}});
+	}
+	// ---- end of Phase 4 ----------------------------------------------------------------------------------------------
 }
 
 namespace cb::natives
@@ -1261,6 +1463,7 @@ namespace cb::natives
 		add(rtti, "Cyberblock_SetSlowMoFx", &SetSlowMoFx, nullptr, {{"CName", "id"}, {"Float", "seconds"}});
 		add(rtti, "Cyberblock_SetPhonePrompt", &SetPhonePrompt, nullptr, {{"Bool", "open"}});
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});
+		register_device_natives(rtti); // Phase 4 (task 4-D1)
 		log::info("redscript natives registered");
 		ui::register_natives(rtti); // the UI bridge's natives (ui_game.cpp, re-test 3 plan section 1.3)
 		survey_game::register_natives(rtti); // the Atlas survey's natives (survey_game.cpp)

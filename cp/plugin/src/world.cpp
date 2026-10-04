@@ -384,6 +384,7 @@ namespace
 		case EventKind::Session: // the cleanup must happen whatever the state
 		case EventKind::VTeleport: // the server waits for `vteleported`: the scripts answer (or refuse) whatever the state
 		case EventKind::Park:      // likewise `parked`
+		case EventKind::DevAct:    // Phase 4: likewise `devresult`
 			return true;
 		default:
 			return false;
@@ -424,6 +425,7 @@ namespace cb::world
 		case EventKind::Session: return "session";
 		case EventKind::VTeleport: return "vteleport";
 		case EventKind::Park: return "park";
+		case EventKind::DevAct: return "devact";
 		case EventKind::None: break;
 		}
 		return "";

@@ -6,6 +6,7 @@
 
 #include "camera.hpp"
 #include "compositor.h"
+#include "devices.hpp"
 #include "drive.hpp"
 #include "input.hpp"
 #include "link.hpp"
@@ -100,6 +101,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 				cb::input::on_minecraft_message(message);
 				cb::ui::on_minecraft_message(message);
 				cb::survey_game::on_minecraft_message(message);
+				cb::devices::on_minecraft_message(message); // Phase 4: `devact`
 				if (message.value("t", "") == "session")
 				{
 					// megaplan 1-H1: a new server session gets the whole ground again; leaving the host role cleans the DLL
@@ -120,6 +122,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 				cb::natives::on_link_dropped();
 				cb::ui::on_link_dropped();
 				cb::survey_game::on_link_dropped();
+				cb::devices::on_link_dropped();
 			});
 		break;
 	}

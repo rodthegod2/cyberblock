@@ -88,6 +88,15 @@ namespace cb
 		std::map<Cell, CellState> m_cells; // solid cells
 	};
 
+	// ---- Phase 4 (megaplan task 4-D1, section 1.11): the device-box filter -------------------------------------------
+
+	/// Whether `p` lies in `box` (faces included).
+	bool inside(const Aabb &box, Vec3 p);
+	/// Removes the hits (Cyberpunk space) that lie in any of `boxes` (devices: doors are not walls, so a hit on one never
+	/// becomes ground), and, when `codes` is given with one code per hit, their material codes with them. Returns how many
+	/// hits went.
+	size_t drop_hits_in_boxes(std::vector<Vec3> &hits, std::vector<int> *codes, std::span<const Aabb> boxes);
+
 	// ---- probe materials (megaplan section 1.8 amendment item 1; values unproven until CET B1-B5) -------------------
 
 	/// The `ground.m` codes, index = code: 0 unknown, 1..10 the replica materials, 11..26 neon in vanilla dye order

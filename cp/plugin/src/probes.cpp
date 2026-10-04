@@ -176,6 +176,33 @@ namespace cb
 		m_cells.clear();
 	}
 
+	bool inside(const Aabb &box, Vec3 p)
+	{
+		return p.x >= box.min.x && p.x <= box.max.x && p.y >= box.min.y && p.y <= box.max.y && p.z >= box.min.z &&
+			   p.z <= box.max.z;
+	}
+
+	size_t drop_hits_in_boxes(std::vector<Vec3> &hits, std::vector<int> *codes, std::span<const Aabb> boxes)
+	{
+		if (codes && codes->size() != hits.size())
+			codes = nullptr;
+		size_t kept = 0;
+		for (size_t i = 0; i < hits.size(); ++i)
+		{
+			if (std::ranges::any_of(boxes, [&](const Aabb &box) { return inside(box, hits[i]); }))
+				continue;
+			hits[kept] = hits[i];
+			if (codes)
+				(*codes)[kept] = (*codes)[i];
+			++kept;
+		}
+		const size_t dropped = hits.size() - kept;
+		hits.resize(kept);
+		if (codes)
+			codes->resize(kept);
+		return dropped;
+	}
+
 	std::span<const std::string> material_match(int code)
 	{
 		if (code < 0 || code >= kCodeCount)
