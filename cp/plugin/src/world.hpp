@@ -53,7 +53,7 @@ namespace cb::world
 		Session, // Phase 1 (megaplan 2026-10-04 sections 1.2 and 1.8): the Minecraft server's verdict on this host changed
 		VTeleport, // Phase 3 (megaplan sections 1.8 and 1.9): move V to a spot (Meet Up, Holo-Table, hub exit)
 		Park,      // Phase 3: park V (on) or bring V back (off)
-		Hub,       // Phase 7 (megaplan 7-D1): the Minecraft player entered (`flag`) or left the Afterlife hub; transient
+		Hub,       // Phase 7 (megaplan 7-D1): the hub is shown (`flag`) or ended; kept while not Active (state, like Park)
 		DevAct,   // Phase 4 (megaplan sections 1.8 and 1.9, task 4-D1): act on a device; parsed by devices.cpp
 	};
 
@@ -131,7 +131,8 @@ namespace cb::world
 	/// without `mob` the mob id -1. Positions (block AABBs, explosion, teleport, lead anchor, pull toward, knock centre)
 	/// get `+off`; the hit impulse does not. The production caller passes the current level_offset; the 0.0 default is
 	/// for tests. Phase 3: `vteleport` {id 0..2^31-1, p (feet, `+off`), yaw, why of kVTeleportWhy} and `park` {on bool}.
-	/// Phase 7: `hub` {in bool} (the event's flag; parse_event itself changes no state, on_minecraft_message sets hub_in()).
+	/// Phase 7: `hub` {in bool} (the event's flag; parse_event itself changes no state, on_minecraft_message decides when
+	/// it is shown and queued, see hub_in()).
 	/// Never throws.
 	Parsed parse_event(const nlohmann::json &message, double off = 0.0);
 
@@ -229,11 +230,16 @@ namespace cb::world
 	/// status, when a status has no boolean `pause` (older Minecraft builds), after every `hello` and after a link drop.
 	/// Any thread. The UI bridge turns it into pause/resume actions (plan section 1.1: level-triggered).
 	bool minecraft_pause();
-	/// Phase 7 (megaplan 7-D1): the last valid `hub` said in (the player is in the Afterlife hub: the compositor shows
-	/// Minecraft full-screen with no depth blending). False before any, after every `hello`, after a link drop and when a
-	/// `session` moves this host away from Host. Any thread.
+	/// Phase 7 (megaplan 7-D1 and the 1.9 amendment of 2026-10-04): the hub is shown (the player is in the Afterlife hub:
+	/// the compositor shows Minecraft full-screen with no depth blending, input.cpp gives Minecraft the movement keys and
+	/// the mouse look). A valid `hub` is shown only while this host is Host; one that arrives before the host grant (a guest
+	/// locked until /login, a reconnect) is remembered and shown at the grant. False after every `hello`, a link drop and
+	/// any non-host `session`; the server's word is also forgotten on `hello`, a link drop and `session none` (a guest or a
+	/// refusal keeps it). Every change, and every `hub` shown, queues a `hub` event (flag = in) for the scripts, kept while
+	/// Cyberblock is not Active. Any thread.
 	bool hub_in();
-	/// A linked Minecraft went away (main.cpp's drop handler, link thread): forgets `persp`, the pause and the `prefs`.
+	/// A linked Minecraft went away (main.cpp's drop handler, link thread): forgets `persp`, the pause, the `prefs` and the
+	/// hub (queuing a `hub` event with flag false when it was shown).
 	void on_link_dropped();
 
 	// ---- Phase Q (megaplan sections 1.9 and Q-D1): `prefs`, the third-person camera preferences ----

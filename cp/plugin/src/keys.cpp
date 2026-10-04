@@ -50,9 +50,26 @@ namespace cb::keys
 		return vk == kT;
 	}
 
+	const char *hub_move_name(uint32_t vk)
+	{
+		switch (vk)
+		{
+		case kW: return "forward";
+		case kA: return "left";
+		case kS: return "back";
+		case kD: return "right";
+		case kControl:
+		case kLeftControl:
+		case kRightControl: return "sneak";
+		default: return nullptr;
+		}
+	}
+
 	bool is_swallowed(uint32_t vk, const Binds &binds, Context context)
 	{
 		if (vk == kF9 || context.screenOpen)
+			return true;
+		if (context.hub && (hub_move_name(vk) != nullptr || vk == kSpace || vk == kShift || vk == kLeftShift || vk == kRightShift))
 			return true;
 		if (context.choices && is_choice_key(vk))
 			return false;

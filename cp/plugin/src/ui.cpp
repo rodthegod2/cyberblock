@@ -278,7 +278,7 @@ namespace cb::ui
 		}
 		json g = {{"hash", hash},
 				  {"title", clean_text(title, kTitleBytes)},
-				  {"kind", known_or(kind, kGroupKinds, "other")},
+				  {"kind", m_kind == "vendor" ? known_or(kind, kVendorGroupKinds, "buy") : known_or(kind, kGroupKinds, "other")},
 				  {"tracked", tracked},
 				  {"done", done},
 				  {"lines", json::array()}};

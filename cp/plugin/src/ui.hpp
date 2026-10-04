@@ -72,8 +72,13 @@ namespace cb::ui
 	/// its name, `state` its price in eddies, 0..Int32 max, not the 0..2 of the other kinds).
 	inline constexpr const char *kReplyKinds[] = {"journal", "phone", "atlas", "vendor"};
 	inline constexpr const char *kGroupKinds[] = {"main", "side", "gig", "other", "sms"}; // unknown -> other
-	/// `uiact.a` (Minecraft -> Cyberpunk). Phase 7: `buy` and `sell` (a vendor's item by `hash`, `id` the stock list's
-	/// reply id); parse_uiact requires a non-zero `hash` for them.
+	/// The group kinds of a "vendor" reply (megaplan 1.9 amendment 2026-10-04): `buy` the vendor's stock, `sell` what V
+	/// can sell to it; unknown -> buy.
+	inline constexpr const char *kVendorGroupKinds[] = {"buy", "sell"};
+	/// `uiact.a` (Minecraft -> Cyberpunk). Phase 7 (megaplan 1.8 amendment 2026-10-04): `buy` and `sell` reach the scripts
+	/// here, through Cyberblock_NextUiAction (never as Cyberblock_NextEvent events): UiActionHash = the item's `hash`,
+	/// UiActionId = the line's index in its side (`buy` or `sell` groups, in reply order), UiActionArg = the quantity as a
+	/// decimal string. parse_uiact requires a non-zero `hash` for them.
 	inline constexpr const char *kUiActs[] = {"save",      "loadlast", "mainmenu",   "cpmenu",    "track",
 											  "smsreply",  "fasttravel", "journalreq", "phonereq", "atlasreq",
 											  "buy",       "sell"};
@@ -173,6 +178,7 @@ namespace cb::ui
 
 		/// Starts a reply (forgetting an unfinished one); false (and inactive) for an unknown kind.
 		bool begin(std::string_view kind, int32_t id);
+		/// `kind` is one of kGroupKinds (unknown -> other), or of kVendorGroupKinds in a "vendor" reply (unknown -> buy).
 		void group(uint32_t hash, std::string_view title, std::string_view kind, bool tracked, bool done);
 		/// state: 0 active / from the contact, 1 done / from V, 2 failed / a reply V can choose (clamped to 0..2); in a
 		/// "vendor" reply the item's price in eddies (clamped to 0..Int32 max).

@@ -922,16 +922,18 @@ TEST(a_bad_hub_is_rejected)
 	CHECK(rejected(R"({"t":"hub","on":true})")); // the field is `in`, not `on`
 }
 
-TEST(hub_is_transient_while_not_active)
+TEST(hub_is_kept_while_not_active)
 {
-	// the compositor switch is the DLL's own state (see test_session); the scripts' copy only matters while they act
+	// the hub is state, like a park: Hub.reds re-parks V while its copy says in, so an `out` must reach it whatever the state
 	cb::world::EventQueue q; // not Active
 	Event h;
 	h.kind = EventKind::Hub;
-	h.flag = true;
+	h.flag = false;
 	q.push(h);
-	CHECK(q.next() == EventKind::None);
-	q.set_active(true);
+	q.set_active(true); // switching keeps it too
+	CHECK(q.next() == EventKind::Hub && !q.current().flag);
+	q.set_active(false);
+	h.flag = true;
 	q.push(h);
 	CHECK(q.next() == EventKind::Hub && q.current().flag);
 }
