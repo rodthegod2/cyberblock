@@ -59,6 +59,19 @@ namespace cb
 	/// A wall hit -> the one cell it is in: y = floor(z - off).
 	Range wall_hit_to_range(double x, double y, double z, double off);
 
+	/// Atlas survey cells (cbmath.py SURVEY_CELL): metres per side.
+	inline constexpr int kSurveyCell = 2;
+	/// A survey cell and the Minecraft y of the highest Night City surface in it.
+	struct SurveyCell
+	{
+		int cx, cz, h;
+	};
+	/// A survey hit (Cyberpunk space) -> cx = floor(x / 2), cz = floor(-y / 2), h = floor(z - off + 0.5) (the top-face rule
+	/// of down_hit_to_range).
+	SurveyCell survey_cell(double x, double y, double z, double off);
+	/// The Cyberpunk column (x, y) at the centre of cell (cx, cz): (2cx + 1, -(2cz + 1)).
+	std::array<double, 2> survey_column(int cx, int cz);
+
 	/// `v` rotated by the unit quaternion `q` (q v q*). C++ only (re-test 3 task D4: V's hips point from V's local axes
 	/// into the world); it stays inside Cyberpunk space, so cbmath.py has no mirror. cp_quat_forward(q) == rotate(q, +Y).
 	Vec3 rotate(const Quat &q, Vec3 v);

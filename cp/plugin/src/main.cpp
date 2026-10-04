@@ -12,6 +12,7 @@
 #include "log.hpp"
 #include "natives.hpp"
 #include "snapshots.hpp"
+#include "survey_game.hpp"
 #include "ui.hpp"
 #include "view.hpp"
 #include "world.hpp"
@@ -97,6 +98,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 				cb::snap::on_minecraft_message(message);
 				cb::input::on_minecraft_message(message);
 				cb::ui::on_minecraft_message(message);
+				cb::survey_game::on_minecraft_message(message);
 			},
 			[]
 			{
@@ -104,6 +106,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 				cb::world::on_link_dropped();
 				cb::natives::on_link_dropped();
 				cb::ui::on_link_dropped();
+				cb::survey_game::on_link_dropped();
 			});
 		break;
 	}

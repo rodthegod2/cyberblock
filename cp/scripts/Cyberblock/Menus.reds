@@ -25,8 +25,11 @@
 // GetMessagesAndChoices/SetEntryVisited/ChangeEntryStateByHash (journalManager.swift; the SMS reply logic of
 // messengerDialogView.swift ActivateReply), JournalPhoneMessage GetText/GetSender, JournalPhoneChoiceEntry GetText;
 // MappinSystem.GetMappins(gamemappinsMappinTargetType.Map)/GetMappin(NewMappinID), IMappin GetDisplayName/
-// GetNewMappinID/GetVariant, QuestMappin and PointOfInterestMappin GetJournalPathHash, MappinUtils.GetMappinsGroup and
-// MappinsGroup_Record.GroupName (orphans.swift, mappinUtils.swift).
+// GetNewMappinID/GetVariant/GetPhase/IsActive/IsPlayerTracked, NewMappinID.value, QuestMappin and PointOfInterestMappin
+// GetJournalPathHash, FastTravelMappin.GetPointData, FastTravelSystem.GetFastTravelPoints and FastTravelPointData
+// mappinID/GetPointDisplayName/GetDistrictDisplayName/ShouldShowMappinOnWorldMap (fastTravelSystem.swift),
+// MappinUIUtils.MappinToString, MappinUtils.GetMappinsGroup and MappinsGroup_Record.GroupName (orphans.swift,
+// mappinUtils.swift).
 //
 // `uiact track`: arg "quest" (or anything but "pin") tracks the journal entry `hash` (a job: its first active
 // objective). arg "pin" tracks the pin at index `id` of the last `reply atlas` as the world map does for quest pins
@@ -406,27 +409,99 @@ public abstract class CyberblockMenus {
     Cyberblock_ReplyEnd();
   }
 
-  // `reply atlas`: every visible Map-target mappin (fast-travel points included; index -1 while fast travel is off), at
-  // most 256 (the DLL's cap). Their IDs are kept in reply order for `track pin`.
+  // `reply atlas`: every Map-target mappin the world map shows (worldMap.swift BaseWorldMapMappinController: a quest
+  // mappin only while active, a completed one only while tracked; IMappin.IsVisible is the 3D world pin's visibility, not
+  // the world map's, so it is not asked), plus the known fast-travel points the mappin system did not list (FastTravelSystem
+  // GetFastTravelPoints, their mappinID). Names: a fast-travel point's name (FastTravelPointData.GetPointDisplayName), a
+  // quest pin's quest title, the pin's display name, else its type's name (MappinUIUtils.MappinToString); fast-travel
+  // points also carry their district (GetDistrictDisplayName) for the Atlas's district labels. Index -1 while fast travel
+  // is off. At most 1024 (the DLL's cap); their IDs are kept in reply order for `track pin`.
   private static func ReplyAtlas(game: GameInstance, id: Int32) -> Void {
     let s = CyberblockUiService.Get();
     if IsDefined(s) {
       ArrayClear(s.atlasPins);
     }
     Cyberblock_ReplyBegin(n"atlas", id);
+    let system = GameInstance.GetMappinSystem(game);
+    let journal = GameInstance.GetJournalManager(game);
     let mappins: array<ref<IMappin>>;
-    GameInstance.GetMappinSystem(game).GetMappins(gamemappinsMappinTargetType.Map, mappins);
+    system.GetMappins(gamemappinsMappinTargetType.Map, mappins);
+    let seen: array<Uint64>;
     let sent = 0;
     for m in mappins {
-      if IsDefined(m) && m.IsVisible() && sent < 256 {
-        Cyberblock_ReplyPin(m.GetWorldPosition(), CyberblockHud.PinKind(m), GetLocalizedText(m.GetDisplayName()), -1);
+      if sent < 1024 && IsDefined(m) && CyberblockMenus.OnWorldMap(m) {
+        let district = "";
+        let name = CyberblockMenus.PinName(journal, m, district);
+        Cyberblock_ReplyPin(m.GetWorldPosition(), CyberblockHud.PinKind(m), name, -1, district);
+        ArrayPush(seen, m.GetNewMappinID().value);
         if IsDefined(s) {
           ArrayPush(s.atlasPins, m.GetNewMappinID());
         }
         sent += 1;
       }
     }
+    let extra = 0;
+    let travel = GameInstance.GetScriptableSystemsContainer(game).Get(n"FastTravelSystem") as FastTravelSystem;
+    if IsDefined(travel) {
+      for point in travel.GetFastTravelPoints() {
+        if sent < 1024 && IsDefined(point) && point.ShouldShowMappinOnWorldMap() && !ArrayContains(seen, point.mappinID.value) {
+          let mappin = system.GetMappin(point.mappinID);
+          if IsDefined(mappin) {
+            Cyberblock_ReplyPin(mappin.GetWorldPosition(), n"fasttravel", GetLocalizedText(point.GetPointDisplayName()), -1,
+              GetLocalizedText(point.GetDistrictDisplayName()));
+            ArrayPush(seen, point.mappinID.value);
+            if IsDefined(s) {
+              ArrayPush(s.atlasPins, point.mappinID);
+            }
+            sent += 1;
+            extra += 1;
+          }
+        }
+      }
+    }
     Cyberblock_ReplyEnd();
+    Cyberblock_Log(s"ui: atlas reply: \(sent) pins of \(ArraySize(mappins)) map mappins, \(extra) more fast-travel points");
+  }
+
+  // Shown on the world map: a quest mappin while active, nothing completed unless tracked.
+  private static func OnWorldMap(m: ref<IMappin>) -> Bool {
+    if IsDefined(m as QuestMappin) && !m.IsActive() {
+      return false;
+    }
+    return NotEquals(m.GetPhase(), gamedataMappinPhase.CompletedPhase) || m.IsPlayerTracked();
+  }
+
+  // A pin's hover name (see ReplyAtlas); `district` gets a fast-travel point's district.
+  private static func PinName(journal: ref<JournalManager>, m: ref<IMappin>, out district: String) -> String {
+    let travel = m as FastTravelMappin;
+    if IsDefined(travel) && IsDefined(travel.GetPointData()) {
+      district = GetLocalizedText(travel.GetPointData().GetDistrictDisplayName());
+      let point = GetLocalizedText(travel.GetPointData().GetPointDisplayName());
+      if StrLen(point) > 0 {
+        return point;
+      }
+    }
+    let quest = m as QuestMappin;
+    if IsDefined(quest) {
+      let entry = journal.GetEntry(quest.GetJournalPathHash());
+      let steps = 0;
+      while IsDefined(entry) && steps < 4 {
+        let found = entry as JournalQuest;
+        if IsDefined(found) {
+          let title = GetLocalizedText(found.GetTitle(journal));
+          if StrLen(title) > 0 {
+            return title;
+          }
+        }
+        entry = journal.GetParentEntry(entry);
+        steps += 1;
+      }
+    }
+    let name = GetLocalizedText(m.GetDisplayName());
+    if StrLen(name) > 0 {
+      return name;
+    }
+    return GetLocalizedTextByKey(MappinUIUtils.MappinToString(m.GetVariant()));
   }
 
   private static func QuestKind(type: gameJournalQuestType) -> CName {

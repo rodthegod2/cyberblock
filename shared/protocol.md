@@ -499,6 +499,68 @@ Re-test 3 examples, Minecraft to Cyberpunk:
 {"t":"persp","mode":"back"}
 ```
 
+## Atlas (explored map and survey tour)
+
+Same wire, same conventions; `proto` stays 1 and older builds ignore the new `t` values and fields. Minecraft's Atlas and
+radar draw Night City as a Minecraft map from **real collision geometry**: Cyberpunk casts long down rays and reports the
+highest Night City surface of each **2-m cell** (no Cyberpunk map art is used). Minecraft keeps the explored cells per
+world. `/cyberblock survey` carries V across the whole city once so the map fills in everywhere.
+
+### Atlas: Cyberpunk → Minecraft
+| `t` | fields | when |
+|---|---|---|
+| `terrain` | `c:[cx, cz, y, s, …]` integer quadruples, at most 64 cells: `cx = floor(x / 2)`, `cz = floor(z / 2)` the 2-m cell in Minecraft blocks, `y` the Minecraft y of the highest Night City surface there (the nearest whole y of `z − off`), `s` 0 ground or building, 1 water | survey hits, at most 10 Hz while On (more messages per tick during a tour) |
+| `surveystate` | `state` (a survey state, below), `done` and `total` stops (ints ≥ 0, `done ≤ total`), `eta` seconds (−1 unknown), `reason` ≤ 64, optional `stop:[gx, gy]` (a stop that has just been finished) | on every change of the tour, each finished stop, every 1 s while it runs, and as the answer to `survey` |
+| `reply` | **extends re-test 3:** an atlas pin may add `d` (its district, ≤ 64), and `pins` may hold up to 1024 entries | answer to `uiact atlasreq` |
+
+### Atlas: Minecraft → Cyberpunk
+| `t` | fields | when |
+|---|---|---|
+| `survey` | `op` ∈ `start, stop, status`; `start` adds `done:[gx, gy, …]`, the stops Minecraft already has (at most 4096 pairs of whole numbers, \|v\| ≤ 100000) | `/cyberblock survey start`, `stop`, `status` |
+
+### Atlas semantics and limits
+- **Cells:** a 2 × 2 block cell. The DLL converts a hit at Cyberpunk `(x, y, z)` with `survey_cell(x, y, z, off)`
+  (`tools/cbmath.py`: Minecraft `(x, z − off, −y)`, then `cx = floor(x / 2)`, `cz = floor(−y / 2)`, `y = floor(z − off + 0.5)`),
+  and hands the scripts cell centres with `survey_column(cx, cz)` = Cyberpunk `(2cx + 1, −(2cz + 1))`. `shared/vectors.json`
+  holds the `survey` and `survey_column` sets.
+- **Walking survey:** after the probes, the scripts cast up to 48 more rays per 100 ms tick, from V's feet `z + 500` to
+  `z − 200` m against Static, Terrain and Water, at the cells within 96 m of V, nearest first; a cell is not cast again for
+  300 s (20 s after a miss). Each hit gets one short Water-only ray: water is `s:1`.
+- **Validation:** the receiver drops a `terrain` whose `c` is not whole quadruples or holds more than 64 cells, any
+  `|cx|, |cz| ≥ 1.5e7`, `|y| > 20000` or `s` not 0 or 1; a `surveystate` with an unknown `state`, `done > total`, a
+  negative count or a `reason` over 64 bytes; a `survey` with an unknown `op` or a bad `done` list. A bad message is
+  counted and dropped and never ends the link.
+- **Tour:** the stops form a grid 200 m apart (stop `(gx, gy)` at Cyberpunk `(200·gx, 200·gy)`), visited in serpentine
+  order over the bounds the scripts derive from the game: the x/y extents of every Map mappin and every known fast-travel
+  point, widened by 200 m, cut to 9 km per axis and to `|x|, |y| ≤ 8000`, at least 8 pins. At each stop the DLL holds V
+  every frame at 150 m (or 25 m above the last stop's highest surface), the scripts cast a 3 × 3 grid of probes 80 m apart
+  until they stay the same for 1 s (at least 1.5 s after arriving, 15 s at most), then every cell of the 220 m square around
+  the stop (up to 400 rays per tick). A stop with only water or nothing streamed is skipped. V is invisible,
+  invulnerable and saving is locked while it runs; at the end, on `stop`, F9, a vehicle, a scene, combat, death or a dropped
+  link, V is put back exactly where V stood. A Cyberpunk menu pauses it.
+- **Resume:** Minecraft keeps every `surveystate.stop` and the cells it has; `start` lists the stops already done (those
+  reported, and those whose 220 m square Minecraft already knows to 90 %), and the tour skips them.
+- **Sending in the DLL:** `terrain` and `surveystate` are queued like `ground` (never superseded).
+
+### Atlas names
+- **Survey states** (`surveystate.state`) — `running`, `paused`, `done`, `stopped`, `refused`, `idle`
+- **Survey ops** (`survey.op`) — `start`, `stop`, `status`
+
+### Atlas examples
+One message per line (JSON Lines). Every `t` of the two Atlas tables has at least one line.
+
+Atlas examples, Cyberpunk to Minecraft:
+```jsonl
+{"t":"terrain","c":[-623,-407,67,0,-623,-406,12,0,-700,-380,0,1]}
+{"t":"surveystate","state":"running","done":12,"total":980,"eta":11520,"reason":"","stop":[-6,4]}
+{"t":"reply","kind":"atlas","id":24,"groups":[],"pins":[{"p":[-1240.0,65.0,830.0],"kind":"fasttravel","name":"Japantown West","i":-1,"d":"Westbrook"},{"p":[-1201.5,64.0,845.0],"kind":"vendor","name":"Gun Shop","i":-1}]}
+```
+
+Atlas examples, Minecraft to Cyberpunk:
+```jsonl
+{"t":"survey","op":"start","done":[-6,4,-5,4]}
+```
+
 ## Shared memory `Local\CyberblockFrame`
 Exactly the reference `FrameExporter` layout (see its Javadoc) with magic `0x52464243` ("CBFR"). The
 reference flags (zero-to-one depth, bottom-up rows, reversed-Z) are kept.

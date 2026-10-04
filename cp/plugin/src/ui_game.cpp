@@ -46,6 +46,8 @@ namespace
 	/// The action Cyberblock_NextUiAction made current (game thread).
 	cb::ui::UiAction g_current;
 	std::atomic<uint64_t> g_invalidUiacts{0};
+	/// When the DLL last ran CyberblockUi.Pump (steady seconds); the scripts pump from their own tick while it is stale.
+	std::atomic<double> g_lastPump{-1e300};
 
 	cb::ui::UiActions &actions()
 	{
@@ -406,6 +408,15 @@ namespace
 			*out = g_current.id;
 	}
 
+	// Cyberblock_UiPumpLive() -> Bool: the DLL ran CyberblockUi.Pump within the last 0.5 s. While it is false the scripts'
+	// 10 Hz tick pumps instead, so Minecraft's screen requests are answered even when the DLL cannot find the function.
+	void UiPumpLive(IScriptable *, CStackFrame *frame, bool *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = now_seconds() - g_lastPump.load() < 0.5;
+	}
+
 	// ---- replies --------------------------------------------------------------------------------------------------------
 
 	void ReplyBegin(IScriptable *, CStackFrame *frame, void *, int64_t)
@@ -458,13 +469,15 @@ namespace
 		RED4ext::CName kind;
 		RED4ext::CString name;
 		int32_t index = -1;
+		RED4ext::CString district;
 		RED4ext::GetParameter(frame, &pos);
 		RED4ext::GetParameter(frame, &kind);
 		RED4ext::GetParameter(frame, &name);
 		RED4ext::GetParameter(frame, &index);
+		RED4ext::GetParameter(frame, &district);
 		++frame->code;
 		std::lock_guard<std::mutex> lock(g_lock);
-		g_reply.pin({pos.X, pos.Y, pos.Z}, name_text(kind), name.c_str(), index, level_offset());
+		g_reply.pin({pos.X, pos.Y, pos.Z}, name_text(kind), name.c_str(), index, level_offset(), district.c_str());
 	}
 
 	// Cyberblock_ReplyEnd(): sends the reply (while linked) and logs its size.
@@ -494,20 +507,26 @@ namespace
 			cb::log::info("ui: unpaused (%s)", reason);
 	}
 
-	/// CyberblockUi.Pump, resolved once (scripts are loaded before the Running state); null when missing.
+	/// CyberblockUi.Pump; null while it cannot be found. In game (2026-10-03) the first look, on the first Running frame
+	/// at the main menu, found no CyberblockUi class yet and the old code never looked again, so no Night City screen
+	/// ever got its reply (the Atlas stayed empty): it is now looked up again every 2 s until it is found.
 	RED4ext::CBaseFunction *pump_function()
 	{
-		static bool resolved = false;
 		static RED4ext::CBaseFunction *function = nullptr;
-		if (!std::exchange(resolved, true))
-		{
-			RED4ext::CClass *type = RED4ext::CRTTISystem::Get()->GetClass("CyberblockUi");
-			function = type ? type->GetFunction("Pump") : nullptr;
-			if (function)
-				cb::log::info("ui: pump ready");
-			else
-				cb::log::warn("ui: pump disabled: CyberblockUi.Pump missing");
-		}
+		static double nextTry = 0.0;
+		static bool warned = false;
+		if (function != nullptr)
+			return function;
+		const double now = now_seconds();
+		if (now < nextTry)
+			return nullptr;
+		nextTry = now + 2.0;
+		RED4ext::CClass *type = RED4ext::CRTTISystem::Get()->GetClass("CyberblockUi");
+		function = type ? type->GetFunction("Pump") : nullptr;
+		if (function)
+			cb::log::info("ui: pump ready%s", warned ? " (found on a later look)" : "");
+		else if (!std::exchange(warned, true))
+			cb::log::warn("ui: pump not found yet: CyberblockUi.Pump missing; looking again every 2 s");
 		return function;
 	}
 }
@@ -539,12 +558,13 @@ namespace cb::ui
 		add(rtti, "Cyberblock_UiActionArg", &UiActionArg, "String");
 		add(rtti, "Cyberblock_UiActionHash", &UiActionHash, "Uint32");
 		add(rtti, "Cyberblock_UiActionId", &UiActionId, "Int32");
+		add(rtti, "Cyberblock_UiPumpLive", &UiPumpLive, "Bool");
 		add(rtti, "Cyberblock_ReplyBegin", &ReplyBegin, nullptr, {{"CName", "kind"}, {"Int32", "id"}});
 		add(rtti, "Cyberblock_ReplyGroup", &ReplyGroup, nullptr,
 			{{"Uint32", "hash"}, {"String", "title"}, {"CName", "kind"}, {"Bool", "tracked"}, {"Bool", "done"}});
 		add(rtti, "Cyberblock_ReplyLine", &ReplyLine, nullptr, {{"Uint32", "hash"}, {"String", "text"}, {"Int32", "state"}});
 		add(rtti, "Cyberblock_ReplyPin", &ReplyPin, nullptr,
-			{{"Vector4", "pos"}, {"CName", "kind"}, {"String", "name"}, {"Int32", "index"}});
+			{{"Vector4", "pos"}, {"CName", "kind"}, {"String", "name"}, {"Int32", "index"}, {"String", "district"}});
 		add(rtti, "Cyberblock_ReplyEnd", &ReplyEnd, nullptr);
 		cb::log::info("ui: natives registered");
 	}
@@ -592,7 +612,10 @@ namespace cb::ui
 		if (!active && actions().empty())
 			return;
 		if (RED4ext::CBaseFunction *function = pump_function())
+		{
 			RED4ext::ExecuteFunction(static_cast<void *>(nullptr), function, nullptr);
+			g_lastPump = now;
+		}
 	}
 
 	void on_link_dropped()

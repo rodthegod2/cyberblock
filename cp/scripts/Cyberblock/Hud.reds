@@ -619,6 +619,7 @@ public class CyberblockHud {
       case gamedataMappinVariant.RetrievingVariant:
         return n"quest";
       case gamedataMappinVariant.FastTravelVariant:
+      case gamedataMappinVariant.Zzz17_NCARTVariant:
         return n"fasttravel";
       case gamedataMappinVariant.ServicePointRipperdocVariant:
         return n"ripperdoc";

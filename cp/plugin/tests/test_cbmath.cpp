@@ -396,3 +396,32 @@ TEST(rotate_about_z_by_90_turns_forward_to_the_left)
 	const cb::Vec3 any = cb::rotate({0.1, -0.2, 0.3, std::sqrt(1.0 - 0.14)}, {0.3, -1.2, 0.7});
 	CHECK(close(std::hypot(any.x, any.y, any.z), std::hypot(0.3, -1.2, 0.7)));
 }
+
+// ---- the Atlas survey: 2-m cells (shared/vectors.json `survey` and `survey_column`) -------------------------------------
+
+TEST(survey_cell_vectors)
+{
+	const nlohmann::json cases = vectors().at("survey");
+	CHECK(cases.size() >= 20);
+	for (const auto &c : cases)
+	{
+		const auto &h = c.at("hit");
+		const cb::SurveyCell cell = cb::survey_cell(h.at(0), h.at(1), h.at(2), offset_of(c));
+		const auto &want = c.at("cell");
+		CHECK(cell.cx == want.at(0).get<int>() && cell.cz == want.at(1).get<int>() && cell.h == want.at(2).get<int>());
+	}
+}
+
+TEST(survey_column_vectors_and_round_trip)
+{
+	const nlohmann::json cases = vectors().at("survey_column");
+	CHECK(cases.size() >= 5);
+	for (const auto &c : cases)
+	{
+		const int cx = c.at("cell").at(0), cz = c.at("cell").at(1);
+		const std::array<double, 2> cp = cb::survey_column(cx, cz);
+		CHECK(close(cp[0], c.at("cp").at(0)) && close(cp[1], c.at("cp").at(1)));
+		const cb::SurveyCell back = cb::survey_cell(cp[0], cp[1], 0.0, 0.0);
+		CHECK(back.cx == cx && back.cz == cz);
+	}
+}

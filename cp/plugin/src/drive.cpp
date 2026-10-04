@@ -32,6 +32,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -70,6 +71,20 @@ namespace
 
 	std::atomic<bool> g_driving{false};
 	std::atomic<float> g_sinceEnd{999.0f};
+
+	/// The survey tour's hold and return (set_hold, request_return), under g_holdLock.
+	struct Return
+	{
+		Vec3 feet;
+		double yaw;
+		double at; // seconds (steady clock) when it was asked for
+	};
+	std::mutex g_holdLock;
+	std::optional<Vec3> g_hold;
+	std::optional<Return> g_return;
+	bool g_holding = false;   // main thread: the hold teleported V on an earlier frame
+	double g_holdYaw = 0.0;   // main thread: V's facing at the hold's first frame
+	constexpr double kReturnSeconds = 2.0;
 
 	double seconds(cb::snap::Clock::time_point t)
 	{
@@ -322,13 +337,74 @@ namespace
 	}
 }
 
+namespace
+{
+	/// The survey tour's part of a frame: the return teleport, then the hold. True while a hold is set (whether or not
+	/// the gate let it move V this frame).
+	bool survey_frame(double now)
+	{
+		std::optional<Vec3> hold;
+		std::optional<Return> back;
+		{
+			std::lock_guard<std::mutex> lock(g_holdLock);
+			hold = g_hold;
+			if (g_return && now - g_return->at > kReturnSeconds)
+				g_return.reset(); // never a stale return: the scripts already put V back
+			back = g_return;
+		}
+		const bool gate = cb::natives::active && !cb::natives::inVehicle && !cb::natives::held && cb::natives::flightAllowed &&
+						  !cb::natives::menuOpen;
+		if (!hold)
+			g_holding = false;
+		if ((!hold && !back) || !gate || !resolve())
+			return hold.has_value();
+		Game game;
+		if (!read_game(game))
+			return hold.has_value();
+		if (back && !hold)
+		{
+			{
+				std::lock_guard<std::mutex> lock(g_holdLock);
+				g_return.reset();
+			}
+			if (teleport(game, back->feet, back->yaw))
+				cb::log::info("survey: V put back at (%.1f, %.1f, %.1f)", back->feet.x, back->feet.y, back->feet.z);
+			return false;
+		}
+		if (!g_holding)
+		{
+			const std::optional<RED4ext::EulerAngles> start = facing(game);
+			g_holdYaw = start ? double(start->Yaw) : 0.0;
+			g_holding = true;
+		}
+		teleport(game, *hold, g_holdYaw);
+		return true;
+	}
+}
+
 namespace cb::drive
 {
+	void set_hold(std::optional<Vec3> cpFeet)
+	{
+		std::lock_guard<std::mutex> lock(g_holdLock);
+		g_hold = cpFeet;
+	}
+
+	void request_return(Vec3 cpFeet, double yaw)
+	{
+		const double now = seconds(snap::Clock::now());
+		std::lock_guard<std::mutex> lock(g_holdLock);
+		g_hold.reset();
+		g_return = Return{cpFeet, yaw, now};
+	}
+
 	void tick(int64_t mouseX, double degreesPerCount)
 	{
 		if (g_api.state == Api::State::Disabled)
 			return;
 		const snap::Clock::time_point now = snap::Clock::now();
+		if (survey_frame(seconds(now)))
+			return; // the survey tour holds V this frame: no flight runs meanwhile
 		snap::Flight &flight = snap::flight();
 		follow::In in;
 		in.now = seconds(now);

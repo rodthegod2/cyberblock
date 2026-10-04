@@ -70,6 +70,7 @@ public class CyberblockSystem extends ScriptableSystem {
   private let events: ref<CyberblockEvents>;
   private let npcs: ref<CyberblockNpcs>;
   private let hud: ref<CyberblockHud>;
+  private let surveyTour: ref<CyberblockSurveyTour>;
   private let saving: Bool;
   private let savingTicks: Int32;
   private let savingPumps: Int32;
@@ -84,6 +85,7 @@ public class CyberblockSystem extends ScriptableSystem {
     this.npcs = new CyberblockNpcs();
     this.npcs.Register();
     this.hud = new CyberblockHud();
+    this.surveyTour = new CyberblockSurveyTour();
     Cyberblock_SetActive(false, false);
     // A menu can pause the game (and with it this tick), so its opening is also taken straight from the blackboard.
     let ui = GameInstance.GetBlackboardSystem(this.GetGameInstance()).Get(GetAllBlackboardDefs().UI_System);
@@ -108,6 +110,8 @@ public class CyberblockSystem extends ScriptableSystem {
     Cyberblock_SetChoices(false);
     CyberblockInk.RestoreFor(this.GetGameInstance(), "detach");
     this.hud.Unregister();
+    Cyberblock_SurveyTourReset();
+    this.surveyTour.Undo(this.GetGameInstance(), GetPlayer(this.GetGameInstance()));
     CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
@@ -120,6 +124,9 @@ public class CyberblockSystem extends ScriptableSystem {
   private cb func OnBeforeSave(event: ref<GameSessionEvent>) {
     if CyberblockSystem.IsOn(this.state) {
       Cyberblock_Notify(n"save", "Saving Night City...", "", 3.0);
+    }
+    if CyberblockSurveyTour.Running(this.GetGameInstance()) {
+      Cyberblock_Log("before save: a save began during the survey tour (its save lock should prevent this)");
     }
     this.saving = true;
     this.savingTicks = 0;
@@ -164,6 +171,8 @@ public class CyberblockSystem extends ScriptableSystem {
 
   private cb func OnSessionEnd(event: ref<GameSessionEvent>) {
     this.saving = false;
+    Cyberblock_SurveyTourReset();
+    this.surveyTour.Undo(this.GetGameInstance(), GetPlayer(this.GetGameInstance()));
     CyberblockInk.RestoreFor(this.GetGameInstance(), "session end");
     this.hud.ClearMinecraft();
     this.hud.Unregister();
@@ -204,6 +213,11 @@ public class CyberblockSystem extends ScriptableSystem {
     }
   }
 
+  // The Atlas survey tour (Survey.reds).
+  public func SurveyTour() -> ref<CyberblockSurveyTour> {
+    return this.surveyTour;
+  }
+
   // The HUD data stream (Hud.reds); Notifications.reds tells it about actionable notifications.
   public func Hud() -> ref<CyberblockHud> {
     return this.hud;
@@ -239,6 +253,8 @@ public class CyberblockSystem extends ScriptableSystem {
       return;
     }
     this.Step(player, toggle);
+    // The Atlas survey tour (Survey.reds): every tick, so F9, a vehicle or a scene ends it at once with V put back.
+    this.surveyTour.Tick(game, player, Equals(this.state, CyberblockState.Active), this.saving);
     // A dialogue or choice list with two or more choices keeps E, Q, 1-4 and the wheel for Cyberpunk (the DLL).
     Cyberblock_SetChoices(Equals(this.state, CyberblockState.Active) && CyberblockSystem.ChoiceCount(game) >= 2);
     this.UpdatePlayer(player);
@@ -278,6 +294,11 @@ public class CyberblockSystem extends ScriptableSystem {
     this.hud.Tick(player, live);
     // Notifications shown while Off are dropped here; while On (saves included) CyberblockUi.Pump reports them at once.
     CyberblockNotifications.Poll(game, on);
+    // The DLL pumps the UI bridge at 30 Hz; while it does not (CyberblockUi.Pump not found yet), Minecraft's screen
+    // requests (the Atlas, Journal and Phone replies) are answered from here.
+    if this.UiOn() && !Cyberblock_UiPumpLive() {
+      CyberblockUi.Pump();
+    }
   }
 
   // Everything of ours in Night City (plan 2026-10-03 section 1.4 Clears). Perk ranks, installed cyberware and the

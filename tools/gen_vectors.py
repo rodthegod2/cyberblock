@@ -42,6 +42,11 @@ def off(k):
     return cbmath.level_offset(k)
 
 
+# the Atlas survey: cell edges (x = 2.0 and y = -2.0 sit on one), negative cells, a surface half a metre off a whole y
+survey_hits = [(2.0, -2.0, 40.5), (1.999, -1.999, 40.49), (-0.5, 0.5, -3.5), (-1245.5, 812.25, 66.62), (3999.9, -3999.9, 455.0)]
+survey_cells = [(0, 0), (-1, -1), (5, -3), (-623, -407), (1999, 1999)]
+
+
 # re-test 3 (plan section 1.7): `binds` messages applied to a current set of six keys, with the clash rule. Every given
 # key is a whole number (the C++ tests cover non-numbers). F1..F6 = 0x70..0x75 (F5 is refused), F10..F12 = 0x79..0x7B.
 F = {n: 0x6F + n for n in range(1, 13)}
@@ -80,9 +85,12 @@ out = {
     "binds": [{"vk": vk, "bindable": vk not in bind_refused} for vk in bind_keys],
     "binds_apply": [{"given": given, "current": current, "expect": expect, "clash": clash}
                     for given, current in binds_given for expect, clash in [cbmath.apply_binds(given, current)]],
+    # the Atlas survey: hits -> (cx, cz, h) at k 0 and 57, and cells -> their Cyberpunk column centre
+    "survey": [{"hit": list(h), "k": k, "cell": list(cbmath.survey_cell(*h, off(k)))} for k in pos_ks for h in hits + survey_hits],
+    "survey_column": [{"cell": list(c), "cp": list(cbmath.survey_column(*c))} for c in survey_cells],
 }
 Path("shared/vectors.json").write_text(json.dumps(out, indent=1), newline="\n")
 print(f"wrote {len(out['quat'])} quat, {len(out['down'])} down, {len(out['wall'])} wall, "
       f"{len(out['mc_pos'])} mc_pos, {len(out['mc_block'])} mc_block, {len(out['align'])} align, "
       f"{len(out['mc_yaw'])} mc_yaw, {len(out['mc_vel'])} mc_vel, {len(out['binds'])} binds, "
-      f"{len(out['binds_apply'])} binds_apply cases")
+      f"{len(out['binds_apply'])} binds_apply, {len(out['survey'])} survey, {len(out['survey_column'])} survey_column cases")
