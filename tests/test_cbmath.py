@@ -302,7 +302,12 @@ def test_materials_vectors_match_truth():
     assert m["order"] == list(cbmath.MATERIAL_ORDER) and m["neon_any"] == list(cbmath.NEON_ANY) and m["neon_any_code"] == 11
     assert len(m["cases"]) >= 30 and all(cbmath.material_code(c["name"]) == c["code"] for c in m["cases"])
     assert {c["code"] for c in m["cases"]} >= set(range(1, 11)) | {0, 11, 14, 19, 22, 25}  # every surface code and several neon dyes
-    assert all(c["ticks"] == cbmath.env_ticks(*c["time"]) for c in m["clock"])
+    assert set(m) == {"codes", "order", "neon_any", "neon_any_code", "cases"}  # only the name table: 3D's cb_tests reads it key by key
+
+
+def test_clock_vectors_match_truth_and_live_outside_materials():
+    clock = json.loads(Path("shared/vectors.json").read_text())["clock"]
+    assert len(clock) >= 8 and all(c["ticks"] == cbmath.env_ticks(*c["time"]) for c in clock)
 
 
 def test_env_ticks_follow_the_plan_formula():

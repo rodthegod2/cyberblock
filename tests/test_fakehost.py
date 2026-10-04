@@ -1151,11 +1151,20 @@ def test_replica_session_host_brings_clear_the_street_with_materials_and_the_fig
 def test_replica_script_scans_seen_then_leaves_then_clears_and_regrows_without_the_scaffolds():
     timeline = fakehost.Cyberpunk(frozenset(), frozenset({"replica"})).script()
     kinds = [(t, m["t"], m.get("seen")) for t, m in timeline]
-    assert kinds[:3] == [(12.0, "unground", True), (12.5, "unground", None), (14.0, "clear", None)]
+    assert kinds[0] == (fakehost.WRECK_AT - fakehost.KILL_LEAD, "killed", None) and timeline[0][1] == fakehost.replica_killed()
+    assert kinds[1:4] == [(12.0, "unground", True), (12.5, "unground", None), (14.0, "clear", None)]
     regrow = [m for t, m in timeline if t > 14.0]
     assert len(regrow) == 5 and all(m["t"] == "ground" for m in regrow) and regrow == fakehost.replica_ground(
         without=[fakehost.SCAFFOLD_SEEN, fakehost.SCAFFOLD_LEFT])
     assert [t for t, _ in timeline] == sorted(t for t, _ in timeline) and all(p3_valid(m) for _, m in timeline)
+
+
+def test_replica_destroyed_car_is_reported_killed_before_it_leaves_the_list():
+    """3F's ProxyManager makes a wreck only from `killed`; a proxy that just leaves `npcs` is removed without one."""
+    killed = fakehost.replica_killed()
+    assert killed == {"t": "killed", "target": WRECK, "kind": "vehicle", "hostile": False} and p3_valid(killed)
+    assert 0 < fakehost.KILL_LEAD < 0.5 and WRECK in {e["id"] for e in fakehost.replica_npcs(fakehost.WRECK_AT - fakehost.KILL_LEAD)["list"]}
+    assert fakehost.replica_killed(1000)["target"] == fakehost.replica_ids(1000)[3]
 
 
 def test_replica_vteleport_is_answered_after_two_seconds_and_v_arrives(monkeypatch):
@@ -1195,6 +1204,7 @@ def test_replica_mode_plays_the_street_the_figures_the_env_and_answers_a_telepor
     npcs = [m for m in got if m["t"] == "npcs"]
     assert len({json.dumps(m) for m in npcs}) > 3 and any(len(m["list"]) == 4 for m in npcs) and any(len(m["list"]) == 3 for m in npcs)  # they move, a car goes
     assert not {"dmg", "mobdmg"} & set(kinds)
+    assert [m for m in got if m["t"] == "killed"] == [fakehost.replica_killed()]  # the destroyed car: the server leaves a wreck
     assert printed(capsys)["session"] == [SESSION_HOST]
 
 

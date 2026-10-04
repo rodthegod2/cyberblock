@@ -18,7 +18,8 @@ Scenarios (megaplan task 1-T2). Each one starts what it needs on its own test po
   reconnect     the host's DLL link drops (barriers and proxies gone) and returns (`blocks reset:true`, the whole ground again)
   twohosts      `maxHosts` 2, two fake hosts with colliding ids: each one gets only its own hits
   replica       Phase 3: one fake host `--replica` and a guest: the street stands as replica blocks of the right materials, a `seen`
-                removal takes one scaffold away and a plain one keeps the other, `clear` removes nothing, the host's clock and weather
+                removal takes one scaffold away and a plain one keeps the other, `clear` removes nothing, the car V destroyed (`killed`)
+                stays a wreck about 5 s, the host's clock and weather
                 drive the world, the replica stays when the host's link drops and a guest's wall reaches the returning host
   twohosts2     Phase 3: two replica hosts that overlap, with colliding ids: both streets and both figure sets stand, a hit reaches only
                 its owner, and only the first host's clock drives the world
@@ -84,6 +85,8 @@ T_STOP = 60.0  # a server gets this long to stop after RCON `stop` before its pr
 HOLD_S = 900 # a fake host keeps its link this long (the scenario stops it earlier)
 T_ENV = 60.0  # `replica`: the env cycle of the fake host takes 40 s, so each of its states shows up within this
 T_POLL = 0.5  # seconds between two looks of a poll
+T_WRECK, WRECK_MIN_S = 10.0, 2.5  # `replica`: a wreck (5 s on the server) goes within T_WRECK of its log line and stands at least WRECK_MIN_S
+DAY_TICKS = 24000
 COOLDOWN_S = 31.0  # `meetup`: the Meet Up cooldown is 30 s (megaplan 3-E2)
 FLOOD_S = 16.0  # how long `flood` keeps flooding (the overflow rule needs more than 10 s)
 LOGIN_GAP_S = 1.2  # `joinpassword`: between two /login attempts (the server takes one per second)
@@ -821,14 +824,21 @@ def scaffold_cell(which: tuple[int, int], shift: int = 0) -> tuple[int, int, int
 
 
 def daytime(server: Server) -> int | None:
-    """`time query daytime`: "The time is 16500"."""
-    match = re.search(r"(\d+)\s*$", server.rcon("time query daytime").strip())
-    return int(match.group(1)) if match else None
+    """The day time 0..23999: 26.3's `time query time` gives the default clock's total ticks ("Clock minecraft:overworld is at
+    88500 tick(s)"; 26.3 has no `time query daytime`), and 3E's EnvSync keeps that total going forward, so the day time is it mod 24000."""
+    match = re.search(r"Clock \S+ is at (-?\d+) tick", server.rcon("time query time"))
+    return int(match.group(1)) % DAY_TICKS if match else None
+
+
+def ticks_apart(a: int, b: int) -> int:
+    """How far apart two day times are on the 24000-tick circle (23990 and 10 are 20 apart)."""
+    d = abs(a - b) % DAY_TICKS
+    return min(d, DAY_TICKS - d)
 
 
 def time_is(server: Server, ticks: int, tol: int = 40) -> bool:
     now = daytime(server)
-    return now is not None and abs(now - ticks) <= tol
+    return now is not None and ticks_apart(now, ticks) <= tol
 
 
 def weather_is(server: Server, *, rain: bool, thunder: bool) -> bool:
@@ -845,7 +855,7 @@ def daylight_holds(server: Server) -> bool:
         first = daytime(server)
         time.sleep(T_QUIET / 4)
         second = daytime(server)
-        if first is not None and second is not None and abs(first - second) <= 3:
+        if first is not None and second is not None and ticks_apart(first, second) <= 3:
             return True
     return False
 
@@ -876,9 +886,9 @@ def reported_cells(text: str, name: str) -> set[tuple[int, int, int]]:
 
 
 def proxy_count(server: Server) -> int:
-    """How many Night City people stand as proxies (`Test passed, count: N`; 0 when none)."""
+    """How many Night City people stand as proxies (26.3: `Test passed. Count: N`; 0 when none)."""
     answer = server.rcon("execute if entity @e[type=cyberblock:proxy_human]")
-    match = re.search(r"count: (\d+)", answer)
+    match = re.search(r"count: (\d+)", answer, re.I)
     return int(match.group(1)) if match else int(passed(answer))
 
 
@@ -887,6 +897,23 @@ def hit_reaches_only(server: Server, owner: FakeHost, other: FakeHost, target: s
     marks = owner.log.mark(), other.log.mark()
     server.test(f"hit {owner.name} {target} 5.0", as_player=owner.name)
     return bool(owner.log.wait(hit_pattern(owner.name, target), T_EFFECT, marks[0])) and other.log.quiet(hit_pattern(other.name, target), T_QUIET, marks[1])
+
+
+def wreck_stands(server: Server, shift: int = 0) -> bool:
+    """A vehicle proxy stands where the fake host's destroyed car stood (the driving car passes a metre away, at z 0.5)."""
+    x, y, z = -5.5 + shift, fakehost.SLAB_Y + 1.0, -0.5
+    return server.passes(f"execute if entity @e[type=cyberblock:proxy_vehicle,x={x},y={y},z={z},distance=..0.6]")
+
+
+def wreck_stays_then_goes(server: Server) -> bool:
+    """The fake host reports its standing car `killed` (V destroyed it): 3F's ProxyManager logs the wreck, the proxy stays there for
+    about 5 s and then goes. A proxy that only left `npcs` would be removed at once, without the log line."""
+    died = rf"figures: vehicle {fakehost.replica_ids()[3]} died \(wreck"
+    # before the log line the car stood there alive, so both must hold: the proxy at the spot and the line saying it died
+    poll(lambda: wreck_stands(server) and server.log.find(died), T_EFFECT, T_POLL, "the wreck")
+    seen = time.monotonic()
+    poll(lambda: not wreck_stands(server), T_WRECK, T_POLL, "the wreck to go")
+    return time.monotonic() - seen >= WRECK_MIN_S
 
 
 def changes_listed(server: Server) -> bool:
@@ -905,6 +932,7 @@ def scenario_replica(env: Env, rep: Report) -> None:
     rep.step("the replica is host ground: it never comes back to the host as a player block",
              lambda: not reported_cells(host.log.text(), "CbHost1") & set(fakehost.replica_cells()))
     rep.step("the figures are there as proxies", lambda: poll(lambda: proxies_stand(server), T_EFFECT, T_POLL, "proxies"))
+    rep.step("the car V destroyed (`killed`) stays a wreck for about 5 s, then goes", lambda: wreck_stays_then_goes(server))
     rep.step("an `unground` with `seen:true` takes its scaffold away", lambda: poll(lambda: not block_stands(server, scaffolds[0], metal), T_EFFECT, T_POLL,
                                                                                     "the seen removal"))
     time.sleep(T_QUIET)  # the plain `unground` comes half a second after the seen one, `clear` and the whole ground again (without both) two seconds after it
@@ -961,7 +989,7 @@ def scenario_twohosts2(env: Env, rep: Report) -> None:
         for _ in range(5):
             samples.append(daytime(server))
             time.sleep(T_QUIET / 4)
-        return all(s is not None and any(abs(s - t) <= 40 for t in mine) and not any(abs(s - t) <= 40 for t in other) for s in samples)
+        return all(s is not None and any(ticks_apart(s, t) <= 40 for t in mine) and not any(ticks_apart(s, t) <= 40 for t in other) for s in samples)
 
     rep.step("only the first host's clock drives the world (the second host's is 12 hours off and never shows)", only_the_first_clock)
     rep.step("the server logged no relay drops", lambda: not server.log.find(r"relay: CbHost[12] dropped"))

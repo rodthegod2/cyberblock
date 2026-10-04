@@ -30,6 +30,14 @@ install is the test. If the owner's plan has no extra TCP port, the map is not p
 - **Not verified by 3P in the game:** everything that needs Cyberpunk or a Minecraft client. 3P's own checks are the unit tests,
   `tools.gen_vectors`, and `tools.mpcheck` against a simulated server; the real `replica`, `twohosts2` and `meetup` runs need
   the merged Java side (3R, 3E) and are the integrator's.
-- **Contract additions made by 3P** (the integrator confirms): rate limits for the new UP types (`env` 2/s burst 4,
-  `vteleported` and `parked` 5/s burst 10) and the `maptile` exchange (`cyberblock:act` request, `cyberblock:ui` answer), which
-  megaplan 3-R2 names only as `cyberblock:ui t:"maptile"`.
+- **Contract additions made by 3P** (the integrator confirms): rate limits for the new UP types as 3E's RelayGuard has them
+  (`env` and `vteleported` 2/s burst 4), and the `maptile` exchange as 3R's NightCityMap and 3C's AtlasWire speak it
+  (`cyberblock:act` request `{tiles, have}`, up to 32 tiles, 64 tiles/s burst 128; `cyberblock:ui` answer `{tx, tz, v, c}` with
+  `v` the CRC32 of the cells), which megaplan 3-R2 names only as `cyberblock:ui t:"maptile"`.
+- **`park` / `parked` relayed from Phase 7:** the DLL and scripts handle `park` and answer `parked` from Phase 3, but no Phase 3
+  server sends `park` (the hub needs it), so the client relay and RelayGuard have no `parked` yet; Phase 7 adds the relay and
+  its rate row.
+- **`maxHosts` on an existing server:** the default 4 applies only to a newly written `config/cyberblock/server.json`; a server
+  that ran before keeps `"maxHosts": 1` until its owner changes the file (HOW-TO-PLAY and TESTING-PLAN P3-7 say so).
+- **Wrecks only for cars V hurt:** the server makes a wreck from `killed`, which the plugin sends only for entities V damaged; a
+  car that crashes on its own just goes.

@@ -14,19 +14,20 @@ Phase 3 of the multiplayer plan: **Night City as Minecraft** on a server. This e
 mod, plugin and scripts of Phase 3 have their own entries. The in-game list is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md),
 "Re-test: Wave B, Phase 3".
 - **Protocol.** `shared/protocol.md` "Phase 3": `ground.m` (one material code 0..26 per range), `unground.seen`, `env` (clock and
-  weather), `vteleport`/`vteleported` (Meet Up), `park`/`parked`, the `maptile` exchange for the shared map, class and rate rows for
-  the new UP types, validators and examples in `tests/test_protocol_md.py`.
+  weather), `vteleport`/`vteleported` (Meet Up), `park`/`parked` (relayed by the server from Phase 7), the `maptile` exchange for the
+  shared map as 3R and 3C speak it, class and rate rows for the new UP types, validators and examples in `tests/test_protocol_md.py`.
 - **Material codes.** `tools.cbmath` (`material_code`, `material_block`, `env_ticks`) and the new `materials` key of
   `shared/vectors.json` (written by `tools.gen_vectors`): the codes (0 unknown, 1 to 10 the surface blocks, 11 to 26 the sixteen
-  `nc_neon_<dye>`), the name rules and 38 name cases, and the clock formula. The substrings are a working table until Phase 0's
+  `nc_neon_<dye>`), the name rules and 38 name cases; the clock formula is the separate top-level `clock` key. The substrings are a working table until Phase 0's
   CET lines B1 to B5 show the real names.
 - **Fake host.** `tools.fakehost --replica`: a street of ground with materials, `seen` and plain removals, figures walking and
-  driving at real speed (and a destroyed car), `env` steps, `vteleport` answered after 2 s, `park` answered at once; `--shift`
+  driving at real speed (and a car V destroys: `killed`, then gone from the list), `env` steps, `vteleport` answered after 2 s, `park` answered at once; `--shift`
   and `--env-hours` make a second host that overlaps the first and has another sky.
 - **Harness.** `tools.mpcheck replica twohosts2 meetup`: the street's replica blocks by material, the `seen` rule, `clear`, the
-  clock and weather, the replica staying when the host leaves, a guest's wall reaching the returning host, two overlapping
+  wreck of the destroyed car, the clock and weather (26.3's `time query time`), the replica staying when the host leaves, a guest's wall reaching the returning host, two overlapping
   hosts with colliding ids, Meet Up both ways with its cooldown.
-- **Docs.** HOW-TO-PLAY "Night City as Minecraft (Phase 3)", `docs/WEBMAP.md` (a BlueMap build for Fabric 26.3 exists; nothing of
+- **Docs.** HOW-TO-PLAY "Night City as Minecraft (Phase 3)" (an existing `server.json` keeps `"maxHosts": 1`: set it to 4 by
+  hand), `docs/WEBMAP.md` (a BlueMap build for Fabric 26.3 exists; nothing of
   it is tested yet), `docs/notes/phase3-descopes.md`.
 
 ### Unreleased additions: join password

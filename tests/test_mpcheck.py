@@ -2,6 +2,7 @@
 simulated server, the CLI and the secret handling. The real run (`tools.mpcheck --all`) is the integrator's."""
 import asyncio
 import json
+import math
 import re
 import socket
 import struct
@@ -24,7 +25,8 @@ SESSION_HOST = {"t": "session", "state": "host", "reason": "", "perms": {"explos
 def quick(monkeypatch):
     """Every wait of the scenarios shrinks to a fraction of a second (the real values are minutes)."""
     for name, value in (("T_QUIET", 0.05), ("T_EFFECT", 0.6), ("T_JOIN", 0.6), ("T_SERVER", 0.6), ("T_CLIENT", 0.6), ("FLOOD_S", 0.1), ("T_STOP", 0.05),
-                        ("LOGIN_GAP_S", 0.0), ("T_ENV", 1.0), ("T_POLL", 0.01), ("COOLDOWN_S", 0.7)):
+                        ("LOGIN_GAP_S", 0.0), ("T_ENV", 1.0), ("T_POLL", 0.01), ("COOLDOWN_S", 0.7),
+                        ("T_WRECK", 0.6), ("WRECK_MIN_S", 0.04)):
         monkeypatch.setattr(mpcheck, name, value)
 
 
@@ -318,7 +320,7 @@ def test_rcon_packets_have_the_documented_framing():
     assert length == len(packet) - 4 == 10 + 4 and (request, kind) == (7, 2) and packet.endswith(b"list\x00\x00")
 
 
-@pytest.mark.parametrize("answer, ok", [("Test passed", True), ("Test passed, count: 3", True), ("  Test passed", True), ("Test failed", False), ("", False)])
+@pytest.mark.parametrize("answer, ok", [("Test passed", True), ("Test passed. Count: 3", True), ("  Test passed", True), ("Test failed", False), ("", False)])
 def test_test_answers(answer, ok):
     assert mpcheck.passed(answer) is ok
 
@@ -507,7 +509,7 @@ class SimServer(mpcheck.Server):
         if command.startswith("execute if block"):
             return "Test passed" if any(h["linked"] and h["ground"] for h in sim.hosts.values()) else "Test failed"
         if command.startswith("execute if entity"):
-            return "Test passed, count: 3" if any(h["linked"] for h in sim.hosts.values()) else "Test failed"
+            return "Test passed. Count: 3" if any(h["linked"] for h in sim.hosts.values()) else "Test failed"
         actor = None
         if match := re.fullmatch(r"execute as (\S+) run (.*)", command):
             actor, command = match.groups()
@@ -924,6 +926,8 @@ class Sim3Server(SimServer):
         self.world, self.replica, self.pos, self.player_blocks, self.changes = {}, set(), {}, [], []
         self.pending_meet, self.cool, self.arrivals, self.meet_ids = {}, {}, [], 0
         self.ticks, self.weather = 18000, "clear"
+        self.days = 3  # whole Minecraft days on the clock: `time query time` answers the total ticks (3 * 24000 + the day time)
+        self.wrecks = {}  # (x, y, z) -> real time it goes: 3F's ProxyManager keeps a `killed` vehicle 5 s as a wreck
 
     # -- the world -------------------------------------------------------------------------------------------------------------
     def place(self, msg):
@@ -949,8 +953,11 @@ class Sim3Server(SimServer):
                     self.replica.discard((x, y, z))
                     self.world.pop((x, y, z), None)
 
-    def apply(self, msg):
-        if msg["t"] == "ground":
+    def apply(self, msg, due, shift):
+        if msg["t"] == "killed" and msg["kind"] == "vehicle" and "no-wreck" not in self.bugs:  # the bug: the proxy just goes
+            append(self.log, f"[Server thread/INFO]: figures: vehicle {msg['target']} died (wreck for 5 s)")
+            self.wrecks[(-5.5 + shift, fakehost.SLAB_Y + 1.0, -0.5)] = due + 5 * SIM
+        elif msg["t"] == "ground":
             self.place(msg)
         elif msg["t"] == "unground":
             self.unground(msg)
@@ -965,8 +972,9 @@ class Sim3Server(SimServer):
         for _, host in linked:
             due = [e for e in host["script"] if host["t0"] + e[0] * SIM <= now]
             host["script"] = [e for e in host["script"] if e not in due]
-            for _, m in due:
-                self.apply(m)
+            for at, m in due:
+                self.apply(m, host["t0"] + at * SIM, host["shift"])
+        self.wrecks = {cell: end for cell, end in self.wrecks.items() if end > now}
         if "replica-leaves" in self.bugs and any(h.get("replica") and not h["linked"] for h in sim.hosts.values()):
             for cell in self.replica:
                 self.world.pop(cell, None)
@@ -990,9 +998,12 @@ class Sim3Server(SimServer):
                 return "Test passed" if self.world.get(cell) == match.group(4) else "Test failed"
         if command == "execute if entity @e[type=cyberblock:proxy_human]":
             n = sum(2 if h.get("replica") else 3 for h in self.sim.hosts.values() if h["linked"])
-            return f"Test passed, count: {n}" if n else "Test failed"
-        if command == "time query daytime":
-            return f"The time is {self.ticks}"
+            return f"Test passed. Count: {n}" if n else "Test failed"  # 26.3's commands.execute.conditional.pass_count
+        if match := re.fullmatch(r"execute if entity @e\[type=cyberblock:proxy_vehicle,x=(\S+),y=(\S+),z=(\S+),distance=\.\.0\.6\]", command):
+            spot = tuple(float(v) for v in match.groups())
+            return "Test passed. Count: 1" if any(math.dist(spot, cell) <= 0.6 for cell in self.wrecks) else "Test failed"
+        if command == "time query time":  # 26.3: commands.time.query.absolute (there is no `time query daytime`)
+            return f"Clock minecraft:overworld is at {self.days * 24000 + self.ticks} tick(s)"
         if match := re.match(r'execute if predicate \{condition:"minecraft:weather_check",(raining|thundering):true\}', command):
             on = self.weather in ("rain", "storm") if match.group(1) == "raining" else self.weather == "storm"
             return "Test passed" if on else "Test failed"
@@ -1071,7 +1082,7 @@ class Sim3Env(SimEnv):
             if m["t"] == "ground":
                 srv.place(m)
         base = ids_from if ids_from is not None else 9007199254740993
-        host.update(replica=True, t0=time.monotonic(), script=list(cp.script()), ids=host["ids"] | {str(base + 3)}, env_hours=extra.get("env_hours", 0))
+        host.update(replica=True, t0=time.monotonic(), script=list(cp.script()), shift=shift, ids=host["ids"] | {str(base + 3)}, env_hours=extra.get("env_hours", 0))
         srv.pos[name] = [fakehost.REPLICA_FEET[0] + shift, fakehost.REPLICA_FEET[1], fakehost.REPLICA_FEET[2]]
         cells = list(srv.player_blocks) + (sorted(srv.replica) if "replica-to-host" in self.bugs else [])
         if cells:  # the resync after `blocks reset:true`: every player block (a bug adds the replica)
@@ -1087,7 +1098,7 @@ def test_replica_scenario_passes_against_an_ideal_server(tmp_path):
     rep = run_scenario(sim, "replica")
     assert rep.ok, failed(rep)
     labels = [label for label, _, _ in rep.checks]
-    assert len(labels) == 25 and sum(label.startswith("the clock and weather follow Cyberpunk") for label in labels) == 4
+    assert len(labels) == 26 and sum(label.startswith("the clock and weather follow Cyberpunk") for label in labels) == 4
     assert ("the clock and weather follow Cyberpunk: 23:00 rain (tick 17000)") in labels and sim.max_hosts == 1
 
 
@@ -1098,6 +1109,7 @@ def test_replica_scenario_passes_against_an_ideal_server(tmp_path):
     ("replica-leaves", {"the replica stays while the host is away"}),
     ("replica-to-host", {"the replica is host ground: it never comes back to the host as a player block", "the resync carries no replica block"}),
     ("daylight-runs", {"the daylight cycle is off: the time stands between two env messages"}),
+    ("no-wreck", {"the car V destroyed (`killed`) stays a wreck for about 5 s, then goes"}),
 ])
 def test_replica_scenario_notices_each_replica_bug(tmp_path, bug, expected):
     rep = run3(tmp_path, "replica", [bug])
@@ -1225,11 +1237,15 @@ def test_the_replica_helpers_read_the_answers_rcon_gives():
         def passes(self, command):
             return mpcheck.passed(self.rcon(command))
 
-    assert mpcheck.daytime(S({"time query daytime": "The time is 16500"})) == 16500 and mpcheck.daytime(S({})) is None
-    assert mpcheck.time_is(S({"time query daytime": "The time is 16520"}), 16500) and not mpcheck.time_is(S({"time query daytime": "The time is 17000"}), 16500)
+    clock = lambda n: S({"time query time": f"Clock minecraft:overworld is at {n} tick(s)"})  # noqa: E731  (26.3's commands.time.query.absolute)
+    assert mpcheck.daytime(clock(16500)) == 16500 and mpcheck.daytime(clock(3 * 24000 + 16500)) == 16500 and mpcheck.daytime(S({})) is None
+    assert mpcheck.daytime(S({"time query daytime": "The time is 16500"})) is None  # the invented command of before: 26.3 has none
+    assert mpcheck.time_is(clock(16520), 16500) and not mpcheck.time_is(clock(17000), 16500) and mpcheck.time_is(clock(24010), 23990)
+    assert mpcheck.ticks_apart(23990, 10) == 20 and mpcheck.ticks_apart(100, 100) == 0 and mpcheck.ticks_apart(0, 12000) == 12000
     pos = S({"data get entity CbGuest1 Pos": "CbGuest1 has the following entity data: [3.5d, 64.0d, -2.25d]"})
     assert mpcheck.player_pos(pos, "CbGuest1") == (3.5, 64.0, -2.25) and mpcheck.near_player(pos, "CbGuest1", (5.0, 64.0, -2.25), 2.0)
     assert not mpcheck.near_player(pos, "CbGuest1", (50.0, 64.0, 0.0), 2.0) and not mpcheck.near_player(pos, "Nobody", (0, 0, 0)) and mpcheck.player_pos(S({}), "x") is None
+    assert mpcheck.proxy_count(S({"execute if entity @e[type=cyberblock:proxy_human]": "Test passed. Count: 4"})) == 4  # 26.3's pass_count
     assert mpcheck.proxy_count(S({"execute if entity @e[type=cyberblock:proxy_human]": "Test passed, count: 4"})) == 4
     assert mpcheck.proxy_count(S({"execute if entity @e[type=cyberblock:proxy_human]": "Test passed"})) == 1 and mpcheck.proxy_count(S({})) == 0
     weather = S({'execute if predicate {condition:"minecraft:weather_check",raining:true}': "Test passed"})

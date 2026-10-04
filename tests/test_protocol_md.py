@@ -1077,8 +1077,9 @@ MP_RATES = {  # plan section 1.6: type -> (tokens per second, burst)
     **dict.fromkeys(("hstate", "state"), (10, 20)), **dict.fromkeys(("mobdmg", "pcells"), (30, 60)),
     **dict.fromkeys(("scaninfo", "hackresult", "hackspread"), (40, 80)), **dict.fromkeys(("killed", "unlead"), (10, 20)),
     "stats": (2, 4), "terrain": (30, 200), "hello": (1, 3), **dict.fromkeys(("devices", "devstate", "devresult"), (10, 40)),
-    "env": (2, 4), **dict.fromkeys(("vteleported", "parked"), (5, 10)),  # Phase 3 (3P proposal, section 1.6 names no rate for them)
+    "env": (2, 4), "vteleported": (2, 4),  # Phase 3, as 3E's RelayGuard (section 1.6 names no rate for them); `parked` waits for Phase 7
 }
+PHASE7_UP = {"parked"}  # an UP type the DLL builds from Phase 3 but the server relays only from Phase 7 (the hub): no rate row yet
 MP_PAYLOADS_EXPECTED = {  # plan section 1.3: id -> direction
     "hs": "C2S", "hs_ack": "S2C", "up": "C2S", "down": "S2C", "roster": "S2C", "perms": "C2S", "content": "S2C", "act": "C2S", "ui": "S2C",
 }
@@ -1208,7 +1209,7 @@ def test_mp_class_tables_cover_every_documented_type_of_the_wire():
 def test_mp_up_types_fit_the_envelope_and_all_have_a_rate_limit():
     up = {t for t, c in MP_CP_CLASSES.items() if c in ("UP", "BOTH")} | {"hstate"}
     assert all(len(t) <= 16 for t in up)  # `cyberblock:up` t is at most 16 characters
-    assert up <= set(rate_rows())
+    assert up - PHASE7_UP <= set(rate_rows()) and not PHASE7_UP & set(rate_rows())
 
 
 def test_mp_rate_limits_are_the_plan_table():
@@ -1489,23 +1490,32 @@ def p3_vteleport_ok(m) -> bool:
     return set(m) == {"t", "id", "p", "yaw", "why"} and whole(m["id"]) and vec3(m["p"]) and num(m["yaw"], -3e7, 3e7) and m["why"] in TELEPORT_WHY
 
 
+MAPTILE_MAX_TILES, MAPTILE_MAX_COORD, MAPTILE_BYTES = 32, 1 << 20, 4096 * 2  # 3R's NightCityMap and 3C's AtlasWire
+
+
 def maptile_request_ok(m) -> bool:
-    tiles = m["tiles"]
-    return (set(m) == {"id", "tiles"} and whole(m["id"]) and isinstance(tiles, list) and len(tiles) % 2 == 0 and 0 < len(tiles) <= 32
-            and all(whole(v, -100000, 100000) for v in tiles))
+    """{"tiles":[tx, tz, ...], "have":[v, ...]?}: 1..32 tiles, |c| <= 2^20, `have` parallel (one version 0..2^32-1 per tile); no id."""
+    tiles, have = m["tiles"], m.get("have", [])
+    return (set(m) <= {"tiles", "have"} and isinstance(tiles, list) and len(tiles) % 2 == 0 and 0 < len(tiles) <= 2 * MAPTILE_MAX_TILES
+            and all(whole(v, -MAPTILE_MAX_COORD, MAPTILE_MAX_COORD) for v in tiles)
+            and isinstance(have, list) and ("have" not in m or len(have) == len(tiles) // 2) and all(whole(v, 0, 2**32 - 1) for v in have))
 
 
 def maptile_tile_ok(m) -> bool:
-    import base64, zlib
-    if not (set(m) == {"id", "tx", "tz", "v", "cells"} and whole(m["id"]) and whole(m["tx"], -100000, 100000) and whole(m["tz"], -100000, 100000)
-            and whole(m["v"]) and isinstance(m["cells"], str)):
+    """{"tx", "tz", "v", "c"}: `v` the CRC32 of the 8192 raw bytes (never 0) with `c` their base64, or `v` 0 and no `c`."""
+    import base64, binascii, zlib
+    if not (set(m) <= {"tx", "tz", "v", "c"} and {"tx", "tz", "v"} <= set(m) and whole(m["tx"], -MAPTILE_MAX_COORD, MAPTILE_MAX_COORD)
+            and whole(m["tz"], -MAPTILE_MAX_COORD, MAPTILE_MAX_COORD) and whole(m["v"], 0, 2**32 - 1)):
         return False
-    if m["cells"] == "":
-        return True  # a tile the server does not have
+    if m["v"] == 0:
+        return "c" not in m  # the server knows nothing there
+    if not isinstance(m.get("c"), str):
+        return False
     try:
-        return len(zlib.decompress(base64.b64decode(m["cells"], validate=True))) == 4096 * 2
-    except (ValueError, zlib.error):
+        raw = base64.b64decode(m["c"], validate=True)
+    except (ValueError, binascii.Error):
         return False
+    return len(raw) == MAPTILE_BYTES and m["v"] == max(1, zlib.crc32(raw))
 
 
 P3_VALIDATORS = {"ground": p3_ground_ok, "unground": p3_unground_ok, "env": p3_env_ok, "vteleported": p3_vteleported_ok, "parked": p3_parked_ok,
@@ -1620,22 +1630,27 @@ def test_p3_validators_accept_the_limits_themselves():
 def test_p3_maptile_examples_are_valid_and_the_validators_reject_bad_ones():
     request, tiles = examples(P3_ACT_EXAMPLES), examples(P3_UI_EXAMPLES)
     assert len(request) == 1 and maptile_request_ok(request[0]) and len(tiles) == 2 and all(maptile_tile_ok(m) for m in tiles)
-    assert tiles[0]["id"] == request[0]["id"] and tiles[1]["cells"] == ""  # an unknown tile answers an empty `cells`
-    for bad in ({**request[0], "tiles": []}, {**request[0], "tiles": [1, 2, 3]}, {**request[0], "tiles": list(range(34))}, {**request[0], "id": -1},
-                {**request[0], "tiles": [0, 200000]}):
-        assert not maptile_request_ok(bad)
-    assert not maptile_request_ok({"id": 1, "tiles": [], "extra": 1}) and not maptile_request_ok({"id": 1, "tiles": [1, 2], "extra": 1})
-    for bad in ({**tiles[0], "cells": "not base64!"}, {**tiles[0], "cells": "AAAA"}, {**tiles[0], "v": -1}, {**tiles[0], "tx": 1.5}, {"id": 1}):
+    asked = list(zip(request[0]["tiles"][::2], request[0]["tiles"][1::2]))
+    assert all((m["tx"], m["tz"]) in asked for m in tiles) and tiles[1] == {"tx": 0, "tz": 0, "v": 0}  # an unknown tile: v 0, no c
+    assert maptile_request_ok({"tiles": [1, 2]})  # `have` is optional (all 0)
+    assert maptile_request_ok({"tiles": list(range(64)), "have": [2**32 - 1] * 32}) and maptile_request_ok({"tiles": [-(1 << 20), 1 << 20], "have": [0]})
+    for bad in ({**request[0], "tiles": [], "have": []}, {**request[0], "tiles": [1, 2, 3]}, {"tiles": list(range(66)), "have": [0] * 33},
+                {**request[0], "tiles": [0, (1 << 20) + 1, 0, 0, 0, 0]}, {**request[0], "tiles": [0, 1.5, 0, 0, 0, 0]}, {**request[0], "have": [0, 0]},
+                {**request[0], "have": [0, -1, 0]}, {**request[0], "have": [0, 2**32, 0]}, {**request[0], "id": 3}):
+        assert not maptile_request_ok(bad), bad
+    for bad in ({**tiles[0], "c": "not base64!"}, {**tiles[0], "c": "AAAA"}, {**tiles[0], "v": tiles[0]["v"] ^ 1}, {**tiles[0], "v": -1},
+                {**tiles[0], "tx": 1.5}, {k: v for k, v in tiles[0].items() if k != "c"}, {**tiles[1], "c": tiles[0]["c"]}, {**tiles[0], "id": 3},
+                {"tx": 0, "tz": 0}, {"tx": 0, "tz": (1 << 20) + 1, "v": 0}):
         try:
             ok = maptile_tile_ok(bad)
         except KeyError:
             ok = False
-        assert not ok
+        assert not ok, {k: v for k, v in bad.items() if k != "c"}
 
 
 def test_p3_the_tile_example_decodes_to_the_atlas_cell_format():
-    import base64, struct, zlib
-    cells = struct.unpack(">4096h", zlib.decompress(base64.b64decode(examples(P3_UI_EXAMPLES)[0]["cells"])))
+    import base64, struct
+    cells = struct.unpack(">4096h", base64.b64decode(examples(P3_UI_EXAMPLES)[0]["c"]))
     assert [c & 0xFFFF for c in cells[:8]] == [(64 + 4000 + 1) << 1] * 8
     assert cells[8] & 1 == 1 and (cells[8] & 0xFFFF) >> 1 == 60 + 4000 + 1 and cells[9:] == (0,) * 4087
 
@@ -1647,13 +1662,15 @@ def test_p3_rules_are_stated_in_the_document():
                    "CET lines B1 to B5", "cast again past it", "primary host", "06:00 is tick 0", "noon 6000", "second host never changes them",
                    "`rain` is rain", "`storm` is thunder", "exempt from the sanity radius", "`timeout` after 15 s", "`no ground`", "`blocked (<why>)`",
                    "fast-travel fallback", "locks saving, movement and camera", "never fatal", "bit 1 (replica)", "`terrain` is **BOTH**",
-                   "nightcity-map", "64 × 64 two-metre cells", "at most 16 tiles", "Flag for the integrator", "travels as `act`",
+                   "nightcity-map", "64 × 64 two-metre cells", "1 to 32 tiles", "64 tiles per second (burst 128)", "no request id", "the CRC32 of its 8192 bytes",
+                   "**absent when `v` is 0**", "is not sent again", "travels as `act`", "relays `parked` from Phase 7",
                    "the DLL answers exactly once with the same `id`", "DOWN to that host only"):
         assert phrase in text, f"{phrase!r} is not stated"
 
 
 def test_p3_new_up_types_have_rate_limits_and_class_rows():
-    assert rate_rows()["env"] == (2, 4) and rate_rows()["vteleported"] == rate_rows()["parked"] == (5, 10)
+    assert rate_rows()["env"] == rate_rows()["vteleported"] == (2, 4) and "parked" not in rate_rows()  # `parked` is relayed from Phase 7
+    assert "Flag for the integrator" not in section(P3_PAYLOADS)
     cp, mc = dict(class_rows(MP_CP)), dict(class_rows(MP_MC))
     assert cp["env"] == cp["vteleported"] == cp["parked"] == "UP" and mc["vteleport"] == mc["park"] == "DOWN"
 

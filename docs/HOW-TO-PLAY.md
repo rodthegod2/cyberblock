@@ -1046,7 +1046,9 @@ different: they are yours, they become collision in the hosts' Night City and ca
 
 **People and cars.** A guest sees the host's Night City **people and cars as figures** moving at real speed: a plain human
 figure for people, a box car for vehicles (hostile people get a red name tag; the full Night City look comes in a later phase).
-A car that is destroyed stays as a dark wreck for 5 seconds, a person who dies lies down for 3 seconds. The host does not see
+A car that V destroyed (shot, hit with a rocket or blown up after V damaged it) stays as a dark wreck for 5 seconds, a person
+who dies lies down for 3 seconds. A car that wrecks itself without V's help (it crashes into a wall on its own) just goes: the
+plugin reports only deaths of what V hurt. The host does not see
 them (the host sees the real ones). They exist only while their owner is playing.
 
 **Time of day and weather.** While a host is playing, the Minecraft world follows that host's Cyberpunk: **Cyberpunk's night is
@@ -1069,7 +1071,10 @@ region with coordinates (the server keeps the last 30 days).
 - 30 seconds between your requests; not into a match zone (a later phase); not while your V is held or in a vehicle.
 
 **More than one host.** A Phase 3 server allows **4 hosts at once** (`maxHosts` in `config/cyberblock/server.json`, default 4;
-a singleplayer or LAN world keeps one host). Each host's people, cars, hits and hacks stay with their own game even when two
+a singleplayer or LAN world keeps one host). The default 4 applies only to a `server.json` that the server writes new: the file
+is written with every value on the first start and kept after that, so **a server that ran an earlier version still says
+`"maxHosts": 1`**. Server owner: open `config/cyberblock/server.json`, set `"maxHosts": 4`, save and restart the server (the
+startup line then says `maxHosts 4`); until then a second linked player joins as a guest. Each host's people, cars, hits and hacks stay with their own game even when two
 hosts' ids collide, and where two hosts' streets overlap the first block placed wins.
 
 **The Apex server's world.** The dedicated server runs a **void world** (level type `cyberblock:nightcity`, level name

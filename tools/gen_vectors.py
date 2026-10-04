@@ -89,8 +89,9 @@ materials = {
     "neon_any": list(cbmath.NEON_ANY),
     "neon_any_code": cbmath.NEON_FIRST,
     "cases": [{"name": n, "code": cbmath.material_code(n)} for n in material_names],
-    "clock": [{"time": [h, m], "ticks": cbmath.env_ticks(h, m)} for h, m in ((6, 0), (12, 0), (18, 0), (0, 0), (22, 30), (5, 45), (23, 59), (0, 1))],
 }
+# The clock (3-E1) is its own top-level key: `materials` holds only the name table, which 3D's cb_tests reads key by key.
+clock = [{"time": [h, m], "ticks": cbmath.env_ticks(h, m)} for h, m in ((6, 0), (12, 0), (18, 0), (0, 0), (22, 30), (5, 45), (23, 59), (0, 1))]
 
 
 out = {
@@ -111,10 +112,11 @@ out = {
     "survey": [{"hit": list(h), "k": k, "cell": list(cbmath.survey_cell(*h, off(k)))} for k in pos_ks for h in hits + survey_hits],
     "survey_column": [{"cell": list(c), "cp": list(cbmath.survey_column(*c))} for c in survey_cells],
     "materials": materials,
+    "clock": clock,
 }
 Path("shared/vectors.json").write_text(json.dumps(out, indent=1), newline="\n")
 print(f"wrote {len(out['quat'])} quat, {len(out['down'])} down, {len(out['wall'])} wall, "
       f"{len(out['mc_pos'])} mc_pos, {len(out['mc_block'])} mc_block, {len(out['align'])} align, "
       f"{len(out['mc_yaw'])} mc_yaw, {len(out['mc_vel'])} mc_vel, {len(out['binds'])} binds, "
       f"{len(out['binds_apply'])} binds_apply, {len(out['survey'])} survey, {len(out['survey_column'])} survey_column, "
-      f"{len(materials['codes'])} material codes, {len(materials['cases'])} material cases")
+      f"{len(materials['codes'])} material codes, {len(materials['cases'])} material cases, {len(clock)} clock")

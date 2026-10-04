@@ -29,11 +29,11 @@ four hosts. Phases 4 and 5 of Wave B add their own sections next to this one; yo
    blocks in roughly the right colours, neon glowing (P3-1).
 2. **Quit Cyberpunk:** the replica stays. The guest builds a wall across the street. Start Cyberpunk again: the wall stops V and
    a toast lists it; `/cyberblock changes` too (P3-2).
-3. **The guest watches** people walking and cars driving at real speed; shoot a car, it leaves a dark wreck for 5 s (P3-3).
+3. **The guest watches** people walking and cars driving at real speed; V destroys a car (a rocket), it leaves a dark wreck for 5 s (P3-3).
 4. **Wait for Cyberpunk night:** Minecraft is night too; rain in Cyberpunk, rain in Minecraft if the plugin can read it (P3-4).
 5. **`/cyberblock meetup <friend>`** (and the other way round): V appears at the friend's spot (P3-5).
 6. **Creative guest breaks a replica block:** it comes back in about 10 s, nothing changes in Night City (P3-6).
-7. **A second host** (only when you have one) plays at the same time (P3-7).
+7. **A second host** (only when you have one, and after `"maxHosts": 4` in the server's `server.json`) plays at the same time (P3-7).
 8. **As a guest, open the Atlas:** it shows what the host explored (P3-8).
 9. **Read the "which way" lines** and paste them to Claude (P3-9).
 10. **The web map** (only if you installed BlueMap; [docs/WEBMAP.md](WEBMAP.md)) (P3-10).
@@ -44,7 +44,7 @@ four hosts. Phases 4 and 5 of Wave B add their own sections next to this one; yo
 | Figures | proxies are visible for guests, moving at real speed; wrecks 5 s, bodies 3 s; none without their owner's session |
 | Environment | clock (`env`) and weather from the first host; Meet Up with `vteleport`/`vteleported`; `park` |
 | Offline Builds | the resync gives a returning host every block placed meanwhile, a toast and `/cyberblock changes` |
-| Hosts | `maxHosts` 4; the shared Night City map (`terrain` both ways) |
+| Hosts | `maxHosts` 4 for a newly written `server.json` (an existing one keeps its value: set it to 4 by hand); the shared Night City map (`terrain` both ways) |
 | Tools | `tools.mpcheck replica twohosts2 meetup` (automatic checks with fake hosts); the docs and the web map page |
 
 ### P3-1. The replica from two streets
@@ -67,8 +67,9 @@ four hosts. Phases 4 and 5 of Wave B add their own sections next to this one; yo
 ### P3-3. Figures
 1. As the guest, stand where the host walks: people appear as plain human figures walking along the streets, cars as boxes
    driving past, **at the speed they have in Cyberpunk**, no jumping; a hostile person has a red name tag.
-2. The host destroys a car (a rocket, or driving it into a wall): a dark wreck stays about 5 s, then goes. A dead person lies
-   down about 3 s.
+2. V destroys a car that V damaged (a rocket, or shoot it until it blows up): a dark wreck stays about 5 s, then goes. A car
+   that crashes into a wall on its own leaves no wreck (the plugin reports only deaths of what V hurt), so do not use that one.
+   A dead person lies down about 3 s.
 3. The host quits Cyberpunk: the figures are gone (the replica stays).
 
 ### P3-4. Time and weather
@@ -94,6 +95,10 @@ four hosts. Phases 4 and 5 of Wave B add their own sections next to this one; yo
    reports the spot again.
 
 ### P3-7. Two hosts (when available)
+**First** (the server owner, once): the server wrote `config/cyberblock/server.json` on its first start and keeps it, so a server
+that ran before Phase 3 still has `"maxHosts": 1` (the new default 4 is only for a new file). Set `"maxHosts": 4` in that file,
+save and restart the server; its startup line must say `maxHosts 4`. Without this the second player silently joins as a guest.
+
 A second player with Cyberpunk joins as a host while you are one: both see their own Night City, both streets are in the
 replica, a hit on one host's NPC never reaches the other host (even if their ids collide), time and weather stay the first
 host's. `tools.mpcheck twohosts2` already checks this with fake hosts.

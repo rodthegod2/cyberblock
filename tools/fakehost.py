@@ -71,7 +71,7 @@ Phase 3 mode (shared/protocol.md "Phase 3"; combinable with the layer flags exce
              asphalt road, sidewalks, brick, concrete, tile buildings, a glass shopfront, three neon signs, a metal pole, a puddle, ground
              (`ground` with `m` codes, in chunks of 64 quadruples, sent when the client makes the DLL the host). `npcs` carries four
              figures at real speed (a hostile runner at 4 m/s and a walker at 1.4 m/s on the sidewalks, a car at 8 m/s on the road and a
-             second car that stands until 6 s and is then gone: a destroyed car); `env` steps every 10 s through 22:30 clear, 23:00 rain,
+             second car that V destroys at 6 s: `killed` for it, then it is gone from the list); `env` steps every 10 s through 22:30 clear, 23:00 rain,
              23:30 storm, 05:45 clear (and again). Scripted: at 12 s `unground seen:true` of one scaffold column, at 12.5 s a plain
              `unground` of another (it only left the radius), at 14 s `clear` and the whole ground again without both. Every `vteleport` is
              answered 2 s later with `vteleported ok:true` (V is there from then on) and every `park` with `parked`.
@@ -450,7 +450,9 @@ REPLICA_YAW = -90.0
 ENV_CYCLE = ((10.0, (22, 30), "clear"), (10.0, (23, 0), "rain"), (10.0, (23, 30), "storm"), (10.0, (5, 45), "clear"))  # seconds, time, weather; repeats
 ENV_SECOND_WEATHER = "fog"  # --env-hours: a second host's sky is always fog
 TELEPORT_DELAY = 2.0  # seconds before `vteleported ok` answers a `vteleport`
-WRECK_AT = 6.0  # seconds after which the standing car is gone from `npcs` (destroyed: the guest sees a wreck)
+WRECK_AT = 6.0  # seconds after which the standing car is gone from `npcs`; `killed` (V destroyed it) comes just before, so the guest
+# sees a wreck for 5 s: the server (3F's ProxyManager) makes a wreck only from `killed`, a proxy that just leaves the list is removed
+KILL_LEAD = 0.05  # seconds between the car's `killed` and the first `npcs` without it
 WALK_X, RUN_X, CAR_X = 1.4, 4.0, 8.0  # m/s along the street
 TELEPORT_WHYS = ("meetup", "holo", "hub_exit")
 
@@ -540,7 +542,7 @@ def loop_x(start: float, speed: float, t: float) -> float:
 
 def replica_npcs(t: float, shift: int = 0, ids_from: int | None = None) -> dict:
     """The `npcs` list at `t` seconds (unscaled): a runner (hostile) and a walker on the sidewalks, a car driving along the road and
-    a second car that stands until WRECK_AT and is then gone from the list (a destroyed car)."""
+    a second car that stands until WRECK_AT and is then gone from the list (V destroyed it: replica_killed comes just before)."""
     feet = SLAB_Y + 1.0
     runner, walker, car, wreck = replica_ids(ids_from)
     out = [
@@ -551,6 +553,11 @@ def replica_npcs(t: float, shift: int = 0, ids_from: int | None = None) -> dict:
     if t < WRECK_AT:
         out.append({"id": wreck, "p": [-5.5 + shift, feet, -0.5], "yaw": 0.0, "kind": "vehicle", "hostile": False})
     return {"t": "npcs", "list": out}
+
+
+def replica_killed(ids_from: int | None = None) -> dict:
+    """The `killed` of the standing car (sent at WRECK_AT - KILL_LEAD): V destroyed it, so the server leaves a wreck for 5 s."""
+    return {"t": "killed", "target": replica_ids(ids_from)[3], "kind": "vehicle", "hostile": False}
 
 
 def env_index(t: float) -> int:
@@ -661,9 +668,10 @@ class Cyberpunk:
         return sorted(((t * SCRIPT_SCALE, m) for t, m in events), key=lambda e: e[0])
 
     def replica_script(self) -> list[tuple[float, dict]]:
-        """--replica: the first scaffold is observed empty (`unground seen:true`), the second only leaves the radius (`unground`), then
-        `clear` and the whole ground again without the first (the DLL starts over after a `clear`; the server keeps its replica)."""
-        events = [(SEEN_AT, unground_message(*SCAFFOLD_SEEN, self.shift)), (LEFT_AT, unground_message(*SCAFFOLD_LEFT, self.shift, seen=False)),
+        """--replica: V destroys the standing car (`killed`, just before it leaves `npcs`); the first scaffold is observed empty
+        (`unground seen:true`), the second only leaves the radius (`unground`), then `clear` and the whole ground again without the
+        first (the DLL starts over after a `clear`; the server keeps its replica)."""
+        events = [(WRECK_AT - KILL_LEAD, replica_killed(self.ids_from)), (SEEN_AT, unground_message(*SCAFFOLD_SEEN, self.shift)), (LEFT_AT, unground_message(*SCAFFOLD_LEFT, self.shift, seen=False)),
                   (CLEAR_AT, {"t": "clear"})]
         events += [(CLEAR_AT + 0.01 * (i + 1), m) for i, m in enumerate(replica_ground(self.shift, without=[SCAFFOLD_SEEN, SCAFFOLD_LEFT]))]
         return events

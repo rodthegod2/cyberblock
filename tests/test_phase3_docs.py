@@ -115,3 +115,18 @@ def test_the_phase_3_docs_hold_no_private_values():
     for name, text in (("HOW-TO-PLAY section", section_of(GUIDE, GUIDE_HEADING)), ("WEBMAP", WEBMAP), ("descopes", DESCOPES), ("Re-test", section_of(TESTING, RETEST_HEADING))):
         assert not re.search(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/]", text), f"{name}: a drive-letter path"
         assert not re.search(r"APEX_FTP_PASS\s*=|ftp://|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", text), f"{name}: a secret or an address"
+
+
+def test_an_existing_server_json_keeps_its_max_hosts_and_the_docs_say_how_to_raise_it():
+    """ServerConfig writes every value on the first start and keeps the file, so the live server still says "maxHosts": 1."""
+    guide = flat(section_of(GUIDE, GUIDE_HEADING))
+    assert 'still says `"maxHosts": 1`' in guide and 'set `"maxHosts": 4`' in guide and "restart the server" in guide
+    p37 = flat(section_of(TESTING, "### P3-7. Two hosts (when available)"))
+    assert 'Set `"maxHosts": 4`' in p37 and "must say `maxHosts 4`" in p37 and "silently joins as a guest" in p37
+
+
+def test_the_wreck_is_promised_only_for_a_car_v_damaged():
+    """3F makes a wreck only from `killed`, and the plugin sends `killed` only for what V hurt."""
+    guide, p33 = flat(section_of(GUIDE, GUIDE_HEADING)), flat(section_of(TESTING, "### P3-3. Figures"))
+    assert "A car that V destroyed" in guide and "crashes into a wall on its own) just goes" in guide
+    assert "V destroys a car that V damaged" in p33 and "leaves no wreck" in p33 and "driving it into a wall" not in p33
