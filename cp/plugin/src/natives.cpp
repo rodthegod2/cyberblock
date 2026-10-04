@@ -13,6 +13,7 @@
 #include "world.hpp"
 #include <RED4ext/RED4ext.hpp>
 #include <RED4ext/Scripting/Natives/Generated/Vector4.hpp>
+#include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -42,6 +43,10 @@ namespace
 		int groundEpoch = 0; // the server session `probes` was built for (world::ground_epoch, megaplan 1-H1)
 		cb::ProbeSet probes;
 		std::optional<cb::Vec3> lastCenter;
+		// Phase 3: the codes of the last Cyberblock_SubmitProbeMaterials (down, wall), for the next SubmitProbes only
+		std::optional<std::pair<std::vector<int>, std::vector<int>>> pendingMaterials;
+		cb::MaterialCache materials;
+		int materialPath = -1; // which path the last probe tick took: -1 none yet, 0 Minecraft's heuristic, 1 the scripts
 	};
 
 	/// The current ground alignment as an offset in metres (Minecraft y = Cyberpunk z - off).
@@ -215,6 +220,57 @@ namespace
 			restart_ground();
 	}
 
+	/// The `ground.m` code of a material or mesh appearance name; an unknown name is logged the first time. g_lock held.
+	int material_of(RED4ext::CName name)
+	{
+		if (name.IsNone())
+			return 0;
+		if (const auto code = g_mashup.materials.find(name.hash))
+			return *code;
+		const char *text = name.ToString();
+		bool firstUnknown = false;
+		const int code = g_mashup.materials.add(name.hash, text ? text : "", firstUnknown);
+		if (firstUnknown)
+			cb::log::info("materials: unknown name %s -> 0", text);
+		return code;
+	}
+
+	/// Logs which material path the probe ticks take when it changes (the first 10 changes: it should not flap).
+	void log_material_path(int path)
+	{
+		static int changes = 0;
+		if (std::exchange(g_mashup.materialPath, path) == path || changes++ >= 10)
+			return;
+		if (path == 1)
+			cb::log::info("materials: path scripts (Cyberblock_SubmitProbeMaterials each tick; ground.m sent, CET B1-B5 values)");
+		else
+			cb::log::info("materials: path heuristic (no materials from the scripts; ground.m left out, Minecraft's "
+						  "material_palette heuristic applies: fallback b)");
+	}
+
+	// Cyberblock_SubmitProbeMaterials(down: array<CName>, wall: array<CName>) -> Void (megaplan section 1.8 amendment
+	// item 1): one material or mesh appearance name per down and wall hit of the Cyberblock_SubmitProbes that follows in
+	// the same tick (n"" when neither is known). Mapped to `ground.m` codes through the fixed table (probes.hpp).
+	void SubmitProbeMaterials(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		RED4ext::DynArray<RED4ext::CName> down;
+		RED4ext::DynArray<RED4ext::CName> wall;
+		RED4ext::GetParameter(frame, &down);
+		RED4ext::GetParameter(frame, &wall);
+		++frame->code;
+
+		std::lock_guard<std::mutex> lock(g_lock);
+		const auto codes = [](const RED4ext::DynArray<RED4ext::CName> &names)
+		{
+			std::vector<int> out;
+			out.reserve(names.Size());
+			for (const RED4ext::CName &name : names)
+				out.push_back(material_of(name));
+			return out;
+		};
+		g_mashup.pendingMaterials.emplace(codes(down), codes(wall));
+	}
+
 	// Cyberblock_SubmitProbes(center: Vector4, downHits: array<Vector4>, wallHits: array<Vector4>, radius: Float)
 	void SubmitProbes(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
@@ -229,6 +285,8 @@ namespace
 		++frame->code;
 
 		std::lock_guard<std::mutex> lock(g_lock);
+		// the materials belong to this tick only, whatever happens to it
+		const auto pending = std::exchange(g_mashup.pendingMaterials, std::nullopt);
 		if (!g_mashup.active || !cb::link().linked())
 			return;
 		if (g_mashup.session != cb::link().session())
@@ -254,12 +312,143 @@ namespace
 			restart_ground();
 		g_mashup.lastCenter = feet;
 
-		const cb::Delta delta =
-			g_mashup.probes.submit(feet, to_vec3(downHits), to_vec3(wallHits), radius, cb::world::level_offset(levelK));
+		std::optional<cb::ProbeMaterials> materials;
+		if (pending && pending->first.size() == downHits.Size() && pending->second.size() == wallHits.Size())
+			materials = cb::ProbeMaterials{pending->first, pending->second};
+		else if (pending)
+		{
+			static bool warned = false;
+			if (!std::exchange(warned, true))
+				cb::log::warn("Cyberblock_SubmitProbeMaterials: %zu down / %zu wall names for %u down / %u wall hits; ground.m "
+							  "left out for that tick (logged once)",
+							  pending->first.size(), pending->second.size(), downHits.Size(), wallHits.Size());
+		}
+		log_material_path(materials ? 1 : 0);
+
+		const cb::Delta delta = g_mashup.probes.submit(feet, to_vec3(downHits), to_vec3(wallHits), radius,
+													   cb::world::level_offset(levelK), cb::steady_seconds(),
+													   materials ? &*materials : nullptr);
+		// Phase 3 (megaplan section 1.9): cells observed empty carry `seen` (the replica drops them); cells that only
+		// left the radius do not (the replica keeps them)
+		if (!delta.seen.empty())
+			cb::link().send({{"t", "unground"}, {"c", delta.seen}, {"seen", true}});
 		if (!delta.remove.empty())
 			cb::link().send({{"t", "unground"}, {"c", delta.remove}});
 		if (!delta.add.empty())
-			cb::link().send({{"t", "ground"}, {"c", delta.add}});
+		{
+			nlohmann::json ground{{"t", "ground"}, {"c", delta.add}};
+			if (!delta.materials.empty())
+				ground["m"] = delta.materials;
+			cb::link().send(ground);
+		}
+	}
+
+	// ---- Phase 3 (megaplan 2026-10-04 sections 1.8 and 1.9 with the Phase 0 amendment, task 3-D1) ---------------------
+
+	std::string name_text(RED4ext::CName name)
+	{
+		if (name.IsNone())
+			return {};
+		const char *text = name.ToString();
+		return text ? text : "";
+	}
+
+	/// The `env` gate (1 Hz for the clock, a weather change at once, never the same message twice) and what it was
+	/// last reset for; touched only under g_envLock.
+	std::mutex g_envLock;
+	cb::ui::Gate g_envGate;
+	int g_envSession = -1, g_envEpoch = -1;
+	std::vector<std::string> g_unmappedWeather; // presets already logged as unmapped (at most 64)
+
+	// Cyberblock_SetEnv(hour: Int32, minute: Int32, weather: CName) -> Void (Env.reds, 1 Hz): the game time and the
+	// weather preset name (Codeware WeatherSystem.GetWeatherState().name; n"" when it cannot be read) as `env`.
+	void SetEnv(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		int32_t hour = 0, minute = 0;
+		RED4ext::CName weather;
+		RED4ext::GetParameter(frame, &hour);
+		RED4ext::GetParameter(frame, &minute);
+		RED4ext::GetParameter(frame, &weather);
+		++frame->code;
+		if (!cb::natives::active || !cb::link().linked())
+			return;
+
+		const std::string preset = name_text(weather);
+		bool known = true;
+		const auto message = cb::world::make_env(hour, minute, preset, &known);
+		std::lock_guard<std::mutex> lock(g_envLock);
+		if (!message)
+		{
+			static bool warned = false;
+			if (!std::exchange(warned, true))
+				cb::log::warn("Cyberblock_SetEnv: time %d:%d is not a clock time; dropping it (logged once)", hour, minute);
+			return;
+		}
+		if (!known && g_unmappedWeather.size() < 64 && std::ranges::find(g_unmappedWeather, preset) == g_unmappedWeather.end())
+		{
+			g_unmappedWeather.push_back(preset);
+			cb::log::info("env: weather preset %s is not mapped -> other", preset.c_str());
+		}
+		// a Minecraft that (re)connected, or a new server session, has not had the current values
+		const int session = cb::link().session(), epoch = cb::world::ground_epoch();
+		if (std::exchange(g_envSession, session) != session || std::exchange(g_envEpoch, epoch) != epoch)
+			g_envGate.reset();
+		static bool first = true;
+		const std::string weatherOut = (*message)["weather"];
+		if (!g_envGate.admit(message->dump(), weatherOut, cb::steady_seconds(), 1.0))
+			return;
+		cb::link().send(*message);
+		if (std::exchange(first, false))
+			cb::log::info("env: path scripts (time %02d:%02d, weather %s -> %s)%s", hour, minute,
+						  preset.empty() ? "unreadable" : preset.c_str(), weatherOut.c_str(),
+						  preset.empty() ? ": weather is 'other' (fallback: no weather preset name)" : "");
+	}
+
+	/// V's feet now (Cyberpunk space) through the game's script functions, as camera.cpp reads them; nullopt without V.
+	std::optional<cb::Vec3> player_feet()
+	{
+		RED4ext::ScriptGameInstance game;
+		RED4ext::Handle<RED4ext::IScriptable> player;
+		if (!RED4ext::ExecuteGlobalFunction("GetPlayer;GameInstance", &player, game) || !player)
+			return std::nullopt;
+		RED4ext::CClass *entity = RED4ext::CRTTISystem::Get()->GetClass("entEntity");
+		RED4ext::CBaseFunction *position = entity != nullptr ? entity->GetFunction("GetWorldPosition") : nullptr;
+		RED4ext::Vector4 feet;
+		RED4ext::StackArgs_t none;
+		if (position == nullptr || !RED4ext::ExecuteFunction(player.GetPtr(), position, &feet, none))
+			return std::nullopt;
+		return cb::Vec3{feet.X, feet.Y, feet.Z};
+	}
+
+	// Cyberblock_TeleportDone(id: Int32, ok: Bool, reason: String) -> Void (Teleport.reds): the answer to event
+	// n"vteleport" `id`; reason "" (ok), "no ground", "timeout" or "blocked (<why>)". Sent as `vteleported` with V's feet
+	// now (the snapped position), or the last probe centre when V cannot be read.
+	void TeleportDone(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		int32_t id = 0;
+		bool ok = false;
+		RED4ext::CString reason;
+		RED4ext::GetParameter(frame, &id);
+		RED4ext::GetParameter(frame, &ok);
+		RED4ext::GetParameter(frame, &reason);
+		++frame->code;
+
+		std::optional<cb::Vec3> feet = player_feet();
+		if (!feet)
+		{
+			std::lock_guard<std::mutex> lock(g_lock);
+			feet = g_mashup.lastCenter;
+		}
+		static bool warned = false;
+		const auto message =
+			cb::world::make_vteleported(id, ok, reason.c_str(), feet.value_or(cb::Vec3{NAN, NAN, NAN}), level_offset());
+		if (message)
+			cb::log::info("vteleported: %d %s%s%s at mc (%.2f, %.2f, %.2f)", id, ok ? "ok" : "failed", ok ? "" : ": ",
+						  ok ? "" : (*message)["reason"].get<std::string>().c_str(), (*message)["p"][0].get<double>(),
+						  (*message)["p"][1].get<double>(), (*message)["p"][2].get<double>());
+		send_or_warn(message, warned, "Cyberblock_TeleportDone",
+					 "a negative id, no position for V, or a reason that is not \"\", \"no ground\", \"timeout\" or "
+					 "\"blocked (<why>)\"");
 	}
 
 	// Cyberblock_SetAim(distance: Float) -> Void: metres from the camera to the first Night City surface under the
@@ -357,11 +546,22 @@ namespace
 	// n"effect", n"hack", n"scan", n"perk", n"perkfx", n"cyber" or n"cyberfx" (re-test 2: one `cyber` per entry of a
 	// `cyberware` message, kept while not Active like n"perk"; n"cyberfx" is dropped while not Active), n"prefs" (Phase Q:
 	// Minecraft's camera prefs arrived, kept while not Active; Cyberblock_EventFlag is `stepup`), n"session" (Phase 1: the
-	// server's verdict on this host changed; kept while not Active); n"" (the empty CName, hash 0) when there is none.
+	// server's verdict on this host changed; kept while not Active), n"vteleport" (Phase 3: move V; EventPos the target
+	// feet, EventAmount the yaw, EventId the request id, EventName why; kept while not Active: Cyberblock_TeleportDone
+	// answers it), n"park" (Phase 3: EventFlag on; kept while not Active); n"" (the empty CName, hash 0) when there is none.
 	void NextEvent(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
 	{
 		++frame->code;
 		const cb::world::EventKind kind = cb::world::events().next();
+		if (kind == cb::world::EventKind::VTeleport || kind == cb::world::EventKind::Park)
+		{
+			const cb::world::Event e = cb::world::events().current();
+			if (kind == cb::world::EventKind::VTeleport)
+				cb::log::info("vteleport: %d (%s) to cp (%.2f, %.2f, %.2f) handed to the scripts", e.id, e.name.c_str(), e.pos.x,
+							  e.pos.y, e.pos.z);
+			else
+				cb::log::info("park: %s handed to the scripts", e.flag ? "on" : "off");
+		}
 		if (out)
 			*out = RED4ext::CName(cb::world::event_name(kind)); // "" gives hash 0
 	}
@@ -399,7 +599,8 @@ namespace
 			*out = to_vector4(cb::world::events().current().vector, 0.0f);
 	}
 
-	// Cyberblock_EventFlag() -> Bool: whether the explosion burns | prefs: the step-up assist is on (world.hpp Event::flag).
+	// Cyberblock_EventFlag() -> Bool: whether the explosion burns | prefs: the step-up assist is on | park: on (world.hpp
+	// Event::flag).
 	void EventFlag(IScriptable *, CStackFrame *frame, bool *out, int64_t)
 	{
 		++frame->code;
@@ -408,7 +609,8 @@ namespace
 	}
 
 	// Cyberblock_EventName() -> CName: the effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id |
-	// session state (n"none", n"host", n"guest", n"refused"); n"" for the other kinds.
+	// session state (n"none", n"host", n"guest", n"refused") | vteleport why (n"meetup", n"holo", n"hub_exit"); n"" for the
+	// other kinds.
 	void EventName(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
 	{
 		++frame->code;
@@ -425,7 +627,8 @@ namespace
 			*out = float(cb::world::events().current().extra);
 	}
 
-	// Cyberblock_EventId() -> Int32: a hit's mob id (-1 when no mob dealt it) | a hack or scan request id; 0 otherwise.
+	// Cyberblock_EventId() -> Int32: a hit's mob id (-1 when no mob dealt it) | a hack, scan or vteleport request id; 0
+	// otherwise.
 	void EventId(IScriptable *, CStackFrame *frame, int32_t *out, int64_t)
 	{
 		++frame->code;
@@ -942,13 +1145,21 @@ namespace
 			cb::log::info("phone: T goes to %s", open ? "Cyberpunk (a call or a message waits)" : "Minecraft again");
 	}
 
-	// Cyberblock_Log(msg: String) -> Void
+	// Cyberblock_Log(msg: String) -> Void. Phase 3: Park.reds's result lines ("park: on (...)", "park: on refused (<why>)",
+	// "park: off (...)") are also Minecraft's `parked` answer; section 1.8 names no native for it (world::parked_from_log).
 	void Log(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
 		RED4ext::CString message;
 		RED4ext::GetParameter(frame, &message);
 		++frame->code;
 		cb::log::info("script: %s", message.c_str());
+		if (const auto parked = cb::world::parked_from_log(message.c_str()); parked && cb::link().linked())
+		{
+			cb::link().send(*parked);
+			cb::log::info("parked: on %s ok %s%s%s", (*parked)["on"].get<bool>() ? "true" : "false",
+						  (*parked)["ok"].get<bool>() ? "true" : "false", (*parked)["ok"].get<bool>() ? "" : " ",
+						  (*parked)["reason"].get<std::string>().c_str());
+		}
 	}
 
 }
@@ -986,6 +1197,11 @@ namespace cb::natives
 		add(rtti, "Cyberblock_SetActive", &SetActive, nullptr, {{"Bool", "active"}, {"Bool", "inVehicle"}});
 		add(rtti, "Cyberblock_SubmitProbes", &SubmitProbes, nullptr,
 			{{"Vector4", "center"}, {"array:Vector4", "downHits"}, {"array:Vector4", "wallHits"}, {"Float", "radius"}});
+		add(rtti, "Cyberblock_SubmitProbeMaterials", &SubmitProbeMaterials, nullptr,
+			{{"array:CName", "down"}, {"array:CName", "wall"}});
+		add(rtti, "Cyberblock_SetEnv", &SetEnv, nullptr, {{"Int32", "hour"}, {"Int32", "minute"}, {"CName", "weather"}});
+		add(rtti, "Cyberblock_TeleportDone", &TeleportDone, nullptr, {{"Int32", "id"}, {"Bool", "ok"}, {"String", "reason"}});
+		log::info("materials: name rule of %zu rules (tools/cbmath.py MATERIAL_ORDER)", material_order().size());
 		add(rtti, "Cyberblock_SetAim", &SetAim, nullptr, {{"Float", "distance"}});
 		add(rtti, "Cyberblock_Damage", &Damage, nullptr,
 			{{"Float", "frac"}, {"CName", "kind"}, {"Vector4", "from"}, {"Bool", "hasFrom"}});

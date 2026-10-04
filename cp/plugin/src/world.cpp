@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <iterator>
 #include <utility>
@@ -342,6 +343,31 @@ namespace
 		return e;
 	}
 
+	/// Phase 3: {"t":"vteleport","id","p":[x,y,z],"yaw","why"}: `p` (Minecraft feet) through the same conversion as
+	/// `teleport`, `yaw` as a Cyberpunk yaw, `why` one of kVTeleportWhy as the event's name.
+	Event parse_vteleport(const json &m, double off)
+	{
+		Event e;
+		e.kind = EventKind::VTeleport;
+		e.id = integer(m, "id", 0.0, kMaxRequestId);
+		e.pos = cp_triple(m, "p", off);
+		e.amount = cb::mc_yaw_to_cp_yaw(number(m, "yaw", -kMaxCoord, kMaxCoord));
+		e.name = one_of(m, "why", cb::world::kVTeleportWhy);
+		return e;
+	}
+
+	/// Phase 3: {"t":"park","on":bool}: the event's flag.
+	Event parse_park(const json &m)
+	{
+		const auto on = m.find("on");
+		if (on == m.end() || !on->is_boolean())
+			throw Bad{"on is missing or not a bool"};
+		Event e;
+		e.kind = EventKind::Park;
+		e.flag = on->get<bool>();
+		return e;
+	}
+
 	/// The kinds that are kept while the mashup is not Active (see EventQueue::set_active); every other kind is transient.
 	bool kept_while_inactive(EventKind kind)
 	{
@@ -356,6 +382,8 @@ namespace
 		case EventKind::Scan:
 		case EventKind::Hack:
 		case EventKind::Session: // the cleanup must happen whatever the state
+		case EventKind::VTeleport: // the server waits for `vteleported`: the scripts answer (or refuse) whatever the state
+		case EventKind::Park:      // likewise `parked`
 			return true;
 		default:
 			return false;
@@ -394,6 +422,8 @@ namespace cb::world
 		case EventKind::CyberFx: return "cyberfx";
 		case EventKind::Prefs: return "prefs";
 		case EventKind::Session: return "session";
+		case EventKind::VTeleport: return "vteleport";
+		case EventKind::Park: return "park";
 		case EventKind::None: break;
 		}
 		return "";
@@ -442,6 +472,10 @@ namespace cb::world
 				out.events.push_back(parse_perkfx(message));
 			else if (t == "cyberfx")
 				out.events.push_back(parse_cyberfx(message));
+			else if (t == "vteleport")
+				out.events.push_back(parse_vteleport(message, off));
+			else if (t == "park")
+				out.events.push_back(parse_park(message));
 			else
 				return out; // another layer's message
 			out.status = Parsed::Status::Event;
@@ -1050,5 +1084,95 @@ namespace cb::world
 	bool take_session_cleanup()
 	{
 		return g_sessionCleanup.exchange(false);
+	}
+
+	// ---- Phase 3: env, vteleported, parked ----
+
+	const char *weather_from_preset(std::string_view preset, bool *known)
+	{
+		if (known)
+			*known = true;
+		if (preset.empty())
+			return "other";
+		std::string lower(preset);
+		std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+		// in order: "sandstorm" before "storm", rain words before fog and smog ("toxic_rain" is rain)
+		static constexpr std::pair<const char *, const char *> kWords[] = {
+			{"sandstorm", "sandstorm"}, {"storm", "storm"},  {"thunder", "storm"}, {"rain", "rain"},      {"fog", "fog"},
+			{"pollution", "smog"},      {"smog", "smog"},    {"toxic", "smog"},    {"cloud", "cloudy"},   {"overcast", "cloudy"},
+			{"sunny", "clear"},         {"clear", "clear"},  {"blue", "clear"}};
+		for (const auto &[word, weather] : kWords)
+			if (lower.find(word) != std::string::npos)
+				return weather;
+		if (known)
+			*known = false;
+		return "other";
+	}
+
+	std::optional<json> make_env(int32_t hour, int32_t minute, std::string_view preset, bool *known)
+	{
+		if (hour < 0 || hour > 23 || minute < 0 || minute > 59)
+			return std::nullopt;
+		return json{{"t", "env"}, {"time", {hour, minute}}, {"weather", weather_from_preset(preset, known)}};
+	}
+
+	bool valid_teleport_reason(std::string_view reason)
+	{
+		if (reason.size() > kMaxTextBytes ||
+			std::any_of(reason.begin(), reason.end(), [](char c) { return static_cast<unsigned char>(c) < 0x20 || c == 0x7f; }))
+			return false;
+		constexpr std::string_view kOpen = "blocked (";
+		if (reason.starts_with(kOpen))
+			return reason.size() > kOpen.size() + 1 && reason.back() == ')';
+		return reason.empty() || reason == "no ground" || reason == "timeout";
+	}
+
+	/// The reason a `vteleported` / `parked` carries: "" when ok, a too long "blocked (<why>)" shortened to fit; nullopt
+	/// when it breaks the contract.
+	static std::optional<std::string> answer_reason(bool ok, std::string_view reason)
+	{
+		if (ok)
+			return std::string();
+		constexpr std::string_view kOpen = "blocked (";
+		std::string out(reason);
+		if (reason.size() > kMaxTextBytes && reason.starts_with(kOpen) && reason.ends_with(')'))
+			out = std::string(kOpen) +
+				  wire::truncate_utf8(reason.substr(kOpen.size(), reason.size() - kOpen.size() - 1), kMaxTextBytes - kOpen.size() - 1) +
+				  ")";
+		if (out.empty() || !valid_teleport_reason(out))
+			return std::nullopt;
+		return out;
+	}
+
+	std::optional<json> make_vteleported(int32_t id, bool ok, std::string_view reason, Vec3 feetCp, double off)
+	{
+		const auto why = answer_reason(ok, reason);
+		if (id < 0 || !finite(feetCp) || !why)
+			return std::nullopt;
+		return json{{"t", "vteleported"},
+					{"id", id},
+					{"ok", ok},
+					{"reason", *why},
+					{"p", triple_json(cp_to_mc_pos(feetCp.x, feetCp.y, feetCp.z, off))}};
+	}
+
+	std::optional<json> make_parked(bool on, bool ok, std::string_view reason)
+	{
+		const auto why = answer_reason(ok, reason);
+		if (!why)
+			return std::nullopt;
+		return json{{"t", "parked"}, {"on", on}, {"ok", ok}, {"reason", *why}};
+	}
+
+	std::optional<json> parked_from_log(std::string_view line)
+	{
+		constexpr std::string_view kRefused = "park: on refused (", kOn = "park: on (", kOff = "park: off (";
+		if (line.starts_with(kRefused) && line.ends_with(')'))
+			return make_parked(true, false, "blocked (" + std::string(line.substr(kRefused.size())));
+		if (line.starts_with(kOn) && line.ends_with(')'))
+			return make_parked(true, true, "");
+		if (line.starts_with(kOff) && line.ends_with(')'))
+			return make_parked(false, true, "");
+		return std::nullopt;
 	}
 }
