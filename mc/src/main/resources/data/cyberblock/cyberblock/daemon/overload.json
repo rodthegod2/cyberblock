@@ -1,0 +1,35 @@
+{
+	"schema": 1,
+	"title_key": "cyberblock.daemon.overload",
+	"text_key": "cyberblock.daemon.overload.text",
+	"sequence": [
+		"FF",
+		"7A",
+		"E9"
+	],
+	"kinds": [
+		"terminal",
+		"light",
+		"vending",
+		"turret",
+		"screen",
+		"traffic"
+	],
+	"action": "overload",
+	"tiers": [
+		{
+			"seconds": 3,
+			"radius": 5
+		},
+		{
+			"seconds": 5,
+			"radius": 8
+		},
+		{
+			"seconds": 8,
+			"radius": 12
+		}
+	],
+	"weight": 3,
+	"min_security": 2
+}

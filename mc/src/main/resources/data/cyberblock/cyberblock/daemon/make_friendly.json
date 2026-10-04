@@ -1,0 +1,33 @@
+{
+	"schema": 1,
+	"title_key": "cyberblock.daemon.make_friendly",
+	"text_key": "cyberblock.daemon.make_friendly.text",
+	"sequence": [
+		"FF",
+		"BD",
+		"E9",
+		"7A"
+	],
+	"kinds": [
+		"turret",
+		"camera",
+		"terminal"
+	],
+	"action": "make_friendly",
+	"tiers": [
+		{
+			"seconds": 30,
+			"radius": 10
+		},
+		{
+			"seconds": 60,
+			"radius": 16
+		},
+		{
+			"seconds": 120,
+			"radius": 26
+		}
+	],
+	"weight": 2,
+	"min_security": 3
+}

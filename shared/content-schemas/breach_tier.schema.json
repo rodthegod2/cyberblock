@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "breach_tier",
+  "description": "The `breach_tier` content kind (megaplan 1.7 and tasks 6-A1, 6-B1): how hard a Breach Protocol is, by the device's security level. `security` is 1 for an ordinary device, 2 for a secure one (device flag bit 2) and 3 for a hardened one (a secure and locked device, a Phase 8 player hack); one file per level, and a datapack file with the same id replaces it. `grid` is the side of the square code grid (5 to 7), `buffer` the number of slots the player may fill (4 to 8), `seconds` the timer, and `daemons_min` and `daemons_max` how many daemon sequences the generator tries to place (1 to 3; it never places one the buffer cannot hold, so a tight buffer may give fewer than the minimum, and every placed daemon is solvable). `firewall` holds exactly three steps, one per Firewall rank 1, 2 and 3 of the defending side's `firewall` implant (rank 0, no implant, changes nothing); each step is added to the base values: the grid grows (never past 7), the buffer, the timer shrink (never below 4 slots and 10 seconds) and the daemon range's upper end may grow by one (never past 3).",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "grid_add",
+        "buffer_add",
+        "seconds_add",
+        "daemons_add"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "grid_add": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "buffer_add": {
+          "type": "integer",
+          "minimum": -3,
+          "maximum": 0
+        },
+        "seconds_add": {
+          "type": "integer",
+          "minimum": -120,
+          "maximum": 0
+        },
+        "daemons_add": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    }
+  },
+  "type": "object",
+  "required": [
+    "schema",
+    "security",
+    "grid",
+    "buffer",
+    "seconds",
+    "daemons_min",
+    "daemons_max",
+    "firewall"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "#/$defs/id"
+    },
+    "security": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3
+    },
+    "grid": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 7
+    },
+    "buffer": {
+      "type": "integer",
+      "minimum": 4,
+      "maximum": 8
+    },
+    "seconds": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 300
+    },
+    "daemons_min": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3
+    },
+    "daemons_max": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3
+    },
+    "firewall": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    }
+  }
+}
