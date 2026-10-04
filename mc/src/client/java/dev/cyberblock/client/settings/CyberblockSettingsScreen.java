@@ -307,7 +307,7 @@ public final class CyberblockSettingsScreen extends Screen {
 			"Players type /login <password> once per world. The password is set by the server admin in server.json and is never shown"));
 		info.add(this.info("allow_hosts", "Hosting", w -> onOffText(w.allowHosts()), "Whether players may link a Cyberpunk game at all"));
 		info.add(this.info("hosts", "Hosts list", w -> w.hosts() == 0
-			? Component.translatableWithFallback("cyberblock.settings.world.hosts.anyone", "anyone allowed")
+			? Component.translatableWithFallback("cyberblock.settings.world.hosts.anyone", "not limited")
 			: Component.translatableWithFallback("cyberblock.settings.world.hosts.count", "%s names", w.hosts()), "Who may host; /cyberblock hosts add|remove"));
 		info.add(this.info("max_hosts", "Hosts at once", w -> Component.literal(Integer.toString(w.maxHosts())), "How many Cyberpunk games may be linked at once"));
 		info.add(this.info("require_mod", "Mod required", w -> onOffText(w.requireMod()), "Players without the Cyberblock mod are turned away"));
