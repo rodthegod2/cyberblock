@@ -105,7 +105,7 @@ Everything else follows the existing pattern:
   - Always close what you launched. Never kill a process you did not start.
 - **Test suites:**
   - `uv run pytest -q`;
-  - in `mc/` of your worktree, `gradlew.bat test build` (`JAVA_HOME` = `C:\Users\<user>\AppData\Local\Cyberblock\jdk-25.0.4.1+1`);
+  - in `mc/` of your worktree, `gradlew.bat test build` (`JAVA_HOME` = `%USERPROFILE%\AppData\Local\Cyberblock\jdk-25.0.4.1+1`);
   - the DLL with `"C:\Program Files\CMake\bin\cmake.exe" --build cp/plugin/build --config Release`, then
     `cp\plugin\build\Release\cb_tests.exe`. Configure `cp/plugin/build` in your worktree first if it does not exist
     there;

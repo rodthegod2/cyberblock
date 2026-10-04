@@ -59,7 +59,7 @@ Audit: `docs/notes/cp-mechanics-audit.md` (sections A–D, cited below as "audit
     (`Get-CimInstance Win32_OperatingSystem`: `TotalVirtualMemorySize - FreeVirtualMemory`). Do not launch above 60 GB.
   - Always close what you launched. Never kill a process you did not start.
 - Test suites: `uv run pytest -q`; in `mc/`, `gradlew.bat test build` (JAVA_HOME =
-  `C:\Users\<user>\AppData\Local\Cyberblock\jdk-25.0.4.1+1`); the DLL with
+  `%USERPROFILE%\AppData\Local\Cyberblock\jdk-25.0.4.1+1`); the DLL with
   `cmake --build cp/plugin/build --config Release` then `cp\plugin\build\Release\cb_tests.exe`; scripts with
   `uv run python cp/scripts/compile_check.py`.
 - **Report format** (each track, at the end):

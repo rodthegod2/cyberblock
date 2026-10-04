@@ -1,3 +1,4 @@
+import getpass
 import hashlib
 import re
 import zipfile
@@ -205,7 +206,7 @@ def test_no_personal_paths_or_decompiled_wording_in_the_docs():
         if "superpowers/plans" in path.as_posix():
             continue
         text = path.read_text(encoding="utf-8")
-        for bad in ("<user>", "SteamLibrary", "adamsmasher/cyberpunk", "%TEMP%\\cbs2", "decompiled 2.31", "Decompiled 2.31"):
+        for bad in (getpass.getuser(), "SteamLibrary", "adamsmasher/cyberpunk", "%TEMP%\\cbs2", "decompiled 2.31", "Decompiled 2.31"):
             assert bad not in text, f"{bad!r} in {path.relative_to(REPO)}"
         assert not re.search(r"[A-Z]:\\(Users|Cyberblock)", text), f"a personal path in {path.relative_to(REPO)}"
 

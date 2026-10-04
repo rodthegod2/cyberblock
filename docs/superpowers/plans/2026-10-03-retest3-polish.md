@@ -145,7 +145,7 @@ composited over them.
   - UI and render work (W, C, M) takes screenshots of the dev client (with `tools/fakehost.py` driving it where useful)
     and lists them in the report.
 - **Test suites:** `uv run pytest -q`; in `mc/` of your worktree `gradlew.bat test build` (`JAVA_HOME` =
-  `C:\Users\<user>\AppData\Local\Cyberblock\jdk-25.0.4.1+1`); `"C:\Program Files\CMake\bin\cmake.exe" --build
+  `%USERPROFILE%\AppData\Local\Cyberblock\jdk-25.0.4.1+1`); `"C:\Program Files\CMake\bin\cmake.exe" --build
   cp/plugin/build --config Release` then `cp\plugin\build\Release\cb_tests.exe` (configure `cp/plugin/build` in your
   worktree first); `uv run python cp/scripts/compile_check.py`.
 - **Report format** (each package, at the end):
