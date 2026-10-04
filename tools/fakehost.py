@@ -135,7 +135,7 @@ stats, nor with --figures, whose list is full); same --hold, --cmd, --port, --na
 fake DLL answered)):
   --modes    the Night City side of the roles and modes. Every valid `spawn` is answered with one `spawnresult` and, when it worked, the `n` enemies join the `npcs` list at
              `p` (people; a `drone` is a person tagged `arch:"Drone"`; `faction` or the record's default gang is their `fac`; `hostile` is their `hostile`) and stay until
-             the session ends: a `rec` outside ganger, ncpd, maxtac and drone is `unsupported` (so is the plan's old `turret`), a `p` outside the world's height `no ground`, more
+             the session ends: a `rec` outside ganger, ncpd, ncpd_heavy, maxtac and drone is `unsupported` (so is the plan's old `turret`), a `p` outside the world's height `no ground`, more
              than 24 live ones `too many`. `heat` sets the host's wanted level (the next `stats` says so: `stats.wanted` is the tier, as the scripts' `SetWantedLevel` does) and
              `session` leaving `host` puts the stars back to what they were (0) and deletes the spawned enemies, as protocol.md says every Phase 8 effect ends; `attitude` is
              kept for a known group (an unknown one is ignored) and `glitch` for `seconds` (0 ends it); a message with a bad type or limit is dropped, and so is any of the four
@@ -1060,12 +1060,12 @@ def vendor_answers(shop: Shop, m: dict) -> list[dict] | None:
 # ---- Phase 8: --modes (shared/protocol.md "Phase 8"): the DLL's side of `spawn`, `heat`, `attitude` and `glitch` -----------------------------------
 # What the scripts and the DLL do with the four messages, deterministic: a spawn is answered with one `spawnresult` and the enemies stand in the `npcs` list; `heat` is
 # the host's wanted level (it comes back in `stats.wanted`); `attitude` and `glitch` are kept; the end of the session puts everything back.
-SPAWN_RECORDS = ("ganger", "ncpd", "maxtac", "drone")  # megaplan 1.9 row 8 without `turret` (Phase 0 check (d): a turret is a device, Minecraft-side only)
+SPAWN_RECORDS = ("ganger", "ncpd", "ncpd_heavy", "maxtac", "drone")  # megaplan 1.9 row 8 without `turret` (Phase 0 check (d): a turret is a device), plus the heavy NCPD unit
 SPAWN_CAP = 24  # live spawned NPCs the scripts allow; a spawn that would pass it is `too many`
 SPAWN_HEIGHT = (-64.0, 320.0)  # a spawn point outside the world's height has no ground
 SPAWN_ID_BASE = 6_000_000_000_000_000  # the spawned figures' ids (decimal strings in `npcs`)
-SPAWN_DEFAULT_FAC = {"ganger": "Maelstrom", "ncpd": "NCPD", "maxtac": "NCPD", "drone": "NCPD"}  # the affiliation of a spawn with no `faction`
-SPAWN_ARCH = {"ganger": "Gunner", "ncpd": "Gunner", "maxtac": "Heavy", "drone": "Drone"}
+SPAWN_DEFAULT_FAC = {"ganger": "Maelstrom", "ncpd": "NCPD", "ncpd_heavy": "NCPD", "maxtac": "NCPD", "drone": "NCPD"}  # the affiliation of a spawn with no `faction`
+SPAWN_ARCH = {"ganger": "Gunner", "ncpd": "Gunner", "ncpd_heavy": "Heavy", "maxtac": "Heavy", "drone": "Drone"}
 ATTITUDE_AFFILIATION = {"tygerClaws": "TygerClaws", "maelstrom": "Maelstrom", "valentinos": "Valentinos", "police": "NCPD"}  # the attitude groups whose figures this scene has
 ATTITUDE_GROUPS = ("tygerClaws", "maelstrom", "valentinos", "6thStreet", "animals", "voodooBoys", "scavenger", "wraiths", "aldecaldos", "kangtao", "kurtz_army",
                    "arasaka", "militech", "police", "traumateam", "civilian")  # Phase 0 check (e), without V's own group `player`

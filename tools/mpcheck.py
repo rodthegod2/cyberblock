@@ -50,17 +50,20 @@ Scenarios (megaplan task 1-T2). Each one starts what it needs on its own test po
                 operator permission, and the pause-screen button and the portal are not driven: Re-test P7-5 checks those with a non-operator guest
   match         Phase 8: one fake host `--modes` and a guest: PvP is off for everyone by default (a `damage` from the guest hurts nobody), a Minecraft-only player
                 cannot create a match, the linked host's match turns PvP on for its players (a hit lands, both ways) and off again after the match and the 15 second
-                lock, `/cyberblock spectate` puts the guest in spectator mode, and the relay drops nothing
-  heat          Phase 8: one fake host `--modes`: the Server Heat meter climbs through the tiers (the host's DLL is told each new tier with `heat`, in order, up to 4
-                and 5), falls back to 0 (`heat tier:0`), a new host session of a host at tier 5 hears the tier again, and every message is valid
-  overlord      Phase 8: one fake host `--modes` and a guest Overlord: a spawn near a player who is in no match reaches nobody; once the host is in a match, the Overlord's
-                spawn reaches the host's DLL as `spawn` (at least about 3 s after the command: the warning) and the DLL's `spawnresult` is answered, every message
-                is valid (`n` 1..8 even for a bigger request), `guests spawns off` keeps spawns out of the DLL (Minecraft squads instead) and `on` brings them back
+                lock, `/cyberblock spectate` puts the guest in spectator mode and `/cyberblock spectate stop` brings it back, and the relay drops nothing
+  heat          Phase 8: one fake host `--modes` (its `spawns` switch left off: it does not gate `heat`): the Server Heat meter (`/cyberblock heat set`) climbs through
+                the tiers (the host's DLL is told each new wanted level with `heat`, in order, up to 4 and 5), falls back to 0 (`heat tier:0`), a new host session
+                of a host at 5 hears it again, and every message is valid
+  overlord      Phase 8: one fake host `--modes` and a guest Overlord: a spawn near a player who is in no match reaches nobody, nor one near a match player who did
+                not opt in (`/cyberblock overlord optin on`); after the opt-in the Overlord's spawn of a `spawn_palette` entry reaches the host's DLL as `spawn` (at
+                least about 3 s after the command: the warning) and the DLL's `spawnresult` is answered, every message is valid, `guests spawns off` keeps spawns
+                out of the DLL (Minecraft squads instead) and `on` brings them back
   joinpassword  a server with a join password: a host waits as a guest until `/login`, then hosts at once; after a reconnect it
                 is remembered; five wrong passwords kick; the password is in no log (it is random per run, like the RCON one)
 
-The Phase 8 scenarios (`match`, `heat`, `overlord`) need the Phase 8 server (packages 8M, 8T and 8O) and the devtools commands that `PHASE8_COMMANDS` names (the
-table is the one place to edit when the packages named them otherwise); a server without them is a clear error. With `--all` a scenario whose package folder
+The Phase 8 scenarios (`match`, `heat`, `overlord`) need the Phase 8 server (packages 8M, 8T and 8O) and the commands that `PHASE8_COMMANDS` names (8T's operator
+command `/cyberblock heat set`, 8M's `/cyberblock test match ...` and 8O's `/cyberblock test overlord spawn`; the table is the one place to edit when the packages
+named them otherwise); a server without them is a clear error. With `--all` a scenario whose package folder
 (`PHASE8_NEEDS`) is not in the checkout is reported as SKIP (not a pass: the summary says so), so a checkout that has no Phase 8 server code can still run the rest.
 Naming a scenario always runs it.
 
@@ -409,10 +412,14 @@ class Server:
     def test(self, command: str, as_player: str | None = None) -> str:
         """A `/cyberblock test ...` devtools command, run as player `as_player` (`execute as <player> run ...`) or from the
         console (no player behind it: always allowed); fails loudly when the server does not know it or the player is not online."""
-        full = f"cyberblock test {command}" if as_player is None else f"execute as {as_player} run cyberblock test {command}"
+        return self.command(f"cyberblock test {command}", as_player, "is -Dcyberblock.devtools=true honoured and task 1-N4 merged?")
+
+    def command(self, command: str, as_player: str | None = None, hint: str = "") -> str:
+        """Any server command (no leading slash), run as `as_player` or from the console, with the same loud failures as `test`."""
+        full = command if as_player is None else f"execute as {as_player} run {command}"
         answer = self.rcon(full)
         if re.search(r"unknown or incomplete|incorrect argument|unknown command", answer, re.I):
-            raise MpError(f"the server refused `{full}`: is -Dcyberblock.devtools=true honoured and task 1-N4 merged? ({answer.strip()[:120]})")
+            raise MpError(f"the server refused `{full}`: {hint + ' ' if hint else ''}({answer.strip()[:120]})")
         if re.search(r"no entity was found", answer, re.I):
             raise MpError(f"`{full}`: {as_player} is not on the server")
         return answer
@@ -1581,19 +1588,24 @@ def scenario_hub(env: Env, rep: Report) -> None:
 # ---- Phase 8: match, heat and overlord (megaplan 8-P1) ----------------------------------------------------------------------------------
 # These checks need the Phase 8 server (8M: matches and PvP, 8T: Server Heat and the spectator mode, 8O: the Overlord) merged. The fake host `--modes`
 # (tools/fakehost.py) plays Cyberpunk: it prints every `spawn`, `heat`, `attitude` and `glitch` its DLL gets and answers `spawn` with `spawnresult`. The contract
-# is shared/protocol.md "Phase 8". The devtools commands below are what the scenarios ASSUME the packages added (the plan names only `/cyberblock spectate` and
-# `/cyberblock guests spawns on|off`): this table is the one place to change when they were named otherwise. A hit is played with vanilla's `/damage`, so the PvP
-# rule has to hold for any damage whose source is a player, and Health is read with `data get entity`.
+# is shared/protocol.md "Phase 8". The table below holds the commands the scenarios drive, as the packages built them: 8T's operator command `heat set`, 8M's
+# devtools `test match ...` and 8O's devtools `test overlord spawn` (the integrator's request to 8O: the same path as the console, `Overlord.request`). The real player
+# commands (`/cyberblock spectate` and `spectate stop`, `/cyberblock overlord optin on`, `/cyberblock guests spawns on|off`) are written out where they are used. This
+# table is the one place to change when a package names a command otherwise. A hit is played with vanilla's `/damage`, so the PvP rule has to hold for any damage
+# whose source is a player, and Health is read with `data get entity`.
 PHASE8_COMMANDS = {
-    "heat": "heat set {value}",  # sets the Server Heat meter (0..100) and applies its tier at once
-    "match_start": "match start {mode}",  # as a Cyberpunk-linked player: a match of this `match_mode` id around the player, PvP on for its players
-    "match_join": "match join {creator} {role}",  # as another player: joins that player's match on the other team, or as `overlord` (role may be empty)
-    "match_end": "match end",  # as the creator
-    "overlord_spawn": "overlord spawn {entry} {n} {player}",  # as the Overlord: n of a `spawn_palette` entry near that player, through the console's own server path
+    "heat": "cyberblock heat set {value}",  # 8T, operators (no `test`): sets the Server Heat meter (0..100) and applies its tier at once
+    "match_start": "cyberblock test match start {mode}",  # 8M, as a Cyberpunk-linked player: a match of this `match_mode` id around the player, PvP on for its players
+    "match_join": "cyberblock test match join {creator} {role}",  # 8M, as another player: joins that player's match on the other team, or as `overlord` (role may be empty)
+    "match_end": "cyberblock test match end",  # 8M, as the creator
+    "overlord_spawn": "cyberblock test overlord spawn {entry} {player}",  # 8O, as the Overlord: one `spawn_palette` entry beside that player (outside the minimum distance)
 }
 PHASE8_NEEDS = {"match": "mode/match", "heat": "mode/heat", "overlord": "mode/overlord"}  # the package folders (under dev/cyberblock/) the scenarios need
 PHASE8_SOURCE = Path("mc/src/main/java/dev/cyberblock")
-MATCH_MODE, OVERLORD_ENTRY = "team_deathmatch", "ganger"  # a shipped `match_mode` id and `spawn_palette` entry (8A's defaults)
+MATCH_MODE = "team_deathmatch"  # a shipped `match_mode` id (8A)
+# three shipped Night City `spawn_palette` entries of 8A (3 gangers each, `rec` ganger): one per spawn, so no entry's own cooldown refuses the next spawn
+OVERLORD_ENTRIES = ("gang_maelstrom", "gang_tyger_claws", "gang_valentinos")
+OVERLORD_ENTRY_N = 3  # the `count` of each of them
 PVP_LOCK_S = 16.0  # after the last hit a player waits 15 s before PvP can go off (megaplan 8-M1), plus a second
 SPAWN_WARNING_S = 3.0  # the Overlord's warning before spawns near a player (megaplan 8-O1); the DLL hears the spawn after it
 WARNING_SLACK = 0.8  # the spawn must come after at least this part of the warning (the command is timed before the server starts its own clock)
@@ -1609,11 +1621,11 @@ GAME_TYPE = re.compile(r"entity data: (-?\d+)\s*$")
 
 
 def test8(server: Server, key: str, as_player: str | None = None, **fields: object) -> str:
-    """A Phase 8 devtools command from PHASE8_COMMANDS (see the note above); a server that does not know it is a clear error that names the table."""
+    """A Phase 8 command from PHASE8_COMMANDS (see the note above); a server that does not know it is a clear error that names the table."""
     try:
-        return server.test(PHASE8_COMMANDS[key].format(**fields).strip(), as_player=as_player)
+        return server.command(PHASE8_COMMANDS[key].format(**fields).strip(), as_player=as_player)
     except MpError as e:
-        raise MpError(f"{e}; the Phase 8 scenarios assume the devtools commands of PHASE8_COMMANDS in tools/mpcheck.py (8M, 8T, 8O): edit the table if they are named otherwise") from None
+        raise MpError(f"{e}; the Phase 8 scenarios assume the commands of PHASE8_COMMANDS in tools/mpcheck.py (8M, 8T, 8O; the `test` ones need -Dcyberblock.devtools=true): edit the table if they are named otherwise") from None
 
 
 def health_of(server: Server, name: str) -> float | None:
@@ -1652,7 +1664,8 @@ def heat_tiers(host: FakeHost, since: int = 0) -> list[int]:
 
 
 def spawn_is_valid(m: dict) -> bool:
-    """A `spawn` that obeys shared/protocol.md "Phase 8": id, one of the four records, a position, `n` 1..8, hostile, a faction."""
+    """A `spawn` that obeys shared/protocol.md "Phase 8": id, one of the five records, a position, `n` 1..8, hostile, a faction, and no other key (a heavy unit is the
+    record `ncpd_heavy`, never a flag)."""
     return (set(m) == {"t", "id", "rec", "p", "n", "hostile", "faction"} and fakehost.is_request_id(m["id"]) and m["rec"] in fakehost.SPAWN_RECORDS
             and fakehost.finite_vec3(m["p"]) and fakehost.whole_in(m["n"], 1, 8) and isinstance(m["hostile"], bool) and isinstance(m["faction"], str)
             and fakehost.FACTION_RE.fullmatch(m["faction"]) is not None)
@@ -1669,17 +1682,25 @@ def guests_spawns(server: Server, on: bool) -> None:
     server.rcon(f"execute as CbHost1 run cyberblock guests spawns {'on' if on else 'off'}")
 
 
-def overlord_spawn(server: Server, n: int) -> float:
-    """As the guest Overlord: spawn `n` of OVERLORD_ENTRY near the host; returns the time the command was sent."""
+def overlord_spawn(server: Server, entry: str) -> float:
+    """As the guest Overlord: one `spawn_palette` entry beside the host; returns the time the command was sent."""
     sent = time.monotonic()
-    test8(server, "overlord_spawn", as_player="CbGuest1", entry=OVERLORD_ENTRY, n=n, player="CbHost1")
+    test8(server, "overlord_spawn", as_player="CbGuest1", entry=entry, player="CbHost1")
     return sent
 
 
 def start_match(server: Server) -> None:
-    """The linked host creates a match and the guest joins it as the Overlord (the test commands go through the Match Terminal's server path)."""
+    """The linked host creates a match and the guest joins it as the Overlord (the test commands go through the Match Terminal's server path). The Overlord
+    then watches in spectator mode: a player standing by the host who is not an opted-in match player would make the Overlord's fairness refuse every spawn
+    there (8O's `not_opted` and minimum distance; in the game the Overlord sits at its console)."""
     test8(server, "match_start", as_player="CbHost1", mode=MATCH_MODE)
     test8(server, "match_join", as_player="CbGuest1", creator="CbHost1", role="overlord")
+    server.rcon("gamemode spectator CbGuest1")
+
+
+def opt_in(server: Server) -> None:
+    """As the host: `/cyberblock overlord optin on`, the match player's consent to the Overlord's spawns and events near it (8O; off until it does)."""
+    server.command("cyberblock overlord optin on", as_player="CbHost1")
 
 
 def scenario_match(env: Env, rep: Report) -> None:
@@ -1697,9 +1718,10 @@ def scenario_match(env: Env, rep: Report) -> None:
     test8(server, "match_end", as_player="CbHost1")
     time.sleep(PVP_LOCK_S)  # the 15 second lock after the last hit
     rep.step("after the match and the 15 second lock PvP is off again for both", lambda: not hit_hurts(server, "CbGuest1", "CbHost1") and not hit_hurts(server, "CbHost1", "CbGuest1"))
-    server.rcon("execute as CbGuest1 run cyberblock spectate")
+    server.command("cyberblock spectate", as_player="CbGuest1")
     rep.step("`/cyberblock spectate` puts the guest in spectator mode", lambda: poll(lambda: game_type_of(server, "CbGuest1") == 3, T_EFFECT, T_POLL, "spectator mode") is True)
-    server.rcon("gamemode survival CbGuest1")
+    server.command("cyberblock spectate stop", as_player="CbGuest1")  # 8T's own way back (it ends the caster overlay too), never `/gamemode`
+    rep.step("`/cyberblock spectate stop` brings the guest back to survival", lambda: poll(lambda: game_type_of(server, "CbGuest1") == 0, T_EFFECT, T_POLL, "survival") is True)
     rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))
     mark = server.log.mark()
     host.stop()
@@ -1709,7 +1731,7 @@ def scenario_match(env: Env, rep: Report) -> None:
 def scenario_heat(env: Env, rep: Report) -> None:
     server = env.server("heat", max_hosts=1)
     client, host = start_host(env, rep, server, "CbHost1", ver=env.mod_version, layers=(), modes=("modes",), wait_host=T_JOIN)
-    guests_spawns(server, True)  # the working rule of shared/protocol.md "Phase 8": the host's `spawns` switch lets heat reach its game
+    # the host's `spawns` switch stays off (its default): it gates only guest and Overlord spawns, never `heat` (shared/protocol.md "Phase 8")
     mark = host.log.mark()
     for value in HEAT_STEPS:
         test8(server, "heat", value=value)
@@ -1742,31 +1764,33 @@ def scenario_overlord(env: Env, rep: Report) -> None:
     env.client("CbGuest1", join=server.port)
     rep.step("a guest joins", lambda: server.log.wait(r"handshake: CbGuest1 .*-> guest", T_JOIN), must=True)
     guests_spawns(server, True)  # the host allows Night City spawns (off by default)
+    first, second, third = OVERLORD_ENTRIES
     mark = host.log.mark()
-    overlord_spawn(server, 2)
+    overlord_spawn(server, first)
     time.sleep(SPAWN_WARNING_S + T_QUIET)
     rep.step("a player who is in no match gets no spawn: nothing reaches the host's DLL", lambda: not spawns_since(host, mark))
     start_match(server)
     mark = host.log.mark()
-    sent = overlord_spawn(server, 2)
-    rep.step("the Overlord's spawn reaches the host's DLL as a valid `spawn`", lambda: poll(lambda: any(spawn_is_valid(m) for m in spawns_since(host, mark)), T_EFFECT, T_POLL, "the spawn"), must=True)
+    overlord_spawn(server, first)
+    time.sleep(SPAWN_WARNING_S + T_QUIET)
+    rep.step("a match player who did not opt in gets no spawn: nothing reaches the host's DLL", lambda: not spawns_since(host, mark))
+    opt_in(server)
+    mark = host.log.mark()
+    sent = overlord_spawn(server, first)
+    rep.step("after `/cyberblock overlord optin on` the Overlord's spawn reaches the host's DLL as a valid `spawn`",
+             lambda: poll(lambda: any(spawn_is_valid(m) for m in spawns_since(host, mark)), T_EFFECT, T_POLL, "the spawn"), must=True)
     delay = time.monotonic() - sent
     rep.step(f"... not before the {SPAWN_WARNING_S:g} second warning (it came {delay:.1f} s after the command)", lambda: delay >= SPAWN_WARNING_S * WARNING_SLACK)
-    rep.step("the two figures asked for were spawned in all and the DLL answered every `spawn` with an ok `spawnresult` of its id",
-             lambda: poll(lambda: sum(m["n"] for m in spawns_since(host, mark)) >= 2, T_EFFECT, T_POLL, "the figures") and answered_every_spawn(host, mark))
-    mark = host.log.mark()
-    overlord_spawn(server, 12)
-    rep.step("a request for more than eight sends only valid `spawn` messages (`n` 1..8 each)",
-             lambda: poll(lambda: spawns_since(host, mark), T_EFFECT, T_POLL, "the spawns") and all(spawn_is_valid(m) for m in spawns_since(host, mark)))
-    time.sleep(SPAWN_WARNING_S * 1.5)  # the 12 asked for are all delivered before the toggle goes off
+    rep.step(f"the entry's {OVERLORD_ENTRY_N} figures were spawned in all and the DLL answered every `spawn` with an ok `spawnresult` of its id",
+             lambda: poll(lambda: sum(m["n"] for m in spawns_since(host, mark)) >= OVERLORD_ENTRY_N, T_EFFECT, T_POLL, "the figures") and answered_every_spawn(host, mark))
     guests_spawns(server, False)
     mark = host.log.mark()
-    overlord_spawn(server, 2)
+    overlord_spawn(server, second)
     time.sleep(SPAWN_WARNING_S + T_QUIET)
     rep.step("with `/cyberblock guests spawns off` nothing reaches the DLL (Minecraft squads stand in)", lambda: not spawns_since(host, mark))
     guests_spawns(server, True)
     mark = host.log.mark()
-    overlord_spawn(server, 2)
+    overlord_spawn(server, third)
     rep.step("with `guests spawns on` the spawns reach it again", lambda: poll(lambda: any(spawn_is_valid(m) for m in spawns_since(host, mark)), T_EFFECT, T_POLL, "the spawn"))
     rep.step("every `spawn` the DLL got is valid and each was answered", lambda: all(spawn_is_valid(m) for m in spawns_since(host)) and answered_every_spawn(host))
     rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))

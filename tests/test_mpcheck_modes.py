@@ -1,7 +1,7 @@
-"""tools/mpcheck.py `match`, `heat` and `overlord` (megaplan task 8-P1) without Minecraft: the scenario logic against a simulated server that does what the plan and
-shared/protocol.md "Phase 8" say for the Phase 8 server (PvP only between players of one match, the Server Heat tiers told to the host's DLL, the Overlord's spawns after
-their warning and only into a game whose owner is in the match and allows spawns). The real run (`tools.mpcheck match heat overlord`) needs packages 8M, 8T and 8O merged
-and the devtools commands of `mpcheck.PHASE8_COMMANDS`: it is the integrator's."""
+"""tools/mpcheck.py `match`, `heat` and `overlord` (megaplan task 8-P1) without Minecraft: the scenario logic against a simulated server that does what
+shared/protocol.md "Phase 8" says and the packages built (PvP only between players of one match, 8T's spectating with its own way back, the Server Heat wanted level
+told to every active host whatever its `spawns` switch, 8O's spawns of a palette entry after their warning and only into a game whose owner is in the match, opted in and
+allows spawns). The real run (`tools.mpcheck match heat overlord`) needs packages 8M, 8T and 8O merged and the commands of `mpcheck.PHASE8_COMMANDS`: it is the integrator's."""
 import json
 import re
 import threading
@@ -17,7 +17,8 @@ from tools.mpcheck import LogFile, MpError
 SIM_WARNING_S = 0.25  # the simulated Overlord's warning (3 s on the real one), shrunk like every other wait
 SIM_LOCK_S = 0.3  # the simulated PvP lock (15 s on the real one)
 TIER_AT = (10, 30, 50, 70, 90)  # the meter values where the simulated tiers 1 to 5 start
-CHECKS = {"match": 8, "heat": 12, "overlord": 13}
+CHECKS = {"match": 9, "heat": 12, "overlord": 13}
+PALETTE = {"gang_maelstrom": 3, "gang_tyger_claws": 3, "gang_valentinos": 3}  # the simulated `spawn_palette` entries the scenario uses, with their `count`
 
 
 @pytest.fixture(autouse=True)
@@ -37,6 +38,8 @@ class Sim8Server(SimServer):
         self.match = None  # {"creator", "members": {name: role}}
         self.pvp_until = {}  # player -> monotonic time until which PvP is still on for it (the lock after a match)
         self.meter, self.told = 0, {}  # the Server Heat meter and the tier last told to each host
+        self.opted = set()  # match players who typed `/cyberblock overlord optin on`
+        self.watching = set()  # players 8T's `/cyberblock spectate` started
         self.request = 0
         self.timers = []
 
@@ -47,8 +50,10 @@ class Sim8Server(SimServer):
 
     def tell_heat(self, name, force=False):
         host = self.sim.hosts.get(name)
-        if not (host and host["linked"] and self.toggles.get(name, {}).get("spawns", False)):
+        if not (host and host["linked"]):
             return
+        if "heat-needs-spawns" in self.bugs and not self.toggles.get(name, {}).get("spawns", False):
+            return  # the old reading: the `spawns` switch gating `heat`
         tier = self.tier(self.meter)
         if "no-heat-zero" in self.bugs and tier == 0:
             return
@@ -85,14 +90,18 @@ class Sim8Server(SimServer):
         return bool(name in self.sim.hosts and self.sim.hosts[name]["linked"])
 
     # -- the Overlord -----------------------------------------------------------------------------------------------------------
-    def overlord_spawn(self, actor, entry, n, player):
-        in_match = self.match is not None and self.match["members"].get(actor) == "overlord" and player in self.match["members"]
-        if not (in_match or "spawn-without-match" in self.bugs):
-            return
+    def overlord_spawn(self, actor, entry, player):
+        """8O's `Overlord.request`: an Overlord of a match, a palette entry, an opted-in match player to land beside."""
+        in_match = self.match is not None and self.match["members"].get(actor) == "overlord" and self.match["members"].get(player, "overlord") != "overlord"
+        if entry not in PALETTE or not (in_match or "spawn-without-match" in self.bugs):
+            return "No such entry or no match"
+        if player not in self.opted and not {"spawn-without-optin", "spawn-without-match"} & set(self.bugs):  # no match check, no opt-in check either
+            return "No opted-in player of this match within 64 blocks"
         delay = 0.0 if "no-warning" in self.bugs else SIM_WARNING_S
-        timer = threading.Timer(delay, self.deliver, (player, n))
+        timer = threading.Timer(delay, self.deliver, (player, PALETTE[entry]))
         self.timers.append(timer)
         timer.start()
+        return "Queued: it lands after the warning"
 
     def deliver(self, owner, n):
         host = self.sim.hosts.get(owner)
@@ -100,16 +109,16 @@ class Sim8Server(SimServer):
             return
         if not self.toggles.get(owner, {}).get("spawns", False) and "ignore-spawns-toggle" not in self.bugs:
             return  # Minecraft squads stand in
-        sizes = [n] if "spawn-too-many" in self.bugs else [min(8, n - i) for i in range(0, n, 8)]
-        for size in sizes:
-            self.request += 1
-            msg = {"t": "spawn", "id": self.request, "rec": "ganger", "p": [-1.5, 64.0, 2.5], "n": size, "hostile": True, "faction": "maelstrom"}
-            append(host["log"], f"[{owner}] spawn: {json.dumps(msg)}")
-            if "no-spawn" in self.bugs:
-                continue
-            for answer in host["cp"].reply(msg):
-                if answer["t"] == "spawnresult":
-                    append(host["log"], f"[{owner}] spawnresult: {json.dumps(answer)}")
+        self.request += 1
+        msg = {"t": "spawn", "id": self.request, "rec": "ganger", "p": [-1.5, 64.0, 2.5], "n": n, "hostile": True, "faction": "maelstrom"}
+        if "spawn-heavy-flag" in self.bugs:
+            msg["heavy"] = True  # 8O as built: a flag instead of the `ncpd_heavy` record
+        append(host["log"], f"[{owner}] spawn: {json.dumps(msg)}")
+        if "no-spawn" in self.bugs:
+            return
+        for answer in host["cp"].reply({k: v for k, v in msg.items() if k != "heavy"}):
+            if answer["t"] == "spawnresult":
+                append(host["log"], f"[{owner}] spawnresult: {json.dumps(answer)}")
 
     # -- commands ---------------------------------------------------------------------------------------------------------------
     def rcon(self, command):
@@ -120,17 +129,30 @@ class Sim8Server(SimServer):
         if match := re.fullmatch(r"damage (\S+) (\d+) minecraft:player_attack by (\S+)", command):
             self.damage(match.group(1), int(match.group(2)), match.group(3))
             return "Applied damage"
-        if match := re.fullmatch(r"gamemode survival (\S+)", command):
-            self.gametype[match.group(1)] = 0
+        if match := re.fullmatch(r"gamemode (survival|spectator) (\S+)", command):
+            self.gametype[match.group(2)] = 0 if match.group(1) == "survival" else 3
             return ""
         actor, inner = None, command
         if match := re.fullmatch(r"execute as (\S+) run (.*)", command):
             actor, inner = match.groups()
-        if inner == "cyberblock spectate":
+        if inner == "cyberblock spectate":  # 8T: a second one is refused, `spectate stop` is the way back
+            if actor in self.watching:
+                return "You are already spectating (/cyberblock spectate stop)"
             if "no-spectate" not in self.bugs:
                 self.gametype[actor] = 3
+                self.watching.add(actor)
             return ""
-        if match := re.fullmatch(r"cyberblock test heat set (\d+)", inner):
+        if inner == "cyberblock spectate stop":
+            if actor in self.watching and "no-spectate-stop" not in self.bugs:
+                self.watching.discard(actor)
+                self.gametype[actor] = 0
+            return ""
+        if inner == "cyberblock overlord optin on":  # 8O: only a player of a running match (not its Overlord)
+            if self.match and self.match["members"].get(actor, "overlord") != "overlord":
+                self.opted.add(actor)
+                return "Opted in: the Overlord may send enemies and events near you in this match"
+            return "Opting in needs a running match you play in"
+        if match := re.fullmatch(r"cyberblock heat set (\d+)", inner):  # 8T's operator command, not under `test`
             self.meter = int(match.group(1))
             for name in list(self.sim.hosts):
                 self.tell_heat(name)
@@ -148,10 +170,10 @@ class Sim8Server(SimServer):
         if inner == "cyberblock test match end":
             if self.match and self.match["creator"] == actor:
                 self.match = None
+                self.opted.clear()
             return "ok"
-        if match := re.fullmatch(r"cyberblock test overlord spawn (\S+) (\d+) (\S+)", inner):
-            self.overlord_spawn(actor, match.group(1), int(match.group(2)), match.group(3))
-            return "ok"
+        if match := re.fullmatch(r"cyberblock test overlord spawn (\S+) (\S+)", inner):
+            return self.overlord_spawn(actor, match.group(1), match.group(2))
         if match := re.fullmatch(r"cyberblock guests spawns (on|off)", inner):
             self.toggles.setdefault(actor, {})["spawns"] = match.group(1) == "on"
             return ""
@@ -212,8 +234,8 @@ def test_the_overlord_story_in_the_ideal_run(tmp_path):
     host = mpcheck.FakeHost("CbHost1", SimProc(), sim.hosts["CbHost1"]["log"], None)
     spawns = mpcheck.spawns_since(host)
     assert spawns and all(mpcheck.spawn_is_valid(m) for m in spawns) and mpcheck.answered_every_spawn(host)
-    assert sum(m["n"] for m in spawns) == 2 + 12 + 2  # the match's 2, the big request split to 8 and 4, none while spawns were off, then 2 again
-    assert sorted(m["n"] for m in spawns) == [2, 2, 4, 8]
+    assert [m["n"] for m in spawns] == [mpcheck.OVERLORD_ENTRY_N] * 2  # after the opt-in one entry, none while spawns were off, then one again
+    assert mpcheck.OVERLORD_ENTRY_N == PALETTE[mpcheck.OVERLORD_ENTRIES[0]] and set(mpcheck.OVERLORD_ENTRIES) == set(PALETTE)
 
 
 @pytest.mark.parametrize("name, bug, expected", [
@@ -222,17 +244,20 @@ def test_the_overlord_story_in_the_ideal_run(tmp_path):
     ("match", "no-pvp", "a match the linked host created turns PvP on for its players"),
     ("match", "pvp-stays-on", "after the match and the 15 second lock PvP is off again for both"),
     ("match", "no-spectate", "`/cyberblock spectate` puts the guest in spectator mode"),
+    ("match", "no-spectate-stop", "`/cyberblock spectate stop` brings the guest back to survival"),
     ("match", "no-session-end", "the session ends when the link drops"),
+    ("heat", "heat-needs-spawns", "the meter at 100 tells the host's DLL `heat` tier 5"),
     ("heat", "heat-skips-tier-4", "the tiers came in order"),
     ("heat", "heat-twice", "each tier is told once"),
     ("heat", "no-heat-zero", "the meter back at 0 tells the DLL `heat` tier 0"),
     ("heat", "no-heat-resync", "a new host session at tier 5 hears `heat` tier 5 again"),
     ("heat", "heat-bad-tier", "every `heat` the DLL got is a whole tier 0..5"),
     ("overlord", "spawn-without-match", "a player who is in no match gets no spawn"),
+    ("overlord", "spawn-without-optin", "a match player who did not opt in gets no spawn"),
     ("overlord", "no-warning", "... not before the"),
     ("overlord", "ignore-spawns-toggle", "with `/cyberblock guests spawns off` nothing reaches the DLL"),
-    ("overlord", "spawn-too-many", "a request for more than eight sends only valid `spawn` messages"),
-    ("overlord", "no-spawn", "the two figures asked for were spawned in all and the DLL answered every `spawn`"),
+    ("overlord", "spawn-heavy-flag", "after `/cyberblock overlord optin on` the Overlord's spawn reaches the host's DLL as a valid `spawn`"),
+    ("overlord", "no-spawn", "the entry's 3 figures were spawned in all and the DLL answered every `spawn`"),
 ])
 def test_each_phase_8_scenario_notices_its_bugs(tmp_path, name, bug, expected):
     _, rep = run8(tmp_path, name, [bug])
@@ -252,16 +277,19 @@ def test_the_scenarios_run_the_creating_and_joining_as_the_players_and_the_meter
     run8(tmp_path, "match")
     assert [c for c in sent if "test match" in c] == ["execute as CbGuest1 run cyberblock test match start team_deathmatch", "execute as CbHost1 run cyberblock test match start team_deathmatch",
                                                       "execute as CbGuest1 run cyberblock test match join CbHost1", "execute as CbHost1 run cyberblock test match end"]
-    assert "execute as CbGuest1 run cyberblock spectate" in sent and "gamemode survival CbGuest1" in sent
+    assert [c for c in sent if "spectate" in c] == ["execute as CbGuest1 run cyberblock spectate", "execute as CbGuest1 run cyberblock spectate stop"]
+    assert not any(c.startswith("gamemode") for c in sent)  # 8T's own way back, never `/gamemode` around it
     assert all(c.startswith("damage ") and "minecraft:player_attack by " in c for c in sent if c.startswith("damage"))
     sent.clear()
     run8(fresh(tmp_path / "heat"), "heat")
-    assert [c for c in sent if "test heat" in c] == [f"cyberblock test heat set {v}" for v in (*mpcheck.HEAT_STEPS, 0, 100, 0)]  # from the console: no player behind it
+    assert [c for c in sent if "heat set" in c] == [f"cyberblock heat set {v}" for v in (*mpcheck.HEAT_STEPS, 0, 100, 0)]  # 8T's operator command, from the console
+    assert not any("guests spawns" in c for c in sent)  # the `spawns` switch does not gate `heat`: the scenario leaves it off
     sent.clear()
     run8(fresh(tmp_path / "overlord"), "overlord")
-    spawns = [c for c in sent if "test overlord spawn" in c]
-    assert spawns and all(c == f"execute as CbGuest1 run cyberblock test overlord spawn ganger {n} CbHost1" for c, n in zip(spawns, (2, 2, 12, 2, 2)))
+    first, second, third = mpcheck.OVERLORD_ENTRIES
+    assert [c for c in sent if "test overlord spawn" in c] == [f"execute as CbGuest1 run cyberblock test overlord spawn {e} CbHost1" for e in (first, first, first, second, third)]
     assert [c for c in sent if "guests spawns" in c] == [f"execute as CbHost1 run cyberblock guests spawns {w}" for w in ("on", "off", "on")]
+    assert [c for c in sent if "optin" in c] == ["execute as CbHost1 run cyberblock overlord optin on"] and "gamemode spectator CbGuest1" in sent
 
 
 def test_the_phase_8_scenarios_ask_a_fake_host_for_the_modes_mode_with_no_layer_and_use_slot_0(tmp_path, capsys):
@@ -308,7 +336,8 @@ def test_the_log_readers_read_what_the_fake_host_prints_even_with_windows_line_e
 def test_the_spawn_check_accepts_exactly_what_the_protocol_allows():
     good = {"t": "spawn", "id": 1, "rec": "maxtac", "p": [0.0, 64.0, 0.0], "n": 8, "hostile": True, "faction": ""}
     assert mpcheck.spawn_is_valid(good) and mpcheck.spawn_is_valid({**good, "n": 1, "faction": "police", "hostile": False})
-    for bad in ({**good, "rec": "turret"}, {**good, "n": 0}, {**good, "n": 9}, {**good, "n": True}, {**good, "id": -1}, {**good, "p": [1.0, 2.0]}, {**good, "hostile": 1},
+    assert mpcheck.spawn_is_valid({**good, "rec": "ncpd_heavy"})  # the heavy unit is a record...
+    for bad in ({**good, "heavy": True}, {**good, "rec": "ncpd", "heavy": True}, {**good, "rec": "turret"},{**good, "n": 0}, {**good, "n": 9}, {**good, "n": True}, {**good, "id": -1}, {**good, "p": [1.0, 2.0]}, {**good, "hostile": 1},
                 {**good, "faction": "Tyger Claws"}, {**good, "extra": 1}, {k: v for k, v in good.items() if k != "faction"}):
         assert not mpcheck.spawn_is_valid(bad), bad
 
@@ -339,7 +368,7 @@ def test_a_hit_that_cannot_be_measured_is_a_clear_error():
 def test_a_server_without_the_phase_8_devtools_commands_is_a_clear_error_that_names_the_table(tmp_path):
     class Refusing(Sim8Server):
         def rcon(self, command):
-            if "test heat" in command:
+            if "heat set" in command:
                 return "Unknown or incomplete command"
             return super().rcon(command)
 
@@ -353,7 +382,7 @@ def test_a_server_without_the_phase_8_devtools_commands_is_a_clear_error_that_na
 
     with pytest.raises(MpError) as e:
         mpcheck.SCENARIO_FUNCS["heat"](RefusingEnv(tmp_path), mpcheck.Report("heat", lambda line: None))
-    assert "PHASE8_COMMANDS" in str(e.value) and "test heat" in str(e.value) and set(mpcheck.PHASE8_COMMANDS) == {"heat", "match_start", "match_join", "match_end", "overlord_spawn"}
+    assert "PHASE8_COMMANDS" in str(e.value) and "cyberblock heat set" in str(e.value) and set(mpcheck.PHASE8_COMMANDS) == {"heat", "match_start", "match_join", "match_end", "overlord_spawn"}
 
 
 def test_a_scenario_whose_server_code_is_not_in_the_checkout_is_a_skip_with_all_and_never_a_pass(tmp_path):

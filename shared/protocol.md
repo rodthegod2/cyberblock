@@ -734,9 +734,9 @@ The frame export (`Local\CyberblockFrame`) is LOCAL: `FrameExporter` on the clie
 | `rhack` | DOWN | the interaction map routing (server), Phase 6 | to the target's owner only; the owner's `hacks` toggle when a guest asked (and for `traffic_switch`, `gridlock`, `blackout` and `cam_feed` also `devices` and that device type's bit) |
 | `daemon` | DOWN | the Breach results (server), Phase 6 | to the breached device's owner only; the owner's `hacks` toggle when a guest breached |
 | `feedreq` | DOWN | the photo feed hub (server), Phase 6 | to that host's session only: on with the first viewer, off after the last |
-| `spawn` | DOWN | the Overlord's spawns (server), Phase 8 | to the owner's session only; the owner's `spawns` toggle, after the server's own fairness checks and warning |
-| `heat` | DOWN | Server Heat (server), Phase 8 | to that host's session only: the tier changed, and again after every host `hello`; the owner's `spawns` toggle |
-| `attitude` | DOWN | Gang Wars reputation (server), Phase 8 | to that host's session only; the owner's `spawns` toggle |
+| `spawn` | DOWN | the Overlord's spawns (server), Phase 8 | to the owner's session only; the owner's `spawns` toggle (unless the owner asked), after the server's own fairness checks and warning |
+| `heat` | DOWN | Server Heat (server), Phase 8 | to every active host's session: its wanted level changed, and again after every host `hello`; no guest toggle |
+| `attitude` | DOWN | Gang Wars reputation (server), Phase 8 | to the active hosts of a Gang Wars match's teams only (the host's own match); no guest toggle |
 | `glitch` | DOWN | the player hacks (server), Phase 8 | to the victim's session only (a linked player hit by Reboot Optics) |
 
 ### Multiplayer: new messages
@@ -1776,7 +1776,7 @@ the player hacks, the Server Heat meter, Downed and revive and the spectator mod
 the `roster` fields (`team`, `pvp`, `downed`, `hidden`) and the Minecraft world, and never reach a DLL. **Five things cross the DLL wire:** Night City enemies
 that the Overlord (or an event) spawns near a host (`spawn`, answered by `spawnresult`), the host's real wanted level (`heat`), the attitude of Night City's
 factions toward V (`attitude`), the glitch of a hacked linked player (`glitch`), and one more cyberware id (`netrunner`). Where the plan leaves a shape open
-(the values of `rec` and `faction`, the reasons of `spawnresult`, the rate of `spawnresult`) this section fixes it; the integrator confirms it against the
+(the values of `rec` and `faction`, the meaning of `heat.tier`, the reasons of `spawnresult`, the rate of `spawnresult`) this section fixes it; the integrator confirms it against the
 packages 8D, 8S, 8T, 8X, 8M, 8O and 8V.
 
 ### Phase 8: Cyberpunk → Minecraft
@@ -1787,9 +1787,9 @@ packages 8D, 8S, 8T, 8X, 8M, 8O and 8V.
 ### Phase 8: Minecraft → Cyberpunk
 | `t` | fields | when |
 |---|---|---|
-| `spawn` | `id` (a request id, a whole number ≥ 0 the session issued), `rec` (what to spawn: one of the four record names below, as a string of `a-z`, `0-9` and `_`, 1 to 32 characters), `p:[x, y, z]` (where, Minecraft convention, finite with `\|c\| < 3e7`), `n` (a whole number 1..8: how many), `hostile:bool` (`true` they fight V at once, `false` they stand about), `faction` (the attitude group of the gang or force, 0 to 32 characters of `A-Z`, `a-z`, `0-9` and `_`, `""` for the scripts' default) | the Overlord (or an event or a Heat response) spawns Night City enemies near a host: DOWN to that host's session only, after the server's own fairness checks and warning (see below) |
-| `heat` | `tier` (a whole number 0..5: the Server Heat tier the host's wanted level follows) | the Server Heat tier changed, and again after every host `hello`: DOWN to that host's session only |
-| `attitude` | `faction` (an attitude group name, 1 to 32 characters of `A-Z`, `a-z`, `0-9` and `_`), `toward` (how that faction treats V: one of `friendly`, `neutral`, `hostile`) | a Gang Wars team's reputation changed how Night City's factions treat its host: DOWN to that host's session only |
+| `spawn` | `id` (a request id, a whole number ≥ 0 the session issued), `rec` (what to spawn: one of the five record names below, as a string of `a-z`, `0-9` and `_`, 1 to 32 characters), `p:[x, y, z]` (where, Minecraft convention, finite with `\|c\| < 3e7`), `n` (a whole number 1..8: how many), `hostile:bool` (`true` they fight V at once, `false` they stand about), `faction` (the attitude group of the gang or force, 0 to 32 characters of `A-Z`, `a-z`, `0-9` and `_`, `""` for the scripts' default) | the Overlord (or an event or a Heat response) spawns Night City enemies near a host: DOWN to that host's session only, after the server's own fairness checks and warning (see below) |
+| `heat` | `tier` (a whole number 0..5: the wanted level the server chose for this host: the Server Heat tier's `host_wanted`, or its `top_chaos_wanted` for the top chaos player) | that host's wanted level changed, and again after every host `hello`: DOWN to every active host's session, each with its own value |
+| `attitude` | `faction` (an attitude group name, 1 to 32 characters of `A-Z`, `a-z`, `0-9` and `_`), `toward` (how that faction treats V: one of `friendly`, `neutral`, `hostile`) | a Gang Wars match ended with a winner and its teams' reputation changed how Night City's factions treat their hosts: DOWN to each active host of those teams only |
 | `glitch` | `seconds` (a finite number 0..10; `0` ends a glitch) | Reboot Optics hit a linked player: DOWN to the victim's session only; the DLL shows the ReShade glitch for that long |
 
 ### Phase 8 semantics and limits
@@ -1798,10 +1798,11 @@ packages 8D, 8S, 8T, 8X, 8M, 8O and 8V.
   the spectator and caster modes are Minecraft and server features. A hit on a linked player lands on V through Steve's hearts (the one-health rule), so it
   needs no message. Only what Night City itself has to do or show goes DOWN.
 - **Spawns (Phase 0 check (d)).** `spawn` goes to the owner's session only; the scripts answer with exactly **one `spawnresult` for every `spawn`**. `rec` is
-  `ganger`, `ncpd`, `maxtac` or `drone` (the plan's `turret` is **not** a `rec`: a turret is a device, not a character, so turrets are Minecraft-side only, the
-  written Phase 0 narrowing). The scripts map them to character records of the check (a `ganger` of the gang the attitude group `faction` names, `""` the
-  scripts' default gang; an `ncpd` patrol; a `maxtac` trooper; a `drone`) and spawn `n` of them around `p` (the plugin snaps them to the ground). A `rec` outside
-  the four is answered `ok:false` with `reason:"unsupported"` (not dropped), like an unknown `hack`. `hostile:true` puts them in combat with V (hostile
+  `ganger`, `ncpd`, `ncpd_heavy`, `maxtac` or `drone` (the plan's `turret` is **not** a `rec`: a turret is a device, not a character, so turrets are Minecraft-side
+  only, the written Phase 0 narrowing). The scripts map them to character records of the check (a `ganger` of the gang the attitude group `faction` names, `""` the
+  scripts' default gang; an `ncpd` patrol officer; an `ncpd_heavy` armoured NCPD unit, the Heat tier 3 heavy unit; a `maxtac` trooper; a `drone`) and spawn `n` of
+  them around `p` (the plugin snaps them to the ground). A heavy unit is always its own `rec`, never a flag: a `spawn` has exactly the seven keys of the row. A `rec`
+  outside the five is answered `ok:false` with `reason:"unsupported"` (not dropped), like an unknown `hack`. `hostile:true` puts them in combat with V (hostile
   attitude toward V's group and a combat start, the method of Phase 0 check (d)); `hostile:false` leaves them standing about. Every spawned NPC is tagged for the
   session and never saved, and **every one is deleted when the session ends** (part of section 1.2's cleanup, below).
 - **`spawnresult`.** `ok:true` means at least one was created (`n` 1..8, fewer than asked when some failed); `ok:false` means none (`n` 0) and says why in `reason`
@@ -1811,15 +1812,18 @@ packages 8D, 8S, 8T, 8X, 8M, 8O and 8V.
 - **Fairness and warnings belong to the server.** The 3 second warning (a sound and a marker) before spawns near a player, the minimum distance, the cap on
   simultaneous spawns, the host-set intensity and the Threat Points are the Overlord's rules (8O) and apply only to players **in an active match who opted in**.
   The DLL checks none of them: it sees a `spawn` at the moment the warning ends, and a spawn is never sent into a game whose owner is not in that match.
-- **Who may, and the fallback.** The host's `spawns` toggle (`/cyberblock guests spawns on|off`, **off by default**) gates `spawn`, and with it `heat` and
-  `attitude` (all three change what Night City does to that host): with the toggle off, or for a Minecraft-only player, the same enemies are **Minecraft squads**
-  (skinned mobs) and nothing reaches the DLL. The **fallback of Phase 0 check (d)** is the same swap: a `spawnresult` with `ok:false` makes the server fill that
+- **Who may, and the fallback.** The host's `spawns` toggle (`/cyberblock guests spawns on|off`, **off by default**) gates `spawn` only, as section 1.6 says:
+  guest and Overlord spawns of Night City enemies into that host's game (a spawn the host asked for itself is never blocked). With the toggle off, or for a
+  Minecraft-only player, the same enemies are **Minecraft squads** (skinned mobs) and nothing reaches the DLL. `heat` and `attitude` are **not** gated by it:
+  `heat` reaches every active host (the Heat meter is the whole server's), and `attitude` reaches only the hosts of a Gang Wars match's teams (the host's own match). The **fallback of Phase 0 check (d)** is the same swap: a `spawnresult` with `ok:false` makes the server fill that
   spawn with a Minecraft squad instead, so a match never lacks its enemies. The scripts and the DLL write **one line saying which path is active**
   (`spawn: path: ...`, see the log lines).
-- **Heat (Phase 0 check (e)).** `heat` carries the Server Heat tier 0..5 (megaplan 8-T1: 1 more NCPD patrols, 2 NCPD chases the loudest players, 3 heavy units,
-  4 Max-Tac hunts the top chaos player, 5 full response). For a host the tier is mapped to **its real wanted level**: the scripts queue `SetWantedLevel` with that
-  many stars, so NCPD and Max-Tac are the game's own; `stats.wanted` shows the result at the next `stats`. The server sends `heat` when the tier changes
-  and **again after every host `hello`** (a restarted Cyberpunk starts calm, so the new session hears the tier it should have). The scripts remember the stage
+- **Heat (Phase 0 check (e)).** `heat.tier` is **the wanted level 0..5 the server chose for this host**: the Server Heat tier's `host_wanted` (`heat_tier`
+  content; megaplan 8-T1: 1 more NCPD patrols, 2 NCPD chases the loudest players, 3 heavy units, 4 Max-Tac hunts the top chaos player, 5 full response), or its
+  `top_chaos_wanted` for the top chaos player (5 stars at tier 4 in the shipped content). It is **its real wanted level**: the scripts queue `SetWantedLevel` with
+  that many stars, so NCPD and Max-Tac are the game's own; `stats.wanted` shows the result at the next `stats`. The server sends `heat` to every active host when
+  that host's value changes and **again after every host `hello`** (a restarted Cyberpunk starts calm, so the new session hears the level it should have; a
+  session at 0 hears nothing, there is nothing to undo). The scripts remember the stage
   the game had before the first `heat` of a session and put it back when the session leaves `host`. When the write is not available (no write is the
   written fallback of check (e)) they log one line, ignore `heat`, and the hunting is done by spawns or Minecraft squads.
 - **Attitude (Phase 0 check (e)).** `attitude` sets, for the session, how the named attitude group treats V's group (the non-persistent
@@ -1836,38 +1840,48 @@ packages 8D, 8S, 8T, 8X, 8M, 8O and 8V.
   arrives while no host session is up is dropped.
 - **Validation (receivers).** `spawn.id` a whole number ≥ 0; `rec` a string of 1 to 32 characters of `[a-z0-9_]` (an unknown one is answered, not dropped);
   `p` three finite numbers with `|c| < 3e7`; `n` a whole number 1..8; `hostile` a boolean; `faction` a string of 0 to 32 characters of `[A-Za-z0-9_]`;
-  `heat.tier` a whole number 0..5; `attitude.faction` a string of 1 to 32 characters of `[A-Za-z0-9_]` and `toward` one of the three; `glitch.seconds` a finite
+  `heat.tier` a whole number 0..5 (a wanted level); `attitude.faction` a string of 1 to 32 characters of `[A-Za-z0-9_]` and `toward` one of the three; `glitch.seconds` a finite
   number 0..10 (not a boolean); `spawnresult.id` a whole number ≥ 0, `ok` a boolean, `n` a whole number 0..8 (≥ 1 exactly when `ok`), `reason` at most 64 characters
   (`""` exactly when `ok`). A bad message is counted and dropped, never fatal.
 - **Features and the implant.** `hs_ack.features` bit 32 (modes) is set by a Phase 8 server. The cyberware list gains a 19th id, `netrunner` (megaplan 1.17):
   it has no effect in Cyberpunk, so a DLL that does not know it drops that one entry as the protocol says; in Minecraft it **resists player hacks** (the
   effects it cannot stop are shorter), as the 18th id `firewall` **blocks** them, with a cooldown, and raises the Breach tier of its defender.
-- **Test commands** (dedicated test server with `-Dcyberblock.devtools=true`; `tools/mpcheck.py`'s `match`, `heat` and `overlord` scenarios assume them, 8M, 8T and
-  8O add them): `/cyberblock test heat set <0..100>` sets the Server Heat meter and applies its tier at once; `/cyberblock test match start <mode>` run as a
-  Cyberpunk-linked player creates and starts a match of that `match_mode` id around that player (the creator is in it with PvP on for its players), `/cyberblock
-  test match join <creator> [overlord]` run as another player joins it (on the other team from the creator, or as the Overlord), and `/cyberblock test match end` run as the creator ends
-  it; `/cyberblock test overlord spawn <palette id> <n> <player>` run as the Overlord spawns `n` of a `spawn_palette` entry near that player through the same
-  server path as the Overlord Console (warning, fairness and routing included). The real commands of the game are `/cyberblock spectate` and the host's `/cyberblock
-  guests spawns on|off`.
+- **Test commands** (`tools/mpcheck.py`'s `match`, `heat` and `overlord` scenarios drive them, one table, `PHASE8_COMMANDS`): 8T's operator command
+  `/cyberblock heat set <0..100>` (no `test`, no devtools needed) sets the Server Heat meter and applies its tier at once. On a dedicated test server with
+  `-Dcyberblock.devtools=true`, 8M's `/cyberblock test match start <mode>` run as a Cyberpunk-linked player creates and starts a match of that `match_mode` id around
+  that player (the creator is in it with PvP on for its players), `/cyberblock test match join <creator> [overlord]` run as another player joins it (on the other
+  team from the creator, or as the Overlord), and `/cyberblock test match end` run as the creator ends it; `/cyberblock test overlord spawn <palette id> <player>`
+  run as the Overlord queues one `spawn_palette` entry (a bare id such as `gang_maelstrom`, its `count` as shipped) beside that player, outside the minimum
+  distance, through the same server path as the Overlord Console (`Overlord.request`: cost, cooldown, warning, fairness and routing included; 8O adds it at the
+  merge). The real commands of the game the scenarios also use are `/cyberblock spectate` and `/cyberblock spectate stop`, a match player's `/cyberblock overlord
+  optin on` (no Overlord spawn lands near a match player before it) and the host's `/cyberblock guests spawns on|off`.
 
 ### Phase 8 differences from megaplan section 1 (for the integrator)
 Section 1 is the contract; these readings differ from its text or add to it, and the integrator amends section 1 (or the packages) at the merge.
 - **No `turret` in `spawn.rec`.** Section 1.9 row 8 lists `turret` among the records; Phase 0 check (d) found no character record for it (a turret is a `SecurityTurret`
-  device), so it is Minecraft-side only and `rec` has four values. 8S, 8D and 8O drop it; the Overlord's turret is a Minecraft entity.
+  device), so it is Minecraft-side only. 8S, 8D and 8O drop it; the Overlord's turret is a Minecraft entity.
+- **`ncpd_heavy` is a fifth `rec`.** Not in section 1.9; 8D (`kSpawnRecords`) and 8S (`Character.prevention_enforcer_rifle_ma`, the Heat tier 3 heavy unit) accept
+  it. A heavy unit is that record, never a flag: 8O's `spawn_palette` `"heavy": true` (on an `ncpd` entry) must send `rec:"ncpd_heavy"` and no `heavy` key (as built,
+  8O adds `"heavy":true`, which 8D ignores and `tools.mpcheck` rejects). The fake host and `tools.mpcheck` take the five records.
 - **`attitude` says `toward`.** Section 1.8 row 8 names the event `attitude` `(faction, delta)`; the wire of section 1.9 carries `toward` ∈ `friendly`, `neutral`, `hostile`.
   The DLL hands the scripts the faction and the stance; the wire follows 1.9.
 - **`spawnresult.n` is the native's `count`.** The wire field is `n` (1.9), the native `Cyberblock_SpawnResult(id, ok, count, reason)` (1.8) calls it `count`: the DLL maps one to the other.
 - **A rate for `spawnresult`.** Section 1.6 names no rate for it: this section sets 10 per second, burst 40, as the other replies of that size (`devresult`); 8D's `RelayGuard` row and the client's UP set add it.
-- **The `spawns` toggle also gates `heat` and `attitude`.** Section 1.6 says `spawns` gates "spawns of Night City NPCs and events into this game"; the real wanted level and the
-  attitudes change that game just as much, so they follow the same switch (off by default). If 8T decides to send `heat` to every host, this section and Re-test 8 change to say so.
+- **The `spawns` toggle gates only `spawn`.** Section 1.6 has `spawns` gate guest spawns of Night City NPCs and events into a game; the packages follow it: 8O checks
+  the toggle before a `spawn`, 8T sends `heat` to every active host with no toggle check and 8M sends `attitude` to the hosts of its own Gang Wars teams (the
+  host's own match). A host who wants no wanted level from the server stays out of the chaos; one who wants no reputation does not join Gang Wars.
+- **`heat.tier` is a wanted level.** Section 1.9 calls the field the tier; 8T sends the wanted level the tier gives that host (`host_wanted`, or `top_chaos_wanted`
+  for the top chaos player), which is what the scripts write.
 - **`heat` is sent again after every `hello`.** Not in section 1; the rule of the existing restore messages (`align`, `perks`, `cyberware`, `effect`) applied to the meter.
-- **The devtools commands** above are this section's request to 8M, 8T and 8O; the names are the integrator's to confirm (one table in `tools/mpcheck.py`, `PHASE8_COMMANDS`).
+- **The test commands** above are the ones 8M and 8T built (8T's `heat set` is an operator command, not under `test`); 8O's `/cyberblock test overlord spawn
+  <palette id> <player>` is this section's request to 8O for the merge (as built, 8O has only `overlord status|console|optin|intensity`). One table in
+  `tools/mpcheck.py`, `PHASE8_COMMANDS`.
 
 ### Phase 8 names
-- **Spawn records** (`spawn.rec`, the 1.9 row 8 list after Phase 0 check (d)) — `ganger`, `ncpd`, `maxtac`, `drone`
+- **Spawn records** (`spawn.rec`, the 1.9 row 8 list after Phase 0 check (d), plus the heavy NCPD unit) — `ganger`, `ncpd`, `ncpd_heavy`, `maxtac`, `drone`
 - **Attitude stances** (`attitude.toward`) — `friendly`, `neutral`, `hostile`
 - **Attitude groups** (`attitude.faction`, Phase 0 check (e)) — `tygerClaws`, `maelstrom`, `valentinos`, `6thStreet`, `animals`, `voodooBoys`, `scavenger`, `wraiths`, `aldecaldos`, `kangtao`, `kurtz_army`, `arasaka`, `militech`, `police`, `traumateam`, `civilian`
-- **Heat tiers** (`heat.tier`) — `0`, `1`, `2`, `3`, `4`, `5`
+- **Heat tiers** (`heat.tier`, the wanted level a host gets) — `0`, `1`, `2`, `3`, `4`, `5`
 
 ### Phase 8 log lines
 In-game checks grep for them (Re-test 8 in `docs/TESTING-PLAN.md`). The exact text belongs to the packages that print them (8S and 8D in Cyberpunk, 8T, 8X, 8O, 8M
@@ -1880,7 +1894,7 @@ and 8V on the server and the client); the integrator copies the final lines into
 
 ### Phase 8 examples
 One message per line (JSON Lines). The `spawnresult` lines are a successful answer and a refusal; the `spawn` lines show a hostile ganger squad of a gang, an NCPD
-drone that only stands about and the scripts' default gang; the `heat` lines show Max-Tac's tier and the calm after it.
+drone that only stands about and the scripts' default gang; the `heat` lines show four stars (Max-Tac's tier) and the calm after it.
 
 Phase 8 examples, Cyberpunk to Minecraft:
 ```jsonl

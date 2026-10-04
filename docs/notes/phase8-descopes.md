@@ -11,22 +11,27 @@ Written by package 8P with the docs, **before** the other Phase 8 packages merge
 - **(e) The wanted level and the factions' attitude.** CET lines E2 to E5 have not been run. With no write of the wanted level the stars stay the game's own and the Heat only
   reaches hosts through spawns or Minecraft squads; with no write of the attitude, a Gang Wars team's reputation does **not** change how Night City treats its hosts (the
   brief made it conditional) and the docs say so (`heat: path: ...` and `attitude: path: ...` in the log).
-- **Without the host's switch.** The `spawns` toggle is **off by default**: Night City enemies, the real wanted level and the attitudes only reach a host that turned it on; for
-  everyone else they are Minecraft squads, so a host who only builds is never surprised.
+- **Without the host's switch.** The `spawns` toggle is **off by default**: Night City enemies that the Overlord or a guest spawns only reach a host that turned it on; for
+  everyone else they are Minecraft squads, so a host who only builds is never surprised by enemies. It gates spawns only (megaplan 1.6): the Server Heat wanted level reaches
+  every active host and Gang Wars reputation the hosts of that match's teams, as 8T and 8M built them.
 
 ## Limits of this version of the contract
-- **Shapes the plan left open, fixed by 8P** (the integrator confirms them against 8D, 8S, 8T, 8X, 8M, 8O and 8V): the four values of `spawn.rec` (the plan's `turret` is out), the
+- **Shapes the plan left open, fixed by 8P** (the integrator confirms them against 8D, 8S, 8T, 8X, 8M, 8O and 8V): the five values of `spawn.rec` (the plan's `turret` is out,
+  8D and 8S's `ncpd_heavy` is in; a heavy unit is that record, never a `heavy` flag, so 8O's palette `heavy` must become `rec:"ncpd_heavy"` at the merge), the
   `faction` of `spawn` and `attitude` (the attitude group names of Phase 0 check (e)), `spawnresult` (`ok` exactly when `n` is 1..8, the reason empty exactly when ok, a rate of 10 per
-  second with a burst of 40), `heat` sent on change and after every host `hello`, `glitch.seconds` 0..10 (0 ends it), the rule that every effect ends with the session, a `hello` and a
-  link drop, and the `spawns` toggle gating `spawn`, `heat` and `attitude`. A later change on either side must change `shared/protocol.md` and `tests/test_phase8_protocol.py` together.
+  second with a burst of 40), `heat.tier` as the wanted level the server chose for that host (the tier's `host_wanted`, or `top_chaos_wanted` for the top chaos player), sent to
+  every active host on change and after every host `hello`, `glitch.seconds` 0..10 (0 ends it), the rule that every effect ends with the session, a `hello` and a link drop, and the
+  `spawns` toggle gating `spawn` only. A later change on either side must change `shared/protocol.md` and `tests/test_phase8_protocol.py` together.
 - **The wire is small on purpose.** Matches, PvP, the Van, the Overlord Console, Downed and the spectator mode are Minecraft and server features; their `cyberblock:act` and
   `cyberblock:ui` payloads belong to their packages and are not in the protocol document until the integrator copies them in.
 - **Attitude has no answer.** The DLL does not reply to `attitude`, `heat` or `glitch`; the log lines are the evidence.
 
 ## Risks
-- **The devtools commands are assumptions.** `tools.mpcheck match`, `heat` and `overlord` assume `/cyberblock test heat set <0..100>`, `test match start|join|end` and `test overlord
-  spawn <palette id> <n> <player>` (`PHASE8_COMMANDS` in `tools/mpcheck.py`, the one table to edit) next to the real `/cyberblock spectate` and `/cyberblock guests spawns on|off`. They
-  were written before 8M, 8T and 8O and are tested against a simulated server only; a server without them gives a clear error that names the table. With `--all` they are reported as
+- **One test command is still a request.** `tools.mpcheck match`, `heat` and `overlord` use 8T's operator command `/cyberblock heat set <0..100>` and 8M's `/cyberblock test match
+  start|join|end` as built, and `/cyberblock test overlord spawn <palette id> <player>` (one `spawn_palette` entry beside the player through `Overlord.request`), which 8O does not have
+  yet and adds at the merge (`PHASE8_COMMANDS` in `tools/mpcheck.py`, the one table to edit), next to the real `/cyberblock spectate` and `spectate stop`, `/cyberblock overlord optin
+  on` and `/cyberblock guests spawns on|off`. The `overlord` scenario puts the Overlord in spectator mode so 8O's fairness (no non-opted player near, the minimum distance) does not
+  refuse its own spawns. They are tested against a simulated server only; a server without the commands gives a clear error that names the table. With `--all` they are reported as
   SKIP in a checkout that has no `mode/match`, `mode/heat` or `mode/overlord` package folder, and a SKIP is not a pass.
 - **PvP is measured with `/damage`.** The `match` scenario hits with vanilla's `/damage ... minecraft:player_attack by <player>`: a PvP rule that only hooks real swings would not
   see it. If so, the scenario needs another way to hit.

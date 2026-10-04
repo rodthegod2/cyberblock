@@ -334,21 +334,24 @@ and the Holo-Table). Plan: `docs/superpowers/plans/2026-10-04-multiplayer-megapl
 - Three players if you can: the **host** (Cyberpunk running, Cyberblock On, V on a street with people around), a **guest** (Minecraft only, survival) and a second guest
   or a second account. For the player hacks (P8-4) one of the targets should be a **linked** player (a second host) so you can see the glitch; if you have only one
   host, the host is the target.
-- The host types **`/cyberblock guests spawns on`** first: it is **off by default** and gates the Night City enemies, the real wanted level and the factions'
-  attitude. Also check that `hacks`, `devices` and `explosions` are on (they are by default).
+- The host types **`/cyberblock guests spawns on`** first: it is **off by default** and gates only the Night City enemies the Overlord or a guest spawns (the
+  Heat's wanted level reaches every host and Gang Wars reputation the hosts of that match, whatever the switch says). Also check that `hacks`, `devices` and
+  `explosions` are on (they are by default).
+- **Opt in for the Overlord:** once you are in a match, **each match player types `/cyberblock overlord optin on`** (the server reminds you once). Before that every
+  Overlord spawn or event near you is refused ("No opted-in player of this match"): that is the fairness rule, not a failure.
 - Items: take the **Van**, the **Overlord Console**, the **Firewall** and **Netrunner** implants and the chips from the Cyberblock creative tab or an operator's `/give`;
   give a guest eddies for the Trauma Team (`/give <guest> cyberblock:eddies 64`). The Match Terminal stands in the hub (`/cyberblock hub`).
 - The names of buttons and items below follow the plan; if a screen words one differently, say so in your report: that is a note, not a failure.
 
 **What to try (one screen):**
 1. **Guest in the Van:** place the Van near the host, sit in the netrunner seat, fly a drone to an NPC near the host and Short Circuit it (P8-1).
-2. **Overlord:** with the host in a match, spawn gangers near the host: a **3 second warning**, then they appear; before the host opted in nothing spawns (P8-2).
+2. **Overlord:** with the host in a match and opted in (`/cyberblock overlord optin on`), spawn gangers near the host: a **3 second warning**, then they appear; before the host opted in nothing spawns (P8-2).
 3. **A match at the Match Terminal:** the host creates it, the guest joins, PvP is on for both and a hit lands; outside the match it does nothing (P8-3).
 4. **Hack a player:** Reboot Optics on the host: the glitch; block a hack with a short Breach, a Firewall and a Netrunner implant (P8-4).
 5. **Push the Heat:** chaos until tier 4: Max-Tac comes for the top player; your real wanted level follows (P8-5).
 6. **Go down:** get downed, a teammate revives you by holding right-click (P8-6).
 7. **Trauma Team:** go down again and call the flyer with eddies (P8-7).
-8. **Spectate:** `/cyberblock spectate` from the guest: every pin and the caster overlay (P8-8).
+8. **Spectate:** `/cyberblock spectate` from the guest: every pin and the caster overlay; `/cyberblock spectate stop` to come back (P8-8).
 9. **Read the "which way" lines** and paste them to Claude (P8-9).
 10. **Switches and safety:** `guests spawns off`, `guests hacks off`, a player who did not opt in (P8-10).
 
@@ -379,8 +382,9 @@ and the Holo-Table). Plan: `docs/superpowers/plans/2026-10-04-multiplayer-megapl
    event list and a timeline, and a Threat Points bar that regenerates.
 2. **Before the match (and before the host opted in):** try to spawn a ganger squad near the host. **Expect:** nothing happens near the host: fairness covers only
    players who are in an active match and opted in.
-3. Do P8-3 so the host is in a match. Spawn **3 gangers** near the host. **Expect, in this order:** a **sound and a marker** on the host's screen (the **3 second
-   warning**), then the gangers appear. If the host's `spawns` switch is on and check (d) works they are **real Night City gangers** (they fight V: say what they do);
+3. Do P8-3 so the host is in a match. **Before the host opts in**, spawn a squad near the host: **expect** it refused ("No opted-in player of this match"; the host
+   got a one-time reminder in chat). The host types **`/cyberblock overlord optin on`**. Now spawn **3 gangers** (a gang crew of the palette, for example the
+   Maelstrom Crew) near the host. **Expect, in this order:** a **sound and a marker** on the host's screen (the **3 second warning**), then the gangers appear. If the host's `spawns` switch is on and check (d) works they are **real Night City gangers** (they fight V: say what they do);
    otherwise Minecraft squads, and the log (P8-9) says so. A bigger spawn costs more Threat Points.
 4. Try to spawn a squad right on top of the host: **expect** it refused or moved (the minimum distance); spawn many in a row: **expect** the cap on simultaneous spawns.
    The host sets the **intensity** (Chill, Normal or Brutal): note a difference.
@@ -414,8 +418,8 @@ and the Holo-Table). Plan: `docs/superpowers/plans/2026-10-04-multiplayer-megapl
 ### P8-5. The Heat climbs and Max-Tac comes (and your real wanted level)
 1. Cause chaos: explosions, kills, a destroyed car, a failed Breach, a PvP kill. **Expect:** the **Heat meter on the HUD** rises, tier by tier, and decays when you stop.
 2. Tier 1: more NCPD patrols; tier 2: the police chase the loudest players; tier 3: heavy units. At **tier 4 Max-Tac hunts the player who caused the most chaos.**
-3. **As the host** (with `guests spawns on`): **expect** your **real wanted level** to follow the tier (up to 5 stars) and the **game's own** NCPD and Max-Tac to come for
-   you, and the stars to go back when the Heat decays. (`stats.wanted` in the HUD shows it.) If the wanted level does not move, the log (P8-9) says **no write**: that is the
+3. **As the host** (whatever your `spawns` switch says: it does not gate the Heat): **expect** your **real wanted level** to follow the tier (up to 5 stars; at tier 4
+   the player who caused the most chaos gets 5) and the **game's own** NCPD and Max-Tac to come for you, and the stars to go back when the Heat decays. (`stats.wanted` in the HUD shows it.) If the wanted level does not move, the log (P8-9) says **no write**: that is the
    written fallback (e); the hunting is done by Minecraft squads then.
 4. **As a Minecraft-only player:** tough **Minecraft squads** hunt the top chaos player in the replica.
 5. Push it to **5** (a friend as Overlord, or a lot of TNT): **expect** a full response on everyone. Leave the server or close Cyberpunk: **expect** your wanted level back to
@@ -433,10 +437,12 @@ and the Holo-Table). Plan: `docs/superpowers/plans/2026-10-04-multiplayer-megapl
 2. If you die first (the bleed-out ends before 30 seconds) **expect** the death screen and the flyer gone; no eddies lost twice.
 
 ### P8-8. The spectator and the caster overlay
-1. Guest: `/cyberblock spectate` (or the Match Terminal's spectate button) during a match. **Expect:** vanilla **spectator movement** (you fly through walls and cannot touch
+1. Guest who does not play the match: `/cyberblock spectate` (a match player uses the Match Terminal's spectate button instead; the command waits 10 seconds
+   after a fight) during a match. **Expect:** vanilla **spectator movement** (you fly through walls and cannot touch
    anything) and **every pin** visible, including the ones hidden outside matches.
 2. **Expect** the **caster overlay**: the **scoreboard**, the **Heat**, the **match timer**, the **team lists** and a **kill feed** that lists the last kills. Leave
-   spectating (the same command or `/gamemode survival` as an operator): the overlay goes.
+   spectating with **`/cyberblock spectate stop`**: you are back where you were, in your old game mode, and the overlay goes (a second `/cyberblock spectate` only
+   says "You are already spectating"; do not use `/gamemode`, it skips that cleanup). The command works again a minute later.
 3. A spectator has no PvP and cannot be hacked; the players do not see it.
 
 ### P8-9. Which way is it working? (the runtime paths)
@@ -453,19 +459,22 @@ Open `red4ext\logs\Cyberblock.log` and the server log and copy these lines to Cl
 | `match` | every match created, joined and ended; every PvP refusal; every player hack (hacker, target, the chip, applied or blocked and why) |
 
 ### P8-10. Permissions and safety
-1. Host: `/cyberblock guests spawns off`. **Expect:** the Overlord's spawns near you are **Minecraft squads** only, your **wanted level does not move** and a faction does
-   not change its attitude. `spawns on`: they reach your Night City again. The host's own actions are never blocked.
+1. Host: `/cyberblock guests spawns off`. **Expect:** the Overlord's spawns near you are **Minecraft squads** only (the server log says the switch is off).
+   `spawns on`: they reach your Night City again. The switch gates spawns only: your **wanted level still follows the Heat** and a Gang Wars match you play still
+   changes a faction's attitude. The host's own actions are never blocked.
 2. Host: `/cyberblock guests hacks off`: the Van's hacks stop (P8-1). The join password still locks players until `/login` on the server that has one: a locked player
    cannot join a match, spectate or be hacked.
-3. **Nothing without opt-in:** a Minecraft-only guest who never joined a match takes no PvP damage, no player hack and no Overlord spawn near them.
+3. **Nothing without opt-in:** a Minecraft-only guest who never joined a match takes no PvP damage, no player hack and no Overlord spawn near them; a match player
+   who never typed `/cyberblock overlord optin on` (or typed `optin off`) gets no Overlord spawn or event near them either.
 4. **Cleanup:** close Cyberpunk (or leave the server) in the middle of a spawn, a high Heat and a glitch: **expect** the spawned enemies deleted, your stars back and the
    glitch gone, nobody stuck. Start Cyberpunk again while the Heat is high: **expect** your wanted level to match the meter again.
 
 ### P8-11. Without Cyberpunk: the fake host
-1. `uv run python -m tools.mpcheck match heat overlord` (it starts a throw-away server, clients and a fake host; it needs the Phase 8 server and the devtools commands in
-   `PHASE8_COMMANDS`) or, for a client you started yourself, `uv run python -m tools.fakehost --modes --no-setup --hold 120`.
-2. **Expect:** the harness reports PvP off by default, the match turning it on and off, `/cyberblock spectate`; the Heat tiers reaching the DLL in order and again at a
-   new session; and the Overlord's spawn reaching the DLL after the warning, answered, and gated by the `spawns` switch. `--modes` alone answers `spawn` with
+1. `uv run python -m tools.mpcheck match heat overlord` (it starts a throw-away server, clients and a fake host; it needs the Phase 8 server and the commands in
+   `PHASE8_COMMANDS`: 8T's `/cyberblock heat set`, 8M's `/cyberblock test match start|join|end` and 8O's `/cyberblock test overlord spawn <palette id> <player>`) or, for a client you started yourself, `uv run python -m tools.fakehost --modes --no-setup --hold 120`.
+2. **Expect:** the harness reports PvP off by default, the match turning it on and off, `/cyberblock spectate` and `spectate stop`; the Heat's wanted level reaching
+   the DLL in order with the `spawns` switch off, and again at a new session; and the Overlord's spawn refused before the host's `/cyberblock overlord optin on`, then
+   reaching the DLL after the warning, answered, and gated by the `spawns` switch. `--modes` alone answers `spawn` with
    `spawnresult`, puts the figures in the `npcs` list, writes the wanted level into `stats` and ends everything with the session; it prints `spawn`, `heat`, `attitude`,
    `glitch` and `spawnresult`.
 
@@ -476,8 +485,8 @@ Open `red4ext\logs\Cyberblock.log` and the server log and copy these lines to Cl
   reputation does not change how Night City treats a team**.
 - **The biggest phase.** The Van, the Overlord, Heat, matches, player hacks, down and revive, and spectating all land together; if the first run finds many rough
   edges, the plan allows splitting it into 8a (Van, Overlord, Heat) and 8b (matches, player hacks, down, spectator) with a test in between.
-- **Assumed test commands.** `tools.mpcheck match`, `heat` and `overlord` assume the devtools commands of `PHASE8_COMMANDS`; they were written before the packages
-  that add them and are tested against a simulated server only (`docs/notes/phase8-descopes.md`).
+- **Assumed test commands.** `tools.mpcheck match`, `heat` and `overlord` use the commands of `PHASE8_COMMANDS`: 8T's `heat set` and 8M's `test match` as built, and
+  `test overlord spawn`, which 8O adds at the merge; they are tested against a simulated server only (`docs/notes/phase8-descopes.md`).
 
 ## Re-test: Wave B (Phases 3, 4, 5)
 

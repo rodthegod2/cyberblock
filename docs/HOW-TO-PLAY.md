@@ -1417,11 +1417,11 @@ you start on purpose, and **nothing in a mode touches a player who did not opt i
 `cyberblock:afterlife` hub and the replica); only four things reach a host's Night City: **enemies** spawned near the host, the host's **wanted level**, how Night
 City's **factions** treat V, and a **glitch** on the host's screen. Everything is checked by [Re-test: Wave C, Phase 8](TESTING-PLAN.md).
 
-**The host's switches for these.** Night City enemies, the real wanted level and the factions' attitude only reach **your** Cyberpunk game if you turn on the
-`spawns` switch: `/cyberblock guests spawns on|off` (**off by default**, like the other switches of
-[The interaction map](#the-interaction-map-phase-6)). With it off, the same enemies are **Minecraft squads** (skinned Minecraft mobs standing in for gangers, NCPD
-and Max-Tac) and nothing reaches your game, so a host who only wants to build can leave it off. A **guest** (Minecraft only) has no game to protect and always gets
-the Minecraft squads.
+**The host's switches for these.** Night City enemies that the Overlord or a guest spawns only reach **your** Cyberpunk game if you turn on the `spawns` switch:
+`/cyberblock guests spawns on|off` (**off by default**, like the other switches of [The interaction map](#the-interaction-map-phase-6)). With it off, the same
+enemies are **Minecraft squads** (skinned Minecraft mobs standing in for gangers, NCPD and Max-Tac) and nothing reaches your game, so a host who only wants to build
+can leave it off. A **guest** (Minecraft only) has no game to protect and always gets the Minecraft squads. The switch is only about spawns: the **Server Heat**
+wanted level reaches every host (see [Server Heat](#server-heat)), and **Gang Wars** reputation reaches only the hosts who play that Gang Wars match.
 
 #### The Hacker in the Van
 A **Van** is a placeable vehicle. A guest who sits in its **netrunner seat** runs the host's operation from a screen:
@@ -1445,7 +1445,9 @@ The **Overlord Console** (a block in the Afterlife hub and a craftable item) is 
 
 **The Overlord is fair.** Before anything spawns near a player, that player gets a **3 second warning** (a sound and a marker where it will happen); there is a
 **minimum distance**, a **cap on simultaneous spawns**, and the host sets the **intensity**: Chill, Normal or Brutal. All of this applies **only to players who are
-in an active match and opted in.** An Overlord cannot spawn anything near you if you are not in the match. When no human is the Overlord, an **Auto-Director**
+in an active match and opted in.** An Overlord cannot spawn anything near you if you are not in the match. **To opt in**, each match player types
+**`/cyberblock overlord optin on`** (the server reminds you once when your match has an Overlord; `optin off` takes it back); until you do, every spawn or event
+near you is refused. When no human is the Overlord, an **Auto-Director**
 (rule-based) spends the points by the pace of the match and the Heat.
 
 #### Matches, PvP and Gang Wars
@@ -1462,7 +1464,8 @@ spectator or the Overlord**. Teams belong to the match and are not saved.
 
 **Gang Wars** is the mode for the big map: **team colours**, **districts**, **spawn points**, a **scoreboard** and **capture points** (stand in a zone to capture
 it). If Phase 0 check (e) works in your game, a team's **reputation** changes how Night City's factions treat that team's hosts (a gang may turn friendly or
-hostile toward V). If it does not, the reputation score stays on the board and nothing changes in Night City: the log says which one you have.
+hostile toward V). Joining the Gang Wars match is the host's consent: the `spawns` switch does not gate it. If it does not work, the reputation score stays on the
+board and nothing changes in Night City: the log says which one you have.
 
 #### Hacking players, and how to stop it
 The chips of [What each chip does](#what-each-chip-does) now work on **players**, but only on a player who **opted in** (PvP on) or who stands **inside a war
@@ -1490,9 +1493,10 @@ One **Heat meter** (0 to 100, on the HUD) belongs to the whole server. **Chaos f
 4. **Max-Tac hunts the player who caused the most chaos**;
 5. full response on everyone.
 
-For a **host** the tier is its **real wanted level** in Cyberpunk, so the NCPD and Max-Tac that come are the game's own (this needs Phase 0 check (e) and the
-`spawns` switch; with no write the stars stay the game's and Minecraft squads hunt instead). For a **Minecraft-only player** tough Minecraft squads hunt them in
-the replica. A host's wanted level goes back to what it was when the host leaves the server or Cyberpunk closes.
+For **every host** the tier becomes a **real wanted level** in Cyberpunk (the tier's stars, and 5 stars at tier 4 for the player who caused the most chaos), so the
+NCPD and Max-Tac that come are the game's own. The Heat belongs to the whole server, so the `spawns` switch does **not** gate it: a host who wants no stars keeps the
+server calm. This needs Phase 0 check (e); with no write the stars stay the game's and Minecraft squads hunt instead. For a **Minecraft-only player** tough Minecraft
+squads hunt them in the replica. A host's wanted level goes back to what it was when the host leaves the server or Cyberpunk closes.
 
 #### Going down, and coming back
 You do not die at once. Instead you go **down**: you crawl, and a **60 second bleed-out timer** runs.
@@ -1502,7 +1506,9 @@ You do not die at once. Instead you go **down**: you crawl, and a **60 second bl
 
 #### Spectating and casting
 **Spectators** (Minecraft-only players, from the Match Terminal or `/cyberblock spectate`) fly with **vanilla spectator movement** and see **every pin**. A
-**caster overlay** shows the **scoreboard, the Heat, the match timer, the team lists and a kill feed**, so a match can be streamed.
+**caster overlay** shows the **scoreboard, the Heat, the match timer, the team lists and a kill feed**, so a match can be streamed. **`/cyberblock spectate stop`**
+takes you back where you were and ends the overlay (do not use `/gamemode` for it). A player of a running match spectates from its Match Terminal instead, the
+command waits 10 seconds after a fight, and it can be used again a minute after you stopped.
 
 #### Limits and fallbacks
 - **Night City enemies (Phase 0 check (d)).** Gangers, NCPD, Max-Tac and drones are spawned through Codeware's entity system; whether they **fight** is checked in
@@ -1596,8 +1602,9 @@ Useful commands: `/cyberblock kit`, `/cyberblock settings` (the [settings screen
 `/cyberblock guests hacks on|off` (whether guests may hack, breach and use remote hacks, see [The interaction map](#the-interaction-map-phase-6)),
 `/cyberblock body male|female` (your cyber skin: V or Lucy, see [Your cyber skin](#your-cyber-skin-phase-5)),
 `/cyberblock hub` (go to the Afterlife and back, see [The Afterlife hub](#the-afterlife-hub-phase-7)),
-`/cyberblock spectate` (watch a match, see [Modes](#modes-the-van-the-overlord-matches-and-more-phase-8)), `/cyberblock guests spawns on|off` (whether Night City enemies, your real wanted level and the factions'
-attitude reach your game, see [Modes](#modes-the-van-the-overlord-matches-and-more-phase-8)),
+`/cyberblock spectate` and `/cyberblock spectate stop` (watch a match and come back, see [Modes](#modes-the-van-the-overlord-matches-and-more-phase-8)),
+`/cyberblock overlord optin on|off` (in a match: let its Overlord send enemies and events near you), `/cyberblock guests spawns on|off` (whether Night City enemies
+the Overlord or a guest spawns reach your game, see [Modes](#modes-the-van-the-overlord-matches-and-more-phase-8)),
 `/cyberblock perks free on|off` (free skill points), `/gamemode creative`, `/gamemode survival`,
 `/xp add @s 30 levels`, `/effect clear @s`. Playing with friends: `/cyberblock guests <toggle> on|off` and, for server
 operators, `/cyberblock hosts`, `/cyberblock status` and `/cyberblock hosts add|remove <name>` (see

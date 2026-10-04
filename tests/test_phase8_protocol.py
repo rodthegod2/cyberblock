@@ -85,7 +85,8 @@ def test_p8_example_obeys_the_documented_limits(t, m):
 
 
 def test_p8_names_have_the_plan_values():
-    assert SPAWN_RECORDS == ["ganger", "ncpd", "maxtac", "drone"] and "turret" not in SPAWN_RECORDS  # megaplan 1.9 row 8 minus the turret of Phase 0 check (d)
+    # megaplan 1.9 row 8 minus the turret of Phase 0 check (d), plus the heavy NCPD unit 8D and 8S accept (a record, never a `heavy` flag)
+    assert SPAWN_RECORDS == ["ganger", "ncpd", "ncpd_heavy", "maxtac", "drone"] and "turret" not in SPAWN_RECORDS
     assert STANCES == ["friendly", "neutral", "hostile"] and TIERS == ["0", "1", "2", "3", "4", "5"]
     assert GROUPS == ["tygerClaws", "maelstrom", "valentinos", "6thStreet", "animals", "voodooBoys", "scavenger", "wraiths", "aldecaldos", "kangtao", "kurtz_army",
                       "arasaka", "militech", "police", "traumateam", "civilian"]  # Phase 0 check (e), without V's own group `player`
@@ -111,15 +112,18 @@ def test_p8_rules_are_stated_in_the_document():
     for phrase in ("Five things cross the DLL wire", "exactly **one `spawnresult` for every `spawn`**", "`turret` is **not** a `rec`", "Minecraft-side only", "answered `ok:false` with `reason:\"unsupported\"`",
                    "`hostile:true` puts them in combat", "every one is deleted when the session ends", "the 3 second warning", "only to players **in an active match who opted in**",
                    "The DLL checks none of them", "`/cyberblock guests spawns on|off`", "off by default", "Minecraft squads", "The **fallback of Phase 0 check (d)**",
-                   "`spawn: path: ...`", "the Server Heat tier 0..5", "its real wanted level", "`SetWantedLevel`", "again after every host `hello`", "put it back when the session leaves `host`",
+                   "`spawn: path: ...`", "the wanted level 0..5 the server chose for this host", "`top_chaos_wanted`",
+                   "`heat` and `attitude` are **not** gated by it", "never a flag", "outside the five is answered", "its real wanted level", "`SetWantedLevel`", "again after every host `hello`", "put it back when the session leaves `host`",
                    "no write is the written fallback of check (e)", "`AttitudeSystem.SetAttitudeRelation`", "the `...Persistent` variants are never used", "`player` is V's own group",
                    "restore it", "no attitude write is the written fallback", "does not change how Night City treats its hosts", "`cb_glitch`", "a new `glitch` replaces the running one",
                    "`0` ends it", "a Minecraft-only victim gets Minecraft's own overlay", "delete every NPC they spawned", "restore every attitude", "is ignored", "never fatal",
                    "bit 32 (modes)", "a 19th id, `netrunner`", "resists player hacks", "`firewall` **blocks** them", "a DLL that does not know it drops that one entry",
                    "Rate row: 10 per second, burst 40", "is dropped and counted", "one line saying which runtime path is active", "Reboot Optics", "through Steve's hearts",
-                   "`/cyberblock test heat set <0..100>`", "`/cyberblock test match start <mode>`", "`/cyberblock test overlord spawn <palette id> <n> <player>`"):
+                   "`/cyberblock heat set <0..100>`", "`/cyberblock test match start <mode>`", "`/cyberblock test overlord spawn <palette id> <player>`",
+                   "`/cyberblock spectate stop`", "`/cyberblock overlord optin on`"):
         assert phrase.lower() in text.lower(), f"{phrase!r} is not stated"
-    for phrase in ("No `turret` in `spawn.rec`", "`attitude` says `toward`", "`spawnresult.n` is the native's `count`", "A rate for `spawnresult`", "also gates `heat` and `attitude`",
+    for phrase in ("No `turret` in `spawn.rec`", "`attitude` says `toward`", "`spawnresult.n` is the native's `count`", "A rate for `spawnresult`", "The `spawns` toggle gates only `spawn`",
+                   "`ncpd_heavy` is a fifth `rec`", "`heat.tier` is a wanted level",
                    "`heat` is sent again after every `hello`", "`PHASE8_COMMANDS`"):
         assert phrase in section(P8_DIFF), f"{phrase!r} is not in the differences list"
 
@@ -157,7 +161,7 @@ def _p8_out_of_limits():
         ("spawn", p8("spawn", n=2.5)), ("spawn", p8("spawn", n=True)), ("spawn", p8("spawn", hostile=1)), ("spawn", p8("spawn", hostile="true")),
         ("spawn", p8("spawn", faction="Tyger Claws")), ("spawn", p8("spawn", faction="a" * 33)), ("spawn", p8("spawn", faction=None)),
         ("spawn", p8("spawn", p=[1.0, 2.0])), ("spawn", p8("spawn", p=[3e7, 0.0, 0.0])), ("spawn", p8("spawn", p=[float("nan"), 0.0, 0.0])), ("spawn", p8("spawn", p="1,2,3")),
-        ("spawn", {k: v for k, v in p8("spawn").items() if k != "faction"}), ("spawn", {**p8("spawn"), "extra": 1}), ("spawn", {k: v for k, v in p8("spawn").items() if k != "n"}),
+        ("spawn", {k: v for k, v in p8("spawn").items() if k != "faction"}), ("spawn", {**p8("spawn"), "extra": 1}), ("spawn", {**p8("spawn"), "heavy": True}), ("spawn", {k: v for k, v in p8("spawn").items() if k != "n"}),
         ("spawnresult", p8("spawnresult", id=-1)), ("spawnresult", p8("spawnresult", ok=1)), ("spawnresult", p8("spawnresult", n=9)), ("spawnresult", p8("spawnresult", n=-1)),
         ("spawnresult", p8("spawnresult", n=0)), ("spawnresult", p8("spawnresult", 1, n=2)), ("spawnresult", p8("spawnresult", reason="x")),  # ok with n 0, a failure with n 2 and an ok with a reason
         ("spawnresult", p8("spawnresult", 1, reason="")), ("spawnresult", p8("spawnresult", 1, reason="é" * 65)), ("spawnresult", p8("spawnresult", reason=3)),
