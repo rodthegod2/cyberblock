@@ -196,7 +196,7 @@ def test_defaults_that_are_only_references_are_not_reported(tmp_path):
 # ---- the shipped schemas and defaults -----------------------------------------------------------------------------------------
 def test_every_shipped_schema_loads_and_uses_only_supported_keywords():
     schemas = sorted(cc.SCHEMA_DIR.glob("*.schema.json"))
-    assert [s.name for s in schemas][:1] == ["test.schema.json"]
+    assert "test.schema.json" in [s.name for s in schemas]  # later kinds sort before it (material_palette, ...)
     for path in schemas:
         schema = cc.load_schema(path.name.removesuffix(".schema.json"))
         assert schema["type"] == "object" and schema["properties"]["schema"] == {"const": 1} and "schema" in schema["required"], path.name
