@@ -26,6 +26,7 @@ section is the order to play them in plus the checks the merge added. Tell Claud
 9. **Two local clients:** ask Claude to start the local test server; join it, add the test guest; TNT, hits, toggles,
    scans, quit and rejoin (W-B).
 10. **Apex, deployment day (only when you are ready):** answer the Apex questions, then megaplan section 6.3 step by step (W-C).
+11. **Wave A leftovers:** vdbg numbers, vdist in a car, the world check, the spawn platform, offline LAN guests (W-A9).
 
 | Part | What changed |
 |---|---|
@@ -144,6 +145,17 @@ also in `<Cyberpunk 2077>\bin\x64\plugins\cyber_engine_tweaks\scripting.log`).
 | ENV | `local t=Game.GetTimeSystem():GetGameTime() local w=Game.GetWeatherSystem():GetWeatherState() CB.p(GameTime.Hours(t)..":"..GameTime.Minutes(t), w and CB.n(w.name) or "no state")` | `CBP0 <h>:<m> <weather preset name>` |
 | C5 (last) | note C1's `id=`; load the save you made; face the same door: `CB.dev(CB.look())` | the same `id=` as in C1 |
 
+**W-A9. Wave A leftovers** (package wb-left).
+1. F5, `/cyberblock debug view on`: the overlay shows `collide <m> smooth <m> age <ms>`, not `vdbg: none`.
+2. In a car with a vehicle distance set (Esc, **Cyberblock...**): Cyberblock.log shows `view: vdist <m> -> vehicle camera
+   TPPClose|TPPMedium|TPPFar` or `view: vdist not settable (game default)`; on activation `collision: wrap path ...`.
+3. A local test server with `level-type=minecraft\:flat` logs `worldcheck: overworld is minecraft:overworld, not
+   cyberblock:nightcity; hosts refused (op: /cyberblock worldcheck off)` every minute and a host stays a guest until
+   `/cyberblock worldcheck off`. On a Night City server a guest lands on the invisible spawn platform and is caught there
+   after walking off (`outline: rescued <name> to ...`).
+4. A world opened to LAN: `/cyberblock lan offline on`, then `uv run python -m tools.mpcheck --guest <LAN port>`: CbGuest1 joins
+   (with a join password set it is locked until `/login`). Wrong `/login` tries count across a reconnect for 10 minutes.
+5. `/cyberblock status` ends with `creative erases replica: on|off (server.json|world setting)`.
 ### W-B. Two local clients through a local test server (Phase 1)
 Ask Claude: "start the local test server". Claude starts a dedicated Fabric 26.3 test server from a temporary worktree
 (Gradle never runs in the folder you play from) on `127.0.0.1:25929` (offline mode, local only), whitelists and ops you, and
