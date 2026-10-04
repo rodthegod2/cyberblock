@@ -230,6 +230,19 @@ TEST(npcs2_validators_bound_every_field)
 	CHECK(!h[0].contains("hp") && approx(h[1].at("hp"), 0.0)); // -1 is "unknown"
 }
 
+TEST(npcs2_vehicles_have_no_gender_and_no_pose)
+{
+	const std::vector<uint64_t> ids{1};
+	const std::vector<cb::Vec3> feet{{0, 0, 0}};
+	const std::vector<double> yaws{0};
+	const std::vector<uint8_t> car{1}, none{0};
+	const std::vector<int32_t> genders{2}, anims{cb::world::kAnimAim | cb::world::kAnimWalk};
+	const NpcTags tags{{}, {}, {}, {}, genders, anims, {}, {}};
+	NpcMotion motion;
+	const json list = cb::world::make_npcs2(ids, feet, yaws, car, none, 0.0, {}, tags, &motion, 0.0)->at("list");
+	CHECK(list[0].at("g") == 0 && list[0].at("anim") == 0);
+}
+
 TEST(npcs2_tag_arrays_must_be_empty_or_as_long_as_the_list)
 {
 	const std::vector<uint64_t> ids{1, 2};

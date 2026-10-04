@@ -1452,6 +1452,132 @@ def test_mp_section_sits_before_the_shared_memory_section_and_points_at_the_plan
     assert "2026-10-04-multiplayer-megaplan.md" in TEXT.split("## Multiplayer (Phase 1)", 1)[1].split("###", 1)[0]
 
 
+# ---- Phase 5 (figures and skins): the `npcs` extension (megaplan 1.9 row 5 with the Phase 0 amendment, task 5-P1) ---------------------------
+# Kept apart from the Phase 3 block below, so the Phase 4 and Phase 5 test blocks merge without touching each other.
+P5_CP_EXAMPLES = "Phase 5 examples, Cyberpunk to Minecraft:"
+P5_CP_TO_MC, P5_SECTION, P5_NAMES = "Phase 5: Cyberpunk → Minecraft", "Phase 5 semantics and limits", "Phase 5 names"
+P5_TAG, P5_COLOUR = re.compile(r"[A-Za-z0-9_./-]{1,32}"), re.compile(r"#[0-9A-Fa-f]{6}")
+P5_ANIM_BITS, P5_GENDERS = names("Animation bits"), names("Genders")
+P5_MAX_LIST = 48
+
+
+def p5_entry_ok(e) -> bool:
+    """One `npcs` entry: the layer 2 keys, `dead` (only ever true), then the Phase 5 tags, each optional."""
+    base = {"id", "p", "yaw", "kind", "hostile", "dead", "role", "fac", "arch", "g", "anim", "vc", "col", "hp"}
+    if not (isinstance(e, dict) and {"id", "p", "yaw", "kind", "hostile"} <= set(e) <= base):
+        return False
+    vehicle = e["kind"] == "vehicle"
+    if not (uint64_string(e["id"]) and vec3(e["p"]) and num(e["yaw"], -360, 360) and e["kind"] in ("human", "vehicle") and isinstance(e["hostile"], bool)):
+        return False
+    if "dead" in e and e["dead"] is not True:
+        return False
+    if any(k in e and not (isinstance(e[k], str) and P5_TAG.fullmatch(e[k])) for k in ("role", "fac", "arch", "vc")):
+        return False
+    if "g" in e and not whole(e["g"], 0, 2):
+        return False
+    if "anim" in e and not whole(e["anim"], 0, 255):
+        return False
+    if "col" in e and not (isinstance(e["col"], str) and P5_COLOUR.fullmatch(e["col"])):
+        return False
+    if "hp" in e and not num(e["hp"], 0, 1):
+        return False
+    if vehicle:  # a car has no gender, no pose, no role and no archetype
+        return e.get("g", 0) == 0 and e.get("anim", 0) == 0 and not {"role", "arch"} & set(e)
+    return not {"vc", "col"} & set(e)  # vehicle fields belong to vehicles
+
+
+def p5_npcs_ok(m) -> bool:
+    return set(m) == {"t", "list"} and isinstance(m["list"], list) and len(m["list"]) <= P5_MAX_LIST and all(p5_entry_ok(e) for e in m["list"]) \
+        and len({e["id"] for e in m["list"]}) == len(m["list"])
+
+
+P5_VALIDATORS = {"npcs": p5_npcs_ok}
+P5_EXAMPLES = [(m["t"], m) for m in examples(P5_CP_EXAMPLES)]
+
+
+def p5_example(**changes):
+    m = copy.deepcopy(P5_EXAMPLES[0][1])
+    m.update(changes)
+    return m
+
+
+def p5_with(index: int, **changes):
+    m = p5_example()
+    m["list"][index].update(changes)
+    return m
+
+
+def test_p5_the_npcs_row_extends_layer_2_and_names_every_new_field():
+    assert documented(P5_CP_TO_MC) == {"npcs"} and {t for t, _ in P5_EXAMPLES} == set(P5_VALIDATORS)
+    row = rows_by_type(P5_CP_TO_MC)["npcs"]
+    assert "**extends layer 2 and Phase 3:**" in row
+    fields = {k for _, m in P5_EXAMPLES for e in m["list"] for k in e} - {"id", "p", "yaw", "kind", "hostile", "dead"}
+    assert fields == {"role", "fac", "arch", "g", "anim", "vc", "col", "hp"}
+    for key in fields:
+        assert re.search(rf"`{key}`", row), f"npcs.{key} is not described in the Phase 5 row"
+    assert "Phase 5" in rows_by_type(CP_TO_MC)["npcs"] and "(#phase-5-figures-and-skins)" in rows_by_type(CP_TO_MC)["npcs"]
+
+
+def test_p5_the_example_is_valid_and_shows_every_new_field_and_the_dead_entry():
+    (_, m), = P5_EXAMPLES
+    assert p5_npcs_ok(m) and {e["kind"] for e in m["list"]} == {"human", "vehicle"}
+    assert any(e.get("dead") for e in m["list"]) and any(e["anim"] & 1 and e["anim"] & 4 and e["anim"] & 8 for e in m["list"])
+    assert {e["g"] for e in m["list"]} >= {0, 1, 2} and any("role" in e for e in m["list"]) and any("col" in e for e in m["list"])
+    assert any(int(e["id"]) > 2**53 for e in m["list"])  # ids stay strings
+
+
+def test_p5_every_entry_is_valid_without_any_tag_so_older_dlls_still_work():
+    old = {"t": "npcs", "list": [{"id": "1", "p": [0, 64, 0], "yaw": 0.0, "kind": "human", "hostile": False},
+                                 {"id": "2", "p": [1, 64, 0], "yaw": 90.0, "kind": "vehicle", "hostile": True, "dead": True}]}
+    assert p5_npcs_ok(old) and p5_npcs_ok({"t": "npcs", "list": []})
+
+
+def test_p5_the_validator_rejects_bad_fields():
+    bad = [p5_with(0, role="two words"), p5_with(0, role=""), p5_with(0, fac="x" * 33), p5_with(0, arch="café"), p5_with(0, g=3), p5_with(0, g=-1),
+           p5_with(0, g=1.5), p5_with(0, g=True), p5_with(0, anim=256), p5_with(0, anim=-1), p5_with(0, anim="1"), p5_with(0, hp=1.5), p5_with(0, hp=-0.1),
+           p5_with(0, hp=float("nan")), p5_with(0, col="#3C4032"), p5_with(1, col="3C4032"), p5_with(2, col="#3C403"), p5_with(2, col="#GGGGGG"),
+           p5_with(0, vc="Car/Turbo"), p5_with(2, vc="a" * 33), p5_with(2, g=1), p5_with(2, anim=4), p5_with(2, role="RipperDoc"), p5_with(2, arch="Gunner"),
+           p5_with(0, dead=False), p5_with(0, extra=1), p5_with(0, id="01x"), p5_example(list=[p5_example()["list"][0]] * 2),
+           p5_example(list=[{"id": str(i), "p": [0, 0, 0], "yaw": 0, "kind": "human", "hostile": False} for i in range(P5_MAX_LIST + 1)]), p5_example(extra=1)]
+    for m in bad:
+        assert not p5_npcs_ok(m), m
+    # the limits themselves are fine
+    assert p5_npcs_ok(p5_with(0, role="x" * 32, anim=255, g=2, hp=1, col="#abcdef")) is False  # a human may not carry a colour
+    assert p5_npcs_ok(p5_with(2, vc="x" * 32, col="#abcdef", hp=0, anim=0, g=0)) and p5_npcs_ok(p5_with(0, role="x" * 32, anim=255, g=2, hp=1))
+
+
+def test_p5_names_are_the_plan_bits_in_order():
+    assert P5_ANIM_BITS == ["walk", "run", "aim", "fire", "ragdoll", "dead", "crouch", "combat"] and len(P5_ANIM_BITS) == 8
+    assert P5_GENDERS == ["unknown", "male", "female"]
+    assert sum(1 << i for i in range(len(P5_ANIM_BITS))) == 255  # `anim` is a mask of exactly these eight bits
+
+
+def test_p5_rules_are_stated_in_the_document():
+    text = " ".join(TEXT.split("## Phase 5 (figures and skins)", 1)[1].split("\n## ", 1)[0].split())  # the whole Phase 5 section, its introduction too
+    for phrase in ("`Cyberblock_SubmitNpcs2`", "the old `Cyberblock_SubmitNpcs` stays", "vendor type name", "`npc_role`", "**Bits 1 (walk) and 2 (run) are set by the DLL**",
+                   "above 0.6 m/s", "below 0.3 m/s", "above 3.2 m/s", "below 2.6 m/s", "faster than 15 m/s", "a gap of more than 1 s", "`g` 0 and `anim` 0",
+                   "packed in one number", "the DLL converts it once", "hue, saturation and brightness", "`npcs: colour format hsb (unconfirmed)`",
+                   "`shared/vectors.json` `colour`", "class's default colour", "1 to 32 characters", "never cut short", "`vc` and `col` belong to `kind:\"vehicle\"`",
+                   "unknown ones are ignored", "empty (the key is left", "30000-byte payload cap", "skins by faction and threat", "`skin_map` and `vehicle_map`"):
+        assert phrase in text, f"{phrase!r} is not stated in the Phase 5 section"
+
+
+def test_p5_the_documented_thresholds_are_the_ones_the_dll_uses():
+    header = Path("cp/plugin/src/world.hpp").read_text(encoding="utf-8")
+    text = " ".join(section(P5_SECTION).split())
+    for name, value, phrase in (("kWalkOn", 0.6, "above 0.6 m/s"), ("kWalkOff", 0.3, "below 0.3 m/s"), ("kRunOn", 3.2, "above 3.2 m/s"),
+                                ("kRunOff", 2.6, "below 2.6 m/s"), ("kTeleportSpeed", 15.0, "faster than 15 m/s"), ("kMaxMotionInterval", 1.0, "more than 1 s")):
+        assert float(re.search(rf"\b{name}\s*=\s*([0-9.]+)", header).group(1)) == value, name
+        assert phrase in text, name
+    assert re.search(r"\bkMaxFigureTag\s*=\s*32\b", header) and re.search(r"\bkAnimMask\s*=\s*255\b", header)
+    assert re.search(r"kAnimWalk = 1, kAnimRun = 2, kAnimAim = 4, kAnimFire = 8, kAnimRagdoll = 16, kAnimDead = 32,\s*kAnimCrouch = 64, kAnimCombat = 128", header)
+
+
+def test_p5_section_sits_after_the_phase_3_section_and_before_the_shared_memory_section():
+    assert TEXT.index("## Phase 3 (the Night City replica)") < TEXT.index("## Phase 5 (figures and skins)") < TEXT.index("## Shared memory")
+    assert "2026-10-04-multiplayer-megaplan.md" in TEXT.split("## Phase 5 (figures and skins)", 1)[1].split("###", 1)[0]
+
+
 # ---- Phase 3 (the Night City replica): `ground.m`, `unground.seen`, `env`, `vteleport`/`vteleported`, `park`/`parked`, `maptile` ---
 # Plan 2026-10-04 megaplan section 1.9 (rows 3) with the Phase 0 amendment; materials: tools/cbmath.py and shared/vectors.json.
 P3_CP_EXAMPLES, P3_MC_EXAMPLES = "Phase 3 examples, Cyberpunk to Minecraft:", "Phase 3 examples, Minecraft to Cyberpunk:"

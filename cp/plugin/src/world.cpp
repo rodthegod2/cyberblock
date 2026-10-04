@@ -926,11 +926,12 @@ namespace cb::world
 			put("role", tags.roles);
 			put("fac", tags.factions);
 			put("arch", tags.archetypes);
+			// vehicles have no gender and no pose: g and anim are 0 whatever the scripts say
 			if (!tags.genders.empty())
-				entry["g"] = tags.genders[i] == 1 || tags.genders[i] == 2 ? tags.genders[i] : 0;
+				entry["g"] = !vehicle && (tags.genders[i] == 1 || tags.genders[i] == 2) ? tags.genders[i] : 0;
 			if (!tags.anims.empty() || motion != nullptr)
 			{
-				int anim = tags.anims.empty() || tags.anims[i] < 0 ? 0 : tags.anims[i] & kAnimMask; // negative: invalid
+				int anim = tags.anims.empty() || tags.anims[i] < 0 || vehicle ? 0 : tags.anims[i] & kAnimMask; // negative: invalid
 				anim &= ~(kAnimWalk | kAnimRun); // the scripts cannot read them (Phase 0 f); only the DLL sets them
 				if (!vehicle && !gone && (anim & (kAnimRagdoll | kAnimDead)) == 0)
 					anim |= motionBits[i];

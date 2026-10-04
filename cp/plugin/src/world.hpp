@@ -347,11 +347,11 @@ namespace cb::world
 	};
 
 	/// {"t":"npcs","list":[...]} with the Phase 5 keys per entry: `role`, `fac`, `arch` (a valid figure_tag, else absent),
-	/// `g` 0 unknown / 1 male / 2 female (anything else 0), `anim` (the scripts' bits 4..128; bits 1 and 2 come from
-	/// `motion`, for living people who are not ragdolling, never for vehicles), `vc` (vehicles only),
-	/// `col` (vehicles only, when colours >= 0 decode), `hp` 0..1 (absent when negative or not finite). A tag array
-	/// of another length than `ids` (and not empty) makes the whole list nullopt, like the old arrays. `motion` null
-	/// leaves bits 1 and 2 out. With empty `tags` and no `motion` this is exactly make_npcs.
+	/// `g` 0 unknown / 1 male / 2 female (anything else, and every vehicle, 0), `anim` (the scripts' bits 4..128; 0 for a
+	/// vehicle; bits 1 and 2 are set from `motion` for living people who are not ragdolling), `vc` (vehicles only), `col`
+	/// (vehicles only, when `colours` decodes), `hp` 0..1 (absent when negative or not finite). A tag array that is not
+	/// empty and not as long as `ids` makes the whole list nullopt, like the old arrays. `motion` null leaves bits 1 and 2
+	/// out. With empty `tags` and no `motion` this is exactly make_npcs.
 	std::optional<nlohmann::json> make_npcs2(std::span<const uint64_t> ids, std::span<const Vec3> feetCp,
 											 std::span<const double> yawsCp, std::span<const uint8_t> vehicles,
 											 std::span<const uint8_t> hostile, double off, std::span<const uint8_t> dead,
