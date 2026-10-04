@@ -1,16 +1,23 @@
 package dev.cyberblock.client.settings;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.settings.CyberblockSettingsScreen.Page;
+import dev.cyberblock.settings.SettingsWire;
+import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
+import net.minecraft.client.gui.components.CycleButton;
+import net.minecraft.client.input.KeyEvent;
 
 /**
  * Developer screenshots of the settings screen (megaplan 9-S1 "Done: screenshots of every tab"): only when the environment variable
  * CYBERBLOCK_SETTINGS_SHOTS is set (a dev client started by the 9S check, never in a player's game). Ten seconds into a world it opens
  * the screen on each tab in turn and saves {@code 9s_<tab>.png} into the run folder's screenshots; then it changes two server values
  * through the screen's own command path (guest spawns on, Heat scaling 150 %) and shoots the Guests and Difficulty tabs again
- * ({@code 9s_guests_changed}, {@code 9s_difficulty_changed}) with the server's answer. Client thread.
+ * ({@code 9s_guests_changed}, {@code 9s_difficulty_changed}) with the server's answer. Once the server says this player is no
+ * longer an operator (the check deops it), it scrolls over a server row and presses every Guests row in one tick ({@link #burst}).
+ * Client thread.
  */
 final class SettingsShots {
 	private static final int SETTLE = 30;
@@ -67,12 +74,46 @@ final class SettingsShots {
 				case 5 -> wait(() -> {
 					minecraft.gui.setScreen(null);
 					Cyberblock.LOG.info("shots: done");
-					step = -2;
 				});
+				case 6 -> {
+					SettingsWire.Snapshot s = ServerValues.snapshot();
+					if (s != null && !s.admin()) {
+						CyberblockSettingsScreen.open(null, Page.GUESTS);
+						if (minecraft.gui.screen() instanceof CyberblockSettingsScreen screen) {
+							burst(screen);
+						}
+
+						step = -2;
+					}
+				}
 				default -> {
 				}
 			}
 		}
+	}
+
+	/**
+	 * As a player who is not an operator: the mouse wheel over the first server row, then every server row of the Guests tab pressed
+	 * in one tick. The wheel must change nothing, and the commands must be paced so the server does not kick for command spam.
+	 */
+	private static void burst(final CyberblockSettingsScreen screen) {
+		List<CycleButton<?>> rows = screen.serverButtons();
+		CycleButton<?> first = rows.getFirst();
+		Object before = first.getValue();
+		for (int i = 0; i < 5; i++) {
+			screen.mouseScrolled(first.getX() + 2, first.getY() + 2, 0, 1);
+		}
+
+		boolean wheelIgnored = before.equals(first.getValue());
+		int pressed = 0;
+		for (CycleButton<?> b : rows) {
+			if (b.active) {
+				b.onPress(new KeyEvent(InputConstants.KEY_RETURN, 0, 0));
+				pressed++;
+			}
+		}
+
+		Cyberblock.LOG.info("shots: burst: wheel over a server row ignored: {}; pressed {} server rows", wheelIgnored ? "yes" : "no", pressed);
 	}
 
 	private static void wait(final Runnable action) {

@@ -1008,6 +1008,7 @@
 	"cyberblock.settings.intensity.normal": "Normal",
 	"cyberblock.settings.overlord": "Overlord",
 	"cyberblock.settings.overlord.help": "The intensity a new match's Overlord starts with; the match's host can still change it",
+	"cyberblock.settings.pending": "%s ...",
 	"cyberblock.settings.performance.note": "Saved on this PC only",
 	"cyberblock.settings.pvp": "PvP",
 	"cyberblock.settings.pvp.help": "Players hurt each other only when both have PvP on",

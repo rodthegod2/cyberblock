@@ -8,10 +8,13 @@ screen's screenshot tour (CYBERBLOCK_SETTINGS_SHOTS): it opens every tab, then c
 command path. Checks: the server's start-up line names the difficulty; the screen's snapshot reaches the client (admin, host, server.json rows shown);
 the screen's commands change the server (spawns on, Heat scaling 150 %) and the next snapshot shows it; `/cyberblock difficulty` answers with the new
 values; after `deop` the snapshot says admin no (RCON's `execute as` keeps operator permission, so a non-operator's refused command is left to the
-command tree's `requires`); an Overlord default set from the console is kept; the server logged no settings warnings. With --shots DIR the tour's PNGs (9s_*.png) are copied into DIR. This file is not a pytest module (no `test_`
-prefix): it starts Minecraft.
+command tree's `requires`); then, as a non-operator, the tour scrolls the mouse wheel over a server row (nothing changes) and presses all 16 Guests
+rows in one tick: the client paces the commands, every toggle and device type ends off, and the player is not kicked for command spam (vanilla
+spares only operators); an Overlord default set from the console is kept; the server logged no settings warnings. With --shots DIR the tour's PNGs
+(9s_*.png) are copied into DIR. This file is not a pytest module (no `test_` prefix): it starts Minecraft.
 """
 import argparse
+import re
 import sys
 import time
 from pathlib import Path
@@ -24,6 +27,7 @@ from tools import mpcheck as mp, play  # noqa: E402
 CLIENT_HOST, SERVER = 25833, 25993
 FRAME_PREFIX = "Local\\CyberblockFrame9S"
 T_TOUR = 600.0
+T_BURST = 60.0  # 16 commands, one every 1.1 s, and the last answer
 
 
 class SettingsPorts(mp.Ports):
@@ -67,6 +71,16 @@ def scenario_settings(env: mp.Env, rep: mp.Report) -> None:
     mark = client.log.mark()
     server.command('cyberblock test act settings {}', as_player="CbHost1")
     rep.step("after deop the snapshot says admin no", lambda: bool(client.log.wait(r"settings: server values: admin no,", mp.T_EFFECT, mark)))
+
+    # the tour, now as a non-operator (the server's command spam kick spares operators): the wheel over a server row, then every Guests row in one tick
+    server_mark = server.log.mark()
+    rep.step("as a non-operator the wheel over a server row changed nothing, and all 16 Guests rows were pressed at once", lambda: bool(client.log.wait(
+        r"shots: burst: wheel over a server row ignored: yes; pressed 16 server rows", mp.T_EFFECT, mark)))
+    rep.step("... their commands reached the server: every guest toggle and device type is off", lambda: bool(client.log.wait(
+        r"settings: server values: admin no, guests 0 devices 0,", T_BURST, mark)))
+    rep.step("... one command per row, paced", lambda: len(re.findall(r"settings: /cyberblock guests ", client.log.text(mark))) == 16)
+    rep.step("... and CbHost1 was not kicked for command spam", lambda: "CbHost1" in server.rcon("list") and not server.log.find(r"CbHost1 lost connection", server_mark)
+             and not client.log.find(r"disconnect\.spam|Kicked for spamming", mark))
 
     server.rcon("cyberblock difficulty overlord brutal")
     rep.step("the console sets the Overlord default", lambda: "new matches: brutal" in server.rcon("cyberblock difficulty")

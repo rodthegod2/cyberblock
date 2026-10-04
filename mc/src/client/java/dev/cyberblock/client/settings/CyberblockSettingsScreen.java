@@ -1,5 +1,7 @@
 package dev.cyberblock.client.settings;
 
+import dev.cyberblock.client.perf.Performance;
+import dev.cyberblock.client.perf.PerformancePrefs;
 import dev.cyberblock.mode.overlord.Intensity;
 import dev.cyberblock.net.Permissions;
 import dev.cyberblock.settings.Difficulty;
@@ -14,6 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
+import java.util.function.IntUnaryOperator;
 import java.util.function.Predicate;
 import java.util.stream.IntStream;
 import net.minecraft.client.Minecraft;
@@ -43,8 +46,10 @@ import org.jspecify.annotations.Nullable;
  * Difficulty, Performance and World. Server values (guest toggles and device types, body, Holo-Table pin, PvP, difficulty, creative
  * erase) show what the server answered ({@link ServerValues}) and change only through the {@code /cyberblock} command each row sends, so
  * the server decides; rows a player may not change are greyed with the reason. server.json's rows (World) are read-only and shown to
- * operators and the singleplayer owner only; the join password shows only as on or off. Performance values are client only and saved
- * on this PC ({@link PerformancePrefs}). Opens from the "Cyberblock..." button of the pause screens and with {@code /cyberblock settings}.
+ * operators and the singleplayer owner only; the join password shows only as on or off. Performance values are client only: 9-F1's
+ * {@link Performance} saves them on this PC and applies them. Server rows ignore the mouse wheel and their commands are paced
+ * ({@link ServerValues#command}), so changing many rows quickly cannot trip the server's command spam kick. Opens from the
+ * "Cyberblock..." button of the pause screens and with {@code /cyberblock settings}.
  *
  * <p>Changing tab opens the screen again on that tab, so rows other packages add after init (QV's camera rows, through Fabric's
  * AFTER_INIT) are laid out under the Look tab's own rows; on the other tabs they are hidden.
@@ -74,7 +79,8 @@ public final class CyberblockSettingsScreen extends Screen {
 		}
 	}
 
-	static final int WIDTH = 310, HALF = 153, THIRD = 100, H = 20, GAP = 4;
+	static final int WIDTH = 310, HALF = 153, THIRD = 100, H = 20, GAP = 4, CAP_STEP = 4;
+	static final double SCALE_STEP = 0.05;
 	private static final List<Row> ROWS = new CopyOnWriteArrayList<>();
 	private static final Component WAITING = Component.translatableWithFallback("cyberblock.settings.waiting",
 		"Waiting for the server's values (a server without this Cyberblock version cannot be changed here)");
@@ -194,6 +200,23 @@ public final class CyberblockSettingsScreen extends Screen {
 		super.extractRenderState(graphics, mouseX, mouseY, a);
 	}
 
+	/** The mouse wheel does nothing over a server row: vanilla's CycleButton would cycle it, and send a command, on every notch. */
+	@Override
+	public boolean mouseScrolled(final double x, final double y, final double scrollX, final double scrollY) {
+		for (ServerRow<?> row : this.serverRows) {
+			if (row.button.isMouseOver(x, y)) {
+				return false;
+			}
+		}
+
+		return super.mouseScrolled(x, y, scrollX, scrollY);
+	}
+
+	/** The server rows' buttons on this tab (the screenshot tour presses them). */
+	List<CycleButton<?>> serverButtons() {
+		return this.serverRows.stream().<CycleButton<?>>map(r -> r.button).toList();
+	}
+
 	@Override
 	public void onClose() {
 		this.minecraft.gui.setScreen(this.parent);
@@ -240,7 +263,7 @@ public final class CyberblockSettingsScreen extends Screen {
 	}
 
 	private void look(final PageTab tab) {
-		CycleButton<String> body = this.server(CycleButton.builder(CyberblockSettingsScreen::bodyName, SkinRules.MALE).withValues(SkinRules.MALE, SkinRules.FEMALE),
+		CycleButton<String> body = this.server(CycleButton.builder(CyberblockSettingsScreen::bodyName, SkinRules.MALE), List.of(SkinRules.MALE, SkinRules.FEMALE),
 			HALF, Component.translatableWithFallback("cyberblock.settings.body", "Cyber skin"),
 			Component.translatableWithFallback("cyberblock.settings.body.help", "How every player sees you while your Cyberpunk game is linked"),
 			SettingsWire.Snapshot::body, s -> true, v -> "cyberblock body " + v).button;
@@ -262,13 +285,13 @@ public final class CyberblockSettingsScreen extends Screen {
 	}
 
 	private void difficulty(final PageTab tab) {
-		AbstractWidget intensity = this.server(CycleButton.builder(CyberblockSettingsScreen::intensityName, Difficulty.OVERLORD_DEFAULT)
-				.withValues(Intensity.values()), HALF, Component.translatableWithFallback("cyberblock.settings.overlord", "Overlord"),
+		AbstractWidget intensity = this.server(CycleButton.builder(CyberblockSettingsScreen::intensityName, Difficulty.OVERLORD_DEFAULT),
+			List.of(Intensity.values()), HALF, Component.translatableWithFallback("cyberblock.settings.overlord", "Overlord"),
 			Component.translatableWithFallback("cyberblock.settings.overlord.help", "The intensity a new match's Overlord starts with; the match's host can still change it"),
 			SettingsWire.Snapshot::overlord, SettingsWire.Snapshot::admin, v -> "cyberblock difficulty overlord " + v.key()).button;
 		List<Integer> steps = IntStream.rangeClosed(Difficulty.HEAT_MIN / Difficulty.HEAT_STEP, Difficulty.HEAT_MAX / Difficulty.HEAT_STEP)
 			.mapToObj(i -> i * Difficulty.HEAT_STEP).toList();
-		AbstractWidget heat = this.server(CycleButton.builder((Integer v) -> Component.literal(v + " %"), Difficulty.HEAT_DEFAULT).withValues(steps), HALF,
+		AbstractWidget heat = this.server(CycleButton.builder((Integer v) -> Component.literal(v + " %"), Difficulty.HEAT_DEFAULT), steps, HALF,
 			Component.translatableWithFallback("cyberblock.settings.heat", "Heat scaling"),
 			Component.translatableWithFallback("cyberblock.settings.heat.help", "How much of every chaos gain reaches the Server Heat meter"),
 			SettingsWire.Snapshot::heat, SettingsWire.Snapshot::admin, v -> "cyberblock difficulty heat " + v).button;
@@ -276,20 +299,23 @@ public final class CyberblockSettingsScreen extends Screen {
 		tab.text(Component.translatableWithFallback("cyberblock.settings.difficulty.note", "Saved with the world; operators and the host change these"));
 	}
 
+	/** Performance mode (9-F1's {@link Performance}, which saves, logs and applies it): frame scale 50..100 % by 5, figures 16..48 by 4. */
 	private void performance(final PageTab tab) {
-		PerformancePrefs p = PerformancePrefs.current();
-		int scaleSteps = (PerformancePrefs.SCALE_MAX - PerformancePrefs.SCALE_MIN) / PerformancePrefs.SCALE_STEP;
-		int capSteps = (PerformancePrefs.CAP_MAX - PerformancePrefs.CAP_MIN) / PerformancePrefs.CAP_STEP;
-		StepSlider scale = new StepSlider(HALF, scaleSteps, (p.scale() - PerformancePrefs.SCALE_MIN) / PerformancePrefs.SCALE_STEP,
+		PerformancePrefs p = Performance.get();
+		int scaleSteps = (int) Math.round((PerformancePrefs.SCALE_MAX - PerformancePrefs.SCALE_MIN) / SCALE_STEP);
+		int capSteps = (PerformancePrefs.CAP_MAX - PerformancePrefs.CAP_MIN) / CAP_STEP;
+		IntFunction<Double> scaleAt = i -> PerformancePrefs.SCALE_MIN + i * SCALE_STEP;
+		IntUnaryOperator capAt = i -> PerformancePrefs.CAP_MIN + i * CAP_STEP;
+		StepSlider scale = new StepSlider(HALF, scaleSteps, (int) Math.round((p.scale() - PerformancePrefs.SCALE_MIN) / SCALE_STEP),
 			i -> CommonComponents.optionNameValue(Component.translatableWithFallback("cyberblock.settings.scale", "Frame scale"),
-				Component.literal((PerformancePrefs.SCALE_MIN + i * PerformancePrefs.SCALE_STEP) + " %")),
-			i -> PerformancePrefs.set(PerformancePrefs.current().withScale(PerformancePrefs.SCALE_MIN + i * PerformancePrefs.SCALE_STEP)));
+				Component.literal(Math.round(scaleAt.apply(i) * 100) + " %")),
+			i -> Performance.set(Performance.get().withScale(scaleAt.apply(i))));
 		scale.setTooltip(Tooltip.create(Component.translatableWithFallback("cyberblock.settings.scale.help",
 			"Minecraft renders and exports its frame at this share of the window; the compositor upscales it")));
-		StepSlider cap = new StepSlider(HALF, capSteps, (p.figureCap() - PerformancePrefs.CAP_MIN) / PerformancePrefs.CAP_STEP,
+		StepSlider cap = new StepSlider(HALF, capSteps, (p.figureCap() - PerformancePrefs.CAP_MIN) / CAP_STEP,
 			i -> CommonComponents.optionNameValue(Component.translatableWithFallback("cyberblock.settings.figure_cap", "Figures"),
-				Component.literal(Integer.toString(PerformancePrefs.CAP_MIN + i * PerformancePrefs.CAP_STEP))),
-			i -> PerformancePrefs.set(PerformancePrefs.current().withFigureCap(PerformancePrefs.CAP_MIN + i * PerformancePrefs.CAP_STEP)));
+				Component.literal(Integer.toString(capAt.applyAsInt(i)))),
+			i -> Performance.set(Performance.get().withFigureCap(capAt.applyAsInt(i))));
 		cap.setTooltip(Tooltip.create(Component.translatableWithFallback("cyberblock.settings.figure_cap.help", "How many of the nearest Night City figures are drawn")));
 		tab.rows(List.of(scale, cap), 2);
 		tab.text(Component.translatableWithFallback("cyberblock.settings.performance.note", "Saved on this PC only"));
@@ -336,13 +362,15 @@ public final class CyberblockSettingsScreen extends Screen {
 	/** A server on/off row: shows the server's value, sends {@code command(on)} when clicked. */
 	private ServerRow<Boolean> onOff(final int width, final Component label, final Component help, final Function<SettingsWire.Snapshot, Boolean> value,
 		final Predicate<SettingsWire.Snapshot> may, final Function<Boolean, String> command) {
-		return this.server(CycleButton.onOffBuilder(false), width, label, help, value, may, command);
+		return this.server(CycleButton.onOffBuilder(false), List.of(true, false), width, label, help, value, may, command);
 	}
 
-	private <T> ServerRow<T> server(final CycleButton.Builder<T> builder, final int width, final Component label, final Component help,
+	/** A server row cycling through {@code values}; each value's command ends with that value (ServerValues paces them per row). */
+	private <T> ServerRow<T> server(final CycleButton.Builder<T> builder, final List<T> values, final int width, final Component label, final Component help,
 		final Function<SettingsWire.Snapshot, T> value, final Predicate<SettingsWire.Snapshot> may, final Function<T, String> command) {
-		ServerRow<T> row = new ServerRow<>(value, may, help);
-		row.button = builder.withTooltip(v -> row.tooltip()).create(0, 0, width, H, label, (b, v) -> ServerValues.command(command.apply(v)));
+		ServerRow<T> row = new ServerRow<>(values, value, may, help, command);
+		row.button = builder.withValues(values).withTooltip(v -> row.tooltip()).create(0, 0, width, H, label,
+			(b, v) -> ServerValues.command(command.apply(v)));
 		this.serverRows.add(row);
 		return row;
 	}
@@ -397,18 +425,23 @@ public final class CyberblockSettingsScreen extends Screen {
 		};
 	}
 
-	/** One server row: its button, the server's value for it, and who may change it. */
+	/** One server row: its button, the server's value for it, who may change it, and the command that changes it. */
 	private static final class ServerRow<T> {
+		final List<T> values;
 		final Function<SettingsWire.Snapshot, T> value;
 		final Predicate<SettingsWire.Snapshot> may;
 		final Component help;
+		final Function<T, String> command;
 		Function<SettingsWire.Snapshot, Component> locked = s -> LOCKED;
 		CycleButton<T> button;
 
-		ServerRow(final Function<SettingsWire.Snapshot, T> value, final Predicate<SettingsWire.Snapshot> may, final Component help) {
+		ServerRow(final List<T> values, final Function<SettingsWire.Snapshot, T> value, final Predicate<SettingsWire.Snapshot> may, final Component help,
+			final Function<T, String> command) {
+			this.values = values;
 			this.value = value;
 			this.may = may;
 			this.help = help;
+			this.command = command;
 		}
 
 		ServerRow<T> locked(final Component why) {
@@ -425,10 +458,19 @@ public final class CyberblockSettingsScreen extends Screen {
 			return Tooltip.create(s == null ? WAITING : this.may.test(s) ? this.help : this.locked.apply(s));
 		}
 
+		/**
+		 * Shows the server's value, or, while this row's command waits to be sent or answered, the value it asks for with a pending
+		 * mark ("On ...").
+		 */
 		void apply(final SettingsWire.@Nullable Snapshot s) {
 			this.button.active = s != null && this.may.test(s);
-			// setValue also refreshes the tooltip (the reason it is greyed, or what it does)
-			this.button.setValue(s == null ? this.button.getValue() : this.value.apply(s));
+			String pending = ServerValues.pending(this.command.apply(this.button.getValue()));
+			@Nullable T wanted = pending == null ? null : this.values.stream().filter(v -> this.command.apply(v).equals(pending)).findFirst().orElse(null);
+			// setValue also refreshes the label and the tooltip (the reason it is greyed, or what it does)
+			this.button.setValue(wanted != null ? wanted : s == null ? this.button.getValue() : this.value.apply(s));
+			if (wanted != null) {
+				this.button.setMessage(Component.translatableWithFallback("cyberblock.settings.pending", "%s ...", this.button.getMessage()));
+			}
 		}
 	}
 

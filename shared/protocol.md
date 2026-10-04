@@ -1929,11 +1929,14 @@ commands, so the server decides (section 1.13).
   on|off`, `/cyberblock pvp on|off`, `/cyberblock outline erase on|off` and the new `/cyberblock difficulty overlord chill|normal|brutal` and `/cyberblock difficulty heat
   <25-200>` (operators and the singleplayer owner; `/cyberblock difficulty` alone shows them to everyone). The difficulty is saved with the world (`cyberblock:difficulty`):
   a new match's Overlord starts at that intensity (its host may change it per match) and every chaos gain is multiplied by the Heat scaling before it reaches the meter.
-- **Client only:** the Performance tab's frame scale (50..100 % by 5) and figure cap (16..48 by 4) live in `config/cyberblock/performance.json` on the player's PC.
+- **Pacing:** vanilla kicks a player who is not an operator after about ten quick commands (each adds 20 to a counter that drops by 1 a tick; the limit is 20 x
+  `command-spam-threshold-seconds`, 200 by default). The screen keeps each row's latest command and sends one about every 1.1 s; the row shows the value it asked
+  for with ` ...` until the next answer. The mouse wheel does not change server rows.
+- **Client only:** the Performance tab is 9-F1's Performance mode (`client.perf.Performance` owns `config/cyberblock/performance.json`, logs it and sends the frame
+  scale to the DLL): frame scale 0.5..1 by 0.05 (shown as 50..100 %) and figure cap 16..48 by 4.
 - **Log lines:** server `settings: difficulty: Overlord intensity default <i>, Heat scaling <n> % (world setting ...)` at start, `settings: Overlord intensity default <i> (by
   <name>)`, `settings: Heat scaling <n> % (by <name>)`; client `settings: server values received (admin yes|no, host yes|no, server.json rows shown|hidden)`, `settings:
-  server values: ...` on each change, `settings: /<command>` for each row sent, and once per start `settings: performance frame scale <n> %, figure cap <n> (...); applied by
-  <readers>` or `nothing applies them yet`.
+  server values: ...` on each change, and `settings: /<command>` for each row sent (with ` (<n> more waiting, one a second)` while others wait).
 
 Phase 9 examples, client to server (`cyberblock:act`, `t:"settings"`):
 ```jsonl
