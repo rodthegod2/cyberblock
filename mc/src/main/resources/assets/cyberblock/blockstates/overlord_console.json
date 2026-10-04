@@ -1,0 +1,19 @@
+{
+	"variants": {
+		"facing=east": {
+			"model": "cyberblock:block/overlord_console",
+			"y": 90
+		},
+		"facing=north": {
+			"model": "cyberblock:block/overlord_console"
+		},
+		"facing=south": {
+			"model": "cyberblock:block/overlord_console",
+			"y": 180
+		},
+		"facing=west": {
+			"model": "cyberblock:block/overlord_console",
+			"y": 270
+		}
+	}
+}

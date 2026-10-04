@@ -1,0 +1,108 @@
+{
+	"ambientocclusion": false,
+	"textures": {
+		"plate": "cyberblock:block/trauma_beacon_plate",
+		"post": "cyberblock:block/trauma_beacon_post",
+		"head": "cyberblock:block/trauma_beacon_lit",
+		"particle": "#plate"
+	},
+	"elements": [
+		{
+			"from": [
+				2,
+				0,
+				2
+			],
+			"to": [
+				14,
+				2,
+				14
+			],
+			"faces": {
+				"north": {
+					"texture": "#plate"
+				},
+				"south": {
+					"texture": "#plate"
+				},
+				"west": {
+					"texture": "#plate"
+				},
+				"east": {
+					"texture": "#plate"
+				},
+				"up": {
+					"texture": "#plate"
+				},
+				"down": {
+					"texture": "#plate"
+				}
+			}
+		},
+		{
+			"from": [
+				7,
+				2,
+				7
+			],
+			"to": [
+				9,
+				10,
+				9
+			],
+			"faces": {
+				"north": {
+					"texture": "#post"
+				},
+				"south": {
+					"texture": "#post"
+				},
+				"west": {
+					"texture": "#post"
+				},
+				"east": {
+					"texture": "#post"
+				},
+				"up": {
+					"texture": "#post"
+				},
+				"down": {
+					"texture": "#post"
+				}
+			}
+		},
+		{
+			"from": [
+				5,
+				10,
+				5
+			],
+			"to": [
+				11,
+				14,
+				11
+			],
+			"faces": {
+				"north": {
+					"texture": "#head"
+				},
+				"south": {
+					"texture": "#head"
+				},
+				"west": {
+					"texture": "#head"
+				},
+				"east": {
+					"texture": "#head"
+				},
+				"up": {
+					"texture": "#head"
+				},
+				"down": {
+					"texture": "#head"
+				}
+			},
+			"light_emission": 15
+		}
+	]
+}

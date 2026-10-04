@@ -1,0 +1,10 @@
+{
+	"variants": {
+		"lit=false": {
+			"model": "cyberblock:block/trauma_beacon_off"
+		},
+		"lit=true": {
+			"model": "cyberblock:block/trauma_beacon_lit"
+		}
+	}
+}
