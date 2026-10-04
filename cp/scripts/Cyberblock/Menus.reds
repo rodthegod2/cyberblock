@@ -21,6 +21,13 @@
 // PerformFastTravelRequest the world map queues (worldMap.swift FastTravel, fastTravelSystem.swift), FastTravelPointData
 // ShouldShowMappinOnWorldMap/mappinID, VehicleComponent.IsMountedToVehicle, the PlayerStateMachine Combat blackboard
 // value gamePSMCombat.InCombat, StrBeginsWith. The Atlas's own reply keeps every index at -1 (map-only).
+// The Holo-Table stands in the Afterlife hub, where a linked host's V is parked (Park.reds). Vanilla's PerformFastTravel
+// calls PlayerGameplayRestrictions.RemoveAllGameplayRestrictions, which would strip the park's NoMovement and
+// NoCameraControl while V stays hidden, and the park's fallback would teleport V back home on release. So a point picked
+// while V is parked is only remembered (toast "when you leave the hub"); UpdateFastTravel (each UI pump) travels 1 s
+// after the park is released, once no Cyberblock teleport runs, and Steve follows V as always. Log lines:
+// 'fast travel: to <name> when V leaves the hub (V is parked)', 'fast travel: to <name> (Holo-Table)',
+// 'fast travel: <name> dropped (<why>)'.
 //
 // 2.31 script API: gameuiInGameMenuGameController.OnAction/OnInitialize, its m_player, SpawnMenuInstanceEvent(
 // n"OnOpenPauseMenu"), SpawnMenuInstanceDataEvent(n"OnOpenHubMenu_InitData" | n"OnOpenRadialHubMenu_InitData",
@@ -49,7 +56,8 @@
 public abstract class CyberblockMenus {
   // Why the host cannot fast travel right now ("" = it can): the runtime check of the Holo-Table path (megaplan 7-V1; the
   // Atlas stays map-only). It is the data term's own rule, without the terminal: no quest lock in FastTravelSystem
-  // (IsFastTravelEnabled), V on foot, out of combat and not held by a scene. Each change of the verdict logs
+  // (IsFastTravelEnabled), V on foot, out of combat and not held by a scene (while V is parked the park's own restrictions
+  // are no scene: the travel waits for the hub exit and is checked again then). Each change of the verdict logs
   // `fast travel: Holo-Table path active (...)` or `fast travel: off (<why>)`.
   public static func FastTravelBlock(game: GameInstance) -> String {
     let why = "";
@@ -67,7 +75,7 @@ public abstract class CyberblockMenus {
           if player.GetPlayerStateMachineBlackboard().GetInt(GetAllBlackboardDefs().PlayerStateMachine.Combat) == EnumInt(gamePSMCombat.InCombat) {
             why = "V is in combat";
           } else {
-            if CyberblockEffects.PlayerLocked(game, player) {
+            if !CyberblockPark.Parked(game) && CyberblockEffects.PlayerLocked(game, player) {
               why = "V is held by a scene";
             }
           }
@@ -84,7 +92,8 @@ public abstract class CyberblockMenus {
   }
 
   // `uiact fasttravel`: id = the point's index in FastTravelSystem.GetFastTravelPoints (from ReplyFastTravel), arg = its
-  // name. The index is used only while its name still matches; else the point is looked up by name.
+  // name. The index is used only while its name still matches; else the point is looked up by name. While V is parked
+  // (the hub) the point is remembered for the hub exit instead (see the header).
   private static func FastTravel(game: GameInstance, index: Int32, name: String) -> Void {
     let why = CyberblockMenus.FastTravelBlock(game);
     if StrLen(why) > 0 {
@@ -108,11 +117,49 @@ public abstract class CyberblockMenus {
       Cyberblock_Notify(n"warning", "Fast travel", "That point is not available", 4.0);
       return;
     }
+    let pointName = GetLocalizedText(point.GetPointDisplayName());
+    if CyberblockPark.Parked(game) {
+      let s = CyberblockVendorService.Get();
+      if !IsDefined(s) {
+        return;
+      }
+      s.travelPending = true;
+      s.travelIndex = index;
+      s.travelName = name;
+      s.travelWait = 0;
+      Cyberblock_Notify(n"info", "Fast travel", s"To \(pointName) when you leave the hub", 4.0);
+      Cyberblock_Log(s"fast travel: to \(pointName) when V leaves the hub (V is parked)");
+      return;
+    }
     let request = new PerformFastTravelRequest();
     request.pointData = point;
     request.player = GetPlayer(game);
     travel.QueueRequest(request);
-    Cyberblock_Log(s"fast travel: to \(GetLocalizedText(point.GetPointDisplayName())) (Holo-Table)");
+    Cyberblock_Log(s"fast travel: to \(pointName) (Holo-Table)");
+  }
+
+  // From CyberblockRestyle.Update (each UI pump, up to 30 Hz, also while paused): a fast travel picked while V was parked
+  // runs 1 s after the park is released (the hub exit) and no Cyberblock teleport is running; it is dropped when
+  // Cyberblock goes off or Minecraft is gone.
+  public static func UpdateFastTravel(game: GameInstance, on: Bool) -> Void {
+    let s = CyberblockVendorService.Get();
+    if !IsDefined(s) || !s.travelPending {
+      return;
+    }
+    if !on || !Cyberblock_IsLinked() {
+      s.travelPending = false;
+      Cyberblock_Log(s"fast travel: \(s.travelName) dropped (Cyberblock off or Minecraft gone)");
+      return;
+    }
+    if CyberblockPark.Parked(game) || CyberblockTeleport.Busy(game) {
+      s.travelWait = 0;
+      return;
+    }
+    s.travelWait += 1;
+    if s.travelWait >= 30 {
+      s.travelPending = false;
+      CyberblockMenus.FastTravel(game, s.travelIndex, s.travelName);
+    }
   }
 
   // The point's name as the reply sent it: the DLL and Minecraft cut it to 64, so a prefix matches.
@@ -121,9 +168,10 @@ public abstract class CyberblockMenus {
     return StrLen(name) > 0 && StrBeginsWith(full, name);
   }
 
-  // `reply atlas` for `uiact atlasreq arg:"fasttravel"` (the Holo-Table's fast travel list): only the known fast-travel
-  // points, each with its index in GetFastTravelPoints while the host can fast travel now, -1 otherwise (and a toast
-  // saying why).
+  // `reply atlas` for `uiact atlasreq arg:"fasttravel"` (the Holo-Table's fast travel list, asked again every few seconds
+  // while the table lists it): only the known fast-travel points, each with its index in GetFastTravelPoints while the
+  // host can fast travel now, -1 otherwise. No toast here (a click on a point says why); the log line comes only when the
+  // count or the verdict changed.
   private static func ReplyFastTravel(game: GameInstance, id: Int32) -> Void {
     let why = CyberblockMenus.FastTravelBlock(game);
     Cyberblock_ReplyBegin(n"atlas", id);
@@ -147,10 +195,12 @@ public abstract class CyberblockMenus {
       }
     }
     Cyberblock_ReplyEnd();
-    if StrLen(why) > 0 {
-      Cyberblock_Notify(n"info", "Fast travel", s"Not now: \(why)", 4.0);
+    let line = s"ui: fast travel reply: \(sent) points\(StrLen(why) > 0 ? s" (off: \(why))" : "")";
+    let s = CyberblockVendorService.Get();
+    if IsDefined(s) && NotEquals(s.fastTravelReplyLog, line) {
+      s.fastTravelReplyLog = line;
+      Cyberblock_Log(line);
     }
-    Cyberblock_Log(s"ui: fast travel reply: \(sent) points\(StrLen(why) > 0 ? s" (off: \(why))" : "")");
   }
 
   // The Minecraft screen for a menu input action, n"" for none.

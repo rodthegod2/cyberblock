@@ -11,13 +11,16 @@ import org.jspecify.annotations.Nullable;
  * <ul>
  * <li>{@code id}: the host's vendor session (+1 each time a vendor is taken over); a refresh after a purchase keeps it;</li>
  * <li>{@code pins[0]}: the vendor itself: {@code kind} {@code ripperdoc} or {@code vendor}, {@code name} its shop name;</li>
- * <li>{@code groups}: one per stock category, titled by it; {@code done:false} lists the vendor's stock (buy), {@code done:true}
- * V's items the vendor takes (sell);</li>
+ * <li>{@code groups}: one per stock category, titled by it; kind {@code buy} with {@code done:false} lists the vendor's stock,
+ * kind {@code sell} with {@code done:true} V's items the vendor takes (either mark makes a sell group);</li>
  * <li>{@code lines}: {@code hash} the item hash, {@code text} its name, {@code state} its unit price in eddies.</li>
  * </ul>
  * Buying and selling go back as {@code uiact buy|sell}: {@code hash} the line's hash, {@code id} the line's index among the lines of
  * its side in reply order, {@code arg} the quantity (1 to {@link #BULK}; the scripts clamp it to the stack and the money). The host
- * pays with its real Cyberpunk money ({@code stats.money}); nothing is paid in Minecraft eddies.
+ * pays with its real Cyberpunk money ({@code stats.money}); nothing is paid in Minecraft eddies. Nothing asks for the reply (no
+ * {@code vendorreq}), and buy/sell are {@code uiact}s, never DLL events: the one Phase 7 vendor contract (megaplan 1.8/1.9 amendment
+ * 2026-10-04). Installing cyberware stays Cyberpunk's own ripperdoc screen ("Night City vendor..."): the Minecraft ripperdoc screen
+ * is a shop only (a Phase 7 descope).
  */
 public final class VendorModel {
 	/** A shift-click buys or sells this many (the scripts clamp it to the stack). */
@@ -53,13 +56,18 @@ public final class VendorModel {
 		List<Item> buy = new ArrayList<>();
 		List<Item> sell = new ArrayList<>();
 		for (UiModel.Group group : reply.groups()) {
-			List<Item> side = group.done() ? sell : buy;
+			List<Item> side = sellSide(group) ? sell : buy;
 			for (UiModel.Line line : group.lines()) {
 				side.add(new Item(side.size(), line.hash(), line.text(), group.title(), line.state()));
 			}
 		}
 
 		return new Vendor(reply.id(), name, ripperdoc, List.copyOf(buy), List.copyOf(sell));
+	}
+
+	/** A group of V's items the vendor takes: kind {@code sell} or {@code done:true} (the scripts send both; either is enough). */
+	static boolean sellSide(final UiModel.Group group) {
+		return group.done() || group.kind().equals("sell");
 	}
 
 	/** How many one click trades: 1, or {@link #BULK} with Shift. */

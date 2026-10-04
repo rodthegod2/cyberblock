@@ -36,6 +36,8 @@ public abstract class CyberblockRestyle {
   public static func Update(game: GameInstance, on: Bool) -> Void {
     // A host's vendor taken over by Minecraft (Vendors.reds) closes Cyberpunk's hub once Minecraft's screen is up.
     CyberblockVendors.Update(game, on);
+    // A Holo-Table fast travel picked while V was parked runs after the hub exit (Menus.reds).
+    CyberblockMenus.UpdateFastTravel(game, on);
     let s = CyberblockUiService.Get();
     if !IsDefined(s) {
       return;

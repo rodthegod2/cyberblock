@@ -35,6 +35,26 @@ class VendorModelTest {
 	}
 
 	@Test
+	void sellGroupsByKindOrDone() {
+		// the scripts mark V's side both ways (kind sell, done:true; 7D keeps buy/sell group kinds in a vendor reply); either is enough,
+		// and a buy group is never taken for the sell side
+		UiModel.Reply reply = UiModel.parseReply(json("{'kind':'vendor','id':3,'groups':["
+			+ "{'hash':0,'title':'Weapons','kind':'buy','tracked':false,'done':false,'lines':[{'hash':11,'text':'Lexington','state':1250}]},"
+			+ "{'hash':6,'title':'Other','kind':'sell','tracked':false,'done':true,'lines':[{'hash':21,'text':'Junk','state':3}]},"
+			+ "{'hash':5,'title':'Clothing','kind':'sell','tracked':false,'done':false,'lines':[{'hash':22,'text':'Jacket','state':40}]}]}"));
+		VendorModel.Vendor v = VendorModel.of(reply);
+		assertEquals(List.of(new VendorModel.Item(0, 11, "Lexington", "Weapons", 1250)), v.buy());
+		assertEquals(List.of(new VendorModel.Item(0, 21, "Junk", "Other", 3), new VendorModel.Item(1, 22, "Jacket", "Clothing", 40)), v.sell());
+	}
+
+	@Test
+	void noHostNoFastTravelPoints() {
+		// guests (and a host that went quiet) list nothing on the Holo-Table, and nothing is asked
+		UiLink.forgetHost();
+		assertTrue(FastTravelPoints.known().isEmpty());
+	}
+
+	@Test
 	void ripperdocAndNameFromTheFirstPin() {
 		UiModel.Reply reply = UiModel.parseReply(json("{'kind':'vendor','id':1,'pins':[{'p':[0,0,0],'kind':'ripperdoc','name':'Viktor','i':-1}],'groups':[]}"));
 		VendorModel.Vendor v = VendorModel.of(reply);

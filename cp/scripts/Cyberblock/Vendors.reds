@@ -4,8 +4,10 @@
 // When the host opens a vendor or a ripperdoc while Cyberblock is On and Minecraft is linked, Cyberpunk's vendor hub
 // starts as usual (VendorHubMenuGameController.OnSetUserData); right after it, the stock is read and sent to Minecraft as
 // an unrequested `reply kind:"vendor"` (pin 0 = the vendor, kind ripperdoc|vendor and its shop name; one group per stock
-// category, done:false the vendor's stock, done:true V's items it takes; lines: hash = the item's TweakDB hash, text = its
-// name, state = its unit price). Minecraft opens its vendor screen for it; once Minecraft reports a screen open
+// category, kind buy + done:false the vendor's stock, kind sell + done:true V's items it takes; lines: hash = the item's
+// TweakDB hash, text = its name, state = its unit price). This is the one vendor contract of Phase 7 (megaplan 1.8/1.9
+// amendment 2026-10-04): nothing asks for the reply (no `vendorreq`), and buy/sell are `uiact`s, never DLL events.
+// Minecraft opens its vendor screen for it; once Minecraft reports a screen open
 // (Cyberblock_ScreenOpen) Cyberpunk's own hub is closed, so input goes to Minecraft. If Minecraft opens nothing within
 // 1.5 s (no screen, an older mod or DLL that dropped the reply) Cyberpunk's screen simply stays: the pass-through.
 // `uiact buy|sell` (hash = item hash, id = the line's index on its side, arg = the quantity) trade through the vendor's
@@ -16,8 +18,9 @@
 //
 // Pass-through (Cyberpunk's screen, logged as `vendors: <name> pass-through (<why>)`): a stash, the prologue ripperdoc
 // (Viktor before q001_ripperdoc_done) and the ripperdoc tutorials (mq048, the Phantom Liberty start), a quest lock
-// (LockInHubMenu), V held by a scene or workspot, a Minecraft screen already open, the vendor not streamed, and any
-// vendor whose stock reads empty. Phase 0 (f) is not confirmed in game yet: the stock read is the runtime feature check,
+// (LockInHubMenu), a Minecraft screen already open, the vendor not streamed, and any vendor whose stock reads empty.
+// V seated in the ripperdoc's chair or talking in the vendor's dialogue scene (a workspot or scene tier 2-5) is the
+// hub's own state, not a block. Phase 0 (f) is not confirmed in game yet: the stock read is the runtime feature check,
 // and every verdict change logs `vendors: path: <minecraft screens|pass-through> (...)`.
 //
 // 2.31 script API (NativeDB, redscript; the 2.31 scripts the compile checker uses): VendorHubMenuGameController
@@ -61,8 +64,15 @@ public class CyberblockVendorService extends ScriptableService {
   public let moneyBefore: Int32;
   // The last `vendors: path:` verdict logged.
   public let path: String;
-  // The last `fast travel:` verdict logged (Menus.reds FastTravelBlock, the Holo-Table's fast travel of package 7V).
+  // The last `fast travel:` verdict and fast-travel reply logged (Menus.reds, the Holo-Table's fast travel of package 7V).
   public let fastTravelLog: String;
+  public let fastTravelReplyLog: String;
+  // A fast travel picked while V is parked in the hub (Menus.reds): it runs once the park is released (hub exit).
+  public let travelPending: Bool;
+  public let travelIndex: Int32;
+  public let travelName: String;
+  // Pump passes since the park was released.
+  public let travelWait: Int32;
 
   public static func Get() -> ref<CyberblockVendorService> {
     return GameInstance.GetScriptableServiceContainer().GetService(n"CyberblockVendorService") as CyberblockVendorService;
@@ -179,10 +189,9 @@ public abstract class CyberblockVendors {
     if StatusEffectSystem.ObjectHasStatusEffectWithTag(player, n"LockInHubMenu") {
       return "quest lock";
     }
-    let held = CyberblockEffects.LockReason(game, player);
-    if NotEquals(held, n"") {
-      return s"V is held by the game: \(NameToString(held))";
-    }
+    // No CyberblockEffects.LockReason here: a ripperdoc seats V in its chair (a workspot) and many vendors trade inside
+    // their dialogue scene, so the hub's own workspot or scene is no block (7V review 2026-10-04); quest-critical vendors
+    // carry LockInHubMenu or the facts above.
     if !IsDefined(manager.GetVendorInstance()) {
       return "the vendor is not streamed";
     }
