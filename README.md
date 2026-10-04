@@ -90,7 +90,7 @@ Everything works on Night City's real NPCs, vehicles and devices.
   subtitles, toasts, phone calls, journal, atlas and the pause screen. Menus that cannot be replaced (shops, ripperdoc,
   settings and similar) are restyled in Minecraft colours and framed.
 - **The Atlas:** Night City as a Minecraft filled map, measured from the game's own collision as you move (no Cyberpunk map
-  art), with every map pin; `/cyberblock survey` maps the whole city once, for every world and save
+  art), with every map pin; `/cyberblock survey` maps the whole city once (15 minutes at most), for every world and save
   ([details](docs/HOW-TO-PLAY.md#the-atlas-map)).
 - A 20-perk skill tree, a starter kit, free perks in creative (or `/cyberblock perks free on`) and `/cyberblock level`.
 

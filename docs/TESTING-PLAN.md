@@ -33,6 +33,46 @@ Three things from the 20:05-20:16 session (`fix/ingame3`):
 
 ## Re-test 3
 
+## Fast survey re-test (branch feat/survey-fast)
+The first survey needed 5 h 36 min for 2116 fixed stops (about 9 s each: a 1.5 s wait, then 12321 rays at 400 per 100 ms
+tick). It is now planned to a 15-minute budget: only the city (fast-travel points outside the Badlands, never the open sea),
+then the Badlands coarser; the DLL casts the rays itself every frame; each stop waits 0.5 s (2 s at most), measures how far
+loaded collision reaches and maps all of it while V flies on to the next stop; the detail (2/4/8/10 m) follows the measured
+speed. Guide: `docs/HOW-TO-PLAY.md` "The Atlas (map)"; wire: `shared/protocol.md` "Atlas" (Tour).
+
+### S1. It plans the city, not the sea
+1. On foot, `/cyberblock survey redo` (or `/cyberblock survey` on an empty map).
+- **Log:** `survey: rays ready, query filter (...)` once (**report** it if it says `one ray per collision group` or `rays
+  disabled`), then `survey: area from P pins: city hull A km2 (C city points), outskirts hull B km2; squares left: X city
+  (.. km2) + Y outskirts (.. km2) ...` and `survey: plan: city every 2 m, outskirts every 8 m, about S s left of the 720 s
+  plan (..., guessed)`. **Report** A, B, X, Y. Expect A about 20-35 km2, X about 500-900; C should be most of the
+  fast-travel points (if it says `dense-pin points`, the district lookup failed: report it).
+
+### S2. Stops are short and the map is useful within minutes
+1. Watch the first minute: V starts over V's own square and the Atlas (M) fills outward from there.
+- **Log:** one line per stop: `survey: stop n at (gx, gy) [city]: settled after T s, reach R m (sampled R m), C columns,
+  H hits in M ms (U us/column), S s in all; d of N squares, eta ...`. **Report** typical T (expect 0.5-0.7), R (how far
+  collision reaches: 150-600), U, S, and how many stops say `not settled` or `nothing streamed`.
+- After the first stops a new `survey: plan: ... (measured)` line appears whenever the detail changes. **Report** the
+  city and outskirts cell sizes it settles on.
+- The game runs at about 25 fps while it surveys; menus (Esc) still open at once and pause it.
+
+### S3. It finishes within 15 minutes
+1. Leave it alone. **Expect:** the boss bar "Atlas survey (city): n of N squares (p %), ~M min left", the minutes going
+   down steadily (not jumping up by much), then "(outskirts)", then the toast "Atlas survey done", all within 15 minutes of
+   wall time (menu time not counted). V is back exactly where V stood.
+- **Log:** `survey: done (every square surveyed) after K stops in S s this run, N of N squares done`. **Report** K and S.
+  If it says `stopped (15-minute budget used; ...)` instead, report the last plan line; `/cyberblock survey` resumes.
+2. Press M: the whole city is drawn (coarser squares where the plan chose 4-10 m), the Badlands blockier; no stripes of
+   parchment between stops. **Report** any gap.
+
+### S4. Driving maps more
+1. Drive fast through an unmapped part (or after `/cyberblock survey redo` and stop at once). **Expect:** a band on each
+   side of the road appears on the Atlas and radar while driving, wider than on foot; frame rate as before.
+
+### S5. Safety is unchanged
+Repeat A4 steps 2-4 and A5 below (menu pauses, saving refused, F9 / stop / vehicle / combat put V back exactly).
+
 ## Atlas re-test (branch feat/atlas)
 The Atlas (M) now draws Night City from Cyberpunk's collision, and `/cyberblock survey` maps the whole city once. Player
 guide: `docs/HOW-TO-PLAY.md` "The Atlas (map)"; wire: `shared/protocol.md` "Atlas".
@@ -60,16 +100,17 @@ guide: `docs/HOW-TO-PLAY.md` "The Atlas (map)"; wire: `shared/protocol.md` "Atla
 - **Log:** `script: ui: tracked pin <i>` (or `track pin <i> unresolved (...)` for a non-quest pin, with a toast).
 
 ### A4. The survey tour (AFK)
-1. On foot, out of combat, type `/cyberblock survey`. **Expect:** a boss bar "Atlas survey: n of N stops (p %), Xh Ym left";
-   V is moved from stop to stop high above the city, invisible, taking no damage; the Atlas fills in around each stop.
+1. On foot, out of combat, type `/cyberblock survey`. **Expect:** a boss bar "Atlas survey (city): n of N squares (p %), ~M min
+   left" (feat/survey-fast; S1-S5 above); V is moved from stop to stop high above the city, invisible, taking no damage; the
+   Atlas fills in around each stop.
 2. Open a Cyberpunk menu (Esc passes through the Minecraft pause screen; or Night City Menu...): the bar says paused.
 3. `/cyberblock survey status` prints the progress. Try saving: it must be refused while the tour runs.
 4. `/cyberblock survey stop` (or F9): **V is put back exactly where V stood**, visible, saving works again.
 5. `/cyberblock survey` again: it resumes (the stops already done are skipped). When all are done: toast "Atlas survey done";
    another `/cyberblock survey` says Night City is already mapped; `/cyberblock survey redo` starts over.
-- **Log:** `survey: start asked by Minecraft (n stops already done)`, `survey: bounds x a..b, y c..d from P map pins: N
-  stops, L left, home (...)`, `survey: started: V hidden, invulnerable, saving locked`, one `survey: stop i/N (gx, gy)
-  sampled|skipped (water)|skipped (nothing streamed): ... eta ...` per stop, `survey: done|stopped (...)`,
+- **Log:** `survey: start asked by Minecraft (n squares already done)`, `survey: area from P pins: ...` (S1),
+  `survey: started: V hidden, invulnerable, saving locked`, one `survey: stop n at (gx, gy) [...]: ...` per stop (S2),
+  `survey: done|stopped (...)`,
   `survey: V put back at (...)` (DLL and script), `survey: V visible again, survey god mode and save lock removed`.
 - **Report** the bounds line, how long a stop takes, and any stop where V was left somewhere or fell.
 

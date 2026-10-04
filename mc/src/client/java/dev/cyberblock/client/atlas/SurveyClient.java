@@ -14,8 +14,9 @@ import net.minecraft.resources.Identifier;
 
 /**
  * The Atlas survey tour on the Minecraft side: {@code /cyberblock survey [start|redo|stop|status]} sends {@code survey} to Cyberpunk
- * (start lists the stops the shared map already has, so the tour resumes; redo lists none), and while the tour runs a vanilla
- * boss bar at the top of the screen shows its progress and time left. The toasts at the end come from AtlasStore.
+ * (start lists the squares the shared map already has, so the tour resumes; redo lists none), and while the tour runs a vanilla
+ * boss bar at the top of the screen shows its progress, the pass (city, outskirts) and the time left. The toasts at the end come
+ * from AtlasStore.
  */
 public final class SurveyClient {
 	public static final Identifier HUD_ID = Identifier.fromNamespaceAndPath(Cyberblock.ID, "atlas_survey");
@@ -48,8 +49,8 @@ public final class SurveyClient {
 				}
 
 				Cyberblock.events.accept(AtlasWire.survey("start", done));
-				return op.equals("redo") ? "Atlas survey: mapping all of Night City again. Stand somewhere safe on foot and stay AFK; F9 or /cyberblock survey stop ends it."
-					: "Atlas survey: " + done.size() + " stops already mapped, mapping the rest. Stand somewhere safe on foot and stay AFK; F9 or /cyberblock survey stop ends it.";
+				return op.equals("redo") ? "Atlas survey: mapping all of Night City again (15 minutes at most). Stand somewhere safe on foot and stay AFK; F9 or /cyberblock survey stop ends it."
+					: "Atlas survey: " + done.size() + " squares already mapped, mapping the rest (15 minutes at most). Stand somewhere safe on foot and stay AFK; F9 or /cyberblock survey stop ends it.";
 			}
 			case "stop" -> {
 				Cyberblock.events.accept(AtlasWire.survey("stop", List.of()));
@@ -65,7 +66,7 @@ public final class SurveyClient {
 
 	static String progress(final AtlasWire.SurveyState state) {
 		int percent = state.total() == 0 ? 0 : (int) Math.floor(100.0 * state.done() / state.total());
-		return state.done() + " of " + state.total() + " stops (" + percent + " %), " + AtlasWire.eta(state.eta()) + " left";
+		return state.done() + " of " + state.total() + " squares (" + percent + " %), " + AtlasWire.eta(state.eta()) + " left";
 	}
 
 	/** The progress bar while the tour runs (a HUD element, render thread). */
@@ -77,7 +78,8 @@ public final class SurveyClient {
 
 		Minecraft minecraft = Minecraft.getInstance();
 		int x = (graphics.guiWidth() - BAR_WIDTH) / 2, y = 22;
-		Component text = Component.literal(state.state().equals("paused") ? "Atlas survey paused (Night City menu)" : "Atlas survey: " + progress(state));
+		Component text = Component.literal(state.state().equals("paused") ? "Atlas survey paused (Night City menu)"
+			: "Atlas survey" + (state.reason().isEmpty() ? "" : " (" + state.reason() + ")") + ": " + progress(state));
 		graphics.centeredText(minecraft.font, text, graphics.guiWidth() / 2, y - 10, McTheme.WHITE);
 		McTheme.bossBar(graphics, x, y, BAR_WIDTH, state.total() == 0 ? 0.0F : (float) state.done() / state.total());
 	}

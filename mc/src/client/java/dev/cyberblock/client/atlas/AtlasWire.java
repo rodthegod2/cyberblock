@@ -13,19 +13,19 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The Atlas messages (protocol.md "Atlas"; pure, tested): {@code terrain} and {@code surveystate} from Cyberpunk, {@code survey}
- * to it, and which survey-tour stops Minecraft already has. A message that breaks a limit is invalid (null) as a whole.
+ * to it, and which survey-tour squares Minecraft already has. A message that breaks a limit is invalid (null) as a whole.
  */
 public final class AtlasWire {
 	public static final Set<String> STATES = Set.of("running", "paused", "done", "stopped", "refused", "idle");
 	public static final int MAX_CELLS = 64;
 	public static final int MAX_DONE = 4096;
-	/** The tour's grid (survey.hpp kTourSpacing, kTourHalf): stop (gx, gy) at Cyberpunk (200 gx, 200 gy), a 220 m square. */
+	/** The tour's squares (survey.hpp kTourSpacing, kTourHalf): square (gx, gy) centred on Cyberpunk (200 gx, 200 gy), 200 m wide. */
 	public static final double SPACING = 200.0;
-	public static final double HALF = 110.0;
-	/** A stop whose square Minecraft knows to this share counts as done. */
+	public static final double HALF = 100.0;
+	/** A square Minecraft knows to this share counts as done (survey.hpp kSquareCovered). */
 	public static final double COVERED = 0.9;
 
-	/** {@code stop} is null unless the message reports a finished stop. */
+	/** {@code done} and {@code total} count squares; {@code stop} is null unless the message reports a finished square. */
 	public record SurveyState(String state, int done, int total, double eta, String reason, int @Nullable [] stop) {
 		public boolean running() {
 			return this.state.equals("running") || this.state.equals("paused");
@@ -127,13 +127,13 @@ public final class AtlasWire {
 		return m.toString();
 	}
 
-	/** The cells (inclusive rectangle cx0, cz0, cx1, cz1) of stop (gx, gy)'s square, in Minecraft space (z = -Cyberpunk y). */
+	/** The cells (inclusive rectangle cx0, cz0, cx1, cz1, 100 x 100) of square (gx, gy), in Minecraft space (z = -Cyberpunk y). */
 	public static int[] stopCells(final int gx, final int gy) {
 		double x = gx * SPACING, z = -gy * SPACING;
-		return new int[] {AtlasTiles.cellOf(x - HALF), AtlasTiles.cellOf(z - HALF), AtlasTiles.cellOf(x + HALF), AtlasTiles.cellOf(z + HALF)};
+		return new int[] {AtlasTiles.cellOf(x - HALF), AtlasTiles.cellOf(z - HALF), AtlasTiles.cellOf(x + HALF) - 1, AtlasTiles.cellOf(z + HALF) - 1};
 	}
 
-	/** The stops of {@code reported} plus every stop whose square the tiles know to {@link #COVERED}: what {@code start} lists. */
+	/** The squares of {@code reported} plus every square the tiles know to {@link #COVERED}: what {@code start} lists. */
 	public static List<Long> doneStops(final AtlasTiles tiles, final Collection<Long> reported) {
 		TreeSet<Long> done = new TreeSet<>(reported);
 		List<Long> keys = tiles.tileKeys();
@@ -163,18 +163,18 @@ public final class AtlasWire {
 		return new ArrayList<>(done);
 	}
 
-	/** Seconds left as the HUD shows them: "3h 12m", "12m", "under a minute", "unknown" (negative). */
+	/** Seconds left as the HUD shows them, rounded up: "~3 h 12 min", "~12 min", "under a minute", "unknown time" (negative). */
 	public static String eta(final double seconds) {
 		if (!(seconds >= 0.0)) {
 			return "unknown time";
 		}
 
-		long minutes = Math.round(seconds / 60.0);
-		if (minutes < 1) {
+		if (seconds < 60.0) {
 			return "under a minute";
 		}
 
-		return minutes >= 60 ? minutes / 60 + "h " + minutes % 60 + "m" : minutes + "m";
+		long minutes = (long) Math.ceil(seconds / 60.0);
+		return minutes >= 60 ? "~" + minutes / 60 + " h " + minutes % 60 + " min" : "~" + minutes + " min";
 	}
 
 	private static @Nullable Long whole(final @Nullable JsonElement e) {

@@ -979,18 +979,24 @@ def test_atlas_validators_accept_the_limits_themselves():
 def test_atlas_rules_are_stated_in_the_document():
     text = " ".join((section("Atlas semantics and limits") + section(AT_CP_TO_MC) + section(AT_MC_TO_CP)).split())
     for phrase in ("2-m cell", "survey_cell(x, y, z, off)", "survey_column(cx, cz)", "`survey` and `survey_column` sets", "at most 64 cells",
-                   "48 more rays", "300 s", "20 s after a miss", "Water-only", "200 m apart", "serpentine", "8 pins", "9 km", "150 m",
-                   "3 × 3", "1.5 s", "15 s", "220 m", "400 rays", "only water", "invisible", "invulnerable", "saving is locked",
-                   "put back exactly", "menu pauses", "90 %", "never superseded", "1024", "4096 pairs"):
+                   "48 more rays", "300 s", "20 s after a miss", "Water-only", "66 to 96 m", "time budget", "12 minutes", "stops after 15",
+                   "200 m apart", "8 pins", "convex hull", "outside the Badlands", "Open sea beyond them is never visited", "150 m",
+                   "2, 4, 8 or 10 m", "8, 10 or 20 m", "3 × 3", "0.5 s", "2 s at most", "150 to 600 m", "flies up to", "one retry",
+                   "invisible", "invulnerable", "saving is locked", "put back exactly", "menu pauses", "90 %", "never superseded", "1024",
+                   "4096 pairs"):
         assert phrase in text, f"{phrase!r} is not stated"
 
 
 def test_atlas_survey_constants_agree_with_the_dll():
     hpp = Path("cp/plugin/src/survey.hpp").read_text(encoding="utf-8")
     for name, value in (("kRadius", "96.0"), ("kRefreshSeconds", "300.0"), ("kMissRetrySeconds", "20.0"), ("kCellsPerMessage", "64"),
-                        ("kTourSpacing", "200.0"), ("kTourHalf", "110.0"), ("kTourHoldZ", "150.0"), ("kTourHoldAbove", "25.0"),
-                        ("kProbeStep", "80.0"), ("kSettleMin", "1.5"), ("kSettleStable", "1.0"), ("kSettleTimeout", "15.0"),
-                        ("kMinPins", "8"), ("kBoundsMargin", "200.0"), ("kMaxSpan", "9000.0"), ("kWorldLimit", "8000.0"), ("kMaxDone", "4096")):
+                        ("kTourSpacing", "200.0"), ("kTourHalf", "100.0"), ("kTourHoldZ", "150.0"), ("kTourHoldAbove", "25.0"),
+                        ("kProbeStep", "60.0"), ("kSettleStable", "0.5"), ("kSettleTimeout", "2.0"), ("kMinPins", "8"), ("kMinCityPoints", "6"),
+                        ("kPinJoinRadius", "800.0"), ("kCityMargin", "300.0"), ("kOutskirtsMargin", "300.0"), ("kWorldLimit", "8000.0"),
+                        ("kMaxDone", "4096"), ("kPlanSeconds", "720.0"), ("kBudgetSeconds", "900.0"), ("kSquareCovered", "0.9"),
+                        ("kFrameTargetMs", "40.0"), ("kMinBudgetMs", "2.0"), ("kMaxBudgetMs", "25.0"), ("kVehicleBudgetMs", "1.5"),
+                        ("kVehicleMinRadius", "66.0"), ("kMaxDrift", "150.0"), ("kReachHits", "10"), ("kReachRays", "12"),
+                        ("kRefineShare", "0.85")):
         assert re.search(rf"\b{name} = {re.escape(value)};", hpp), f"survey.hpp {name} is not {value}"
 
 

@@ -832,20 +832,29 @@ square**. Minecraft colours it like a map item: **streets and open ground light 
 grey, tall buildings dark grey, megabuildings and towers nearly black, **water blue**, with Minecraft's map shading (an edge
 facing north is brighter, the ground north of a tall building darker). Squares nobody has measured yet stay plain parchment.
 - **It fills in as you move:** while Cyberblock is on, about 48 rays per tick map everything within about 96 m of V, so the
-  streets you walk or drive through appear on their own (the **radar** shows the same map around you).
+  streets you walk through appear on their own (the **radar** shows the same map around you). **Driving maps more:** in a
+  vehicle Cyberblock casts its own rays every frame, so a fast drive leaves a band about 60-96 m wide on each side of the
+  road.
 - **Survey once, and every world and save uses it.** Type **`/cyberblock survey`** once, stand somewhere safe on foot and
-  leave the game alone (AFK). Cyberblock makes V invisible and invulnerable, locks saving, and carries V in steps of 200 m
-  across the whole city (V hangs in the air at each stop while the city streams in, about 10-15 s a stop; a full survey takes
-  a few hours). A boss bar at the top shows the stops done and the time left; a toast says when it is done. **At the end V is
-  put back exactly where V stood**, visible, with saving unlocked. The map is kept **once for the whole installation** in
+  leave the game alone (AFK). **It takes 15 minutes at most** (it aims for about 12). Cyberblock makes V invisible and
+  invulnerable, locks saving, and flies V over Night City: first the city itself (worked out from the fast-travel points
+  outside the Badlands, never the open sea), outward from where V stands so the map is useful within minutes, then the
+  Badlands as a coarser pass. At each stop V hangs in the air until the city has streamed in (half a second, 2 s at most),
+  everything already loaded around V is measured at once, and V flies on towards the next stop meanwhile. Cyberblock
+  measures how fast your PC does this and plans the detail to fit the 15 minutes: every 2 m of the city if it can, else
+  every 4, 8 or 10 m (the whole city coarser rather than gaps; walking and driving fill in the detail later), and the
+  Badlands at 8-20 m. A boss bar at the top shows the 200 m squares done, the pass (city, outskirts) and an honest "~N min
+  left"; a toast says when it is done. **At the end V is put back exactly where V stood**, visible, with saving unlocked.
+  The map is kept **once for the whole installation** in
   `%APPDATA%\.minecraft-cyberblock\cyberblock\nightcity-map\` (Night City is the same in every Minecraft world and every
   Cyberpunk save), so you only ever survey once.
   - `/cyberblock survey stop` ends it early (V goes back home); so do **F9**, getting into a vehicle, a scene or combat
-    starting, or Minecraft disconnecting. Opening a Cyberpunk menu only pauses it.
-  - It resumes: `/cyberblock survey` again skips every stop already on the map. On a finished map it says Night City is
-    already mapped; **`/cyberblock survey redo`** maps it all again. `/cyberblock survey status` shows the progress.
-  - It only starts while Cyberblock is on, V is on foot, alive, not in combat, not in a scene, not gliding. Stops over open
-    water, or where nothing has streamed in, are skipped.
+    starting, or Minecraft disconnecting. Opening a Cyberpunk menu only pauses it (the paused time does not count).
+  - It resumes: `/cyberblock survey` again skips every square already on the map (also if the 15 minutes ran out). On a
+    finished map it says Night City is already mapped; **`/cyberblock survey redo`** maps it all again.
+    `/cyberblock survey status` shows the progress.
+  - It only starts while Cyberblock is on, V is on foot, alive, not in combat, not in a scene, not gliding. The game runs
+    at about 25 fps while it surveys (V is held in the air; that frame time goes into the rays).
 - **Pins:** every pin of Cyberpunk's world map (fast-travel points, vendors, ripperdocs, gigs, quests, apartments, cars and
   the rest) as one of Minecraft's own map markers. **Hover** a pin for its name, its kind and its district; the buttons at the
   top (**Quests, Travel, Shops, Gigs, Places**) hide or show each kind; where pins would cover each other the more important

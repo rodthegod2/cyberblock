@@ -1,15 +1,15 @@
 // The automatic Atlas survey tour (`/cyberblock survey start|stop|status` in Minecraft; the DLL's survey.hpp owns the
-// plan and the state machine, this class carries out each step on the game thread).
+// plan and the state machine and casts the stop's rays itself every frame, this class carries out the steps that need
+// the game's scripts).
 //
 // While Cyberblock is Active, Minecraft is linked, V is on foot, alive, not held (workspot, scene tier 2-5, braindance,
 // moving elevator), not in combat and not flying, the tour:
-//   bounds  derives Night City's extent from the game: the x/y extents of every Map mappin and every known fast-travel
-//           point (the DLL adds a 200 m margin, cuts the box to 9 km and needs at least 8 pins);
+//   bounds  hands the DLL every Map mappin and every known fast-travel point, each fast-travel point marked by its
+//           district: the Badlands (Badlands, North Badlands, South Badlands, Morro Rock, or a district below one of them)
+//           are the outskirts, every other district is the city (the DLL builds the city and the outskirts from them);
 //   begin   makes V invisible to NPCs (PlayerPuppet.SetInvisible), invulnerable (god mode source n"CyberblockSurvey")
 //           and locks saving (SaveLocksManager, reason n"CyberblockSurvey"), so no save can ever hold V at a stop;
-//   settle  casts a 3 x 3 grid of long down rays 80 m apart around the stop where the DLL holds V (every frame) until
-//           Night City's collision has streamed in;
-//   sample  casts up to 400 survey rays per tick at the stop's 2-m columns (Probes.reds SurveyRay);
+//           the DLL then holds V over each stop every frame and casts the probes and survey rays itself;
 //   end     puts V back exactly where V stood, facing as then (TeleportationFacility.Teleport; falls are not reported for
 //           3 s), and undoes begin: V's own invisibility as it was, the god mode source and the save lock removed.
 // Anything that blocks the tour while it runs (F9, a vehicle, a scene, combat, death, the link dropping) ends it at
@@ -17,10 +17,12 @@
 //
 // 2.31 script API (decompiled scripts): MappinSystem.GetMappins(gamemappinsMappinTargetType.Map), IMappin
 // GetWorldPosition, FastTravelSystem (scriptable system n"FastTravelSystem") GetFastTravelPoints, FastTravelPointData
-// mappinID / MappinSystem.GetMappin (fastTravelSystem.swift), PlayerPuppet.SetInvisible/IsInvisible/IsInCombat
-// (player.swift), GameObject.IsDead, GodModeSystem.AddGodMode/RemoveGodMode(EntityID, gameGodModeType, CName),
-// SaveLocksManager.RequestSaveLockAdd/RequestSaveLockRemove (saveLocksManager.swift), TeleportationFacility.Teleport,
-// Vector4.ToRotation, VehicleComponent.IsMountedToVehicle, SpatialQueriesSystem as Probes.reds.
+// mappinID / GetPointRecord / MappinSystem.GetMappin (fastTravelSystem.swift), TweakDBInterface.GetFastTravelPointRecord,
+// FastTravelPoint_Record.District, District_Record.Type/ParentDistrict, gamedataDistrict (orphans.swift),
+// PlayerPuppet.SetInvisible/IsInvisible/IsInCombat (player.swift), GameObject.IsDead,
+// GodModeSystem.AddGodMode/RemoveGodMode(EntityID, gameGodModeType, CName), SaveLocksManager.RequestSaveLockAdd/
+// RequestSaveLockRemove (saveLocksManager.swift), TeleportationFacility.Teleport, Vector4.ToRotation,
+// VehicleComponent.IsMountedToVehicle.
 
 public class CyberblockSurveyTour {
   // begin was applied and not undone yet
@@ -44,12 +46,6 @@ public class CyberblockSurveyTour {
         break;
       case n"begin":
         this.Begin(game, player);
-        break;
-      case n"settle":
-        this.Settle(game);
-        break;
-      case n"sample":
-        this.Sample(game);
         break;
       case n"end":
         this.End(game, player);
@@ -85,41 +81,53 @@ public class CyberblockSurveyTour {
     return n"";
   }
 
-  // Night City's extent: every Map mappin and every known fast-travel point.
+  // Every Map mappin (W 2) and every known fast-travel point (W 0 in the city, 1 in the Badlands) for the DLL's area.
   private func Bounds(game: GameInstance) -> Void {
     let mappins = GameInstance.GetMappinSystem(game);
-    let lo = new Vector4(100000.0, 100000.0, 0.0, 1.0);
-    let hi = new Vector4(-100000.0, -100000.0, 0.0, 1.0);
-    let pins = 0;
+    let pins: array<Vector4>;
     let all: array<ref<IMappin>>;
     mappins.GetMappins(gamemappinsMappinTargetType.Map, all);
     for m in all {
-      if IsDefined(m) && CyberblockSurveyTour.Grow(m.GetWorldPosition(), lo, hi) {
-        pins += 1;
+      if IsDefined(m) {
+        CyberblockSurveyTour.Add(pins, m.GetWorldPosition(), 2);
       }
     }
     let travel = GameInstance.GetScriptableSystemsContainer(game).Get(n"FastTravelSystem") as FastTravelSystem;
     if IsDefined(travel) {
       for point in travel.GetFastTravelPoints() {
         let mappin = IsDefined(point) ? mappins.GetMappin(point.mappinID) : null;
-        if IsDefined(mappin) && CyberblockSurveyTour.Grow(mappin.GetWorldPosition(), lo, hi) {
-          pins += 1;
+        if IsDefined(mappin) {
+          let record = TweakDBInterface.GetFastTravelPointRecord(point.GetPointRecord());
+          let kind = !IsDefined(record) ? 2 : (CyberblockSurveyTour.InBadlands(record.District()) ? 1 : 0);
+          CyberblockSurveyTour.Add(pins, mappin.GetWorldPosition(), kind);
         }
       }
     }
-    Cyberblock_SurveyTourBounds(lo, hi, pins);
+    Cyberblock_SurveyTourArea(pins);
   }
 
-  // Widens lo..hi by a pin's position; false for a position that is no place in Night City (zero, or beyond 10 km).
-  private static func Grow(p: Vector4, out lo: Vector4, out hi: Vector4) -> Bool {
+  // A pin at `p` of `kind`; left out when it is no place in Night City (zero, or beyond 10 km).
+  private static func Add(out pins: array<Vector4>, p: Vector4, kind: Int32) -> Void {
     if (p.X == 0.0 && p.Y == 0.0) || AbsF(p.X) > 10000.0 || AbsF(p.Y) > 10000.0 {
-      return false;
+      return;
     }
-    lo.X = MinF(lo.X, p.X);
-    lo.Y = MinF(lo.Y, p.Y);
-    hi.X = MaxF(hi.X, p.X);
-    hi.Y = MaxF(hi.Y, p.Y);
-    return true;
+    ArrayPush(pins, new Vector4(p.X, p.Y, 0.0, Cast<Float>(kind)));
+  }
+
+  // The district is one of the Badlands, or lies below one (sub-districts name their parent).
+  private static func InBadlands(district: wref<District_Record>) -> Bool {
+    let d = district;
+    let depth = 0;
+    while IsDefined(d) && depth < 8 {
+      let t = d.Type();
+      if Equals(t, gamedataDistrict.Badlands) || Equals(t, gamedataDistrict.NorthBadlands) || Equals(t, gamedataDistrict.SouthBadlands)
+        || Equals(t, gamedataDistrict.MorroRock) {
+        return true;
+      }
+      d = d.ParentDistrict();
+      depth += 1;
+    }
+    return false;
   }
 
   private func Begin(game: GameInstance, player: ref<PlayerPuppet>) -> Void {
@@ -131,29 +139,6 @@ public class CyberblockSurveyTour {
     GameInstance.GetGodModeSystem(game).AddGodMode(player.GetEntityID(), gameGodModeType.Invulnerable, n"CyberblockSurvey");
     SaveLocksManager.RequestSaveLockAdd(game, n"CyberblockSurvey");
     Cyberblock_Log("survey: started: V hidden, invulnerable, saving locked");
-  }
-
-  // The 3 x 3 streaming probes around the stop.
-  private func Settle(game: GameInstance) -> Void {
-    let stop = Cyberblock_SurveyTourStop();
-    let queries = GameInstance.GetSpatialQueriesSystem(game);
-    let probes: array<Vector4>;
-    let casts = 0;
-    let dy = -1;
-    while dy <= 1 {
-      let dx = -1;
-      while dx <= 1 {
-        ArrayPush(probes, CyberblockProbes.SurveyRay(queries, stop.X + 80.0 * Cast<Float>(dx), stop.Y + 80.0 * Cast<Float>(dy), 100.0, casts));
-        dx += 1;
-      }
-      dy += 1;
-    }
-    Cyberblock_SurveyTourSettle(probes);
-  }
-
-  private func Sample(game: GameInstance) -> Void {
-    let stop = Cyberblock_SurveyTourStop();
-    CyberblockProbes.Survey(GameInstance.GetSpatialQueriesSystem(game), new Vector4(stop.X, stop.Y, 100.0, 1.0), 400);
   }
 
   // V back home, then everything begin did undone.

@@ -65,11 +65,11 @@ class AtlasWireTest {
 	}
 
 	@Test
-	void aStopIsDoneWhenReportedOrWhenItsSquareIsMapped() {
+	void aSquareIsDoneWhenReportedOrWhenItIsMapped() {
 		AtlasTiles tiles = new AtlasTiles();
-		// map stop (1, -1)'s square (Cyberpunk (200, -200) = Minecraft x 200, z 200) completely
+		// map square (1, -1) (Cyberpunk (200, -200) = Minecraft x 200, z 200; 100 x 100 cells, as survey.cpp first_cell) completely
 		int[] r = AtlasWire.stopCells(1, -1);
-		assertArrayEquals(new int[] {45, 45, 155, 155}, r);
+		assertArrayEquals(new int[] {50, 50, 149, 149}, r);
 		for (int z = r[1]; z <= r[3]; z++) {
 			for (int x = r[0]; x <= r[2]; x++) {
 				tiles.put(x, z, 5, false);
@@ -87,8 +87,9 @@ class AtlasWireTest {
 	void etaReadsLikeTheHud() {
 		assertEquals("unknown time", AtlasWire.eta(-1));
 		assertEquals("under a minute", AtlasWire.eta(20));
-		assertEquals("12m", AtlasWire.eta(720));
-		assertEquals("3h 12m", AtlasWire.eta(11520));
+		assertEquals("~12 min", AtlasWire.eta(720));
+		assertEquals("~13 min", AtlasWire.eta(721)); // rounded up: never more time than it shows
+		assertEquals("~3 h 12 min", AtlasWire.eta(11520));
 	}
 
 	@Test
