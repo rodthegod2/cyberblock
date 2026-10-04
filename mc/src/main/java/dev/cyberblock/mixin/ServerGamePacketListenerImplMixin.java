@@ -16,7 +16,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 abstract class ServerGamePacketListenerImplMixin {
 	@Inject(method = "forceSendPlayerSupportBlocks", at = @At("HEAD"), cancellable = true)
 	private void cyberblock$hostCarries(final CallbackInfo ci) {
-		if (Cyberblock.active && ((ServerGamePacketListenerImpl) (Object) this).player.noPhysics) {
+		ServerGamePacketListenerImpl self = (ServerGamePacketListenerImpl) (Object) this;
+		if (self.player.noPhysics && Cyberblock.hostActive(self.player)) {
 			ci.cancel();
 		}
 	}

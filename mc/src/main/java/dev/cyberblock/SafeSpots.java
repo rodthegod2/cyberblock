@@ -97,7 +97,7 @@ public final class SafeSpots {
 		long now = server.getTickCount();
 		BREAKS.values().removeIf(tick -> now - tick > RECENT_TICKS);
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-			if (Cyberblock.active || player.isSpectator() || player.getAbilities().flying || player.isFallFlying() || player.isPassenger()) {
+			if (Cyberblock.hostActive(player) || player.isSpectator() || player.getAbilities().flying || player.isFallFlying() || player.isPassenger()) {
 				continue;
 			}
 

@@ -19,7 +19,7 @@ abstract class FireworkRocketEntityMixin {
 	private void cyberblock$burst(final ServerLevel level, final CallbackInfo ci) {
 		if (this.hasExplosion()) {
 			FireworkRocketEntity rocket = (FireworkRocketEntity) (Object) this;
-			ExplosionEvents.reportFirework(level, rocket.getX(), rocket.getY(), rocket.getZ());
+			ExplosionEvents.reportFirework(level, rocket.getX(), rocket.getY(), rocket.getZ(), rocket.getOwner());
 		}
 	}
 }

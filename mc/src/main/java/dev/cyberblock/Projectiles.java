@@ -4,10 +4,17 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
+import dev.cyberblock.net.HostSession;
+import dev.cyberblock.net.HostSessions;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -23,9 +30,9 @@ import net.minecraft.world.level.entity.EntityTypeTest;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Layer 4: Steve's projectiles in flight ({"t":"proj"}, 10 Hz), so the host can find the Night City surfaces on their paths and
- * answer with cells to make solid for a moment ({"t":"pcells"}, WorldBridge): pearls, arrows and tridents, rockets, thrown
- * potions, wind charges and fishing hooks then hit Night City. Server thread only.
+ * Layer 4: each host's Steve's projectiles in flight ({"t":"proj"}, 10 Hz, to that host), so the host can find the Night City surfaces
+ * on their paths and answer with cells to make solid for a moment ({"t":"pcells"}, WorldBridge): pearls, arrows and tridents, rockets,
+ * thrown potions, wind charges and fishing hooks then hit Night City. Server thread only.
  */
 public final class Projectiles {
 	static final int MAX = 16;
@@ -33,8 +40,8 @@ public final class Projectiles {
 	static final double MAX_GRAVITY = 40.0;
 	private static final EntityTypeTest<Entity, Projectile> PROJECTILES = EntityTypeTest.forClass(Projectile.class);
 	private static int ticks;
-	/** The last list had something in it: one empty list follows when the last one is gone. */
-	private static boolean reported;
+	/** Hosts whose last list had something in it: one empty list follows when the last one is gone. */
+	private static final Set<UUID> reported = new HashSet<>();
 
 	/** One projectile: entity id, position, velocity (m/s) and gravity (m/s^2, down). */
 	public record Flying(int id, double x, double y, double z, double vx, double vy, double vz, double g, double distanceSq) {
@@ -91,30 +98,41 @@ public final class Projectiles {
 		return sorted.size() > MAX ? List.copyOf(sorted.subList(0, MAX)) : sorted;
 	}
 
-	/** Every server tick: the list every other tick while the host is active. */
+	/** Every server tick: every other tick, each active host gets its own Steve's projectiles. */
 	static void tick(final MinecraftServer s) {
-		List<ServerPlayer> players = s.getPlayerList().getPlayers();
-		if (!Cyberblock.active || players.isEmpty()) {
-			reported = false;
-			return;
-		}
-
 		if (++ticks % 2 != 0) {
 			return;
 		}
 
 		ServerLevel level = s.overworld();
-		ServerPlayer steve = players.get(0);
-		List<Flying> flying = new ArrayList<>();
+		Map<HostSession, List<Flying>> flying = new HashMap<>();
 		// a projectile at rest (an arrow stuck in a wall, a hook hanging still) has nowhere to go
-		for (Projectile p : level.getEntities(PROJECTILES, p -> p.isAlive() && tracked(p) && p.getOwner() == steve && p.getDeltaMovement().lengthSqr() > 1.0E-8)) {
-			Vec3 v = p.getDeltaMovement().scale(20.0);
-			flying.add(new Flying(p.getId(), p.getX(), p.getY(), p.getZ(), v.x, v.y, v.z, gravity(p.getGravity()), p.distanceToSqr(steve)));
+		for (Projectile p : level.getEntities(PROJECTILES, p -> p.isAlive() && tracked(p) && p.getDeltaMovement().lengthSqr() > 1.0E-8)) {
+			HostSession host = WorldModule.activeSession(p.getOwner());
+			ServerPlayer steve = host == null ? null : host.player();
+			if (steve != null) {
+				Vec3 v = p.getDeltaMovement().scale(20.0);
+				flying.computeIfAbsent(host, h -> new ArrayList<>())
+					.add(new Flying(p.getId(), p.getX(), p.getY(), p.getZ(), v.x, v.y, v.z, gravity(p.getGravity()), p.distanceToSqr(steve)));
+			}
 		}
 
-		if (!flying.isEmpty() || reported) {
-			Cyberblock.events.accept(Wire.proj(nearest(flying)));
-			reported = !flying.isEmpty();
+		for (HostSession host : HostSessions.active()) {
+			List<Flying> mine = flying.getOrDefault(host, List.of());
+			if (!mine.isEmpty() || reported.contains(host.uuid())) {
+				host.send(Wire.proj(nearest(mine)));
+			}
+
+			if (mine.isEmpty()) {
+				reported.remove(host.uuid());
+			} else {
+				reported.add(host.uuid());
+			}
 		}
+	}
+
+	/** The session ended. */
+	static void end(final UUID owner) {
+		reported.remove(owner);
 	}
 }

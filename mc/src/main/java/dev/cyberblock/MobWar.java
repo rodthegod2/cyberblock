@@ -3,9 +3,17 @@ package dev.cyberblock;
 
 import com.google.gson.JsonObject;
 import dev.cyberblock.mixin.MobAccessor;
+import dev.cyberblock.net.HostSession;
+import dev.cyberblock.net.HostSessions;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -27,9 +35,9 @@ import net.minecraft.world.phys.Vec3;
 
 /**
  * Layer 3: Minecraft's mobs against Night City. Hostile mobs hunt the pedestrians' proxies (ProxyTargetGoal) and their hits
- * reach the NPC as {"t":"hit"} with "mob" (ProxyEntity); the host keeps a puppet for every fighter near Steve ({"t":"mobs"},
- * 10 Hz) and sends the puppets' damage back ({"t":"mobdmg"}). Fighters are held off Night City's unknown ground (MobRules.held).
- * Server thread only, except where noted.
+ * reach the NPC as {"t":"hit"} with "mob" (ProxyEntity); each active host keeps a puppet for every fighter near its Steve
+ * ({"t":"mobs"}, 10 Hz) and sends the puppets' damage back ({"t":"mobdmg"}). Fighters are held off Night City's unknown ground
+ * (MobRules.held, around the nearest host's Steve). Server thread only, except where noted.
  */
 public final class MobWar {
 	private static final EntityTypeTest<Entity, Mob> MOBS = EntityTypeTest.forClass(Mob.class);
@@ -38,8 +46,8 @@ public final class MobWar {
 	/** The fighters held right now. Read from every living entity's tick (HeldMobMixin), on both sides: concurrent. */
 	private static final Set<LivingEntity> held = ConcurrentHashMap.newKeySet();
 	private static int ticks;
-	/** The last mobs list had someone in it: one empty list follows when the last one goes. */
-	private static boolean reported;
+	/** Hosts whose last mobs list had someone in it: one empty list follows when the last one goes. */
+	private static final Set<UUID> reported = new HashSet<>();
 	private static int bad;
 
 	private MobWar() {
@@ -79,29 +87,68 @@ public final class MobWar {
 	/** Every server tick. */
 	static void tick(final MinecraftServer s) {
 		held.removeIf(e -> e.isRemoved() || !e.isAlive());
-		List<ServerPlayer> players = s.getPlayerList().getPlayers();
-		if (!Cyberblock.active || players.isEmpty()) {
-			reported = false; // the host drops the list by itself when it gets old
-			return;
-		}
-
 		ServerLevel level = s.overworld();
-		ServerPlayer steve = players.get(0);
-		boolean report = ++ticks % 2 == 0;
-		List<MobRules.Seen> seen = new ArrayList<>();
-		for (Mob mob : level.getEntities(MOBS, mob -> mob.isAlive() && fighter(mob))) {
-			hold(level, mob, steve);
-			double distanceSq = steve.distanceToSqr(mob);
-			if (report && distanceSq <= MobRules.RANGE * MobRules.RANGE) {
-				seen.add(new MobRules.Seen(mob.getId(), BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).getPath(), mob.getX(), mob.getY(), mob.getZ(),
-					mob.getYRot(), mob.getBbWidth(), mob.getBbHeight(), mob.getHealth(), mob.getMaxHealth(), distanceSq));
+		// each active host with its Steve in this world (a session whose player is not online this tick is skipped)
+		Map<HostSession, ServerPlayer> hosts = new LinkedHashMap<>();
+		for (HostSession h : HostSessions.active()) {
+			ServerPlayer steve = h.player();
+			if (steve != null && steve.level() == level) {
+				hosts.put(h, steve);
 			}
 		}
 
-		if (report && (!seen.isEmpty() || reported)) {
-			Cyberblock.events.accept(Wire.mobs(MobRules.nearest(seen)));
-			reported = !seen.isEmpty();
+		reported.removeIf(owner -> hosts.keySet().stream().noneMatch(h -> h.uuid().equals(owner))); // a host drops the list by itself when it gets old
+		if (hosts.isEmpty()) {
+			return;
 		}
+
+		boolean report = ++ticks % 2 == 0;
+		Map<HostSession, List<MobRules.Seen>> seen = new HashMap<>();
+		for (Mob mob : level.getEntities(MOBS, mob -> mob.isAlive() && fighter(mob))) {
+			hold(level, mob, nearest(hosts.values(), mob));
+			if (!report) {
+				continue;
+			}
+
+			for (Map.Entry<HostSession, ServerPlayer> h : hosts.entrySet()) {
+				double distanceSq = h.getValue().distanceToSqr(mob);
+				if (distanceSq <= MobRules.RANGE * MobRules.RANGE) {
+					seen.computeIfAbsent(h.getKey(), k -> new ArrayList<>()).add(new MobRules.Seen(mob.getId(), BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).getPath(),
+						mob.getX(), mob.getY(), mob.getZ(), mob.getYRot(), mob.getBbWidth(), mob.getBbHeight(), mob.getHealth(), mob.getMaxHealth(), distanceSq));
+				}
+			}
+		}
+
+		if (!report) {
+			return;
+		}
+
+		for (HostSession h : hosts.keySet()) {
+			List<MobRules.Seen> list = seen.getOrDefault(h, List.of());
+			if (!list.isEmpty() || reported.contains(h.uuid())) {
+				h.send(Wire.mobs(MobRules.nearest(list)));
+				if (list.isEmpty()) {
+					reported.remove(h.uuid());
+				} else {
+					reported.add(h.uuid());
+				}
+			}
+		}
+	}
+
+	/** The Steve (of the hosts' players, at least one) nearest to the mob, horizontally (the probed ground is around him). */
+	private static ServerPlayer nearest(final Collection<ServerPlayer> steves, final Mob mob) {
+		ServerPlayer best = steves.iterator().next();
+		double bestSq = Double.MAX_VALUE;
+		for (ServerPlayer p : steves) {
+			double dx = p.getX() - mob.getX(), dz = p.getZ() - mob.getZ();
+			if (dx * dx + dz * dz < bestSq) {
+				best = p;
+				bestSq = dx * dx + dz * dz;
+			}
+		}
+
+		return best;
 	}
 
 	/**
@@ -137,11 +184,24 @@ public final class MobWar {
 	/** Server thread, as the world stops: nobody is held. */
 	static void clear() {
 		held.clear();
-		reported = false;
+		reported.clear();
 	}
 
-	/** Link thread: {"t":"mobdmg"}. */
-	public static void damage(final JsonObject message) {
+	/** A host's session ended: no mob hunts its proxies any more (they are going). */
+	static void end(final UUID owner) {
+		reported.remove(owner);
+		MinecraftServer s = WorldBridge.server();
+		if (s == null) {
+			return;
+		}
+
+		for (Mob mob : s.overworld().getEntities(MOBS, mob -> mob.getTarget() instanceof ProxyEntity p && owner.equals(p.owner()))) {
+			mob.setTarget(null);
+		}
+	}
+
+	/** {"t":"mobdmg"} from a host: one of its puppets was hurt. */
+	static void damage(final HostSession host, final JsonObject message) {
 		MobRules.Damage d = MobRules.parseDamage(message);
 		if (d == null) {
 			if (bad++ % 100 == 0) {
@@ -152,8 +212,8 @@ public final class MobWar {
 		}
 
 		MinecraftServer s = WorldBridge.server();
-		if (s != null && d.frac() > 0.0F) {
-			s.execute(() -> hurt(s.overworld(), d));
+		if (s != null && d.frac() > 0.0F && host.active()) {
+			hurt(s.overworld(), host.uuid(), d);
 		}
 	}
 
@@ -161,12 +221,12 @@ public final class MobWar {
 	 * A puppet in Night City was hurt: the mob loses frac of its max health, every hit counting (automatic fire lands several
 	 * inside vanilla's cooldown). Hurt by the NPC's proxy when there is one, so the mob turns on that NPC; else generic damage.
 	 */
-	private static void hurt(final ServerLevel level, final MobRules.Damage d) {
-		if (!Cyberblock.active || !(level.getEntity(d.id()) instanceof Mob mob) || !mob.isAlive() || !fighter(mob)) {
+	private static void hurt(final ServerLevel level, final UUID owner, final MobRules.Damage d) {
+		if (!(level.getEntity(d.id()) instanceof Mob mob) || !mob.isAlive() || !fighter(mob)) {
 			return;
 		}
 
-		DamageSource source = d.by() != 0L && ProxyManager.byId(d.by()) instanceof LivingEntity proxy
+		DamageSource source = d.by() != 0L && ProxyManager.byId(owner, d.by()) instanceof LivingEntity proxy
 			? level.damageSources().mobAttack(proxy) : level.damageSources().generic();
 		mob.damageCooldownTime = 0;
 		mob.hurtServer(level, source, d.frac() * mob.getMaxHealth());

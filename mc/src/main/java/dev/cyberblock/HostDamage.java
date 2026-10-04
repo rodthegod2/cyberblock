@@ -4,7 +4,11 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
-import java.util.List;
+import dev.cyberblock.net.HostSession;
+import dev.cyberblock.net.HostSessions;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -22,7 +26,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * Steve's health is the only health: while the host drives V (who cannot die), every damage event on V arrives as
  * {"t":"dmg","frac":0..4,"kind":"...","from":[x,y,z]|null} and hurts Steve by frac of his maximum health, through vanilla's
- * damage rules (armour, totems, creative and spectator immunity, death and respawn).
+ * damage rules (armour, totems, creative and spectator immunity, death and respawn). Each host's damage hurts that host's own Steve
+ * (plan 2026-10-04 section 1.2). Server thread only.
  */
 public final class HostDamage {
 	/** The host clamps to 0..4 (a hit can be several times V's health); anything else is garbage. */
@@ -32,10 +37,11 @@ public final class HostDamage {
 	private static final double Y_LIMIT = 20000.0;
 	private static int bad;
 	/**
-	 * Until when (System.nanoTime) the host's "fall" damage is ignored: Steve's own glide set it (layer 4: while gliding and 2 s
-	 * after touchdown, Minecraft's elytra rules hurt him, not V's landing). Long.MIN_VALUE: never.
+	 * Per host, until when (System.nanoTime) its "fall" damage is ignored: its Steve's own glide or launch (the session's hstate fly
+	 * and launch) keeps it set (layer 4: while gliding and 2 s after touchdown, Minecraft's elytra rules hurt him, not V's landing).
+	 * Absent: never.
 	 */
-	public static volatile long fallFreeUntil = Long.MIN_VALUE;
+	private static final Map<UUID, Long> fallFreeUntil = new HashMap<>();
 
 	/** @param from where the damage came from (Minecraft coordinates), null when unknown */
 	record Hit(float frac, String kind, @Nullable Vec3 from) {
@@ -83,8 +89,8 @@ public final class HostDamage {
 		return e instanceof JsonPrimitive p && p.isNumber() ? p.getAsDouble() : Double.NaN;
 	}
 
-	/** Link thread: the host's dmg message. */
-	public static void update(final JsonObject message) {
+	/** {"t":"dmg"} from a host. */
+	static void update(final HostSession s, final JsonObject message) {
 		Hit hit = parse(message);
 		if (hit == null) {
 			if (bad++ % 100 == 0) {
@@ -94,20 +100,14 @@ public final class HostDamage {
 			return;
 		}
 
-		MinecraftServer s = WorldBridge.server();
-		if (s != null && hit.frac() > 0.0F) {
-			s.execute(() -> hurt(s, hit));
+		if (hit.frac() > 0.0F && s.active()) {
+			hurt(s, hit);
 		}
 	}
 
-	private static void hurt(final MinecraftServer s, final Hit hit) {
-		List<ServerPlayer> players = s.getPlayerList().getPlayers();
-		if (!Cyberblock.active || players.isEmpty()) {
-			return;
-		}
-
-		ServerPlayer steve = players.get(0);
-		if (ignoredFall(hit.kind(), System.nanoTime(), fallFreeUntil, steve.hasEffect(MobEffects.SLOW_FALLING))) {
+	private static void hurt(final HostSession s, final Hit hit) {
+		ServerPlayer steve = s.player();
+		if (steve == null || ignoredFall(hit.kind(), System.nanoTime(), fallFreeUntil.getOrDefault(s.uuid(), Long.MIN_VALUE), steve.hasEffect(MobEffects.SLOW_FALLING))) {
 			return;
 		}
 
@@ -115,6 +115,21 @@ public final class HostDamage {
 		steve.damageCooldownTime = 0;
 		Holder<DamageType> type = steve.level().registryAccess().lookupOrThrow(Registries.DAMAGE_TYPE).getOrThrow(type(hit.kind()));
 		steve.hurtServer(steve.level(), source(type, hit), hit.frac() * steve.getMaxHealth());
+	}
+
+	/** Every server tick: a host whose Steve glides or is launched ignores V's falls until 2 s after it ends. */
+	static void tick(final MinecraftServer server) {
+		long now = System.nanoTime();
+		for (HostSession s : HostSessions.active()) {
+			if (s.flying() || s.launching()) {
+				fallFreeUntil.put(s.uuid(), now + FlightRules.FALL_GRACE_NANOS);
+			}
+		}
+	}
+
+	/** The session ended. */
+	static void end(final UUID owner) {
+		fallFreeUntil.remove(owner);
 	}
 
 	/** V's fall damage does not reach Steve with Slow Falling, nor around his own glide (until fallFreeUntil). */
