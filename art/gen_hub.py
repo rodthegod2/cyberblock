@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import random
 import sys
 from pathlib import Path
@@ -310,11 +311,12 @@ STATIONS = {"match_terminal": (21, 2, 14), "holo_table": (4, 1, 14), "exit_porta
 
 
 def figures() -> list[dict]:
+    # each figure faces where its customers come from: the bartender and the vendors over their counters, the clinic pair the clinic door
     out = [
-        {"id": "bartender", "role": "cyberblock:bartender", "area": "bar", "pos": [21.5, 1.0, 4.5], "yaw": 0.0, "gender": "female", "name": "Juno"},
+        {"id": "bartender", "role": "cyberblock:bartender", "area": "bar", "pos": [21.5, 1.0, 6.5], "yaw": 0.0, "gender": "female", "name": "Juno"},
         {"id": "fixer", "role": "cyberblock:fixer", "area": "booths", "pos": [10.5, 1.0, 20.5], "yaw": 270.0, "gender": "male", "name": "Venn"},
-        {"id": "ripperdoc", "role": "cyberblock:ripperdoc", "area": "clinic", "pos": [38.5, 1.0, 5.5], "yaw": 270.0, "gender": "female", "name": "Dr. Vale"},
-        {"id": "medic", "role": "cyberblock:medic", "area": "clinic", "pos": [37.5, 1.0, 12.5], "yaw": 270.0, "gender": "male", "name": "Sorrel"},
+        {"id": "ripperdoc", "role": "cyberblock:ripperdoc", "area": "clinic", "pos": [38.5, 1.0, 5.5], "yaw": 90.0, "gender": "female", "name": "Dr. Vale"},
+        {"id": "medic", "role": "cyberblock:medic", "area": "clinic", "pos": [37.5, 1.0, 12.5], "yaw": 90.0, "gender": "male", "name": "Sorrel"},
         {"id": "mechanic", "role": "cyberblock:mechanic", "area": "garage", "pos": [38.5, 1.0, 21.5], "yaw": 90.0, "gender": "female", "name": "Rook"},
     ]
     for i, (shop, x0, _x1, _dye, name) in enumerate(STALLS):
@@ -347,11 +349,11 @@ def build() -> Layout:
     L.fill((12, 3, 1), (30, 3, 1), MT)  # shelf
     for i, x in enumerate(range(13, 30, 2)):
         L.put((x, 4, 1), neon(("pink", "cyan", "lime", "orange")[i % 4]))  # bottles
-    L.fill((14, 1, 7), (28, 2, 8), CD)  # counter
-    L.fill((14, 2, 7), (28, 2, 8), MT)
-    L.fill((14, 1, 8), (28, 1, 8), neon("magenta"))
+    # the counter is one block high and one deep, so a customer at z 8 sees and reaches the bartender at z 6.5 over it
+    L.fill((14, 1, 7), (28, 1, 7), MT)  # counter
+    L.fill((14, 0, 8), (28, 0, 8), neon("magenta"))  # a glowing strip in the floor along its front
     for x in range(15, 28, 2):
-        L.put((x, 1, 10), "minecraft:polished_blackstone_slab[type=bottom]")  # stools
+        L.put((x, 1, 9), "minecraft:polished_blackstone_slab[type=bottom]")  # stools
     for zc in (18, 22, 26):
         L.fill((9, 1, zc - 1), (9, 3, zc + 1), CD)  # booth back panel
         L.fill((9, 4, zc - 1), (9, 4, zc + 1), neon("pink"))
@@ -367,8 +369,7 @@ def build() -> Layout:
     for pos, _objective, _title in BOARDS:
         L.put(pos, "cyberblock:leaderboard_board[facing=west]")
     for name, x0, x2, dye, _vendor in STALLS:
-        L.fill((x0, 1, 25), (x2, 1, 25), CD)  # stall counter
-        L.fill((x0, 2, 25), (x2, 2, 25), MT)
+        L.fill((x0, 1, 25), (x2, 1, 25), MT)  # stall counter, one block high: the vendor behind it is in reach over it
         L.fill((x0, 4, 27), (x2, 5, 27), neon(dye))  # sign
     L.fill((9, 5, 1), (9, 5, 27), neon("magenta"))  # wall accents
     L.fill((33, 5, 1), (33, 5, 27), neon("cyan"))
@@ -421,9 +422,71 @@ def layout_document() -> dict:
     }
 
 
+REACH = 2.5  # blocks from a customer's eye to a figure's hitbox: Minecraft 26.3's entity interaction range is 3.0, less a margin
+EYE, HALF_WIDTH = 1.62, 0.3  # a standing player's eye height; half the width of a figure's 0.6 x 1.8 hitbox (the hub NPC)
+COUNTER = 3  # a solid block at foot level this many blocks or fewer in front of a figure, with room above it, is the counter it serves over
+
+
+def standable(L: Layout, cell: Cell) -> bool:
+    x, y, z = cell
+    return not passable(L.block((x, y - 1, z))) and passable(L.block(cell)) and passable(L.block((x, y + 1, z)))
+
+
+def walkable_cells(L: Layout, start: Cell, size: list[int]) -> set[Cell]:
+    """Every cell a player can walk to from start: four-way steps that stay level, drop one block or climb one (with head room for the jump)."""
+    seen, todo = {start}, [start]
+    while todo:
+        x, y, z = todo.pop()
+        for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            for dy in (0, -1, 1):
+                nxt = (x + dx, y + dy, z + dz)
+                if nxt in seen or not all(0 <= c < lim for c, lim in zip(nxt, size)) or not standable(L, nxt):
+                    continue
+                if dy == 1 and not passable(L.block((x, y + 2, z))):
+                    continue
+                seen.add(nxt)
+                todo.append(nxt)
+    return seen
+
+
+def clear_line(L: Layout, a: tuple[float, float, float], b: tuple[float, float, float]) -> bool:
+    """Whether the straight line from a to b crosses only passable cells (sampled every 1/20 block)."""
+    steps = max(1, int(max(abs(b[i] - a[i]) for i in range(3)) * 20))
+    for n in range(steps + 1):
+        p = [a[i] + (b[i] - a[i]) * n / steps for i in range(3)]
+        if not passable(L.block((int(p[0] // 1), int(p[1] // 1), int(p[2] // 1)))):
+            return False
+    return True
+
+
+def in_reach(L: Layout, fig: list[float], yaw: float, walkable: set[Cell]) -> bool:
+    """Whether a customer can use the figure: standing on a walkable cell in front of it (the side its yaw faces), beyond the counter it
+    serves over when a solid block stands up to COUNTER blocks ahead of it at foot level, he sees a point of its body within REACH of his
+    eye. A layout where the only way to a figure is round the side of its counter fails."""
+    fx, fy, fz = fig
+    ahead = (-math.sin(math.radians(yaw)), math.cos(math.radians(yaw)))  # Minecraft yaw: 0 faces south (+z), 90 west (-x)
+    def cell_ahead(s: int, dy: int) -> Cell:
+        return int((fx + ahead[0] * s) // 1), int(fy // 1) + dy, int((fz + ahead[1] * s) // 1)
+
+    counter = next((s for s in range(1, COUNTER + 1) if not passable(L.block(cell_ahead(s, 0)))), 0)
+    if counter and not any(passable(L.block(cell_ahead(counter, dy))) for dy in (1, 2)):
+        counter = 0  # a wall, not a counter: the customers stand between the figure and it
+    targets = [(fx, fy + h, fz) for h in (1.6, 1.3, 1.0)]  # head, chest and waist on the figure's axis
+    for cell in walkable:
+        front = (cell[0] + 0.5 - fx) * ahead[0] + (cell[2] + 0.5 - fz) * ahead[1]
+        if front < max(0.5, counter + 0.5):
+            continue
+        eye = (cell[0] + 0.5, cell[1] + EYE, cell[2] + 0.5)
+        for t in targets:
+            if sum((eye[i] - t[i]) ** 2 for i in range(3)) ** 0.5 - HALF_WIDTH <= REACH and clear_line(L, eye, t):
+                return True
+    return False
+
+
 def layout_problems(doc: dict) -> list[str]:
-    """Everything wrong with a layout document: cells outside the size, figures that do not stand on floor with air above, stations that are
-    not the block they claim, areas that leave the size, a spawn inside a block. An empty list is a good layout."""
+    """Everything wrong with a layout document: cells outside the size, figures that do not stand on floor with air above, figures no player
+    can reach and see from a cell he can walk to from the spawn, stations that are not the block they claim, areas that leave the size, a
+    spawn inside a block. An empty list is a good layout."""
     L = Layout()
     problems: list[str] = []
     w, h, d = doc["size"]
@@ -443,8 +506,12 @@ def layout_problems(doc: dict) -> list[str]:
             problems.append(f"{what} at {pos} is inside a block")
 
     stands(doc["spawn"]["pos"], "the spawn")
+    spawn = tuple(int(v // 1) for v in doc["spawn"]["pos"])
+    walkable = walkable_cells(L, spawn, doc["size"]) if standable(L, spawn) else set()
     for fig in doc["figures"]:
         stands(fig["pos"], f"figure {fig['id']}")
+        if not in_reach(L, fig["pos"], fig.get("yaw", 0.0), walkable):
+            problems.append(f"figure {fig['id']} at {fig['pos']} is out of reach: no walkable cell sees it within {REACH} blocks")
         area = doc["areas"].get(fig["area"])
         if area is None or not all(area["from"][i] <= int(fig["pos"][i] // 1) <= area["to"][i] for i in range(3)):
             problems.append(f"figure {fig['id']} is not inside its area {fig['area']}")

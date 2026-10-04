@@ -31,6 +31,10 @@
 			"price": 1100
 		},
 		{
+			"implant": "firewall",
+			"price": 1300
+		},
+		{
 			"implant": "cyberdeck",
 			"price": 1500
 		},

@@ -155,6 +155,20 @@ def test_figures_and_the_spawn_stand_on_floor_with_head_room(hub, layout):
     assert any("figure bartender" in p for p in problems) and any("figure fixer" in p for p in problems)
 
 
+def test_every_figure_is_in_reach_over_its_counter_and_the_checker_catches_one_that_is_not(hub, layout):
+    assert not any("out of reach" in p for p in hub.layout_problems(layout))
+    taller = json.loads(json.dumps(layout))
+    taller["steps"].append({"from": [14, 2, 7], "to": [28, 2, 7], "block": "cyberblock:nc_metal"})  # a bar counter two blocks high
+    taller["steps"].append({"from": [13, 2, 25], "to": [15, 2, 25], "block": "cyberblock:nc_metal"})  # and the arms stall's
+    problems = hub.layout_problems(taller)
+    assert any("figure bartender" in p and "out of reach" in p for p in problems), problems
+    assert any("figure vendor_arms" in p and "out of reach" in p for p in problems), problems
+    assert not any("figure vendor_gear" in p for p in problems), problems
+    far = json.loads(json.dumps(layout))
+    far["figures"][0]["pos"] = [21.5, 1.0, 4.5]  # at the back bar: across the counter but beyond reach
+    assert any("figure bartender" in p and "out of reach" in p for p in hub.layout_problems(far))
+
+
 def test_the_layout_checker_catches_a_station_that_is_not_its_block(hub, layout):
     broken = json.loads(json.dumps(layout))
     broken["stations"]["holo_table"] = [4, 1, 15]

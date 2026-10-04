@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ripperdoc",
-  "description": "The `ripperdoc` content kind (megaplan 1.7 and task 7-A1): one clinic's implant catalogue, paid in Minecraft eddies (section 1.16). `implants` lists what the clinic installs: `implant` is a cyberware id (the 17 of `shared/protocol.md`; firewall and netrunner join with Phases 6 and 8), `price` the cost in eddies. An entry with a `surgery` object is installed through the timing-bar minigame: a marker sweeps the bar once every `period` ticks and the player must stop it inside the centre `window` (a percentage of the bar, 5 to 90: a smaller window is a riskier surgery). Missing it applies the catalogue's `failure`: `damage` half-hearts (never lethal: it leaves the player at half a heart at the least) and a debuff (slowness and weakness) of `debuff_s` seconds. An entry without `surgery` installs at once. `title_key` is the lang key of the screen title. A file with the same id as a default replaces it.",
+  "description": "The `ripperdoc` content kind (megaplan 1.7 and task 7-A1): one clinic's implant catalogue, paid in Minecraft eddies (section 1.16). `implants` lists what the clinic installs: `implant` is a cyberware id (the 17 of `shared/protocol.md`, then the ids megaplan section 1.17 appends: firewall from Phase 6; netrunner joins this list with Phase 8), `price` the cost in eddies. An entry with a `surgery` object is installed through the timing-bar minigame: a marker sweeps the bar once every `period` ticks and the player must stop it inside the centre `window` (a percentage of the bar, 5 to 90: a smaller window is a riskier surgery). Missing it applies the catalogue's `failure`: `damage` half-hearts (never lethal: it leaves the player at half a heart at the least) and a debuff (slowness and weakness) of `debuff_s` seconds. An entry without `surgery` installs at once. `title_key` is the lang key of the screen title. A file with the same id as a default replaces it.",
   "type": "object",
   "required": [
     "schema",
@@ -54,7 +54,8 @@
               "kiroshi_optics",
               "biomonitor",
               "second_heart",
-              "ram_upgrade"
+              "ram_upgrade",
+              "firewall"
             ]
           },
           "price": {

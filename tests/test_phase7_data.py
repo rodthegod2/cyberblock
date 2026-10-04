@@ -16,6 +16,13 @@ ROLES = ["bartender", "fixer", "mechanic", "medic", "ripperdoc", "vendor"]
 TOKENS = {"player", "item", "price", "title", "reward", "implant", "drink"}
 NEEDS = {"shop": ["purchase", "sale", "no_funds"], "contracts": ["gig_offer", "gig_done"], "bartender": ["rumour", "drink", "no_funds"],
          "ripperdoc": ["installed", "surgery_ok", "surgery_fail", "no_funds"], "medic": ["healed", "no_funds"], "mechanic": ["repaired", "no_funds"]}
+APPENDED_1_17 = {"firewall", "netrunner"}  # megaplan 1.17: cyberware ids appended by Phases 6 and 8
+# the placeholders 7N fills in each context ({player} always): a line may only use those of the screen that says it
+FILLED = {"gig_offer": {"title", "reward"}, "gig_done": {"title", "reward"}, "purchase": {"item", "price"}, "sale": {"item", "price"},
+          "repaired": {"item", "price"}, "drink": {"drink", "price"}, "installed": {"implant", "price"}, "surgery_ok": {"implant"},
+          "surgery_fail": {"implant"}, "healed": {"price"}}
+NO_FUNDS = {"shop": {"item", "price"}, "mechanic": {"item", "price"}, "bartender": {"drink", "price"}, "ripperdoc": {"implant", "price"},
+            "medic": {"price"}}
 GAME_SLANG = ("choom", "preem", "gonk", "nova", "wakako", "silverhand", "samurai", "braindance")  # words of the game's own text: ours is original
 
 
@@ -100,6 +107,16 @@ def test_dialogue_has_every_context_its_screen_uses_and_only_known_placeholders(
         assert len(entries("dialogue")["bartender"]["lines"][ctx]) >= 10
 
 
+def test_every_placeholder_is_one_its_context_fills():
+    roles = entries("npc_role")
+    for name, doc in entries("dialogue").items():
+        screen = roles[name]["screen"]
+        for ctx, texts in doc["lines"].items():
+            filled = {"player"} | (NO_FUNDS[screen] if ctx == "no_funds" else FILLED.get(ctx, set()))
+            for line in texts:
+                assert set(re.findall(r"\{(\w+)\}", line)) <= filled, (name, ctx, line, filled)
+
+
 def test_contracts_cover_every_type_and_refer_to_what_exists(lang):
     contracts, landmarks = entries("contract"), entries("landmark")
     factions = set()
@@ -133,10 +150,16 @@ def test_contracts_cover_every_type_and_refer_to_what_exists(lang):
 def test_the_catalogue_lists_every_cyberware_id_once_with_riskier_surgery_for_dearer_implants():
     source = (ROOT / "mc" / "src" / "main" / "java" / "dev" / "cyberblock" / "cyber" / "Cyberware.java").read_text("utf-8")
     ids = [m.lower() for m in re.findall(r"^\t([A-Z_]+)\(CyberSlot\.", source, re.M)]
-    assert len(ids) == 17
+    assert 17 <= len(ids) <= 32  # the 17 of retest2, then the ids megaplan 1.17 appends
+    schema = read(ROOT / "shared" / "content-schemas" / "ripperdoc.schema.json")
+    allowed = schema["properties"]["implants"]["items"]["properties"]["implant"]["enum"]
+    assert set(ids) <= set(allowed), set(ids) - set(allowed)
+    appended = set(allowed) - set(ids)
+    assert appended <= APPENDED_1_17, appended  # only a 1.17 id may be in the schema before its phase's Cyberware lands
     catalogue = entries("ripperdoc")["afterlife"]
     listed = [e["implant"] for e in catalogue["implants"]]
-    assert sorted(listed) == sorted(ids) and len(listed) == len(set(listed))
+    assert len(listed) == len(set(listed))
+    assert set(ids) <= set(listed) <= set(allowed), (set(ids) - set(listed), set(listed) - set(allowed))
     with_surgery = [e for e in catalogue["implants"] if "surgery" in e]
     without = [e for e in catalogue["implants"] if "surgery" not in e]
     assert with_surgery and without
@@ -163,6 +186,64 @@ def test_shops_sell_known_items_and_never_buy_dearer_than_they_sell(lang):
     for item, prices in sell.items():
         if item in buy:
             assert max(prices) < min(buy[item]), f"{item}: sells for {max(prices)} per piece but is bought for {min(buy[item])}"
+
+
+# One crafting step from shop stock to a sell row (the Minecraft 26.3 recipes, read from its jar; redstone torches counted as their redstone
+# and stick): {sold item: ({ingredient: count}, items made)}. FREE are the renewable materials that cost no eddies (wood, stone, coal,
+# feathers): a recipe with a bought ingredient and only free ones besides is an eddie loop unless the sell price is below the bought part.
+RECIPES = {
+    "minecraft:iron_sword": ({"minecraft:iron_ingot": 2, "minecraft:stick": 1}, 1),
+    "minecraft:bow": ({"minecraft:string": 3, "minecraft:stick": 3}, 1),
+    "minecraft:shield": ({"minecraft:iron_ingot": 1, "minecraft:oak_planks": 6}, 1),
+    "minecraft:arrow": ({"minecraft:flint": 1, "minecraft:stick": 1, "minecraft:feather": 1}, 4),
+    "minecraft:compass": ({"minecraft:iron_ingot": 4, "minecraft:redstone": 1}, 1),
+    "minecraft:clock": ({"minecraft:gold_ingot": 4, "minecraft:redstone": 1}, 1),
+    "minecraft:torch": ({"minecraft:coal": 1, "minecraft:stick": 1}, 4),
+    "minecraft:repeater": ({"minecraft:redstone": 3, "minecraft:stick": 2, "minecraft:stone": 3}, 1),
+    "minecraft:comparator": ({"minecraft:redstone": 3, "minecraft:stick": 3, "minecraft:quartz": 1, "minecraft:stone": 3}, 1),
+}
+FREE = {"minecraft:stick", "minecraft:oak_planks", "minecraft:feather", "minecraft:stone", "minecraft:coal"}
+# sell rows no recipe makes from shop stock: drops and raw materials (a new sell row must be listed here or in RECIPES)
+UNCRAFTED = {"minecraft:" + i for i in ("rotten_flesh", "bone", "string", "gunpowder", "spider_eye", "ink_sac", "iron_ingot", "gold_ingot",
+                                        "redstone", "emerald", "diamond", "ender_pearl", "wheat", "potato", "carrot")}
+
+
+def mod_recipe(item: str) -> tuple[dict[str, int], int] | None:
+    """A cyberblock item's own crafting recipe as ({ingredient: count}, items made); None when it has none."""
+    path = RES / "data" / "cyberblock" / "recipe" / f"{item.removeprefix('cyberblock:')}.json"
+    if not path.is_file():
+        return None
+    doc, need = read(path), {}
+    if "ingredients" in doc:
+        names = doc["ingredients"]
+    else:
+        names = [doc["key"][ch] for row in doc["pattern"] for ch in row if ch != " "]
+    for name in names:
+        name = name if isinstance(name, str) else name[0]
+        need[name] = need.get(name, 0) + 1
+    return need, doc["result"].get("count", 1)
+
+
+def test_no_sell_row_pays_more_than_the_bought_inputs_of_its_recipe():
+    buy, sells = {}, []
+    for name, shop in entries("shop").items():
+        for row in shop["stock"]:
+            buy[row["item"]] = min(buy.get(row["item"], 1e9), row["price"] / row["count"])
+        sells += [(name, row) for row in shop.get("sell", [])]
+    assert sells
+    for shop, row in sells:
+        item = row["item"]
+        recipe = RECIPES.get(item) or (mod_recipe(item) if item.startswith("cyberblock:") else None)
+        if recipe is None:
+            assert item in UNCRAFTED or item.startswith("cyberblock:"), f"{shop} buys {item}: add its recipe to RECIPES or it to UNCRAFTED"
+            continue
+        need, made = recipe
+        bought = {i: n for i, n in need.items() if i in buy}
+        if not bought or set(need) - set(bought) - FREE:
+            continue  # nothing in it is bought, or it needs a gathered material the shops do not sell: not an eddie loop
+        cost = sum(buy[i] * n for i, n in bought.items()) / made
+        each = row["price"] / row["count"]
+        assert each < cost, f"{shop} buys {item} for {each:.2f} each, but its bought inputs cost only {cost:.2f}"
 
 
 def test_landmarks_are_unique_named_places_in_known_districts_and_marked_approximate(lang):
