@@ -27,7 +27,7 @@ public final class BreachScreen extends Screen {
 	/** Dark green (ChatFormatting.DARK_GREEN): readable on the light panel, where the bright green is not. */
 	static final int DONE = 0xFF00AA00;
 	private BreachWire.Screen data;
-	/** When the timer runs out (System.currentTimeMillis), or -1 while it has not started. */
+	/** When the timer runs out (System.currentTimeMillis), or -1 once the breach ended. */
 	private long deadline = -1;
 
 	BreachScreen(final BreachWire.Screen data) {
@@ -46,9 +46,9 @@ public final class BreachScreen extends Screen {
 		this.rebuildWidgets();
 	}
 
-	/** The timer runs once a pick was made and while the breach runs. */
+	/** The timer runs from the opening (the server's {@code left}) while the breach runs. */
 	private static long deadline(final BreachWire.Screen d) {
-		return d.picks().length == 0 || d.done() ? -1 : System.currentTimeMillis() + Math.round(d.left() * 1000.0);
+		return d.done() ? -1 : System.currentTimeMillis() + Math.round(d.left() * 1000.0);
 	}
 
 	static int width(final int n) {
@@ -116,7 +116,7 @@ public final class BreachScreen extends Screen {
 		return false;
 	}
 
-	/** The timer bar's fill 0..1: full before the first pick, empty once the breach ended. */
+	/** The timer bar's fill 0..1: full with no deadline, empty once the breach ended. */
 	static float timeLeft(final long deadline, final long now, final int seconds, final boolean done) {
 		return done ? 0.0F : deadline < 0 ? 1.0F : Math.clamp((deadline - now) / (seconds * 1000.0F), 0.0F, 1.0F);
 	}

@@ -1,0 +1,16 @@
+{
+	"schema": 1,
+	"title": "Bone Collector",
+	"text": "A sculptor in the stalls builds with bones and the skeletons on the rooftops keep plenty. Bring me twenty-four.",
+	"done_text": "She will turn those into something unsettling. Here is your cut.",
+	"type": "deliver_item",
+	"target": {
+		"item": "minecraft:bone",
+		"count": 24
+	},
+	"reward": {
+		"eddies": 150
+	},
+	"difficulty": 1,
+	"repeatable": true
+}

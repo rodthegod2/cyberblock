@@ -94,9 +94,35 @@ public final class NpcContent {
 	 * double[3]); empty when the kind, the landmark or such a component is missing.
 	 */
 	static Optional<Vec3> landmark(final Identifier id) {
-		ContentKind<?> kind = ContentKind.byId("landmark");
-		Object entry = kind == null ? null : Content.all(kind).get(id);
+		Object entry = landmarkEntry(id);
 		return entry == null ? Optional.empty() : position(entry);
+	}
+
+	/** Whether a landmark's position was written without game data (its record's {@code approx} component is true). */
+	static boolean approximate(final @Nullable Identifier id) {
+		Object entry = id == null ? null : landmarkEntry(id);
+		if (entry == null || !entry.getClass().isRecord()) {
+			return false;
+		}
+
+		for (RecordComponent c : entry.getClass().getRecordComponents()) {
+			if (c.getName().equals("approx")) {
+				try {
+					java.lang.reflect.Method accessor = c.getAccessor();
+					accessor.setAccessible(true);
+					return Boolean.TRUE.equals(accessor.invoke(entry));
+				} catch (ReflectiveOperationException | RuntimeException e) {
+					return false;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	private static @Nullable Object landmarkEntry(final Identifier id) {
+		ContentKind<?> kind = ContentKind.byId("landmark");
+		return kind == null ? null : Content.all(kind).get(id);
 	}
 
 	static Optional<Vec3> position(final Object entry) {

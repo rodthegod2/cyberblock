@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 /**
  * Who watches each host's photo feed (megaplan tasks 6-I1 and 6-D1: the DLL sends `feed` only while requested): a Net Map viewer
@@ -22,11 +23,11 @@ final class FeedViewers {
 	record Change(UUID host, boolean on) {
 	}
 
-	/** host -> viewer -> until (ms); `screen` viewers get the frames, map holders see the map item. */
+	/** host -> viewer -> until (ms); `screen` viewers get the frames as `cyberblock:ui feed`, map holders as their own map packet. */
 	private final Map<UUID, Map<UUID, Long>> screens = new HashMap<>();
 	private final Map<UUID, Map<UUID, Long>> maps = new HashMap<>();
-	/** Hosts whose last feedreq was on. */
-	private final Set<UUID> on = new HashSet<>();
+	/** Hosts whose last feedreq was on, and when it went on (ms). */
+	private final Map<UUID, Long> on = new HashMap<>();
 
 	/** A Net Map viewer starts, renews or stops watching. */
 	void watch(final UUID host, final UUID viewer, final boolean watching, final long now) {
@@ -52,6 +53,30 @@ final class FeedViewers {
 	/** The Net Map viewers of this host now (they get each frame). */
 	Set<UUID> screenViewers(final UUID host, final long now) {
 		return live(this.screens, host, now);
+	}
+
+	/** Who gets one frame: the Net Map viewers (a `cyberblock:ui` `feed`) and the feed map holders (their own map packet). */
+	record Recipients(Set<UUID> screens, Set<UUID> maps) {
+	}
+
+	/**
+	 * The viewers of this host that one frame goes to: the live watches and holders that `allowed` still admits. It is asked for
+	 * every frame (the owner's `hacks` toggle, the session and the join lock), never only when the watch began, so a guest the owner
+	 * turned away gets no picture from the next frame on, also on a map he took while it was allowed.
+	 */
+	Recipients recipients(final UUID host, final long now, final Predicate<UUID> allowed) {
+		return new Recipients(admitted(live(this.screens, host, now), allowed), admitted(live(this.maps, host, now), allowed));
+	}
+
+	private static Set<UUID> admitted(final Set<UUID> viewers, final Predicate<UUID> allowed) {
+		Set<UUID> out = new HashSet<>();
+		for (UUID viewer : viewers) {
+			if (allowed.test(viewer)) {
+				out.add(viewer);
+			}
+		}
+
+		return out;
 	}
 
 	private static Set<UUID> live(final Map<UUID, Map<UUID, Long>> by, final UUID host, final long now) {
@@ -84,12 +109,12 @@ final class FeedViewers {
 
 		List<Change> out = new ArrayList<>();
 		for (UUID host : wanted) {
-			if (this.on.add(host)) {
+			if (this.on.putIfAbsent(host, now) == null) {
 				out.add(new Change(host, true));
 			}
 		}
 
-		for (UUID host : Set.copyOf(this.on)) {
+		for (UUID host : Set.copyOf(this.on.keySet())) {
 			if (!wanted.contains(host)) {
 				this.on.remove(host);
 				out.add(new Change(host, false));
@@ -102,8 +127,13 @@ final class FeedViewers {
 	private Set<UUID> union() {
 		Set<UUID> all = new HashSet<>(this.screens.keySet());
 		all.addAll(this.maps.keySet());
-		all.addAll(this.on);
+		all.addAll(this.on.keySet());
 		return all;
+	}
+
+	/** The hosts whose feedreq is on now, each with when it went on (ms). */
+	Map<UUID, Long> requested() {
+		return Map.copyOf(this.on);
 	}
 
 	/** The host's DLL said hello again: it forgot the request, so the next changes() asks again when someone watches. */

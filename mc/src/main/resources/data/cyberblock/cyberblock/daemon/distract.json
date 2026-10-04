@@ -15,15 +15,15 @@
 	"action": "distract",
 	"tiers": [
 		{
-			"seconds": 8,
+			"seconds": 0,
 			"radius": 10
 		},
 		{
-			"seconds": 15,
+			"seconds": 0,
 			"radius": 16
 		},
 		{
-			"seconds": 30,
+			"seconds": 0,
 			"radius": 24
 		}
 	],

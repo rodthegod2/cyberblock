@@ -1,6 +1,7 @@
 package dev.cyberblock.holo;
 
 import java.util.UUID;
+import java.util.function.IntPredicate;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -204,6 +205,41 @@ public final class HoloRules {
 
 		bucket[0]--;
 		return true;
+	}
+
+	/** The ground search's reach: up out of solid blocks (or up to a floor overhead) and down to a floor. */
+	static final int CLIMB = 64, DROP = 48;
+
+	/**
+	 * The feet y for standing in the column at {@code y}, given which of its blocks are free (no collision): up out of solid blocks
+	 * (at most {@link #CLIMB}), then down to the first floor (at most {@link #DROP} below, never under {@code minY}); when there is no
+	 * floor below (the asked y lies under a replica floor: the shipped landmark heights are guesses, or under an overhang, with the
+	 * void beneath), up to the nearest floor above with two free blocks on it (at most {@link #CLIMB}). Null when neither finds one.
+	 */
+	static @Nullable Integer stand(final IntPredicate free, final int y, final int minY) {
+		int up = 0;
+		while (up <= CLIMB && !(free.test(y + up) && free.test(y + up + 1))) {
+			up++;
+		}
+
+		if (up > CLIMB) {
+			return null;
+		}
+
+		int feet = y + up;
+		for (int d = 0; d <= DROP && feet - d - 1 >= minY; d++) {
+			if (!free.test(feet - d - 1)) {
+				return feet - d;
+			}
+		}
+
+		for (int f = feet + 1; f <= y + CLIMB; f++) {
+			if (!free.test(f - 1) && free.test(f) && free.test(f + 1)) {
+				return f;
+			}
+		}
+
+		return null;
 	}
 
 	/** Where Steve goes after V's teleport: V's snapped spot, unless it is more than 32 blocks (horizontally) from the asked one. */

@@ -53,9 +53,10 @@
 // on detach (forgotten on session ready); a park is also released when Cyberblock stops being On.
 //
 // Phase 7 (megaplan 2026-10-04 task 7-S1): every tick with a player also runs CyberblockHub.Tick (Hub.reds: V parked
-// again while Steve is in the hub) and CyberblockServices.Tick (Services.reds: the mechanic's repair check); the hub and
-// a pending repair are forgotten on session ready and end (the hub also on detach, on Minecraft lost and whenever the
-// link is down: the DLL forgets its hub then too).
+// again while Steve is in the hub) and CyberblockServices.Tick (Services.reds: the mechanic's repair check). A pending
+// repair is forgotten on session ready and end. The hub is kept through session ready, session end and detach while
+// linked (CyberblockHub.Keep: the DLL's hub survives a load, so V is parked again once On) and forgotten on Minecraft
+// lost and whenever the link is down (the DLL forgets its hub then too).
 
 enum CyberblockState {
   Off = 0,
@@ -135,7 +136,7 @@ public class CyberblockSystem extends ScriptableSystem {
     this.surveyTour.Undo(this.GetGameInstance(), GetPlayer(this.GetGameInstance()));
     this.teleport.Abort(this.GetGameInstance(), "detach");
     this.park.Release(this.GetGameInstance(), "detach");
-    CyberblockHub.Forget("detach");
+    CyberblockHub.Keep("detach");
     CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
@@ -181,7 +182,7 @@ public class CyberblockSystem extends ScriptableSystem {
     CyberblockInk.RestoreFor(this.GetGameInstance(), "session ready");
     this.teleport.Forget();
     this.park.Forget();
-    CyberblockHub.Forget("session ready");
+    CyberblockHub.Keep("session ready");
     CyberblockServices.Forget();
     this.playerState.Clear(player);
     this.creative.Clear(player);
@@ -203,7 +204,7 @@ public class CyberblockSystem extends ScriptableSystem {
     this.surveyTour.Undo(this.GetGameInstance(), GetPlayer(this.GetGameInstance()));
     this.teleport.Abort(this.GetGameInstance(), "session end");
     this.park.Release(this.GetGameInstance(), "session end");
-    CyberblockHub.Forget("session end");
+    CyberblockHub.Keep("session end");
     CyberblockServices.Forget();
     CyberblockInk.RestoreFor(this.GetGameInstance(), "session end");
     this.hud.ClearMinecraft();

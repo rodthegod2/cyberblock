@@ -682,7 +682,7 @@
 	"cyberblock.breach.invalid": "That pick is not allowed",
 	"cyberblock.breach.alarm": "Alarm raised: the cameras around it are alerted",
 	"cyberblock.breach.heat": "Heat +%s",
-	"cyberblock.breach.locked_out": "This device is locked out for %s s",
+	"cyberblock.breach.cooldown": "Wait %s s before breaching this device again",
 	"cyberblock.breach.abort": "Abort",
 	"cyberblock.breach.close": "Close",
 	"cyberblock.breach.intrusion": "Intrusion detected: defend yourself",

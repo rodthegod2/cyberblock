@@ -37,12 +37,12 @@ class BreachResultsTest {
 		BreachGame g = new BreachGame(BreachGameTest.puzzle(), 0);
 		g.pick(1, 0);
 		g.pick(21, 0);
-		g.quit();
+		g.expire(20_000);
 		JsonObject m = down(3, SMALL_ID, g);
 		assertEquals("77", m.get("dev").getAsString());
 		assertEquals("[\"open_door\"]", m.get("list").toString());
 		assertEquals(1, m.get("strength").getAsInt());
-		assertEquals("solved", BreachResults.Outcome.of(g).state(), "an abort after an upload still counts what was uploaded");
+		assertEquals("solved", BreachResults.Outcome.of(g).state(), "the timer ran out after an upload: what was uploaded counts");
 	}
 
 	@Test
@@ -55,12 +55,31 @@ class BreachResultsTest {
 		assertEquals("[\"alarm\"]", m.get("list").toString(), "always alone");
 		assertEquals(1, m.get("strength").getAsInt());
 
+		BreachGame untouched = new BreachGame(BreachGameTest.puzzle(), 0);
+		untouched.expire(20_000);
+		assertEquals("timeout", BreachResults.Outcome.of(untouched).state(), "a kept puzzle that runs out before a pick");
+		assertEquals("[\"alarm\"]", down(6, PORT, untouched).get("list").toString());
+
 		BreachGame abort = new BreachGame(BreachGameTest.puzzle(), 0);
 		abort.pick(0, 0);
 		abort.quit();
-		assertEquals("failed", BreachResults.Outcome.of(abort).state(), "walking out after a pick is a failure");
+		assertEquals("aborted", BreachResults.Outcome.of(abort).state(), "protocol.md: walking out after a pick is a failure with state aborted");
 		assertEquals("[\"alarm\"]", down(5, PORT, abort).get("list").toString());
 		assertEquals(5, BreachResults.FAILURE_HEAT, "Heat +5 on the Phase 8 meter");
+	}
+
+	@Test
+	void anAbortAfterAnUploadIsTheAlarmNotTheDaemon() {
+		BreachGame g = new BreachGame(BreachGameTest.puzzle(), 0);
+		g.pick(1, 0);
+		g.pick(21, 0);
+		g.quit();
+		BreachResults.Outcome o = BreachResults.Outcome.of(g);
+		assertTrue(o.failed());
+		assertFalse(o.success());
+		assertEquals("aborted", o.state());
+		assertEquals(0, o.strength());
+		assertEquals("[\"alarm\"]", down(7, PORT, g).get("list").toString(), "no open_door: an abort is not a way to cash in");
 	}
 
 	@Test

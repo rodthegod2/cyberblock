@@ -1,7 +1,5 @@
 #include "feed.hpp"
-#include "link.hpp"
 #include "log.hpp"
-#include "wire.hpp"
 #include "world.hpp"
 #include <chrono>
 #include <limits>
@@ -141,11 +139,6 @@ namespace cb::feed
 		return json{{"t", "feed"}, {"w", kSize}, {"h", kSize}, {"px", base64(colours)}};
 	}
 
-	json make_feed_fallback(std::string_view why)
-	{
-		return json{{"t", "feed"}, {"w", 0}, {"h", 0}, {"px", ""}, {"fallback", wire::truncate_utf8(why, kMaxFallbackBytes)}};
-	}
-
 	double now_seconds()
 	{
 		return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -213,15 +206,10 @@ namespace cb::feed
 		return true;
 	}
 
-	std::optional<json> Gate::fallback_notice(double now)
+	std::string Gate::reason()
 	{
-		if (!m_requested || !m_fallback)
-			return std::nullopt;
 		std::lock_guard<std::mutex> lock(m_lock);
-		if (m_lastNotice && now - *m_lastNotice < kIntervalSeconds)
-			return std::nullopt;
-		m_lastNotice = now;
-		return make_feed_fallback(m_reason);
+		return m_reason;
 	}
 
 	void Gate::reset()
@@ -230,7 +218,6 @@ namespace cb::feed
 		std::lock_guard<std::mutex> lock(m_lock);
 		m_fallback = false;
 		m_last.reset();
-		m_lastNotice.reset();
 		m_reason.clear();
 	}
 
@@ -267,21 +254,16 @@ namespace cb::feed
 			prepare(); // builds the colour table here, never on the render thread
 		const bool was = gate().requested();
 		gate().set_requested(req.on);
-		if (req.on && gate().fallen_back())
-		{
-			// every `on` while fallen back is answered (at most once a second): a viewer that came late learns it too
-			if (const auto notice = gate().fallback_notice(now_seconds()))
-			{
-				link().send(*notice);
-				if (!was)
-					log::info("feed: requested, but the back-buffer feed is off this session (%s); Minecraft was told "
-							  "(feed fallback), its top-down replica render is the fallback",
-							  (*notice)["fallback"].get_ref<const std::string &>().c_str());
-			}
-			return;
-		}
 		if (was == req.on)
 			return;
+		if (req.on && gate().fallen_back())
+		{
+			// nothing is sent: with no `feed`, the server's top-down replica render stands in (feed.hpp)
+			log::info("feed: requested, but the back-buffer feed is off this session (%s); no picture is sent, the "
+					  "server's top-down replica render is the fallback",
+					  gate().reason().c_str());
+			return;
+		}
 		if (!req.on)
 			log::info("feed: off (Minecraft stopped asking)");
 		else

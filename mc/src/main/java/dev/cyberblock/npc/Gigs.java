@@ -255,7 +255,7 @@ public final class Gigs implements Visit.Service {
 
 	/**
 	 * A solved Breach Protocol on a device of this section 1.11 kind (door, terminal, camera, turret, ...): one step of a breach gig.
-	 * Phase 6's Breach (6B) calls this; until it does, breach gigs cannot progress (said in the log at server start).
+	 * Phase 6's Breach calls this on a solved device breach with the device's {@code DeviceType} id.
 	 */
 	public static void breached(final ServerPlayer player, final String deviceKind) {
 		GigData.Gig gig = gig(player);
@@ -309,7 +309,7 @@ public final class Gigs implements Visit.Service {
 				player.sendSystemMessage(Component.translatableWithFallback("cyberblock.npc.gig.expired", "Gig failed: %s ran out of time", c.title()));
 				Cyberblock.LOG.info("npc: gig {} of {} ran out of time", gig.contract(), player.getPlainTextName());
 			} else if (c.type() == Contract.Type.REACH_LANDMARK && player.level().dimension() == Level.OVERWORLD
-				&& GigRules.reached(c, target(c), player.position())) {
+				&& GigRules.reached(c, target(c), NpcContent.approximate(c.landmark()), player.position())) {
 				complete(player, gig, c);
 			}
 		}

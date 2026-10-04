@@ -6,7 +6,9 @@ import dev.cyberblock.holo.HoloRules.Ask;
 import dev.cyberblock.holo.HoloRules.Kind;
 import dev.cyberblock.holo.HoloRules.Role;
 import dev.cyberblock.holo.HoloRules.Who;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.IntPredicate;
 import org.junit.jupiter.api.Test;
 
 /** Megaplan 7-T1: who sees whose pin on the Holo-Table, and the spawn rules. */
@@ -191,6 +193,32 @@ class HoloRulesTest {
 		}
 
 		assertFalse(HoloRules.take(bucket, 100_000L), "the burst refills to 4, never more");
+	}
+
+	/** A column of the void world: solid exactly at the given ys. */
+	private static IntPredicate solidAt(final Integer... ys) {
+		Set<Integer> solid = Set.of(ys);
+		return y -> !solid.contains(y);
+	}
+
+	@Test
+	void groundBelowInsideOrNone() {
+		assertEquals(41, HoloRules.stand(solidAt(40), 50, -64), "down to the floor under the spot");
+		assertEquals(41, HoloRules.stand(solidAt(40), 41, -64), "already standing");
+		assertEquals(43, HoloRules.stand(solidAt(40, 41, 42), 41, -64), "up out of the solid floor");
+		assertNull(HoloRules.stand(solidAt(), 10, -64), "nothing built here");
+		assertNull(HoloRules.stand(solidAt(10 + HoloRules.CLIMB + 1), 10, -64), "a floor out of reach above");
+	}
+
+	@Test
+	void groundAboveWhenTheSpotHangsUnderTheReplica() {
+		// a guessed landmark height under a one-block-thick replica floor, the void below
+		assertEquals(31, HoloRules.stand(solidAt(30), 10, -64));
+		assertEquals(-39, HoloRules.stand(solidAt(-40), -60, -64), "near the bottom of the world");
+		assertEquals(31, HoloRules.stand(solidAt(30, 60), 10, -64), "the nearest floor above");
+		assertEquals(32, HoloRules.stand(solidAt(30, 31), 10, -64), "on top of a thicker floor");
+		assertEquals(33, HoloRules.stand(solidAt(30, 32), 10, -64), "a one-block gap is no place to stand: on top instead");
+		assertEquals(5, HoloRules.stand(solidAt(4, 30), 10, -64), "a floor below still wins");
 	}
 
 	@Test

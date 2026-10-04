@@ -8,12 +8,18 @@
 //
 // Hacks (the target is a car, a person or a device id as the npcs / devices streams sent it; 0 = none):
 //   veh_lock        the car's doors locked (a person's car when the target is a person), restored after 120 s (15 s on
-//                   V's own car, so V is never shut in for long).
+//                   the car V is in and on V's own car (IsPlayerVehicle) wherever it is, so V is never shut in or out
+//                   for long). The doors are restored through the car's persistent state, also when it drove off or
+//                   despawned; V's own car whose state is not loaded keeps its record until it is (retried on every
+//                   request and Clear), so it never comes back locked in a later session or save.
 //   veh_engine_off  vehicle and engine off and held off for 30 s (10 s on V's car); a moving car is braked to a stop;
-//                   the engine comes back when it ran before (always on V's car).
+//                   the engine comes back when it ran before (always on V's car). Refused "not hackable (engine
+//                   locked)" on a car whose on-state lock this service did not set.
 //   veh_brake       brakes: on an NPC's car the Force Brakes quickhack's own call; on V's car the NCPD hack loop's call
 //                   (5 s, with the immobilized effect).
-//   veh_start       vehicle and engine on (a held car is released first).
+//   veh_start       vehicle and engine on (a held car is released first); refused "not hackable (engine locked)" when
+//                   an on-state lock is still there after that (a quest's, never ours). A hold's end puts the on-state
+//                   lock back as it was before the first hold, so only a lock this service set is removed.
 //   veh_jam         a temporary loss of control, 3 s of horn and of the immobilized effect.
 //   traffic_switch  the intersection of the target traffic light (or the nearest one within 40 m of the target) flips.
 //   gridlock        the cars within 25 m of the target (at most 12, never V's) stop for 60 s; the nearest intersection
@@ -66,8 +72,10 @@
 //
 // Night City is left as vanilla as possible: held engines, locked doors, switched-off devices and the forced city lights
 // are restored by their timers, and all at once by Clear (CyberblockSystem.ClearWorld: before every save, on leaving
-// live, on load and session end), so a save never keeps them. Quest-marked and quest-locked devices, cars in a scene,
-// AVs and destroyed cars are left alone; nothing runs while V is in scene tier 3-5.
+// live, on load and session end), so a save never keeps them. Quest-marked and quest-locked devices, quest cars
+// (VehicleComponentPS IsMarkedAsQuest or GetHasStateBeenModifiedByQuest: "not hackable (quest)", skipped by gridlock),
+// cars in a scene, AVs and destroyed cars are left alone; nothing runs while V is in scene tier 3-5. RaiseHeat sends
+// nothing while the police are off (PreventionSystem.IsSystemEnabled) or V is in a scene.
 //
 // 2.31 script API (NativeDB, redscript), compile-checked: VehicleObject.GetVehiclePS / IsPlayerMounted / IsDestroyed /
 // IsPerformingSceneAnimation / IsEngineTurnedOn / TurnVehicleOn / TurnEngineOn / LockVehicleOnState / ForceBrakesFor /
@@ -79,7 +87,12 @@
 // TrafficLight, CityLightSystem.GetState / ForceCLSStateRequest (cityLightSystem.swift 53, 598),
 // GameInstance.QueueScriptableSystemRequest, ScriptableDeviceComponentPS.ActionSetDeviceON / ActionSetDeviceOFF /
 // ExecutePSAction / IsON / IsOFF / IsMarkedAsQuest, GameObject.SendForceRevealObjectEvent, SurveillanceCamera,
-// SecurityTurret, IsHostileTowardsPlayer, DelaySystem.DelayCallback. Ours: CyberblockDeviceService.Find / Known
+// SecurityTurret, IsHostileTowardsPlayer, DelaySystem.DelayCallback, VehicleObject.IsPlayerVehicle / IsVehicleOnStateLocked
+// (vehicles.swift 134, 190), VehicleComponentPS.GetHasStateBeenModifiedByQuest (vehicleComponentPS.swift 124),
+// CreatePersistentID + GamePersistencySystem.GetConstAccessToPSObject + vehicleControllerPS.SetDoorInteractionState
+// (orphans.swift 21191, 16752, 21217; as VehicleComponentPS.GetVehicleControllerPS, vehicleComponentPS.swift 83),
+// PreventionSystem.IsSystemEnabled (preventionSystem.swift 331), SetWantedLevel.m_forceIgnoreSecurityAreas (4214),
+// Codeware Reflection.GetClass / ReflectionClass.GetProperty / ReflectionProp.GetValue. Ours: CyberblockDeviceService.Find / Known
 // (Devices.reds), CyberblockTetherService.Known (Tether.reds), CyberblockHacks.Upload / FlipIntersection / Refusal
 // (Hacks.reds), CyberblockIds.Hash, CyberblockEffects.Find, CyberblockPuppets.IsPuppet.
 
@@ -252,13 +265,18 @@ public class CyberblockRemoteService extends ScriptableService {
   private let offSerials: array<Int32>;
   private let blackoutSerial: Int32;
   private let cityLights: Bool;
-  // Cars whose engine is held off: id, serial, whether the engine comes back on.
+  // Cars whose engine is held off: id, serial (0: over, restore pending), whether the engine comes back on, whether its
+  // on-state was locked before the first hold (the value restored), whether it is V's own car.
   private let heldCars: array<Uint64>;
   private let heldSerials: array<Int32>;
   private let heldRestart: array<Bool>;
-  // Cars we locked: id, serial, and the 6 door interaction states before the lock (6 entries per car).
+  private let heldWasLocked: array<Bool>;
+  private let heldOwned: array<Bool>;
+  // Cars we locked: id, serial (0: over, restore pending), whether it is V's own car, and the 6 door interaction states
+  // before the lock (6 entries per car).
   private let lockedCars: array<Uint64>;
   private let lockedSerials: array<Int32>;
+  private let lockedOwned: array<Bool>;
   private let lockedStates: array<Int32>;
 
   public static func Get() -> ref<CyberblockRemoteService> {
@@ -313,7 +331,7 @@ public class CyberblockRemoteService extends ScriptableService {
       return fallback ? "none: devices stay as they are (Phase 0 c fallback: the action is not callable; blackout keeps the city lights)" : "ScriptableDeviceComponentPS.ExecutePSAction(SetDeviceOFF) with V as executor (the Phase 4 devact path)";
     }
     if Equals(what, n"heat") {
-      return fallback ? "Minecraft Heat only (Phase 0 e fallback)" : "PreventionSystem SetWantedLevel +1 (the quest path)";
+      return fallback ? "Minecraft Heat only (Phase 0 e fallback)" : "PreventionSystem SetWantedLevel +1 (the quest path; only while the police are on, m_ignoreSecurityAreasByQuest passed through unchanged)";
     }
     return "?";
   }
@@ -384,6 +402,7 @@ public class CyberblockRemoteService extends ScriptableService {
     if tier >= 3 && tier <= 5 {
       return "not hackable (V is in a scene)";
     }
+    this.RetryPending(game);
     let object = CyberblockRemoteHacks.FindObject(game, target);
     if target != 0ul && (!IsDefined(object) || !object.IsAttached()) {
       return "target gone";
@@ -417,6 +436,12 @@ public class CyberblockRemoteService extends ScriptableService {
     return "no such hack";
   }
 
+  // A car a quest marked or changed (VehicleComponentPS extends ScriptableDeviceComponentPS): left alone.
+  private static func QuestCar(vehicle: ref<VehicleObject>) -> Bool {
+    let ps = vehicle.GetVehiclePS();
+    return IsDefined(ps) && (ps.IsMarkedAsQuest() || ps.GetHasStateBeenModifiedByQuest());
+  }
+
   private func Vehicle(game: GameInstance, player: ref<PlayerPuppet>, hack: CName, object: ref<GameObject>, run: ref<CyberblockRemoteRun>) -> String {
     if !IsDefined(object) {
       return "target gone";
@@ -440,15 +465,23 @@ public class CyberblockRemoteService extends ScriptableService {
     if vehicle.IsPerformingSceneAnimation() {
       return "not hackable (in a scene)";
     }
+    if CyberblockRemoteService.QuestCar(vehicle) {
+      return "not hackable (quest)";
+    }
     let mine = vehicle.IsPlayerMounted();
+    let owned = vehicle.IsPlayerVehicle();
     let far = Vector4.Distance(player.GetWorldPosition(), vehicle.GetWorldPosition()) > 50.0;
     let speed = Vector4.Length(vehicle.GetLinearVelocity());
     let id = CyberblockIds.Hash(vehicle);
-    run.note = s"\(mine ? "V's car" : "car") \(id)";
+    run.note = s"\(mine ? "V's car" : owned ? "V's own car, V not in it" : "car") \(id)";
     if Equals(hack, n"veh_lock") {
-      return this.LockCar(game, vehicle, mine ? 15.0 : 120.0, far, run);
+      return this.LockCar(game, vehicle, mine || owned ? 15.0 : 120.0, far, run);
     }
     if Equals(hack, n"veh_engine_off") {
+      // An on-state lock this service did not set (a quest's) is never overridden.
+      if vehicle.IsVehicleOnStateLocked() && !ArrayContains(this.heldCars, id) {
+        return "not hackable (engine locked)";
+      }
       if mine || speed > 1.0 {
         vehicle.ForceBrakesUntilStoppedOrFor(8.0);
       }
@@ -464,8 +497,12 @@ public class CyberblockRemoteService extends ScriptableService {
       return "";
     }
     if Equals(hack, n"veh_start") {
+      // A held car is released first (its on-state lock back as it was before the hold); a lock still there is not ours.
       this.Release(game, id, 0, false);
-      if vehicle.IsEngineTurnedOn() && !vehicle.IsVehicleOnStateLocked() {
+      if vehicle.IsVehicleOnStateLocked() {
+        return "not hackable (engine locked)";
+      }
+      if vehicle.IsEngineTurnedOn() {
         run.note += ", already running";
         return "";
       }
@@ -540,23 +577,38 @@ public class CyberblockRemoteService extends ScriptableService {
       ArrayPush(this.heldCars, id);
       ArrayPush(this.heldSerials, serial);
       ArrayPush(this.heldRestart, restart);
+      ArrayPush(this.heldWasLocked, vehicle.IsVehicleOnStateLocked());
+      ArrayPush(this.heldOwned, vehicle.IsPlayerVehicle());
     }
     this.Schedule(game, n"engine", id, serial, seconds);
     return serial;
   }
 
-  // Ends a hold (serial 0: whichever); restore: switch the engine back on when it ran before.
+  // Ends a hold (serial 0: whichever): the on-state lock goes back to what it was before the first hold (only a lock
+  // this service set is removed); restore: switch the engine back on when it ran before. When the car is not streamed,
+  // V's own car keeps its record (serial 0) for RetryPending; another car's state went with it.
   private func Release(game: GameInstance, id: Uint64, serial: Int32, restore: Bool) -> Void {
     let i = ArrayFindFirst(this.heldCars, id);
     if i < 0 || serial != 0 && this.heldSerials[i] != serial {
       return;
     }
+    let vehicle = CyberblockEffects.Find(game, id) as VehicleObject;
+    if !IsDefined(vehicle) && this.heldOwned[i] {
+      if this.heldSerials[i] != 0 {
+        this.heldSerials[i] = 0;
+        Cyberblock_Log(s"rhack: engine hold on V's own car \(id): car not streamed, restore kept for when it is back");
+      }
+      return;
+    }
     let restart = this.heldRestart[i];
+    let wasLocked = this.heldWasLocked[i];
     ArrayErase(this.heldCars, i);
     ArrayErase(this.heldSerials, i);
     ArrayErase(this.heldRestart, i);
-    let vehicle = CyberblockEffects.Find(game, id) as VehicleObject;
+    ArrayErase(this.heldWasLocked, i);
+    ArrayErase(this.heldOwned, i);
     if !IsDefined(vehicle) {
+      Cyberblock_Log(s"rhack: engine hold on car \(id) dropped (car gone)");
       return;
     }
     vehicle.LockVehicleOnState(false);
@@ -564,7 +616,10 @@ public class CyberblockRemoteService extends ScriptableService {
       vehicle.TurnVehicleOn(true);
       vehicle.TurnEngineOn(true);
     }
-    Cyberblock_Log(s"rhack: engine hold on car \(id) released\(restore && restart ? ", engine back on" : "")");
+    if wasLocked {
+      vehicle.LockVehicleOnState(true);
+    }
+    Cyberblock_Log(s"rhack: engine hold on car \(id) released\(restore && restart ? ", engine back on" : "")\(wasLocked ? ", its own on-state lock kept" : "")");
   }
 
   // Locks the car's doors for seconds; the states before come back afterwards.
@@ -589,6 +644,7 @@ public class CyberblockRemoteService extends ScriptableService {
     }
     ArrayPush(this.lockedCars, id);
     ArrayPush(this.lockedSerials, serial);
+    ArrayPush(this.lockedOwned, vehicle.IsPlayerVehicle());
     let d = 0;
     while d < 6 {
       ArrayPush(this.lockedStates, EnumInt(ps.GetDoorInteractionState(IntEnum<EVehicleDoor>(d))));
@@ -619,28 +675,60 @@ public class CyberblockRemoteService extends ScriptableService {
     GameInstance.GetPersistencySystem(game).QueuePSEvent(ps.GetID(), ps.GetClassName(), evt);
   }
 
-  // Puts the doors back as they were before the lock (serial 0: whichever).
+  // The car's vehicle controller persistent state, where the door interaction states live (what
+  // VehicleComponentPS.SetDoorInteractionState writes); found by the car's id whether or not the car is streamed, null
+  // when it is not loaded.
+  private static func DoorController(game: GameInstance, id: Uint64) -> ref<vehicleControllerPS> {
+    let psId = CreatePersistentID(EntityID.FromHash(id), n"VehicleController");
+    return GameInstance.GetPersistencySystem(game).GetConstAccessToPSObject(psId, n"gamevehicleControllerPS") as vehicleControllerPS;
+  }
+
+  // Puts the doors back as they were before the lock (serial 0: whichever), through the car's persistent state, so a
+  // car that drove off or was despawned is restored too. When even that state is not loaded, V's own car keeps its
+  // record (serial 0) for RetryPending, so its doors are never left locked; another car's state went with it.
   private func Unlock(game: GameInstance, id: Uint64, serial: Int32) -> Void {
     let i = ArrayFindFirst(this.lockedCars, id);
     if i < 0 || serial != 0 && this.lockedSerials[i] != serial {
       return;
     }
-    let vehicle = CyberblockEffects.Find(game, id) as VehicleObject;
-    let ps: ref<VehicleComponentPS>;
-    if IsDefined(vehicle) {
-      ps = vehicle.GetVehiclePS();
+    let controller = CyberblockRemoteService.DoorController(game, id);
+    if !IsDefined(controller) && this.lockedOwned[i] {
+      if this.lockedSerials[i] != 0 {
+        this.lockedSerials[i] = 0;
+        Cyberblock_Log(s"rhack: doors of V's own car \(id): its state is not loaded, restore kept for when it is back");
+      }
+      return;
     }
     let d = 0;
     while d < 6 {
-      if IsDefined(ps) {
-        ps.SetDoorInteractionState(IntEnum<EVehicleDoor>(d), IntEnum<VehicleDoorInteractionState>(this.lockedStates[i * 6]), "Cyberblock");
+      if IsDefined(controller) {
+        controller.SetDoorInteractionState(IntEnum<EVehicleDoor>(d), IntEnum<VehicleDoorInteractionState>(this.lockedStates[i * 6]));
       }
       ArrayErase(this.lockedStates, i * 6);
       d += 1;
     }
     ArrayErase(this.lockedCars, i);
     ArrayErase(this.lockedSerials, i);
-    Cyberblock_Log(s"rhack: doors of car \(id) \(IsDefined(ps) ? "restored" : "left (car gone)")");
+    ArrayErase(this.lockedOwned, i);
+    Cyberblock_Log(s"rhack: doors of car \(id) \(IsDefined(controller) ? "restored" : "left (car and its state gone)")");
+  }
+
+  // Restores still owed on V's own cars that were not loaded when their time ran out (every Run and Clear).
+  private func RetryPending(game: GameInstance) -> Void {
+    let i = ArraySize(this.lockedCars) - 1;
+    while i >= 0 {
+      if this.lockedSerials[i] == 0 {
+        this.Unlock(game, this.lockedCars[i], 0);
+      }
+      i -= 1;
+    }
+    i = ArraySize(this.heldCars) - 1;
+    while i >= 0 {
+      if this.heldSerials[i] == 0 {
+        this.Release(game, this.heldCars[i], 0, true);
+      }
+      i -= 1;
+    }
   }
 
   private func TrafficSwitch(player: ref<PlayerPuppet>, object: ref<GameObject>, run: ref<CyberblockRemoteRun>) -> String {
@@ -670,7 +758,7 @@ public class CyberblockRemoteService extends ScriptableService {
     for found in CyberblockRemoteHacks.Nearby(game, player, center, 25.0, true, false, 64) {
       let car = found as VehicleObject;
       if stopped < 12 && IsDefined(car) && !IsDefined(car as AVObject) && !car.IsPerformingSceneAnimation()
-        && Vector4.Distance(player.GetWorldPosition(), car.GetWorldPosition()) <= limit {
+        && !CyberblockRemoteService.QuestCar(car) && Vector4.Distance(player.GetWorldPosition(), car.GetWorldPosition()) <= limit {
         let speed = Vector4.Length(car.GetLinearVelocity());
         let serial = 0;
         if fallback {
@@ -1056,8 +1144,17 @@ public class CyberblockRemoteService extends ScriptableService {
 
   // ---- heat (Daemons.reds' failure alarm; Phase 0 e) ----
 
-  // Raises V's wanted level by one star; "" or why not.
+  // Raises V's wanted level by one star; "" or why not. OnSetWantedLevel (preventionSystem.swift 3258-3284) switches
+  // the police back on (TogglePreventionSystem(true)) and overwrites the persistent m_ignoreSecurityAreasByQuest with
+  // the request's m_forceIgnoreSecurityAreas. So nothing is sent while the police are off (a quest or a police-free
+  // area switched them off; IsSystemEnabled, 331) or V is in scene tier 3-5, and the flag's current value (read with
+  // Codeware reflection) goes along, so a quest's setting stays. Neither refusal switches the feature to its fallback.
   public func RaiseHeat(game: GameInstance) -> String {
+    let player = GetPlayer(game);
+    let tier = IsDefined(player) ? PlayerPuppet.GetSceneTier(player) : 0;
+    if tier >= 3 && tier <= 5 {
+      return "Minecraft Heat only (V is in a scene)";
+    }
     if this.UsesFallback(n"heat") {
       return "Minecraft Heat only";
     }
@@ -1066,12 +1163,22 @@ public class CyberblockRemoteService extends ScriptableService {
       this.Fall(n"heat", "no PreventionSystem");
       return "no PreventionSystem";
     }
+    if !prevention.IsSystemEnabled() {
+      return "Minecraft Heat only (police off here)";
+    }
+    let cls = Reflection.GetClass(n"PreventionSystem");
+    let flag = IsDefined(cls) ? cls.GetProperty(n"m_ignoreSecurityAreasByQuest") : null;
+    if !IsDefined(flag) {
+      this.Fall(n"heat", "PreventionSystem.m_ignoreSecurityAreasByQuest not readable, a request would overwrite it");
+      return "Minecraft Heat only";
+    }
     let before = Cast<Int32>(prevention.GetHeatStageAsInt());
     if before >= 5 {
       return "already 5 stars";
     }
     let request = new SetWantedLevel();
     request.m_wantedLevel = IntEnum<EPreventionHeatStage>(before + 1);
+    request.m_forceIgnoreSecurityAreas = FromVariant<Bool>(flag.GetValue(ToVariant(prevention)));
     PreventionSystem.QueueRequest(game, request);
     this.Check(game, n"heat", 0ul, 0, 1, 2.0, Cast<Float>(before + 1), false);
     return "";
@@ -1085,11 +1192,16 @@ public class CyberblockRemoteService extends ScriptableService {
     if ArraySize(this.heldCars) == 0 && ArraySize(this.lockedCars) == 0 && ArraySize(this.offDevices) == 0 && !this.cityLights {
       return;
     }
-    while ArraySize(this.heldCars) > 0 {
-      this.Release(game, this.heldCars[0], 0, true);
+    // From the end: a record V's own car keeps (not loaded) stays in place for RetryPending.
+    let i = ArraySize(this.heldCars) - 1;
+    while i >= 0 {
+      this.Release(game, this.heldCars[i], 0, true);
+      i -= 1;
     }
-    while ArraySize(this.lockedCars) > 0 {
-      this.Unlock(game, this.lockedCars[0], 0);
+    i = ArraySize(this.lockedCars) - 1;
+    while i >= 0 {
+      this.Unlock(game, this.lockedCars[i], 0);
+      i -= 1;
     }
     if this.blackoutSerial != 0 {
       this.EndBlackout(game, this.blackoutSerial, "cleared");

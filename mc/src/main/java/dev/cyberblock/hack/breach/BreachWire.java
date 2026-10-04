@@ -17,9 +17,9 @@ import org.jspecify.annotations.Nullable;
  * <ul>
  * <li>{@code cyberblock:ui t:"breach"} (server to client), on open, after every pick (a refused one too) and at the end: {@code {id, dev,
  * size, grid:[codes], buffer, picks:[cells], seqs:[{id, codes, ok}], total, left, state, strength}}: the puzzle id, the breached device's
- * decimal id ({@code "0"} for a breach with no device: a practice or a Phase 8 player hack), the grid row by row as hex codes, the timer
- * in seconds and the seconds left (the whole timer before the first pick), {@code state} one of {@link #STATES}, {@code strength} 0
- * until the end. The planted solution never leaves the server.</li>
+ * decimal id ({@code "0"} for a breach with no device: a practice or a Phase 8 player hack), {@code size} 5..7 (4 for Phase 8's short
+ * breach), the grid row by row as hex codes, the timer in seconds and the seconds left (it runs from the opening), {@code state} one of
+ * {@link #STATES}, {@code strength} 0 until the end. The planted solution never leaves the server.</li>
  * <li>{@code cyberblock:act t:"breach"} (client to server): {@code {op:"pick", id, cell}} or {@code {op:"abort", id}}.</li>
  * </ul>
  */
@@ -65,6 +65,14 @@ public final class BreachWire {
 
 	/** The screen data for this breach now. */
 	public static String screen(final int id, final String dev, final BreachGame g, final long nowMs) {
+		return screen(id, dev, g, nowMs, false);
+	}
+
+	/**
+	 * The screen data for this breach now; {@code kept}: the player closed this screen of a device breach before a pick, so it shows
+	 * {@code aborted} while the server keeps the puzzle (and its timer) for the next right-click, which opens it under a new id.
+	 */
+	public static String screen(final int id, final String dev, final BreachGame g, final long nowMs, final boolean kept) {
 		BreachPuzzle p = g.puzzle();
 		JsonObject o = new JsonObject();
 		o.addProperty("id", id);
@@ -90,10 +98,9 @@ public final class BreachWire {
 
 		o.add("seqs", seqs);
 		o.addProperty("total", p.seconds());
-		long left = g.leftMs(nowMs);
-		o.addProperty("left", left < 0 ? p.seconds() : Math.round(left / 100.0) / 10.0);
+		o.addProperty("left", Math.round(g.leftMs(nowMs) / 100.0) / 10.0);
 		BreachResults.Outcome end = g.ended() ? BreachResults.Outcome.of(g) : null;
-		o.addProperty("state", end == null ? RUN : end.state());
+		o.addProperty("state", end != null ? end.state() : kept ? "aborted" : RUN);
 		o.addProperty("strength", end == null ? 0 : end.strength());
 		return o.toString();
 	}

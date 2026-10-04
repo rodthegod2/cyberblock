@@ -25,20 +25,23 @@ class HoloContentTest {
 		assertEquals("", l.district());
 		assertEquals("landmark", l.kind());
 		assertTrue(l.spawn());
+		assertFalse(l.approx());
 	}
 
 	@Test
 	void aFullLandmark() {
 		Landmarks.Landmark l = Landmarks.parse(ID, json(
-			"{\"schema\":1,\"name\":\"Afterlife\",\"pos\":[10,64,-20],\"district\":\"Watson\",\"kind\":\"bar\",\"yaw\":90,\"spawn\":false,\"extra\":1}"));
+			"{\"schema\":1,\"name\":\"Afterlife\",\"pos\":[10,64,-20],\"district\":\"Watson\",\"kind\":\"bar\",\"yaw\":90,\"spawn\":false,\"approx\":true,\"extra\":1}"));
 		assertEquals("Watson", l.district());
 		assertEquals("bar", l.kind());
 		assertEquals(90.0F, l.yaw());
 		assertFalse(l.spawn());
+		assertTrue(l.approx());
 	}
 
 	@Test
 	void badLandmarksAreRefused() {
+		assertThrows(IllegalArgumentException.class, () -> Landmarks.parse(ID, json("{\"schema\":1,\"name\":\"a\",\"pos\":[0,0,0],\"approx\":1}")));
 		assertThrows(IllegalArgumentException.class, () -> Landmarks.parse(ID, json("{\"schema\":1,\"pos\":[0,0,0]}")));
 		assertThrows(IllegalArgumentException.class, () -> Landmarks.parse(ID, json("{\"schema\":1,\"name\":\"a\",\"pos\":[0,0]}")));
 		assertThrows(IllegalArgumentException.class, () -> Landmarks.parse(ID, json("{\"schema\":1,\"name\":\"a\",\"pos\":[0,0,0],\"spawn\":\"yes\"}")));

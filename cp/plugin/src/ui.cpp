@@ -515,4 +515,13 @@ namespace cb::ui
 		std::lock_guard<std::mutex> lock(m_lock);
 		return m_dropped;
 	}
+
+	bool script_function_matches(std::string_view fullName, std::string_view shortName, std::string_view wanted)
+	{
+		if (wanted.empty())
+			return false;
+		if (shortName == wanted || fullName == wanted)
+			return true;
+		return fullName.size() > wanted.size() && fullName.starts_with(wanted) && fullName[wanted.size()] == ';';
+	}
 }

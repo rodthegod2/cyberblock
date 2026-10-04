@@ -10,23 +10,23 @@ import org.jspecify.annotations.Nullable;
  * plus the device type's bit), how often one player may send it and how long its effect lasts in Night City. Pure.
  */
 public enum RemoteHack {
-	VEH_LOCK(Target.VEHICLE, null, 2, 0),
-	VEH_ENGINE_OFF(Target.VEHICLE, null, 2, 0),
-	VEH_BRAKE(Target.VEHICLE, null, 2, 0),
-	VEH_START(Target.VEHICLE, null, 2, 0),
-	VEH_JAM(Target.VEHICLE, null, 2, 0),
-	/** A district's traffic lights switch (the host's current district). */
-	TRAFFIC_SWITCH(Target.DISTRICT, Permissions.DeviceType.TRAFFIC, 10, 0),
+	VEH_LOCK(Target.VEHICLE, null, 2, 30),
+	VEH_ENGINE_OFF(Target.VEHICLE, null, 2, 30),
+	VEH_BRAKE(Target.VEHICLE, null, 2, 30),
+	VEH_START(Target.VEHICLE, null, 2, 30),
+	VEH_JAM(Target.VEHICLE, null, 2, 30),
+	/** The traffic lights around the host's V switch for a minute. */
+	TRAFFIC_SWITCH(Target.DISTRICT, Permissions.DeviceType.TRAFFIC, 10, 60),
 	/** The cars on the road segment at a point stop for a minute. */
 	GRIDLOCK(Target.POINT, Permissions.DeviceType.TRAFFIC, 60, 60),
-	/** A district's lights and devices off for minutes (1 to 5), then back. */
+	/** The lights and devices around the host's V off for minutes (1 to 5, two when the request names none), then back. */
 	BLACKOUT(Target.DISTRICT, Permissions.DeviceType.LIGHT, 30, 120),
 	/** Recon: the camera's place and facing, so Minecraft renders the replica from there. */
 	CAM_FEED(Target.CAMERA, Permissions.DeviceType.CAMERA, 2, 0),
 	/** The figures around a point are outlined for the asker's team. */
 	OUTLINE(Target.POINT, null, 10, 20),
-	/** Night City's own ping around a point. */
-	PING_AREA(Target.POINT, null, 5, 10);
+	/** Night City's own ping around a point (a one-shot: `secs` 0). */
+	PING_AREA(Target.POINT, null, 5, 0);
 
 	/** What a request names. */
 	public enum Target {
@@ -35,8 +35,15 @@ public enum RemoteHack {
 
 	/** Blackout length bounds in seconds (1 to 5 minutes). */
 	public static final int MIN_BLACKOUT = 60, MAX_BLACKOUT = 300;
-	/** Radius in blocks of the point hacks (the cars of one road segment, the figures of one block, a ping). */
-	public static final double GRIDLOCK_RADIUS = 24.0, OUTLINE_RADIUS = 24.0, PING_RADIUS = 32.0;
+	/** Every vehicle effect is timed (shared/protocol.md: "the server sends 30"); the scripts put the car back after it. */
+	public static final int VEHICLE_SECONDS = 30;
+	/** How long the Minecraft-side ping marker of a `ping_area` shows (Night City's ping itself is a one-shot). */
+	public static final int PING_MARK_SECONDS = 10;
+	/**
+	 * Radius in metres of the area hacks, a whole number 1..150 on the wire: the cars of one road segment, the figures of one block, a
+	 * ping, and the 150 m around V of the district hacks (the scripts' written fallback: the Phase 4 devices within 150 m of V).
+	 */
+	public static final int GRIDLOCK_RADIUS = 24, OUTLINE_RADIUS = 24, PING_RADIUS = 32, DISTRICT_RADIUS = 150;
 
 	private final Target target;
 	private final Permissions.@Nullable DeviceType device;
@@ -69,18 +76,29 @@ public enum RemoteHack {
 		return this.cooldownSeconds;
 	}
 
-	/** How long the effect lasts (0: instant or the scripts' own time); a blackout's is the request's. */
+	/** The DOWN `rhack.secs`: how long the effect lasts in Night City (0: a one-shot, or none sent); a blackout's default length. */
 	public int seconds() {
 		return this.seconds;
 	}
 
-	/** The radius of a point hack (0 for the others). */
-	public double radius() {
+	/** The `secs` the server sends: the length the player picked for a blackout, this hack's own for the others. */
+	public int downSeconds(final int requested) {
+		return this == BLACKOUT ? requested : this.seconds;
+	}
+
+	/** An area hack (shared/protocol.md "Area hacks"): `target` null and always `p`, `r` and `secs`. */
+	public boolean area() {
+		return this.target == Target.DISTRICT || this.target == Target.POINT;
+	}
+
+	/** The `rhack.r` of an area hack in metres (0 for the others). */
+	public int radius() {
 		return switch (this) {
 			case GRIDLOCK -> GRIDLOCK_RADIUS;
 			case OUTLINE -> OUTLINE_RADIUS;
 			case PING_AREA -> PING_RADIUS;
-			default -> 0.0;
+			case TRAFFIC_SWITCH, BLACKOUT -> DISTRICT_RADIUS;
+			default -> 0;
 		};
 	}
 
