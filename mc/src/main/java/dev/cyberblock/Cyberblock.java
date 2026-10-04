@@ -104,6 +104,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.net.admin.ServerAdmin.init();
 		// Phase 4B: the device blocks, their block entities and the Minecraft eddies (megaplan 4-B1)
 		dev.cyberblock.device.block.DeviceBlocks.register();
+		// Phase 6R: the redstone hacking blocks, the Cyberdeck Link and their server module (megaplan 6-R1)
+		dev.cyberblock.hack.redstone.RedstoneBlocks.register();
 		// Phase 5K: the body attachment, /cyberblock body male|female and the [V] team prefix for linked players
 		dev.cyberblock.skin.CyberSkins.init();
 		// Phase 6B: Breach Protocol (Net Port right-click, the daemon and breach_tier content, the daemon DOWN)
