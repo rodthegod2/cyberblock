@@ -17,15 +17,23 @@
 //   spellings of them (tyger_claws, 6th_street, voodoo_boys, barghest, mox, ...), see CyberblockFactions.
 //
 // Method (Phase 0 d, desk verdict "yes", unconfirmed in game: CET D1-D5): Codeware DynamicEntitySystem.CreateEntity with
-// a DynamicEntitySpec by record (persistState and persistSpawn false, never saved; tag n"CyberblockSpawn"), spread within
-// 2 m of p. Once attached a hostile one gets the vanilla ambush treatment (DynamicSpawnSystem.ChangeAttitude and
-// SpawnRequestFinished, dynamicSpawnSystem.swift): attitude group n"hostile", hostile toward V, and an
-// AIInjectCombatThreatCommand on the player for 120 s. The answer waits until every NPC of the request attached, at most
-// 5 s: ok with n = the attached count.
+// a DynamicEntitySpec by record (persistState and persistSpawn false, never saved; alwaysSpawned true as Puppets.reds,
+// so world streaming does not hold an NPC back; tag n"CyberblockSpawn"), spread within 2 m of p. Once attached a hostile
+// one gets the vanilla ambush treatment (DynamicSpawnSystem.ChangeAttitude and SpawnRequestFinished,
+// dynamicSpawnSystem.swift): attitude group n"hostile", hostile toward V, and an AIInjectCombatThreatCommand on the
+// player for 120 s. No spawn while V is in scene tier 3-5 (a dialogue, a cinematic, a quest scene: V cannot act, Steve
+// would take the hits and combat could break the scene): "V is in a scene".
+// Answer timing (shared with the server: 8O's NcSpawns waits 5 s from sending the request, the DLL relay and the event
+// pump add to that): the answer goes once every NPC of the request attached, at the latest 3 s after the event came in
+// (engine time, or 30 ticks, whichever first): ok with n = the attached count, the request's NPCs not attached yet are
+// deleted so n stays true. An answer that could only go out more than 4.5 s after the event (the tick stood still)
+// is ok:false "answered too late" and the request's NPCs are deleted, so a Minecraft squad and Night City NPCs never
+// both land.
 // Runtime feature check and the written fallback (plan 4.1 d): spawning fails (no DynamicEntitySystem, CreateEntity
-// returns no id, none of a request attaches within 5 s) or the spawned NPCs stay passive -> the fallback until the next
-// load: every spawn is answered ok:false "Night City spawns unavailable; Minecraft squads instead", so the server sends
-// Minecraft squads, and the passive NPCs are deleted. Passive: 6 s after a hostile NPC attached, it and every other
+// returns no id, none of a request attaches within 3 s two requests in a row: a first such request is refused 'none
+// attached within 3 s (miss 1 of 2)' and its NPCs deleted) or the spawned NPCs stay passive -> the fallback until the
+// next load: every spawn is answered ok:false "Night City spawns unavailable; Minecraft squads instead", so the server
+// sends Minecraft squads, and the passive NPCs are deleted. Passive: 6 s after a hostile NPC attached, it and every other
 // hostile NPC of its request within 50 m of V are still Relaxed. The check waits (re-armed for 6 s more) while V cannot
 // be seen (invisible: a Minecraft invisibility potion, the hub park, a running Meet Up teleport) or none of the request
 // is within 50 m of V. A first passive request only loses its NPCs ('spawns: <id> passive (strike 1 of 2), its NPCs
@@ -43,7 +51,8 @@
 //
 // 2.31 script API (NativeDB, redscript) and Codeware 1.20.3, compile-checked by cp/scripts/compile_check.py:
 // DynamicEntitySystem.IsReady/CreateEntity/GetEntity/DeleteEntity/IsManaged/DeleteTagged + DynamicEntitySpec (recordID, position, persistState,
-// persistSpawn, spawnInView, active, tags), TweakDBInterface.GetCharacterRecord, GameObject.GetAttitudeAgent,
+// persistSpawn, alwaysSpawned, spawnInView, active, tags), PlayerPuppet.GetSceneTier, GameInstance.GetEngineTime +
+// EngineTime.ToFloat, TweakDBInterface.GetCharacterRecord, GameObject.GetAttitudeAgent,
 // AttitudeAgent.SetAttitudeGroup/SetAttitudeTowards, EAIAttitude, AIInjectCombatThreatCommand (targetPuppetRef,
 // duration), CreateEntityReference, AIComponent.SendCommand, ScriptedPuppet.GetHighLevelStateFromBlackboard and
 // gamedataNPCHighLevelState, PlayerPuppet.IsInvisible, Entity.IsAttached, Vector4.Distance, StrLower/StrReplaceAll.
@@ -60,6 +69,8 @@ public class CyberblockSpawnsService extends ScriptableService {
   // Passive requests seen (the fallback comes at the second) and the request of the first.
   public let strikes: Int32;
   public let strikeRequest: Int32;
+  // Requests in a row of which no NPC attached within 3 s (the fallback comes at the second).
+  public let misses: Int32;
   // One slot per spawned NPC (parallel arrays): entity, its request, hostile, attached (hostility applied), ticks since
   // it was created, ticks to its passive check (0 none).
   public let ids: array<EntityID>;
@@ -68,10 +79,11 @@ public class CyberblockSpawnsService extends ScriptableService {
   public let attached: array<Bool>;
   public let ages: array<Int32>;
   public let checks: array<Int32>;
-  // Requests waiting for their answer (parallel arrays): id, NPCs created, ticks waited.
+  // Requests waiting for their answer (parallel arrays): id, NPCs created, ticks waited, engine time it came in.
   public let pending: array<Int32>;
   public let pendingMade: array<Int32>;
   public let pendingWait: array<Int32>;
+  public let pendingAt: array<Float>;
 
   public static func Get() -> ref<CyberblockSpawnsService> {
     return GameInstance.GetScriptableServiceContainer().GetService(n"CyberblockSpawnsService") as CyberblockSpawnsService;
@@ -104,6 +116,11 @@ public abstract class CyberblockSpawns {
     }
     if s.fallback {
       CyberblockSpawns.Refuse(id, "Night City spawns unavailable; Minecraft squads instead");
+      return;
+    }
+    let tier = PlayerPuppet.GetSceneTier(player);
+    if tier >= 3 && tier <= 5 {
+      CyberblockSpawns.Refuse(id, "V is in a scene");
       return;
     }
     let entities = GameInstance.GetDynamicEntitySystem();
@@ -145,6 +162,7 @@ public abstract class CyberblockSpawns {
       spec.position = CyberblockSpawns.Spot(at, i, n);
       spec.persistState = false;
       spec.persistSpawn = false;
+      spec.alwaysSpawned = true;
       spec.spawnInView = true;
       spec.active = true;
       spec.tags = [CyberblockSpawnsService.Tag()];
@@ -170,6 +188,7 @@ public abstract class CyberblockSpawns {
     ArrayPush(s.pending, id);
     ArrayPush(s.pendingMade, made);
     ArrayPush(s.pendingWait, 0);
+    ArrayPush(s.pendingAt, CyberblockSpawns.Now(game));
   }
 
   // Every CyberblockSystem tick with a player: hostility on attach, the answers, the passive checks, the age and
@@ -241,7 +260,7 @@ public abstract class CyberblockSpawns {
       }
       i -= 1;
     }
-    CyberblockSpawns.Answer(game, s);
+    CyberblockSpawns.Answer(game, s, entities);
   }
 
   // Deletes every spawned NPC and answers every waiting request with ok:false (Off, Lost, a non-host session, session
@@ -257,6 +276,7 @@ public abstract class CyberblockSpawns {
     ArrayClear(s.pending);
     ArrayClear(s.pendingMade);
     ArrayClear(s.pendingWait);
+    ArrayClear(s.pendingAt);
     let n = ArraySize(s.ids);
     let entities = GameInstance.GetDynamicEntitySystem();
     if IsDefined(entities) {
@@ -278,7 +298,9 @@ public abstract class CyberblockSpawns {
       ArrayClear(s.pending);
       ArrayClear(s.pendingMade);
       ArrayClear(s.pendingWait);
+      ArrayClear(s.pendingAt);
       CyberblockSpawns.Reset(s);
+      s.misses = 0;
       s.fallback = false;
       s.fallbackWhy = "";
       s.pathLogged = false;
@@ -334,12 +356,15 @@ public abstract class CyberblockSpawns {
     Cyberblock_Log(s"spawns: \(id) refused (\(why))");
   }
 
-  // The answers: a request is answered once each of its NPCs attached or is gone, or after 5 s.
-  private static func Answer(game: GameInstance, s: ref<CyberblockSpawnsService>) -> Void {
+  // The answers, well inside the server's 5 s (see the header): a request is answered once each of its NPCs attached
+  // or is gone, at the latest 3 s (or 30 ticks) after it came in; past 4.5 s it is refused and its NPCs deleted.
+  private static func Answer(game: GameInstance, s: ref<CyberblockSpawnsService>, entities: ref<DynamicEntitySystem>) -> Void {
+    let now = CyberblockSpawns.Now(game);
     let p = ArraySize(s.pending) - 1;
     while p >= 0 {
       let request = s.pending[p];
       s.pendingWait[p] += 1;
+      let waited = now - s.pendingAt[p];
       let waiting = 0;
       let attached = 0;
       let i = 0;
@@ -353,25 +378,57 @@ public abstract class CyberblockSpawns {
         }
         i += 1;
       }
-      if waiting == 0 || s.pendingWait[p] >= 50 {
+      if waiting == 0 || s.pendingWait[p] >= 30 || waited >= 3.0 {
         let made = s.pendingMade[p];
         ArrayErase(s.pending, p);
         ArrayErase(s.pendingMade, p);
         ArrayErase(s.pendingWait, p);
-        if attached > 0 {
-          Cyberblock_SpawnResult(request, true, attached, "");
-          Cyberblock_Log(s"spawns: \(request) ok (\(attached) attached)");
-        } else {
+        ArrayErase(s.pendingAt, p);
+        if waited > 4.5 {
+          // The server gave up on it and may already send a Minecraft squad: none of ours may land as well.
+          CyberblockSpawns.Drop(s, entities, request, false);
+          CyberblockSpawns.Refuse(request, s"answered too late (\(RoundF(waited)) s), its NPCs deleted");
+        } else if attached > 0 {
+          s.misses = 0;
+          let late = "";
           if waiting > 0 {
-            CyberblockSpawns.Fall(game, s"none of \(made) spawned NPCs of request \(request) attached within 5 s");
+            CyberblockSpawns.Drop(s, entities, request, true); // n stays the number that is really there
+            late = s", \(waiting) not attached in time deleted";
+          }
+          Cyberblock_SpawnResult(request, true, attached, "");
+          Cyberblock_Log(s"spawns: \(request) ok (\(attached) attached\(late))");
+        } else if waiting > 0 {
+          if s.misses > 0 {
+            CyberblockSpawns.Fall(game, s"none of the spawned NPCs of two requests in a row attached within 3 s (the last: \(made) of request \(request))");
             CyberblockSpawns.Refuse(request, "Night City spawns unavailable; Minecraft squads instead");
             return; // Fall cleared the rest
           }
+          s.misses = 1;
+          CyberblockSpawns.Drop(s, entities, request, false);
+          CyberblockSpawns.Refuse(request, s"none of \(made) attached within 3 s (miss 1 of 2), its NPCs deleted");
+        } else {
           CyberblockSpawns.Refuse(request, "the spawned NPCs were gone before they attached");
         }
       }
       p -= 1;
     }
+  }
+
+  // Deletes the NPCs of a request (only those not attached yet: unattached).
+  private static func Drop(s: ref<CyberblockSpawnsService>, entities: ref<DynamicEntitySystem>, request: Int32, unattached: Bool) -> Void {
+    let i = ArraySize(s.ids) - 1;
+    while i >= 0 {
+      if s.requests[i] == request && (!unattached || !s.attached[i]) {
+        entities.DeleteEntity(s.ids[i]);
+        CyberblockSpawns.Erase(s, i);
+      }
+      i -= 1;
+    }
+  }
+
+  // Engine time in seconds (not stretched by slow-mo; as Cyberware.reds and Buffs.reds).
+  private static func Now(game: GameInstance) -> Float {
+    return EngineTime.ToFloat(GameInstance.GetEngineTime(game));
   }
 
   // Vanilla's ambush treatment (DynamicSpawnSystem.ChangeAttitude and SpawnRequestFinished).

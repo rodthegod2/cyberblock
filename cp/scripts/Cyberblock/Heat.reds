@@ -16,14 +16,23 @@
 //   Spawns.reds) gets that relation toward the group n"player" while live. Unknown factions are logged and ignored.
 //
 // Method (Phase 0 e, desk verdict "yes", unconfirmed in game: CET E1-E5): heat = the quest path, a SetWantedLevel request
-// queued with PreventionSystem.QueueRequest (OnSetWantedLevel; the quest flag it sets is removed again at heat 0);
-// attitude = AttitudeSystem.SetAttitudeRelation(group, n"player", attitude), the non-persistent call (never saved).
+// queued with PreventionSystem.QueueRequest; attitude = AttitudeSystem.SetAttitudeRelation(group, n"player", attitude),
+// the non-persistent call (never saved).
+// Saves stay whole: OnSetWantedLevel (preventionSystem.swift 3258-3284), even for heat 0, switches the police on
+// (TogglePreventionSystem(true), the saved m_systemEnabled) and overwrites the saved m_ignoreSecurityAreasByQuest with
+// the request's m_forceIgnoreSecurityAreas. So every write (raise, lowering and the cleanup's 0) goes through one guard,
+// as RemoteHacks.RaiseHeat: nothing is sent while V is in scene tier 3-5 (PlayerPuppet.GetSceneTier) or the police are
+// off (IsSystemEnabled false: a quest or a police-free area), and the flag's current value (read with Codeware
+// reflection) goes along. A flag that cannot be read is the fallback below (no wanted-level writes), never a false.
+// A held raise or lowering is tried again every tick ('heat: raise held (<why>, ...)', 'heat: lowering held (<why>,
+// ...)'); a held cleanup leaves the stars to the game ('heat: wanted level A left (<why>; not cleared: <guard>)').
 // Runtime feature checks and the written fallback (plan 4.1 e): two raises in a row (at least 30 s apart) that left the
 // wanted level where it was 2 s later, or no PreventionSystem -> no more wanted-level writes until the next load (the
-// server's Minecraft squads stay the only Heat response); an attitude that does not read back as set, or no
+// server's Minecraft squads stay the only Heat response), likewise PreventionSystem.m_ignoreSecurityAreasByQuest not
+// readable through Codeware reflection; an attitude that does not read back as set, or no
 // AttitudeSystem -> no more attitude writes until the next load (Gang Wars reputation does not change how Night City
-// treats the host). The game may legitimately hold heat back, so these do not count toward the fallback: while a quest
-// or scene has the prevention system off (PreventionSystem.IsSystemEnabled false, or IsSystemLocked) a raise waits for
+// treats the host). The game may legitimately hold heat back, so these do not count toward the fallback: while V is in
+// a scene or a quest or area has the prevention system off (IsSystemEnabled false, or IsSystemLocked) a raise waits for
 // that to end ('heat: raise held (<why>, wanted level A), kept'; at the check: 'heat: raise ignored (<why>, ...), kept')
 // instead of forcing it on; a raise that moved the level but stopped below the tier (a quest or district heat
 // cap) works. A first failed raise is logged 'heat: raise ignored (<why>, strike 1 of 2), kept' and tried again 30 s
@@ -38,8 +47,9 @@
 // A', 'heat: wanted level cleared (<why>)', 'attitude: <group> -> <attitude> (server)', 'attitude: <group> back to
 // <attitude> (<why>)'.
 //
-// 2.31 script API (NativeDB, redscript), compile-checked by cp/scripts/compile_check.py: SetWantedLevel.m_wantedLevel,
-// EPreventionHeatStage, PreventionSystem.QueueRequest (static), GetHeatStageAsInt, IsSystemEnabled and IsSystemLocked
+// 2.31 script API (NativeDB, redscript), compile-checked by cp/scripts/compile_check.py: SetWantedLevel.m_wantedLevel
+// and m_forceIgnoreSecurityAreas (4214), PlayerPuppet.GetSceneTier, Codeware Reflection.GetClass/GetProperty/GetValue
+// with ToVariant/FromVariant (as RemoteHacks.RaiseHeat), EPreventionHeatStage, PreventionSystem.QueueRequest (static), GetHeatStageAsInt, IsSystemEnabled and IsSystemLocked
 // (preventionSystem.swift 331-336, 383, 3522, 4200), ScriptableSystemsContainer.Get(n"PreventionSystem"), GameInstance.GetAttitudeSystem,
 // AttitudeSystem.GetAttitudeRelation/SetAttitudeRelation (orphans.swift 26919-26923), EAIAttitude, EnumInt/IntEnum.
 
@@ -54,7 +64,7 @@ public class CyberblockHeatService extends ScriptableService {
   public let checkIn: Int32;
   public let checkFor: Int32;
   public let checkFrom: Int32;
-  // Failed raises in a row (the fallback comes at the second), ticks until the next try, a raise held by a lock.
+  // Failed raises in a row (the fallback comes at the second), ticks until the next try, a write held by the guard (logged).
   public let heatStrikes: Int32;
   public let retryIn: Int32;
   public let heatHeld: Bool;
@@ -87,11 +97,12 @@ public abstract class CyberblockHeat {
       s.heatLogged = true;
       Cyberblock_Log(s.heatFallback
         ? "heat: path: none, no wanted-level writes; Minecraft squads are the Heat response (Phase 0 e fallback)"
-        : "heat: path: PreventionSystem SetWantedLevel (the quest path), the server's Heat tier is V's wanted level (Phase 0 e, unconfirmed in game)");
+        : "heat: path: PreventionSystem SetWantedLevel (the quest path; only while the police are on and V is not in a scene, m_ignoreSecurityAreasByQuest passed through), the server's Heat tier is V's wanted level (Phase 0 e, unconfirmed in game)");
     }
     s.tier = Clamp(RoundF(Cyberblock_EventAmount()), 0, 5);
     s.hasTier = true;
     s.synced = false;
+    s.heatHeld = false; // a hold of the new tier is logged again
     Cyberblock_Log(s"heat: server tier \(s.tier)\(live ? "" : " (applied once Cyberblock is On)")");
     if live {
       CyberblockHeat.Sync(game, s);
@@ -189,7 +200,7 @@ public abstract class CyberblockHeat {
       }
       return;
     }
-    let blocked = CyberblockHeat.Blocked(GameInstance.GetScriptableSystemsContainer(game).Get(n"PreventionSystem") as PreventionSystem);
+    let blocked = CyberblockHeat.Blocked(game, GameInstance.GetScriptableSystemsContainer(game).Get(n"PreventionSystem") as PreventionSystem);
     if StrLen(blocked) > 0 {
       s.synced = false; // Sync holds the raise until the block lifts
       Cyberblock_Log(s"heat: raise ignored (\(blocked), wanted level \(now)), kept");
@@ -219,8 +230,12 @@ public abstract class CyberblockHeat {
     if s.wrote > 0 {
       let now = CyberblockHeat.Stage(game);
       if now > 0 && now <= s.wrote {
-        CyberblockHeat.Write(game, 0);
-        Cyberblock_Log(s"heat: wanted level cleared (\(why))");
+        let held = CyberblockHeat.Write(game, s, 0);
+        if StrLen(held) == 0 {
+          Cyberblock_Log(s"heat: wanted level cleared (\(why))");
+        } else {
+          Cyberblock_Log(s"heat: wanted level \(now) left (\(why); not cleared: \(held))");
+        }
       }
       s.wrote = 0;
     }
@@ -281,17 +296,17 @@ public abstract class CyberblockHeat {
     }
     let now = Cast<Int32>(prevention.GetHeatStageAsInt());
     if s.tier > now {
-      let blocked = CyberblockHeat.Blocked(prevention);
+      let blocked = CyberblockHeat.Blocked(game, prevention);
       if StrLen(blocked) > 0 {
-        s.synced = false; // tried again every tick, written once the block lifts
-        if !s.heatHeld {
-          s.heatHeld = true;
-          Cyberblock_Log(s"heat: raise held (\(blocked), wanted level \(now)), kept");
-        }
+        CyberblockHeat.Hold(s, s"raise held (\(blocked), wanted level \(now)), kept");
+        return;
+      }
+      let held = CyberblockHeat.Write(game, s, s.tier);
+      if StrLen(held) > 0 {
+        CyberblockHeat.Hold(s, s"raise held (\(held), wanted level \(now)), kept");
         return;
       }
       s.heatHeld = false;
-      CyberblockHeat.Write(game, s.tier);
       s.wrote = s.tier;
       s.checkIn = 20;
       s.checkFor = s.tier;
@@ -301,7 +316,12 @@ public abstract class CyberblockHeat {
     }
     if s.tier < now {
       if s.wrote > 0 && now <= s.wrote {
-        CyberblockHeat.Write(game, s.tier);
+        let held = CyberblockHeat.Write(game, s, s.tier);
+        if StrLen(held) > 0 {
+          CyberblockHeat.Hold(s, s"lowering held (\(held), wanted level \(now)), kept");
+          return;
+        }
+        s.heatHeld = false;
         s.wrote = s.tier;
         Cyberblock_Log(s"heat: wanted level \(now) -> \(s.tier) (server tier)");
       } else {
@@ -310,16 +330,66 @@ public abstract class CyberblockHeat {
     }
   }
 
-  private static func Write(game: GameInstance, stage: Int32) -> Void {
-    let request = new SetWantedLevel();
-    request.m_wantedLevel = IntEnum<EPreventionHeatStage>(Clamp(stage, 0, 5));
-    PreventionSystem.QueueRequest(game, request);
+  // A write the guard held back: tried again every tick (Tick calls Sync while !synced), logged once; nothing more in
+  // the fallback (FallHeat logged it).
+  private static func Hold(s: ref<CyberblockHeatService>, what: String) -> Void {
+    if s.heatFallback {
+      return;
+    }
+    s.synced = false;
+    if !s.heatHeld {
+      s.heatHeld = true;
+      Cyberblock_Log(s"heat: \(what)");
+    }
   }
 
-  // Why the prevention system holds heat back right now ("" when it does not): a quest or scene lock source or the
-  // stars blinking turn it off (IsSystemEnabled false, preventionSystem.swift 3213-3229, 1338), the console lock
-  // (IsSystemLocked). A SetWantedLevel would force it on again, so a raise waits instead of overriding a quest.
-  private static func Blocked(prevention: ref<PreventionSystem>) -> String {
+  // The one way a wanted level is written; "" when the request went out, else the guard that held it back. Every
+  // SetWantedLevel switches the police on and sets the saved m_ignoreSecurityAreasByQuest (see the header), so nothing
+  // is sent in the fallback, while V is in scene tier 3-5 or while the police are off, and the flag's current value
+  // goes along; a flag that cannot be read is the fallback (a request would overwrite it).
+  private static func Write(game: GameInstance, s: ref<CyberblockHeatService>, stage: Int32) -> String {
+    if s.heatFallback {
+      return "fallback, no wanted-level writes";
+    }
+    if CyberblockHeat.InScene(game) {
+      return "V is in a scene";
+    }
+    let prevention = GameInstance.GetScriptableSystemsContainer(game).Get(n"PreventionSystem") as PreventionSystem;
+    if !IsDefined(prevention) {
+      CyberblockHeat.FallHeat(s, "no PreventionSystem");
+      return "no PreventionSystem";
+    }
+    if !prevention.IsSystemEnabled() {
+      return "prevention disabled by a quest or scene";
+    }
+    let cls = Reflection.GetClass(n"PreventionSystem");
+    let flag = IsDefined(cls) ? cls.GetProperty(n"m_ignoreSecurityAreasByQuest") : null;
+    if !IsDefined(flag) {
+      CyberblockHeat.FallHeat(s, "PreventionSystem.m_ignoreSecurityAreasByQuest not readable, a request would overwrite it");
+      return "fallback, no wanted-level writes";
+    }
+    let request = new SetWantedLevel();
+    request.m_wantedLevel = IntEnum<EPreventionHeatStage>(Clamp(stage, 0, 5));
+    request.m_forceIgnoreSecurityAreas = FromVariant<Bool>(flag.GetValue(ToVariant(prevention)));
+    PreventionSystem.QueueRequest(game, request);
+    return "";
+  }
+
+  // V is in scene tier 3-5 (a dialogue, a cinematic, a quest scene): no heat is written (as RemoteHacks.RaiseHeat).
+  private static func InScene(game: GameInstance) -> Bool {
+    let player = GetPlayer(game);
+    let tier = IsDefined(player) ? PlayerPuppet.GetSceneTier(player) : 0;
+    return tier >= 3 && tier <= 5;
+  }
+
+  // Why heat is held back right now ("" when it is not): V is in a scene (no combat may start there), a quest or scene
+  // lock source or the stars blinking turn the police off (IsSystemEnabled false, preventionSystem.swift 3213-3229,
+  // 1338), the console lock (IsSystemLocked). A SetWantedLevel would force the police on again, so a raise waits instead
+  // of overriding a quest.
+  private static func Blocked(game: GameInstance, prevention: ref<PreventionSystem>) -> String {
+    if CyberblockHeat.InScene(game) {
+      return "V is in a scene";
+    }
     if !IsDefined(prevention) {
       return "";
     }
