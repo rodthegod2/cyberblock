@@ -324,6 +324,16 @@ public final class ServerNet {
 		send(player, new Payloads.Ui(t, json));
 	}
 
+	/** cyberblock:content to one player (a clientSide content kind, section 1.7); a json over the cap is dropped and logged. */
+	public static void content(final ServerPlayer player, final String kind, final String json) {
+		if (!Payloads.fits(kind, Payloads.KIND_CAP) || !Payloads.fits(json, Payloads.DOWN_CAP)) {
+			Cyberblock.LOG.warn("content: {} for {} over the cap: not sent", kind, player.getPlainTextName());
+			return;
+		}
+
+		send(player, new Payloads.Content(kind, json));
+	}
+
 	/** The connected players' handshake state, for /cyberblock hosts. */
 	static List<Conn> conns() {
 		return List.copyOf(conns.values());

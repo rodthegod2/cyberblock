@@ -1,6 +1,8 @@
 // Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
 package dev.cyberblock;
 
+import dev.cyberblock.content.ContentLoader;
+import dev.cyberblock.net.DevCommands;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.NetCommands;
@@ -92,8 +94,15 @@ public class Cyberblock implements ModInitializer {
 
 			dispatcher.register(Commands.literal("cyberblock").then(survey));
 		});
-		// /cyberblock guests and /cyberblock hosts (megaplan sections 1.4 and 1.6)
-		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> NetCommands.register(dispatcher));
+		// /cyberblock guests and /cyberblock hosts (megaplan sections 1.4 and 1.6); /cyberblock test only with -Dcyberblock.devtools=true
+		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> {
+			NetCommands.register(dispatcher);
+			if (DevCommands.enabled()) {
+				DevCommands.register(dispatcher);
+			}
+		});
+		// content as data (megaplan section 1.7)
+		ContentLoader.init();
 		LOG.info("cyberblock loaded");
 	}
 
