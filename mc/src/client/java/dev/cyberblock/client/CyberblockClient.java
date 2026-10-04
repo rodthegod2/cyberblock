@@ -81,6 +81,8 @@ public class CyberblockClient implements ClientModInitializer {
 		dev.cyberblock.client.mode.pvphack.PvpHackClient.init();
 		// Phase 8O: the Overlord Console on the Atlas (megaplan 8-O1)
 		dev.cyberblock.client.mode.overlord.OverlordClient.init();
+		// Phase 8V: the Hacker in the Van (the Van and drone models, the Van screen, its Hack Wheel, the drone camera and HUD)
+		dev.cyberblock.client.mode.van.VanClient.init();
 		ClientTickEvents.START_CLIENT_TICK.register(minecraft -> ClientInput.tickStart());
 		ClientTickEvents.END_CLIENT_TICK.register(CyberblockClient::tick);
 		// launcher players (plan retest3 M5): a "Play Cyberblock" button on the title screen

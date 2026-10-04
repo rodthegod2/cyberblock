@@ -1,0 +1,15 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "misc",
+	"ingredients": [
+		"minecraft:minecart",
+		"minecraft:chest",
+		"minecraft:copper_ingot",
+		"minecraft:redstone",
+		"cyberblock:net_map"
+	],
+	"result": {
+		"id": "cyberblock:hacker_van",
+		"count": 1
+	}
+}

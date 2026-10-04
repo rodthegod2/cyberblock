@@ -18,9 +18,11 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The hosts' photo feeds on this client (megaplan tasks 6-I1 and 6-D1): the newest 128 x 128 map colour frame of each host the Net
- * Map watches, drawn through one nearest-sampled texture like a map item (the colours are vanilla's map palette). Client thread.
+ * Map (or the Van screen, 8-V1) watches, drawn through one nearest-sampled texture like a map item (the colours are vanilla's map
+ * palette). PhotoFeed sends each frame, the DLL's picture or the replica fallback, gated per frame by the host's toggle and the join
+ * lock. Client thread.
  */
-final class FeedTexture {
+public final class FeedTexture {
 	private static final Identifier ID = Identifier.fromNamespaceAndPath(Cyberblock.ID, "hack/feed");
 	private static final Map<UUID, byte[]> frames = new HashMap<>();
 	private static final Map<UUID, Long> frameAt = new HashMap<>();
@@ -52,7 +54,7 @@ final class FeedTexture {
 	}
 
 	/** Seconds since this host's last frame (-1: none yet). */
-	static long age(final UUID host) {
+	public static long age(final UUID host) {
 		Long at = frameAt.get(host);
 		return at == null ? -1L : (System.nanoTime() - at) / 1_000_000_000L;
 	}
@@ -63,7 +65,7 @@ final class FeedTexture {
 	}
 
 	/** Draws the host's newest frame at (x, y), `size` GUI pixels square; false when there is none. */
-	static boolean draw(final GuiGraphicsExtractor graphics, final UUID host, final int x, final int y, final int size) {
+	public static boolean draw(final GuiGraphicsExtractor graphics, final UUID host, final int x, final int y, final int size) {
 		byte[] px = frames.get(host);
 		if (px == null) {
 			return false;

@@ -274,19 +274,20 @@ public final class Hacking {
 
 	/**
 	 * The hack key's wheel fired a chip (HackWheel, `act t:"hack"`): the first one of that kind in the inventory is used as if it
-	 * were in his hand; one that recharges says so.
+	 * were in his hand; one that recharges says so. True when the hack was sent.
 	 */
-	public static void useChip(final ServerPlayer player, final Hack hack) {
+	public static boolean useChip(final ServerPlayer player, final Hack hack) {
 		ItemStack stack = findChip(player, hack);
 		if (stack.isEmpty()) {
-			return;
+			return false;
 		}
 
 		if (player.getCooldowns().isOnCooldown(stack)) {
 			player.sendOverlayMessage(Component.translatable("cyberblock.hack.cooldown"));
-		} else {
-			use(player, stack, hack);
+			return false;
 		}
+
+		return use(player, stack, hack);
 	}
 
 	/**

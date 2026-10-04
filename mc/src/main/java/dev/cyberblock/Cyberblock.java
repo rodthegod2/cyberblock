@@ -122,6 +122,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.mode.pvphack.PvpHacks.init();
 		// Phase 8O: the Overlord Console, Threat Points, fair spawns and events, the Auto-Director (megaplan 8-O1)
 		dev.cyberblock.mode.overlord.Overlord.init();
+		// Phase 8V: the Hacker in the Van (the Van and its drones, the netrunner's screen state, the Van's hacks; megaplan 8-V1)
+		dev.cyberblock.mode.van.VanModule.init();
 		LOG.info("cyberblock loaded");
 	}
 
