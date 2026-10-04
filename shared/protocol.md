@@ -687,7 +687,7 @@ the same validators the client ran before (the limits above), plus the envelope 
 | `surveystate` | LOCAL | `SurveyClient` | |
 | `env` | UP | `EnvSync` (server), Phase 3 | the primary host's clock and weather |
 | `vteleported` | UP | `MeetUp` (server), routed to the request's owner, Phase 3 | a reply: it must carry a request id the session issued |
-| `parked` | UP | session (server), **Phase 7** (the hub) | the answer to `park`; the DLL builds it from Phase 3, but no Phase 3 server sends `park`, so until Phase 7 the client relay drops a `parked` (counted) and it has no rate row |
+| `parked` | UP | session (server), **Phase 7** (the hub) | the answer to `park`; the DLL builds it from Phase 3, but no Phase 3 server sends `park`, so a Phase 3 relay drops a `parked` (counted) and has no rate row; from Phase 7 the client relay and the server accept it (rate row 2 per second, burst 4, see [Phase 7](#phase-7-npc-interaction-the-afterlife-hub-and-the-holo-table)) |
 | `devices` | UP | the device layer per session (server), Phase 4 | the devices within 48 m: changes and a full list every 5 s |
 | `devstate` | UP | the device layer per session (server), Phase 4 | one device changed state |
 | `devresult` | UP | the device layer (server), routed to the request's asker, Phase 4 | a reply: it must carry a request id the session issued |
@@ -726,7 +726,8 @@ The frame export (`Local\CyberblockFrame`) is LOCAL: `FrameExporter` on the clie
 | `cyberfx` | DOWN | `CyberwareEffects` for that host | `perkfx` stays superseded (never sent) |
 | `pteleport` | DOWN | `ServerPlayerMixin` | Steve was teleported by a command; documented below |
 | `vteleport` | DOWN | `MeetUp` (server), Phase 3 | to the host's session only |
-| `park` | DOWN | session (server), **Phase 7** (the hub) | to the host's session only; the DLL and scripts handle it from Phase 3, the server first sends it in Phase 7 |
+| `park` | DOWN | session (server), **Phase 7** (the hub) | to the host's session only; the DLL and scripts handle it from Phase 3, the server first sends it in Phase 7 (with every `hub`) |
+| `hub` | DOWN | `HubSession` (server), Phase 7 | to the host's session only: a host entered or left the Afterlife hub, the DLL switches the compositor to full-screen Minecraft or back |
 | `devact` | DOWN | the device layer (server), Phase 4 | to the device's owner only; the owner's `devices` toggle and the device type's bit when a guest asked |
 
 ### Multiplayer: new messages
@@ -834,6 +835,7 @@ moved to the client thread (client). For reference; the owner of the exact caps 
 | `devices`, `devstate`, `devresult` | 10 | 40 | Phase 4 and later |
 | `env` | 2 | 4 | Phase 3 (1 Hz and on change) |
 | `vteleported` | 2 | 4 | Phase 3 (a reply; one Meet Up at a time per host) |
+| `parked` | 2 | 4 | Phase 7 (a reply to `park`; one hub entry or exit at a time per host) |
 
 - **Overflow.** A session that keeps overflowing at five times its rate for 10 s is ended and the player kicked with
   "Cyberblock: too many messages from your Cyberpunk link".
@@ -1202,6 +1204,87 @@ person who just died (listed once more after the living, as in Phase 3).
 Phase 5 examples, Cyberpunk to Minecraft:
 ```jsonl
 {"t":"npcs","list":[{"id":"9007199254740993","p":[-1243.0,64.9,808.5],"yaw":90.0,"kind":"human","hostile":true,"fac":"Maelstrom","arch":"Gunner","g":1,"anim":141,"hp":0.75},{"id":"18446744073709551615","p":[-1240.25,64.9,815.0],"yaw":-45.0,"kind":"human","hostile":false,"role":"RipperDoc","fac":"Civilian","arch":"Civilian","g":2,"anim":0,"hp":1.0},{"id":"4503599627370497","p":[-1252.0,64.9,820.5],"yaw":180.0,"kind":"vehicle","hostile":false,"fac":"Civilian","g":0,"anim":0,"vc":"Car/Turbo","col":"#3C4032","hp":1.0},{"id":"4503599627370499","p":[-1236.5,64.9,812.0],"yaw":0.0,"kind":"human","hostile":true,"dead":true,"fac":"NCPD","arch":"Gunner","g":2,"anim":32,"hp":0.0}]}
+```
+
+## Phase 7 (NPC interaction, the Afterlife hub and the Holo-Table)
+
+Same wire, same conventions; `proto` stays 1 and older builds ignore the new `t` values, actions and fields. Plan:
+`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 1.9 (rows 7), section 1.8 (row 7) and section 11, with the dated Phase 0
+amendment (fallbacks (f) and (g)). Three things cross the DLL wire in Phase 7: **the Afterlife hub** (the server tells a host's DLL to
+switch to full-screen Minecraft and, with `park`, to put V away safely), **the stock of Night City's own vendors and ripperdocs** (so Minecraft can
+draw their screens) and **the purchases and sales back** (paid with the host's real Cyberpunk money, megaplan 1.16). The role screens of figures,
+the hub's Minecraft shops and the Holo-Table (7N, 7H, 7T) are Minecraft and server only: they use `cyberblock:act` and `cyberblock:ui` payloads that
+their packages define and never reach a DLL; a Holo-Table spawn of a linked player is the existing [`vteleport` with `why:"holo"`](#phase-3-minecraft--cyberpunk).
+
+### Phase 7: Cyberpunk → Minecraft
+| `t` | fields | when |
+|---|---|---|
+| `reply` | **extends re-test 3 and the Atlas:** `kind` also ∈ `vendor`. `id` echoes the `uiact vendorreq` it answers; `groups` are the **stock categories**, each with `kind` ∈ `buy` (what the vendor sells) or `sell` (what V can sell to it) and the usual `hash`, `title` (≤ 128), `tracked:false`, `done:false`; `lines` are the **items**: `hash` (uint32, what `uiact buy` and `sell` send back), `text` (≤ 256) and **`state` = the price in eddies** (a whole number 0..2147483647) instead of the 0, 1, 2 of the other kinds; `pins` is `[]`. The limits of [Re-test 3](#re-test-3-semantics-and-limits) hold (≤ 128 groups, ≤ 512 lines in all, ≤ 256 KB) | the answer to `uiact vendorreq`, LOCAL (the host's own Night City interface: never relayed) |
+
+### Phase 7: Minecraft → Cyberpunk
+| `t` | fields | when |
+|---|---|---|
+| `hub` | `in:bool` (`true` the host entered the Afterlife hub, `false` it left or its hub session ended) | the server, DOWN to that host's DLL only; always together with a `park` (see the order below) |
+| `uiact` | **extends re-test 3:** `a` also ∈ `vendorreq`, `buy`, `sell`. `vendorreq` (`id` a request id) asks for the stock of the vendor whose screen is open; `buy` and `sell` carry `hash` (the line's `hash` from the `reply`, **one unit per action**) and `id` (the `id` of that `reply`), and an absent or zero `hash` makes them invalid. `fasttravel` (`id` = the `i` of an `atlas` pin) is **enabled in Phase 7** once verified | a Minecraft vendor or ripperdoc screen (7V), or the Holo-Table's fast-travel list; LOCAL |
+
+### Phase 7 semantics and limits
+- **The hub.** `hub in:true` switches the compositor to **full-screen Minecraft** (the loading-cover path: no depth blending, Cyberpunk's picture is
+  hidden) and `in:false` switches back. The hub is a Minecraft dimension (`cyberblock:afterlife`): entering moves Steve there, V stays where
+  it was. The server sends **both messages in the same tick, in an order that never shows V exposed: on entering `park on:true` then `hub in:true`, on leaving
+  `hub in:false` then `park on:false`**. `park` is the [Phase 3 message](#phase-3-minecraft--cyberpunk) (V invisible, invulnerable, unseen by NPCs, saving locked,
+  no movement or camera); the DLL answers it with `parked`, as before. A host whose link drops, whose Cyberblock goes Off or whose `session` leaves `host`
+  has its cover and its park ended **on the DLL side** (no message needed), exactly as the Phase 3 cleanup releases a parked V; a `hub` or `park` that arrives
+  without a host session is ignored. Hosts only: a guest has no DLL, so no `hub` and no `park` is ever sent for it.
+- **`parked` is relayed from Phase 7.** The client relay and the server accept the DLL's `parked` (it answers the last `park`: it carries no request id,
+  like `vteleported` it is a reply, so one the session did not ask for is dropped and counted). Rate row: 2 per second, burst 4
+  ([the table](#multiplayer-security-rate-limits-and-guest-toggles)). `parked.ok:false` (V cannot be parked now: in a vehicle, a scene, combat) carries
+  its reason; what the server does with it is the hub's business (7H), the wire only says that every `park` is answered.
+- **Vendor stock (Phase 0 check (f)).** `MarketSystem.GetVendorItemsForSale(vendor, false)` is the readable stock; the scripts send it only for a
+  vendor whose stock they can read. When Minecraft sees `screen pass:"vendor"` or `pass:"ripperdoc"` it sends `uiact vendorreq`; **no usable reply (none, or one with no
+  lines) means "not readable" and the pass-through screen stays** (logged), as for the prologue ripperdoc and anything quest-critical, which the scripts never
+  answer. A ripperdoc's stock is a vendor stock like any other. The DLL builds the `reply` like the journal's (control characters stripped, text cut at a
+  character boundary, extra entries dropped and counted); a receiver treats a group `kind` that is neither `buy` nor `sell` as `buy`.
+- **Buying and selling.** `uiact buy` and `sell` are one unit per action. They are paid from and into the host's **real Cyberpunk money**, never Minecraft eddies
+  (megaplan 1.16): the scripts re-read the real price and the real stock at the moment of the action, so Minecraft is never trusted with a price. A refusal
+  (not enough money, a hash that is no longer in the stock) is a `notify` (`warning`); success is a `notify` (`item` or `money`), the new balance arrives as the
+  next `stats.money`, and Minecraft asks again with `vendorreq` to redraw the stock. Inside the DLL the scripts receive `hub`, `buy` and `sell` as events
+  (megaplan 1.8 row 7); `vendorreq` is answered by a `reply` builder like `journalreq`.
+- **Fast travel.** `uiact fasttravel` was parsed in re-test 3 but answered with an `info` toast ("Use the Night City map") while the scripts' `FastTravelEnabled`
+  switch was off. Phase 7 turns it on after an in-game check; until then the toast is the answer. The wire does not change.
+- **Validation (receivers).** `hub.in` is a boolean (anything else is dropped and counted); `uiact.a` outside the thirteen names makes the whole message invalid, as
+  before; `buy` and `sell` need a `hash` of 1..2^32 − 1 and an `id` ≥ 0; a vendor `reply` follows the Re-test 3 limits plus `kind` ∈ `buy`, `sell` for its
+  groups, `state` a whole number 0..2147483647 for its lines, `tracked` and `done` booleans and `pins` empty. A bad message is counted and dropped, never fatal.
+- **Features.** `hs_ack.features` bit 16 (hub) is set by a Phase 7 server.
+
+### Phase 7 names
+- **Vendor group kinds** (`reply.groups[].kind` for `kind:"vendor"`) — `buy`, `sell`
+- **Reply kinds** (Phase 7 adds one to the three of Re-test 3) — `vendor`
+- **UI actions** (Phase 7 adds three to the ten of Re-test 3) — `vendorreq`, `buy`, `sell`
+
+### Phase 7 log lines
+In-game checks grep for them (Re-test: Wave C, Phase 7 in `docs/TESTING-PLAN.md`). The exact text belongs to the packages that print them (7S and 7D in
+Cyberpunk, 7H and 7V on the server and the client); the integrator copies the final lines into the Re-test.
+- Each feature that has a fallback prints **one line saying which runtime path is active**: whether a vendor's stock was readable (and how many lines)
+  or the pass-through stayed, whether fast travel is on or off, and the park method (the Phase 3 `park: on|off (<reason>)` line, now also written for every hub
+  entry and exit; its text says when the unseen-by-NPCs part is unavailable, Phase 0 check (g)).
+- The server logs every hub entry and exit (who, how: the command, the portal block, the pause screen).
+
+### Phase 7 examples
+One message per line (JSON Lines). The vendor `reply` shows both group kinds; the `uiact` lines show the request, a purchase, a sale and a fast travel.
+
+Phase 7 examples, Cyberpunk to Minecraft:
+```jsonl
+{"t":"reply","kind":"vendor","id":31,"groups":[{"hash":501,"title":"Pistols","kind":"buy","tracked":false,"done":false,"lines":[{"hash":90210,"text":"Unity pistol","state":1200},{"hash":90211,"text":"Liberty pistol","state":2400}]},{"hash":502,"title":"Your items","kind":"sell","tracked":false,"done":false,"lines":[{"hash":4000000001,"text":"Broken radio","state":35}]}],"pins":[]}
+```
+
+Phase 7 examples, Minecraft to Cyberpunk:
+```jsonl
+{"t":"hub","in":true}
+{"t":"hub","in":false}
+{"t":"uiact","a":"vendorreq","arg":"","hash":0,"id":31}
+{"t":"uiact","a":"buy","arg":"","hash":90210,"id":31}
+{"t":"uiact","a":"sell","arg":"","hash":4000000001,"id":31}
+{"t":"uiact","a":"fasttravel","arg":"","hash":0,"id":4}
 ```
 
 ## Shared memory `Local\CyberblockFrame`
