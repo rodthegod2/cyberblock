@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What the client does with each message from its own DLL (megaplan section 1.2), and the UP side of the relay: UP messages go to
@@ -25,7 +26,8 @@ public final class Relay {
 
 	private static final Set<String> UP = Set.of("ground", "unground", "clear", "dmg", "mobdmg", "pcells", "unlead", "killed",
 		"scaninfo", "hackresult", "hackspread");
-	private static final Set<String> BOTH = Set.of("hello", "state", "aim", "npcs", "stats");
+	/** {@code terrain} is BOTH from Phase 3 (megaplan 3-R2): this client's Atlas keeps it, and the server's shared map grows from it. */
+	private static final Set<String> BOTH = Set.of("hello", "state", "aim", "npcs", "stats", "terrain");
 	/** Splittable messages: the array field and how many elements make one indivisible unit (a ground range is a quadruple). */
 	private static final Map<String, Integer> UNIT = Map.of("ground", 4, "unground", 4, "terrain", 4, "npcs", 1);
 	/** {@code stats} goes UP at most once a second (section 1.2); the newest waits for its turn. */
@@ -113,7 +115,9 @@ public final class Relay {
 	/**
 	 * The message as one or more chunks of at most {@code cap} UTF-8 bytes: unchanged when it fits; a splittable message (the
 	 * {@code c} quadruples of {@code ground}, {@code unground} and {@code terrain}, the {@code npcs} list) is cut between whole units,
-	 * every chunk keeping the other fields. Empty when it cannot fit (any other type over the cap, or one unit alone too big).
+	 * every chunk keeping the other fields. A {@code ground} message's {@code m} (Phase 3: one material code per quadruple) is cut
+	 * with its quadruples; an {@code m} of the wrong length is left out (materials are optional: the server's heuristic palette).
+	 * Empty when it cannot fit (any other type over the cap, or one unit alone too big).
 	 */
 	public static List<String> split(final String t, final JsonObject m, final String raw, final int cap) {
 		if (bytes(raw) <= cap) {
@@ -128,9 +132,19 @@ public final class Relay {
 
 		JsonObject shell = m.deepCopy();
 		shell.add(field, new JsonArray());
+		@Nullable JsonArray codes = null;
+		if (t.equals("ground") && shell.has("m")) {
+			codes = shell.get("m") instanceof JsonArray a && a.size() * unit == all.size() ? a : null;
+			shell.remove("m");
+			if (codes != null) {
+				shell.add("m", new JsonArray());
+			}
+		}
+
 		int base = bytes(shell.toString());
 		List<String> out = new ArrayList<>();
 		JsonArray chunk = new JsonArray();
+		JsonArray chunkCodes = new JsonArray();
 		int size = base;
 		for (int i = 0; i < all.size(); i += unit) {
 			int unitBytes = 0;
@@ -138,13 +152,18 @@ public final class Relay {
 				unitBytes += bytes(all.get(i + j).toString()) + 1; // the element and its comma
 			}
 
+			if (codes != null) {
+				unitBytes += bytes(codes.get(i / unit).toString()) + 1;
+			}
+
 			if (base + unitBytes > cap) {
 				return List.of();
 			}
 
 			if (size + unitBytes > cap && !chunk.isEmpty()) {
-				out.add(with(shell, field, chunk));
+				out.add(with(shell, field, chunk, codes == null ? null : chunkCodes));
 				chunk = new JsonArray();
+				chunkCodes = new JsonArray();
 				size = base;
 			}
 
@@ -153,19 +172,27 @@ public final class Relay {
 				chunk.add(e);
 			}
 
+			if (codes != null) {
+				chunkCodes.add(codes.get(i / unit));
+			}
+
 			size += unitBytes;
 		}
 
 		if (!chunk.isEmpty()) {
-			out.add(with(shell, field, chunk));
+			out.add(with(shell, field, chunk, codes == null ? null : chunkCodes));
 		}
 
 		return out;
 	}
 
-	private static String with(final JsonObject shell, final String field, final JsonArray chunk) {
+	private static String with(final JsonObject shell, final String field, final JsonArray chunk, final @Nullable JsonArray codes) {
 		JsonObject copy = shell.deepCopy();
 		copy.add(field, chunk);
+		if (codes != null) {
+			copy.add("m", codes);
+		}
+
 		return copy.toString();
 	}
 

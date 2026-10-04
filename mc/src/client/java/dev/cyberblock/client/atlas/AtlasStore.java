@@ -45,6 +45,9 @@ import org.jspecify.annotations.Nullable;
  * labels). Loaded when the game starts, filled from {@code terrain} on the link thread, saved every 30 s by a background thread,
  * when a world closes and when the game quits. A per-world copy an earlier build kept in {@code <world>/cyberblock/atlas/} is
  * merged in (cells the shared map does not know yet) when that world opens, and renamed {@code atlas.merged}.
+ *
+ * <p>Phase 3 (megaplan 3-C1): a host keeps this store and its {@code terrain} also goes UP into the server's shared map (BOTH); a
+ * guest's Atlas and radar draw from the server's map instead ({@link #view()}, ServerMap).
  */
 public final class AtlasStore {
 	public static final AtlasTiles tiles = new AtlasTiles();
@@ -71,7 +74,16 @@ public final class AtlasStore {
 	private AtlasStore() {
 	}
 
+	/**
+	 * The map the Atlas and the radar draw: a guest's view of the server's shared map while the server has one (ServerMap), else
+	 * this installation's own (a host keeps its own store; its {@code terrain} also goes UP, megaplan 3-C1).
+	 */
+	public static AtlasTiles view() {
+		return ServerMap.active() ? ServerMap.tiles : tiles;
+	}
+
 	public static void register() {
+		ServerMap.register();
 		HostLink.listen("terrain", m -> {
 			int[] cells = AtlasWire.parseTerrain(m);
 			if (cells == null) {

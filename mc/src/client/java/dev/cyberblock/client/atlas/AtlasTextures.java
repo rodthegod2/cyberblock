@@ -54,16 +54,20 @@ public final class AtlasTextures {
 	private static final Map<Long, Entry> tiles = new LinkedHashMap<>(64, 0.75F, true);
 	private static final Map<Long, Entry> regions = new LinkedHashMap<>(16, 0.75F, true);
 	private static int generation = Integer.MIN_VALUE;
+	/** The map being drawn this frame (AtlasStore.view(): a guest's shared map or this installation's own). */
+	private static AtlasTiles viewed = AtlasStore.tiles;
 	private static int builds;
 
 	private AtlasTextures() {
 	}
 
-	/** Starts a frame: the build budget is renewed; another world's textures are dropped. */
+	/** Starts a frame: the build budget is renewed; another world's textures, or the other map's, are dropped. */
 	public static void beginFrame() {
 		builds = 0;
-		int now = AtlasStore.tiles.generation();
-		if (now != generation) {
+		AtlasTiles view = AtlasStore.view();
+		int now = view.generation();
+		if (view != viewed || now != generation) {
+			viewed = view;
 			generation = now;
 			releaseAll(tiles);
 			releaseAll(regions);
@@ -98,7 +102,11 @@ public final class AtlasTextures {
 	}
 
 	private static @Nullable Identifier tile(final int tx, final int tz) {
-		AtlasTiles store = AtlasStore.tiles;
+		AtlasTiles store = viewed;
+		if (ServerMap.asking()) {
+			ServerMap.want(tx, tz);
+		}
+
 		if (!store.hasTile(tx, tz)) {
 			return null;
 		}
@@ -117,7 +125,11 @@ public final class AtlasTextures {
 	}
 
 	private static @Nullable Identifier region(final int rx, final int rz) {
-		AtlasTiles store = AtlasStore.tiles;
+		AtlasTiles store = viewed;
+		if (ServerMap.asking()) {
+			ServerMap.wantRegion(rx, rz);
+		}
+
 		int t0x = rx * LOD, t0z = rz * LOD;
 		long stamp = store.versionSum(t0x - 1, t0z - 1, t0x + LOD, t0z + LOD);
 		if (stamp == 0L) {

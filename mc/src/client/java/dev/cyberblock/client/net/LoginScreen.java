@@ -42,10 +42,13 @@ public final class LoginScreen extends Screen {
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, minecraft) -> minecraft.execute(() -> pending = false));
 	}
 
-	/** A {@code cyberblock:ui} message: true when it was the {@code login} one (client thread). */
+	/**
+	 * A {@code cyberblock:ui} message (client thread): true when the client net took it, the {@code login} one here or a type
+	 * listed in {@link UiRoutes} (the shared map's {@code maptile}, ...); false leaves it to the cyber track.
+	 */
 	public static boolean onUi(final String t, final String json) {
 		if (!t.equals("login")) {
-			return false;
+			return UiRoutes.dispatch(t, json);
 		}
 
 		try {
