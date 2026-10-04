@@ -4,6 +4,7 @@ import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.atlas.AtlasStore;
 import dev.cyberblock.client.atlas.AtlasTiles;
 import dev.cyberblock.client.atlas.AtlasWire;
+import dev.cyberblock.client.hack.screen.FeedTexture;
 import dev.cyberblock.client.holo.HoloCamera;
 import dev.cyberblock.client.holo.HoloMesh;
 import dev.cyberblock.client.ui.McTheme;
@@ -22,6 +23,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix3x2f;
@@ -38,7 +40,8 @@ final class VanScreen extends Screen {
 	static final int MARGIN = 8, TOP = 26, BOTTOM = 30, PANEL = 140, ROW = 11, FEED = 128;
 	/** A press that moved this far (GUI px) is a drag; a marker this close picks. */
 	static final double DRAG_PX = 3.0, PICK_PX = 6.0;
-	static final long REBUILD_NANOS = 250_000_000L;
+	static final long REBUILD_NANOS = 250_000_000L, DETAIL_REFRESH_NANOS = 2_000_000_000L;
+	static final double MAX_ZOOM_OUT = 512.0;
 	static final int TILE_TICKS = 10;
 	static final long MISSING_NANOS = 10_000_000_000L, KNOWN_NANOS = 60_000_000_000L;
 	static final int PERSON = 0xFFEFEFEF, HOSTILE = 0xFFFF5555, CAR = 0xFFFFC040, DEVICE = 0xFF40E0FF, V = 0xFFFCEE0A;
@@ -47,9 +50,12 @@ final class VanScreen extends Screen {
 	private final HoloMesh.Quads quads = new HoloMesh.Quads();
 	private final Matrix3x2f affine = new Matrix3x2f();
 	private HoloMesh.@Nullable Grid grid;
-	private long builtAt;
+	private long checkedAt;
 	private double builtCx = Double.NaN, builtCz, builtRadius;
 	private int builtViewVersion = -1;
+	private HoloWire.@Nullable Detail detail;
+	private int detailChunks = -1;
+	private long detailAt;
 	private boolean dragging, dragged;
 	private double pressX, pressY;
 	private int scroll;
@@ -107,8 +113,8 @@ final class VanScreen extends Screen {
 		int x = MARGIN;
 		this.flyButton = this.addRenderableWidget(Button.builder(Component.empty(), b -> VanClient.fly(this.minecraft)).bounds(x, y, 100, 20).build());
 		this.dockButton = this.addRenderableWidget(Button.builder(text("dock", "Dock drone"), b -> VanClient.dock()).bounds(x += 102, y, 80, 20).build());
-		this.addRenderableWidget(Button.builder(Component.literal("+"), b -> this.cam.zoom(1.25)).bounds(x += 84, y, 18, 20).build());
-		this.addRenderableWidget(Button.builder(Component.literal("-"), b -> this.cam.zoom(1 / 1.25)).bounds(x += 20, y, 18, 20).build());
+		this.addRenderableWidget(Button.builder(Component.literal("+"), b -> this.zoom(1.25)).bounds(x += 84, y, 18, 20).build());
+		this.addRenderableWidget(Button.builder(Component.literal("-"), b -> this.zoom(1 / 1.25)).bounds(x += 20, y, 18, 20).build());
 		this.addRenderableWidget(Button.builder(Component.literal("⟲"), b -> this.cam.turn(Math.PI / 4 / 0.01)).bounds(x += 20, y, 18, 20)
 			.tooltip(Tooltip.create(text("turn", "Turn the miniature"))).build());
 		int px = this.panelX();
@@ -265,23 +271,27 @@ final class VanScreen extends Screen {
 		return text("status", "%s targets seen (%s by the drone)", s.targets().size(), drone);
 	}
 
-	/** The miniature of the host's area: rebuilt at most 4 times a second, drawn every frame, with V, the drone and the targets. */
+	/**
+	 * The miniature of the host's area: checked at most 4 times a second and rebuilt only when the camera moved, the shared map's tiles
+	 * or the replica detail changed; drawn every frame, with V, the drone and the targets.
+	 */
 	private void drawMini(final GuiGraphicsExtractor graphics, final VanWire.State s) {
 		double sx0 = (this.left() + this.right()) / 2.0, sy0 = (this.top() + this.bottom()) / 2.0, scale = this.scale();
 		AtlasTiles view = AtlasStore.view();
 		long now = System.nanoTime();
-		boolean moved = this.cam.cx() != this.builtCx || this.cam.cz() != this.builtCz || this.cam.radius() != this.builtRadius;
-		if (this.grid == null || (moved || view.version() != this.builtViewVersion || now - this.builtAt > 1_000_000_000L) && now - this.builtAt >= REBUILD_NANOS) {
-			int r = (int) Math.ceil(this.cam.radius());
-			List<HoloWire.Detail> detail = this.minecraft.level == null ? List.of()
-				: List.of(VanMini.detail((int) Math.floor(this.cam.cx()) - r, (int) Math.floor(this.cam.cz()) - r, 2 * r + 1, VanMini.of(this.minecraft.level)));
-			this.grid = HoloMesh.build(HoloMesh.N, this.cam.cx(), this.cam.cz(), this.cam.radius(), view::get, detail);
-			this.builtAt = now;
-			this.builtCx = this.cam.cx();
-			this.builtCz = this.cam.cz();
-			this.builtRadius = this.cam.radius();
-			this.builtViewVersion = view.version();
-			this.cam.setBase(this.grid.base());
+		if (this.grid == null || now - this.checkedAt >= REBUILD_NANOS) {
+			this.checkedAt = now;
+			boolean fresh = this.minecraft.level != null && this.updateDetail(this.minecraft.level, now);
+			boolean moved = this.cam.cx() != this.builtCx || this.cam.cz() != this.builtCz || this.cam.radius() != this.builtRadius;
+			if (this.grid == null || moved || fresh || view.version() != this.builtViewVersion) {
+				HoloWire.Detail detail = this.detail;
+				this.grid = HoloMesh.build(HoloMesh.N, this.cam.cx(), this.cam.cz(), this.cam.radius(), view::get, detail == null ? List.of() : List.of(detail));
+				this.builtCx = this.cam.cx();
+				this.builtCz = this.cam.cz();
+				this.builtRadius = this.cam.radius();
+				this.builtViewVersion = view.version();
+				this.cam.setBase(this.grid.base());
+			}
 		}
 
 		HoloMesh.quads(this.grid, this.cam, sx0, sy0, scale, this.quads);
@@ -308,6 +318,26 @@ final class VanScreen extends Screen {
 		if (s.drone() != null && this.minecraft.level != null && this.minecraft.level.getEntity(s.drone().eid()) != null) {
 			this.dot(graphics, this.minecraft.level.getEntity(s.drone().eid()).position(), McTheme.AQUA, 3, true);
 		}
+	}
+
+	/**
+	 * The replica detail from this client's loaded blocks: {@link VanRules#MINI_RADIUS} blocks around the centre whatever the zoom (the
+	 * shared map's tiles show the rest), remade when the centre moves a block, a chunk there loads or unloads, or every
+	 * {@link #DETAIL_REFRESH_NANOS} for blocks the replica placed in loaded chunks (129 x 129 columns: cheap). True when it was remade.
+	 */
+	private boolean updateDetail(final ClientLevel level, final long now) {
+		int r = (int) VanRules.MINI_RADIUS, n = 2 * r + 1;
+		int x0 = (int) Math.floor(this.cam.cx()) - r, z0 = (int) Math.floor(this.cam.cz()) - r;
+		int chunks = VanMini.loadedChunks(level, x0, z0, n);
+		HoloWire.Detail d = this.detail;
+		if (d != null && d.x0() == x0 && d.z0() == z0 && chunks == this.detailChunks && now - this.detailAt < DETAIL_REFRESH_NANOS) {
+			return false;
+		}
+
+		this.detail = VanMini.detail(x0, z0, n, VanMini.of(level));
+		this.detailChunks = chunks;
+		this.detailAt = now;
+		return true;
 	}
 
 	static int colour(final VanWire.Target t) {
@@ -348,12 +378,12 @@ final class VanScreen extends Screen {
 		return best == null ? null : best.target();
 	}
 
-	/** The host's photo feed in the panel's top, framed like a map. */
+	/** The host's photo feed in the panel's top, framed like a map: the Net Map's frames of that host (the DLL's picture or the replica fallback). */
 	private void drawFeed(final GuiGraphicsExtractor graphics, final VanWire.@Nullable State s) {
 		int x = this.panelX() + (PANEL - FEED) / 2, y = TOP;
 		McTheme.panel(graphics, x - 4, y - 4, FEED + 8, FEED + 8);
 		VanWire.Host h = host(s);
-		if (h == null || !VanFeed.draw(graphics, h.id(), x, y, FEED)) {
+		if (h == null || !FeedTexture.draw(graphics, h.id(), x, y, FEED)) {
 			graphics.fill(x, y, x + FEED, y + FEED, 0xFF202020);
 			Component why = h == null ? text("feed_none", "No host linked") : !h.open() ? text("feed_closed", "This host lets no guest watch")
 				: text("feed_wait", "Waiting for the host's picture...");
@@ -361,8 +391,8 @@ final class VanScreen extends Screen {
 			for (int i = 0; i < lines.size(); i++) {
 				graphics.centeredText(this.font, lines.get(i), x + FEED / 2, y + FEED / 2 - 4 * lines.size() + 9 * i, McTheme.GRAY);
 			}
-		} else if (VanFeed.age(h.id()) > 3) {
-			graphics.text(this.font, VanFeed.age(h.id()) + " s", x + 2, y + FEED - 10, McTheme.RED, true);
+		} else if (FeedTexture.age(h.id()) > 3) {
+			graphics.text(this.font, FeedTexture.age(h.id()) + " s", x + 2, y + FEED - 10, McTheme.RED, true);
 		}
 	}
 
@@ -506,7 +536,7 @@ final class VanScreen extends Screen {
 	@Override
 	public boolean mouseScrolled(final double x, final double y, final double scrollX, final double scrollY) {
 		if (scrollY != 0.0 && this.onMini(x, y)) {
-			this.cam.zoom(Math.pow(1.15, scrollY));
+			this.zoom(Math.pow(1.15, scrollY));
 			return true;
 		}
 
@@ -516,6 +546,14 @@ final class VanScreen extends Screen {
 		}
 
 		return super.mouseScrolled(x, y, scrollX, scrollY);
+	}
+
+	/** Zoom the miniature (above 1 = closer), out to at most {@link #MAX_ZOOM_OUT} blocks: it shows the host's area, not the city. */
+	private void zoom(final double factor) {
+		this.cam.zoom(factor);
+		if (this.cam.radius() > MAX_ZOOM_OUT) {
+			this.cam.zoom(this.cam.radius() / MAX_ZOOM_OUT);
+		}
 	}
 
 	private void wheel(final VanWire.Target t) {

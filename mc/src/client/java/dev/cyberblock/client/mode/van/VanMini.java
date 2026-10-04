@@ -41,6 +41,18 @@ final class VanMini {
 		return new HoloWire.Detail(x0, z0, n, heights, colours);
 	}
 
+	/** How many chunks under the n x n columns from (x0, z0) this client has loaded (a change remakes the detail). */
+	static int loadedChunks(final ClientLevel level, final int x0, final int z0, final int n) {
+		int count = 0;
+		for (int cz = z0 >> 4; cz <= (z0 + n - 1) >> 4; cz++) {
+			for (int cx = x0 >> 4; cx <= (x0 + n - 1) >> 4; cx++) {
+				count += level.getChunk(cx, cz, ChunkStatus.FULL, false) != null ? 1 : 0;
+			}
+		}
+
+		return count;
+	}
+
 	/**
 	 * The loaded blocks of this client's level as columns: the top block that shows on a map, as the photo feed's replica view
 	 * (ReplicaFeed) finds it: glass, barriers and the like show what is under them; a column with nothing that shows is unknown.

@@ -20,23 +20,22 @@ import org.jspecify.annotations.Nullable;
  * <ul>
  * <li>{@code cyberblock:act t:"van"} {@code {"op":"host","host":"<uuid>"}} (link the Van to that host), {@code {"op":"launch"}} (a drone
  * takes off and the camera goes to it), {@code {"op":"pilot","on":bool}} (the camera to the hovering drone, or back to the Van),
- * {@code {"op":"dock"}} (the drone comes home), {@code {"op":"screen","on":bool}} (the Van screen is open: its photo feed panel wants
- * frames; renewed every 2 s).</li>
+ * {@code {"op":"dock"}} (the drone comes home). The screen's photo feed is 6-I1's {@code feed} watch on the linked host (its frames come
+ * as {@code cyberblock:ui t:"feed"}, the DLL's picture or the replica fallback).</li>
  * <li>{@code cyberblock:act t:"vhack"} {@code {"eid":n,"hack":"<quickhack>"}} (a chip on a person or a car's driver), {@code {"host":"<uuid>",
  * "dev":"<id>","act":"<devact>"}} (a device action) or {@code {"host":"<uuid>","dev":"<id>","hack":"device"}} (the lever chip on a
  * device). The car hacks and the area hacks go as 6-I1's {@code rhack} act.</li>
- * <li>{@code cyberblock:ui t:"van"}: the netrunner's state (below, {@link #state}); {@code t:"vanfeed"} {@code {"host","px"}} one photo
- * feed frame (6-D1's 128 x 128 map colours).</li>
+ * <li>{@code cyberblock:ui t:"van"}: the netrunner's state (below, {@link #state}).</li>
  * </ul>
  */
 public final class VanWire {
 	public static final String T_VAN = "van", T_VHACK = "vhack";
-	public static final String UI_STATE = "van", UI_FEED = "vanfeed";
+	public static final String UI_STATE = "van";
 	public static final int NAME_MAX = 48;
 	private static final Pattern DECIMAL = Pattern.compile("[0-9]{1,20}");
 
 	/** A van op from the client. */
-	public sealed interface Op permits LinkHost, Launch, Pilot, Dock, Screen {
+	public sealed interface Op permits LinkHost, Launch, Pilot, Dock {
 	}
 
 	public record LinkHost(UUID host) implements Op {
@@ -49,9 +48,6 @@ public final class VanWire {
 	}
 
 	public record Dock() implements Op {
-	}
-
-	public record Screen(boolean on) implements Op {
 	}
 
 	/** A vhack request: a chip on a figure (eid), or an act or the lever chip on one host's device. */
@@ -111,12 +107,6 @@ public final class VanWire {
 		return op("dock").toString();
 	}
 
-	public static String screen(final boolean on) {
-		JsonObject m = op("screen");
-		m.addProperty("on", on);
-		return m.toString();
-	}
-
 	private static JsonObject op(final String op) {
 		JsonObject m = new JsonObject();
 		m.addProperty("op", op);
@@ -133,7 +123,6 @@ public final class VanWire {
 				case "launch" -> new Launch();
 				case "pilot" -> bool(m.get("on")) instanceof Boolean on ? new Pilot(on) : null;
 				case "dock" -> new Dock();
-				case "screen" -> bool(m.get("on")) instanceof Boolean on ? new Screen(on) : null;
 				default -> null;
 			};
 		} catch (RuntimeException e) {
@@ -309,11 +298,6 @@ public final class VanWire {
 		} catch (RuntimeException e) {
 			return null;
 		}
-	}
-
-	/** {"host":"<uuid>","px":"<base64>"}: one photo feed frame for a netrunner (ActWire's frame shape). */
-	public static String feed(final UUID host, final byte[] px) {
-		return ActWire.feedUi(host, px);
 	}
 
 	// ---- helpers -------------------------------------------------------------------------------------------------------

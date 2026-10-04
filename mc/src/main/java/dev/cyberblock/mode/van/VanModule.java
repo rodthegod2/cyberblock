@@ -11,7 +11,6 @@ import dev.cyberblock.device.Device;
 import dev.cyberblock.device.DeviceMap;
 import dev.cyberblock.device.DeviceRules;
 import dev.cyberblock.device.DeviceWire;
-import dev.cyberblock.hack.actions.ActWire;
 import dev.cyberblock.hack.actions.RangeRule;
 import dev.cyberblock.holo.HoloLayers;
 import dev.cyberblock.holo.HoloWire;
@@ -20,6 +19,7 @@ import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.JoinLock;
 import dev.cyberblock.net.Permissions;
 import dev.cyberblock.net.ServerNet;
+import dev.cyberblock.net.TokenBucket;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -67,14 +67,15 @@ import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The Hacker in the Van on the server (megaplan task 8-V1). A guest sits in a Van as netrunner and gets the Van screen: the linked
- * host's area (V's surroundings as a miniature, with the figures and devices there as targets), the host's photo feed (6-D1's frames,
- * forwarded while the screen is open) and a drone to fly as eyes. The Hack Wheel on a target he can see runs in the owner's real game:
+ * The Hacker in the Van on the server (megaplan task 8-V1). A guest (never a player with a host session, Cyberpunk On or Off) sits in a
+ * Van as netrunner and gets the Van screen: the linked host's area (V's surroundings as a miniature, with the figures and devices there
+ * as targets), the host's photo feed (6-D1's Net Map feed, which the screen watches itself) and a drone to fly as eyes. The Hack Wheel on a target he can see runs in the owner's real game:
  * chips through Hacking (his RAM, cooldowns, the owner's {@code hacks} toggle and the Phase 0 (h) range rule), device actions as a
  * {@code devact} under the owner's {@code hacks} and device toggles, car and area hacks as 6-I1's {@code rhack}. The server decides
  * every "can see" again (the screen: the linked host's area; a drone: its sight with a clear line). Server thread.
  *
- * <p>Log lines: {@code van: <name> sits in the Van ...}, {@code van: <name> left the Van}, {@code van: <name> linked to <host>},
+ * <p>Log lines: {@code van: <name> sits in the Van ...} (and {@code ... as netrunner again} when vanilla seated him with his Van at
+ * login), {@code van: <name> has a Cyberpunk host session: put out of the Van ...}, {@code van: <name> left the Van}, {@code van: <name> linked to <host>},
  * {@code van: <name> launched|docked a drone ...}, {@code van: <name> -> <hack> on <target> of <host> (from the screen|drone)},
  * {@code van: <name> devact <act> <type> <id> of <host> -> request N}, {@code van: <host> devresult N <act> ok|refused (...)}.
  */
@@ -82,18 +83,21 @@ public final class VanModule {
 	public static EntityType<VanEntity> VAN;
 	public static EntityType<VanDrone> DRONE;
 	public static Item VAN_ITEM;
+	/** The Van item's id (8A's art, item model and English name are `hacker_van`). */
+	static final String ITEM_ID = "hacker_van";
 	/** The state goes to each netrunner this often (ticks). */
 	static final int STATE_TICKS = 10;
-	/** The screen's photo feed panel counts as open this long after its last renewal (ms). */
-	static final long SCREEN_MS = 5_000L;
 	/** A drone takes off this high above the Van's roof. */
 	static final double LAUNCH_HEIGHT = 2.6;
+	/** `van` and `vhack` acts together, per player: this many a second, in bursts of up to {@link #ACTS_BURST} (section 1.6). */
+	static final double ACTS_PER_SECOND = 10.0, ACTS_BURST = 20.0;
 
-	/** A netrunner: the camera is on his drone (`piloting`), and until when his screen wants the photo feed. */
+	/** A netrunner: the camera is on his drone (`piloting`); `dirty` sends his state at the end of this tick (`wantOpen`: opening the screen). */
 	static final class Seat {
 		boolean piloting;
-		long screenUntil;
 		boolean opened;
+		boolean dirty;
+		boolean wantOpen;
 	}
 
 	/** A devact the Van sent: who asked, what, how far the device was from V. */
@@ -107,6 +111,7 @@ public final class VanModule {
 	private static final Map<UUID, Seat> seats = new HashMap<>();
 	private static final Map<PendingKey, Pending> pending = new HashMap<>();
 	private static final Map<UUID, Long> lastDeviceAct = new HashMap<>();
+	private static final Map<UUID, TokenBucket> acts = new HashMap<>();
 	private static @Nullable MinecraftServer server;
 	private static int bad;
 
@@ -131,7 +136,6 @@ public final class VanModule {
 			}
 		});
 		HostSessions.listen("devresult", VanModule::onDevResult);
-		HostSessions.listen("feed", VanModule::onFeed);
 		HostSessions.onEnd(s -> {
 			devices.end(s.uuid());
 			pending.keySet().removeIf(k -> k.owner().equals(s.uuid()));
@@ -141,18 +145,22 @@ public final class VanModule {
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, s) -> {
 			seats.remove(handler.getPlayer().getUUID());
 			lastDeviceAct.remove(handler.getPlayer().getUUID());
+			acts.remove(handler.getPlayer().getUUID());
 		});
 		ServerLifecycleEvents.SERVER_STARTED.register(s -> {
 			server = s;
 			Cyberblock.LOG.info(String.format(Locale.ROOT, "van: Hacker in the Van ready: links to hosts within %.0f blocks, the screen sees %.0f blocks around V, "
 				+ "drones fly %.0f blocks from the Van for %d s and see %.0f blocks; chips go through the owner's hacks toggle and the Phase 0 (h) range rule "
-				+ "(its own `hack range:` line says which path), device actions as devact, car and area hacks as rhack; the photo feed is 6-D1's while the "
-				+ "host's DLL streams it", VanRules.LINK_RANGE, VanRules.AREA_RADIUS, VanRules.DRONE_RANGE, VanRules.BATTERY / 20, VanRules.DRONE_SIGHT));
+				+ "(its own `hack range:` line says which path), device actions as devact, car and area hacks as rhack; the screen's photo feed is 6-D1's "
+				+ "Net Map feed (the DLL's picture, or the replica fallback when none comes: its `feed:` lines say which path is active); "
+				+ "%.0f van and vhack acts a second per player", VanRules.LINK_RANGE, VanRules.AREA_RADIUS, VanRules.DRONE_RANGE, VanRules.BATTERY / 20,
+				VanRules.DRONE_SIGHT, ACTS_PER_SECOND));
 		});
 		ServerLifecycleEvents.SERVER_STOPPING.register(s -> {
 			seats.clear();
 			pending.clear();
 			lastDeviceAct.clear();
+			acts.clear();
 			devices.clear();
 			server = null;
 		});
@@ -168,9 +176,9 @@ public final class VanModule {
 		// updated every tick: the pilot's camera sits in it
 		DRONE = Registry.register(BuiltInRegistries.ENTITY_TYPE, droneKey, EntityType.Builder.<VanDrone>of(VanDrone::new, MobCategory.MISC)
 			.sized(0.6F, 0.3F).eyeHeight(0.15F).noSave().noSummon().noLootTable().clientTrackingRange(8).updateInterval(1).build(droneKey));
-		ResourceKey<Item> itemKey = ResourceKey.create(Registries.ITEM, id("van"));
+		ResourceKey<Item> itemKey = ResourceKey.create(Registries.ITEM, id(ITEM_ID));
 		Item.Properties properties = new Item.Properties().stacksTo(1).rarity(Rarity.RARE)
-			.component(DataComponents.ITEM_NAME, Component.translatableWithFallback("item.cyberblock.van", "Netrunner Van"));
+			.component(DataComponents.ITEM_NAME, Component.translatableWithFallback("item.cyberblock." + ITEM_ID, "Hacker Van"));
 		VAN_ITEM = Registry.register(BuiltInRegistries.ITEM, itemKey, new VanItem(properties.setId(itemKey)));
 		ResourceKey<CreativeModeTab> tab = ResourceKey.create(Registries.CREATIVE_MODE_TAB, id("cyberblock"));
 		CreativeModeTabEvents.modifyOutputEvent(tab).register(output -> output.accept(VAN_ITEM));
@@ -194,13 +202,18 @@ public final class VanModule {
 		}
 
 		if (player.getVehicle() == van) {
-			sendState(player, van, true);
+			Seat seat = seatIn(player, van);
+			if (seat != null) {
+				seat.dirty = true;
+				seat.wantOpen = true;
+			}
+
 			return true;
 		}
 
-		HostSession own = HostSessions.of(player);
-		if (own != null && own.active()) {
-			player.sendOverlayMessage(text("host", "Your V drives Night City: the Van is for guests").withStyle(ChatFormatting.RED));
+		// any host, Cyberpunk On or Off (section 1.1): his Steve follows V once it is on, and the relay checks his UP against Steve's place
+		if (HostSessions.of(player) != null) {
+			player.sendOverlayMessage(hostRefused());
 			return true;
 		}
 
@@ -235,6 +248,45 @@ public final class VanModule {
 	static void broken(final VanEntity van, final Entity by) {
 		dock(van, "the Van was broken");
 		Cyberblock.LOG.info("van: the Van at {} was broken by {}", van.blockPosition().toShortString(), by.getPlainTextName());
+	}
+
+	/**
+	 * The seat of a player in a Van, made when he has none: vanilla saves a ridden Van with its player and seats him in it again at
+	 * login (a relog, a server restart). A player with a Cyberpunk host session is put out instead (null): the Van is for guests.
+	 */
+	static @Nullable Seat seatIn(final ServerPlayer player, final VanEntity van) {
+		if (HostSessions.of(player) != null) {
+			player.stopRiding();
+			player.sendOverlayMessage(hostRefused());
+			Cyberblock.LOG.info("van: {} has a Cyberpunk host session: put out of the Van (it is for guests)", player.getPlainTextName());
+			return null;
+		}
+
+		Seat seat = seats.get(player.getUUID());
+		if (seat == null) {
+			seat = new Seat();
+			seat.dirty = true;
+			seats.put(player.getUUID(), seat);
+			HostSession host = linkedHost(van);
+			Cyberblock.LOG.info("van: {} sits in the Van at {} as netrunner again (seated with it at login; host {})", player.getPlainTextName(),
+				van.blockPosition().toShortString(), host == null ? "none in reach" : host.name());
+		}
+
+		return seat;
+	}
+
+	private static Component hostRefused() {
+		return text("host", "The Van is for guests: a Cyberpunk host cannot sit in it").withStyle(ChatFormatting.RED);
+	}
+
+	/** At most {@link #ACTS_PER_SECOND} `van` and `vhack` acts a second per player; the rest are dropped (and counted). */
+	private static boolean withinRate(final ServerPlayer player, final String what) {
+		if (acts.computeIfAbsent(player.getUUID(), id -> new TokenBucket(ACTS_PER_SECOND, ACTS_BURST, Util::getMillis)).tryTake(1.0)) {
+			return true;
+		}
+
+		warn(what + " over " + (int) ACTS_PER_SECOND + " a second from one player dropped");
+		return false;
 	}
 
 	/** The seated netrunner's Van, or null. */
@@ -278,10 +330,14 @@ public final class VanModule {
 	// ---- acts ------------------------------------------------------------------------------------------------------------
 
 	private static void onVan(final ServerPlayer player, final JsonObject m) {
+		if (!withinRate(player, "van op")) {
+			return;
+		}
+
 		VanWire.Op op = VanWire.parseOp(m);
 		VanEntity van = vanOf(player);
-		Seat seat = seats.get(player.getUUID());
-		if (op == null || van == null || seat == null) {
+		Seat seat = van == null ? null : seatIn(player, van);
+		if (op == null || seat == null) {
 			warn("van op dropped (" + (op == null ? "bad" : "not seated") + ")");
 			return;
 		}
@@ -299,16 +355,19 @@ public final class VanModule {
 			case VanWire.Launch() -> launch(player, van, seat);
 			case VanWire.Pilot(boolean on) -> seat.piloting = on && drone(van) != null;
 			case VanWire.Dock() -> dock(van, "docked by " + player.getPlainTextName());
-			case VanWire.Screen(boolean on) -> seat.screenUntil = on ? Util.getMillis() + SCREEN_MS : 0L;
 		}
 
-		sendState(player, van, false);
+		seat.dirty = true; // one state at the end of this tick, however many ops came
 	}
 
 	private static void onVhack(final ServerPlayer player, final JsonObject m) {
+		if (!withinRate(player, "vhack")) {
+			return;
+		}
+
 		VanWire.Request r = VanWire.parseRequest(m);
 		VanEntity van = vanOf(player);
-		if (r == null || van == null) {
+		if (r == null || van == null || seatIn(player, van) == null) {
 			warn("vhack dropped (" + (r == null ? "bad" : "not seated") + ")");
 			return;
 		}
@@ -336,7 +395,10 @@ public final class VanModule {
 		}
 
 		Hacking.lock(player.getUUID(), owner, id, false, e.getX(), e.getY(), e.getZ(), e.getBbHeight(), proxy.label());
-		Hacking.useChip(player, f.hack());
+		if (!Hacking.useChip(player, f.hack())) {
+			return false; // no chip, recharging, no RAM, the owner's toggle: Hacking told him why
+		}
+
 		HostSession s = HostSessions.of(owner);
 		Cyberblock.LOG.info("van: {} -> {} on {} of {} (from the {})", player.getPlainTextName(), f.hack().wire(), proxy.label().isEmpty() ? id : proxy.label(),
 			s == null ? owner : s.name(), seen.wire());
@@ -361,7 +423,10 @@ public final class VanModule {
 
 		if (r.act() == null) {
 			Hacking.lock(player.getUUID(), r.host(), d.id(), true, d.x(), d.y(), d.z(), 1.0, d.cls());
-			Hacking.useChip(player, Hack.DEVICE);
+			if (!Hacking.useChip(player, Hack.DEVICE)) {
+				return false;
+			}
+
 			Cyberblock.LOG.info("van: {} -> device on {} {} of {} (from the {})", player.getPlainTextName(), d.type().id(), d.idText(), s.name(), seen.wire());
 			return true;
 		}
@@ -545,6 +610,8 @@ public final class VanModule {
 			targets(player, van, host));
 		ServerNet.ui(player, VanWire.UI_STATE, VanWire.state(state));
 		seat.opened |= open;
+		seat.dirty = false;
+		seat.wantOpen = false;
 	}
 
 	// ---- drones ----------------------------------------------------------------------------------------------------------
@@ -594,12 +661,10 @@ public final class VanModule {
 		Seat seat = pilot == null ? null : seats.get(pilot.getUUID());
 		if (seat != null) {
 			seat.piloting = false;
+			seat.dirty = true;
 		}
 
 		Cyberblock.LOG.info("van: {} docked a drone ({}; battery {} %)", pilot == null ? "a netrunner" : pilot.getPlainTextName(), why, Math.round(van.charge() * 100));
-		if (pilot != null && vanOf(pilot) == van) {
-			sendState(pilot, van, false);
-		}
 	}
 
 	/** Every tick of a Van (server): the battery drains while its drone flies and refills while it is docked. */
@@ -681,45 +746,39 @@ public final class VanModule {
 		return out;
 	}
 
-	// ---- feed and time ---------------------------------------------------------------------------------------------------
+	// ---- time ------------------------------------------------------------------------------------------------------------
 
-	/** `feed` UP (6-D1): the frame goes to the netrunners whose screen is open on that host (and whom its `hacks` toggle lets watch). */
-	private static void onFeed(final HostSession s, final JsonObject m) {
-		byte[] px = ActWire.parseFeed(m);
-		MinecraftServer srv = server;
-		if (px == null || srv == null) {
-			return;
-		}
-
-		long now = Util.getMillis();
-		String json = null;
-		for (Map.Entry<UUID, Seat> e : seats.entrySet()) {
-			ServerPlayer p = srv.getPlayerList().getPlayer(e.getKey());
-			VanEntity van = p == null ? null : vanOf(p);
-			if (van == null || e.getValue().screenUntil < now || !s.uuid().equals(van.host()) || !Permissions.allows(s.uuid(), p.getUUID(), Permissions.Toggle.HACKS)) {
-				continue;
-			}
-
-			json = json == null ? VanWire.feed(s.uuid(), px) : json;
-			ServerNet.ui(p, VanWire.UI_FEED, json);
-		}
-	}
-
+	/**
+	 * Every tick: seats whose player left the Van go; a state goes to each seat that asked for one this tick (at most one per tick).
+	 * Every {@link #STATE_TICKS}: every player in a Van gets a seat (or, a host, is put out) and his state, and devacts time out.
+	 */
 	private static void tick(final MinecraftServer s) {
-		if (s.getTickCount() % STATE_TICKS != 0) {
-			return;
+		seats.keySet().removeIf(id -> {
+			ServerPlayer p = s.getPlayerList().getPlayer(id);
+			return p == null || vanOf(p) == null;
+		});
+
+		boolean all = s.getTickCount() % STATE_TICKS == 0;
+		if (all) {
+			for (ServerPlayer p : List.copyOf(s.getPlayerList().getPlayers())) {
+				VanEntity van = vanOf(p);
+				Seat seat = van == null || JoinLock.locked(p) ? null : seatIn(p, van);
+				if (seat != null) {
+					seat.dirty = true;
+				}
+			}
 		}
 
-		for (Iterator<Map.Entry<UUID, Seat>> it = seats.entrySet().iterator(); it.hasNext(); ) {
-			Map.Entry<UUID, Seat> e = it.next();
-			ServerPlayer p = s.getPlayerList().getPlayer(e.getKey());
+		for (Map.Entry<UUID, Seat> e : List.copyOf(seats.entrySet())) {
+			ServerPlayer p = e.getValue().dirty ? s.getPlayerList().getPlayer(e.getKey()) : null;
 			VanEntity van = p == null ? null : vanOf(p);
-			if (van == null) {
-				it.remove();
-				continue;
+			if (van != null) {
+				sendState(p, van, e.getValue().wantOpen);
 			}
+		}
 
-			sendState(p, van, false);
+		if (!all) {
+			return;
 		}
 
 		long now = s.getTickCount();

@@ -9,8 +9,8 @@ owns). The guest sits in a Van and acts through the devtools commands `/cyberblo
 Van screen and its Hack Wheel. Checks: the Van screen sees the host's people, cars and devices; a chip from the screen reaches the
 owner's DLL as a `hack`; a device action as a `devact` that the DLL answers; a drone takes off, sees targets with a clear line and its
 chip reaches the DLL too; its leash holds it at 64 blocks; `guests hacks off` stops the Van's chips and device actions and `on` brings
-them back; a shot drone docks with an empty battery and cannot take off; getting out docks nothing left behind; the relay drops
-nothing. This file is not a pytest module (no `test_` prefix): it starts Minecraft. Phase 8's protocol package can wire it into
+them back; a shot drone docks with an empty battery and cannot take off; a host cannot sit in; a netrunner who reconnects while
+seated gets his seat back; getting out docks nothing left behind; the relay drops nothing. This file is not a pytest module (no `test_` prefix): it starts Minecraft. Phase 8's protocol package can wire it into
 tools/mpcheck.py as a `van` scenario.
 """
 import argparse
@@ -71,8 +71,10 @@ def scenario_van(env: mp.Env, rep: mp.Report) -> None:
     server = env.server("van", max_hosts=1)
     _, host = mp.start_host(env, rep, server, "CbHost1", ver=env.mod_version, layers=(6,), modes=("hacks2", "figures"), wait_host=mp.T_JOIN)
     rep.step("the host's figures stand", lambda: mp.poll(lambda: mp.proxies_stand(server), mp.T_EFFECT, mp.T_POLL, "the figures"), must=True)
-    env.client("CbGuest1", join=server.port)
+    guest = env.client("CbGuest1", join=server.port)
     rep.step("a guest joins", lambda: server.log.wait(r"handshake: CbGuest1 .*-> guest", mp.T_JOIN), must=True)
+    rep.step("a Cyberpunk host cannot sit in a Van (it is for guests)", lambda: "-> not seated" in server.test("van sit", as_player="CbHost1"))
+    server.rcon("execute at CbHost1 run kill @e[type=cyberblock:van,distance=..4]")  # the Van that test parked for him
     server.rcon("execute as CbGuest1 run cyberblock kit")  # the quickhack chips and the cyberdeck
     server.rcon(f"tp CbGuest1 {GUEST_AT[0]} {GUEST_AT[1]} {GUEST_AT[2]}")
     time.sleep(2.0)
@@ -124,6 +126,17 @@ def scenario_van(env: mp.Env, rep: mp.Report) -> None:
     rep.step("a shot drone docks with an empty battery", lambda: bool(server.log.wait(r"van: CbGuest1 docked a drone \(shot down by CbHost1; battery 0 %\)", mp.T_EFFECT)))
     rep.step("... and cannot take off until it recharged", lambda: "-> not launched" in server.test("van launch", as_player="CbGuest1"))
     rep.step("no drone is left in the world", lambda: not server.passes("execute if entity @e[type=cyberblock:van_drone]"))
+
+    # vanilla saves a ridden Van with its player and seats him in it again at login: the Van must give him a seat again
+    mark = server.log.mark()
+    guest.proc.stop()
+    rep.step("the netrunner leaves while seated", lambda: server.log.wait(r"CbGuest1 lost connection", mp.T_EFFECT, mark), must=True)
+    mark = server.log.mark()
+    guest = env.client("CbGuest1", join=server.port)
+    rep.step("after a reconnect he is seated in his Van again, with a seat",
+             lambda: server.log.wait(r"van: CbGuest1 sits in the Van at .* as netrunner again", mp.T_JOIN, mark), must=True)
+    rep.step("... and the Van answers him (its state, linked to the host)",
+             lambda: mp.poll(lambda: (s := state(server)) and s["host"] == "CbHost1", mp.T_EFFECT, 1.0, "the state"))
 
     server.rcon("ride CbGuest1 dismount")
     rep.step("getting out of the Van is logged", lambda: bool(server.log.wait(r"van: CbGuest1 left the Van", mp.T_EFFECT)))

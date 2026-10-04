@@ -1,6 +1,7 @@
 package dev.cyberblock.client.mode.van;
 
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.client.hack.screen.FeedTexture;
 import dev.cyberblock.mode.van.VanRules;
 import dev.cyberblock.mode.van.VanWire;
 import net.minecraft.client.CameraType;
@@ -57,7 +58,7 @@ final class VanShots {
 			}
 			case 1 -> {
 				boolean ready = s != null && s.targets().stream().anyMatch(t -> t.kind() == VanRules.Kind.PERSON) && s.host() != null
-					&& VanFeed.age(s.host()) >= 0;
+					&& FeedTexture.age(s.host()) >= 0;
 				if (!ready && ticks - at < 1200) {
 					return;
 				}

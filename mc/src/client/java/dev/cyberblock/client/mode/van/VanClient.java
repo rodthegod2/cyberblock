@@ -1,6 +1,5 @@
 package dev.cyberblock.client.mode.van;
 
-import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.net.UiRoutes;
@@ -11,7 +10,6 @@ import dev.cyberblock.mode.van.VanModule;
 import dev.cyberblock.mode.van.VanRules;
 import dev.cyberblock.mode.van.VanWire;
 import dev.cyberblock.net.Payloads;
-import java.util.UUID;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -55,17 +53,6 @@ public final class VanClient {
 		EntityRenderers.register(VanModule.VAN, VanRenderer::new);
 		EntityRenderers.register(VanModule.DRONE, DroneRenderer::new);
 		UiRoutes.listen(VanWire.UI_STATE, VanClient::onState);
-		UiRoutes.listen(VanWire.UI_FEED, json -> {
-			JsonObject m = JsonParser.parseString(json).getAsJsonObject();
-			JsonObject frame = new JsonObject();
-			frame.addProperty("w", ActWire.FEED_SIDE);
-			frame.addProperty("h", ActWire.FEED_SIDE);
-			frame.add("px", m.get("px"));
-			byte[] px = ActWire.parseFeed(frame);
-			if (px != null) {
-				VanFeed.put(UUID.fromString(m.get("host").getAsString()), px);
-			}
-		});
 		VanDrone.clientView = VanClient::view;
 		ClientTickEvents.START_CLIENT_TICK.register(VanClient::input);
 		ClientTickEvents.END_CLIENT_TICK.register(VanClient::tick);
@@ -265,9 +252,11 @@ public final class VanClient {
 		}
 	}
 
-	/** The Van screen's photo feed: watched on the linked host (6-I1's feed act keeps the DLL's feed on; the van op routes frames here). */
+	/**
+	 * The Van screen's photo feed: 6-I1's feed watch on the linked host, as the Net Map's; its frames (the DLL's picture or the replica
+	 * fallback) land in the Net Map's FeedTexture, which the screen draws.
+	 */
 	static void watch(final VanWire.State s, final boolean on) {
-		send(VanWire.T_VAN, VanWire.screen(on));
 		if (s.host() != null) {
 			send(ActWire.T_FEED, ActWire.feedWatch(s.host(), on));
 		}
@@ -302,6 +291,5 @@ public final class VanClient {
 		stateAt = 0L;
 		piloting = false;
 		aimed = null;
-		VanFeed.clear();
 	}
 }

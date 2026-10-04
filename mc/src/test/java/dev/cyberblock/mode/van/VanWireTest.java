@@ -1,7 +1,6 @@
 package dev.cyberblock.mode.van;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,7 +27,6 @@ class VanWireTest {
 		assertEquals(new VanWire.Launch(), VanWire.parseOp(json(VanWire.launch())));
 		assertEquals(new VanWire.Pilot(false), VanWire.parseOp(json(VanWire.pilot(false))));
 		assertEquals(new VanWire.Dock(), VanWire.parseOp(json(VanWire.dock())));
-		assertEquals(new VanWire.Screen(true), VanWire.parseOp(json(VanWire.screen(true))));
 	}
 
 	@Test
@@ -37,7 +35,8 @@ class VanWireTest {
 		assertNull(VanWire.parseOp(json("{\"op\":\"fly\"}")));
 		assertNull(VanWire.parseOp(json("{\"op\":\"host\",\"host\":\"nope\"}")));
 		assertNull(VanWire.parseOp(json("{\"op\":\"pilot\",\"on\":\"yes\"}")));
-		assertNull(VanWire.parseOp(json("{\"op\":\"screen\"}")));
+		// the screen's photo feed is 6-I1's own `feed` watch: the Van has no screen op
+		assertNull(VanWire.parseOp(json("{\"op\":\"screen\",\"on\":true}")));
 	}
 
 	@Test
@@ -106,12 +105,5 @@ class VanWireTest {
 	@Test
 	void brokenStateIsNull() {
 		assertNull(VanWire.parseState(json("{\"open\":true}")));
-	}
-
-	@Test
-	void feedIsTheNetMapsFrameShape() {
-		JsonObject m = json(VanWire.feed(HOST, new byte[] {1, 2, 3}));
-		assertEquals(HOST.toString(), m.get("host").getAsString());
-		assertInstanceOf(String.class, m.get("px").getAsString());
 	}
 }
