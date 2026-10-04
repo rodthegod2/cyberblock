@@ -123,6 +123,16 @@ Phase 7 mode (shared/protocol.md "Phase 7"; combinable with the layer flags and 
              (`hub in:true` then `park on:true`) and exit (`park on:false` then `hub in:false`) can be watched; the printed `hub` lines are what the server sent.
   --park-refuse  with --vendor or --replica: `park on:true` is answered `parked ok:false` ("blocked (in a vehicle)"), as the scripts do when V cannot be
              parked; `park on:false` is still ok.
+Phase 8 mode (shared/protocol.md "Phase 8"; stands on the street like --hacks2, so the same restrictions apply (and not with --vendor or --ui, which send their own
+stats, nor with --figures, whose list is full); same --hold, --cmd, --port, --name, --shift and NPC resend; prints `spawn`, `heat`, `attitude` and `glitch` (what Minecraft asks) and `spawnresult` (what this
+fake DLL answered)):
+  --modes    the Night City side of the roles and modes. Every valid `spawn` is answered with one `spawnresult` and, when it worked, the `n` enemies join the `npcs` list at
+             `p` (people; a `drone` is a person tagged `arch:"Drone"`; `faction` or the record's default gang is their `fac`; `hostile` is their `hostile`) and stay until
+             the session ends: a `rec` outside ganger, ncpd, maxtac and drone is `unsupported` (so is the plan's old `turret`), a `p` outside the world's height `no ground`, more
+             than 24 live ones `too many`. `heat` sets the host's wanted level (the next `stats` says so: `stats.wanted` is the tier, as the scripts' `SetWantedLevel` does) and
+             `session` leaving `host` puts the stars back to what they were (0) and deletes the spawned enemies, as protocol.md says every Phase 8 effect ends; `attitude` is
+             kept for a known group (an unknown one is ignored) and `glitch` for `seconds` (0 ends it); a message with a bad type or limit is dropped, and so is any of the four
+             without a host session.
 Multiplayer (shared/protocol.md "Multiplayer (Phase 1)"; tools/mpcheck.py starts one fake host per host client):
   --name NAME      prefixes every line this tool prints with `[NAME] `, so the output of two fake hosts can be told apart.
   --ver VERSION    the DLL version in the `hello` (`ver`, at most 32 characters). The default is this checkout's version, the
@@ -174,10 +184,11 @@ JUMP_AT, JUMP_FOR = 0.5, 0.1  # layer 4: seconds after the scenario starts, and 
 HACK_KEY, SKILLS_KEY, KILLED_AT = (1.0, 2.0), (2.5, 2.6), 3.0  # layer 6: (down, up) and the kill, in seconds
 CYBERWARE_KEYS, ACTIVATE_KEY = ((3.5, 3.6), (4.0, 4.1)), (4.5, 4.6)  # layer 6: U opens the Cyberware screen then closes it; Y is a tap
 PCELLS_AHEAD, MAX_PCELLS = 0.5, 64  # layer 4: seconds ahead of a projectile for its wall, and the `pcells` cap
-MODES = ("ui", "hacks", "seat", "view", "stairs", "replica", "devices", "figures", "hacks2", "vendor")  # re-test 3: --ui, --hacks, --seat; Phase Q: --view, --stairs; Phase 3: --replica; Phase 4: --devices; Phase 5: --figures; Phase 6: --hacks2; Phase 7: --vendor
+MODES = ("ui", "hacks", "seat", "view", "stairs", "replica", "devices", "figures", "hacks2", "vendor", "modes")  # re-test 3: --ui, --hacks, --seat; Phase Q: --view, --stairs; Phase 3: --replica; Phase 4: --devices; Phase 5: --figures; Phase 6: --hacks2; Phase 7: --vendor; Phase 8: --modes
 MODE_EVENTS = {"ui": {"uiact", "persp", "binds"}, "hacks": {"hack", "uiact", "persp", "binds"}, "seat": {"persp", "binds"},
                "view": {"prefs"}, "stairs": {"prefs"}, "replica": {"vteleport", "park"}, "devices": {"devact"}, "figures": set(),
-               "hacks2": {"devact", "rhack", "daemon", "feedreq"}, "vendor": {"uiact", "hub", "park", "vteleport"}}
+               "hacks2": {"devact", "rhack", "daemon", "feedreq"}, "vendor": {"uiact", "hub", "park", "vteleport"},
+               "modes": {"spawn", "heat", "attitude", "glitch"}}
 CAMERA_OWNERS = ("view", "stairs", "seat", "replica")  # the modes that drive the camera by themselves
 UI_MENU = (6.0, 7.0)  # --ui: seconds in which `cam.menu` is true (a pass-through menu is open)
 PERSPECTIVE_KEY = (8.0, 8.1)  # --ui: the F5 tap that makes Minecraft answer `persp`
@@ -1018,6 +1029,53 @@ def vendor_answers(shop: Shop, m: dict) -> list[dict] | None:
     return shop.act(a, line, rid, arg) if line >= 1 else None
 
 
+# ---- Phase 8: --modes (shared/protocol.md "Phase 8"): the DLL's side of `spawn`, `heat`, `attitude` and `glitch` -----------------------------------
+# What the scripts and the DLL do with the four messages, deterministic: a spawn is answered with one `spawnresult` and the enemies stand in the `npcs` list; `heat` is
+# the host's wanted level (it comes back in `stats.wanted`); `attitude` and `glitch` are kept; the end of the session puts everything back.
+SPAWN_RECORDS = ("ganger", "ncpd", "maxtac", "drone")  # megaplan 1.9 row 8 without `turret` (Phase 0 check (d): a turret is a device, Minecraft-side only)
+SPAWN_CAP = 24  # live spawned NPCs the scripts allow; a spawn that would pass it is `too many`
+SPAWN_HEIGHT = (-64.0, 320.0)  # a spawn point outside the world's height has no ground
+SPAWN_ID_BASE = 6_000_000_000_000_000  # the spawned figures' ids (decimal strings in `npcs`)
+SPAWN_DEFAULT_FAC = {"ganger": "Maelstrom", "ncpd": "NCPD", "maxtac": "NCPD", "drone": "NCPD"}  # the affiliation of a spawn with no `faction`
+SPAWN_ARCH = {"ganger": "Gunner", "ncpd": "Gunner", "maxtac": "Heavy", "drone": "Drone"}
+ATTITUDE_AFFILIATION = {"tygerClaws": "TygerClaws", "maelstrom": "Maelstrom", "valentinos": "Valentinos", "police": "NCPD"}  # the attitude groups whose figures this scene has
+ATTITUDE_GROUPS = ("tygerClaws", "maelstrom", "valentinos", "6thStreet", "animals", "voodooBoys", "scavenger", "wraiths", "aldecaldos", "kangtao", "kurtz_army",
+                   "arasaka", "militech", "police", "traumateam", "civilian")  # Phase 0 check (e), without V's own group `player`
+ATTITUDE_STANCES = ("friendly", "neutral", "hostile")
+MODES8_REQUESTS = ("spawn", "heat", "attitude", "glitch")
+SPAWN_REC_RE, FACTION_RE, GROUP_RE = re.compile(r"[a-z0-9_]{1,32}"), re.compile(r"[A-Za-z0-9_]{0,32}"), re.compile(r"[A-Za-z0-9_]{1,32}")
+MODES_MONEY = 5000  # V's eddies in the `stats` the wanted level rides on
+
+
+def spawn_valid(m: dict) -> bool:
+    """A DOWN `spawn` the DLL accepts: a request id, a record name (any well-formed string: an unknown one is answered `unsupported`), `p`, `n` 1..8, `hostile`, `faction`."""
+    return (is_request_id(m.get("id")) and isinstance(m.get("rec"), str) and SPAWN_REC_RE.fullmatch(m["rec"]) is not None and finite_vec3(m.get("p"))
+            and whole_in(m.get("n"), 1, 8) and isinstance(m.get("hostile"), bool) and isinstance(m.get("faction"), str) and FACTION_RE.fullmatch(m["faction"]) is not None)
+
+
+def spawn_result(rid: int, n: int = 0, reason: str = "") -> dict:
+    """`spawnresult`: ok exactly when `n` figures were made (1..8), the reason empty exactly when ok (shared/protocol.md "Phase 8")."""
+    return {"t": "spawnresult", "id": rid, "ok": n >= 1, "n": n, "reason": reason}
+
+
+def modes_stats(wanted: int) -> dict:
+    """The `stats` the scripts send: V's money and the wanted level (0..5 stars) that `heat` wrote."""
+    return {"t": "stats", "money": MODES_MONEY, "wanted": wanted, "district": "Watson", "time": [14, 35], "speed": -1}
+
+
+def heat_valid(m: dict) -> bool:
+    return whole_in(m.get("tier"), 0, 5)
+
+
+def attitude_valid(m: dict) -> bool:
+    return isinstance(m.get("faction"), str) and GROUP_RE.fullmatch(m["faction"]) is not None and m.get("toward") in ATTITUDE_STANCES
+
+
+def glitch_valid(m: dict) -> bool:
+    s = m.get("seconds")
+    return isinstance(s, (int, float)) and not isinstance(s, bool) and math.isfinite(s) and 0 <= s <= 10
+
+
 class Body:
     """Where V is in layer 4: falls from FALL_FROM at FALL_SPEED until Minecraft reports `flight`, then follows it (and
     says `fly:true`, as the real host's drive does); a touchdown (`flight` inactive) or an ender pearl's `teleport` puts V
@@ -1065,7 +1123,7 @@ class Cyberpunk:
         self.session: str | None = None  # the last `session` state Minecraft sent (a change to host re-sends the ground)
         self.hacks2 = "hacks2" in modes  # --hacks2 (Phase 6): the devices plus remote hacks, Breach daemons and the photo feed
         self.devices = "devices" in modes or self.hacks2  # --devices (Phase 4): the device scene on the street's ground (--hacks2 adds the Net Port)
-        self.street = self.replica or self.devices  # the street's ground and camera: --replica, --devices and --hacks2 all stand on it
+        self.street = self.replica or self.devices or "modes" in modes  # the street's ground and camera: --replica, --devices, --hacks2 and --modes all stand on it
         self.dev_table = device_table(shift, HACKS2_SCENE if self.hacks2 else DEVICE_SCENE)  # id -> the device's current data (actions and the NPC door change it)
         self.car = {"locked": False, "engine": True, "braked": False, "jammed": False}  # --hacks2: what the vehicle hacks did to the car
         self.feed_on, self.feed_at, self.feed_n = False, None, 0  # --hacks2: the photo feed (on, scenario time of the last frame, frames sent)
@@ -1079,6 +1137,10 @@ class Cyberpunk:
         self.shop = Shop()
         self.hub = False  # --vendor: the last `hub.in` Minecraft sent
         self.park_refuse = park_refuse  # --park-refuse: V cannot be parked (`parked ok:false` to every `park on:true`)
+        self.modes8 = "modes" in modes  # --modes (Phase 8): spawns, the wanted level, attitudes and the glitch
+        self.spawned: list[dict] = []  # --modes: the live spawned enemies, as `npcs` entries
+        self.spawn_count = 0  # --modes: how many were ever made (the id counter)
+        self.heat, self.attitudes, self.glitch = 0, {}, 0.0  # --modes: the wanted level written, faction -> stance, the seconds the last `glitch` asked for
 
     def script(self) -> list[tuple[float, dict]]:
         """(seconds after the scenario starts, message), in time order: the layer 4 jump tap, the layer 6 keys and kill."""
@@ -1124,10 +1186,12 @@ class Cyberpunk:
     def npcs(self, t: float) -> dict:
         """The `npcs` list `t` seconds (scaled scenario time) into the scenario: the figures of --replica move, the others stand."""
         if self.replica:
-            return replica_npcs(t / SCRIPT_SCALE, self.shift, self.ids_from)
-        if self.figures:
-            return figures_npcs(t / SCRIPT_SCALE, self.ids_from)
-        return npcs_message(self.ids_from)
+            msg = replica_npcs(t / SCRIPT_SCALE, self.shift, self.ids_from)
+        elif self.figures:
+            msg = figures_npcs(t / SCRIPT_SCALE, self.ids_from)
+        else:
+            msg = npcs_message(self.ids_from)
+        return {**msg, "list": [*msg["list"], *self.spawned]} if self.spawned else msg
 
     def setup_commands(self) -> list[str]:
         """The server commands the mode sends by itself at the start of the scenario: --stairs places its staircase."""
@@ -1309,6 +1373,49 @@ class Cyberpunk:
             self.feed_on = m["on"]
         return []
 
+    # -- --modes: the answers of Phase 8 (shared/protocol.md "Phase 8") ------------------------------------------------------------
+    def on_spawn(self, m: dict) -> list[dict]:
+        """One `spawnresult` for a valid `spawn`; when it worked the figures stand in the `npcs` list until the session ends."""
+        if not spawn_valid(m):
+            return []
+        rid, rec, n, (x, y, z) = m["id"], m["rec"], m["n"], m["p"]
+        if rec not in SPAWN_RECORDS:
+            return [spawn_result(rid, reason="unsupported")]
+        if not SPAWN_HEIGHT[0] <= y <= SPAWN_HEIGHT[1]:
+            return [spawn_result(rid, reason="no ground")]
+        if len(self.spawned) + n > SPAWN_CAP:
+            return [spawn_result(rid, reason="too many")]
+        fac = ATTITUDE_AFFILIATION.get(m["faction"]) or m["faction"] or SPAWN_DEFAULT_FAC[rec]
+        for _ in range(n):
+            self.spawn_count += 1
+            self.spawned.append({"id": str(SPAWN_ID_BASE + self.spawn_count), "p": [x, y, z], "yaw": 0.0, "kind": "human", "hostile": m["hostile"],
+                                 "fac": fac, "arch": SPAWN_ARCH[rec], "g": 1, "anim": 128 if m["hostile"] else 0, "hp": 1.0})
+        return [spawn_result(rid, n)]
+
+    def on_heat(self, m: dict) -> list[dict]:
+        """The wanted level follows the tier: the next `stats` carries it (the scripts queue `SetWantedLevel`; the real DLL sends `stats` at 1 Hz)."""
+        if not heat_valid(m):
+            return []
+        self.heat = m["tier"]
+        return [modes_stats(self.heat)]
+
+    def on_attitude(self, m: dict) -> list[dict]:
+        """A known group's stance is kept (the scripts restore it at the session end); an unknown group is ignored, as the scripts log and ignore it."""
+        if attitude_valid(m) and m["faction"] in ATTITUDE_GROUPS:
+            self.attitudes[m["faction"]] = m["toward"]
+        return []
+
+    def on_glitch(self, m: dict) -> list[dict]:
+        if glitch_valid(m):
+            self.glitch = float(m["seconds"])
+        return []
+
+    def end_modes(self) -> list[dict]:
+        """The session left `host`: every spawned enemy is deleted, the attitudes and the glitch end, the wanted level goes back to what the game had (0 here)."""
+        was = self.heat
+        self.spawned, self.attitudes, self.glitch, self.heat = [], {}, 0.0, 0
+        return [modes_stats(0)] if was else []
+
     def cam(self, f: int, t: float, held: dict) -> dict:
         """The `cam` for frame f, t seconds into the scenario: V in a vehicle (--seat), V's body in layer 4, else the last
         orbit pose held (`fp:false` once Minecraft asked for the third-person view, `menu:true` while --ui shows a pass-through menu)."""
@@ -1337,6 +1444,8 @@ class Cyberpunk:
             self.env_step = -1  # a new server session needs the clock again
             if self.hacks2 and self.session != "host":  # none, guest or refused: the scripts clean up, every pending effect comes back at once
                 self.restore_effects()
+            if self.modes8 and self.session != "host":  # --modes: the spawned enemies, the stars, the attitudes and the glitch end too
+                return self.end_modes()
             if self.session == "host" and was != "host":  # a new server session: it needs the whole ground and the NPCs again
                 ground = replica_ground(self.shift) if self.street else [{"t": "ground", "c": ground_slab()}]
                 ground += [device_ground(self.shift)] if self.devices else []  # a hit on a door the DLL did not filter out
@@ -1355,6 +1464,8 @@ class Cyberpunk:
             return [{"t": "parked", "on": m["on"], "ok": not refused, "reason": PARK_REFUSAL if refused else ""}]
         if self.hacks2 and t in HACKS2_REQUESTS:
             return getattr(self, f"on_{t}")(m)
+        if self.modes8 and t in MODES8_REQUESTS:  # without a host session the DLL ignores all four
+            return getattr(self, f"on_{t}")(m) if self.session == "host" else []
         if self.devices and t == "devact":
             return devact_answers(self.dev_table, m) or []
         if t == "persp" and m.get("mode") in ("first", "back"):
@@ -1428,6 +1539,8 @@ async def listen(ws, host: Cyberpunk) -> None:
                 print(f"{host.tag}devresult: {json.dumps(reply)}")
             if host.hacks2 and reply.get("t") == "hackresult":  # --hacks2: the answers to `rhack` and `daemon`
                 print(f"{host.tag}hackresult: {json.dumps(reply)}")
+            if host.modes8 and reply.get("t") == "spawnresult":  # --modes: the answers to `spawn`
+                print(f"{host.tag}spawnresult: {json.dumps(reply)}")
             if host.vendor and reply.get("t") in ("reply", "notify"):  # --vendor: what the shop answered (the stock and the toasts), for a harness or a person
                 print(f"{host.tag}vendor: {json.dumps(reply)}")
 
@@ -1536,8 +1649,9 @@ def main() -> int:
     ap.add_argument("--figures", action="store_true", help="after the orbit: the Phase 5 `npcs` list with the figure tags: one person per skin group, every animation bit, cars with colours, a hostile police cruiser chasing a car; print nothing extra")
     ap.add_argument("--hacks2", action="store_true", help="after the orbit: the Phase 6 hacking scene: the --devices scene plus a Net Port, `rhack` (vehicle, camera and area hacks, range 50 m), `daemon` (Breach results) and `feedreq` (a 128 x 128 `feed` once a second) answered; print devact/devresult/rhack/daemon/feedreq/hackresult/feed")
     ap.add_argument("--vendor", action="store_true", help="after the orbit: the Phase 7 gun shop and hub: `stats` with V's money, the shop's screen from 2 s to 8 s with its unrequested `reply kind:vendor` stock, `uiact buy` and `sell` answered (`notify`, `stats` and the stock again), `atlasreq arg:fasttravel` answered with the fast-travel list, `park` answered with `parked`, `vteleport` after 2 s; print uiact/hub/park/vteleport")
+    ap.add_argument("--modes", action="store_true", help="after the orbit: the Phase 8 Night City side of the modes: `spawn` answered with `spawnresult` (and the enemies join `npcs`), `heat` written as the wanted level in `stats`, `attitude` and `glitch` kept, all ended with the session; print spawn/heat/attitude/glitch/spawnresult")
     ap.add_argument("--park-refuse", action="store_true", help="--vendor or --replica: answer `park on:true` with `parked ok:false` (\"blocked (in a vehicle)\"), as the scripts do when V cannot be parked")
-    ap.add_argument("--shift", type=int, default=None, metavar="DX", help="--replica, --devices or --hacks2: move the street, the figures, the devices and V DX blocks east (a second fake host that overlaps the first)")
+    ap.add_argument("--shift", type=int, default=None, metavar="DX", help="--replica, --devices, --hacks2 or --modes: move the street, the figures, the devices and V DX blocks east (a second fake host that overlaps the first)")
     ap.add_argument("--env-hours", type=int, default=None, metavar="H", help="--replica: add H hours to the `env` clock and make the weather fog (a second host whose sky must never reach the server)")
     ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica, --devices: seconds to keep the link up and listen (default 10)")
     ap.add_argument("--cmd", action="append", default=[], metavar="COMMAND", help='--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs: a server command to send after the npcs, e.g. "summon tnt 0 64 0" (repeatable)')
@@ -1564,23 +1678,27 @@ def main() -> int:
     if args.hold < 0:
         ap.error("--hold must not be negative")
     if args.cmd and not (layers or modes):
-        ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica, --devices, --hacks2, --figures or --vendor")
+        ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica, --devices, --hacks2, --figures, --vendor or --modes")
     if args.park_refuse and not {"vendor", "replica"} & modes:
         ap.error("--park-refuse needs --vendor or --replica (the modes that answer `park`)")
     if "vendor" in modes and "ui" in modes:
         ap.error("--vendor and --ui each send their own stats and screens: use only one of them")
+    if "modes" in modes and modes & {"vendor", "ui"}:
+        ap.error("--modes, --vendor and --ui each send their own stats: use only one of them")
+    if "figures" in modes and "modes" in modes:
+        ap.error("--figures already fills the `npcs` list (48 entries is the protocol's limit) and --modes adds the spawned enemies to it: use only one of them")
     if "figures" in modes and "replica" in modes:
         ap.error("--figures and --replica each send their own npcs list: use only one of them")
     if "figures" in modes and args.ids_from is not None and args.ids_from > 2**64 - FIGURE_COUNT:
         ap.error(f"--ids-from must be at most {2**64 - FIGURE_COUNT} with --figures (it numbers {FIGURE_COUNT} figures)")
     if len(modes & set(CAMERA_OWNERS)) > 1 or (modes & {"view", "stairs", "replica"} and 4 in layers):
         ap.error("--view, --stairs, --seat, --replica and --layer4 each drive the camera: use only one of them")
-    if modes & {"devices", "hacks2"} and (modes & {"view", "stairs", "seat"} or 4 in layers):
-        ap.error("--devices and --hacks2 stand on the street like --replica (V is fixed there): do not combine them with --view, --stairs, --seat or --layer4")
+    if modes & {"devices", "hacks2", "modes"} and (modes & {"view", "stairs", "seat"} or 4 in layers):
+        ap.error("--devices, --hacks2 and --modes stand on the street like --replica (V is fixed there): do not combine them with --view, --stairs, --seat or --layer4")
     if args.env_hours is not None and "replica" not in modes:
         ap.error("--env-hours belongs to --replica")
-    if args.shift is not None and not modes & {"replica", "devices", "hacks2"}:
-        ap.error("--shift belongs to --replica, --devices and --hacks2")
+    if args.shift is not None and not modes & {"replica", "devices", "hacks2", "modes"}:
+        ap.error("--shift belongs to --replica, --devices, --hacks2 and --modes")
     if args.shift is not None and abs(args.shift) > 1000:
         ap.error("--shift must be between -1000 and 1000 blocks")
     if args.env_hours is not None and not -23 <= args.env_hours <= 23:
