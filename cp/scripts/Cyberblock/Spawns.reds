@@ -23,25 +23,30 @@
 // AIInjectCombatThreatCommand on the player for 120 s. The answer waits until every NPC of the request attached, at most
 // 5 s: ok with n = the attached count.
 // Runtime feature check and the written fallback (plan 4.1 d): spawning fails (no DynamicEntitySystem, CreateEntity
-// returns no id, none of a request attaches within 5 s) or the spawned NPCs stay passive (6 s after it attached, a
-// hostile NPC and every other of its request are still Relaxed) -> the fallback for the rest of the game session: every
-// spawn is answered ok:false "Night City spawns unavailable; Minecraft squads instead", so the
-// server sends Minecraft squads, and the passive NPCs are deleted. One log line names the path in use at the first
-// spawn, one more on the switch: 'spawns: path: <path>' / 'spawns: path: <fallback> (fallback: <why>)'; the first
-// attached spawn and the first hostile one seen fighting are logged as confirmed in game.
+// returns no id, none of a request attaches within 5 s) or the spawned NPCs stay passive -> the fallback until the next
+// load: every spawn is answered ok:false "Night City spawns unavailable; Minecraft squads instead", so the server sends
+// Minecraft squads, and the passive NPCs are deleted. Passive: 6 s after a hostile NPC attached, it and every other
+// hostile NPC of its request within 50 m of V are still Relaxed. The check waits (re-armed for 6 s more) while V cannot
+// be seen (invisible: a Minecraft invisibility potion, the hub park, a running Meet Up teleport) or none of the request
+// is within 50 m of V. A first passive request only loses its NPCs ('spawns: <id> passive (strike 1 of 2), its NPCs
+// deleted'); the fallback needs a second passive request. One log line names the path in use at the first spawn, one
+// more on the switch: 'spawns: path: <path>' / 'spawns: path: <fallback> (fallback: <why>)'; the first attached spawn
+// and the first hostile one seen fighting are logged as confirmed in game.
 // Limits: at most 24 spawned NPCs at once (a request gets what room is left; none: "spawn cap (24) reached"), p within
-// 150 m of V ("too far from V (N m)"); each spawned NPC is deleted 300 s after it was created or once farther than 200 m
-// from V, and forgotten once the game streamed it out after it attached. All are deleted when Night City stops being live (Off, Lost), on a non-host session, at session end and on
-// detach (Clear), and forgotten on load (never saved).
+// 150 m of V ("too far from V (N m)"); each spawned NPC is deleted 300 s after it was created, once farther than 200 m
+// from V, or once the game streamed it out after it attached (Codeware keeps a streamed-out entity registered and would
+// spawn it again, untracked, when V comes back). All are deleted when Night City stops being live (Off, Lost), on a
+// non-host session, at session end and on detach (Clear: the tracked ones and anything else tagged n"CyberblockSpawn"),
+// and forgotten on load (never saved).
 // Log lines: 'spawns: <id> <rec>[ <faction>] x<n> <hostile|friendly> at <d> m from V: <k> created', 'spawns: <id> ok
 // (<k> attached)', 'spawns: <id> refused (<why>)', 'spawns: cleared <k> (<why>)'.
 //
 // 2.31 script API (NativeDB, redscript) and Codeware 1.20.3, compile-checked by cp/scripts/compile_check.py:
-// DynamicEntitySystem.IsReady/CreateEntity/GetEntity/DeleteEntity + DynamicEntitySpec (recordID, position, persistState,
+// DynamicEntitySystem.IsReady/CreateEntity/GetEntity/DeleteEntity/IsManaged/DeleteTagged + DynamicEntitySpec (recordID, position, persistState,
 // persistSpawn, spawnInView, active, tags), TweakDBInterface.GetCharacterRecord, GameObject.GetAttitudeAgent,
 // AttitudeAgent.SetAttitudeGroup/SetAttitudeTowards, EAIAttitude, AIInjectCombatThreatCommand (targetPuppetRef,
 // duration), CreateEntityReference, AIComponent.SendCommand, ScriptedPuppet.GetHighLevelStateFromBlackboard and
-// gamedataNPCHighLevelState, Entity.IsAttached, Vector4.Distance, StrLower/StrReplaceAll.
+// gamedataNPCHighLevelState, PlayerPuppet.IsInvisible, Entity.IsAttached, Vector4.Distance, StrLower/StrReplaceAll.
 
 public native func Cyberblock_SpawnResult(id: Int32, ok: Bool, count: Int32, reason: String) -> Void;
 
@@ -52,6 +57,9 @@ public class CyberblockSpawnsService extends ScriptableService {
   public let pathLogged: Bool;
   public let attachConfirmed: Bool;
   public let fightConfirmed: Bool;
+  // Passive requests seen (the fallback comes at the second) and the request of the first.
+  public let strikes: Int32;
+  public let strikeRequest: Int32;
   // One slot per spawned NPC (parallel arrays): entity, its request, hostile, attached (hostility applied), ticks since
   // it was created, ticks to its passive check (0 none).
   public let ids: array<EntityID>;
@@ -197,16 +205,39 @@ public abstract class CyberblockSpawns {
       }
       if s.checks[i] > 0 {
         s.checks[i] -= 1;
-        if s.checks[i] == 0 && CyberblockSpawns.Passive(s, entities, i) {
-          CyberblockSpawns.Fall(game, s"hostile spawns of request \(s.requests[i]) still Relaxed 6 s after they attached");
-          return; // Fall cleared every spawn
+        if s.checks[i] == 0 {
+          let verdict = CyberblockSpawns.Unseeable(game, player) ? -1 : CyberblockSpawns.Passive(s, entities, i, center);
+          if verdict < 0 {
+            s.checks[i] = 60; // V cannot be seen or none is near V: ask again in 6 s
+          } else if verdict > 0 {
+            let request = s.requests[i];
+            if s.strikes > 0 && s.strikeRequest != request {
+              CyberblockSpawns.Fall(game, s"hostile spawns of requests \(s.strikeRequest) and \(request) still Relaxed 6 s after they attached");
+              return; // Fall cleared every spawn
+            }
+            s.strikes = 1;
+            s.strikeRequest = request;
+            Cyberblock_Log(s"spawns: \(request) passive (strike 1 of 2), its NPCs deleted");
+            let j = 0;
+            while j < ArraySize(s.ids) {
+              if s.requests[j] == request {
+                s.ages[j] = 3000; // deleted by the age limit below (this tick or the next)
+                s.checks[j] = 0;
+              }
+              j += 1;
+            }
+          }
         }
       }
       if s.ages[i] >= 3000 || IsDefined(puppet) && Vector4.Distance(puppet.GetWorldPosition(), center) > 200.0 {
         entities.DeleteEntity(s.ids[i]);
         CyberblockSpawns.Erase(s, i);
       } else if s.attached[i] && !IsDefined(puppet) {
-        CyberblockSpawns.Erase(s, i); // streamed out or deleted by the game
+        // Streamed out (or gone): Codeware keeps a streamed-out entity registered and would spawn it again untracked.
+        if entities.IsManaged(s.ids[i]) {
+          entities.DeleteEntity(s.ids[i]);
+        }
+        CyberblockSpawns.Erase(s, i);
       }
       i -= 1;
     }
@@ -228,11 +259,11 @@ public abstract class CyberblockSpawns {
     ArrayClear(s.pendingWait);
     let n = ArraySize(s.ids);
     let entities = GameInstance.GetDynamicEntitySystem();
-    if IsDefined(entities) && n > 0 {
+    if IsDefined(entities) {
       for entity in s.ids {
         entities.DeleteEntity(entity);
       }
-      entities.DeleteTagged(CyberblockSpawnsService.Tag());
+      entities.DeleteTagged(CyberblockSpawnsService.Tag()); // also any of ours no longer tracked
     }
     CyberblockSpawns.Reset(s);
     if n > 0 {
@@ -240,7 +271,7 @@ public abstract class CyberblockSpawns {
     }
   }
 
-  // On load: spawns are never saved, so the slots are only forgotten; the fallback holds for one game session.
+  // On load: spawns are never saved, so the slots are only forgotten; the fallback and the strikes hold until a load.
   public static func Forget() -> Void {
     let s = CyberblockSpawnsService.Get();
     if IsDefined(s) {
@@ -251,6 +282,8 @@ public abstract class CyberblockSpawns {
       s.fallback = false;
       s.fallbackWhy = "";
       s.pathLogged = false;
+      s.strikes = 0;
+      s.strikeRequest = 0;
     }
   }
 
@@ -283,7 +316,7 @@ public abstract class CyberblockSpawns {
     }
   }
 
-  // The written fallback (plan 4.1 d) for the rest of this game session; every spawn so far is deleted.
+  // The written fallback (plan 4.1 d) until the next load; every spawn so far is deleted.
   private static func Fall(game: GameInstance, why: String) -> Void {
     let s = CyberblockSpawnsService.Get();
     if !IsDefined(s) || s.fallback {
@@ -356,23 +389,26 @@ public abstract class CyberblockSpawns {
     AIComponent.SendCommand(puppet, threat);
   }
 
-  // True when slot i is Relaxed and so is every other hostile NPC of its request (none fighting, alerted or sneaking);
-  // a fighter confirms the path instead.
-  private static func Passive(s: ref<CyberblockSpawnsService>, entities: ref<DynamicEntitySystem>, i: Int32) -> Bool {
+  // The passive check of slot i over the hostile NPCs of its request within 50 m of V: 1 when one is Relaxed and none
+  // is fighting, alerted or sneaking; 0 when one is (that confirms the path) or none is Relaxed; -1 when none is near V
+  // (no line to V, ask again later).
+  private static func Passive(s: ref<CyberblockSpawnsService>, entities: ref<DynamicEntitySystem>, i: Int32, center: Vector4) -> Int32 {
     if s.fightConfirmed {
-      return false;
+      return 0;
     }
+    let near = false;
     let relaxed = false;
     let j = 0;
     while j < ArraySize(s.ids) {
       if s.requests[j] == s.requests[i] && s.hostile[j] && s.attached[j] {
         let puppet = entities.GetEntity(s.ids[j]) as ScriptedPuppet;
-        if IsDefined(puppet) {
+        if IsDefined(puppet) && Vector4.Distance(puppet.GetWorldPosition(), center) <= 50.0 {
+          near = true;
           let state = puppet.GetHighLevelStateFromBlackboard();
           if Equals(state, gamedataNPCHighLevelState.Combat) || Equals(state, gamedataNPCHighLevelState.Alerted) || Equals(state, gamedataNPCHighLevelState.Stealth) {
             s.fightConfirmed = true;
             Cyberblock_Log(s"spawns: path confirmed in game: hostile spawns of request \(s.requests[i]) fight (\(EnumInt(state)))");
-            return false;
+            return 0;
           }
           if Equals(state, gamedataNPCHighLevelState.Relaxed) {
             relaxed = true;
@@ -381,7 +417,16 @@ public abstract class CyberblockSpawns {
       }
       j += 1;
     }
-    return relaxed;
+    if !near {
+      return -1;
+    }
+    return relaxed ? 1 : 0;
+  }
+
+  // V cannot be acquired by NPCs: invisible (Buffs.reds: a Minecraft invisibility potion), parked in the hub or in a
+  // running Meet Up teleport.
+  private static func Unseeable(game: GameInstance, player: ref<PlayerPuppet>) -> Bool {
+    return player.IsInvisible() || CyberblockPark.Parked(game) || CyberblockTeleport.Busy(game);
   }
 
   // The i-th of n spots: the first on p, the rest on a 2 m circle around it.
