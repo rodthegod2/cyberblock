@@ -24,7 +24,7 @@ public final class Relay {
 	}
 
 	private static final Set<String> UP = Set.of("ground", "unground", "clear", "dmg", "mobdmg", "pcells", "unlead", "killed",
-		"scaninfo", "hackresult", "hackspread");
+		"scaninfo", "hackresult", "hackspread", "env");
 	private static final Set<String> BOTH = Set.of("hello", "state", "aim", "npcs", "stats");
 	/** Splittable messages: the array field and how many elements make one indivisible unit (a ground range is a quadruple). */
 	private static final Map<String, Integer> UNIT = Map.of("ground", 4, "unground", 4, "terrain", 4, "npcs", 1);
