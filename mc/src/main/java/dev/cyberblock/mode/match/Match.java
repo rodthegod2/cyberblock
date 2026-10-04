@@ -86,6 +86,8 @@ public final class Match {
 	final List<Base> bases = new ArrayList<>();
 	/** The PvP toggle each teammate had before the match turned it on, restored when the match ends. */
 	final Map<UUID, Boolean> pvpBefore = new LinkedHashMap<>();
+	/** Teammates defeated in a mode without respawn ({@code respawn_s} 0): out until the match ends. */
+	final Set<UUID> out = new LinkedHashSet<>();
 	long startedMs, endsMs, endedMs;
 	int winner = -1;
 
@@ -161,10 +163,45 @@ public final class Match {
 		};
 	}
 
-	/** Adds (or moves) a member; its team is the preferred one when valid, else the smallest. Returns the member. */
+	/** The team {@code uuid} would get as {@code role} (its own seat not counted): -1 for no team, or when every team is full. */
+	public int teamFor(final UUID uuid, final Role role, final int preferredTeam) {
+		if (!role.onTeam()) {
+			return -1;
+		}
+
+		int[] sizes = this.teamSizes();
+		Member was = this.members.get(uuid);
+		if (was != null && was.role().onTeam() && was.team() >= 0 && was.team() < sizes.length) {
+			sizes[was.team()]--;
+		}
+
+		return MatchRules.team(sizes, preferredTeam, this.mode.minTeams(), this.mode.teamSizeMax());
+	}
+
+	/** The teams the match shows: the first {@code teams.min}, and every later one up to the last that has a member or a score. */
+	public int shownTeams() {
+		int n = Math.min(this.mode.minTeams(), this.scores.length);
+		int[] sizes = this.teamSizes();
+		for (int t = n; t < this.scores.length; t++) {
+			if (sizes[t] > 0 || this.scores[t] > 0) {
+				n = t + 1;
+			}
+		}
+
+		return n;
+	}
+
+	public boolean isOut(final UUID uuid) {
+		return this.out.contains(uuid);
+	}
+
+	/**
+	 * Adds (or moves) a member; its team is the preferred one when valid and not full, else the smallest of the open teams
+	 * ({@link MatchRules#team}). Callers check {@link MatchRules#joinRefusal} first (it refuses when every team is full). Returns the member.
+	 */
 	public Member join(final UUID uuid, final String name, final Role role, final boolean linked, final int preferredTeam) {
+		int team = this.teamFor(uuid, role, preferredTeam);
 		this.members.remove(uuid);
-		int team = role.onTeam() ? MatchRules.team(this.teamSizes(), preferredTeam) : -1;
 		Member m = new Member(uuid, name, role, team, linked);
 		this.members.put(uuid, m);
 		return m;

@@ -8,12 +8,20 @@ import java.util.UUID;
  * Gang Wars reputation (megaplan 8-M1, Phase 0 e), pure and tested: when a Gang Wars match ends with a winner, each linked host on a
  * team that stood for a gang gets {@code attitude} DOWN messages (section 1.9: {@code {faction, toward}}): the winners' own gang
  * turns friendly to them and every losing gang hostile; the losers' own gang turns neutral (they lost face) and the winners' gang
- * hostile. A draw changes nothing. Cyberpunk does not save attitude changes (the scripts use the non-persistent call), so they
- * last until the host loads a save. When check (e) fails at runtime the scripts drop the message and say so in their log: the
- * standing then stays on the Minecraft scoreboard only (the written fallback).
+ * hostile. A draw, or a mode whose {@code reputation} is false, changes nothing. Cyberpunk does not save attitude changes (the
+ * scripts use the non-persistent call), so they last until the host loads a save. The host's {@code spawns} guest toggle does not
+ * gate it (megaplan 1.6 gates only guest and Overlord spawns and events; a host who joined a Gang Wars match agreed to its
+ * reputation, it is the host's own action). Whatever the game does with it, the standing is also kept on the Minecraft scoreboard
+ * ({@code cb_rep_<faction>} objectives, {@link Matches}): when check (e) fails at runtime the scripts drop the message and say so in
+ * their log, and the scoreboard is what remains (the written fallback).
  */
 public final class Reputation {
 	public static final String FRIENDLY = "friendly", NEUTRAL = "neutral", HOSTILE = "hostile";
+
+	/** The scoreboard objective that keeps a player's standing with a gang (the Phase 0 (e) fallback). */
+	public static String objective(final String faction) {
+		return "cb_rep_" + faction.toLowerCase(java.util.Locale.ROOT);
+	}
 
 	/** One attitude change for one host's game. */
 	public record Change(UUID host, String faction, String toward) {
@@ -32,11 +40,19 @@ public final class Reputation {
 	public static List<Change> afterMatch(final MatchMode mode, final Iterable<Match.Member> members, final int winner) {
 		List<Change> out = new ArrayList<>();
 		List<MatchMode.TeamSpec> teams = mode.teams();
-		if (winner < 0 || winner >= teams.size()) {
+		if (!mode.reputation() || winner < 0 || winner >= teams.size()) {
 			return out;
 		}
 
 		String winnersGang = teams.get(winner).gang();
+		// only the teams that played (a mode may offer more teams than a match fills)
+		boolean[] played = new boolean[teams.size()];
+		for (Match.Member m : members) {
+			if (m.role().onTeam() && m.team() >= 0 && m.team() < teams.size()) {
+				played[m.team()] = true;
+			}
+		}
+
 		for (Match.Member m : members) {
 			if (!m.linked() || m.role() != Match.Role.TEAMMATE || m.team() < 0 || m.team() >= teams.size()) {
 				continue;
@@ -50,7 +66,7 @@ public final class Reputation {
 
 				for (int t = 0; t < teams.size(); t++) {
 					String g = teams.get(t).gang();
-					if (t != winner && !g.isEmpty() && !g.equals(own)) {
+					if (t != winner && played[t] && !g.isEmpty() && !g.equals(own)) {
 						out.add(new Change(m.uuid(), g, HOSTILE));
 					}
 				}

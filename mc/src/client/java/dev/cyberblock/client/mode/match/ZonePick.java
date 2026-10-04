@@ -12,7 +12,7 @@ import net.minecraft.network.chat.Component;
 
 /**
  * The match zone pick (megaplan 8-M1, "zones (Holo-Table area pick)"): the Atlas the Holo-Table's 2D mode uses, with the zone drawn
- * as a circle; a click puts its centre there, the radius buttons size it (16..512 blocks), "Use this zone" takes it back to the
+ * as a circle; a click puts its centre there, the radius buttons size it (16..1024 blocks; the mode clamps it), "Use this zone" takes it back to the
  * Match Terminal's create form. Drag and wheel pan and zoom as on the Atlas.
  */
 final class ZonePick implements AtlasScreen.Overlay {

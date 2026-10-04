@@ -20,8 +20,9 @@ class ReputationTest {
 	@Test
 	void winnersAreFriendsOfTheirGangAndEnemiesOfTheLosers() {
 		List<Change> out = Reputation.afterMatch(WARS, MEMBERS, 0);
-		assertEquals(List.of(new Change(CLAW, "tygerClaws", "friendly"), new Change(CLAW, "maelstrom", "hostile"),
-			new Change(MAEL, "maelstrom", "neutral"), new Change(MAEL, "tygerClaws", "hostile")), out);
+		assertEquals(List.of(new Change(CLAW, "tygerClaws", "friendly"), new Change(CLAW, "valentinos", "hostile"),
+			new Change(MAEL, "valentinos", "neutral"), new Change(MAEL, "tygerClaws", "hostile")), out,
+			"only the gangs of the two teams that played: Maelstrom and 6th Street (teams 3 and 4 of the mode) are left alone");
 	}
 
 	@Test
@@ -33,6 +34,16 @@ class ReputationTest {
 	void aDrawOrGanglessTeamsChangeNothing() {
 		assertTrue(Reputation.afterMatch(WARS, MEMBERS, -1).isEmpty());
 		assertTrue(Reputation.afterMatch(MatchMode.BUILT_IN.get("cyberblock:team_deathmatch"), MEMBERS, 0).isEmpty());
+	}
+
+	@Test
+	void aModeWithoutReputationChangesNothing() {
+		MatchMode w = WARS;
+		MatchMode quiet = new MatchMode(w.name(), w.description(), w.minTeams(), w.teams(), w.teamSizeMin(), w.teamSizeMax(), w.timeLimit(), w.scoreLimit(),
+			w.killScore(), w.captureScore(), w.respawnS(), w.friendlyFire(), w.pvp(), w.zoneMin(), w.zoneMax(), w.captureCount(), w.captureRadius(),
+			w.captureSeconds(), w.districts(), false, w.heatScale(), w.roles());
+		assertTrue(Reputation.afterMatch(quiet, MEMBERS, 0).isEmpty());
+		assertEquals("cb_rep_6thstreet", Reputation.objective("6thStreet"), "the scoreboard fallback's objective");
 	}
 
 	@Test

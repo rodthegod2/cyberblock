@@ -8,12 +8,10 @@ import java.util.List;
  * Where a match puts its team spawns and Gang Wars capture points (megaplan 8-M1), pure and tested. Landmarks inside the zone
  * (the {@code landmark} content: the district's real places) are used first: each team's spawn is the spawn landmark closest to
  * its ideal spot on the zone's rim (teams spread evenly around it), capture points are the remaining landmarks nearest the centre.
- * Where the zone has too few landmarks the ideal spots are used (their height is the nearest landmark's, else the caller's
+ * Capture points have the mode's {@code capture_points.radius}. Where the zone has too few landmarks the ideal spots are used (their height is the nearest landmark's, else the caller's
  * {@code y}).
  */
 public final class MatchLayout {
-	/** Capture point radius (blocks). */
-	public static final double POINT_RADIUS = 6.0;
 	/** Team spawns sit this far out (fraction of the zone radius); generated capture points at {@link #POINT_OUT}. */
 	static final double BASE_OUT = 0.8, POINT_OUT = 0.4;
 
@@ -27,7 +25,8 @@ public final class MatchLayout {
 	private MatchLayout() {
 	}
 
-	public static Layout plan(final Match.Zone zone, final List<MatchMode.TeamSpec> teams, final int points, final List<Spot> landmarks, final double y) {
+	public static Layout plan(final Match.Zone zone, final List<MatchMode.TeamSpec> teams, final int points, final double pointRadius, final List<Spot> landmarks,
+		final double y) {
 		List<Spot> free = new ArrayList<>(landmarks.stream().filter(s -> zone.inside(s.x(), s.z())).toList());
 		List<Match.Base> bases = new ArrayList<>();
 		int n = teams.size();
@@ -51,13 +50,13 @@ public final class MatchLayout {
 				break;
 			}
 
-			out.add(new Capture.Point(s.name(), s.x(), s.y(), s.z(), POINT_RADIUS));
+			out.add(new Capture.Point(s.name(), s.x(), s.y(), s.z(), pointRadius));
 		}
 
 		for (int i = out.size(); i < points; i++) {
 			double a = Math.PI * 2.0 * i / points + Math.PI / Math.max(1, n);
 			double px = zone.x() + Math.cos(a) * zone.r() * POINT_OUT, pz = zone.z() + Math.sin(a) * zone.r() * POINT_OUT;
-			out.add(new Capture.Point("Point " + (char) ('A' + i), px, height(landmarks, px, pz, y), pz, POINT_RADIUS));
+			out.add(new Capture.Point("Point " + (char) ('A' + i), px, height(landmarks, px, pz, y), pz, pointRadius));
 		}
 
 		return new Layout(List.copyOf(bases), List.copyOf(out));

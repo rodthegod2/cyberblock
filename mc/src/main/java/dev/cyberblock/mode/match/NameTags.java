@@ -5,6 +5,7 @@ import dev.cyberblock.skin.CyberSkins;
 import dev.cyberblock.skin.SkinRules;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.MinecraftServer;
@@ -16,13 +17,21 @@ import net.minecraft.world.scores.TeamColor;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Name tags for PvP and match teams (megaplan 8-M1), drawn by vanilla from scoreboard teams so every client shows them: a player
- * with PvP on has a <b>red name</b> and a red crossed-swords mark; a player on a match team has its team name in the team colour
- * before the name; a linked player keeps its {@code [V] } prefix. One scoreboard team per look ({@code cbm_pvp}, {@code cbm_pvp_v},
- * {@code cbm_<match>_<team>[p][v]}); they are cosmetic like the V team (friendly fire on, so {@link Pvp} alone decides; no seeing
- * each other's camo). A player in a team that is not Cyberblock's (an operator's) is left there. When a player needs none of
- * these looks it leaves its {@code cbm_} team and CyberSkins puts a linked player back into the V team. Empty {@code cbm_} teams
- * are removed; leftovers of an earlier run go at server start. Server thread.
+ * Name tags for PvP and match teams (megaplan 8-M1), drawn by vanilla from scoreboard teams so every client shows them. Vanilla
+ * treats players on one scoreboard team as allies ({@code isAlliedTo}: RemoteActions shares Outline and Ping results with them, and
+ * 8X/8T read it too), so a {@code cbm_} team only ever holds real teammates:
+ * <ul>
+ * <li>a member of a match team is on {@code cbm_<match>_<team>}, one vanilla team per match team (linked or not, whatever its own
+ * toggle): its team name in the team colour before the name, and once the match runs with PvP a red name and a red crossed-swords
+ * mark ({@code cbm_<match>_<team>p}; every teammate moves together). A linked player's {@code [V] } prefix gives way to the team's
+ * while it plays (the roster still says who is linked);</li>
+ * <li>a player with PvP on outside a match team gets a team of its own, {@code cbm_p_<uuid>} ({@code cbm_pv_<uuid>} with the
+ * {@code [V] } prefix): a red name and the swords, and no allies.</li>
+ * </ul>
+ * They are cosmetic like the V team (friendly fire on, so {@link Pvp} alone decides; no seeing each other's camo). A player in a team
+ * that is not Cyberblock's (an operator's) is left there. When a player needs none of these looks it leaves its {@code cbm_} team and
+ * CyberSkins puts a linked player back into the V team. Empty {@code cbm_} teams are removed; leftovers of an earlier run go at
+ * server start. Server thread.
  */
 final class NameTags {
 	static final String PREFIX = "cbm_";
@@ -33,13 +42,20 @@ final class NameTags {
 	private NameTags() {
 	}
 
-	/** The scoreboard team a player's look needs, or null for none. Pure. */
-	static @Nullable String teamName(final @Nullable String match, final int team, final boolean pvp, final boolean linked) {
-		if (match == null || team < 0) {
-			return pvp ? PREFIX + "pvp" + (linked ? "_v" : "") : null;
+	/**
+	 * The scoreboard team a player's look needs, or null for none. Pure.
+	 *
+	 * @param match the player's match id when it is on one of its teams, else null
+	 * @param fighting the match runs with PvP on (the whole team shows the PvP look)
+	 * @param pvp the player's own toggle (only outside a match team)
+	 */
+	static @Nullable String teamName(final @Nullable String match, final int team, final boolean fighting, final boolean pvp, final boolean linked,
+		final UUID player) {
+		if (match != null && team >= 0) {
+			return PREFIX + match + "_" + team + (fighting ? "p" : "");
 		}
 
-		return PREFIX + match + "_" + team + (pvp ? "p" : "") + (linked ? "v" : "");
+		return pvp ? PREFIX + (linked ? "pv_" : "p_") + player.toString().replace("-", "") : null;
 	}
 
 	/** The vanilla team colour closest to an RGB colour (the name's colour when PvP is off). */
@@ -85,9 +101,10 @@ final class NameTags {
 
 			Match m = Matches.of(p.getUUID());
 			Match.Member member = m == null ? null : m.member(p.getUUID());
-			int team = member != null && member.role().onTeam() ? member.team() : -1;
-			boolean pvp = Pvp.on(p), linked = CyberSkins.linked(p);
-			String wanted = teamName(m == null ? null : m.id, team, pvp, linked);
+			int team = m != null && member != null && member.role().onTeam() && m.state() != Match.State.ENDED ? member.team() : -1;
+			boolean fighting = team >= 0 && m.pvp && m.state() == Match.State.RUNNING;
+			boolean pvp = team >= 0 ? fighting : Pvp.on(p), linked = team < 0 && CyberSkins.linked(p);
+			String wanted = teamName(team >= 0 ? m.id : null, team, fighting, Pvp.on(p), CyberSkins.linked(p), p.getUUID());
 			if (wanted == null) {
 				if (current != null && current.getName().startsWith(PREFIX)) {
 					board.removePlayerFromTeam(name, current);

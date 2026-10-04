@@ -26,13 +26,16 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.gamerules.GameRules;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The PvP toggle (megaplan 8-M1, section 1.13's per-player {@code pvp} attachment): off for everyone by default
  * ({@code pvpDefault} in the server config) until a match turns it on for its players, or the player turns it on with the HUD
  * button, the Cyberware screen button or {@code /cyberblock pvp on}. A hit between two players applies only when both are on
  * ({@link PvpRules}); the attacker sees why not on the action bar. After the last PvP hit the toggle stays on 15 s; an "off" asked
- * meanwhile is refused with the seconds left, and a match that ends meanwhile turns it off when the 15 s are over. A hit on a linked
+ * meanwhile is refused with the seconds left, and a match that ends meanwhile turns it off when the 15 s are over. A teammate of a
+ * running PvP match cannot turn it off at all (it would stay on its team, unhurtable, holding points): it leaves the match instead,
+ * which gives back the toggle it had before. A hit on a linked
  * player is an ordinary hit on Steve, so it lands on V through Steve's hearts (the one health rule). Players with PvP on wear a red
  * name tag ({@link NameTags}). Server thread.
  *
@@ -48,11 +51,21 @@ public final class Pvp {
 		.buildAndRegister(Identifier.fromNamespaceAndPath(Cyberblock.ID, "pvp"));
 	private static final long LOG_PAIR_MS = 10_000L;
 	private static final long REFUSAL_NOTE_MS = 1_000L;
+	/**
+	 * How long the last player who hurt someone keeps the credit for that player's death: 8T's Downed turns a death into a bleed-out
+	 * of up to 60 s (plus a Trauma Team wait) whose final death has no attacker, so the takedown goes to the last PvP hit within this.
+	 */
+	static final long KILL_CREDIT_MS = 90_000L;
 	private static final Map<UUID, Long> lastHit = new HashMap<>();
 	private static final Map<UUID, Long> lastRefusalNote = new HashMap<>();
 	private static final Map<String, Long> lastPairLog = new HashMap<>();
+	/** Victim to the last player whose PvP hit landed on it, and when. */
+	private static final Map<UUID, Hit> lastAttacker = new HashMap<>();
 	/** Players whose toggle goes off once their 15 s lock is over (a match ended or they left it during a fight). */
 	private static final Set<UUID> offWhenUnlocked = new HashSet<>();
+
+	private record Hit(UUID attacker, long ms) {
+	}
 
 	private Pvp() {
 	}
@@ -76,6 +89,7 @@ public final class Pvp {
 		lastHit.clear();
 		lastRefusalNote.clear();
 		lastPairLog.clear();
+		lastAttacker.clear();
 		offWhenUnlocked.clear();
 	}
 
@@ -83,6 +97,7 @@ public final class Pvp {
 	static void disconnected(final ServerPlayer player) {
 		UUID uuid = player.getUUID();
 		lastRefusalNote.remove(uuid);
+		lastAttacker.remove(uuid);
 		if (offWhenUnlocked.remove(uuid)) {
 			player.setAttached(PVP, false);
 			Cyberblock.LOG.info("pvp: {} off (match over, left the server)", player.getPlainTextName());
@@ -99,8 +114,26 @@ public final class Pvp {
 		return PvpRules.lockLeft(System.currentTimeMillis(), lastHit.getOrDefault(player.getUUID(), PvpRules.NEVER));
 	}
 
-	/** The player asked to turn PvP on or off (button or command); false when the 15 s lock refused "off". */
+	/**
+	 * The player who gets the credit for {@code victim}'s death: the last one whose PvP hit landed on it within
+	 * {@link #KILL_CREDIT_MS}, or null. The credit is used up (a death counts once).
+	 */
+	static @Nullable UUID killCredit(final ServerPlayer victim) {
+		Hit h = lastAttacker.remove(victim.getUUID());
+		return h != null && System.currentTimeMillis() - h.ms() <= KILL_CREDIT_MS ? h.attacker() : null;
+	}
+
+	/**
+	 * The player asked to turn PvP on or off (button or command); false when "off" was refused: by the 15 s lock, or because the
+	 * player fights in a running PvP match (leaving the match gives the toggle back).
+	 */
 	public static boolean request(final ServerPlayer player, final boolean wanted) {
+		if (!wanted && Matches.pvpHeld(player)) {
+			player.sendSystemMessage(Component.translatableWithFallback("cyberblock.pvp.in_match", "You fight in a PvP match: leave the match to turn PvP off"),
+				true);
+			return false;
+		}
+
 		boolean was = on(player);
 		boolean now = PvpRules.next(was, wanted, System.currentTimeMillis(), lastHit.getOrDefault(player.getUUID(), PvpRules.NEVER));
 		if (!wanted && now) {
@@ -192,6 +225,7 @@ public final class Pvp {
 
 		lastHit.put(attacker.getUUID(), now);
 		lastHit.put(victim.getUUID(), now);
+		lastAttacker.put(victim.getUUID(), new Hit(attacker.getUUID(), now));
 		String pair = attacker.getUUID() + ">" + victim.getUUID();
 		if (now - lastPairLog.getOrDefault(pair, 0L) >= LOG_PAIR_MS) {
 			lastPairLog.put(pair, now);

@@ -77,15 +77,92 @@ class MatchRulesTest {
 		assertEquals(1, m.join(UUID.randomUUID(), "G3", Role.TEAMMATE, false, 1).team(), "a valid pick is kept");
 		assertEquals(-1, m.join(UUID.randomUUID(), "S", Role.SPECTATOR, false, 0).team(), "spectators have no team");
 		assertEquals(-1, m.join(UUID.randomUUID(), "O", Role.OVERLORD, false, 1).team(), "overlords have no team");
-		assertArrayEquals(new int[] {2, 2}, m.teamSizes());
-		assertEquals(0, MatchRules.team(new int[] {3, 3}, 7), "an unknown pick: the smallest, first of equals");
-		assertEquals(2, MatchRules.team(new int[] {3, 3, 1}, -1));
+		assertArrayEquals(new int[] {2, 2, 0, 0}, m.teamSizes(), "team deathmatch fills its two teams (teams.min) before a third");
+		assertEquals(2, m.shownTeams());
+		assertEquals(0, MatchRules.team(new int[] {3, 3}, 7, 2, 8), "an unknown pick: the smallest, first of equals");
+		assertEquals(2, MatchRules.team(new int[] {3, 3, 1}, -1, 3, 8));
+		assertEquals(0, MatchRules.team(new int[] {3, 3, 0, 0}, -1, 2, 8), "a third team waits until the first two are full");
+		assertEquals(2, MatchRules.team(new int[] {8, 8, 0, 0}, -1, 2, 8), "both full: the next team opens");
+		assertEquals(1, MatchRules.team(new int[] {8, 3}, 0, 2, 8), "a full preferred team: the smallest open one");
+		assertEquals(-1, MatchRules.team(new int[] {8, 8}, -1, 2, 8), "every team full");
+	}
+
+	@Test
+	void freeForAllIsATeamEach() {
+		MatchMode ffa = MatchMode.parse(net.minecraft.resources.Identifier.fromNamespaceAndPath("cyberblock", "free_for_all"),
+			com.google.gson.JsonParser.parseString(MatchModeTest.FREE_FOR_ALL).getAsJsonObject());
+		Match m = new Match("m2", "cyberblock:free_for_all", ffa, CREATOR, "CbHost1", new Match.Zone(0, 0, 64, ""), true, false, 300, 0L);
+		m.join(CREATOR, "CbHost1", Role.TEAMMATE, true, -1);
+		for (int i = 1; i < 8; i++) {
+			assertEquals(i, m.join(UUID.randomUUID(), "P" + i, Role.TEAMMATE, false, -1).team(), "player " + i + " gets the next team");
+		}
+
+		assertEquals(8, m.shownTeams());
+		assertEquals("cyberblock.match.refused.teams_full", MatchRules.joinRefusal(m, UUID.randomUUID(), false, Role.TEAMMATE, false), "eight teams of one");
+		assertNull(MatchRules.joinRefusal(m, UUID.randomUUID(), false, Role.SPECTATOR, false), "watching needs no seat");
+		assertEquals("cyberblock.match.refused.role", MatchRules.joinRefusal(m, UUID.randomUUID(), false, Role.HACKER, false), "free for all has no Van");
+		assertNull(MatchRules.joinRefusal(m, CREATOR, true, Role.TEAMMATE, false), "a member re-joining keeps its own seat");
+	}
+
+	@Test
+	void aRunningPvpMatchHoldsItsTeammatesToggle() {
+		Match m = match("cyberblock:gang_wars", false);
+		UUID spec = UUID.randomUUID();
+		m.join(spec, "S", Role.SPECTATOR, false, -1);
+		assertFalse(MatchRules.pvpHeld(m, CREATOR), "not in the lobby");
+		m.start(0L);
+		assertTrue(MatchRules.pvpHeld(m, CREATOR), "a teammate of a running PvP match keeps PvP on");
+		assertFalse(MatchRules.pvpHeld(m, spec), "spectators do not fight");
+		assertFalse(MatchRules.pvpHeld(m, UUID.randomUUID()), "not a member");
+		Match calm = new Match("m3", "cyberblock:gang_wars", m.mode, CREATOR, "CbHost1", m.zone, false, false, 300, 0L);
+		calm.join(CREATOR, "CbHost1", Role.TEAMMATE, true, -1);
+		calm.start(0L);
+		assertFalse(MatchRules.pvpHeld(calm, CREATOR), "a match without PvP holds nothing");
+		m.end(1L);
+		assertFalse(MatchRules.pvpHeld(m, CREATOR), "over: the toggle is the player's again");
+	}
+
+	@Test
+	void onlyTeammatesWithPvpOnHoldPointsInAPvpMatch() {
+		Match m = match("cyberblock:gang_wars", false);
+		Match.Member me = m.member(CREATOR);
+		Match.Member hacker = m.join(UUID.randomUUID(), "H", Role.HACKER, false, -1);
+		assertTrue(MatchRules.holdsPoints(m, me, true));
+		assertFalse(MatchRules.holdsPoints(m, me, false), "PvP off: nobody can hurt it, so it cannot hold a point");
+		assertFalse(MatchRules.holdsPoints(m, hacker, true), "the hacker is in the Van");
+		Match calm = new Match("m3", "cyberblock:gang_wars", m.mode, CREATOR, "CbHost1", m.zone, false, false, 300, 0L);
+		Match.Member c = calm.join(CREATOR, "CbHost1", Role.TEAMMATE, true, -1);
+		assertTrue(MatchRules.holdsPoints(calm, c, false), "no PvP in the match: the toggle does not matter");
+	}
+
+	@Test
+	void theLastTeamStandingWins() {
+		MatchMode tdm = MatchMode.BUILT_IN.get("cyberblock:team_deathmatch");
+		MatchMode lts = new MatchMode("Last Team Standing", "One life each.", 2, tdm.teams(), 1, 6, 1200, 1, 0, 0, 0, false, true, 32, 192, 0, 0, 0, false,
+			false, 0.75, tdm.roles());
+		Match m = new Match("m4", "cyberblock:last_team_standing", lts, CREATOR, "CbHost1", new Match.Zone(0, 0, 64, ""), true, false, 600, 0L);
+		m.join(CREATOR, "CbHost1", Role.TEAMMATE, true, -1);
+		UUID a = UUID.randomUUID(), b = UUID.randomUUID();
+		m.join(a, "A", Role.TEAMMATE, false, 0);
+		m.join(b, "B", Role.TEAMMATE, false, 1);
+		m.start(0L);
+		assertEquals(-1, MatchRules.standing(m), "nobody out yet");
+		m.out.add(a);
+		assertEquals(-1, MatchRules.standing(m), "team 0 still has its creator");
+		m.out.add(b);
+		assertEquals(0, MatchRules.standing(m), "team 1 is out: team 0 stands");
+		m.out.add(CREATOR);
+		assertEquals(-2, MatchRules.standing(m), "nobody left");
+		Match tm = match("cyberblock:team_deathmatch", false);
+		tm.out.add(CREATOR);
+		assertEquals(-1, MatchRules.standing(tm), "a mode with respawn has no last team standing");
 	}
 
 	@Test
 	void onlyTheCreatorStartsWithEnoughTeammates() {
 		Match m = match("cyberblock:team_deathmatch", false);
 		assertEquals("cyberblock.match.refused.too_few", MatchRules.startRefusal(m, CREATOR), "team deathmatch needs two");
+		assertNull(MatchRules.startRefusalAnyCount(m, CREATOR), "the dev start (mpcheck) skips the count");
 		m.join(UUID.randomUUID(), "G1", Role.SPECTATOR, false, -1);
 		assertEquals("cyberblock.match.refused.too_few", MatchRules.startRefusal(m, CREATOR), "spectators do not count");
 		UUID g = UUID.randomUUID();
@@ -107,12 +184,12 @@ class MatchRulesTest {
 		assertTrue(MatchRules.over(m, 300_000L));
 		Match s = match("cyberblock:gang_wars", false);
 		s.start(0L);
-		s.score(1, 599);
+		s.score(1, 299);
 		assertFalse(MatchRules.over(s, 1L));
 		s.score(1, 1);
-		assertTrue(MatchRules.over(s, 1L), "gang wars plays to 600");
+		assertTrue(MatchRules.over(s, 1L), "gang wars plays to 300");
 		s.score(7, 5);
-		assertArrayEquals(new int[] {0, 600}, s.scores(), "an unknown team scores nothing");
+		assertArrayEquals(new int[] {0, 300, 0, 0}, s.scores(), "an unknown team scores nothing");
 	}
 
 	@Test
@@ -151,7 +228,7 @@ class MatchRulesTest {
 	@Test
 	void everyRefusalHasEnglish() {
 		for (String key : new String[] {"not_linked", "in_match", "full", "ended", "invite_only", "linked_fights", "overlords_full", "not_creator",
-			"started", "too_few", "no_match", "not_in", "bad"}) {
+			"started", "too_few", "no_match", "not_in", "bad", "role", "teams_full"}) {
 			assertNotEquals("cyberblock.match.refused." + key, MatchRules.fallback("cyberblock.match.refused." + key));
 		}
 	}

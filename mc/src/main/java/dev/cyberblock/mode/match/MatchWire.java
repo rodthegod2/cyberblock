@@ -16,7 +16,8 @@ import org.jspecify.annotations.Nullable;
  * <p>Client to server, {@code cyberblock:act t:"match"}: {@code {"op": ...}} with
  * <ul>
  * <li>{@code open}: send me the state (the screen is open);</li>
- * <li>{@code create}: {@code mode} (a {@code match_mode} id), {@code zone:{x, z, r 16..512, district? <= 64}}, {@code time} 60..3600 s,
+ * <li>{@code create}: {@code mode} (a {@code match_mode} id), {@code zone:{x, z, r 16..1024, district? <= 64}} (the mode clamps r to
+ * its zone range), {@code time} 60..7200 s (the mode caps it at its time_limit_s),
  * {@code pvp} bool, {@code invite} bool (invite only); the creator joins as a teammate;</li>
  * <li>{@code join}: {@code id}, {@code role} one of teammate, hacker, spectator, overlord, {@code team}? (-1 or absent: the smallest);</li>
  * <li>{@code leave}; {@code start} and {@code end} (the creator); {@code invite}: {@code name} (a player name, 1-16 of A-Z a-z 0-9 _).</li>

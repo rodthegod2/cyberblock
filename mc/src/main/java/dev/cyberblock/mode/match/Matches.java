@@ -10,7 +10,9 @@ import dev.cyberblock.holo.HoloLayers;
 import dev.cyberblock.holo.HoloRules;
 import dev.cyberblock.holo.HoloWire;
 import dev.cyberblock.holo.Landmarks;
+import dev.cyberblock.hub.Leaderboards;
 import dev.cyberblock.hub.MatchTerminalBlock;
+import dev.cyberblock.meetup.MeetUp;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.ServerNet;
@@ -23,6 +25,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.function.BiPredicate;
+import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
@@ -42,8 +46,16 @@ import org.jspecify.annotations.Nullable;
  * <p>Log lines: {@code match: <name> created <id> (<mode>, <district|x z>, r <r>, <s> s, pvp on|off, open|invite only)},
  * {@code match: <name> joined <id> as <role> (team <t>)}, {@code match: <name> left <id>}, {@code match: <id> started (<n> players,
  * <bases> spawns, <points> capture points)}, {@code match: <id> <team> took <point>}, {@code match: <id> ended (<result>; <scores>)},
- * {@code match: <id> reputation: attitude DOWN to <n> host(s) (Phase 0 e; the scripts log whether the game applied it)} or
- * {@code match: <id> reputation: no active Cyberpunk host on the teams (fallback: the standing stays on the Minecraft scoreboard)}.
+ * {@code match: <id> reputation: attitude DOWN to <n> host(s), <c> change(s) (Phase 0 e; the scripts log whether the game applied it;
+ * the standing is also on the cb_rep_<gang> scoreboard)} or {@code match: <id> reputation: no active Cyberpunk host on the teams
+ * (fallback: the standing is kept only on the cb_rep_<gang> scoreboard objectives)}.
+ *
+ * <p>Hooks for the other Phase 8 packages (built in parallel, so the integrator installs them after the merge, in SERVER_STARTED
+ * after every init): {@link #pvpHeld}, {@link #inWarZone} and {@link #team} for 8X's {@code PvpHooks.use}; {@link #running} and
+ * {@link #area} for 8O's {@code OverlordHooks}; {@link #spectate}, {@link #unspectate}, {@link #feed} and {@link #viewFor} for 8T's
+ * Spectate; {@link #teammates} for 8T's {@code Downed.teammates}. Kill credit does not need Downed: a death without a player source
+ * (Downed's bleed-out) goes to the last player whose PvP hit landed ({@link Pvp#killCredit}), so Downed must not call
+ * {@link #takedown} itself (that would count twice).
  */
 public final class Matches {
 	/** How far from the terminal a player may be to create a match from its screen, and how long the screen counts as open. */
@@ -56,6 +68,20 @@ public final class Matches {
 	private static @Nullable ContentKind<MatchMode> kind;
 	private static @Nullable MinecraftServer server;
 	private static int nextId = 1;
+
+	/** 8T: puts a player who joined as a spectator into spectator mode for that match ({@code Spectate::start}); false when refused. */
+	public static volatile BiPredicate<ServerPlayer, String> spectate = (player, match) -> false;
+	/** 8T: takes a spectator out of spectator mode when it leaves the match or the match ends ({@code Spectate::stop}). */
+	public static volatile Predicate<ServerPlayer> unspectate = player -> false;
+	/** 8T: one kill feed line ({@code Spectate::feed}). */
+	public static volatile Feed feed = (who, verb, whom) -> {
+	};
+
+	/** A kill feed line: who, what, whom (who may be empty). */
+	@FunctionalInterface
+	public interface Feed {
+		void line(String who, String verb, String whom);
+	}
 
 	private record Terminal(BlockPos pos, long ms) {
 	}
@@ -71,6 +97,8 @@ public final class Matches {
 		HoloHooks.teamColour = Matches::teamColour;
 		HoloHooks.bases = Matches::bases;
 		HoloHooks.lockedZone = (level, pos, player) -> level.dimension() == Level.OVERWORLD && lockedFor(pos, player.getUUID());
+		MeetUp.matchZone = (requester, target) -> target.level().dimension() == Level.OVERWORLD && lockedFor(target.position(), requester.getUUID())
+			? "cyberblock.meetup.match_zone" : null;
 		HoloLayers.register("matches", (s, viewer) -> matchesLayer());
 		HoloLayers.register("gangwars", (s, viewer) -> gangWarsLayer());
 	}
@@ -120,14 +148,44 @@ public final class Matches {
 		return m != null && m.state() == Match.State.RUNNING && player.level().dimension() == Level.OVERWORLD && m.zone.inside(player.getX(), player.getZ());
 	}
 
+	/** The player fights in a running PvP match: its toggle may not go off ({@link MatchRules#pvpHeld}). */
+	public static boolean pvpHeld(final ServerPlayer player) {
+		Match m = of(player.getUUID());
+		return m != null && MatchRules.pvpHeld(m, player.getUUID());
+	}
+
+	/** 8O: the match is running (not in its lobby, not over). */
+	public static boolean running(final String id) {
+		Match m = matches.get(id);
+		return m != null && m.state() == Match.State.RUNNING;
+	}
+
+	/** 8O: the match's zone as [x0, z0, x1, z1] (the box around its circle), or null for no such match. */
+	public static double @Nullable [] area(final String id) {
+		Match m = matches.get(id);
+		return m == null ? null : new double[] {m.zone.x() - m.zone.r(), m.zone.z() - m.zone.r(), m.zone.x() + m.zone.r(), m.zone.z() + m.zone.r()};
+	}
+
+	/** 8T Downed (who may revive whom): both on the same team of the same match. */
+	public static boolean teammates(final ServerPlayer a, final ServerPlayer b) {
+		Match m = of(a.getUUID());
+		return m != null && m == of(b.getUUID()) && m.teammates(a.getUUID(), b.getUUID());
+	}
+
+	/** 8T Spectate.matchView: the view of the match the player is in (title, clock, teams, scores), or null. */
+	public static MatchWire.@Nullable View viewFor(final ServerPlayer player) {
+		Match m = of(player.getUUID());
+		return m == null ? null : view(m, player.getUUID(), System.currentTimeMillis());
+	}
+
 	/** Every match on the server, in creation order. */
 	public static List<Match> all() {
 		return List.copyOf(matches.values());
 	}
 
 	/**
-	 * A takedown of {@code victim} by {@code killer}: in a running kills match on opposite teams it scores for the killer's team.
-	 * Called on death; 8-T2 (Downed) may call it when a downed player bleeds out instead.
+	 * A takedown of {@code victim} by {@code killer}: in a running match on opposite teams it scores the mode's {@code scoring.kill}
+	 * for the killer's team. Called once per death ({@link #died}; see the class note on Downed).
 	 */
 	public static void takedown(final ServerPlayer killer, final ServerPlayer victim) {
 		Match m = of(killer.getUUID());
@@ -137,10 +195,8 @@ public final class Matches {
 			return;
 		}
 
-		if (m.mode.scoring() == MatchMode.Scoring.KILLS) {
-			m.score(k.team(), 1);
-		}
-
+		m.score(k.team(), m.mode.killScore());
+		feed.line(k.name(), "took down", v.name());
 		tell(m, Component.translatableWithFallback("cyberblock.match.takedown", "%s took down %s", k.name(), v.name()));
 		changed(m);
 	}
@@ -195,7 +251,7 @@ public final class Matches {
 		}
 	}
 
-	private static void create(final ServerPlayer player, final MatchWire.Request r) {
+	private static @Nullable Match create(final ServerPlayer player, final MatchWire.Request r) {
 		String why = MatchRules.createRefusal(CyberSkins.linked(player), of(player.getUUID()) != null, (int) matches.values().stream()
 			.filter(m -> m.state() != Match.State.ENDED).count());
 		MatchMode mode = modes().get(r.mode());
@@ -207,13 +263,16 @@ public final class Matches {
 			why = "cyberblock.match.refused.bad";
 		}
 
-		if (why != null || mode == null || r.zone() == null) {
+		Match.Zone asked = r.zone();
+		if (why != null || mode == null || asked == null) {
 			refuse(player, why == null ? "cyberblock.match.refused.bad" : why);
-			return;
+			return null;
 		}
 
+		// the mode bounds the zone (zone.min_radius..max_radius) and the time (the creator may shorten time_limit_s)
+		Match.Zone zone = new Match.Zone(asked.x(), asked.z(), mode.clampRadius(asked.r()), asked.district());
 		String id = "m" + nextId++;
-		Match m = new Match(id, r.mode(), mode, player.getUUID(), player.getPlainTextName(), r.zone(), r.pvp(), r.invite(), r.time(),
+		Match m = new Match(id, r.mode(), mode, player.getUUID(), player.getPlainTextName(), zone, r.pvp(), r.invite(), Math.min(r.time(), mode.timeLimit()),
 			System.currentTimeMillis());
 		matches.put(id, m);
 		Match.Zone z = m.zone;
@@ -222,6 +281,7 @@ public final class Matches {
 			m.inviteOnly ? "invite only" : "open");
 		join(player, id, Match.Role.TEAMMATE, -1);
 		broadcastLobby(m);
+		return m;
 	}
 
 	private static void join(final ServerPlayer player, final String id, final Match.Role role, final int team) {
@@ -244,6 +304,15 @@ public final class Matches {
 		Cyberblock.LOG.info("match: {} joined {} as {} (team {})", now.name(), id, role.key(), now.team());
 		if (m.state() == Match.State.RUNNING) {
 			pvpIn(m, player, was, now);
+			baseFor(m, now.team());
+		}
+
+		if (role == Match.Role.SPECTATOR && (was == null || was.role() != Match.Role.SPECTATOR)) {
+			boolean watching = spectate.test(player, id);
+			Cyberblock.LOG.info("match: {} spectates {} ({})", now.name(), id, watching ? "spectator mode on"
+				: "no spectator mode: 8T's Spectate hook is not installed, or it refused");
+		} else if (role != Match.Role.SPECTATOR && was != null && was.role() == Match.Role.SPECTATOR) {
+			unspectate.test(player);
 		}
 
 		tell(m, Component.translatableWithFallback("cyberblock.match.joined", "%s joined %s as %s", now.name(), m.mode.name(), roleName(role)));
@@ -276,6 +345,10 @@ public final class Matches {
 			Pvp.matchOver(player, before);
 		}
 
+		if (player != null && member.role() == Match.Role.SPECTATOR) {
+			unspectate.test(player);
+		}
+
 		tell(m, Component.translatableWithFallback("cyberblock.match.left", "%s left the match", member.name()));
 		HostSessions.rosterChanged();
 		if (m.state() == Match.State.LOBBY && uuid.equals(m.creator)) {
@@ -292,13 +365,18 @@ public final class Matches {
 			return;
 		}
 
-		String why = MatchRules.startRefusal(m, player.getUUID());
+		begin(player, m, MatchRules.startRefusal(m, player.getUUID()));
+	}
+
+	/** Starts {@code m} unless {@code why} refuses it: spawns and capture points for the teams in play, PvP on for its teammates. */
+	private static void begin(final ServerPlayer player, final Match m, final @Nullable String why) {
 		if (why != null) {
 			refuse(player, why);
 			return;
 		}
 
-		MatchLayout.Layout layout = MatchLayout.plan(m.zone, m.mode.teams(), m.mode.capturePoints(), spots(), 64.0);
+		MatchLayout.Layout layout = MatchLayout.plan(m.zone, m.mode.teams().subList(0, m.shownTeams()), m.mode.captureCount(), m.mode.captureRadius(),
+			spots(), 64.0);
 		m.bases.addAll(layout.bases());
 		m.points.addAll(layout.points());
 		m.start(System.currentTimeMillis());
@@ -329,6 +407,15 @@ public final class Matches {
 				Pvp.matchOver(p, before);
 			}
 		}
+	}
+
+	/** A team that opened after the start (free for all) gets its spawn on the rim too. */
+	private static void baseFor(final Match m, final int team) {
+		if (team < 0 || m.bases.stream().anyMatch(b -> b.team() == team)) {
+			return;
+		}
+
+		m.bases.add(MatchLayout.plan(m.zone, m.mode.teams().subList(0, team + 1), 0, 1.0, List.of(), 64.0).bases().get(team));
 	}
 
 	private static void end(final ServerPlayer player) {
@@ -416,6 +503,49 @@ public final class Matches {
 		return 1;
 	}
 
+	/**
+	 * Dev command {@code /cyberblock test match start <mode>} (tools/mpcheck.py's {@code match_start}): as if the player stood at a
+	 * Match Terminal, creates a match of that mode (a bare name means {@code cyberblock:<name>}) around the player with the mode's
+	 * default radius, time and PvP, open to all, and starts it at once without the player count (the other side joins after).
+	 */
+	static int devStart(final ServerPlayer player, final String modeArg) {
+		String mode = modeArg.contains(":") ? modeArg : Cyberblock.ID + ":" + modeArg;
+		MatchMode mm = modes().get(mode);
+		if (mm == null) {
+			refuse(player, "cyberblock.match.refused.bad");
+			return 0;
+		}
+
+		terminals.put(player.getUUID(), new Terminal(player.blockPosition(), System.currentTimeMillis()));
+		Match m = create(player, new MatchWire.Request("create", "", mode, Match.Role.TEAMMATE, -1, "",
+			new Match.Zone(player.getX(), player.getZ(), mm.defaultRadius(), ""), mm.timeLimit(), mm.pvp(), false));
+		if (m == null) {
+			return 0;
+		}
+
+		begin(player, m, MatchRules.startRefusalAnyCount(m, player.getUUID()));
+		return m.state() == Match.State.RUNNING ? 1 : 0;
+	}
+
+	/** Dev command {@code /cyberblock test match join <creator> [role]}: joins the match that player created (role default teammate). */
+	static int devJoin(final ServerPlayer player, final String creator, final String role) {
+		Match.Role r = Match.Role.of(role.isBlank() ? "teammate" : role);
+		Match m = matches.values().stream().filter(x -> x.state() != Match.State.ENDED && x.creatorName.equalsIgnoreCase(creator)).findFirst().orElse(null);
+		if (r == null || m == null) {
+			refuse(player, r == null ? "cyberblock.match.refused.bad" : "cyberblock.match.refused.no_match");
+			return 0;
+		}
+
+		join(player, m.id, r, -1);
+		return m.member(player.getUUID()) != null ? 1 : 0;
+	}
+
+	/** Dev command {@code /cyberblock test match end}: the creator ends (or closes) its match. */
+	static int devEnd(final ServerPlayer player) {
+		end(player);
+		return 1;
+	}
+
 	/** One line per match for /cyberblock match. */
 	static List<Component> status() {
 		List<Component> out = new ArrayList<>();
@@ -445,6 +575,12 @@ public final class Matches {
 		for (Match m : List.copyOf(matches.values())) {
 			if (m.state() == Match.State.RUNNING) {
 				capture(s, m);
+				int standing = MatchRules.standing(m);
+				if (standing != -1) {
+					finish(m, standing >= 0 ? "last team standing" : "nobody left standing", standing);
+					continue;
+				}
+
 				if (MatchRules.over(m, now)) {
 					finish(m, now >= m.endsMs ? "time" : "score limit");
 					continue;
@@ -478,8 +614,9 @@ public final class Matches {
 			int[] counts = new int[teams];
 			for (Match.Member member : m.members()) {
 				ServerPlayer pl = member.role() == Match.Role.TEAMMATE ? s.getPlayerList().getPlayer(member.uuid()) : null;
-				if (pl != null && pl.isAlive() && !pl.isSpectator() && pl.level().dimension() == Level.OVERWORLD && member.team() >= 0
-					&& member.team() < teams && p.inside(pl.getX(), pl.getZ())) {
+				// a teammate whose PvP is off in a PvP match (nobody can hurt it) does not hold points
+				if (pl != null && MatchRules.holdsPoints(m, member, Pvp.on(pl)) && pl.isAlive() && !pl.isSpectator()
+					&& pl.level().dimension() == Level.OVERWORLD && member.team() >= 0 && member.team() < teams && p.inside(pl.getX(), pl.getZ())) {
 					counts[member.team()]++;
 				}
 			}
@@ -489,6 +626,7 @@ public final class Matches {
 			if (c == Capture.Change.CAPTURED) {
 				String team = m.mode.teams().get(p.owner()).name();
 				Cyberblock.LOG.info("match: {} {} took {}", m.id, team, p.name);
+				feed.line(team, "took", p.name);
 				tell(m, Component.translatableWithFallback("cyberblock.match.captured", "%s took %s", team, p.name));
 				changed = true;
 			} else if (c == Capture.Change.NEUTRALISED && owner >= 0) {
@@ -497,7 +635,7 @@ public final class Matches {
 			}
 
 			if (p.owner() >= 0) {
-				m.score(p.owner(), 1);
+				m.score(p.owner(), m.mode.captureScore());
 			}
 		}
 
@@ -506,9 +644,18 @@ public final class Matches {
 		}
 	}
 
-	/** Ends a running match: the result, PvP back, reputation, the result stays listed a minute. */
+	/** Ends a running match: the result, PvP back, wins, reputation, the result stays listed a minute. */
 	private static void finish(final Match m, final String why) {
+		finish(m, why, -1);
+	}
+
+	/** @param standing the last team standing (it wins whatever the scores say), or a negative value for the best score */
+	private static void finish(final Match m, final String why, final int standing) {
 		m.end(System.currentTimeMillis());
+		if (standing >= 0) {
+			m.winner = standing;
+		}
+
 		MinecraftServer s = server;
 		StringBuilder scores = new StringBuilder();
 		for (int t = 0; t < m.scores.length; t++) {
@@ -527,8 +674,18 @@ public final class Matches {
 			if (p != null && before != null) {
 				Pvp.matchOver(p, before);
 			}
+
+			if (p != null && member.role() == Match.Role.SPECTATOR) {
+				unspectate.test(p);
+			}
+
+			// the Afterlife's Match Wins board (Leaderboards.MATCH_WINS): every teammate and hacker of the winning team
+			if (p != null && m.winner() >= 0 && member.role().onTeam() && member.team() == m.winner()) {
+				Leaderboards.add(p, Leaderboards.MATCH_WINS, 1);
+			}
 		}
 
+		standings(m);
 		reputation(m);
 		HostSessions.rosterChanged();
 		changed(m);
@@ -556,9 +713,30 @@ public final class Matches {
 	}
 
 	/**
+	 * The Phase 0 (e) fallback, kept whatever the game does: in a {@code reputation} mode with a winner, every online teammate and
+	 * hacker of a team that stands for a gang gets +1 (won) or -1 (lost) on that gang's {@code cb_rep_<gang>} scoreboard objective.
+	 */
+	private static void standings(final Match m) {
+		MinecraftServer s = server;
+		if (s == null || !m.mode.reputation() || m.winner() < 0) {
+			return;
+		}
+
+		for (Match.Member member : m.members()) {
+			ServerPlayer p = s.getPlayerList().getPlayer(member.uuid());
+			String gang = member.role().onTeam() && member.team() >= 0 && member.team() < m.mode.teams().size() ? m.mode.teams().get(member.team()).gang()
+				: "";
+			if (p != null && !gang.isEmpty()) {
+				Leaderboards.add(p, Reputation.objective(gang), member.team() == m.winner() ? 1 : -1);
+			}
+		}
+	}
+
+	/**
 	 * Phase 0 (e): the linked hosts of a Gang Wars team get {@code attitude} DOWN ({@link Reputation}). Only an ACTIVE session's game
-	 * can apply it (a host whose Cyberpunk is Off is skipped); whether 2.31 applied it is the scripts' log line (8S). With nobody to
-	 * send to, the written fallback holds: the standing stays on the Minecraft scoreboard.
+	 * can apply it (a host whose Cyberpunk is Off is skipped); whether 2.31 applied it is the scripts' log line (8S). The host's
+	 * {@code spawns} guest toggle does not gate it (megaplan 1.6: the host's own match). The standing is on the scoreboard either way
+	 * ({@link #standings}).
 	 */
 	private static void reputation(final Match m) {
 		List<Reputation.Change> changes = Reputation.afterMatch(m.mode, m.members(), m.winner());
@@ -578,10 +756,11 @@ public final class Matches {
 		}
 
 		if (sent > 0) {
-			Cyberblock.LOG.info("match: {} reputation: attitude DOWN to {} host(s), {} change(s) (Phase 0 e; the scripts log whether the game applied it)",
-				m.id, hosts.size(), sent);
+			Cyberblock.LOG.info("match: {} reputation: attitude DOWN to {} host(s), {} change(s) (Phase 0 e; the scripts log whether the game applied it;"
+				+ " the standing is also on the cb_rep_<gang> scoreboard)", m.id, hosts.size(), sent);
 		} else {
-			Cyberblock.LOG.info("match: {} reputation: no active Cyberpunk host on the teams (fallback: the standing stays on the Minecraft scoreboard)", m.id);
+			Cyberblock.LOG.info("match: {} reputation: no active Cyberpunk host on the teams (fallback: the standing is kept only on the cb_rep_<gang>"
+				+ " scoreboard objectives)", m.id);
 		}
 	}
 
@@ -595,9 +774,25 @@ public final class Matches {
 		}
 	}
 
-	static void died(final ServerPlayer victim, final @Nullable ServerPlayer killer) {
+	/**
+	 * A player died (AFTER_DEATH). The killer is the damage source's player, else the last player whose PvP hit landed on it
+	 * ({@link Pvp#killCredit}: 8T's bleed-out ends in a death without a source). In a mode without respawn the victim is out.
+	 */
+	static void died(final ServerPlayer victim, final @Nullable ServerPlayer source) {
+		UUID credit = Pvp.killCredit(victim);
+		MinecraftServer s = server;
+		ServerPlayer killer = source != null ? source : credit == null || s == null ? null : s.getPlayerList().getPlayer(credit);
 		if (killer != null && killer != victim) {
 			takedown(killer, victim);
+		}
+
+		Match m = of(victim.getUUID());
+		Match.Member v = m == null ? null : m.member(victim.getUUID());
+		if (m != null && v != null && m.state() == Match.State.RUNNING && m.mode.respawnS() == 0 && v.role() == Match.Role.TEAMMATE && m.out.add(v.uuid())) {
+			Cyberblock.LOG.info("match: {} {} is out (no respawn in {})", m.id, v.name(), m.mode.name());
+			feed.line("", "out:", v.name());
+			tell(m, Component.translatableWithFallback("cyberblock.match.out", "%s is out until the match ends", v.name()));
+			changed(m);
 		}
 	}
 
@@ -646,8 +841,8 @@ public final class Matches {
 		for (Map.Entry<String, MatchMode> e : modes().entrySet()) {
 			MatchMode mode = e.getValue();
 			modes.add(new MatchWire.Mode(e.getKey(), mode.name(), mode.description(), mode.teams().stream()
-				.map(t -> new MatchWire.Team(t.name(), t.colour(), 0, List.of())).toList(), mode.pvp(), mode.timeLimit(), mode.scoring().key(),
-				mode.zoneRadius()));
+				.map(t -> new MatchWire.Team(t.name(), t.colour(), 0, List.of())).toList(), mode.pvp(), mode.timeLimit(), mode.scoringKey(),
+				mode.defaultRadius()));
 		}
 
 		long now = System.currentTimeMillis();
@@ -662,7 +857,7 @@ public final class Matches {
 
 	private static MatchWire.View view(final Match m, final UUID viewer, final long now) {
 		List<MatchWire.Team> teams = new ArrayList<>();
-		for (int t = 0; t < m.mode.teams().size(); t++) {
+		for (int t = 0; t < m.shownTeams(); t++) {
 			int team = t;
 			MatchMode.TeamSpec spec = m.mode.teams().get(t);
 			teams.add(new MatchWire.Team(spec.name(), spec.colour(), m.scores[t], m.members().stream().filter(x -> x.role().onTeam() && x.team() == team)

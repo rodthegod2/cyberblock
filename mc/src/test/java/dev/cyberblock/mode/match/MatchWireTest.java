@@ -30,7 +30,7 @@ class MatchWireTest {
 		String ok = "\"mode\":\"cyberblock:gang_wars\",\"time\":900,\"pvp\":true,\"invite\":false";
 		assertNull(req("{\"op\":\"create\"," + ok + "}"), "no zone");
 		assertNull(req("{\"op\":\"create\"," + ok + ",\"zone\":{\"x\":0,\"z\":0,\"r\":8}}"), "radius under 16");
-		assertNull(req("{\"op\":\"create\"," + ok + ",\"zone\":{\"x\":0,\"z\":0,\"r\":600}}"), "radius over 512");
+		assertNull(req("{\"op\":\"create\"," + ok + ",\"zone\":{\"x\":0,\"z\":0,\"r\":1100}}"), "radius over 1024");
 		assertNull(req("{\"op\":\"create\"," + ok + ",\"zone\":{\"x\":4e7,\"z\":0,\"r\":64}}"), "outside the world");
 		assertNull(req("{\"op\":\"create\",\"mode\":\"Gang Wars\",\"time\":900,\"pvp\":true,\"invite\":false,\"zone\":{\"x\":0,\"z\":0,\"r\":64}}"));
 		assertNull(req("{\"op\":\"create\",\"mode\":\"cyberblock:gang_wars\",\"time\":30,\"pvp\":true,\"invite\":false,\"zone\":{\"x\":0,\"z\":0,\"r\":64}}"));

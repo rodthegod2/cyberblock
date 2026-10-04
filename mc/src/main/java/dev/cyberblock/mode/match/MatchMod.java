@@ -72,12 +72,23 @@ public final class MatchMod implements ModInitializer {
 	 * Dev only ({@code -Dcyberblock.devtools=true}, ops; for tools/mpcheck.py over RCON with {@code execute as <player> run ...}):
 	 * {@code /cyberblock test terminal} is a right-click on a Match Terminal where the player stands (the screen opens, and creating
 	 * is allowed from there); {@code /cyberblock test match <json>} is one {@code act match} from that player, through the same code.
+	 * The shapes tools/mpcheck.py's {@code PHASE8_COMMANDS} uses: {@code /cyberblock test match start <mode>} (a match of that mode
+	 * around the player, started at once), {@code /cyberblock test match join <creator> [role]} and {@code /cyberblock test match end}.
 	 */
 	private static LiteralArgumentBuilder<CommandSourceStack> devCommand() {
 		return Commands.literal("cyberblock").then(Commands.literal("test").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
 			.then(Commands.literal("terminal").executes(c -> Matches.devTerminal(c.getSource().getPlayerOrException())))
-			.then(Commands.literal("match").then(Commands.argument("json", StringArgumentType.greedyString())
-				.executes(c -> Matches.devAct(c.getSource().getPlayerOrException(), StringArgumentType.getString(c, "json"))))));
+			.then(Commands.literal("match")
+				.then(Commands.literal("start").then(Commands.argument("mode", StringArgumentType.greedyString())
+					.executes(c -> Matches.devStart(c.getSource().getPlayerOrException(), StringArgumentType.getString(c, "mode")))))
+				.then(Commands.literal("join").then(Commands.argument("creator", StringArgumentType.word())
+					.executes(c -> Matches.devJoin(c.getSource().getPlayerOrException(), StringArgumentType.getString(c, "creator"), ""))
+					.then(Commands.argument("role", StringArgumentType.word())
+						.executes(c -> Matches.devJoin(c.getSource().getPlayerOrException(), StringArgumentType.getString(c, "creator"),
+							StringArgumentType.getString(c, "role"))))))
+				.then(Commands.literal("end").executes(c -> Matches.devEnd(c.getSource().getPlayerOrException())))
+				.then(Commands.argument("json", StringArgumentType.greedyString())
+					.executes(c -> Matches.devAct(c.getSource().getPlayerOrException(), StringArgumentType.getString(c, "json"))))));
 	}
 
 	private static int list(final CommandSourceStack source) {
