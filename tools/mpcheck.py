@@ -926,10 +926,14 @@ def wreck_stays_then_goes(server: Server) -> bool:
     return time.monotonic() - seen >= WRECK_MIN_S
 
 
-def changes_listed(server: Server) -> bool:
-    """`/cyberblock changes` answers (it is not unknown) and names the guest or a coordinate of the wall."""
+def changes_listed(server: Server, host_client: Client) -> bool:
+    """`/cyberblock changes` run as the host names the guest who built. 26.3's CommandSourceStack.sendSystemMessage goes to the
+    player behind `execute as`, not to RCON, so the list shows in the host client's chat (its log), and RCON answers nothing."""
+    mark = host_client.log.mark()
     answer = server.rcon("execute as CbHost1 run cyberblock changes")
-    return not re.search(r"unknown or incomplete|incorrect argument|unknown command", answer, re.I) and bool(re.search(r"CbGuest1|\b64\b", answer))
+    if re.search(r"unknown or incomplete|incorrect argument|unknown command", answer, re.I):
+        raise MpError(f"the server refused `cyberblock changes` ({' '.join(answer.split())[:120]})")
+    return bool(re.search(r"CbGuest1", answer)) or bool(host_client.log.wait(r"\[CHAT\] In the last .*\(by [^)]*CbGuest1", T_EFFECT, mark))
 
 
 def scenario_replica(env: Env, rep: Report) -> None:
@@ -970,7 +974,7 @@ def scenario_replica(env: Env, rep: Report) -> None:
     wall = r"\[CbHost1\] blocks: .*(?<![-\d])2, 64, 0(?!\d)"
     rep.step("the resync tells the returning host about the guest's wall (Offline Builds)", lambda: returned.log.wait(wall, T_EFFECT))
     rep.step("the resync carries no replica block", lambda: not reported_cells(returned.log.text(), "CbHost1") & set(fakehost.replica_cells()))
-    rep.step("`/cyberblock changes` lists what the guest built", lambda: changes_listed(server))
+    rep.step("`/cyberblock changes` lists what the guest built", lambda: changes_listed(server, client))
     rep.step("the street still stands after the return", lambda: landmarks_stand(server))
     rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))
 

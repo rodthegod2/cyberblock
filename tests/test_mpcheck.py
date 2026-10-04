@@ -1035,8 +1035,11 @@ class Sim3Server(SimServer):
                 if host["linked"]:
                     append(host["log"], f'[{name}] block: {{"t": "block", "op": "add", "pos": [{x}, {y}, {z}]}}')
             return "Changed the block"
-        if inner == "cyberblock changes":
-            return f"While you were away: {len(self.changes)} blocks placed by " + ", ".join(sorted({a for a, _ in self.changes})) if self.changes else "No changes."
+        if inner == "cyberblock changes":  # 26.3: the list goes to the player behind `execute as` (its chat), RCON gets nothing
+            text = f"In the last 0 min: {len(self.changes)} blocks placed, 0 removed (by " + ", ".join(sorted({a for a, _ in self.changes})) + ")"                 if self.changes else "No blocks changed in the last 0 min"
+            if actor and "changes-to-nobody" not in self.bugs:
+                append(LogFile(self.sim.tmp / f"client-{actor}.log"), f"[Render thread/INFO] (Minecraft) [System] [CHAT] {text}")
+            return ""
         if inner == "cyberblock meetup accept":
             asker = self.pending_meet.pop(actor, None)
             return self.meet(asker, actor) if asker else ""
@@ -1134,6 +1137,12 @@ def test_replica_scenario_checks_the_wall_the_guest_builds_and_the_changes_list(
     assert rep.ok and sim.server_obj.player_blocks == [(2, 64, 0), (2, 65, 0)] and {a for a, _ in sim.server_obj.changes} == {"CbGuest1"}
     host_log = sim.hosts["CbHost1"]["log"].text()
     assert "2, 64, 0" in host_log and "nc_" not in host_log  # the returning host heard of the wall, and of nothing else
+
+
+def test_replica_scenario_reads_the_changes_list_from_the_host_chat(tmp_path):
+    """26.3 sends `/cyberblock changes` to the player behind `execute as`: a list that reaches no chat fails the check."""
+    rep = run3(tmp_path, "replica", bugs=["changes-to-nobody"])
+    assert failed(rep) == ["`/cyberblock changes` lists what the guest built"]
 
 
 def test_replica_scenario_runs_the_guest_actions_as_the_guest(tmp_path, monkeypatch):
