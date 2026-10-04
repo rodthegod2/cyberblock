@@ -1,0 +1,19 @@
+{
+	"variants": {
+		"facing=east": {
+			"model": "cyberblock:block/leaderboard_board",
+			"y": 90
+		},
+		"facing=north": {
+			"model": "cyberblock:block/leaderboard_board"
+		},
+		"facing=south": {
+			"model": "cyberblock:block/leaderboard_board",
+			"y": 180
+		},
+		"facing=west": {
+			"model": "cyberblock:block/leaderboard_board",
+			"y": 270
+		}
+	}
+}

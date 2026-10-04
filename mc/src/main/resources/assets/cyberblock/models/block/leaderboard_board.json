@@ -1,0 +1,73 @@
+{
+	"ambientocclusion": false,
+	"textures": {
+		"front": "cyberblock:block/leaderboard_board_front",
+		"edge": "cyberblock:block/leaderboard_board_edge",
+		"particle": "#edge"
+	},
+	"elements": [
+		{
+			"from": [
+				0,
+				1,
+				14
+			],
+			"to": [
+				16,
+				15,
+				16
+			],
+			"faces": {
+				"north": {
+					"texture": "#front"
+				},
+				"south": {
+					"texture": "#edge",
+					"uv": [
+						0,
+						0,
+						16,
+						14
+					]
+				},
+				"west": {
+					"texture": "#edge",
+					"uv": [
+						0,
+						0,
+						2,
+						14
+					]
+				},
+				"east": {
+					"texture": "#edge",
+					"uv": [
+						0,
+						0,
+						2,
+						14
+					]
+				},
+				"up": {
+					"texture": "#edge",
+					"uv": [
+						0,
+						0,
+						16,
+						2
+					]
+				},
+				"down": {
+					"texture": "#edge",
+					"uv": [
+						0,
+						0,
+						16,
+						2
+					]
+				}
+			},
+			"light_emission": 6
+		}
+	]
+}

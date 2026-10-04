@@ -1,0 +1,136 @@
+{
+	"ambientocclusion": false,
+	"textures": {
+		"side": "cyberblock:block/holo_table_side",
+		"base": "cyberblock:block/holo_table_base",
+		"top": "cyberblock:block/holo_table_top",
+		"proj": "cyberblock:block/holo_table_proj",
+		"particle": "#side"
+	},
+	"elements": [
+		{
+			"from": [
+				3,
+				0,
+				3
+			],
+			"to": [
+				13,
+				9,
+				13
+			],
+			"faces": {
+				"north": {
+					"texture": "#side"
+				},
+				"south": {
+					"texture": "#side"
+				},
+				"west": {
+					"texture": "#side"
+				},
+				"east": {
+					"texture": "#side"
+				},
+				"up": {
+					"texture": "#base"
+				},
+				"down": {
+					"texture": "#base"
+				}
+			}
+		},
+		{
+			"from": [
+				0,
+				9,
+				0
+			],
+			"to": [
+				16,
+				11,
+				16
+			],
+			"faces": {
+				"north": {
+					"texture": "#side"
+				},
+				"south": {
+					"texture": "#side"
+				},
+				"west": {
+					"texture": "#side"
+				},
+				"east": {
+					"texture": "#side"
+				},
+				"up": {
+					"texture": "#base"
+				},
+				"down": {
+					"texture": "#base"
+				}
+			}
+		},
+		{
+			"from": [
+				1,
+				11,
+				1
+			],
+			"to": [
+				15,
+				12,
+				15
+			],
+			"faces": {
+				"north": {
+					"texture": "#top"
+				},
+				"south": {
+					"texture": "#top"
+				},
+				"west": {
+					"texture": "#top"
+				},
+				"east": {
+					"texture": "#top"
+				},
+				"up": {
+					"texture": "#top"
+				}
+			},
+			"light_emission": 15
+		},
+		{
+			"from": [
+				5,
+				12,
+				5
+			],
+			"to": [
+				11,
+				15,
+				11
+			],
+			"faces": {
+				"north": {
+					"texture": "#proj"
+				},
+				"south": {
+					"texture": "#proj"
+				},
+				"west": {
+					"texture": "#proj"
+				},
+				"east": {
+					"texture": "#proj"
+				},
+				"up": {
+					"texture": "#proj"
+				}
+			},
+			"light_emission": 15
+		}
+	]
+}

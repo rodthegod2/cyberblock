@@ -1,0 +1,108 @@
+{
+	"ambientocclusion": false,
+	"textures": {
+		"base": "cyberblock:block/spawn_beacon_base",
+		"pillar": "cyberblock:block/spawn_beacon_pillar",
+		"core": "cyberblock:block/spawn_beacon_core",
+		"particle": "#base"
+	},
+	"elements": [
+		{
+			"from": [
+				2,
+				0,
+				2
+			],
+			"to": [
+				14,
+				2,
+				14
+			],
+			"faces": {
+				"north": {
+					"texture": "#base"
+				},
+				"south": {
+					"texture": "#base"
+				},
+				"west": {
+					"texture": "#base"
+				},
+				"east": {
+					"texture": "#base"
+				},
+				"up": {
+					"texture": "#base"
+				},
+				"down": {
+					"texture": "#base"
+				}
+			}
+		},
+		{
+			"from": [
+				6,
+				2,
+				6
+			],
+			"to": [
+				10,
+				11,
+				10
+			],
+			"faces": {
+				"north": {
+					"texture": "#pillar"
+				},
+				"south": {
+					"texture": "#pillar"
+				},
+				"west": {
+					"texture": "#pillar"
+				},
+				"east": {
+					"texture": "#pillar"
+				},
+				"up": {
+					"texture": "#pillar"
+				},
+				"down": {
+					"texture": "#pillar"
+				}
+			}
+		},
+		{
+			"from": [
+				5,
+				11,
+				5
+			],
+			"to": [
+				11,
+				16,
+				11
+			],
+			"faces": {
+				"north": {
+					"texture": "#core"
+				},
+				"south": {
+					"texture": "#core"
+				},
+				"west": {
+					"texture": "#core"
+				},
+				"east": {
+					"texture": "#core"
+				},
+				"up": {
+					"texture": "#core"
+				},
+				"down": {
+					"texture": "#core"
+				}
+			},
+			"light_emission": 15
+		}
+	]
+}
