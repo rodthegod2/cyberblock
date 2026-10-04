@@ -4,9 +4,10 @@
 // this file talks to the game. Redscript only says whether V may be moved (Cyberblock_SetFlightAllowed, 10 Hz).
 //
 // Re-test 3 (plan task D3, F4): the drive owns V's yaw while it flies. It starts from V's facing and turns by the raw
-// mouse X counts (input.cpp take_mouse_x; the game's own copy of them is stripped while driving in first person) at the
+// mouse X counts (input.cpp take_mouse_x; the game's own copy of them is stripped while driving, in either view) at the
 // rate Cyberpunk turns per count (keys::TurnRate, learnt by camera.cpp), and every teleport passes that yaw.
 #pragma once
+#include "cbmath.hpp"
 #include <cstdint>
 
 namespace cb::drive
@@ -23,4 +24,9 @@ namespace cb::drive
 	bool driving();
 	/// 0 while driving, the seconds since the last flight ended, 999 before any. Any thread.
 	float seconds_since_end();
+	/// True when this frame's tick teleported V; `feet` is then where V's feet were before it (Cyberpunk space): the place
+	/// that matches the camera the game last computed, which camera::publish reads in the same frame. V's position read
+	/// after the teleport may already be the new one, a frame ahead of that camera, and Steve would then be drawn (and moved
+	/// by the compositor) a frame ahead of the camera framing him. Main thread.
+	bool feet_before_teleport(Vec3 &feet);
 }

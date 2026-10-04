@@ -50,7 +50,16 @@ namespace cb::follow
 	{
 		m_state = State::Idle;
 		m_endedAt = now;
+		m_armed = false;
+		m_oddSince = -1;
 		return {act, to, std::move(log)};
+	}
+
+	Out Follower::blocked(Vec3 at, double now)
+	{
+		if (m_state == State::Idle)
+			return {};
+		return end(Act::Ground, at, "flight: V hit Night City geometry, the glide ends here (V put on the ground below)", now);
 	}
 
 	Out Follower::step(const In &in)
@@ -58,6 +67,8 @@ namespace cb::follow
 		const double dt = m_lastNow < 0 ? 0.0 : std::max(in.now - m_lastNow, 0.0);
 		m_lastNow = in.now;
 		const bool driving = m_state != State::Idle;
+		if (!in.active)
+			m_armed = true; // Minecraft's flight is over: the next one is a new flight
 
 		// the gate first: Stop never moves V, so it is safe even behind a menu
 		if (driving && !in.gate)
@@ -68,6 +79,8 @@ namespace cb::follow
 			// the game is paused or a menu is up: nothing moves and no timer runs
 			m_start += dt;
 			m_holdSince += dt;
+			if (m_oddSince >= 0)
+				m_oddSince += dt;
 			if (m_endedAt >= 0)
 				m_endedAt += dt;
 			return {};
@@ -75,9 +88,10 @@ namespace cb::follow
 
 		if (!driving)
 		{
-			if (!in.gate || !in.active)
+			if (!in.gate || !in.active || !m_armed)
 				return {};
 			m_state = State::Following;
+			m_oddSince = -1;
 			m_start = in.now;
 			m_launch = in.launch;
 			m_last = in.feet;
@@ -91,6 +105,23 @@ namespace cb::follow
 
 		if (in.active)
 		{
+			// the watchdog: V must be where it was put, and Steve must not have run away from it
+			const double behind = distance(in.target, m_last), off = distance(in.feet, m_last);
+			if (m_state == State::Following && (behind > kDivergence || off > kDivergence))
+			{
+				if (m_oddSince < 0)
+					m_oddSince = in.now;
+				else if (in.now - m_oddSince >= kWatchdog)
+				{
+					char line[160];
+					std::snprintf(line, sizeof(line),
+								  "flight: watchdog: V could not follow for %.1f s (Steve %.1f m away, V %.1f m off), V released",
+								  in.now - m_oddSince, behind, off);
+					return end(Act::Ground, m_last, line, in.now);
+				}
+			}
+			else
+				m_oddSince = -1;
 			m_launch = in.launch; // a launch may turn into a glide mid-air
 			++m_summary.frames;
 			const bool wasHolding = m_state == State::Holding;
