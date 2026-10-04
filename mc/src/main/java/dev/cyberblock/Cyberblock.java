@@ -1,8 +1,12 @@
 // Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
 package dev.cyberblock;
 
+import dev.cyberblock.net.HostSession;
+import dev.cyberblock.net.HostSessions;
+import dev.cyberblock.net.NetCommands;
 import java.util.Locale;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
@@ -11,6 +15,8 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,6 +32,24 @@ public class Cyberblock implements ModInitializer {
 	 * The client's Flight sets it for the length of a launch; the integrated server shares this JVM.
 	 */
 	public static volatile boolean launching;
+	/**
+	 * The client's own answer to {@link #hostActive} for client-side players (its HostState); the client entrypoint installs it
+	 * (megaplan section 1.4).
+	 */
+	public static volatile Predicate<Player> clientHostActive = player -> false;
+
+	/**
+	 * Is this player a host whose Cyberpunk is On and streaming? On the server the player's session decides; on the client its own
+	 * HostState (through {@link #clientHostActive}). For code that runs on both sides (for example PlayerMixin).
+	 */
+	public static boolean hostActive(final Player player) {
+		if (player instanceof ServerPlayer serverPlayer) {
+			HostSession session = HostSessions.of(serverPlayer);
+			return session != null && session.active();
+		}
+
+		return clientHostActive.test(player);
+	}
 
 	@Override
 	public void onInitialize() {
@@ -68,6 +92,8 @@ public class Cyberblock implements ModInitializer {
 
 			dispatcher.register(Commands.literal("cyberblock").then(survey));
 		});
+		// /cyberblock guests and /cyberblock hosts (megaplan sections 1.4 and 1.6)
+		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> NetCommands.register(dispatcher));
 		LOG.info("cyberblock loaded");
 	}
 
