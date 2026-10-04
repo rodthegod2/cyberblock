@@ -2,11 +2,13 @@
 package dev.cyberblock.client;
 
 import dev.cyberblock.Bridge;
+import dev.cyberblock.client.view.ViewInterp;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.player.Abilities;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Keeps the Minecraft player on the host's player: it stands where they stand and looks where the host camera looks. While
@@ -39,6 +41,8 @@ public final class PlayerSync {
 			minecraft.options.setCameraType(cameraType);
 		}
 
+		Vec3 feet = anchor(p, player.getEyeHeight());
+		INTERP.sample(p.receivedNanos(), feet.x, feet.y, feet.z);
 		if (Flight.driving()) {
 			Flight.frame(player, p, partialTick);
 			return;
@@ -55,12 +59,32 @@ public final class PlayerSync {
 			return; // just landed: Steve waits at the landing spot until the host has placed V there
 		}
 
-		// the model stands exactly where the host's player is this frame (not a tick behind, interpolating)
-		Vec3 at = anchor(p, player.getEyeHeight());
-		player.setPos(at.x, at.y, at.z);
-		player.xo = player.xOld = at.x;
-		player.yo = player.yOld = at.y;
-		player.zo = player.zOld = at.z;
+		// the model stands exactly where the host's player is this frame (not a tick behind, interpolating); the next tick sets the
+		// position the server hears from the newest pose again
+		player.setPos(feet.x, feet.y, feet.z);
+		player.xo = player.xOld = feet.x;
+		player.yo = player.yOld = feet.y;
+		player.zo = player.zOld = feet.z;
+	}
+
+	/** The host's poses as they arrive (Q-V1). Render thread. */
+	private static final ViewInterp INTERP = new ViewInterp();
+
+	/**
+	 * Q-V1: where third-person Steve is drawn this frame, {x, y, z} (AvatarRendererMixin, every frame, gliding and launched too):
+	 * at the feet (or seat) of the pose the frame is rendered and exported with, whatever the tick or Minecraft's physics have.
+	 * The compositor re-projects the frame by that pose's own camera and moves Steve's capsule by V's motion since then
+	 * (Cyberblock.fx cb_body_move), so that pose's time is the one he is drawn for (see ViewInterp). Null without a host.
+	 */
+	public static double @Nullable [] renderFeet() {
+		HostState.Pose p = HostState.frame();
+		return p == null ? null : INTERP.at(p.receivedNanos());
+	}
+
+	/** The interpolation factor Steve is drawn with this frame (1: exactly the frame's pose), for the view debug overlay. */
+	public static double renderFactor() {
+		HostState.Pose p = HostState.frame();
+		return p == null ? Double.NaN : INTERP.factor(p.receivedNanos());
 	}
 
 	/** How far below V's hips (cam.pl while seated) Steve's feet go, so his riding pose sits on V's seat (plan retest3 M2). */
