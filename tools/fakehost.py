@@ -87,7 +87,8 @@ asks the devices to do) and `devresult` (what this fake DLL answered)):
              hit the door: the server must keep the door). Every valid `devact` is answered with a `devresult` and, when the device changed, its
              `devstate by:guest`: `open`, `close`, `lock`, `unlock`, `on`, `off`, `toggle`, `disable`, `enable`, `distract` and `friendly` are
              ok on the kinds they make sense for (a refusal says why: `locked`, `not a door`, `not applicable`), `call`, `buy` and `breach` are
-             `unsupported`, a quest-locked device answers `quest locked` and an unknown device id `device gone`. A bad `devact` is dropped.
+             `unsupported` (so is any other name), a quest-locked device answers `quest locked` and an unknown device id `device gone`. A
+             `devact` whose id, dev or act has the wrong type is dropped.
 Multiplayer (shared/protocol.md "Multiplayer (Phase 1)"; tools/mpcheck.py starts one fake host per host client):
   --name NAME      prefixes every line this tool prints with `[NAME] `, so the output of two fake hosts can be told apart.
   --ver VERSION    the DLL version in the `hello` (`ver`, at most 32 characters). The default is this checkout's version, the
@@ -663,7 +664,7 @@ def devstate_message(dev_id: str, dev: dict, by: str) -> dict:
 def apply_act(dev: dict | None, act: str) -> tuple[bool, str]:
     """Run `act` on `dev` (changed in place) the way the DLL does through the device's own actions: (ok, reason). `call`, `buy` and
     `breach` are `unsupported`, a quest-locked device is never touched, a device that is not in the table is `device gone`."""
-    if act in UNSUPPORTED_ACTS:
+    if act not in DEVICE_ACTS or act in UNSUPPORTED_ACTS:  # a name outside the list is answered like call, buy and breach (the DLL's `unsupported`)
         return False, "unsupported"
     if dev is None:
         return False, "device gone"
@@ -693,11 +694,11 @@ def apply_act(dev: dict | None, act: str) -> tuple[bool, str]:
 
 
 def devact_answers(table: dict[str, dict], m: dict) -> list[dict] | None:
-    """The DLL's answer to a DOWN `devact` (None for a message with bad fields, which the real DLL drops): `devresult` first, then, when
+    """The DLL's answer to a DOWN `devact` (None for a message whose id, dev or act has the wrong type, which the real DLL drops): `devresult` first, then, when
     the device changed, its `devstate` (`by:"guest"`: every `devact` comes from the server's routing of a player, see protocol.md)."""
     rid, dev_id, act = m.get("id"), m.get("dev"), m.get("act")
     if not (isinstance(rid, int) and not isinstance(rid, bool) and rid >= 0 and isinstance(dev_id, str) and dev_id.isascii() and dev_id.isdigit()
-            and act in DEVICE_ACTS):
+            and isinstance(act, str)):
         return None
     dev = table.get(dev_id)
     before = (dev["st"], dev["fl"]) if dev else None

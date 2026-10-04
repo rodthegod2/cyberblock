@@ -1051,7 +1051,7 @@ before it sends, as for `npcs`).
   pedestrian opening a door shows in Minecraft), `script` when there is none, and `guest` when the change came from a guest's `devact` (the
   DLL remembers that request for 2 s). Minecraft updates the block's state from `devstate`, never from its own guess.
 - **`devact`.** The `act` list is `open`, `close`, `lock`, `unlock`, `on`, `off`, `toggle`, `call`, `buy`, `disable`, `enable`, `friendly`,
-  `breach`, `distract`; any other value is an invalid message (dropped and counted). The DLL runs **`open`, `close`, `toggle`, `lock`,
+  `breach`, `distract`; the server never sends another value, and a DLL that gets one anyway answers `unsupported`. The DLL runs **`open`, `close`, `toggle`, `lock`,
   `unlock`, `on`, `off`, `disable`, `enable`, `distract` and `friendly`** through the device's own persistent-state actions and answers
   `devresult ok:true` once it did (and sends the `devstate`); `call`, `buy` and `breach` are not Cyberpunk actions (a lift call is unproven,
   vending is a Minecraft shop paid in eddies, Breach is a Minecraft minigame whose daemons send the supported acts), so the DLL answers
@@ -1065,7 +1065,7 @@ before it sends, as for `npcs`).
   the whole layer).
 - **Validation (receivers).** `devices.list` has at most 64 entries; `id` is a decimal string below 2^64; `cls` 1 to 48 characters; `kind` one of
   the eleven names; `p` finite with `|c| < 3e7`; `yaw` finite; `st` -2..1; `fl` 0..31; `devstate.by` one of the four names; `devresult.reason` at most
-  128 UTF-8 bytes and `""` when `ok` is true; `devact.id` a whole number ≥ 0; `devact.dev` a decimal string; `devact.act` one of the fourteen names. A
+  128 UTF-8 bytes and `""` when `ok` is true; `devact.id` a whole number ≥ 0; `devact.dev` a decimal string; `devact.act` a string (a name outside the fourteen is answered `unsupported`, not dropped). A
   bad message is counted and dropped, never fatal. The rate limit (10 per second, burst 40) and the sanity radius of
   [Multiplayer: security](#multiplayer-security-rate-limits-and-guest-toggles) apply to `devices` and `devstate`; `devresult` also needs a request
   id the session issued.
@@ -1076,11 +1076,14 @@ before it sends, as for `npcs`).
 ### Phase 4: payloads (client ↔ server)
 | Id | Direction | Fields | When |
 |---|---|---|---|
-| `cyberblock:act` `t:"devact"` | C2S | `pos:[x, y, z]` the block the player used (three whole numbers, `\|c\| ≤ 30000000`), `act` one of the fourteen device acts | a player right-clicks a device block (a door, a lamp switch, a camera, a lift call button, a turret); `json` is at most 8000 bytes like every `act` |
+| `cyberblock:act` `t:"devact"` | C2S | `pos:[x, y, z]` the block the player used (three whole numbers, `\|c\| ≤ 30000000`), `act` one of the fourteen device acts or `use` (what a right-click does for that kind of device; a missing `act` is `use`), and for `buy` only: `i` the shop row (0..23) and `n` how many (1..16) | a player right-clicks a device block (a door, a lamp switch, a camera, a lift call button, a turret, a vending machine); `json` is at most 8000 bytes like every `act` |
 
 - **Which device.** The server finds the device whose block stands at `pos` (any block of a multi-block device counts) and takes its owner and id from
-  its own registry, so the client never names an owner or an id: a `pos` with no device block is dropped (counted). The server turns the request into the
-  DOWN `devact` above (with a fresh request id remembered for the asker) after the permission check.
+  its own registry, so the client never names an owner or an id: a `pos` with no device block is dropped (counted), and one farther than 8 blocks from the player is
+  refused (`cyberblock.device.out_of_range`). A second use by the same player within 4 ticks is ignored. After the permission check the server turns the
+  request into the DOWN `devact` above (with a fresh request id remembered for the asker), shows the shop of a vending machine (`buy` with `i` and `n` is
+  paid in Minecraft eddies and never goes DOWN), or greys the control (`call`, `breach`, a quest-locked device, a locked door that would open: a message on
+  the action bar, nothing is sent). An `act` the server does not know is greyed like `call`.
 - **Answers.** A `devresult` is routed to the asker the request id was issued for; `ok:false` shows its reason on the action bar. The next
   `devstate` (or the `devresult ok:true`) updates the block for everyone.
 
@@ -1117,6 +1120,7 @@ Phase 4 examples, Minecraft to Cyberpunk:
 Phase 4 examples, client to server (`cyberblock:act`, `t:"devact"`):
 ```jsonl
 {"pos":[-1239,64,811],"act":"open"}
+{"pos":[-1242,64,806],"act":"buy","i":0,"n":2}
 ```
 
 ## Shared memory `Local\CyberblockFrame`

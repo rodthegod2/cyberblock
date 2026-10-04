@@ -1357,10 +1357,16 @@ def test_the_three_unsupported_acts_are_exactly_the_documented_ones_and_the_rest
 
 @pytest.mark.parametrize("bad", [{"t": "devact", "id": -1, "dev": "5", "act": "open"}, {"t": "devact", "id": True, "dev": "5", "act": "open"},
                                  {"t": "devact", "id": "7", "dev": "5", "act": "open"}, {"t": "devact", "id": 7, "dev": 5, "act": "open"},
-                                 {"t": "devact", "id": 7, "dev": "x5", "act": "open"}, {"t": "devact", "id": 7, "dev": "5", "act": "explode"},
+                                 {"t": "devact", "id": 7, "dev": "x5", "act": "open"}, {"t": "devact", "id": 7, "dev": "5", "act": 5},
                                  {"t": "devact", "id": 7, "dev": "5"}, {"t": "devact", "dev": "5", "act": "open"}])
 def test_a_bad_devact_is_dropped_and_not_answered(bad):
     assert fakehost.devact_answers(fakehost.device_table(), bad) is None
+
+
+def test_an_act_the_list_does_not_have_is_answered_unsupported_like_call_buy_and_breach():
+    table = fakehost.device_table()
+    assert fakehost.devact_answers(table, {"t": "devact", "id": 7, "dev": DEV["door"], "act": "explode"}) == [
+        {"t": "devresult", "id": 7, "ok": False, "reason": "unsupported"}] and table == fakehost.device_table()
 
 
 def test_the_npc_door_changes_every_four_seconds_and_the_lists_follow():
@@ -1401,16 +1407,16 @@ def test_devices_alone_stands_on_the_street_like_replica_and_has_no_env_no_figur
 
 
 def test_devices_mode_plays_the_scene_answers_devact_and_prints_both_sides(tmp_path, exporting, quick, capsys):
-    asks = [devact("door", "open", 11), devact("sealed", "open", 12), devact("elevator", "call", 13), {"t": "devact", "id": 14, "dev": "1", "act": "nope"}]
+    asks = [devact("door", "open", 11), devact("sealed", "open", 12), devact("elevator", "call", 13), {"t": "devact", "id": 14, "dev": "1", "act": "nope"}, {"t": "devact", "id": 15, "dev": "1"}]
     _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[HOST_SESSION, *asks], hold=0.5, layers=layer_set(), modes=mode_set("devices"))
     kinds = types(got)
     assert kinds.count("devices") >= 2 and "devstate" in kinds and "env" not in kinds and all(p4_valid(m) for m in got if m["t"] in set(P4_VALIDATORS) | {"ground", "clear", "npcs"})
     results = [m for m in got if m["t"] == "devresult"]
-    assert [(m["id"], m["ok"], m["reason"]) for m in results] == [(11, True, ""), (12, False, "quest locked"), (13, False, "unsupported")]  # the bad one gets nothing
+    assert [(m["id"], m["ok"], m["reason"]) for m in results] == [(11, True, ""), (12, False, "quest locked"), (13, False, "unsupported"), (14, False, "unsupported")]  # no act at all gets nothing
     assert next(m for m in got if m["t"] == "devstate" and m["by"] == "guest")["id"] == DEV["door"]
     assert any(m["t"] == "devstate" and m["by"] == "npc" for m in got)  # the NPC door changed within 0.5 s of scaled time
     lines = printed(capsys)
-    assert [m["id"] for m in lines["devact"]] == [11, 12, 13, 14] and [m["id"] for m in lines["devresult"]] == [11, 12, 13]
+    assert [m["id"] for m in lines["devact"]] == [11, 12, 13, 14, 15] and [m["id"] for m in lines["devresult"]] == [11, 12, 13, 14]
 
 
 def test_devact_is_printed_only_with_the_mode(tmp_path, exporting, capsys):

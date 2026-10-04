@@ -1733,10 +1733,12 @@ def devact_ok(m) -> bool:
 
 
 def devact_payload_ok(m) -> bool:
-    """`cyberblock:act` `t:"devact"`: the block the player used and the act (the server finds the device and its owner)."""
-    pos = m["pos"]
-    return (set(m) == {"pos", "act"} and isinstance(pos, list) and len(pos) == 3 and all(whole(c, -POS_LIMIT, POS_LIMIT) for c in pos)
-            and m["act"] in DEVICE_ACTS)
+    """`cyberblock:act` `t:"devact"`: the block the player used and the act (the server finds the device and its owner): `act` is one of the
+    fourteen or `use` (a missing one is `use`); `i` (a shop row 0..23) and `n` (1..16) only go with `buy`."""
+    pos = m.get("pos")
+    return (set(m) <= {"pos", "act", "i", "n"} and isinstance(pos, list) and len(pos) == 3 and all(whole(c, -POS_LIMIT, POS_LIMIT) for c in pos)
+            and m.get("act", "use") in (*DEVICE_ACTS, "use") and ("i" not in m or (m.get("act") == "buy" and whole(m["i"], 0, 23)))
+            and ("n" not in m or (m.get("act") == "buy" and whole(m["n"], 1, 16))))
 
 
 P4_VALIDATORS = {"devices": devices_ok, "devstate": devstate_ok, "devresult": devresult_ok, "devact": devact_ok}
@@ -1780,7 +1782,7 @@ def test_p4_example_obeys_the_documented_limits(t, m):
 
 def test_p4_the_act_payload_example_is_valid_and_matches_the_devact_example():
     payloads = examples(P4_ACT_EXAMPLES)
-    assert len(payloads) == 1 and devact_payload_ok(payloads[0])
+    assert len(payloads) == 2 and all(devact_payload_ok(m) for m in payloads) and payloads[1]["act"] == "buy" and {"i", "n"} <= set(payloads[1])  # a use and a purchase
     assert payloads[0]["act"] == p4_example("devact")["act"] and payloads[0]["pos"] == [math.floor(c) for c in p4_example("devices")["list"][0]["p"]]
 
 
@@ -1819,7 +1821,8 @@ def test_p4_rules_are_stated_in_the_document():
                    "needs the owner's `devices` toggle **and** the bit of the device's kind", "`cyberblock.guest.blocked`", "never shows a state Night City refused",
                    "`/cyberblock guests devices <type> on|off`", "never fatal", "10 per second, burst 40", "probe ray that hits a device is cast again past it",
                    "never makes a replica block inside a device's box", "`cyberblock.device.quest_locked`", "bit 2 (devices)",
-                   "the client never names an owner or an id", "a `pos` with no device block is dropped", "fresh request id", "8000 bytes"):
+                   "the client never names an owner or an id", "a `pos` with no device block is dropped", "fresh request id", "8000 bytes", "or `use`",
+                   "farther than 8 blocks", "within 4 ticks", "never goes DOWN", "a DLL that gets one anyway answers `unsupported`"):
         assert phrase in text, f"{phrase!r} is not stated"
 
 
@@ -1883,7 +1886,10 @@ def test_p4_validators_accept_the_limits_themselves():
     assert devresult_ok(p4_example("devresult", ok=False, reason="unsupported")) and devresult_ok(p4_example("devresult", ok=False, reason="é" * 64))
     assert not devresult_ok(p4_example("devresult", ok=False, reason="é" * 65))  # 130 bytes
     assert devact_ok(p4_example("devact", id=0)) and devact_ok(p4_example("devact", id=2**31 - 1))
-    assert all(devact_payload_ok({"pos": [-POS_LIMIT, 0, POS_LIMIT], "act": act}) for act in DEVICE_ACTS)
+    assert all(devact_payload_ok({"pos": [-POS_LIMIT, 0, POS_LIMIT], "act": act}) for act in (*DEVICE_ACTS, "use")) and devact_payload_ok({"pos": [0, 0, 0]})
+    assert devact_payload_ok({"pos": [0, 0, 0], "act": "buy", "i": 23, "n": 16}) and devact_payload_ok({"pos": [0, 0, 0], "act": "buy", "i": 0})
     for bad in ({"pos": [1, 2], "act": "open"}, {"pos": [1.5, 2, 3], "act": "open"}, {"pos": [POS_LIMIT + 1, 0, 0], "act": "open"},
-                {"pos": [0, 0, 0], "act": "dig"}, {"pos": [0, 0, 0]}, {"pos": [0, 0, 0], "act": "open", "owner": "x"}, {"pos": "0,0,0", "act": "open"}):
+                {"pos": [0, 0, 0], "act": "dig"}, {"act": "open"}, {"pos": [0, 0, 0], "act": "open", "owner": "x"}, {"pos": "0,0,0", "act": "open"},
+                {"pos": [0, 0, 0], "act": "open", "i": 1}, {"pos": [0, 0, 0], "act": "buy", "i": 24}, {"pos": [0, 0, 0], "act": "buy", "n": 0},
+                {"pos": [0, 0, 0], "act": "buy", "n": 17}, {"pos": [0, 0, 0], "act": "buy", "i": 1.5}, {"pos": [0, 0, 0], "act": None}):
         assert not devact_payload_ok(bad), bad

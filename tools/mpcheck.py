@@ -38,8 +38,8 @@ mode on 127.0.0.1; its RCON password is random per run, held in memory and writt
 folder (it is never printed, logged or put on a command line); APEX_FTP_PASS is removed from the environment of every child;
 port 25600 and `Local\\CyberblockFrame` are never used. The scenarios assume the plan's devtools commands (task 1-N4,
 `-Dcyberblock.devtools=true`): `/cyberblock test hit <host> <id> <dmg>`, `/cyberblock test explode <x> <y> <z> <power>` and
-`/cyberblock test place <x> <y> <z> <block>` (Phase 4's `devices` scenario adds `/cyberblock test devact <x> <y> <z> <act>`: the same
-`cyberblock:act` `devact` a right-click on that block sends)
+`/cyberblock test place <x> <y> <z> <block>` (Phase 4's `devices` scenario adds `/cyberblock test device <x> <y> <z> <act>`: the same
+use of the device block that a right-click or a `cyberblock:act` `devact` is)
 run as the guest with `/execute as CbGuest1 run ...` (from the RCON console alone there is no player behind them, and an action
 with no player behind it is always allowed), and `/execute as <host> run cyberblock guests <toggle> on|off` flips that host's
 toggle. They also assume that `runServer` and `runClient` honour `-Pcyberblock.runDir` (task 1-L1) and that the dedicated
@@ -1055,9 +1055,8 @@ def scenario_meetup(env: Env, rep: Report) -> None:
 
 # ---- Phase 4: the device layer (megaplan 4-P1) ------------------------------------------------------------------------------
 # These scenarios need packages 4M (devices on the server) and 4B (device blocks) merged: the fake host `--devices` (tools/fakehost.py)
-# plays Cyberpunk, RCON looks at the world, and the guest acts through the devtools command `/cyberblock test devact <x> <y> <z> <act>` (run
-# as the guest it sends the same `cyberblock:act` `devact` a right-click on that block does; 4M adds it next to `test hit`, `test explode` and
-# `test place`). The doors are the vanilla ones (the `#minecraft:doors` tag, driven by the server); every other device only has to stand as a
+# plays Cyberpunk, RCON looks at the world, and the guest acts through the devtools command `/cyberblock test device <x> <y> <z> <act>` (4M's
+# DeviceCommands: run as the guest it does exactly what a right-click or a `cyberblock:act` `devact` on that block does). The doors are the vanilla ones (the `#minecraft:doors` tag, driven by the server); every other device only has to stand as a
 # block (not air): which block it is belongs to 4A's `device_map` and 4B.
 DEVICE_ACT = r"\[CbHost1\] devact: (\{.*\})"
 DEVICE_RESULT = r"\[CbHost1\] devresult: (\{.*\})"
@@ -1065,6 +1064,7 @@ DEVICE_IDS = fakehost.device_ids()
 DOOR_KEYS = ("door", "npcdoor")  # the devices that must be vanilla doors; the sealed quest door shows greyed (any block)
 DEVICE_PLACE_TIMEOUT = 60.0  # the devices of a fresh host may need a full 5 s list and a chunk or two
 GUEST_AT = (-1.5, 64.0, 6.5)  # the guest stands on the street, in front of the doors
+GUEST_GAP_S = 0.7  # between two uses by the guest: the server ignores a second use within 4 ticks (DeviceRules.USE_GAP_TICKS)
 
 
 def logged_events(log: LogFile, pattern: str, since: int = 0) -> list[dict]:
@@ -1101,7 +1101,8 @@ def door_is_open(server: Server, key: str, shift: int = 0) -> bool:
 def guest_act(server: Server, key: str, act: str) -> None:
     """As the guest: use the block of device `key` the way a right-click does (the devtools command sends the `cyberblock:act` `devact`)."""
     x, y, z = fakehost.device_cell(key)
-    server.test(f"devact {x} {y} {z} {act}", as_player="CbGuest1")
+    time.sleep(GUEST_GAP_S)
+    server.test(f"device {x} {y} {z} {act}", as_player="CbGuest1")
 
 
 def devact_quiet(host: FakeHost, key: str, act: str, since: int) -> bool:

@@ -26,7 +26,7 @@ def quick(monkeypatch):
     """Every wait of the scenarios shrinks to a fraction of a second (the real values are minutes)."""
     for name, value in (("T_QUIET", 0.05), ("T_EFFECT", 0.6), ("T_JOIN", 0.6), ("T_SERVER", 0.6), ("T_CLIENT", 0.6), ("FLOOD_S", 0.1), ("T_STOP", 0.05),
                         ("LOGIN_GAP_S", 0.0), ("T_ENV", 1.0), ("T_POLL", 0.01), ("COOLDOWN_S", 0.7),
-                        ("T_WRECK", 0.6), ("WRECK_MIN_S", 0.04), ("DEVICE_PLACE_TIMEOUT", 1.0)):
+                        ("T_WRECK", 0.6), ("WRECK_MIN_S", 0.04), ("DEVICE_PLACE_TIMEOUT", 1.0), ("GUEST_GAP_S", 0.0)):
         monkeypatch.setattr(mpcheck, name, value)
 
 
@@ -1342,7 +1342,7 @@ class Sim4Server(Sim3Server):
         if match := re.fullmatch(r"cyberblock guests devices (\w+) (on|off)", inner):  # one device type's bit
             (self.type_off.add if match.group(2) == "off" else self.type_off.discard)((actor, match.group(1)))
             return ""
-        if match := re.fullmatch(r"cyberblock test devact (-?\d+) (-?\d+) (-?\d+) (\w+)", inner):
+        if match := re.fullmatch(r"cyberblock test device (-?\d+) (-?\d+) (-?\d+) (\w+)", inner):
             return self.devact(actor, tuple(int(v) for v in match.groups()[:3]), match.group(4))
         return super().rcon(command)
 
@@ -1431,7 +1431,7 @@ def test_devices_scenario_runs_the_guest_actions_as_the_guest_and_the_toggles_as
     monkeypatch.setattr(Sim4Server, "rcon", lambda self, c: sent.append(c) or real(self, c))
     assert run4(tmp_path).ok
     x, y, z = fakehost.device_cell("door")
-    assert f"execute as CbGuest1 run cyberblock test devact {x} {y} {z} open" in sent and not [c for c in sent if "test devact" in c and not c.startswith("execute as CbGuest1")]
+    assert f"execute as CbGuest1 run cyberblock test device {x} {y} {z} open" in sent and not [c for c in sent if "test device" in c and not c.startswith("execute as CbGuest1")]
     assert [c for c in sent if "guests devices" in c] == [f"execute as CbHost1 run cyberblock guests devices {w}" for w in ("door off", "door on", "off", "on")]
 
 
