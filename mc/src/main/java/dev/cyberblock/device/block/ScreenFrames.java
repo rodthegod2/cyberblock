@@ -2,8 +2,16 @@ package dev.cyberblock.device.block;
 
 import com.mojang.serialization.Codec;
 import dev.cyberblock.Cyberblock;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
@@ -36,12 +44,21 @@ import org.jspecify.annotations.Nullable;
  * holding a locked filled map with its tile of a {@link ScreenImage} picture. The frames are fixed (nothing can be taken out, only
  * creative players can break them) and their map items carry the custom-data mark {@link #MARK}, so an active host's client hides
  * them like the device blocks. The maps are made once per picture tile and reused (SavedData
- * {@code cyberblock:screens}), so screens that come and go never pile up map files. Server thread.
+ * {@code cyberblock:screens}), so screens that come and go never pile up map files. The frames follow the body blocks however they are
+ * set: {@link ScreenFrameBlock} refreshes its panel when a body block appears or switches, and {@link #init}'s sweep takes away a frame
+ * whose body is gone, so the server may simply set screen_frame blocks (4M does) or use {@link #place}, {@link #set} and
+ * {@link #remove}. Server thread.
  */
 public final class ScreenFrames {
 	/** The custom-data key on a screen's map items (and the entity tag of its frames). */
 	public static final String MARK = "cyberblock_screen";
 	public static final int MAX_SIZE = 4;
+	/** How far a refresh looks for the rest of a screen, each way. */
+	private static final int RUN_LIMIT = 64;
+	/** Ticks between two checks for frames whose body is gone. */
+	private static final int SWEEP_TICKS = 20;
+	/** Every screen frame in a loaded chunk (server thread). */
+	private static final Set<ItemFrame> FRAMES = Collections.newSetFromMap(new IdentityHashMap<>());
 	/** The map colour of each ScreenImage ink. */
 	private static final byte[] COLOURS = {
 		MapColor.COLOR_BLACK.getPackedId(MapColor.Brightness.LOWEST),
@@ -100,39 +117,61 @@ public final class ScreenFrames {
 	}
 
 	/**
-	 * Puts the screen up: its body blocks into {@link DeviceBlocks#free free} cells, and a frame in front of each body block whose
-	 * front cell is air (one that already hangs there stays); returns how many frames were hung.
+	 * The frames follow the body blocks: every screen frame the server knows (spawned or loaded) is checked once a second, and one whose
+	 * body block is gone is taken away, so a screen the server removes by setting its blocks to air (4M at device removal and session
+	 * end) leaves no fixed frame behind, even across a restart. Common init, once.
 	 */
-	public static int place(final ServerLevel level, final Screen screen, final int pattern, final boolean on) {
+	static void init() {
+		ServerEntityEvents.ENTITY_LOAD.register((entity, level) -> {
+			if (entity instanceof ItemFrame frame && frame.entityTags().contains(MARK)) {
+				FRAMES.add(frame);
+			}
+		});
+		ServerEntityEvents.ENTITY_UNLOAD.register((entity, level) -> {
+			if (entity instanceof ItemFrame frame) {
+				FRAMES.remove(frame);
+			}
+		});
+		ServerTickEvents.END_SERVER_TICK.register(server -> {
+			if (server.getTickCount() % SWEEP_TICKS == 0 && !FRAMES.isEmpty()) {
+				sweep();
+			}
+		});
+		ServerLifecycleEvents.SERVER_STOPPING.register(server -> FRAMES.clear());
+	}
+
+	private static void sweep() {
+		for (ItemFrame frame : List.copyOf(FRAMES)) {
+			BlockPos body = frame.getPos().relative(frame.getDirection().getOpposite());
+			if (frame.isRemoved()) {
+				FRAMES.remove(frame);
+			} else if (frame.level().isLoaded(body) && !frame.level().getBlockState(body).is(DeviceBlocks.SCREEN_FRAME)) {
+				FRAMES.remove(frame);
+				frame.discard();
+			}
+		}
+	}
+
+	/**
+	 * Puts the screen up: its body blocks into {@link DeviceBlocks#free free} cells, and its frames ({@link #show}); returns how many
+	 * frames were hung.
+	 */
+	public static int place(final ServerLevel level, final Screen screen, final boolean on) {
 		BlockState body = DeviceBlocks.SCREEN_FRAME.defaultBlockState().setValue(FacingDeviceBlock.FACING, screen.facing()).setValue(ScreenFrameBlock.ON, on);
-		int hung = 0;
 		for (int column = 0; column < screen.width(); column++) {
 			for (int row = 0; row < screen.height(); row++) {
 				BlockPos cell = screen.cell(column, row);
 				if (DeviceBlocks.free(level.getBlockState(cell))) {
 					level.setBlock(cell, body, Block.UPDATE_ALL);
 				}
-
-				BlockPos front = screen.frame(column, row);
-				if (!level.getBlockState(cell).is(DeviceBlocks.SCREEN_FRAME) || frameAt(level, front, screen.facing()) != null || !level.getBlockState(front).isAir()) {
-					continue;
-				}
-
-				ItemFrame frame = new GlowItemFrame(level, front, screen.facing());
-				frame.setItem(map(level, screen, pattern, on, column, row), false);
-				frame.addTag(MARK);
-				fix(level, frame);
-				if (level.addFreshEntity(frame)) {
-					hung++;
-				}
 			}
 		}
 
-		return hung;
+		return show(level, screen);
 	}
 
-	/** Shows another picture, or switches the screen on or off. */
-	public static void set(final ServerLevel level, final Screen screen, final int pattern, final boolean on) {
+	/** Switches the screen on or off. */
+	public static void set(final ServerLevel level, final Screen screen, final boolean on) {
 		for (int column = 0; column < screen.width(); column++) {
 			for (int row = 0; row < screen.height(); row++) {
 				BlockPos cell = screen.cell(column, row);
@@ -140,13 +179,72 @@ public final class ScreenFrames {
 				if (body.is(DeviceBlocks.SCREEN_FRAME) && body.getValue(ScreenFrameBlock.ON) != on) {
 					level.setBlock(cell, body.setValue(ScreenFrameBlock.ON, on), Block.UPDATE_ALL);
 				}
+			}
+		}
 
-				ItemFrame frame = frameAt(level, screen.frame(column, row), screen.facing());
+		show(level, screen);
+	}
+
+	/**
+	 * The panel {@code pos} belongs to gets its frames ({@link ScreenFrameBlock}'s refresh): the body blocks facing {@code facing} in a
+	 * row and a column through {@code pos} make one screen, cut into panels of at most {@link #MAX_SIZE} each way from its bottom-left.
+	 */
+	static void refresh(final ServerLevel level, final BlockPos pos, final Direction facing) {
+		Direction right = facing.getCounterClockWise();
+		int left = run(level, pos, right.getOpposite(), facing), below = run(level, pos, Direction.DOWN, facing);
+		int width = left + 1 + run(level, pos, right, facing), height = below + 1 + run(level, pos, Direction.UP, facing);
+		int column = left / MAX_SIZE * MAX_SIZE, row = below / MAX_SIZE * MAX_SIZE;
+		BlockPos origin = pos.relative(right, column - left).below(below - row);
+		show(level, new Screen(origin, facing, Math.min(MAX_SIZE, width - column), Math.min(MAX_SIZE, height - row)));
+	}
+
+	/** How many body blocks facing {@code facing} follow {@code pos} toward {@code way} (at most {@link #RUN_LIMIT}). */
+	private static int run(final ServerLevel level, final BlockPos pos, final Direction way, final Direction facing) {
+		int n = 0;
+		BlockState s;
+		while (n < RUN_LIMIT && (s = level.getBlockState(pos.relative(way, n + 1))).is(DeviceBlocks.SCREEN_FRAME) && s.getValue(FacingDeviceBlock.FACING) == facing) {
+			n++;
+		}
+
+		return n;
+	}
+
+	/**
+	 * Every body block of the screen gets its frame with its tile of the screen's picture, lit or dark as the block: a missing frame is
+	 * hung where the front cell is air, a hanging one gets the right map. Returns how many frames were hung.
+	 */
+	static int show(final ServerLevel level, final Screen screen) {
+		int pattern = pattern(screen), hung = 0;
+		for (int column = 0; column < screen.width(); column++) {
+			for (int row = 0; row < screen.height(); row++) {
+				BlockState body = level.getBlockState(screen.cell(column, row));
+				if (!body.is(DeviceBlocks.SCREEN_FRAME) || body.getValue(FacingDeviceBlock.FACING) != screen.facing()) {
+					continue;
+				}
+
+				ItemStack map = map(level, screen, pattern, body.getValue(ScreenFrameBlock.ON), column, row);
+				BlockPos front = screen.frame(column, row);
+				ItemFrame frame = frameAt(level, front, screen.facing());
 				if (frame != null) {
-					frame.setItem(map(level, screen, pattern, on, column, row), false);
+					if (!Objects.equals(frame.getItem().get(DataComponents.MAP_ID), map.get(DataComponents.MAP_ID))) {
+						frame.setItem(map, false);
+					}
+				} else if (level.getBlockState(front).isAir()) {
+					frame = new GlowItemFrame(level, front, screen.facing());
+					frame.setItem(map, false);
+					frame.addTag(MARK);
+					fix(level, frame);
+					hung += level.addFreshEntity(frame) ? 1 : 0;
 				}
 			}
 		}
+
+		return hung;
+	}
+
+	/** The screen's picture: chosen by where its panel starts, so it stays the same however often the panel is refreshed. Pure. */
+	static int pattern(final Screen screen) {
+		return Math.floorMod(screen.origin().hashCode(), ScreenImage.PATTERNS);
 	}
 
 	/** Takes the screen away: its frames and body blocks. */

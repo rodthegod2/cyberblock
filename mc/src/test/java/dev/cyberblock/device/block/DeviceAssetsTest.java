@@ -21,10 +21,12 @@ import org.junit.jupiter.api.Test;
 /**
  * The contract between 4B's blocks and 4A's art (megaplan 4-B1, 4-A1): every device blockstate file 4A ships names only this block's
  * properties and values, every state of the block has a model, every {@code cyberblock:} model it uses exists, and every device block
- * has one; the lang has 4A's keys 4B's code uses. Skipped while 4A's assets are not merged.
+ * has one; the lang has 4A's keys 4B's code uses. Skipped while 4A's assets are not merged, except 4B's own door blockstates.
  */
 class DeviceAssetsTest {
 	private static final Path ASSETS = Path.of("src/main/resources/assets/cyberblock");
+	/** The blockstates 4B ships itself: its doors, drawn with the player's own vanilla door models. */
+	static final List<String> OWN_BLOCKSTATES = List.of("device_door", "device_iron_door");
 	/** 4A's keys 4B's code uses (each also has an English fallback in the code): a rename on 4A's side shows here. */
 	static final List<String> KEYS = List.of(
 		"cyberblock.device.quest_locked", "cyberblock.device.unsupported", "cyberblock.device.no_link", "cyberblock.device.net_port.phase6",
@@ -39,27 +41,41 @@ class DeviceAssetsTest {
 	@Test
 	void everyShippedDeviceBlockstateFitsTheBlock() throws IOException {
 		List<String> missing = DeviceBlocks.NAMES.stream().filter(name -> !Files.isRegularFile(ASSETS.resolve("blockstates/" + name + ".json"))).toList();
-		Assumptions.assumeTrue(missing.size() < DeviceBlocks.NAMES.size(), "4A's device art is not merged yet");
+		// the two door blockstates are 4B's own (vanilla door models); the rest is 4A's art
+		Assumptions.assumeTrue(DeviceBlocks.NAMES.stream().anyMatch(name -> !OWN_BLOCKSTATES.contains(name) && !missing.contains(name)),
+			"4A's device art is not merged yet");
 		// once the art is in, a device block without a blockstate would show as the missing-model cube
 		assertTrue(missing.isEmpty(), "device blocks without a blockstate: " + missing);
 		for (String name : DeviceBlocks.NAMES) {
-			Path file = ASSETS.resolve("blockstates/" + name + ".json");
-			Block block = DeviceTestBlocks.block(name);
-			JsonObject json = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
-			if (json.has("variants")) {
-				List<Map<String, String>> keys = new ArrayList<>();
-				for (Map.Entry<String, JsonElement> variant : json.getAsJsonObject("variants").entrySet()) {
-					keys.add(parse(name, variant.getKey(), block));
-					models(name, variant.getValue());
-				}
+			fits(name);
+		}
+	}
 
-				for (BlockState state : block.getStateDefinition().getPossibleStates()) {
-					assertTrue(keys.stream().anyMatch(k -> matches(k, state)), name + ": no model for " + state);
-				}
-			} else {
-				for (JsonElement part : json.getAsJsonArray("multipart")) {
-					models(name, part.getAsJsonObject().get("apply"));
-				}
+	@Test
+	void theDoorBlockstatesFitTheDoors() throws IOException {
+		for (String name : OWN_BLOCKSTATES) {
+			fits(name);
+		}
+	}
+
+	/** The block's blockstate file names only its properties and values, covers every state and uses only models that exist. */
+	private static void fits(final String name) throws IOException {
+		Path file = ASSETS.resolve("blockstates/" + name + ".json");
+		Block block = DeviceTestBlocks.block(name);
+		JsonObject json = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+		if (json.has("variants")) {
+			List<Map<String, String>> keys = new ArrayList<>();
+			for (Map.Entry<String, JsonElement> variant : json.getAsJsonObject("variants").entrySet()) {
+				keys.add(parse(name, variant.getKey(), block));
+				models(name, variant.getValue());
+			}
+
+			for (BlockState state : block.getStateDefinition().getPossibleStates()) {
+				assertTrue(keys.stream().anyMatch(k -> matches(k, state)), name + ": no model for " + state);
+			}
+		} else {
+			for (JsonElement part : json.getAsJsonArray("multipart")) {
+				models(name, part.getAsJsonObject().get("apply"));
 			}
 		}
 	}

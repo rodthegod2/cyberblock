@@ -111,6 +111,7 @@ public final class DeviceBlocks {
 		EDDIE_CHIP = item("eddie_chip", new Item.Properties().rarity(Rarity.UNCOMMON));
 		DeviceHooks.init();
 		DeviceMotions.init();
+		ScreenFrames.init();
 		DeviceTestCommand.init();
 		// Phase 0 c (not yet confirmed in game): lift calls are unproven and vending is a Minecraft shop; say which path is active
 		Cyberblock.LOG.info("device: {} device blocks and the eddies registered; lift call: {}; vending buy: Minecraft shop (eddies, never reaches Night City)",
@@ -157,7 +158,7 @@ public final class DeviceBlocks {
 		}
 
 		return switch (name) {
-			case "device_door" -> new DeviceDoorBlock(BlockSetType.OAK, props(name, MapColor.WOOD, SoundType.WOOD).noOcclusion());
+			case "device_door" -> new DeviceDoorBlock(DeviceDoorBlock.NIGHT_CITY_WOOD, props(name, MapColor.WOOD, SoundType.WOOD).noOcclusion());
 			case "device_iron_door" -> new DeviceDoorBlock(BlockSetType.IRON, props(name, MapColor.METAL, SoundType.METAL).noOcclusion());
 			case "eye_camera" -> new EyeCameraBlock(props(name, MapColor.COLOR_GRAY, SoundType.METAL));
 			case "net_port" -> new NetPortBlock(props(name, MapColor.COLOR_CYAN, SoundType.METAL).lightLevel(state -> 4));

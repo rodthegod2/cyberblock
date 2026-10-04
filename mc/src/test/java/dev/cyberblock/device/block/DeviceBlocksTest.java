@@ -15,6 +15,7 @@ import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockSetType;
 import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.CollisionContext;
@@ -65,9 +66,16 @@ class DeviceBlocksTest {
 	@Test
 	void theDoorsAreVanillaDoorsWithTheirOwnIds() {
 		assertInstanceOf(DoorBlock.class, DeviceTestBlocks.block("device_door"));
-		assertTrue(((DoorBlock) DeviceTestBlocks.block("device_door")).type().canOpenByHand());
+		DoorBlock wood = (DoorBlock) DeviceTestBlocks.block("device_door");
+		// not a "wooden door" to vanilla: zombies never break it, villager and piglin door goals and mob pathing treat it like iron
+		assertFalse(DoorBlock.isWoodenDoor(wood.defaultBlockState()));
+		assertFalse(DoorBlock.isWoodenDoor(DeviceTestBlocks.block("device_iron_door").defaultBlockState()));
+		assertFalse(wood.type().canOpenByWindCharge());
+		// still sounds like oak
+		assertEquals(BlockSetType.OAK.doorOpen(), wood.type().doorOpen());
+		assertEquals(BlockSetType.OAK.soundType(), wood.type().soundType());
 		assertFalse(((DoorBlock) DeviceTestBlocks.block("device_iron_door")).type().canOpenByHand());
-		assertFalse(DeviceTestBlocks.block("device_door").defaultBlockState().getValue(DoorBlock.OPEN));
+		assertFalse(wood.defaultBlockState().getValue(DoorBlock.OPEN));
 	}
 
 	@Test

@@ -136,9 +136,9 @@ final class DeviceTestCommand {
 		Lifts.place(level, shaft(o), o.getY());
 		set(level, o.offset(LIFT + 2, 1, 0), LiftCallButtonBlock.state(FRONT));
 		set(level, o.offset(LIFT + 2, 2, 0), LiftCallButtonBlock.state(FRONT).setValue(LiftCallButtonBlock.LIT, true));
-		ScreenFrames.place(level, screen(o, 0), 0, true);
-		ScreenFrames.place(level, screen(o, 1), 1, true);
-		ScreenFrames.place(level, screen(o, 2), 2, false);
+		ScreenFrames.place(level, screen(o, 0), true);
+		ScreenFrames.place(level, screen(o, 1), true);
+		ScreenFrames.place(level, screen(o, 2), false);
 		set(level, o.offset(CRATES, 0, 0), DeviceBlocks.CRATE.defaultBlockState().setValue(CrateBlock.READABLE, true));
 		set(level, o.offset(CRATES + 1, 0, 0), DeviceBlocks.CRATE.defaultBlockState());
 		return say(source, "test: devices built at " + o.toShortString());
@@ -169,8 +169,8 @@ final class DeviceTestCommand {
 		Lifts.Shaft shaft = shaft(o);
 		Lifts.moveTo(level, shaft, Lifts.platformY(level, shaft).orElse(o.getY()) == o.getY() ? shaft.maxY() : o.getY());
 		boolean even = level.getGameTime() % 2 == 0;
-		ScreenFrames.set(level, screen(o, 0), even ? 2 : 4, true);
-		ScreenFrames.set(level, screen(o, 2), 3, even);
+		ScreenFrames.set(level, screen(o, 0), even);
+		ScreenFrames.set(level, screen(o, 2), !even);
 		return say(source, "test: devices cycled at " + o.toShortString());
 	}
 
