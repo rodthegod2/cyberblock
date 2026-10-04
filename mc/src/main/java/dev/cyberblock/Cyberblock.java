@@ -98,6 +98,8 @@ public class Cyberblock implements ModInitializer {
 		ContentLoader.init();
 		// Phase 3E: time and weather from the primary host, /cyberblock meetup, the Offline Builds summary and /cyberblock changes
 		dev.cyberblock.env.EnvSync.init(); dev.cyberblock.meetup.MeetUp.init(); dev.cyberblock.env.OfflineBuilds.init();
+		// Phase 4M: Night City's devices as blocks, device actions to their owner, vending shops, /cyberblock guests devices <type>
+		dev.cyberblock.device.DeviceModule.init();
 		// dedicated-server admin bits (megaplan 2-M1): startup line, whitelist warning, /cyberblock status and hosts add|remove
 		dev.cyberblock.net.admin.ServerAdmin.init();
 		LOG.info("cyberblock loaded");

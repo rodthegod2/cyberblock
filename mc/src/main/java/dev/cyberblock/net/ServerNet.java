@@ -33,8 +33,8 @@ import org.jspecify.annotations.Nullable;
  * the server thread (see Payloads for the verified Fabric names and threads).
  */
 public final class ServerNet {
-	/** Phase features this server has (hs_ack.features): figures from Phase 3 (task 3-F1). */
-	static final int FEATURES = Payloads.FEATURE_FIGURES;
+	/** Phase features this server has (hs_ack.features): figures from Phase 3 (task 3-F1), devices from Phase 4 (task 4-M1). */
+	static final int FEATURES = Payloads.FEATURE_FIGURES | Payloads.FEATURE_DEVICES;
 	private static final Map<UUID, Conn> conns = new ConcurrentHashMap<>();
 	private static final Map<String, BiConsumer<ServerPlayer, JsonObject>> actHandlers = new ConcurrentHashMap<>();
 	private static volatile @Nullable MinecraftServer server;

@@ -66,6 +66,10 @@ final class RelayGuard {
 		// MeetUp against the requested spot: V's new place is far from Steve by design)
 		Map.entry("env", new Rule(2, 4, Sanity.Kind.NONE, false)),
 		Map.entry("vteleported", new Rule(2, 4, Sanity.Kind.NONE, true)),
+		// Phase 4 (package 4M, section 1.6): the device list (its entries' p within the radius), state changes, devact answers
+		Map.entry("devices", new Rule(10, 40, Sanity.Kind.LIST, false)),
+		Map.entry("devstate", new Rule(10, 40, Sanity.Kind.NONE, false)),
+		Map.entry("devresult", new Rule(10, 40, Sanity.Kind.NONE, true)),
 		// LOCAL until Phase 3 (the shared Night City map); its row is ready: 30/s, the survey's burst of 200
 		Map.entry("terrain", new Rule(30, 200, Sanity.Kind.TERRAIN, false))));
 
