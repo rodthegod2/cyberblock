@@ -11,14 +11,18 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.Registry;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Rarity;
+import net.minecraft.world.item.component.ItemLore;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.SoundType;
@@ -108,7 +112,10 @@ public final class DeviceBlocks {
 		TURRET_ENTITY = Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE, id("turret"),
 			FabricBlockEntityTypeBuilder.create((pos, state) -> new DeviceBlockEntity(TURRET_ENTITY, pos, state), TURRET).build());
 		EDDIES = item("eddies", new Item.Properties());
-		EDDIE_CHIP = item("eddie_chip", new Item.Properties().rarity(Rarity.UNCOMMON));
+		// the hover line "Worth 100 eddies" (4A's lang key) as default lore, grey and upright like a vanilla tooltip line
+		EDDIE_CHIP = item("eddie_chip", new Item.Properties().rarity(Rarity.UNCOMMON).component(DataComponents.LORE, new ItemLore(List.of(
+			Component.translatableWithFallback("item.cyberblock.eddie_chip.tooltip", "Worth " + EDDIE_CHIP_VALUE + " eddies")
+				.withStyle(style -> style.withItalic(false).withColor(ChatFormatting.GRAY))))));
 		DeviceHooks.init();
 		DeviceMotions.init();
 		ScreenFrames.init();

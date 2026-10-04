@@ -93,7 +93,7 @@ def test_re_test_wave_b_phase_3_has_one_line_per_runtime_path_of_the_script_and_
 
 def test_the_testing_plan_intro_and_the_old_sections_are_still_in_their_order():
     assert TESTING.index("## Re-test Q (do this first)") < TESTING.index("## In-game fixes 3") < TESTING.index("## Re-test 3 (do this first)")
-    assert "Re-test: Wave B, Phase 3 first" in flat(TESTING[:1200])
+    assert "Re-test: Wave B (Phases 3, 4, 5) first" in flat(TESTING[:1200])  # the combined Wave B section leads, its Phase 3 part next
 
 
 def test_the_changelog_has_a_phase_3_entry_above_the_join_password_one():

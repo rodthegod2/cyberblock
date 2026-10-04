@@ -9,6 +9,19 @@ and the tools.
 Version 1.0.0 is set in the files on 2026-10-03; it is tagged and published only after the in-game re-test
 ([docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test 3") has passed.
 
+### Unreleased additions: Wave B integration (Phases 3, 4 and 5 together)
+Phases 4 and 5 merged on top of Phase 3 (and the Wave A leftovers) for one combined in-game test,
+[docs/TESTING-PLAN.md](docs/TESTING-PLAN.md) "Re-test: Wave B (Phases 3, 4, 5)".
+- **Merged packages.** Phase 4: scripts (device stream and actions), DLL (device messages, the device-box probe filter), server (device
+  registry, placement, both-way sync, per-type toggles, vending in eddies), device blocks and client, art and data, protocol and tools.
+  Phase 5: NPC and vehicle skins, figure rendering (skins, poses, outlines, vehicle models), forced cyber skins with the `[V]` team, NPC
+  tags in the scripts, the DLL's `Cyberblock_SubmitNpcs2`, protocol and tools.
+- **Integration.** The fake host runs `--devices` and `--figures` (each with its own checks); `tools.mpcheck` has both the `devices` and
+  the `figures` scenario; the mod registers the device blocks and the cyber skins at startup; the Eddie Chip shows "Worth 100 eddies" when
+  hovered; the native check reads `Cyberblock_SubmitNpcs2`'s parameters again.
+- **Phase 0 still open.** The in-game CET checks (the "Cyberblock Phase 0" window of the CET overlay) have not been run; every reader whose
+  verdict is unconfirmed logs which path it took (the research guess or the written fallback).
+
 ### Unreleased additions: Phase 4 (multiplayer plan, package 4P)
 Phase 4 of the multiplayer plan: **Night City's devices as Minecraft blocks**. This entry is the protocol, tools and docs side; the
 mod, plugin and scripts of Phase 4 have their own entries. The in-game list is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md),

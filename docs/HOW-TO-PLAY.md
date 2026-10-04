@@ -986,8 +986,10 @@ nothing of it stays in the world file. Reopen the world and the ground comes bac
 **Testing it yourself (developers).** From a git worktree (never the folder you play from), `uv run python -m tools.mpcheck
 --all` runs the automatic checks (a test server, offline clients and fake hosts; it needs about 3 GB of free commit per client
 and stops everything it started). `uv run python -m tools.mpcheck --guest <port>` starts one offline test guest (name
-`CbGuest1`), but a world opened to LAN checks every Minecraft login and refuses it ("Invalid session"): to try a guest in
-your own LAN world you need a second player with a real Minecraft account.
+`CbGuest1`), but a world opened to LAN checks every Minecraft login and refuses it ("Invalid session") until the world's
+owner types `/cyberblock lan offline on`. With a join password set, such an offline guest must type `/login` on every join:
+an offline name's login holds for that connection only and is never remembered (anyone could type that name), while a
+real-account player who logged in earlier stays verified.
 
 #### On a dedicated server (Phase 2 tools)
 The same mod runs on a dedicated Fabric 26.3 server (a hosting panel's **Custom Jar** option runs the Fabric server launcher
@@ -1126,7 +1128,7 @@ says so). A device you cannot reach (more than 8 blocks away) or use twice withi
   its own stock (below), nothing is bought in the host's Night City. **Breach** is the Minecraft Breach Protocol of Phase 6.
 
 **Vending machines and eddies.** A vending machine's shop sells Minecraft items for **eddies**, an item (`cyberblock:eddies`, and the
-*Eddie Chip* worth 100) that is yours like any other: gigs and sales earn them in later phases, and an operator can `/give` some. The prices, the stock and when it restocks come from the shop files (`data/cyberblock/cyberblock/shop/`), so a server can
+*Eddie Chip* worth 100, as its tooltip says) that is yours like any other: gigs and sales earn them in later phases, and an operator can `/give` some. The prices, the stock and when it restocks come from the shop files (`data/cyberblock/cyberblock/shop/`), so a server can
 change them with a datapack. The host's own Cyberpunk money is a different thing and is not touched.
 
 **Who may use what.** The host decides, per kind of device, whether guests may use it: `/cyberblock guests devices <type> on|off` with a
@@ -1149,6 +1151,11 @@ loot cannot be read.
 hash, or the position fallback), one saying how **changes** are found (the game's events, or polling twice a second), and one saying whether the
 **device-box filter** is needed (probe rays that hit a device are cast past it, or the DLL drops hits inside a known device box).
 [Re-test: Wave B, Phase 4](TESTING-PLAN.md) lists what to search for.
+
+**Until Phase 0 is run in game.** The in-game CET checks (the "Cyberblock Phase 0" window of the CET overlay) have not been run yet, so the
+replica materials, the weather, the device ids and the NPC tags use the research's best guess with a runtime check, and each writes one log
+line naming the path it took (the guess or the fallback). Everything works either way; the CET lines only make the guesses exact.
+[Re-test: Wave B (Phases 3, 4, 5)](TESTING-PLAN.md) is the one combined test.
 
 
 ### Figures and skins (Phase 5)

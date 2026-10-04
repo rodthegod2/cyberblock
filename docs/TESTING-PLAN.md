@@ -1,9 +1,136 @@
 # Cyberblock — in-game test session (2026-10-03)
 
 Everything below is built, unit-tested, compile-checked against the real 2.31 game scripts and reviewed. Work top to
-bottom (**Re-test: Wave B, Phase 3 first** when you are testing Wave B, with the sections of Phases 4 and 5 beside it; then
+bottom (**Re-test: Wave B (Phases 3, 4, 5) first** when you are testing Wave B, then its Phase 3, 4 and 5 sections; then
 **Re-test: Wave A**, which points into Re-test Q and Re-test 1 for the details; then **In-game fixes 3**, then Re-test 3); each step says what should happen. Tell Claude "F4: what you saw" or "R5 L-1: what you saw" (or "step N: ...") and it reads
 `red4ext\logs\Cyberblock.log`, Minecraft's `mc\run\logs\latest.log` and captures the game window to diagnose.
+
+## Re-test: Wave B (Phases 3, 4, 5)
+
+**One session for all of Wave B**: Night City as Minecraft (Phase 3), the device layer (Phase 4), figures and skins (Phase 5)
+and the Wave A leftovers. The detailed sections of each phase follow below ("Re-test: Wave B, Phase 3", "... Phase 4",
+"... Phase 5"); this section is the short list of what changed since the last build and what to look at first. Tell Claude
+"WB p3-c 2: what you saw" (the group key and the check number) and it reads `Cyberblock.log`, the server log and `latest.log`.
+
+**Phase 0 is still not run.** The in-game CET checks have not been done yet. The installed **Cyber Engine Tweaks** mod
+`cyberblock_p0` adds a **"Cyberblock Phase 0"** window to the CET overlay (open the overlay with the CET key; the window has a
+button per check, and every result line starts with `CBP0`). Until those lines reach Claude, the plugin and scripts use the
+research verdicts with a runtime check and their written fallbacks, and the log says which path is active (for example
+`materials: name rule of 27 rules`, `npcs: tags full|faction only`, `npcs: colour format hsb (unconfirmed)`,
+`probes: device-box filter active`). Running the window once, before or after this session, and pasting the `CBP0` lines lets
+Claude switch the guesses to the real names.
+
+**What to try (one screen):**
+1. **Solo with Cyberpunk first** (your own world on the Night City preset, Cyberblock On): walk two streets and up a facade, stand on
+   a bridge for a few seconds, then look at the log lines of p3-d and p3-r below. Walk past doors, lamps and vending machines
+   (p4-d: no holes under them). Watch a gang fight or a crash (p3-f: a body or a wreck, then gone). Park V and press F9 Off with an
+   invisibility potion running (p3-s). Start an Atlas survey tour (p3-c: no kick, no relay drops).
+2. **On the server with a friend or your second account as a plain-Minecraft guest** (the guest needs only Minecraft with the
+   mod; the test server is the local one Claude starts, or the real server once the owner has set `maxHosts` and copied the new
+   jar): the guest opens and closes a door in front of V and buys from a vending machine (p4-p, p4-a); a Night City door an NPC
+   opens moves in Minecraft (p4-b); the guest looks at gangers, cops and cars (p5-a, p5-s) and at a hostile through a wall with
+   Kiroshi optics (p5-f); you switch `/cyberblock body female` and back (p5-a); the guest opens the Atlas at the farthest zoom and
+   then the radar (p3-c).
+3. **Two hosts** (only if a second Cyberpunk PC is around): one turns on Optical Camo, the other must not see them (p5-k).
+4. **LAN leftovers** (wb-left): a LAN world with a join password and an offline guest.
+
+### wb-left. Wave A leftovers: offline LAN guest and the join password
+1. LAN world with a joinPassword set: run `/cyberblock lan offline on`, then join as the offline guest (`uv run python -m tools.mpcheck --guest <LAN port>`) and type /login with the right password. The log should show 'login: CbGuest1 verified for this connection only (offline name, not remembered)'. Disconnect and join again: the guest should be locked again ('login: CbGuest1 is locked until /login').
+2. With a real-account player who logged in earlier (while authentication was on), the stored verification still counts when offline logins are on: no lock.
+
+### p3-r. Replica materials (3R)
+1. Re-test 3 check 1 ('roughly the right colours'): once the DLL sends real ground.m codes, streets first explored through the heuristic should turn into their probe materials (for example, a light-concrete wall guess turning to brick) the next time a host's probes report them. Before this fix they kept heuristic colours.
+
+### p3-c. Atlas upload and the guest's map (3C)
+1. As a host on a Phase 3 server, start an Atlas survey tour. Expected: no kick within 10-60 s; the client log shows 'relay: terrain goes up to the server's shared map in batches (at most 20 a second, 1024 cells each)'; the server log shows no 'relay: <host> dropped terrain x N (rate)' lines. A 'terrain is coming faster than it can go up' warning should be rare or absent.
+2. As a guest, open the Atlas at the farthest zoom for a few seconds, then close it and look at the radar, or zoom into a district. Expected: the radar or district tiles fill within about a second, not after minutes.
+
+### p3-f. Deaths: bodies and wrecks (3F)
+1. As a guest, watch the host's area while an NPC that V did not touch dies (NCPD vs gang, traffic hits a pedestrian), or while a car is wrecked in a crash or explosion. The guest sees a body for ~3 s or a dark wreck for ~5 s. The server log shows `figures: person|vehicle <id> died (body|wreck for 3|5 s; from the npcs dead flag)`, and Cyberblock.log's 5 s `npcs:` line ends with `deaths sent flagged dead (bodies and wrecks for Minecraft): N` where N >= 1.
+2. Steve kills an NPC with Cyberblock active: exactly one body (no second body), XP still awarded. The log shows a single `figures: ... died` line from the npcs dead flag or from the killed, whichever arrived first.
+
+### p3-e. Weather on the void world (3E)
+1. Re-test 3 check 4: with Cyberpunk raining, the server log shows 'env: weather from host <name> (rain): rain set, not drawn (biome minecraft:the_void has no precipitation)', and in Minecraft the sky darkens but no rain falls. This is expected until the preset ships a biome with precipitation. Clear or cloudy weather shows 'env: weather from host <name> (<value>)'. Unreadable weather shows 'env: time only (weather unreadable)'.
+
+### p3-s. Park and teleport when the session ends (3S)
+1. Park V (park on), then make the Minecraft server drop or restart the player. Expect 'session: none ...' followed by 'park: off (session none)' in the log, and V can move again without pressing F9.
+2. Start a vteleport, then end the host session. Expect 'teleport: <id> failed: blocked (session none)' and V released from the hold 60 m up.
+3. With a Minecraft invisibility potion active, park on, then press F9 Off. Expect 'park: off (Cyberblock off)', and afterwards NPCs can see V (V is not left invisible).
+4. While parked, let the invisibility potion expire. V should stay hidden until park off.
+
+### p3-d. No holes in the replica, material rules (3D)
+1. Walk up a sloped street or stairs next to a wall, or fly up a facade, as host. The guest's or replica's ground-level walls should stay, with no holes appearing behind you.
+2. Stand on a bridge or balcony over a street the replica already knows, for more than 3 s. The street blocks below should stay in the replica.
+3. Go up to a roof, then back down to the street. The roof should stay in the replica.
+4. A floor or object that really disappears under you (the down ray now hits lower) should still be dropped from the replica, because it arrives as unground seen:true.
+5. The DLL log at startup should show 'materials: name rule of 27 rules (tools/cbmath.py MATERIAL_ORDER)'. Generic neon or hologram surfaces should arrive as code 11 (white neon).
+
+### p3-a. Palette, Meet Up and the changes text (3A)
+1. After merge: /reload on a world with the mod. The server log should not report any material_palette file as skipped, and the replica should look the same as with no content (the heuristic entries equal the built-ins).
+2. Meet Up: the request chat line shows '<name> wants to meet up. [Accept]' with a clickable green [Accept], and the toast reads 'Meet Up: <name>'.
+3. /cyberblock changes header reads 'In the last N min: X blocks placed, Y removed (by ...)'; figure tags read Civilian, Hostile or Vehicle.
+
+### p3-p. Server checks (3P)
+1. P3-3: V destroys a car V damaged (rocket): the guest sees a dark wreck about 5 s, and the server log has 'figures: vehicle <id> died (wreck for 5 s)'. A car that crashes on its own just goes.
+2. P3-7: before the test the server owner sets "maxHosts": 4 in config/cyberblock/server.json and restarts; the startup line must say 'maxHosts 4', or the second host joins as a guest.
+3. P3-8: a guest's Atlas fills from maptile answers; the server sends no relay drop lines for maptile.
+4. P3-4: the clock follows Cyberpunk; the mpcheck replica/twohosts2 clock steps now read 'time query time' on a real 26.3 server.
+
+### p4-s. Device scripts (4S)
+1. Road barrier (RoadBlock) in range: Minecraft gets state 0 when it is raised and 1 when it is lowered. devact open/close/toggle moves it, and the log reads 'devices: devact <req> open RoadBlock <id>: ok'.
+2. Unpowered lamp or door: devact on/toggle/lock is answered 'refused (unpowered)' and the Minecraft block does not change.
+3. devact friendly on a light or terminal: 'refused (unsupported)'. On a camera or turret: ok, and the attitude changes.
+4. Quest-marked door (one with a quest marker): devact lock or close gives 'refused (quest locked)', while open and unlock still work.
+5. Traffic lights stay listed through every colour (no 4D warning 'flags are outside 0..31').
+
+### p4-d. Device boxes in the DLL (4D)
+1. Walk through a doorway and past vending machines and street lamps on the void world (level-type cyberblock:nightcity). The replica floor under them should be solid, with no hole to the void. A wall-mounted camera or light should leave the facade behind it intact.
+2. The log line 'probes: device-box filter active (N boxes)' should now count only the doors and gates near V.
+
+### p4-m. Devices on the server (4M)
+1. With 4B absent (log line 'devices: block ... is not registered: ... uses <stand-in>'), place an iron_block or redstone_lamp where a host's lift or light appears, walk V away for more than 10 s or end the session: the player's block stays. (4B is merged in this build, so this line should not appear; if it does, report it.)
+2. With 4B merged, device doors are cyberblock:device_door and device_iron_door, and they open and close from Minecraft and when an NPC uses them (mpcheck covered this with the fake host).
+
+### p4-b. Device blocks for guests (4B)
+1. A guest near a Night City TV or billboard sees glow item frames with a picture on the screen blocks. When the host's TV turns off, the picture goes dark. When the host walks away (the device is removed) or the session ends, the frames disappear within about a second, with no frames left floating.
+2. A Night City gate opened by the host or an NPC slides open in Minecraft over about a second, with trapdoor sounds, and does not jump open.
+3. A guest hears the oak or iron door sound when a Night City door opens or closes, including when an NPC opens it.
+4. Villagers or piglins in Minecraft never open device doors. Zombies never target them (Hard difficulty).
+5. Doors render as normal oak or iron doors for guests, not as missing-model cubes.
+
+### p4-a. Eddies (4A)
+1. Re-test 4: a vending purchase with eddies. After the merge, the server log should show 4B's line 'device: N device blocks and the eddies registered; ...'. It should not show 4M's Vending line saying eddies are missing.
+2. Hover over an eddie chip in the inventory: it shows 'Worth 100 eddies' (a grey line; added at the merge).
+
+### p4-p. Vending and doors (4P)
+1. Vending: right-click a vending machine block as a guest and check the shop screen opens; buy a line and check the shop comes back with the new eddies and result `ok` (or `poor` without eddies). The server log shows `devices: <player> bought ...`.
+2. Doors: as a guest, check that doors show proper door models and not purple/black missing-model blocks (4A and 4B ship the device_door and device_iron_door blockstates).
+
+### p5-a. NPC and vehicle looks (5A)
+1. As a guest: NPC figures wear the faction looks (for example teal jacket with gold back slashes for Tyger Claws, red mohawk with chrome arms and red optics for Maelstrom, pink for Mox, navy cap and vest with badge for NCPD), and women are drawn on slim models. This needs 5F's skin_map loader and the 5S tags.
+2. Vehicles: the paint layer takes the host colour (`col`) or the vehicle_map default; a police cruiser keeps its navy livery with a white side band and alternates the red and blue light-bar halves (lights_a / lights_b) in a chase. This needs 5F's models built from the header UV table.
+3. `/cyberblock body female` shows Lucy on the slim model with no gaps at the arms (cyber_skin/v_female.png), and male V shows on classic (5K).
+
+### p5-f. Figure rendering (5F)
+1. Kill a hostile NPC with gunfire: the body falls with no explosion or large-smoke burst. Kill one with an explosion: it bursts.
+2. As a guest with Kiroshi optics installed, stand within 32 m of a hostile behind a wall: the red outline shows through the wall.
+3. The server log 'figures: <host> npcs tags ...' line now ends with '; vehicles: fac sent' or '; vehicles: fac missing (fallback: no police or Trauma liveries)'. If it says missing, police cars and Trauma aerodynes will not get their models until the 5S fix lands.
+
+### p5-k. Cyber skins and Optical Camo (5K)
+1. Two linked hosts on a test server (both in the [V] team). Host A turns on Optical Camo. Host B must not see A at all: no translucent body and no '[V] A' name tag. A must also be invisible to a guest. When A's camo ends, both see A again with the [V] prefix.
+2. Server log after the first linked join on a world whose cyberblock_v team was saved by an earlier build shows 'skin: V team set cosmetic (members cannot see each other's camo, friendly fire on)' once, and never again while the server keeps running.
+3. With PvP allowed, two linked hosts can still damage each other (friendly fire on). Name tags still show over other hosts, and players still push each other.
+
+### p5-s. NPC tags from the scripts (5S)
+1. Ganger: walk near a Tyger Claws or Maelstrom ganger. The Cyberblock.log 5 s block should show 'npcs: tags full (k of n people entries with gender and archetype)' (or 'faction only', which names the fallback path) and 'npcs: anims from blackboard (...)'. The DLL's npcs entry for the ganger should carry fac=<gang affiliation enum, e.g. TygerClaws>, an arch value, g 1 or 2, and anim 128 (combat), 4 (aim) and 8 (fire) once fighting.
+2. Cop: an NCPD officer should show fac=NCPD (the affiliation enum name), a police archetype, and anim 128 during a chase or fight. A ragdolled or killed cop should show 16 or 32.
+3. Vendor: a ripperdoc or shop clerk should show role=RipperDoc, Clothes, Gunsmith, ... (gamedataVendorType name). Non-vendors have no role.
+4. Car: a parked car should show vc='Car/<Model>' (e.g. Car/Turbo). The log should show 'npcs: vehicle colours from colour templates (k of n car entries matched a template)' or 'from default', plus the DLL's 'npcs: colour format hsb (unconfirmed)'. Compare the guest's car colour with the real paint to confirm the HSB guess (CET F2).
+5. Gender: once per session, 'npcs: gender names seen <a>, <b>' should list the engine's names (expected to contain Female and Male). If they do not, every g is 0 and the mapping needs the real names.
+6. CET cross-check (optional, Phase 0 notes F1/F2): CB.tags() on a pedestrian, a ganger, a vendor and a parked car should match the tags above.
+
+### p5-dp. The tags log line (5D, 5P)
+1. TESTING-PLAN P5-6: search Cyberblock.log for `npcs: tags`. Only the scripts' line should appear, as `npcs: tags full|faction only (N of M people entries with gender and archetype)`. It should appear once, again on each change, and only while people are near. Check there is no `npcs: tags none` line.
 
 ## Re-test: Wave B, Phase 3 (the Night City replica)
 
