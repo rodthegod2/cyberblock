@@ -96,6 +96,19 @@ Phase 5 mode (shared/protocol.md "Phase 5"; combinable with the layer flags and 
              the other gender), a row of poses the scripts set (aim, fire, crouch, combat, ragdoll), a victim who fights and is listed once more flagged dead at
              8 s, a walker (1.4 m/s) and a runner (4 m/s) with the bits the DLL derives from speed, four parked cars (three with a colour, one with none: the class
              default), and a hostile NCPD cruiser chasing a car at 9 m/s against 8. Every `anim` bit appears. --ids-from numbers the 46 ids from N.
+Phase 6 mode (shared/protocol.md "Phase 6"; stands on the street like --devices, which it may be combined with, so the same restrictions and the same --hold,
+--cmd, --port, --name, --shift and NPC resend apply; prints `devact` and `devresult` like --devices, plus `rhack`, `daemon` and `feedreq` (what Minecraft asks) and
+`hackresult` (what this fake DLL answered)):
+  --hacks2   the device scene of --devices plus a Net Port (a `Terminal`, id ...770, the terminal a Breach opens on) and the default `npcs` (two people and a car).
+             Every valid `rhack` is answered with a `hackresult`: the five vehicle hacks change the car's state (a `veh_*` on a car that is not in the list is
+             `vehicle gone`), `cam_feed` needs a camera, the five area hacks need `p`, `r` and `secs` (`blackout` switches the powered devices within `r` of `p`
+             off, `devstate by:script`, and back after `secs`; `outline` and `ping_area` reveal the hostile people of the area with `hackspread why:ping`), a hack
+             name outside the eleven is `unsupported`, and a target or centre farther than 50 m from V (the fallback of Phase 0 check (h)) is
+             `cyberblock.hack.out_of_range`. Every valid `daemon` is answered with one `hackresult`: `open_door` opens the doors, `disable_cameras` disables the
+             cameras (both `devstate by:script`), `reveal_enemies` pings the hostile people, `overload` and the reserved `alarm` change nothing, any other id is
+             `unsupported daemon` (the others still run), and a device that is not in the table is `device gone`. `feedreq on:true` starts a `feed` (a 128 x 128
+             test card of map colours that changes every frame) at once and once a second after, `on:false` stops it. A message whose id, target, hack, list or
+             on has the wrong type is dropped.
 Multiplayer (shared/protocol.md "Multiplayer (Phase 1)"; tools/mpcheck.py starts one fake host per host client):
   --name NAME      prefixes every line this tool prints with `[NAME] `, so the output of two fake hosts can be told apart.
   --ver VERSION    the DLL version in the `hello` (`ver`, at most 32 characters). The default is this checkout's version, the
@@ -111,6 +124,7 @@ A dedicated server refuses the reference-mod `cmd` commands: against a real clie
 """
 import argparse
 import asyncio
+import base64
 import json
 import math
 import re
@@ -146,9 +160,10 @@ JUMP_AT, JUMP_FOR = 0.5, 0.1  # layer 4: seconds after the scenario starts, and 
 HACK_KEY, SKILLS_KEY, KILLED_AT = (1.0, 2.0), (2.5, 2.6), 3.0  # layer 6: (down, up) and the kill, in seconds
 CYBERWARE_KEYS, ACTIVATE_KEY = ((3.5, 3.6), (4.0, 4.1)), (4.5, 4.6)  # layer 6: U opens the Cyberware screen then closes it; Y is a tap
 PCELLS_AHEAD, MAX_PCELLS = 0.5, 64  # layer 4: seconds ahead of a projectile for its wall, and the `pcells` cap
-MODES = ("ui", "hacks", "seat", "view", "stairs", "replica", "devices", "figures")  # re-test 3: --ui, --hacks, --seat; Phase Q: --view, --stairs; Phase 3: --replica; Phase 4: --devices; Phase 5: --figures
+MODES = ("ui", "hacks", "seat", "view", "stairs", "replica", "devices", "figures", "hacks2")  # re-test 3: --ui, --hacks, --seat; Phase Q: --view, --stairs; Phase 3: --replica; Phase 4: --devices; Phase 5: --figures
 MODE_EVENTS = {"ui": {"uiact", "persp", "binds"}, "hacks": {"hack", "uiact", "persp", "binds"}, "seat": {"persp", "binds"},
-               "view": {"prefs"}, "stairs": {"prefs"}, "replica": {"vteleport", "park"}, "devices": {"devact"}, "figures": set()}
+               "view": {"prefs"}, "stairs": {"prefs"}, "replica": {"vteleport", "park"}, "devices": {"devact"}, "figures": set(),
+               "hacks2": {"devact", "rhack", "daemon", "feedreq"}}
 CAMERA_OWNERS = ("view", "stairs", "seat", "replica")  # the modes that drive the camera by themselves
 UI_MENU = (6.0, 7.0)  # --ui: seconds in which `cam.menu` is true (a pass-through menu is open)
 PERSPECTIVE_KEY = (8.0, 8.1)  # --ui: the F5 tap that makes Minecraft answer `persp`
@@ -634,21 +649,24 @@ DEVICE_SCENE = (  # key, id offset, class, kind, cell (x, y, z) relative to the 
 DOOR_GROUND_KEY = "door"  # --devices also sends one `ground` column through this door: a DLL that did not filter its hit (the server must keep the door)
 
 
-def device_ids() -> dict[str, str]:
+HACKS2_SCENE = (*DEVICE_SCENE, ("netport", 10, "Terminal", "terminal", (4, DEVICE_FEET, 3), 180.0, 1, FL_POWERED))  # --hacks2: + the Net Port a Breach opens on
+
+
+def device_ids(scene=DEVICE_SCENE) -> dict[str, str]:
     """key -> the device's id as a decimal string."""
-    return {key: str(DEVICE_ID_BASE + offset) for key, offset, *_ in DEVICE_SCENE}
+    return {key: str(DEVICE_ID_BASE + offset) for key, offset, *_ in scene}
 
 
-def device_cell(key: str, shift: int = 0) -> tuple[int, int, int]:
+def device_cell(key: str, shift: int = 0, scene=DEVICE_SCENE) -> tuple[int, int, int]:
     """The Minecraft cell the device `key` stands in (x shifted by --shift)."""
-    x, y, z = next(cell for k, _, _, _, cell, *_ in DEVICE_SCENE if k == key)
+    x, y, z = next(cell for k, _, _, _, cell, *_ in scene if k == key)
     return x + shift, y, z
 
 
-def device_table(shift: int = 0) -> dict[str, dict]:
+def device_table(shift: int = 0, scene=DEVICE_SCENE) -> dict[str, dict]:
     """id -> the device's current data (what a `devices` entry says, plus `key`), at its start state."""
     table = {}
-    for key, offset, cls, kind, (x, y, z), yaw, st, fl in DEVICE_SCENE:
+    for key, offset, cls, kind, (x, y, z), yaw, st, fl in scene:
         table[str(DEVICE_ID_BASE + offset)] = {"key": key, "cls": cls, "kind": kind, "p": [x + shift + 0.5, float(y), z + 0.5], "yaw": yaw, "st": st, "fl": fl}
     return table
 
@@ -719,6 +737,77 @@ def devact_answers(table: dict[str, dict], m: dict) -> list[dict] | None:
 def npc_door_step(u: float) -> int:
     """How many NPC door changes have happened `u` seconds (unscaled) into the scenario (the first one at NPC_DOOR_EVERY)."""
     return int(u / NPC_DOOR_EVERY)
+
+
+# ---- Phase 6: --hacks2 (megaplan 6-P1, shared/protocol.md "Phase 6") --------------------------------------------------------------------
+# The DLL's side of the remote hacks, the Breach daemons and the photo feed on top of the --devices scene (plus a Net Port): every valid `rhack` and
+# `daemon` is answered with one `hackresult`, the effects show in the device table (`devstate by:script`) and in `hackspread`, and `feedreq` turns a
+# 128 x 128 map-colour `feed` on and off. Deterministic. The checks the scripts make (range 50 m, a camera for `cam_feed`) are the written fallback of
+# Phase 0 check (h).
+REMOTE_HACKS = ("veh_lock", "veh_engine_off", "veh_brake", "veh_start", "veh_jam", "traffic_switch", "gridlock", "blackout", "cam_feed", "outline", "ping_area")
+VEHICLE_HACKS = ("veh_lock", "veh_engine_off", "veh_brake", "veh_start", "veh_jam")
+AREA_HACKS = ("traffic_switch", "gridlock", "blackout", "outline", "ping_area")
+VEHICLE_EFFECT = {"veh_lock": {"locked": True}, "veh_engine_off": {"engine": False}, "veh_brake": {"braked": True}, "veh_start": {"engine": True},
+                  "veh_jam": {"jammed": True}}
+HACK_RANGE_M = 50.0  # a target or an area's centre farther than this from V is out of range (the fallback of Phase 0 check (h))
+OUT_OF_RANGE = "cyberblock.hack.out_of_range"
+ALARM_DAEMON = "alarm"  # the reserved daemon id of a failed Breach
+DAEMON_RE = re.compile(r"[a-z0-9_]{1,32}")
+HACKS2_REQUESTS = ("rhack", "daemon", "feedreq")
+FEED_SIZE, FEED_EVERY = 128, 1.0  # the photo feed: 128 x 128, at most one `feed` per second
+MAX_SPREADS = 16
+NO_POWER_KINDS = ("door", "gate")  # a blackout leaves doors alone: their -1 is `LOCKED`, not `UNPOWERED`
+
+
+def is_request_id(x) -> bool:
+    return isinstance(x, int) and not isinstance(x, bool) and x >= 0
+
+
+def is_device_id(s) -> bool:
+    return isinstance(s, str) and s.isascii() and s.isdigit() and 0 < int(s) < 2**64
+
+
+def finite_vec3(p) -> bool:
+    return isinstance(p, list) and len(p) == 3 and all(isinstance(c, (int, float)) and not isinstance(c, bool) and math.isfinite(c) and abs(c) < 3e7 for c in p)
+
+
+def rhack_valid(m: dict) -> bool:
+    """A DOWN `rhack` the DLL accepts: a request id, a hack name (any string: an unknown one is answered `unsupported`) and a `target` that is a decimal id or null."""
+    return "target" in m and is_request_id(m.get("id")) and isinstance(m.get("hack"), str) and (m["target"] is None or is_device_id(m["target"]))
+
+
+def area_valid(m: dict) -> bool:
+    """The three fields every area hack carries: `p` a finite position, `r` a whole number 1..150, `secs` a whole number 0..600 (and `target` null)."""
+    r, secs = m.get("r"), m.get("secs")
+    return (m.get("target") is None and finite_vec3(m.get("p")) and isinstance(r, int) and not isinstance(r, bool) and 1 <= r <= 150
+            and isinstance(secs, int) and not isinstance(secs, bool) and 0 <= secs <= 600)
+
+
+def daemon_valid(m: dict) -> bool:
+    lst, strength = m.get("list"), m.get("strength")
+    return (is_request_id(m.get("id")) and is_device_id(m.get("dev")) and isinstance(lst, list) and 1 <= len(lst) <= 3 and len(set(map(str, lst))) == len(lst)
+            and all(isinstance(d, str) and DAEMON_RE.fullmatch(d) for d in lst) and isinstance(strength, int) and not isinstance(strength, bool) and 1 <= strength <= 3
+            and (ALARM_DAEMON not in lst or lst == [ALARM_DAEMON]))
+
+
+def hack_result(rid: int, ok: bool, reason: str = "") -> dict:
+    return {"t": "hackresult", "id": rid, "ok": ok, "reason": reason}
+
+
+def ping_spreads(rid: int, npcs: list[dict], centre: Sequence[float] | None, radius: float) -> list[dict]:
+    """`hackspread why:ping` for the hostile people within `radius` of `centre` (anywhere when `centre` is None), as the Ping chip reveals them."""
+    found = [e["id"] for e in npcs if e.get("kind") == "human" and e.get("hostile") and (centre is None or math.dist(e["p"], centre) <= radius)]
+    return [{"t": "hackspread", "id": rid, "target": i, "why": "ping"} for i in found[:MAX_SPREADS]]
+
+
+def feed_message(n: int) -> dict:
+    """Frame `n` of the photo feed: a 128 x 128 test card of map colours (8 x 8 blocks of 59 colours, a 4-step shade across, shifted one block per frame);
+    never the transparent bytes 0..3."""
+    yy, xx = np.mgrid[0:FEED_SIZE, 0:FEED_SIZE]
+    px = (4 + ((xx // 8 + yy // 8 + n) % 59) * 4 + (xx + yy) % 4).astype(np.uint8)
+    return {"t": "feed", "w": FEED_SIZE, "h": FEED_SIZE, "px": base64.b64encode(px.tobytes()).decode()}
+
+
 # ---- --figures (megaplan 5-P1): one figure per skin group, every animation bit, cars with colours, a police chase ----------------------------
 # The `npcs` list as the Phase 5 DLL sends it (shared/protocol.md "Phase 5"): the tags of Cyberblock_SubmitNpcs2 on every entry. The people stand in
 # rows on the slab, one per skin group of megaplan 5-A2; a row of figures shows the animation bits the scripts set; a walker and a runner carry the bits
@@ -858,9 +947,15 @@ class Cyberpunk:
         self.view_back = False  # --ui: Minecraft asked for the third-person view (`persp back`), so `cam.fp` is false
         self.delayed: list[tuple[float, dict]] = []  # (perf_counter due time, message): the `ping` and `frenzy` spreads of --hacks
         self.session: str | None = None  # the last `session` state Minecraft sent (a change to host re-sends the ground)
-        self.devices = "devices" in modes  # --devices (Phase 4): the device scene on the street's ground
-        self.street = self.replica or self.devices  # the street's ground and camera: --replica and --devices both stand on it
-        self.dev_table = device_table(shift)  # id -> the device's current data (actions and the NPC door change it)
+        self.hacks2 = "hacks2" in modes  # --hacks2 (Phase 6): the devices plus remote hacks, Breach daemons and the photo feed
+        self.devices = "devices" in modes or self.hacks2  # --devices (Phase 4): the device scene on the street's ground (--hacks2 adds the Net Port)
+        self.street = self.replica or self.devices  # the street's ground and camera: --replica, --devices and --hacks2 all stand on it
+        self.dev_table = device_table(shift, HACKS2_SCENE if self.hacks2 else DEVICE_SCENE)  # id -> the device's current data (actions and the NPC door change it)
+        self.car = {"locked": False, "engine": True, "braked": False, "jammed": False}  # --hacks2: what the vehicle hacks did to the car
+        self.feed_on, self.feed_at, self.feed_n = False, None, 0  # --hacks2: the photo feed (on, scenario time of the last frame, frames sent)
+        self.restores: list[tuple[float, str]] = []  # --hacks2: (perf_counter due time, device id) a blackout gives back
+        self.blacked: dict[str, tuple[int, int]] = {}  # --hacks2: device id -> (st, fl) before the blackout
+        self.clock = 0.0  # the scaled scenario time of the last frame (the figures a hack looks up move with it)
         self.dev_list_step, self.dev_npc_step = -1, 0  # --devices: the last full list (every DEVICE_LIST_EVERY s) and the last NPC door change
 
     def script(self) -> list[tuple[float, dict]]:
@@ -942,8 +1037,12 @@ class Cyberpunk:
         `devices` list every DEVICE_LIST_EVERY s and a Night City person's change to the NPC door every NPC_DOOR_EVERY s (`devstate
         by:npc`); --stairs looks at the aim every AIM_EVERY s and sends `aim` when it changed by AIM_STEP."""
         out = []
+        self.clock = t
         if self.devices:
             out += self.device_messages(t / SCRIPT_SCALE)
+        if self.hacks2 and self.feed_on and (self.feed_at is None or t - self.feed_at >= FEED_EVERY * SCRIPT_SCALE - 1e-9):
+            self.feed_at, self.feed_n = t, self.feed_n + 1
+            out.append(feed_message(self.feed_n))
         if self.replica:
             step = env_index(t / SCRIPT_SCALE)
             if step != self.env_step:
@@ -977,13 +1076,101 @@ class Cyberpunk:
         return out
 
     def due(self, now: float) -> list[dict]:
-        """The delayed messages (--hacks) whose time has come, oldest first; they are removed."""
+        """The delayed messages (--hacks) whose time has come, oldest first; they are removed. --hacks2 also gives the devices of a finished blackout back
+        (`devstate by:script`)."""
         ready = sorted((d for d in self.delayed if d[0] <= now), key=lambda d: d[0])
         self.delayed = [d for d in self.delayed if d[0] > now]
         for _, m in ready:
             if m.get("t") == "vteleported" and m.get("ok") is True:  # V arrives: the camera is there from now on
                 self.arrived = m["p"]
-        return [m for _, m in ready]
+        out = [m for _, m in ready]
+        for _, dev_id in sorted(r for r in self.restores if r[0] <= now):
+            dev = self.dev_table[dev_id]
+            dev["st"], dev["fl"] = self.blacked.pop(dev_id)
+            out.append(devstate_message(dev_id, dev, "script"))
+        self.restores = [r for r in self.restores if r[0] > now]
+        return out
+
+    # -- --hacks2: the answers of Phase 6 (shared/protocol.md "Phase 6") -----------------------------------------------------------
+    def v_feet(self) -> tuple[float, float, float]:
+        """Where V stands (the --replica street's spot, moved by --shift; a Meet Up is not modelled here)."""
+        return REPLICA_FEET[0] + self.shift, REPLICA_FEET[1], REPLICA_FEET[2]
+
+    def on_rhack(self, m: dict) -> list[dict]:
+        """The DLL's answer to a DOWN `rhack`: one `hackresult` (then the `devstate`s and `hackspread`s the hack caused); a message with a bad type is dropped."""
+        if not rhack_valid(m):
+            return []
+        rid, hack, target = m["id"], m["hack"], m["target"]
+        if hack not in REMOTE_HACKS:
+            return [hack_result(rid, False, "unsupported")]
+        npcs, v = self.npcs(self.clock)["list"], self.v_feet()
+        if hack in VEHICLE_HACKS or hack == "cam_feed":
+            if target is None:
+                return []  # the wrong shape: a target hack needs its target
+            if hack == "cam_feed":
+                dev = self.dev_table.get(target)
+                if dev is None:
+                    return [hack_result(rid, False, "device gone")]
+                if dev["kind"] != "camera":
+                    return [hack_result(rid, False, "not a camera")]
+                where = dev["p"]
+            else:
+                car = next((e for e in npcs if e["id"] == target and e["kind"] == "vehicle"), None)
+                if car is None:
+                    return [hack_result(rid, False, "vehicle gone")]
+                where = car["p"]
+            if math.dist(where, v) > HACK_RANGE_M:
+                return [hack_result(rid, False, OUT_OF_RANGE)]
+            self.car.update(VEHICLE_EFFECT.get(hack, {}))
+            return [hack_result(rid, True)]
+        if not area_valid(m):
+            return []
+        if math.dist(m["p"], v) > HACK_RANGE_M:
+            return [hack_result(rid, False, OUT_OF_RANGE)]
+        extras = ping_spreads(rid, npcs, m["p"], m["r"]) if hack in ("outline", "ping_area") else []
+        if hack == "blackout":
+            for dev_id, dev in self.dev_table.items():
+                if dev["kind"] in NO_POWER_KINDS or dev["fl"] & FL_QUEST or not dev["fl"] & FL_POWERED or math.dist(dev["p"], m["p"]) > m["r"]:
+                    continue
+                self.blacked[dev_id] = (dev["st"], dev["fl"])
+                dev["st"], dev["fl"] = -1, dev["fl"] & ~FL_POWERED  # UNPOWERED
+                extras.append(devstate_message(dev_id, dev, "script"))
+                if m["secs"]:
+                    self.restores.append((time.perf_counter() + m["secs"] * SCRIPT_SCALE, dev_id))
+        return [hack_result(rid, True), *extras]
+
+    def on_daemon(self, m: dict) -> list[dict]:
+        """The DLL's answer to a DOWN `daemon`: each known id's action, then one `hackresult` for the whole message (ok only when every id ran)."""
+        if not daemon_valid(m):
+            return []
+        rid = m["id"]
+        if m["dev"] not in self.dev_table:
+            return [hack_result(rid, False, "device gone")]
+        extras, failure = [], ""
+        for daemon in m["list"]:
+            if daemon == "open_door":
+                for dev_id, dev in self.dev_table.items():
+                    if dev["kind"] == "door" and not dev["fl"] & FL_QUEST and dev["st"] == 0:
+                        dev["st"] = 1
+                        extras.append(devstate_message(dev_id, dev, "script"))
+            elif daemon == "disable_cameras":
+                for dev_id, dev in self.dev_table.items():
+                    before = (dev["st"], dev["fl"])
+                    if dev["kind"] == "camera" and apply_act(dev, "disable")[0] and (dev["st"], dev["fl"]) != before:
+                        extras.append(devstate_message(dev_id, dev, "script"))
+            elif daemon == "reveal_enemies":
+                extras += ping_spreads(rid, self.npcs(self.clock)["list"], None, 0.0)
+            elif daemon not in ("overload", ALARM_DAEMON):
+                failure = failure or "unsupported daemon"
+        return [hack_result(rid, not failure, failure), *extras]
+
+    def on_feedreq(self, m: dict) -> list[dict]:
+        """`feedreq on:true` starts the photo feed (the first frame with the next frame message, then one per second), `on:false` stops it."""
+        if isinstance(m.get("on"), bool):
+            if m["on"] and not self.feed_on:
+                self.feed_at = None
+            self.feed_on = m["on"]
+        return []
 
     def cam(self, f: int, t: float, held: dict) -> dict:
         """The `cam` for frame f, t seconds into the scenario: V in a vehicle (--seat), V's body in layer 4, else the last
@@ -1020,6 +1207,8 @@ class Cyberpunk:
             return []
         if self.replica and t == "park" and isinstance(m.get("on"), bool):
             return [{"t": "parked", "on": m["on"], "ok": True, "reason": ""}]
+        if self.hacks2 and t in HACKS2_REQUESTS:
+            return getattr(self, f"on_{t}")(m)
         if self.devices and t == "devact":
             return devact_answers(self.dev_table, m) or []
         if t == "persp" and m.get("mode") in ("first", "back"):
@@ -1089,6 +1278,8 @@ async def listen(ws, host: Cyberpunk) -> None:
             await ws.send(json.dumps(reply))
             if host.devices and reply.get("t") == "devresult":  # --devices: what this DLL answered, so a harness can see the refusals too
                 print(f"{host.tag}devresult: {json.dumps(reply)}")
+            if host.hacks2 and reply.get("t") == "hackresult":  # --hacks2: the answers to `rhack` and `daemon`
+                print(f"{host.tag}hackresult: {json.dumps(reply)}")
 
 
 async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, commands: Sequence[str], host: Cyberpunk) -> None:
@@ -1115,6 +1306,8 @@ async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, com
         await ws.send(json.dumps(host.cam(first_frame + i, t, cam)))
         for m in host.frame_messages(t):
             await ws.send(json.dumps(m))
+            if m["t"] == "feed":  # --hacks2: a frame of the photo feed went out (the bytes themselves are not printed)
+                print(f"{host.tag}feed: {json.dumps({'n': host.feed_n, 'w': m['w'], 'h': m['h']})}")
         await asyncio.sleep(max(0.0, t0 + (i + 1) / fps - time.perf_counter()))
 
 
@@ -1191,7 +1384,8 @@ def main() -> int:
     ap.add_argument("--replica", action="store_true", help="after the orbit: the Phase 3 replica script: a street of ground with materials (`ground.m`), `unground seen`, walking and driving figures, `env` changes, `vteleport` answered after 2 s; print vteleport/park")
     ap.add_argument("--devices", action="store_true", help="after the orbit: the Phase 4 device scene on the --replica street's ground (a door, a light, a camera, a vending machine, an elevator, a sealed quest door and a door a Night City person opens and closes every 4 s): `devices` lists, `devstate`, every `devact` answered with `devresult` (ok for the supported acts, unsupported for call/buy/breach); print devact/devresult")
     ap.add_argument("--figures", action="store_true", help="after the orbit: the Phase 5 `npcs` list with the figure tags: one person per skin group, every animation bit, cars with colours, a hostile police cruiser chasing a car; print nothing extra")
-    ap.add_argument("--shift", type=int, default=None, metavar="DX", help="--replica or --devices: move the street, the figures, the devices and V DX blocks east (a second fake host that overlaps the first)")
+    ap.add_argument("--hacks2", action="store_true", help="after the orbit: the Phase 6 hacking scene: the --devices scene plus a Net Port, `rhack` (vehicle, camera and area hacks, range 50 m), `daemon` (Breach results) and `feedreq` (a 128 x 128 `feed` once a second) answered; print devact/devresult/rhack/daemon/feedreq/hackresult/feed")
+    ap.add_argument("--shift", type=int, default=None, metavar="DX", help="--replica, --devices or --hacks2: move the street, the figures, the devices and V DX blocks east (a second fake host that overlaps the first)")
     ap.add_argument("--env-hours", type=int, default=None, metavar="H", help="--replica: add H hours to the `env` clock and make the weather fog (a second host whose sky must never reach the server)")
     ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica, --devices: seconds to keep the link up and listen (default 10)")
     ap.add_argument("--cmd", action="append", default=[], metavar="COMMAND", help='--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs: a server command to send after the npcs, e.g. "summon tnt 0 64 0" (repeatable)')
@@ -1218,19 +1412,19 @@ def main() -> int:
     if args.hold < 0:
         ap.error("--hold must not be negative")
     if args.cmd and not (layers or modes):
-        ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica, --devices or --figures")
+        ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica, --devices, --hacks2 or --figures")
     if "figures" in modes and "replica" in modes:
         ap.error("--figures and --replica each send their own npcs list: use only one of them")
     if "figures" in modes and args.ids_from is not None and args.ids_from > 2**64 - FIGURE_COUNT:
         ap.error(f"--ids-from must be at most {2**64 - FIGURE_COUNT} with --figures (it numbers {FIGURE_COUNT} figures)")
     if len(modes & set(CAMERA_OWNERS)) > 1 or (modes & {"view", "stairs", "replica"} and 4 in layers):
         ap.error("--view, --stairs, --seat, --replica and --layer4 each drive the camera: use only one of them")
-    if "devices" in modes and (modes & {"view", "stairs", "seat"} or 4 in layers):
-        ap.error("--devices stands on the street like --replica (V is fixed there): do not combine it with --view, --stairs, --seat or --layer4")
+    if modes & {"devices", "hacks2"} and (modes & {"view", "stairs", "seat"} or 4 in layers):
+        ap.error("--devices and --hacks2 stand on the street like --replica (V is fixed there): do not combine them with --view, --stairs, --seat or --layer4")
     if args.env_hours is not None and "replica" not in modes:
         ap.error("--env-hours belongs to --replica")
-    if args.shift is not None and not modes & {"replica", "devices"}:
-        ap.error("--shift belongs to --replica and --devices")
+    if args.shift is not None and not modes & {"replica", "devices", "hacks2"}:
+        ap.error("--shift belongs to --replica, --devices and --hacks2")
     if args.shift is not None and abs(args.shift) > 1000:
         ap.error("--shift must be between -1000 and 1000 blocks")
     if args.env_hours is not None and not -23 <= args.env_hours <= 23:
