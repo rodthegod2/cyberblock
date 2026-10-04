@@ -123,6 +123,8 @@ Phase 7 mode (shared/protocol.md "Phase 7"; combinable with the layer flags and 
              (`hub in:true` then `park on:true`) and exit (`park on:false` then `hub in:false`) can be watched; the printed `hub` lines are what the server sent.
   --park-refuse  with --vendor or --replica: `park on:true` is answered `parked ok:false` ("blocked (in a vehicle)"), as the scripts do when V cannot be
              parked; `park on:false` is still ok.
+  --park-off     with --vendor or --replica: `park on:true` is answered `parked ok:false` ("blocked (Cyberblock is not active)"), as the scripts do while
+             Cyberblock is Off (no cover is drawn, so the server keeps the player in the hub); not with --park-refuse.
 Multiplayer (shared/protocol.md "Multiplayer (Phase 1)"; tools/mpcheck.py starts one fake host per host client):
   --name NAME      prefixes every line this tool prints with `[NAME] `, so the output of two fake hosts can be told apart.
   --ver VERSION    the DLL version in the `hello` (`ver`, at most 32 characters). The default is this checkout's version, the
@@ -938,6 +940,7 @@ VENDOR_BAG = ((4000000001, "Broken radio", 35, 1),)  # what V carries at the sta
 VENDOR_RESALE = 2  # a bought item sells back for its price divided by this
 VENDOR_ACTS = ("buy", "sell", "atlasreq")  # the `uiact` actions the fake shop answers (`atlasreq` only with `arg:"fasttravel"`)
 PARK_REFUSAL = "blocked (in a vehicle)"  # --park-refuse: the reason the DLL builds from the scripts' `park: on refused (in a vehicle)`
+PARK_OFF = "blocked (Cyberblock is not active)"  # --park-off: the same from `park: on refused (Cyberblock is not active)` (Off: no cover drawn)
 
 
 def vendor_stats(money: int) -> dict:
@@ -1049,7 +1052,7 @@ class Cyberpunk:
     """Cyberpunk's side of layers 2-6 once the orbit is over: the timed messages it sends by itself and its answers."""
 
     def __init__(self, layers: frozenset[int], modes: frozenset[str] = frozenset(), ids_from: int | None = None, name: str | None = None,
-                 shift: int = 0, env_hours: int = 0, park_refuse: bool = False) -> None:
+                 shift: int = 0, env_hours: int = 0, park_refuse: bool = False, park_off: bool = False) -> None:
         self.layers, self.modes, self.mobdmg_sent = layers, modes, False
         self.shift, self.env_hours = shift, env_hours  # --replica: the street's x shift and the clock shift of a second host
         self.replica = "replica" in modes
@@ -1079,6 +1082,7 @@ class Cyberpunk:
         self.shop = Shop()
         self.hub = False  # --vendor: the last `hub.in` Minecraft sent
         self.park_refuse = park_refuse  # --park-refuse: V cannot be parked (`parked ok:false` to every `park on:true`)
+        self.park_off = park_off  # --park-off: Cyberblock is Off (`parked ok:false`, not active, to every `park on:true`)
 
     def script(self) -> list[tuple[float, dict]]:
         """(seconds after the scenario starts, message), in time order: the layer 4 jump tap, the layer 6 keys and kill."""
@@ -1351,8 +1355,8 @@ class Cyberpunk:
             self.delayed.append((time.perf_counter() + TELEPORT_DELAY * SCRIPT_SCALE, answer))  # `vteleported` after 2 s (due() lets V arrive)
             return []
         if (self.replica or self.vendor) and t == "park" and isinstance(m.get("on"), bool):
-            refused = self.park_refuse and m["on"]
-            return [{"t": "parked", "on": m["on"], "ok": not refused, "reason": PARK_REFUSAL if refused else ""}]
+            refused = (self.park_refuse or self.park_off) and m["on"]
+            return [{"t": "parked", "on": m["on"], "ok": not refused, "reason": (PARK_OFF if self.park_off else PARK_REFUSAL) if refused else ""}]
         if self.hacks2 and t in HACKS2_REQUESTS:
             return getattr(self, f"on_{t}")(m)
         if self.devices and t == "devact":
@@ -1464,7 +1468,7 @@ async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, com
 async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str = shm.NAME, setup: bool = True,
               hold: float | None = None, commands: Sequence[str] = (), layers: frozenset[int] = frozenset({2}),
               modes: frozenset[str] = frozenset(), name: str | None = None, ver: str | None = None, ids_from: int | None = None,
-              wait_host: float | None = None, shift: int = 0, env_hours: int = 0, park_refuse: bool = False) -> int:
+              wait_host: float | None = None, shift: int = 0, env_hours: int = 0, park_refuse: bool = False, park_off: bool = False) -> int:
     """Returns the number of frame sets saved. `hold` (seconds) runs the scripts of `layers` (2 to 6) and of the re-test 3
     `modes` (ui, hacks, seat) after the orbit. Multiplayer: `name` prefixes every printed line, `ver` is the DLL version in
     the `hello` (None: no `ver`, a DLL from before Phase 1), `ids_from` numbers the NPCs (None: the protocol.md example ids)."""
@@ -1474,7 +1478,8 @@ async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str
         replica_ids(ids_from)
     if "figures" in modes:
         figure_ids(ids_from)
-    host = Cyberpunk(layers if hold is not None else frozenset(), modes if hold is not None else frozenset(), ids_from, name, shift, env_hours, park_refuse)
+    host = Cyberpunk(layers if hold is not None else frozenset(), modes if hold is not None else frozenset(), ids_from, name, shift, env_hours, park_refuse,
+                     park_off)
     async with connect(url, max_size=None) as ws:
         listener = asyncio.create_task(listen(ws, host))
         for m in (hello_message(ver), {"t": "view", "w": VIEW[0], "h": VIEW[1]},
@@ -1537,6 +1542,7 @@ def main() -> int:
     ap.add_argument("--hacks2", action="store_true", help="after the orbit: the Phase 6 hacking scene: the --devices scene plus a Net Port, `rhack` (vehicle, camera and area hacks, range 50 m), `daemon` (Breach results) and `feedreq` (a 128 x 128 `feed` once a second) answered; print devact/devresult/rhack/daemon/feedreq/hackresult/feed")
     ap.add_argument("--vendor", action="store_true", help="after the orbit: the Phase 7 gun shop and hub: `stats` with V's money, the shop's screen from 2 s to 8 s with its unrequested `reply kind:vendor` stock, `uiact buy` and `sell` answered (`notify`, `stats` and the stock again), `atlasreq arg:fasttravel` answered with the fast-travel list, `park` answered with `parked`, `vteleport` after 2 s; print uiact/hub/park/vteleport")
     ap.add_argument("--park-refuse", action="store_true", help="--vendor or --replica: answer `park on:true` with `parked ok:false` (\"blocked (in a vehicle)\"), as the scripts do when V cannot be parked")
+    ap.add_argument("--park-off", action="store_true", help="--vendor or --replica: answer `park on:true` with `parked ok:false` (\"blocked (Cyberblock is not active)\"), as the scripts do while Cyberblock is Off")
     ap.add_argument("--shift", type=int, default=None, metavar="DX", help="--replica, --devices or --hacks2: move the street, the figures, the devices and V DX blocks east (a second fake host that overlaps the first)")
     ap.add_argument("--env-hours", type=int, default=None, metavar="H", help="--replica: add H hours to the `env` clock and make the weather fog (a second host whose sky must never reach the server)")
     ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica, --devices: seconds to keep the link up and listen (default 10)")
@@ -1567,6 +1573,10 @@ def main() -> int:
         ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica, --devices, --hacks2, --figures or --vendor")
     if args.park_refuse and not {"vendor", "replica"} & modes:
         ap.error("--park-refuse needs --vendor or --replica (the modes that answer `park`)")
+    if args.park_off and not {"vendor", "replica"} & modes:
+        ap.error("--park-off needs --vendor or --replica (the modes that answer `park`)")
+    if args.park_off and args.park_refuse:
+        ap.error("--park-off and --park-refuse each give the refusal's reason: use only one of them")
     if "vendor" in modes and "ui" in modes:
         ap.error("--vendor and --ui each send their own stats and screens: use only one of them")
     if "figures" in modes and "replica" in modes:
@@ -1592,7 +1602,7 @@ def main() -> int:
                                 args.hold if layers or modes else None, args.cmd, layers, modes, args.name, ver, args.ids_from,
                                 **({"wait_host": args.wait_host} if args.wait_host is not None else {}),
                                 **({"shift": args.shift} if args.shift else {}), **({"env_hours": args.env_hours} if args.env_hours else {}),
-                                **({"park_refuse": True} if args.park_refuse else {})))
+                                **({"park_refuse": True} if args.park_refuse else {}), **({"park_off": True} if args.park_off else {})))
     except (ConnectionError, TimeoutError, ConnectionClosed) as e:
         print(f"{tag}no connection to Minecraft at {url} ({e}); start the dev client first:\n"
               '  mc\\gradlew.bat runClient --args="--quickPlaySingleplayer cyberblock"', file=sys.stderr)

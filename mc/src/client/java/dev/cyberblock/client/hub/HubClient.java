@@ -3,6 +3,7 @@ package dev.cyberblock.client.hub;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.client.HostCursor;
 import dev.cyberblock.client.HostState;
 import dev.cyberblock.client.net.ClientNet;
 import dev.cyberblock.client.ui.screen.NightCityPauseScreen;
@@ -12,6 +13,7 @@ import dev.cyberblock.net.Payloads;
 import java.util.Arrays;
 import java.util.List;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLevelEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
@@ -34,7 +36,8 @@ import net.minecraft.network.chat.Component;
  * {@code /cyberblock hub} (the server decides); and the leaderboard boards draw their scores. The button shows only on a server with
  * the hub ({@code hs_ack.features} bit 16). Log lines: {@code hub: in the Afterlife (Cyberpunk does not drive Steve here)},
  * {@code hub: back from the Afterlife}, and which input is active there: {@code hub: input from Cyberpunk's keys and mouse (the DLL
- * shows the hub)} or {@code hub: input from Minecraft's own window (no linked host DLL)}.
+ * shows the hub)} or {@code hub: input from Minecraft's own window (no linked host DLL showing the hub)} (none linked, a guest, or
+ * Cyberblock Off: no cams for 5 s).
  */
 public final class HubClient implements ClientModInitializer {
 	/** Entity.turn scales its arguments by this (mouse counts to degrees); the DLL's look deltas are degrees already. */
@@ -83,6 +86,7 @@ public final class HubClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		BlockEntityRenderers.register(HubBlocks.LEADERBOARD_ENTITY, LeaderboardRenderer::new);
+		ClientLevelEvents.AFTER_CLIENT_LEVEL_CHANGE.register((minecraft, level) -> where(level != null && Afterlife.is(level)));
 		ClientTickEvents.END_CLIENT_TICK.register(HubClient::tick);
 		ScreenEvents.AFTER_INIT.register((minecraft, screen, width, height) -> {
 			if (paused(screen) && (ClientNet.features() & Payloads.FEATURE_HUB) != 0 && minecraft.player != null) {
@@ -96,24 +100,32 @@ public final class HubClient implements ClientModInitializer {
 		return new KeyMapping[] {o.keyUp, o.keyLeft, o.keyDown, o.keyRight, o.keyShift, o.keyJump, o.keySprint};
 	}
 
-	private static void tick(final Minecraft minecraft) {
-		boolean now = minecraft.level != null && Afterlife.is(minecraft.level);
+	/**
+	 * The client's level is now the Afterlife or not: set as the level changes (the respawn packet, before the first tick and the first
+	 * frame there, which would otherwise still place Steve at V's Night City position inside the hub) and checked every tick (a
+	 * disconnect leaves no level).
+	 */
+	public static void where(final boolean now) {
 		if (now != inHub) {
 			inHub = now;
 			HostState.released = now;
 			Cyberblock.LOG.info(now ? "hub: in the Afterlife (Cyberpunk does not drive Steve here)" : "hub: back from the Afterlife");
 		}
+	}
 
+	private static void tick(final Minecraft minecraft) {
+		where(minecraft.level != null && Afterlife.is(minecraft.level));
 		boolean input = HostState.hostInput();
 		if (input != hostInput) {
 			hostInput = input;
 			if (!input) {
 				keys.release(mappings(minecraft.options)); // nothing stays held once the DLL no longer speaks for this client
+				HostCursor.hubInputEnded(); // nor does its last cursor stand in for the real mouse (Cyberblock Off, the link gone)
 			}
 
 			if (inHub) {
 				Cyberblock.LOG.info(input ? "hub: input from Cyberpunk's keys and mouse (the DLL shows the hub)"
-					: "hub: input from Minecraft's own window (no linked host DLL)");
+					: "hub: input from Minecraft's own window (no linked host DLL showing the hub)");
 			}
 		}
 

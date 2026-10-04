@@ -1433,10 +1433,17 @@ Holo-Table spawn of a linked player is the existing [`vteleport` with `why:"holo
   guest has no DLL, so no `hub` and no `park` is ever sent for it.
 - **The cover only stays up over a parked V.** The server refuses an entry (a chat message, nobody moves) while the player is locked by the join password
   (`JoinLock`: the command, the hub portal and the pause screen's button alike), while the session says the game holds V (a scene or a ride) and while V is
-  in a vehicle. When the DLL still answers the hub's `park on:true` with **`parked ok:false`** (V cannot be parked now: not live, a vehicle, a scene, a
-  teleport, saving; the reason is `blocked (<why>)`), the server **takes the player out of the hub at once**, back to where they came from (the leaving pair:
-  `park on:false`, `hub in:false`), and shows the reason; the cover is never left over an unparked V for longer than that one answer. No answer within 10 s
-  is logged as an unconfirmed park path (a Phase 3 DLL answers every `park` from the scripts' `park:` log lines).
+  in a vehicle. When the DLL still answers the hub's `park on:true` with **`parked ok:false`** while it draws the cover (V cannot be parked now: dead, a
+  vehicle, a scene, a teleport, the survey tour; the reason is `blocked (<why>)`), the server **takes the player out of the hub at once**, back to where they
+  came from (the leaving pair: `park on:false`, `hub in:false`), and shows the reason; the cover is never left over an unparked V for longer than that one
+  answer. Two refusals come while **no cover is drawn**, `blocked (Cyberblock is not active)` (Off, or saving) and `blocked (no player)` (a load): the
+  server logs them (`hub: <name> V not parked yet (<reason>): no cover is shown, kept in the Afterlife (V is parked at On)`) and the player stays, still
+  counted as told (the scripts keep the hub and park V once Cyberblock is On with a player, 7S `Hub.reds`; a host with Cyberblock Off may use the hub). No
+  answer within 10 s is logged as an unconfirmed park path (a Phase 3 DLL answers every `park` from the scripts' `park:` log lines).
+- **Input in the hub follows the cams.** The client counts the DLL as showing the hub (its keys, mouse and cursor drive Minecraft, frames go to it) only
+  while its `cam`s keep coming (every Cyberpunk frame while Active, parked V included; none while Off) and drops it 5 s after the last one: Minecraft's own
+  window is the input again and the DLL's last cursor position is forgotten. The client stops placing Steve from `cam` as its level becomes
+  `cyberblock:afterlife` (before its first tick there), so his first position in the hub is the server's arrival point.
 - **A new session hears the hub again.** What a DLL was told ends with its session: the DLL drops its cover by itself (and the scripts release V) on a link
   drop, on every `hello` and when its `session` leaves `host`, with no message needed. So on **every host session start** (the `hello` after a link drop, a
   Cyberpunk restart or a reconnect) the server counts the DLL as out of the hub, and a player who is still in `cyberblock:afterlife` gets the entering pair

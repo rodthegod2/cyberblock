@@ -1,6 +1,7 @@
 package dev.cyberblock.hub;
 
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.holo.HoloBlocks;
 import java.util.function.Function;
 import net.fabricmc.fabric.api.creativetab.v1.CreativeModeTabEvents;
 import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
@@ -61,9 +62,9 @@ public final class HubBlocks {
 			});
 	}
 
-	/** Is this one of the hub's blocks (the hub lets a player use these whatever they hold)? */
-	static boolean is(final BlockState state) {
-		return state.is(HUB_PORTAL) || state.is(MATCH_TERMINAL) || state.is(LEADERBOARD);
+	/** Is this a block with its own use in the hub, one of the hub's or 7T's Holo-Table (the hub lets a player use these whatever they hold)? */
+	static boolean usable(final BlockState state) {
+		return state.is(HUB_PORTAL) || state.is(MATCH_TERMINAL) || state.is(LEADERBOARD) || state.is(HoloBlocks.HOLO_TABLE);
 	}
 
 	private static Identifier id(final String name) {

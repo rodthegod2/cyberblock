@@ -5,8 +5,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Set;
 import net.minecraft.world.item.ArmorStandItem;
-import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.BoatItem;
 import net.minecraft.world.item.BoneMealItem;
 import net.minecraft.world.item.BucketItem;
@@ -103,16 +103,24 @@ final class HubRules {
 	}
 
 	/**
+	 * The refusals that come while the DLL draws no cover: Cyberblock is not On (the compositor draws nothing while Off) or there is no
+	 * V yet (a load). The scripts park V by themselves once Cyberblock is On with a player (7S Hub.reds, every 1 s while the hub lasts),
+	 * so the player stays in the hub. Built by the DLL from Park.reds' {@code park: on refused (<why>)} (world::parked_from_log).
+	 */
+	static final Set<String> NO_COVER = Set.of("blocked (Cyberblock is not active)", "blocked (no player)");
+
+	/**
 	 * A refused park ({@code on:true, ok:false}) takes the player out of the hub at once (shared/protocol.md "The cover only stays up
-	 * over a parked V"): full-screen Minecraft must never hide a V that is neither invisible nor invulnerable.
+	 * over a parked V"): full-screen Minecraft must never hide a V that is neither invisible nor invulnerable. Not for the
+	 * {@link #NO_COVER} refusals: nothing is hidden then, and leaving would keep a host whose Cyberpunk is Off out of the hub for good.
 	 */
 	static boolean exitsHub(final Parked answer) {
-		return answer.on() && !answer.ok();
+		return answer.on() && !answer.ok() && !NO_COVER.contains(answer.reason());
 	}
 
 	/**
 	 * The Phase 0 (g) path line (megaplan 4.1 g, unconfirmed in game until the CET checks G1-G6): which way parking is known to work.
-	 * Only a park that worked or one never answered says it; refusals have their own line and take the player out.
+	 * Only a park that worked or one never answered says it; refusals have their own lines (see {@link #exitsHub}).
 	 *
 	 * @param answered a {@code parked on:true, ok:true} came; false: none came in time
 	 */
@@ -127,24 +135,26 @@ final class HubRules {
 	}
 
 	/**
-	 * Items refused to non-creative players in the Afterlife besides {@code mayBuild}: blocks, fluids, fire, bone meal, and everything
-	 * that puts an entity down (a creeper or an end crystal would break the hub).
+	 * Items refused to non-creative players in the Afterlife besides {@code mayBuild}: fluids, fire, bone meal, everything that puts an
+	 * entity down (a creeper or an end crystal would break the hub), and lily pads, which place on water from the air with no ability
+	 * check. Plain block items are not here: placing one on a block is refused by {@code mayBuild} ({@code ItemStack.useOn}), and
+	 * holding one (a carrot, seeds, a stack of stone) must neither stop eating nor stop a right-click opening the Holo-Table.
 	 */
-	static final List<Class<? extends Item>> REFUSED_ITEMS = List.of(BlockItem.class, BucketItem.class, SpawnEggItem.class, BoatItem.class,
+	static final List<Class<? extends Item>> REFUSED_ITEMS = List.of(BucketItem.class, SpawnEggItem.class, BoatItem.class,
 		MinecartItem.class, ArmorStandItem.class, HangingEntityItem.class, EndCrystalItem.class, FlintAndSteelItem.class,
-		FireChargeItem.class, BoneMealItem.class);
+		FireChargeItem.class, BoneMealItem.class, PlaceOnWaterBlockItem.class);
+
+	/** Whether an item of this class is one of the {@link #REFUSED_ITEMS} (or a subclass). */
+	static boolean refusedItem(final Class<? extends Item> item) {
+		return REFUSED_ITEMS.stream().anyMatch(c -> c.isAssignableFrom(item));
+	}
 
 	/**
-	 * Whether an item of this class is refused: on a block, every {@link #REFUSED_ITEMS} one; in the air the same except plain block
-	 * items (carrots and berries are block items, and eating them is fine), but lily pads, which place on water from the air with no
-	 * ability check (as spawn eggs and boats spawn).
+	 * Whether a right-click on a block is refused: a refused item, unless the block has its own use in the hub (a hub block or the
+	 * Holo-Table), which works whatever the player holds.
 	 */
-	static boolean refusedItem(final Class<? extends Item> item, final boolean onBlock) {
-		if (!onBlock && BlockItem.class.isAssignableFrom(item)) {
-			return PlaceOnWaterBlockItem.class.isAssignableFrom(item);
-		}
-
-		return REFUSED_ITEMS.stream().anyMatch(c -> c.isAssignableFrom(item));
+	static boolean refusedOnBlock(final Class<? extends Item> item, final boolean usableBlock) {
+		return !usableBlock && refusedItem(item);
 	}
 
 	/** The facing of a block at (x, z) that looks toward (tx, tz): the larger of the two distances wins (ties go north-south). */
