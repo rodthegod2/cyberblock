@@ -107,7 +107,9 @@ final class VehicleFigureRenderer extends EntityRenderer<ProxyEntity, VehicleFig
 
 	@Override
 	public boolean shouldRender(final ProxyEntity entity, final Frustum frustum, final double x, final double y, final double z, final float partialTicks) {
-		return FigureRenderer.drawn() && super.shouldRender(entity, frustum, x, y, z, partialTicks);
+		boolean draw = FigureRenderer.drawn() && super.shouldRender(entity, frustum, x, y, z, partialTicks);
+		FigureStats.considered(entity.getId(), draw);
+		return draw;
 	}
 
 	@Override

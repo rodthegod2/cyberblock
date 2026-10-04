@@ -107,6 +107,25 @@ def read_latest(name: str = NAME) -> dict | None:
         return None
 
 
+def read_timing(name: str = NAME) -> dict | None:
+    """The newest frame's size and times without its pixels (megaplan 9-F1 measurements): {"published": the publish counter,
+    "width", "height", "capture_ns", "publish_ns"} (both times System.nanoTime of the Minecraft process), or None when there is
+    no mapping, nothing published yet, or the slot was being rewritten."""
+    with _view(name) as v:
+        if v is None or v[1] < HEADER_SIZE:
+            return None
+        base, _ = v
+        magic, version, _, slots, _, _, _, published, latest, _ = struct.unpack(HEADER_FMT, ctypes.string_at(base, HEADER_SIZE))
+        if magic != MAGIC or version != VERSION or not 0 <= latest < slots:
+            return None
+        desc = base + SLOT_DESC + SLOT_DESC_BYTES * latest
+        (seq,) = struct.unpack("<q", ctypes.string_at(desc, 8))
+        fields = struct.unpack(SLOT_FMT, ctypes.string_at(desc + 8, SLOT_SIZE))
+        if seq & 1 or struct.unpack("<q", ctypes.string_at(desc, 8))[0] != seq:
+            return None
+        return {"published": published, "width": fields[2], "height": fields[3], "capture_ns": fields[-2], "publish_ns": fields[-1]}
+
+
 def linear_depth(frame: dict) -> np.ndarray:
     """View-space depth in metres along the view axis (inf where Minecraft drew nothing), from the frame's raw depth."""
     n, f, flags = frame["pose"]["near"], frame["pose"]["far"], frame["pose"]["flags"]

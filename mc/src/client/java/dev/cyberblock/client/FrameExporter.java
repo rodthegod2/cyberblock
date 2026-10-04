@@ -10,7 +10,10 @@ import dev.cyberblock.Cyberblock;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.VarHandle;
+import java.util.Arrays;
+import java.util.Locale;
 import org.joml.Vector4f;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Hands Minecraft's frame to the host through the shared memory "Local\CyberblockFrame".
@@ -67,6 +70,9 @@ public final class FrameExporter {
 	private static long frameCounter;
 	private static long publishCounter;
 	private static Capture current;
+	/** Megaplan 9-F1: what the export costs, logged every STATS_NANOS while frames go out. */
+	private static final ExportStats stats = new ExportStats();
+	private static final long STATS_NANOS = 30_000_000_000L;
 
 	private FrameExporter() {
 	}
@@ -229,9 +235,11 @@ public final class FrameExporter {
 			VarHandle.fullFence();
 			long base = HEADER + STRIDE * slot;
 			long n = (long)c.width * c.height * 4;
+			long copyStart = System.nanoTime();
 			copy(c.color, m, base, n);
 			copy(c.depth, m, base + n, n);
 			copy(c.overlay, m, base + 2 * n, n);
+			long published = System.nanoTime();
 			HostState.Pose p = c.pose;
 			m.set(LONG, desc + 8, c.frame);
 			m.set(LONG, desc + 16, p.hostFrame());
@@ -249,16 +257,78 @@ public final class FrameExporter {
 			m.set(FLOAT, desc + 80, p.roll());
 			m.set(INT, desc + 84, p.firstPerson() ? 1 : 0);
 			m.set(LONG, desc + 88, c.captureNanos);
-			m.set(LONG, desc + 96, System.nanoTime());
+			m.set(LONG, desc + 96, published);
 			VarHandle.fullFence();
 			m.set(LONG, desc, seq + 2L);
 			m.set(INT, 40, slot);
 			VarHandle.fullFence();
 			m.set(LONG, 32, ++publishCounter);
+			String line = stats.add(c.width, c.height, copyStart - c.captureNanos, published - copyStart, published, STATS_NANOS);
+			if (line != null) {
+				Cyberblock.LOG.info(line);
+			}
 		} catch (RuntimeException e) {
 			Cyberblock.LOG.warn("frame export failed", e);
 		} finally {
 			c.busy = false;
+		}
+	}
+
+	/**
+	 * What the export costs (megaplan 9-F1), per published frame: the readback (capture until the GPU's copy is mapped, the fence
+	 * wait included) and the copy into the shared memory. Every {@code every} nanoseconds the window's line is returned for the log,
+	 * then it starts over. Pure: no game in here; one thread (the render thread).
+	 */
+	static final class ExportStats {
+		private static final int MAX_SAMPLES = 4096;
+		private final long[] readback = new long[MAX_SAMPLES], copies = new long[MAX_SAMPLES];
+		private int samples;
+		private long frames, since = -1L;
+
+		/** One published frame of w x h; returns the log line when the window is over (null otherwise). */
+		@Nullable String add(final int w, final int h, final long readbackNanos, final long copyNanos, final long now, final long every) {
+			if (this.since < 0L) {
+				this.since = now;
+			}
+
+			this.frames++;
+			if (this.samples < MAX_SAMPLES) {
+				this.readback[this.samples] = readbackNanos;
+				this.copies[this.samples] = copyNanos;
+				this.samples++;
+			}
+
+			long elapsed = now - this.since;
+			if (elapsed < every) {
+				return null;
+			}
+
+			String line = String.format(Locale.ROOT, "frame export: %dx%d, %.1f fps, readback %.1f ms avg (p95 %.1f ms), copy %.2f ms avg (p95 %.2f ms)",
+				w, h, this.frames * 1.0E9 / elapsed, avgMs(this.readback, this.samples), p95Ms(this.readback, this.samples),
+				avgMs(this.copies, this.samples), p95Ms(this.copies, this.samples));
+			this.samples = 0;
+			this.frames = 0;
+			this.since = now;
+			return line;
+		}
+
+		static double avgMs(final long[] v, final int n) {
+			long sum = 0L;
+			for (int i = 0; i < n; i++) {
+				sum += v[i];
+			}
+
+			return n == 0 ? 0.0 : sum / (n * 1.0E6);
+		}
+
+		static double p95Ms(final long[] v, final int n) {
+			if (n == 0) {
+				return 0.0;
+			}
+
+			long[] sorted = Arrays.copyOf(v, n);
+			Arrays.sort(sorted);
+			return sorted[Math.min(n - 1, (int) Math.ceil(n * 0.95) - 1)] / 1.0E6;
 		}
 	}
 

@@ -59,6 +59,7 @@ public final class FigureRenderer extends LivingEntityRenderer<ProxyEntity, Figu
 		EntityRenderers.register(ProxyEntities.HUMAN, FigureRenderer::new);
 		EntityRenderers.register(ProxyEntities.VEHICLE, VehicleFigureRenderer::new);
 		ClientTickEvents.END_CLIENT_TICK.register(FigureEffects::tick);
+		ClientTickEvents.END_CLIENT_TICK.register(FigureStats::tick);
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
 			present.clear();
 			loggedMissing.clear();
@@ -115,7 +116,9 @@ public final class FigureRenderer extends LivingEntityRenderer<ProxyEntity, Figu
 
 	@Override
 	public boolean shouldRender(final ProxyEntity entity, final Frustum frustum, final double x, final double y, final double z, final float partialTicks) {
-		return drawn() && super.shouldRender(entity, frustum, x, y, z, partialTicks);
+		boolean draw = drawn() && super.shouldRender(entity, frustum, x, y, z, partialTicks);
+		FigureStats.considered(entity.getId(), draw);
+		return draw;
 	}
 
 	@Override
@@ -153,6 +156,9 @@ public final class FigureRenderer extends LivingEntityRenderer<ProxyEntity, Figu
 		track.phase += (float) (FigureAnim.strideRate(gait, speed) * dt);
 		state.walkAnimationPos = track.phase;
 		state.walkAnimationSpeed = FigureAnim.swing(gait, speed);
+		if (gait != FigureAnim.Gait.IDLE || state.aim || state.fire || state.combat || state.isCrouching || state.ragdollSeconds > 0.0F) {
+			FigureStats.animated(entity.getId());
+		}
 		if (dead) {
 			// vanilla's death fall (setupRotations: on its side within a second)
 			state.deathTime = Math.max(1.0F, (entity.dead() ? entity.deadTicks() : fx.deadBitTicks) + partialTicks);
