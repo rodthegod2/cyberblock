@@ -1,12 +1,17 @@
 package dev.cyberblock.client.mode.match;
 
+import dev.cyberblock.client.ui.UiModel;
 import dev.cyberblock.mode.match.MatchWire;
 import java.util.Locale;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 
 /**
  * The match HUD (megaplan 8-M1), at the right edge: the PvP chip (shown while PvP is on or in a match; with chat or the inventory
@@ -21,18 +26,51 @@ final class MatchHud {
 	private static final int GREY = 0xFFAAAAAA;
 	private static final int WHITE = 0xFFFFFFFF;
 	private static final int RED = 0xFFFF5555;
+	private static final int QUEST_TOP = 52;
+	private static final int QUEST_W = 160;
 
 	private MatchHud() {
 	}
 
-	/** The chip's x, y and width for a GUI of this size (the HUD button sits exactly on it). */
+	/** The chip's x, y and width for a GUI of this size (the HUD button sits exactly on it): below the tracked job when there is one. */
 	static int[] chip(final int width, final int height) {
-		return new int[] {width - CHIP_W - 4, Math.max(4, height / 2 - 72), CHIP_W};
+		return new int[] {width - CHIP_W - 4, Math.max(Math.max(4, height / 2 - 72), questBottom() + 6), CHIP_W};
+	}
+
+	/**
+	 * The lowest y of the tracked job at the top right (QuestHud's layout, section 1.11: from y 52, 10 px lines, 160 px wide, the
+	 * objectives 10 px narrower, one line for the waypoint distance); 0 without a job.
+	 */
+	private static int questBottom() {
+		UiModel.Quest quest = UiModel.quest;
+		if (quest == null) {
+			return 0;
+		}
+
+		Font font = Minecraft.getInstance().font;
+		int lines = font.split(Component.literal(quest.title()).withStyle(ChatFormatting.BOLD), QUEST_W).size();
+		for (UiModel.Objective o : quest.objectives()) {
+			MutableComponent text = Component.literal(o.text());
+			if (o.tot() > 0) {
+				text.append(" (" + o.cur() + "/" + o.tot() + ")");
+			}
+
+			if (o.optional()) {
+				text.append(" ").append(Component.translatableWithFallback("cyberblock.ui.quest.optional", "(optional)"));
+			}
+
+			lines += font.split(text, QUEST_W - 10).size();
+		}
+
+		return QUEST_TOP + (lines + (quest.wp() != null ? 1 : 0)) * 10;
 	}
 
 	static void draw(final GuiGraphicsExtractor graphics, final DeltaTracker delta) {
 		Minecraft minecraft = Minecraft.getInstance();
-		if (minecraft.player == null || minecraft.gui.hud.isHidden()) {
+		// HUD elements are drawn under open screens too: only chat leaves the right edge free (the Match Terminal and the Cyberware
+		// screen show their own PvP button and match view there)
+		Screen screen = minecraft.gui.screen();
+		if (minecraft.player == null || minecraft.gui.hud.isHidden() || screen != null && !(screen instanceof ChatScreen)) {
 			return;
 		}
 

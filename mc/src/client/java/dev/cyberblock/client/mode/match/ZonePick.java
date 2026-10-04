@@ -32,8 +32,9 @@ final class ZonePick implements AtlasScreen.Overlay {
 	static void open(final MatchScreen parent, final double x, final double z, final double r, final Consumer<double[]> done) {
 		ZonePick pick = new ZonePick(x, z, r, done);
 		double zoom = Math.clamp(80.0 / Math.max(16.0, r), AtlasView.MIN_ZOOM, AtlasView.MAX_ZOOM);
-		Minecraft.getInstance().gui.setScreen(new AtlasScreen(parent, Component.translatableWithFallback("cyberblock.match.zone.title",
-			"Pick the match zone: click its centre"), pick, x, z, zoom));
+		// a short title: the Atlas's tab buttons take the rest of the top row; the instruction is in the bottom line
+		Minecraft.getInstance().gui.setScreen(new AtlasScreen(parent, Component.translatableWithFallback("cyberblock.match.zone.pick", "Match zone"),
+			pick, x, z, zoom));
 	}
 
 	@Override
@@ -67,7 +68,7 @@ final class ZonePick implements AtlasScreen.Overlay {
 	@Override
 	public void extractTop(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY) {
 		Minecraft minecraft = Minecraft.getInstance();
-		Component line = Component.translatableWithFallback("cyberblock.match.zone.line", "Centre %s, %s, radius %s blocks", Math.round(this.x),
+		Component line = Component.translatableWithFallback("cyberblock.match.zone.click", "Click the centre: %s, %s, radius %s blocks", Math.round(this.x),
 			Math.round(this.z), Math.round(this.r));
 		graphics.text(minecraft.font, line, 8, minecraft.getWindow().getGuiScaledHeight() - 36, 0xFFFFFFFF, true);
 	}

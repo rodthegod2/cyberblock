@@ -172,11 +172,29 @@ final class MatchScreen extends Screen {
 		this.addRenderableWidget(go);
 		y += 26;
 		MatchWire.Mode m = s.modes().get(mode);
-		this.lines.add(new Line(this.font.plainSubstrByWidth(m.description(), w), x, y, DIM));
+		y = this.wrap(m.description(), x, y, w, 3, DIM);
 		if (!s.canCreate()) {
-			this.lines.add(new Line(this.font.plainSubstrByWidth(Component.translatableWithFallback(s.why(), MatchRules.fallback(s.why())).getString(), w),
-				x, y + 12, WARN));
+			this.wrap(Component.translatableWithFallback(s.why(), MatchRules.fallback(s.why())).getString(), x, y + 1, w, 2, WARN);
 		}
+	}
+
+	/** Adds {@code text} as at most {@code max} lines of {@code w} px, broken at spaces; returns the y under them. */
+	private int wrap(final String text, final int x, final int y0, final int w, final int max, final int colour) {
+		String rest = text.strip();
+		int y = y0;
+		for (int n = 0; n < max && !rest.isEmpty(); n++) {
+			String part = this.font.plainSubstrByWidth(rest, w);
+			int space = part.lastIndexOf(' ');
+			if (part.length() < rest.length() && space > 0 && n < max - 1) {
+				part = part.substring(0, space);
+			}
+
+			this.lines.add(new Line(part, x, y, colour));
+			rest = rest.substring(part.length()).strip();
+			y += 11;
+		}
+
+		return y;
 	}
 
 	private static List<Integer> indices(final int n) {
