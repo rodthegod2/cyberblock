@@ -72,9 +72,18 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	private static final EntityDataAccessor<Boolean> DATA_HOSTILE = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.BOOLEAN);
 	/** Ticks left of a Compass Ping (plan retest3 section 1.5): the client outlines a pinged proxy, so it is synced entity data. */
 	private static final EntityDataAccessor<Integer> DATA_PINGED = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.INT);
+	/**
+	 * Dead in Night City (plan 2026-10-04 task 3-F1): a guest's figure lies down (a car stays a dark wreck) until ProxyManager
+	 * removes it. The figure's look is synced entity data like this, set from the host's list in apply(Entry); Phase 5 (5F) adds the
+	 * skin id, anim bits, threat, colour and hp next to it.
+	 */
+	private static final EntityDataAccessor<Boolean> DATA_DEAD = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.BOOLEAN);
+	/** Ticks since it died, on each side (the client counts from when it saw it die): how far the body has fallen. */
+	private int deadTicks;
 
 	public ProxyEntity(final EntityType<? extends ProxyEntity> type, final Level level) {
 		super(type, level);
+		// invisible to vanilla; guests see it through client/figure, which draws it anyway
 		this.setInvisible(true);
 		this.setNoGravity(true);
 	}
@@ -84,6 +93,48 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 		super.defineSynchedData(entityData);
 		entityData.define(DATA_HOSTILE, false);
 		entityData.define(DATA_PINGED, 0);
+		entityData.define(DATA_DEAD, false);
+	}
+
+	/** Server thread: the host's latest list entry for it: its place and the synced figure data. */
+	void apply(final ProxyDiff.Entry e) {
+		this.setHostile(e.hostile());
+		this.setPos(e.x(), e.y(), e.z());
+		this.setYRot(e.yaw());
+		this.setYHeadRot(e.yaw());
+		this.setYBodyRot(e.yaw());
+	}
+
+	/**
+	 * Server thread: it died in Night City (ProxyManager.bury). It stops being anything to hit, hunt, outline or report; it only lies
+	 * there for the guests until ProxyManager removes it.
+	 */
+	void die() {
+		this.entityData.set(DATA_DEAD, true);
+		this.setHostile(false);
+		this.setPinged(0);
+	}
+
+	/** Dead in Night City; valid on the client too (the figure lies down or is a wreck). */
+	public boolean dead() {
+		return this.entityData.get(DATA_DEAD);
+	}
+
+	/** Ticks since it died on this side (0 while alive). */
+	public int deadTicks() {
+		return this.deadTicks;
+	}
+
+	/** A body or wreck is no target for the crosshair, a sword or an arrow. */
+	@Override
+	public boolean isPickable() {
+		return !this.dead() && super.isPickable();
+	}
+
+	/** Mobs (ProxyTargetGoal) never hunt a body. */
+	@Override
+	public boolean canBeSeenAsEnemy() {
+		return !this.dead() && super.canBeSeenAsEnemy();
 	}
 
 	/** The Cyberpunk entity id hash this proxy stands for. */
@@ -164,6 +215,11 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 			this.igniteCooldown--;
 		}
 
+		if (this.dead()) {
+			this.deadTicks++;
+			return;
+		}
+
 		if (this.level() instanceof ServerLevel) {
 			if (this.pendingIgnite > 0.0) {
 				ProxyManager.ignite(this, this.pendingIgnite, this.recentActor());
@@ -186,7 +242,7 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	public void setRemainingFireTicks(final int remainingTicks) {
 		if (remainingTicks <= 0 || !(this.level() instanceof ServerLevel)) {
 			super.setRemainingFireTicks(remainingTicks);
-		} else if (ProxyDamage.igniteDue(this.igniteCooldown, this.igniteReported, remainingTicks)) {
+		} else if (!this.dead() && ProxyDamage.igniteDue(this.igniteCooldown, this.igniteReported, remainingTicks)) {
 			this.pendingIgnite = remainingTicks / 20.0;
 			this.igniteCooldown = remainingTicks;
 			this.igniteReported = remainingTicks;
@@ -198,8 +254,8 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	public InteractionResult interact(final Player player, final InteractionHand hand, final Vec3 location) {
 		ItemStack held = player.getItemInHand(hand);
 		boolean flint = held.is(Items.FLINT_AND_STEEL);
-		// a vehicle does not burn: the item stays unused (and is not worn or consumed)
-		if (this.getType() == ProxyEntities.VEHICLE || !flint && !held.is(Items.FIRE_CHARGE)) {
+		// a vehicle does not burn, nor does a body: the item stays unused (and is not worn or consumed)
+		if (this.getType() == ProxyEntities.VEHICLE || this.dead() || !flint && !held.is(Items.FIRE_CHARGE)) {
 			return super.interact(player, hand, location);
 		}
 
@@ -231,7 +287,7 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 			: direct instanceof Projectile ? ProxyDamage.Medium.PROJECTILE : ProxyDamage.Medium.BODY;
 		// no kind for an explosion (TNT, creeper, firework...): the host's real Cyberpunk explosion is what hurts the NPC, and this one is consumed
 		String kind = ProxyDamage.kind(source.is(DamageTypeTags.IS_EXPLOSION), source.is(DamageTypeTags.IS_FIRE), medium, actor);
-		if (kind == null || !(damage > 0.0F) || !Float.isFinite(damage)) {
+		if (kind == null || this.dead() || !(damage > 0.0F) || !Float.isFinite(damage)) {
 			return false;
 		}
 

@@ -1,10 +1,12 @@
 package dev.cyberblock;
 
 import com.google.gson.JsonObject;
+import dev.cyberblock.cyber.Kills;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.Permissions;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -21,10 +23,15 @@ import org.jspecify.annotations.Nullable;
 /**
  * The proxies in the Minecraft world: one per Cyberpunk NPC or vehicle in each host's latest {"t":"npcs"} list, created, moved and
  * removed to match it. Owner-scoped (plan 2026-10-04 section 1.4): a proxy belongs to the host whose game its id comes from, and
- * everything it reports goes to that host only. Server thread only.
+ * everything it reports goes to that host only. Guests see the proxies as figures (task 3-F1): only while the owner's session is
+ * active, and a proxy the host reports `killed` stays a few seconds as a body or a wreck. Server thread only.
  */
 public final class ProxyManager {
 	private static final ProxyFleet.ByOwner<ProxyEntity> fleets = new ProxyFleet.ByOwner<>();
+	/** Each host's dead and just-gone ids (task 3-F1). */
+	private static final Map<UUID, ProxyDiff.Graveyard> graves = new HashMap<>();
+	/** Each host's bodies and wrecks: out of its fleet (nothing to hit or move), removed when their time is up or the session ends. */
+	private static final Map<UUID, List<ProxyEntity>> corpses = new HashMap<>();
 	/** The log says how many proxies there are, and how many hits went to the hosts, at most this often (ns). */
 	private static final long REPORT_NANOS = 5_000_000_000L;
 	private static long lastReport = System.nanoTime() - REPORT_NANOS;
@@ -57,56 +64,144 @@ public final class ProxyManager {
 		}
 
 		ProxyFleet<ProxyEntity> fleet = fleets.of(s.uuid());
+		ProxyDiff.Graveyard graveyard = graves.computeIfAbsent(s.uuid(), o -> new ProxyDiff.Graveyard());
 		// a proxy that was killed or unloaded under us is simply gone: it is spawned again below if the host still lists it
 		fleet.proxies.values().removeIf(ProxyEntity::isRemoved);
 		fleet.kinds.keySet().retainAll(fleet.proxies.keySet());
 		fleet.motions.keySet().retainAll(fleet.proxies.keySet());
-		ProxyDiff.Plan plan = ProxyDiff.apply(fleet.kinds, parsed.entries());
+		// a dead NPC the host still lists for a moment is not stood up again next to its body
+		ProxyDiff.Plan plan = ProxyDiff.apply(fleet.kinds, graveyard.alive(parsed.entries(), received));
 		for (Long id : plan.remove()) {
-			fleet.kinds.remove(id);
+			ProxyDiff.Kind kind = fleet.kinds.remove(id);
 			fleet.motions.remove(id);
-			remove(fleet.proxies.remove(id));
+			ProxyEntity proxy = fleet.proxies.remove(id);
+			// where it left the list: a `killed` that comes after this list still leaves the body there
+			graveyard.left(new ProxyDiff.Entry(id, proxy.getX(), proxy.getY(), proxy.getZ(), proxy.getYRot(), kind, false), received);
+			remove(proxy);
 		}
 
 		for (ProxyDiff.Entry e : plan.move()) {
-			place(fleet.proxies.get(e.id()), e);
+			fleet.proxies.get(e.id()).apply(e);
 			fleet.motions.merge(e.id(), ProxyDiff.Motion.first(e, received), (was, first) -> was.next(e, received));
 		}
 
 		for (ProxyDiff.Entry e : plan.spawn()) {
-			spawn(level, s.uuid(), fleet, e, received);
+			ProxyEntity proxy = spawn(level, s.uuid(), e);
+			if (proxy != null) {
+				fleet.proxies.put(e.id(), proxy);
+				fleet.kinds.put(e.id(), e.kind());
+				fleet.motions.put(e.id(), ProxyDiff.Motion.first(e, received));
+			}
 		}
 	}
 
-	private static void place(final ProxyEntity proxy, final ProxyDiff.Entry e) {
-		proxy.setHostile(e.hostile());
-		proxy.setPos(e.x(), e.y(), e.z());
-		proxy.setYRot(e.yaw());
-		proxy.setYHeadRot(e.yaw());
-		proxy.setYBodyRot(e.yaw());
-	}
-
-	private static void spawn(final ServerLevel level, final UUID owner, final ProxyFleet<ProxyEntity> fleet, final ProxyDiff.Entry e, final long received) {
+	/** A new proxy for the entry in the world, or null when it could not be added. */
+	private static @Nullable ProxyEntity spawn(final ServerLevel level, final UUID owner, final ProxyDiff.Entry e) {
 		// beyond the loaded chunks it could not be ticked or hit anyway
 		if (!level.hasChunkAt(BlockPos.containing(e.x(), e.y(), e.z()))) {
-			return;
+			return null;
 		}
 
 		EntityType<ProxyEntity> type = e.kind() == ProxyDiff.Kind.HUMAN ? ProxyEntities.HUMAN : ProxyEntities.VEHICLE;
 		ProxyEntity proxy = type.create(level, EntitySpawnReason.COMMAND);
 		if (proxy == null) {
-			return;
+			return null;
 		}
 
 		proxy.setOwner(owner);
 		proxy.setProxyId(e.id());
-		place(proxy, e);
-		if (level.addFreshEntity(proxy)) {
-			fleet.proxies.put(e.id(), proxy);
-			fleet.kinds.put(e.id(), e.kind());
-			fleet.motions.put(e.id(), ProxyDiff.Motion.first(e, received));
-			spawned++;
+		proxy.apply(e);
+		if (!level.addFreshEntity(proxy)) {
+			return null;
 		}
+
+		spawned++;
+		return proxy;
+	}
+
+	/** ProxyEntities.register (the proxies' startup): the host's kill reports make bodies and wrecks. */
+	static void listen() {
+		HostSessions.listen("killed", (s, m) -> {
+			try {
+				killed(s, m);
+			} catch (RuntimeException e) {
+				WorldModule.warn("bad killed message for the figures: " + e);
+			}
+		});
+	}
+
+	/**
+	 * {"t":"killed"} from a host (Kills): the NPC or vehicle died. Its proxy leaves the fleet and stays as a body or a wreck for a few
+	 * seconds (task 3-F1); when the list already left it out, a body is laid where it was last seen.
+	 */
+	static void killed(final HostSession s, final JsonObject message) {
+		MinecraftServer server = WorldBridge.server();
+		Kills.Killed killed = Kills.parse(message);
+		if (server == null || !s.active() || killed == null) {
+			return;
+		}
+
+		ProxyDiff.Graveyard graveyard = graves.computeIfAbsent(s.uuid(), o -> new ProxyDiff.Graveyard());
+		ProxyDiff.Entry last = graveyard.killed(killed.target(), System.nanoTime());
+		ProxyFleet<ProxyEntity> fleet = fleets.all().get(s.uuid());
+		ProxyEntity proxy = fleet == null ? null : fleet.proxies.remove(killed.target());
+		if (fleet != null) {
+			fleet.kinds.remove(killed.target());
+			fleet.motions.remove(killed.target());
+		}
+
+		if (proxy == null || proxy.isRemoved()) {
+			proxy = last == null ? null : spawn(server.overworld(), s.uuid(), last);
+		}
+
+		if (proxy != null) {
+			bury(s.uuid(), proxy);
+		}
+	}
+
+	/** The proxy is dead: its leash goes (the host knows), it lies there for the guests, and ProxyManager.tick removes it in time. */
+	private static void bury(final UUID owner, final ProxyEntity proxy) {
+		proxy.reportRemoved();
+		if (proxy.isLeashed()) {
+			proxy.dropLeash();
+		}
+
+		proxy.die();
+		corpses.computeIfAbsent(owner, o -> new ArrayList<>()).add(proxy);
+		boolean car = proxy.getType() == ProxyEntities.VEHICLE;
+		Cyberblock.LOG.info("figures: {} {} died ({} for {} s)", car ? "vehicle" : "person", Long.toUnsignedString(proxy.proxyId()),
+			car ? "wreck" : "body", ProxyDiff.deadTicks(car ? ProxyDiff.Kind.VEHICLE : ProxyDiff.Kind.HUMAN) / 20);
+	}
+
+	/** Every tick: bodies and wrecks whose time is up go; with their host's session no longer active, all of them go. */
+	private static void tickCorpses() {
+		for (Iterator<Map.Entry<UUID, List<ProxyEntity>>> it = corpses.entrySet().iterator(); it.hasNext();) {
+			Map.Entry<UUID, List<ProxyEntity>> e = it.next();
+			HostSession session = HostSessions.of(e.getKey());
+			boolean live = session != null && session.active();
+			e.getValue().removeIf(p -> {
+				boolean due = !live || p.isRemoved()
+					|| p.deadTicks() >= ProxyDiff.deadTicks(p.getType() == ProxyEntities.VEHICLE ? ProxyDiff.Kind.VEHICLE : ProxyDiff.Kind.HUMAN);
+				if (due) {
+					p.discard();
+				}
+
+				return due;
+			});
+			if (e.getValue().isEmpty()) {
+				it.remove();
+			}
+		}
+	}
+
+	/** The owner's bodies and wrecks go now, and what it knew of its dead. */
+	private static void clearCorpses(final UUID owner) {
+		List<ProxyEntity> list = corpses.remove(owner);
+		if (list != null) {
+			list.forEach(ProxyEntity::discard);
+		}
+
+		graves.remove(owner);
 	}
 
 	/**
@@ -117,12 +212,15 @@ public final class ProxyManager {
 	static void tick(final MinecraftServer s) {
 		long now = System.nanoTime();
 		report(now);
+		tickCorpses();
 		for (Iterator<Map.Entry<UUID, ProxyFleet<ProxyEntity>>> it = fleets.all().entrySet().iterator(); it.hasNext();) {
 			Map.Entry<UUID, ProxyFleet<ProxyEntity>> e = it.next();
 			HostSession session = HostSessions.of(e.getKey());
+			// figures live only while their host's game is on (task 3-F1): an offline host leaves only its saved blocks
 			if (session == null || !session.active()) {
 				it.remove();
 				clear(e.getValue());
+				graves.remove(e.getKey());
 				continue;
 			}
 
@@ -177,14 +275,18 @@ public final class ProxyManager {
 		}
 
 		fleets.all().clear();
+		List.copyOf(corpses.keySet()).forEach(ProxyManager::clearCorpses);
+		graves.clear();
 	}
 
-	/** The host's session ended: its proxies go (and with them their leads, as items). */
+	/** The host's session ended: its proxies go (and with them their leads, as items), and its bodies and wrecks. */
 	static void end(final UUID owner) {
 		ProxyFleet<ProxyEntity> fleet = fleets.remove(owner);
 		if (fleet != null) {
 			clear(fleet);
 		}
+
+		clearCorpses(owner);
 	}
 
 	private static void clear(final ProxyFleet<ProxyEntity> fleet) {

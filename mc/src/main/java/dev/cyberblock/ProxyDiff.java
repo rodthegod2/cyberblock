@@ -5,12 +5,14 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The host's {"t":"npcs","list":[...]} as validated entries, and what to do about the proxies that exist: spawn, move,
@@ -71,6 +73,46 @@ public final class ProxyDiff {
 
 	/** The usable entries of a message and how many were thrown out. */
 	public record Parsed(List<Entry> entries, int rejected) {
+	}
+
+	/** Ticks a dead figure stays before it goes (plan 2026-10-04 task 3-F1): a body lies down for 3 s, a wreck stays dark for 5 s. */
+	public static int deadTicks(final Kind kind) {
+		return kind == Kind.HUMAN ? 60 : 100;
+	}
+
+	/**
+	 * One host's dead and just-gone ids (task 3-F1). The host's {"t":"killed"} can come after the list that already left the NPC out
+	 * (Kills), so where an id left the list is kept for GONE_NANOS and the body still lies down there. A dead id is not spawned again
+	 * for DEAD_NANOS, however long the host keeps listing the dying NPC. Pure logic, times in System.nanoTime.
+	 */
+	public static final class Graveyard {
+		static final long GONE_NANOS = 2_000_000_000L;
+		static final long DEAD_NANOS = 10_000_000_000L;
+
+		private record Gone(Entry last, long nanos) {
+		}
+
+		private final Map<Long, Gone> gone = new HashMap<>();
+		private final Map<Long, Long> dead = new HashMap<>();
+
+		/** The id left the list (or the proxy went) at last's place. */
+		public void left(final Entry last, final long nanos) {
+			this.gone.put(last.id(), new Gone(last, nanos));
+		}
+
+		/** The host says the id died: it is dead from now on; the place it left the list at, when that was recent, else null. */
+		public @Nullable Entry killed(final long id, final long nanos) {
+			this.dead.put(id, nanos);
+			Gone g = this.gone.remove(id);
+			return g != null && nanos - g.nanos() <= GONE_NANOS ? g.last() : null;
+		}
+
+		/** The entries without the dead ids (and what has run out is forgotten). */
+		public List<Entry> alive(final List<Entry> entries, final long nanos) {
+			this.gone.values().removeIf(g -> nanos - g.nanos() > GONE_NANOS);
+			this.dead.values().removeIf(at -> nanos - at > DEAD_NANOS);
+			return this.dead.isEmpty() ? entries : entries.stream().filter(e -> !this.dead.containsKey(e.id())).toList();
+		}
 	}
 
 	/** The host sends at most 48; more than this in one message is a bug or an attack. */

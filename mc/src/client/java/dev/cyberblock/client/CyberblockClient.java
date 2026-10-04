@@ -2,8 +2,8 @@
 package dev.cyberblock.client;
 
 import dev.cyberblock.Cyberblock;
-import dev.cyberblock.ProxyEntities;
 import dev.cyberblock.WorldBridge;
+import dev.cyberblock.client.figure.FigureRenderer;
 import dev.cyberblock.client.net.ClientNet;
 import dev.cyberblock.client.settings.AimDebug;
 import dev.cyberblock.client.settings.SettingsClient;
@@ -11,7 +11,6 @@ import dev.cyberblock.client.view.ViewClient;
 import java.util.List;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -23,7 +22,6 @@ import net.minecraft.client.Options;
 import net.minecraft.client.gui.screens.DeathScreen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.renderer.entity.NoopRenderer;
 import net.minecraft.client.tutorial.TutorialSteps;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -59,9 +57,8 @@ public class CyberblockClient implements ClientModInitializer {
 		Cyberblock.clientHostActive = player -> player instanceof LocalPlayer && HostState.active();
 		SettingsClient.init();
 		ViewClient.init();
-		// proxies are never drawn: Cyberpunk shows the NPC or vehicle they stand for
-		EntityRendererRegistry.register(ProxyEntities.HUMAN, NoopRenderer::new);
-		EntityRendererRegistry.register(ProxyEntities.VEHICLE, NoopRenderer::new);
+		// proxies are figures for guests and nothing for an active host, whose Cyberpunk shows the real NPCs (megaplan 3-F1)
+		FigureRenderer.register();
 		ClientTickEvents.START_CLIENT_TICK.register(minecraft -> ClientInput.tickStart());
 		ClientTickEvents.END_CLIENT_TICK.register(CyberblockClient::tick);
 		// launcher players (plan retest3 M5): a "Play Cyberblock" button on the title screen
