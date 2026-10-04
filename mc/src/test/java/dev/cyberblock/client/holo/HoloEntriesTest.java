@@ -3,9 +3,11 @@ package dev.cyberblock.client.holo;
 import static org.junit.jupiter.api.Assertions.*;
 
 import dev.cyberblock.client.atlas.AtlasTiles;
+import dev.cyberblock.client.ui.UiModel;
 import dev.cyberblock.holo.HoloRules;
 import dev.cyberblock.holo.HoloWire;
 import java.util.List;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
 /** Megaplan 7-T1: the table's spawn list (with 7V's fast-travel hook) and a guest's map tile asks under the miniature. */
@@ -37,8 +39,29 @@ class HoloEntriesTest {
 	}
 
 	@Test
-	void noStateNoPointsNoEntries() {
+	void noStateNoHookNoEntries() {
 		assertTrue(HoloEntries.of(null, List.of()).isEmpty());
+	}
+
+	@Test
+	void initInstallsTheHostsFastTravelPoints() {
+		Supplier<List<HoloFastTravel.Point>> before = HoloFastTravel.points;
+		try {
+			HoloFastTravel.points = HoloFastTravel.NONE;
+			HoloFastTravel.install(); // what HoloClient.init does
+			assertNotSame(HoloFastTravel.NONE, HoloFastTravel.points, "7V's points are hooked in");
+			assertTrue(HoloFastTravel.list().isEmpty(), "no host linked (a guest): nothing listed");
+		} finally {
+			HoloFastTravel.points = before;
+		}
+
+		List<HoloFastTravel.Point> p = HoloFastTravel.of(List.of(new UiModel.ReplyPin(new UiModel.Pos(-120.5, 30, 64.25), "fasttravel",
+			"Kabuki market", 3, "Watson")));
+		assertEquals(1, p.size());
+		assertEquals("Kabuki market", p.getFirst().name());
+		assertEquals(-120.5, p.getFirst().x());
+		assertEquals(64.25, p.getFirst().z(), "Minecraft x and z, as the Atlas draws the pin");
+		assertEquals("Watson", p.getFirst().district());
 	}
 
 	@Test
