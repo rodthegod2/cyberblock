@@ -1194,7 +1194,7 @@ namespace cb::natives
 			{{"array:CName", "down"}, {"array:CName", "wall"}});
 		add(rtti, "Cyberblock_SetEnv", &SetEnv, nullptr, {{"Int32", "hour"}, {"Int32", "minute"}, {"CName", "weather"}});
 		add(rtti, "Cyberblock_TeleportDone", &TeleportDone, nullptr, {{"Int32", "id"}, {"Bool", "ok"}, {"String", "reason"}});
-		log::info("materials: table %zu entries", material_table().size());
+		log::info("materials: name rule of %zu rules (tools/cbmath.py MATERIAL_ORDER)", material_order().size());
 		add(rtti, "Cyberblock_SetAim", &SetAim, nullptr, {{"Float", "distance"}});
 		add(rtti, "Cyberblock_Damage", &Damage, nullptr,
 			{{"Float", "frac"}, {"CName", "kind"}, {"Vector4", "from"}, {"Bool", "hasFrom"}});

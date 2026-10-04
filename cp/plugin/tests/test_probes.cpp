@@ -1,6 +1,7 @@
 // ProbeSet: which Night City cells Minecraft is told about, and when they are taken back; the probe material table.
 #include "probes.hpp"
 #include "test.hpp"
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
@@ -26,35 +27,41 @@ namespace
 		return d.add.empty() && d.remove.empty() && d.seen.empty();
 	}
 
-	/// Checks every name -> code pair found in the vectors' `materials` value against material_code: a list of code
-	/// names (index = code), an object of name: code, or objects with a name field and a whole-number `code`; other
-	/// lists and objects are walked. Returns how many pairs it checked (a mismatch fails a CHECK and prints the pair).
-	size_t check_material_vectors(const nlohmann::json &v)
+	std::vector<std::string> strings(std::span<const std::string> s)
 	{
-		const auto pair = [](const std::string &name, int code)
+		return {s.begin(), s.end()};
+	}
+
+	/// Checks the DLL's rule against a vectors.json `materials` value as tools/gen_vectors.py writes it: `codes`
+	/// [{code, id, block, match}], `order` (codes and "neon"), `neon_any`, `neon_any_code` and `cases` [{name, code}].
+	void check_material_vectors(const nlohmann::json &m)
+	{
+		const nlohmann::json &codes = m.at("codes");
+		CHECK(codes.size() == std::size(cb::kMaterialCodes));
+		for (const auto &c : codes)
 		{
-			const int got = cb::material_code(name);
-			if (got != code)
-				std::printf("  materials vector: %s -> %d, the table says %d\n", name.c_str(), code, got);
-			CHECK(got == code);
-			return size_t(1);
-		};
-		size_t checked = 0;
-		if (v.is_array())
-		{
-			for (size_t i = 0; i < v.size(); ++i)
-				checked += v[i].is_string() ? pair(v[i].get<std::string>(), int(i)) : check_material_vectors(v[i]);
-			return checked;
+			const int code = c.at("code").get<int>();
+			CHECK(code >= 0 && code < int(std::size(cb::kMaterialCodes)));
+			if (code < 0 || code >= int(std::size(cb::kMaterialCodes)))
+				continue;
+			CHECK(c.at("id").get<std::string>() == cb::kMaterialCodes[code]);
+			CHECK(c.at("match").get<std::vector<std::string>>() == strings(cb::material_match(code)));
 		}
-		if (!v.is_object())
-			return 0;
-		if (const auto code = v.find("code"); code != v.end() && code->is_number_integer())
-			for (const char *field : {"name", "material", "in", "id", "key"})
-				if (const auto name = v.find(field); name != v.end() && name->is_string())
-					return pair(name->get<std::string>(), code->get<int>());
-		for (const auto &[key, value] : v.items())
-			checked += value.is_number_integer() ? pair(key, value.get<int>()) : check_material_vectors(value);
-		return checked;
+		std::vector<int> order;
+		for (const auto &rule : m.at("order"))
+			order.push_back(rule.is_string() && rule.get<std::string>() == "neon" ? cb::kAnyNeonRule : rule.get<int>());
+		CHECK(order == std::vector<int>(cb::material_order().begin(), cb::material_order().end()));
+		CHECK(m.at("neon_any").get<std::vector<std::string>>() == strings(cb::material_neon_any()));
+		CHECK(m.at("neon_any_code").get<int>() == cb::kNeonFirst);
+		CHECK(m.contains("cases") && !m.at("cases").empty());
+		for (const auto &c : m.value("cases", nlohmann::json::array()))
+		{
+			const std::string name = c.at("name").get<std::string>();
+			const int want = c.at("code").get<int>(), got = cb::material_code(name);
+			if (got != want)
+				std::printf("  materials case: '%s' -> %d in cbmath, %d in the DLL\n", name.c_str(), want, got);
+			CHECK(got == want);
+		}
 	}
 }
 
@@ -83,7 +90,7 @@ TEST(range_not_rehit_for_3s_after_its_column_is_probed_again_is_removed)
 {
 	cb::ProbeSet set;
 	set.submit(kCenter, kDown, {}, kRadius, kNoOffset, 0.0);
-	// column (10, -21) is probed again and hits higher up (a car roof, a new floor): {10, -21, 7, 8}
+	// column (10, -21) is probed again and hits higher up (a car roof, an awning): {10, -21, 7, 8}
 	const std::vector<cb::Vec3> higher{{10.4, 20.6, 9.0}};
 	const cb::Delta reprobed = set.submit(kCenter, higher, {}, kRadius, kNoOffset, 1.0);
 	CHECK(reprobed.add == (Quads{10, -21, 7, 8}));
@@ -91,9 +98,60 @@ TEST(range_not_rehit_for_3s_after_its_column_is_probed_again_is_removed)
 	CHECK(empty(set.submit(kCenter, {}, {}, kRadius, kNoOffset, 2.5))); // the old floor was confirmed only 2.5 s ago
 	const cb::Delta expired = set.submit(kCenter, {}, {}, kRadius, kNoOffset, 3.5);
 	CHECK(expired.add.empty());
-	// column (11, -21) was never re-probed, so it stays; the old floor was observed empty inside the radius: `seen`
-	CHECK(expired.seen == (Quads{10, -21, 3, 4}));
-	CHECK(expired.remove.empty());
+	// column (11, -21) was never re-probed, so it stays; the old floor is under the new hit, where no down ray looks:
+	// taken back, but not `seen` (the replica keeps it)
+	CHECK(expired.remove == (Quads{10, -21, 3, 4}));
+	CHECK(expired.seen.empty());
+}
+
+TEST(a_floor_that_drops_away_under_the_down_ray_is_seen)
+{
+	cb::ProbeSet set;
+	set.submit(kCenter, kDown, {}, kRadius, kNoOffset, 0.0); // {10, -21, 3, 4}; down rays start at Minecraft y 8
+	// the column now hits lower ({10, -21, 0, 1}): the ray passed through 3..4 on its way down
+	CHECK(set.submit(kCenter, std::vector<cb::Vec3>{{10.4, 20.6, 2.0}}, {}, kRadius, kNoOffset, 1.0).add ==
+		  (Quads{10, -21, 0, 1}));
+	const cb::Delta d = set.submit(kCenter, {}, {}, kRadius, kNoOffset, 3.5);
+	CHECK(d.seen == (Quads{10, -21, 3, 4}));
+	CHECK(d.remove.empty());
+}
+
+TEST(walking_uphill_past_a_wall_sees_nothing)
+{
+	// a wall ray at feet + 0.5 m hits column (10, -23) at cell 5; V walks one metre up a slope and it hits cell 6
+	cb::ProbeSet set;
+	set.submit(kCenter, {}, kWall, kRadius, kNoOffset, 0.0);
+	const cb::Vec3 uphill{kCenter.x, kCenter.y, kCenter.z + 1.0};
+	CHECK(set.submit(uphill, {}, std::vector<cb::Vec3>{{10.4, 22.5, 6.7}}, kRadius, kNoOffset, 1.0).add ==
+		  (Quads{10, -23, 6, 6}));
+	const cb::Delta d = set.submit(uphill, {}, {}, kRadius, kNoOffset, 3.5);
+	CHECK(d.remove == (Quads{10, -23, 5, 5})); // still wall: only wall rays moved, nobody saw it empty
+	CHECK(d.seen.empty());
+}
+
+TEST(standing_on_a_bridge_over_a_known_street_sees_nothing)
+{
+	cb::ProbeSet set;
+	set.submit(kCenter, kDown, {}, kRadius, kNoOffset, 0.0); // the street: {10, -21, 3, 4}
+	// V on a bridge 5 m up: the down ray stops on the bridge deck ({10, -21, 8, 9}) and never reaches the street
+	const cb::Vec3 bridge{kCenter.x, kCenter.y, kCenter.z + 5.0};
+	set.submit(bridge, std::vector<cb::Vec3>{{10.4, 20.6, 10.0}}, {}, kRadius, kNoOffset, 1.0);
+	const cb::Delta d = set.submit(bridge, {}, {}, kRadius, kNoOffset, 3.5);
+	CHECK(d.remove == (Quads{10, -21, 3, 4}));
+	CHECK(d.seen.empty());
+}
+
+TEST(a_roof_above_the_down_ray_start_is_not_seen)
+{
+	// V on a roof 15 m up sees it ({10, -21, 18, 19}), then takes the stairs down to the street
+	cb::ProbeSet set;
+	const cb::Vec3 roof{kCenter.x, kCenter.y, kCenter.z + 15.0};
+	CHECK(set.submit(roof, std::vector<cb::Vec3>{{10.4, 20.6, 20.0}}, {}, kRadius, kNoOffset, 0.0).add ==
+		  (Quads{10, -21, 18, 19}));
+	set.submit(kCenter, kDown, {}, kRadius, kNoOffset, 1.0); // the street; this down ray started at Minecraft y 8
+	const cb::Delta d = set.submit(kCenter, {}, {}, kRadius, kNoOffset, 3.5);
+	CHECK(d.remove == (Quads{10, -21, 18, 19}));
+	CHECK(d.seen.empty());
 }
 
 TEST(clear_then_submit_adds_everything_again)
@@ -115,8 +173,9 @@ TEST(overlapping_ranges_keep_their_shared_cells)
 	cb::ProbeSet set;
 	const cb::Delta first = set.submit(origin, std::vector<cb::Vec3>{{2.5, -3.5, 0.7}}, riser, kRadius, kNoOffset, 0.0);
 	CHECK(first.add == (Quads{2, 3, -1, 0}));
-	set.submit(origin, std::vector<cb::Vec3>{{2.5, -3.5, 5.0}}, riser, kRadius, kNoOffset, 1.0);
-	// the step's range expires, but cell 0 is still claimed by the riser
+	// the down ray now goes through the step to a floor below ({2, 3, -5, -4})
+	set.submit(origin, std::vector<cb::Vec3>{{2.5, -3.5, -3.0}}, riser, kRadius, kNoOffset, 1.0);
+	// the step's range expires and its cell -1 was seen empty, but cell 0 is still claimed by the riser
 	const cb::Delta expired = set.submit(origin, {}, riser, kRadius, kNoOffset, 3.5);
 	CHECK(expired.add.empty());
 	CHECK(expired.seen == (Quads{2, 3, -1, -1}));
@@ -160,8 +219,9 @@ TEST(seen_and_left_cells_of_one_call_are_reported_apart)
 	const std::vector<cb::Vec3> two{{10.4, 20.6, 5.0}, {31.4, 20.6, 5.0}};
 	cb::ProbeSet set;
 	CHECK(set.submit(kCenter, two, {}, kRadius, kNoOffset, 0.0).add == (Quads{10, -21, 3, 4, 31, -21, 3, 4}));
-	set.submit(kCenter, std::vector<cb::Vec3>{{10.4, 20.6, 9.0}}, {}, kRadius, kNoOffset, 1.0); // (10, -21) hits higher
-	// V walks to Minecraft x -5: column 31 leaves the radius, column 10 stays inside and its old floor is not hit again
+	set.submit(kCenter, std::vector<cb::Vec3>{{10.4, 20.6, 2.0}}, {}, kRadius, kNoOffset, 1.0); // (10, -21) hits lower
+	// V walks to Minecraft x -5: column 31 leaves the radius; column 10 stays inside and its old floor, which the down
+	// ray passed through, is not hit again
 	const cb::Delta d = set.submit({-5.0, kCenter.y, kCenter.z}, {}, {}, kRadius, kNoOffset, 3.5);
 	CHECK(d.add.empty());
 	CHECK(d.seen == (Quads{10, -21, 3, 4}));
@@ -239,7 +299,7 @@ TEST(a_cell_keeps_the_material_it_was_added_with)
 TEST(every_code_name_maps_to_its_own_code)
 {
 	CHECK(std::size(cb::kMaterialCodes) == 27);
-	for (size_t code = 0; code < std::size(cb::kMaterialCodes); ++code)
+	for (size_t code = 1; code < std::size(cb::kMaterialCodes); ++code)
 	{
 		bool known = false;
 		CHECK(cb::material_code(cb::kMaterialCodes[code], &known) == int(code));
@@ -249,23 +309,27 @@ TEST(every_code_name_maps_to_its_own_code)
 	CHECK(std::string(cb::kMaterialCodes[14]) == "neon_light_blue" && std::string(cb::kMaterialCodes[19]) == "neon_light_gray");
 }
 
-TEST(material_names_match_by_substring_ignoring_case)
+TEST(material_names_follow_the_cbmath_rule)
 {
-	CHECK(cb::material_code("Concrete_Dark_01") == 2);
-	CHECK(cb::material_code("concrete") == 1);
-	CHECK(cb::material_code("asphalt.physmat") == 3);
-	CHECK(cb::material_code("pavement_wet") == 4);
-	CHECK(cb::material_code("glass_bulletproof") == 5);
-	CHECK(cb::material_code("metal_hollow") == 6);
-	CHECK(cb::material_code("brick_red") == 7);
-	CHECK(cb::material_code("tiles") == 8);
-	CHECK(cb::material_code("dirt") == 9);
-	CHECK(cb::material_code("grass_tall") == 9);
-	CHECK(cb::material_code("water_shallow") == 10);
-	CHECK(cb::material_code("neon_light_blue_sign") == 14);
-	CHECK(cb::material_code("neon_blue") == 22);
-	CHECK(cb::material_code("sign_neon_pink") == 17);
-	CHECK(cb::material_code("neon") == 13); // a neon of no known colour glows magenta
+	// a few of tools/gen_vectors.py's cases, so cb_tests holds the rule before shared/vectors.json carries them
+	CHECK(cb::material_code("Concrete_White_Wall") == 1);
+	CHECK(cb::material_code("plaster_dirty") == 1); // not ground through "dirt": light concrete comes first
+	CHECK(cb::material_code("Concrete_Wet_Floor") == 2);
+	CHECK(cb::material_code("Road_Marking_Yellow") == 3);
+	CHECK(cb::material_code("pavement_concrete") == 4);
+	CHECK(cb::material_code("shopfront_glass_blue") == 5);
+	CHECK(cb::material_code("scaffold_pipe") == 6);
+	CHECK(cb::material_code("masonry_old") == 7);
+	CHECK(cb::material_code("marble_floor") == 8);
+	CHECK(cb::material_code("terrain_rock_cliff") == 9);
+	CHECK(cb::material_code("puddle_street") == 10);
+	CHECK(cb::material_code("neon_light_blue_tube") == 14);
+	CHECK(cb::material_code("neon_blue_tube") == 22);
+	CHECK(cb::material_code("emissive_light_gray_panel") == 19);
+	CHECK(cb::material_code("led_pink_strip") == 17);
+	CHECK(cb::material_code("neon_generic_sign") == cb::kNeonFirst); // a neon of no known dye is the white neon
+	CHECK(cb::material_code("hologram_ad_01") == cb::kNeonFirst);
+	CHECK(cb::material_code("concrete") == 0); // a bare "concrete" names neither shade
 }
 
 TEST(unknown_and_empty_material_names_are_0)
@@ -276,9 +340,15 @@ TEST(unknown_and_empty_material_names_are_0)
 	known = false;
 	CHECK(cb::material_code("", &known) == 0);
 	CHECK(known); // no name is not an unknown name: nothing to log
-	CHECK(!cb::material_table().empty());
-	for (const cb::MaterialName &entry : cb::material_table())
-		CHECK(entry.code >= 0 && entry.code < 27 && entry.substring[0] != '\0');
+	CHECK(cb::material_code("None", &known) == 0 && !known);
+	// every code 1..26 is tried exactly once, and so is "any other neon"
+	std::vector<int> rules(cb::material_order().begin(), cb::material_order().end());
+	std::sort(rules.begin(), rules.end());
+	std::vector<int> want{cb::kAnyNeonRule};
+	for (int code = 1; code < 27; ++code)
+		want.push_back(code);
+	CHECK(rules == want);
+	CHECK(cb::material_match(0).empty() && cb::material_match(27).empty() && cb::material_match(-1).empty());
 }
 
 TEST(material_cache_flags_each_unknown_name_once)
@@ -306,8 +376,5 @@ TEST(material_table_matches_shared_vectors)
 	const nlohmann::json all = nlohmann::json::parse(file);
 	if (!all.contains("materials"))
 		return (void)std::puts("  (skipped: shared/vectors.json has no materials key yet; task 3-P1 writes it)");
-	const size_t checked = check_material_vectors(all.at("materials"));
-	if (checked == 0)
-		std::puts("  materials: shared/vectors.json key 'materials' holds no name -> code pair this check knows");
-	CHECK(checked > 0);
+	check_material_vectors(all.at("materials"));
 }
