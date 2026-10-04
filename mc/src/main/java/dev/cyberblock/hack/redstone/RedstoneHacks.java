@@ -584,7 +584,12 @@ public final class RedstoneHacks {
 		Cyberblock.LOG.info("redstone: {} at {} refused by Night City ({})", p.what(), p.pos().toShortString(), reason);
 	}
 
+	/** A refusal is said and logged when it is new for the block (a clock on an unresolved relay says it once, not twice a second). */
 	private static void refuse(final ServerLevel level, final BlockPos pos, final HackBlockEntity be, final String what, final Refusal r) {
+		if (be.status.equals(r.name())) {
+			return;
+		}
+
 		be.status = r.name();
 		if (r != Refusal.NO_TARGET) {
 			tell(be.actor(), Component.translatableWithFallback(r.key(), r.fallback()));
