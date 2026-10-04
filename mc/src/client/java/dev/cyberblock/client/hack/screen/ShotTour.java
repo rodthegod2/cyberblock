@@ -99,7 +99,9 @@ final class ShotTour {
 				shot(minecraft, "6i_comms_panel");
 				NetState.Host h = ActionsClient.selectedHost();
 				if (h != null) {
-					Vec3 p = minecraft.player.position().add(12.0, 0.0, -6.0);
+					// a waypoint 16 blocks ahead of the camera, so the locator bar shows it in the screenshot
+					Vec3 look = new Vec3(minecraft.gameRenderer.mainCamera().forwardVector());
+					Vec3 p = minecraft.player.position().add(look.x * 16.0, 0.0, look.z * 16.0);
 					ActionsClient.send(ActWire.T_COMMS, ActWire.comms(h.id(), "Meet me at the noodle bar", new int[] {(int) p.x, (int) p.y, (int) p.z}));
 				}
 

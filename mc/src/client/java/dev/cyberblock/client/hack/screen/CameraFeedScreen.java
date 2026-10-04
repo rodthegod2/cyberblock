@@ -26,6 +26,7 @@ final class CameraFeedScreen extends Screen {
 	private final String name;
 	private @Nullable CameraType before;
 	private @Nullable Marker eye;
+	private boolean hudWasHidden;
 	private int ticks;
 
 	CameraFeedScreen(final Vec3 at, final float yaw, final String name) {
@@ -45,7 +46,12 @@ final class CameraFeedScreen extends Screen {
 		marker.snapTo(this.at.x, this.at.y, this.at.z, this.yaw, PITCH);
 		this.eye = marker;
 		this.before = this.minecraft.options.getCameraType();
+		this.hudWasHidden = this.minecraft.gui.hud.isHidden();
 		this.minecraft.options.setCameraType(CameraType.FIRST_PERSON);
+		// a camera has no hands, crosshair or hotbar: the HUD is off while the feed shows (this screen still draws)
+		if (!this.hudWasHidden) {
+			this.minecraft.gui.hud.toggle();
+		}
 		this.minecraft.setCameraEntity(marker);
 	}
 
@@ -62,6 +68,9 @@ final class CameraFeedScreen extends Screen {
 				this.minecraft.options.setCameraType(this.before);
 			}
 
+			if (!this.hudWasHidden && this.minecraft.gui.hud.isHidden()) {
+				this.minecraft.gui.hud.toggle();
+			}
 			this.eye = null;
 		}
 

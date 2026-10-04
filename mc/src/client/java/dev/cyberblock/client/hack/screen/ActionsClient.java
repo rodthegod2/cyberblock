@@ -7,6 +7,7 @@ import com.google.gson.JsonParser;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.cyber.HackWheel;
 import dev.cyberblock.client.net.UiRoutes;
+import dev.cyberblock.client.ui.McTheme;
 import dev.cyberblock.client.ui.UiLink;
 import dev.cyberblock.cyber.Hacking;
 import dev.cyberblock.hack.actions.ActWire;
@@ -228,7 +229,7 @@ public final class ActionsClient {
 
 		UUID id = UUID.randomUUID();
 		Waypoint.Icon icon = new Waypoint.Icon();
-		icon.color = Optional.of(0x55FFFF);
+		icon.color = Optional.of(McTheme.AQUA); // opaque ARGB, as Waypoints does (alpha 0 draws nothing)
 		minecraft.player.connection.getWaypointManager().trackWaypoint(TrackedWaypoint.setPosition(id, icon, BlockPos.containing(p)));
 		waypointOf.put(from, id);
 		waypointUntil.put(id, Util.getMillis() + WAYPOINT_MS);
