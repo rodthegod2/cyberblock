@@ -3,6 +3,7 @@ Phase 6 server (a guest's Breach on the Net Port: the owner's `hacks` toggle, th
 the session). The real run (`tools.mpcheck breach`) needs packages 6B, 6R and 6I merged: it is the integrator's."""
 import json
 import re
+import time
 
 import pytest
 
@@ -12,6 +13,13 @@ from tools.mpcheck import LogFile
 
 KIND6 = {key: kind for key, _, _, kind, *_ in fakehost.HACKS2_SCENE}
 SOLVED = ["open_door", "disable_cameras"]
+SIM_COOLDOWN_S = 0.3  # the simulated server's failure cooldown (10 s on the real one), shrunk like every other wait
+
+
+@pytest.fixture(autouse=True)
+def breach_cooldown(quick, monkeypatch):
+    """The scenario waits a little longer than the simulated cooldown (`quick` set it to 0)."""
+    monkeypatch.setattr(mpcheck, "BREACH_COOLDOWN_S", SIM_COOLDOWN_S + 0.05)
 
 
 class Sim6Server(Sim4Server):
@@ -22,6 +30,7 @@ class Sim6Server(Sim4Server):
     def __init__(self, tmp, port, env_sim, bugs, join_password=""):
         super().__init__(tmp, port, env_sim, bugs, join_password)
         self.breaches = []
+        self.failed_at = {}  # (player, cell) -> monotonic time of that player's last failed Breach on that device
 
     def place_devices(self, owner, msg):
         ids = {i: k for k, i in fakehost.device_ids(fakehost.HACKS2_SCENE).items()}
@@ -50,9 +59,12 @@ class Sim6Server(Sim4Server):
         if not block or block["key"] != "netport":
             return ""
         owner = block["owner"]
+        if time.monotonic() - self.failed_at.get((actor, cell), -SIM_COOLDOWN_S) < SIM_COOLDOWN_S:
+            return ""  # the failure cooldown: `cyberblock.breach.cooldown` on the action bar, nothing reaches the DLL
         if not self.allows(owner, actor, "hacks") and "ignore-hacks-toggle" not in self.bugs:
             return ""
         if how == "fail":
+            self.failed_at[(actor, cell)] = time.monotonic()
             if "no-alarm" in self.bugs:
                 return ""
             listing, strength = (["open_door"] if "solved-on-fail" in self.bugs else ["alarm"]), 1
@@ -124,6 +136,12 @@ def test_breach_scenario_passes_against_an_ideal_server(tmp_path):
 def test_breach_scenario_notices_each_breach_bug(tmp_path, bug, expected):
     rep = run6(tmp_path, [bug])
     assert expected <= set(failed(rep)) and not rep.ok
+
+
+def test_breach_scenario_waits_out_the_failure_cooldown_before_it_checks_the_toggle(tmp_path, monkeypatch):
+    monkeypatch.setattr(mpcheck, "BREACH_COOLDOWN_S", 0.0)  # a scenario that does not wait would see the cooldown, not the toggle, block the Breach
+    rep = run6(tmp_path)
+    assert "with `guests hacks on` the Breach works again" in failed(rep) and not rep.ok
 
 
 def test_breach_scenario_runs_the_breaches_as_the_guest_and_the_toggle_as_the_host(tmp_path, monkeypatch):

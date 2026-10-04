@@ -20,8 +20,11 @@ def host(**kw):
     return fakehost.Cyberpunk(frozenset(), frozenset({"hacks2"}), **kw)
 
 
-def rhack(hack, target=None, rid=21, **area):
-    return {"t": "rhack", "id": rid, "target": target, "hack": hack, **area}
+def rhack(hack, target=None, rid=21, **extra):
+    """A DOWN `rhack`; a vehicle hack carries the server's `secs` 30 unless the test says otherwise (every vehicle effect is timed)."""
+    if hack in fakehost.VEHICLE_HACKS:
+        extra.setdefault("secs", 30)
+    return {"t": "rhack", "id": rid, "target": target, "hack": hack, **extra}
 
 
 def area(hack, p=(0.0, 64.0, 0.0), r=60, secs=180, rid=23):
@@ -109,7 +112,9 @@ def test_a_hack_name_outside_the_eleven_is_unsupported_not_dropped():
 
 @pytest.mark.parametrize("bad", [rhack("veh_lock", CAR, rid=-1), rhack("veh_lock", CAR, rid=True), rhack("veh_lock", CAR, rid="21"), rhack("veh_lock", 5),
                                  rhack("veh_lock", "0"), rhack("veh_lock", "-3"), rhack("veh_lock", "x1"), {"t": "rhack", "id": 21, "target": CAR},
-                                 {"t": "rhack", "id": 21, "hack": "veh_lock"}, {"t": "rhack", "target": CAR, "hack": "veh_lock"}, rhack(None, CAR), rhack(7, CAR)])
+                                 {"t": "rhack", "id": 21, "hack": "veh_lock"}, {"t": "rhack", "target": CAR, "hack": "veh_lock"}, rhack(None, CAR), rhack(7, CAR),
+                                 {k: v for k, v in rhack("veh_lock", CAR).items() if k != "secs"}, rhack("veh_jam", CAR, secs=0), rhack("veh_jam", CAR, secs=601),
+                                 rhack("veh_jam", CAR, secs=1.5), rhack("veh_jam", CAR, secs=True)])
 def test_a_bad_rhack_is_dropped_and_not_answered(bad):
     assert host().reply(bad) == []
 
@@ -130,15 +135,43 @@ def test_blackout_switches_the_powered_devices_in_the_area_off_and_gives_them_ba
     assert h.dev_table == fakehost.device_table(0, fakehost.HACKS2_SCENE) and h.restores == [] and h.blacked == {}
 
 
-def test_blackout_stays_in_its_radius_and_secs_zero_means_no_timer():
+def test_blackout_stays_in_its_radius_and_always_has_a_timer():
     h = host()
-    near = h.reply(area("blackout", (-1.0, 64.0, 4.0), r=1, secs=0))  # only the light at (0.5, 64, 4.5) is within 1 m ... of (-1, 64, 4)? it is 1.58 m away
+    near = h.reply(area("blackout", (-1.0, 64.0, 4.0), r=1, secs=5))  # the light at (0.5, 64, 4.5) is 1.58 m from (-1, 64, 4): outside r 1
     assert [m["t"] for m in near] == ["hackresult"] and h.restores == []
-    small = h.reply(area("blackout", (0.5, 64.0, 4.5), r=1, secs=0))
-    assert [m["t"] for m in small] == ["hackresult", "devstate"] and small[1]["id"] == DEV["light"] and h.restores == []  # no timer: it stays off
+    small = h.reply(area("blackout", (0.5, 64.0, 4.5), r=1, secs=5))
+    assert [m["t"] for m in small] == ["hackresult", "devstate"] and small[1]["id"] == DEV["light"] and len(h.restores) == 1  # it comes back
     assert h.dev_table[DEV["light"]]["st"] == -1
-    again = h.reply(area("blackout", (0.5, 64.0, 4.5), r=1, secs=0))
-    assert [m["t"] for m in again] == ["hackresult"]  # already unpowered: nothing changes twice
+    again = h.reply(area("blackout", (0.5, 64.0, 4.5), r=1, secs=5))
+    assert [m["t"] for m in again] == ["hackresult"] and len(h.restores) == 1  # already unpowered: nothing changes twice
+    assert h.reply(area("blackout", (0.5, 64.0, 4.5), r=1, secs=0)) == []  # secs 0 would leave the devices off for good: dropped
+
+
+def test_vehicle_effects_wear_off_after_secs_and_a_second_hack_restarts_the_timer_but_keeps_the_first_state():
+    h = host()
+    start = time.perf_counter()
+    assert result(h.reply(rhack("veh_lock", CAR, secs=2)))["ok"] and result(h.reply(rhack("veh_engine_off", CAR, secs=4, rid=22)))["ok"]
+    assert h.car == {"locked": True, "engine": False, "braked": False, "jammed": False}
+    h.due(start + 2 * fakehost.SCRIPT_SCALE + 0.5)
+    assert h.car == {"locked": False, "engine": False, "braked": False, "jammed": False}  # the lock wore off, the engine is still dead
+    assert result(h.reply(rhack("veh_start", CAR, secs=10, rid=23)))["ok"] and h.car["engine"] is True  # a second engine hack: the timer restarts
+    h.due(start + 4 * fakehost.SCRIPT_SCALE + 0.5)
+    assert h.car["engine"] is True  # not yet: veh_start restarted the engine field's timer
+    h.due(time.perf_counter() + 10 * fakehost.SCRIPT_SCALE + 1)
+    assert h.car == {"locked": False, "engine": True, "braked": False, "jammed": False} and h.car_due == {} and h.car_before == {}  # as before the first hack
+
+
+@pytest.mark.parametrize("state", ["none", "guest", "refused"])
+def test_a_session_that_is_not_host_puts_every_pending_blackout_and_car_effect_back_at_once(state):
+    h = host()
+    h.reply(HOST_SESSION)
+    h.reply(area("blackout", (0.0, 64.0, 3.5), r=60, secs=600))
+    h.reply(rhack("veh_jam", CAR, secs=600))
+    h.reply(rhack("veh_brake", CAR, secs=600, rid=22))
+    assert h.restores and h.car["jammed"] and h.car["braked"]
+    h.reply({"t": "session", "state": state, "reason": "test", "perms": {}})
+    assert h.dev_table == fakehost.device_table(0, fakehost.HACKS2_SCENE) and h.restores == [] and h.blacked == {}
+    assert h.car == {"locked": False, "engine": True, "braked": False, "jammed": False} and h.car_due == {}
 
 
 def test_outline_and_ping_area_reveal_the_hostile_people_of_the_area_like_the_ping_chip():
@@ -147,6 +180,7 @@ def test_outline_and_ping_area_reveal_the_hostile_people_of_the_area_like_the_pi
         got = h.reply(area(name, (2.5, 64.0, 2.5), r=3, secs=20, rid=31))
         assert [m["t"] for m in got] == ["hackresult", "hackspread"] and got[1] == {"t": "hackspread", "id": 31, "target": HOSTILE, "why": "ping"}
         assert [m["t"] for m in h.reply(area(name, (-2.5, 64.0, 2.5), r=1))] == ["hackresult"]  # the friendly person is never outlined, the hostile one is too far
+        assert result(h.reply(area(name, (2.5, 64.0, 2.5), r=3, secs=0)))["ok"] is True  # a one-shot: nothing lasts, so secs 0 is fine
     assert fakehost.MAX_SPREADS == 16
 
 
@@ -159,6 +193,7 @@ def test_traffic_switch_and_gridlock_are_ok_and_change_nothing_here():
 
 @pytest.mark.parametrize("bad", [{k: v for k, v in area("blackout").items() if k != key} for key in ("p", "r", "secs")]
                          + [area("blackout", r=0), area("blackout", r=151), area("blackout", r=1.5), area("blackout", secs=-1), area("blackout", secs=601),
+                            area("blackout", secs=0), area("traffic_switch", secs=0), area("gridlock", secs=0),
                             area("blackout", p=(0.0, 64.0)), area("blackout", p=(0.0, math.nan, 0.0)), area("blackout", p=(3e7, 0.0, 0.0)),
                             {**area("blackout"), "target": "5"}, area("blackout", rid=-2)])
 def test_a_bad_area_hack_is_dropped_and_changes_nothing(bad):

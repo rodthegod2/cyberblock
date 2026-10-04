@@ -57,6 +57,23 @@ def test_guide_interaction_map_lists_every_entry_of_the_plan_and_the_fallbacks()
         assert phrase in text, f"HOW-TO-PLAY.md The interaction map does not say {phrase!r}"
 
 
+def test_guide_and_retest_cover_the_review_fixes_abort_timed_effects_reach_from_v_and_the_feed_toggle():
+    breach, tools = flat(section_of(GUIDE, BREACH)), flat(section_of(GUIDE, MAP))
+    for phrase in ("**Closing the screen after your first pick is a failure**", "the same grid with the same timer still running", "**10 seconds**"):
+        assert phrase in breach, phrase
+    for phrase in ("each for **30 seconds**, then the car is as it was", "**from V, not from you**", "work from anywhere in the world", "**Nothing a hack does lasts.**",
+                   "puts everything back **at once**", "cannot **save** while a hack is still running", "the host's `hacks` toggle (also for the photo feed)",
+                   "every guest watching the feed loses it at once"):
+        assert phrase in tools, phrase
+    retest = flat(TESTING.split(RETEST_HEADING, 1)[1].split("## Re-test: Wave B", 1)[0])
+    for phrase in ("**No free re-roll:**", "**same grid** with the timer still running", "**Every effect wears off:**", "the save waits until the effect is over",
+                   "Open the Vehicle Panel **from the Net Map** while the guest stands far from V", "the reach is measured from V",
+                   "guest's picture **stops at once**", "`feedreq off` (no viewer left)"):
+        assert phrase in retest, phrase
+    p610 = flat(TESTING.split("### P6-10.", 1)[1].split("### ", 1)[0])
+    assert "`/cyberblock guests hacks off`: **expect** the guest's picture **stops at once**" in p610
+
+
 def test_guide_range_and_names_agree_with_the_protocol():
     from test_protocol_md import TEXT
     assert "50 m from V" in flat(TEXT) and len(REMOTE_HACKS) == 11 and len(AREA_HACKS) == 5

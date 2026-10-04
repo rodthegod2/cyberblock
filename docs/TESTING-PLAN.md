@@ -75,6 +75,9 @@ others, on the same test server, with the same host and guest.
 4. Fail on purpose (let the timer run out or fill the buffer with wrong picks): **expect** an **alarm in the host's game** (the cameras of the
    area alert, V may see people react). A failure also costs Heat; with no Heat meter yet, the host's wanted level may go up by one if the game
    allows it: tell Claude what happened.
+   **No free re-roll:** open a Breach, make one pick and close the screen: **expect** the same alarm. Open another one and close it without a
+   pick, then right-click again: **expect** the **same grid** with the timer still running. Right after a failure a new right-click on that
+   Net Port says to wait (10 s).
 5. Server log (grep `breach`): the puzzle, every daemon solved and `strength`, or the failure.
 
 ### P6-5. The Vehicle Panel stops a car
@@ -83,9 +86,14 @@ others, on the same test server, with the same host and guest.
 3. **Expect:** the car's engine **dies in Night City** and it rolls to a halt. Try **Lock doors**, **Brake**, **Remote start** and **Jam**
    too, and a car that is farther away than 50 metres: it says it is **out of range** and nothing happens.
 4. If the guest stops **the host's own car**, the host feels it: say so, that is the headline check of this phase.
+5. **Every effect wears off:** about **30 seconds** after each hack the car is as it was (the doors unlock, the engine and brake come back,
+   the jam ends). Lock or jam the host's car, then have the host try to **save**: the save waits until the effect is over. Lock a car and
+   have the host leave the Minecraft server: the car is back to normal at once (the session cleanup).
+6. Open the Vehicle Panel **from the Net Map** while the guest stands far from V (more than 50 blocks away): it still works, because the
+   reach is measured from V.
 
 ### P6-6. A district blackout
-1. Guest: open the **Net Map**, pick a district around V and choose **Blackout**.
+1. Guest: open the **Net Map**, pick a district around V and choose **Blackout**. The guest may stand anywhere: the reach is measured from V.
 2. **Expect:** the **lights and devices go off in Night City** around V for a few minutes (the street goes dark), the device blocks in
    Minecraft follow (the lamps are off), and then **everything comes back**. If the game's district call is unproven, the fallback blacks out
    the **devices within 150 m of V** and the `blackout` log line says so.
@@ -121,7 +129,10 @@ log) and copy these lines to Claude. The exact wording belongs to the packages t
    **blocked**, nothing reaches Night City (a Breach still plays out in Minecraft). Comms still works (it is Minecraft's own HUD).
 2. Host: `/cyberblock guests hacks on`: they work again. `/cyberblock guests devices off` also stops the Device Relays, blackouts and camera
    feeds. The host's own actions are never blocked.
-3. A target or a centre **more than 50 metres** from V answers **out of range** (the fallback of Phase 0's check (h)); tell Claude how far a
+3. **Photo feed:** while the guest watches the host's photo feed (P6-8), the host types `/cyberblock guests hacks off`: **expect** the
+   guest's picture **stops at once**, the guest sees **blocked**, and the host's `Cyberblock.log` says `feedreq off` (no viewer left). A new
+   request from the guest is blocked too; the host can still watch the own feed. `/cyberblock guests hacks on` lets the guest watch again.
+4. A target or a centre **more than 50 metres** from V answers **out of range** (the fallback of Phase 0's check (h)); tell Claude how far a
    hack really reached if you can measure it.
 
 ### Phase 6 descopes and risks (short)

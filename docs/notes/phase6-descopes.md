@@ -22,7 +22,10 @@ amendment after section 1.9. Written by package 6P with the docs; the integrator
 - **Shapes the plan left open, fixed by 6P** (the integrator confirms them against 6B, 6I, 6R, 6S and 6D): the optional `p`, `r` and `secs` of an
   area `rhack` (`target` is `null` there), the reserved daemon id `alarm` (a failed Breach sends exactly `["alarm"]`), `hackresult` answering `rhack`
   and `daemon` with the same `id` and no `upload` or `kind`, the four `cyberblock:act` payloads, the three `cyberblock:ui` payloads, the
-  `breach` payload with a puzzle id and `pick`/`abort`, and the 50 m range. A later change on either side must change `shared/protocol.md` and
+  `breach` payload with a puzzle id and `pick`/`abort`, and the 50 m range. After the 6P review: `secs` on every vehicle hack (the server sends 30)
+  and never 0 on `traffic_switch`, `gridlock` and `blackout`, every timed effect restored on the session end, a link drop and before a save (save
+  lock `n"CyberblockHack"`), the photo feed behind the owner's `hacks` toggle, an abort after the first pick as a failure (the puzzle kept
+  otherwise, a 10 s cooldown after a failure), and the player-reach rule only for hand uses (a Breach pick, a right-clicked car figure). A later change on either side must change `shared/protocol.md` and
   `tests/test_phase6_protocol.py` together.
 - **Daemon ids are content.** The examples use `open_door`, `disable_cameras`, `reveal_enemies` and `overload` (the megaplan's words); the shipped
   set belongs to the `daemon` files of package 6A, and the scripts answer `unsupported daemon` for any id they do not run while the others still run.

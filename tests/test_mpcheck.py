@@ -26,7 +26,7 @@ def quick(monkeypatch):
     """Every wait of the scenarios shrinks to a fraction of a second (the real values are minutes)."""
     for name, value in (("T_QUIET", 0.05), ("T_EFFECT", 0.6), ("T_JOIN", 0.6), ("T_SERVER", 0.6), ("T_CLIENT", 0.6), ("FLOOD_S", 0.1), ("T_STOP", 0.05),
                         ("LOGIN_GAP_S", 0.0), ("T_ENV", 1.0), ("T_POLL", 0.01), ("COOLDOWN_S", 0.7),
-                        ("T_WRECK", 0.6), ("WRECK_MIN_S", 0.04), ("DEVICE_PLACE_TIMEOUT", 1.0), ("GUEST_GAP_S", 0.0)):
+                        ("T_WRECK", 0.6), ("WRECK_MIN_S", 0.04), ("DEVICE_PLACE_TIMEOUT", 1.0), ("GUEST_GAP_S", 0.0), ("BREACH_COOLDOWN_S", 0.0)):
         monkeypatch.setattr(mpcheck, name, value)
 
 

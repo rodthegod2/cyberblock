@@ -1252,6 +1252,7 @@ HACK_RESULT = r"\[CbHost1\] hackresult: (\{.*\})"
 BREACH_IDS = fakehost.device_ids(fakehost.HACKS2_SCENE)
 BREACH_GUEST_AT = (4.5, 64.0, 6.0)  # the guest stands on the street, 2.5 blocks from the Net Port
 RESERVED_DAEMON = "alarm"
+BREACH_COOLDOWN_S = 11.0  # after a failed Breach the same player cannot breach that device again for 10 s (shared/protocol.md "Phase 6")
 
 
 def netport_stands(server: Server, shift: int = 0) -> bool:
@@ -1320,6 +1321,7 @@ def scenario_breach(env: Env, rep: Report) -> None:
     rep.step("... answered with `hackresult ok:true` too, and no solved daemon came with it",
              lambda: poll(lambda: answered_ok(host, alarms, mark), T_EFFECT, T_POLL, "the hackresult")
              and not any(daemon_is_a_solved_breach(m) for m in daemons_since(host, mark)))
+    time.sleep(BREACH_COOLDOWN_S)  # wait out the failure's cooldown, so the toggle (not the cooldown) is what blocks the next Breach
     guests_hacks(server, False)
     mark = host.log.mark()
     guest_breach(server, "solve")

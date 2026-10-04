@@ -100,9 +100,11 @@ Phase 6 mode (shared/protocol.md "Phase 6"; stands on the street like --devices,
 --cmd, --port, --name, --shift and NPC resend apply; prints `devact` and `devresult` like --devices, plus `rhack`, `daemon` and `feedreq` (what Minecraft asks) and
 `hackresult` (what this fake DLL answered)):
   --hacks2   the device scene of --devices plus a Net Port (a `Terminal`, id ...770, the terminal a Breach opens on) and the default `npcs` (two people and a car).
-             Every valid `rhack` is answered with a `hackresult`: the five vehicle hacks change the car's state (a `veh_*` on a car that is not in the list is
-             `vehicle gone`), `cam_feed` needs a camera, the five area hacks need `p`, `r` and `secs` (`blackout` switches the powered devices within `r` of `p`
-             off, `devstate by:script`, and back after `secs`; `outline` and `ping_area` reveal the hostile people of the area with `hackspread why:ping`), a hack
+             Every valid `rhack` is answered with a `hackresult`: the five vehicle hacks need `secs` 1..600 and change the car's state until it runs out (a
+             `veh_*` on a car that is not in the list is `vehicle gone`), `cam_feed` needs a camera, the five area hacks need `p`, `r` and `secs` (1..600 for
+             `traffic_switch`, `gridlock` and `blackout`; `blackout` switches the powered devices within `r` of `p` off, `devstate by:script`, and back after
+             `secs`; `outline` and `ping_area` reveal the hostile people of the area with `hackspread why:ping`); a `session` that is not `host` puts every
+             pending blackout and car effect back at once; a hack
              name outside the eleven is `unsupported`, and a target or centre farther than 50 m from V (the fallback of Phase 0 check (h)) is
              `cyberblock.hack.out_of_range`. Every valid `daemon` is answered with one `hackresult`: `open_door` opens the doors, `disable_cameras` disables the
              cameras (both `devstate by:script`), `reveal_enemies` pings the hostile people, `overload` and the reserved `alarm` change nothing, any other id is
@@ -747,6 +749,8 @@ def npc_door_step(u: float) -> int:
 REMOTE_HACKS = ("veh_lock", "veh_engine_off", "veh_brake", "veh_start", "veh_jam", "traffic_switch", "gridlock", "blackout", "cam_feed", "outline", "ping_area")
 VEHICLE_HACKS = ("veh_lock", "veh_engine_off", "veh_brake", "veh_start", "veh_jam")
 AREA_HACKS = ("traffic_switch", "gridlock", "blackout", "outline", "ping_area")
+TIMED_AREA_HACKS = ("traffic_switch", "gridlock", "blackout")  # they change Night City, so `secs` is 1..600 (never 0) and the scripts put it back
+SECS_MAX = 600
 VEHICLE_EFFECT = {"veh_lock": {"locked": True}, "veh_engine_off": {"engine": False}, "veh_brake": {"braked": True}, "veh_start": {"engine": True},
                   "veh_jam": {"jammed": True}}
 HACK_RANGE_M = 50.0  # a target or an area's centre farther than this from V is out of range (the fallback of Phase 0 check (h))
@@ -776,11 +780,15 @@ def rhack_valid(m: dict) -> bool:
     return "target" in m and is_request_id(m.get("id")) and isinstance(m.get("hack"), str) and (m["target"] is None or is_device_id(m["target"]))
 
 
+def whole_in(x, low: int, high: int) -> bool:
+    return isinstance(x, int) and not isinstance(x, bool) and low <= x <= high
+
+
 def area_valid(m: dict) -> bool:
-    """The three fields every area hack carries: `p` a finite position, `r` a whole number 1..150, `secs` a whole number 0..600 (and `target` null)."""
-    r, secs = m.get("r"), m.get("secs")
-    return (m.get("target") is None and finite_vec3(m.get("p")) and isinstance(r, int) and not isinstance(r, bool) and 1 <= r <= 150
-            and isinstance(secs, int) and not isinstance(secs, bool) and 0 <= secs <= 600)
+    """The three fields every area hack carries: `p` a finite position, `r` a whole number 1..150, `secs` a whole number 1..600 for the timed hacks and
+    0..600 for `outline` and `ping_area` (and `target` null)."""
+    low = 1 if m.get("hack") in TIMED_AREA_HACKS else 0
+    return m.get("target") is None and finite_vec3(m.get("p")) and whole_in(m.get("r"), 1, 150) and whole_in(m.get("secs"), low, SECS_MAX)
 
 
 def daemon_valid(m: dict) -> bool:
@@ -955,6 +963,8 @@ class Cyberpunk:
         self.feed_on, self.feed_at, self.feed_n = False, None, 0  # --hacks2: the photo feed (on, scenario time of the last frame, frames sent)
         self.restores: list[tuple[float, str]] = []  # --hacks2: (perf_counter due time, device id) a blackout gives back
         self.blacked: dict[str, tuple[int, int]] = {}  # --hacks2: device id -> (st, fl) before the blackout
+        self.car_due: dict[str, float] = {}  # --hacks2: a car field a vehicle hack changed -> perf_counter time it is put back
+        self.car_before: dict[str, bool] = {}  # --hacks2: that field's value before the first hack on it
         self.clock = 0.0  # the scaled scenario time of the last frame (the figures a hack looks up move with it)
         self.dev_list_step, self.dev_npc_step = -1, 0  # --devices: the last full list (every DEVICE_LIST_EVERY s) and the last NPC door change
 
@@ -1083,12 +1093,20 @@ class Cyberpunk:
         for _, m in ready:
             if m.get("t") == "vteleported" and m.get("ok") is True:  # V arrives: the camera is there from now on
                 self.arrived = m["p"]
-        out = [m for _, m in ready]
+        return [m for _, m in ready] + self.restore_effects(now)
+
+    def restore_effects(self, now: float = math.inf) -> list[dict]:
+        """--hacks2: put back every blackout device and car field whose timer ran out by `now` (all of them by default: the session ended), as
+        the scripts must (shared/protocol.md "Phase 6": every effect ends). The devices come back as `devstate by:script`."""
+        out = []
         for _, dev_id in sorted(r for r in self.restores if r[0] <= now):
             dev = self.dev_table[dev_id]
             dev["st"], dev["fl"] = self.blacked.pop(dev_id)
             out.append(devstate_message(dev_id, dev, "script"))
         self.restores = [r for r in self.restores if r[0] > now]
+        for field in [f for f, due in self.car_due.items() if due <= now]:
+            self.car[field] = self.car_before.pop(field)
+            del self.car_due[field]
         return out
 
     # -- --hacks2: the answers of Phase 6 (shared/protocol.md "Phase 6") -----------------------------------------------------------
@@ -1115,13 +1133,18 @@ class Cyberpunk:
                     return [hack_result(rid, False, "not a camera")]
                 where = dev["p"]
             else:
+                if not whole_in(m.get("secs"), 1, SECS_MAX):
+                    return []  # every vehicle effect is timed: no `secs` (or 0) is the wrong shape
                 car = next((e for e in npcs if e["id"] == target and e["kind"] == "vehicle"), None)
                 if car is None:
                     return [hack_result(rid, False, "vehicle gone")]
                 where = car["p"]
             if math.dist(where, v) > HACK_RANGE_M:
                 return [hack_result(rid, False, OUT_OF_RANGE)]
-            self.car.update(VEHICLE_EFFECT.get(hack, {}))
+            due = time.perf_counter() + m.get("secs", 0) * SCRIPT_SCALE
+            for field, value in VEHICLE_EFFECT.get(hack, {}).items():  # the first hack's state is kept; a second one restarts the timer
+                self.car_before.setdefault(field, self.car[field])
+                self.car[field], self.car_due[field] = value, due
             return [hack_result(rid, True)]
         if not area_valid(m):
             return []
@@ -1135,8 +1158,7 @@ class Cyberpunk:
                 self.blacked[dev_id] = (dev["st"], dev["fl"])
                 dev["st"], dev["fl"] = -1, dev["fl"] & ~FL_POWERED  # UNPOWERED
                 extras.append(devstate_message(dev_id, dev, "script"))
-                if m["secs"]:
-                    self.restores.append((time.perf_counter() + m["secs"] * SCRIPT_SCALE, dev_id))
+                self.restores.append((time.perf_counter() + m["secs"] * SCRIPT_SCALE, dev_id))  # `secs` is never 0 for a blackout
         return [hack_result(rid, True), *extras]
 
     def on_daemon(self, m: dict) -> list[dict]:
@@ -1196,6 +1218,8 @@ class Cyberpunk:
         if t == "session":
             was, self.session = self.session, m.get("state")
             self.env_step = -1  # a new server session needs the clock again
+            if self.hacks2 and self.session != "host":  # none, guest or refused: the scripts clean up, every pending effect comes back at once
+                self.restore_effects()
             if self.session == "host" and was != "host":  # a new server session: it needs the whole ground and the NPCs again
                 ground = replica_ground(self.shift) if self.street else [{"t": "ground", "c": ground_slab()}]
                 ground += [device_ground(self.shift)] if self.devices else []  # a hit on a door the DLL did not filter out

@@ -743,7 +743,8 @@ The frame export (`Local\CyberblockFrame`) is LOCAL: `FrameExporter` on the clie
 | `hello` | DLL → client (**extends layer 1**) | adds `ver` (the DLL version, ≤ 32 chars) | on connect, as Minecraft's `hello` already has |
 
 - **`session`:** on `none`, `guest` or `refused` the DLL and the scripts clean Cyberpunk state exactly as on a link drop
-  (collision boxes reset, puppets despawned, tethers released, Minecraft pause released, survey stopped, parked V released)
+  (collision boxes reset, puppets despawned, tethers released, Minecraft pause released, survey stopped, parked V released;
+  Phase 6: every pending blackout, traffic and vehicle hack effect restored and its save lock released, see "Phase 6 semantics and limits")
   while keeping the WebSocket. On a change **to** `host` the DLL forgets its probe state and sends `clear`, so the new
   server session receives the whole ground again. `refused` carries the reason to show (a version mismatch, for example).
   `perms` is what that host currently lets guests do to its game (`explosions`, `damage`, `hacks`, `devices`, `spawns`),
@@ -1228,21 +1229,29 @@ payloads) this section fixes it; the integrator confirms it against the packages
 ### Phase 6: Minecraft → Cyberpunk
 | `t` | fields | when |
 |---|---|---|
-| `rhack` | `id` (a request id, a whole number ≥ 0 the session issued), `target` (the decimal id of a car or a camera device, or `null` for an area), `hack` one of the remote hack names below, and for an **area** hack also `p:[x,y,z]` (the centre, Minecraft convention), `r` (a whole number 1..150 metres) and `secs` (a whole number 0..600, 0 = no timer) | a player used the Vehicle Panel, the Traffic Tool or the Net Map; DOWN to the target's owner only |
+| `rhack` | `id` (a request id, a whole number ≥ 0 the session issued), `target` (the decimal id of a car or a camera device, or `null` for an area), `hack` one of the remote hack names below; a **vehicle** hack also carries `secs` (a whole number 1..600, how long the effect lasts; the server sends 30); an **area** hack also carries `p:[x,y,z]` (the centre, Minecraft convention), `r` (a whole number 1..150 metres) and `secs` (a whole number, 1..600 for `traffic_switch`, `gridlock` and `blackout`, 0..600 for `outline` and `ping_area`, where 0 is a one-shot) | a player used the Vehicle Panel, the Traffic Tool or the Net Map; DOWN to the target's owner only |
 | `daemon` | `id` (a request id), `dev` (the decimal id of the device that was breached), `list` (1 to 3 distinct daemon ids), `strength` (1..3) | a Breach was solved (or failed: the list is then exactly `["alarm"]`); DOWN to the device's owner only |
-| `feedreq` | `on:bool` | the first viewer of the host's photo feed appears (`true`) and the last one is gone (`false`); DOWN to that host only |
+| `feedreq` | `on:bool` | the first viewer of the host's photo feed appears (`true`) and the last one is gone (`false`, also when the owner's `hacks` toggle removed the last guest viewer); DOWN to that host only |
 
 ### Phase 6 semantics and limits
 - **The remote hacks and what each one needs.** The five **vehicle** hacks `veh_lock`, `veh_engine_off`, `veh_brake`, `veh_start`
-  and `veh_jam` take a car's id as `target` and carry no `p`, `r` or `secs`. `cam_feed` takes a camera device's id as `target` and carries no
+  and `veh_jam` take a car's id as `target` and `secs` (the server sends 30) and carry no `p` or `r`. `cam_feed` takes a camera device's id as `target` and carries no
   `p`, `r` or `secs`: Cyberpunk answers `ok` and the camera's position and facing are already in the `devices` list, so Minecraft draws the
   replica from there (a true Cyberpunk camera view would take over the host's screen and is not built). The five **area** hacks
   `traffic_switch`, `gridlock`, `blackout`, `outline` and `ping_area` have `target:null` and **always** carry `p`, `r` and `secs`: `traffic_switch`
-  switches the lights of the district around `p`, `gridlock` stops the cars on the road segment around `p` (the server sends `secs` 60),
+  switches the lights of the district around `p` for `secs` seconds (the server sends 60), `gridlock` stops the cars on the road segment around `p` (the server sends `secs` 60),
   `blackout` switches the district's devices off for `secs` seconds and back (the server sends `r` up to 150 and `secs` 180), `outline`
   reveals the figures of the area as the Ping chip does (`hackspread` `why:"ping"`, at most 16) and `ping_area` pings the area once (`secs` 0). The
   scripts use the traffic and district calls where they are proven; the written fallback is the Phase 4 devices (the traffic lights and the
   devices within 150 m of V).
+- **Every effect ends; nothing a hack does outlives it.** The five vehicle hacks, `traffic_switch`, `gridlock` and `blackout` are **timed**: when
+  their `secs` run out the scripts put back what the hack changed (the car's doors, engine, brake and jam as they were before the first hack on it,
+  `veh_start` included; the lights and devices as they were). A second hack of the same kind on the same target restarts its timer and keeps the
+  first saved state. `secs` 0 is accepted only for `outline` and `ping_area`, which change nothing that lasts. The scripts also restore **every
+  pending effect at once** when the session goes to `none`, `guest` or `refused` and on a link drop (part of section 1.2's cleanup, before the
+  `session: cleaned (<reason>)` line), and **a save never holds one**: while any timed effect is pending the scripts hold a save lock (source
+  `n"CyberblockHack"`, the same mechanism as the parked V's `n"CyberblockPark"`), released when the last one is restored. V's own car and the car V
+  sits in are not exempt (a guest braking the host's car is the headline check), but every effect on them is timed and restored the same way.
 - **Range (the fallback of Phase 0 check (h), the working contract).** A remote action only reaches what the DLL streams: a `target` that is in no
   `npcs` or `devices` list of the session, or a `target` or `p` farther than 50 m from V, is answered
   `{ok:false, reason:"cyberblock.hack.out_of_range"}`. The server checks the same range before it sends, so a guest normally sees the
@@ -1260,6 +1269,9 @@ payloads) this section fixes it; the integrator confirms it against the packages
   (`/cyberblock guests hacks on|off`), and the ones that switch devices (`blackout`, `cam_feed` and a daemon on a device) also the owner's
   `devices` toggle; the host's own Steve is always allowed. A refused request changes nothing in Cyberpunk and shows `cyberblock.guest.blocked`.
   A Breach solved by a guest sends the `daemon` only after the server validated every pick (the client is never trusted with a result).
+- **Who may watch the photo feed.** A guest's `feedreq` needs the owner's `hacks` toggle; the host's own client is always allowed. A blocked
+  `feedreq` adds no viewer and shows `cyberblock.guest.blocked`. When the owner turns `hacks` off, the server removes that host's guest viewers
+  **at once**: it stops forwarding `cyberblock:ui` `feed` to them and, when no viewer is left, sends the DLL `feedreq` `on:false`.
 - **The photo feed.** `feedreq` `on:true` starts it: within 1 s of the request the DLL copies Cyberpunk's picture, scales it to 128 × 128, maps every
   pixel to the Minecraft map palette and sends `feed`, then at most one `feed` per second until `feedreq` `on:false` (a `session` that is not `host`
   also stops it). One `px` byte is `base × 4 + shade` (shade 0..3); the bytes 0..3 are the transparent colour (a pixel the DLL could not map). If
@@ -1267,7 +1279,8 @@ payloads) this section fixes it; the integrator confirms it against the packages
   top-down replica view instead (the written fallback: the replica render, low-resolution by design).
 - **Validation (receivers).** `rhack.id` and `daemon.id` whole numbers ≥ 0; `target` a decimal string below 2^64 (not `0`) or `null`, exactly the
   `null` of the area hacks; `hack` one of the eleven names (any other string is answered `unsupported`, not dropped); `p` finite with `|c| < 3e7`;
-  `r` 1..150; `secs` 0..600; `daemon.list` 1 to 3 distinct strings of `[a-z0-9_]{1,32}` (a list that is not a list is dropped), `strength` 1..3 (a
+  `r` 1..150; `secs` 1..600 on a vehicle hack and on `traffic_switch`, `gridlock` and `blackout`, 0..600 on `outline` and `ping_area`, absent on
+  `cam_feed`; `daemon.list` 1 to 3 distinct strings of `[a-z0-9_]{1,32}` (a list that is not a list is dropped), `strength` 1..3 (a
   whole number); `feedreq.on` a boolean; `feed.w` and `feed.h` exactly 128 and `px` valid base64 of exactly 16384 bytes. A bad message is counted
   and dropped, never fatal. The rate limit of `feed` (2 per second, burst 4) and the sanity radius of
   [Multiplayer: security](#multiplayer-security-rate-limits-and-guest-toggles) apply to the UP `feed`; `hackresult` keeps its own (40 per second, burst 80).
@@ -1283,7 +1296,7 @@ payloads) this section fixes it; the integrator confirms it against the packages
 |---|---|---|---|
 | `cyberblock:act` `t:"rhack"` | C2S | `hack` one of the remote hack names; for a **vehicle** hack `target` (a whole number ≥ 0: the Minecraft entity id of the car figure); for `cam_feed` `pos:[x, y, z]` (the camera device's block, three whole numbers, `\|c\| ≤ 30000000`); for an **area** hack `pos` (the centre block) and `r` (a whole number 1..150); nothing else | a Vehicle Panel, Traffic Tool or Net Map action; at most 4 per second per player |
 | `cyberblock:act` `t:"breach"` | C2S | `op` ∈ `pick`, `abort`; `id` (the puzzle id of the `breach` screen data, a whole number ≥ 0); for `pick` also `cell` (0..48, the grid index row by row) | the Breach screen: one pick per message, or the player closes it |
-| `cyberblock:act` `t:"feedreq"` | C2S | `owner` (the host's player UUID as 36 lower-case characters with hyphens), `on:bool` | a Net Map or map item starts or stops watching that host's photo feed; the viewer repeats `on:true` every 5 s while it shows it |
+| `cyberblock:act` `t:"feedreq"` | C2S | `owner` (the host's player UUID as 36 lower-case characters with hyphens), `on:bool` | a Net Map or map item starts or stops watching that host's photo feed; the viewer repeats `on:true` every 5 s while it shows it; a guest needs the owner's `hacks` toggle |
 | `cyberblock:act` `t:"comms"` | C2S | `to` (a player UUID, same form), `text` (0 to 80 characters), `pos` (`null`, or a block position of three whole numbers, `\|c\| ≤ 30000000`); `text` and `pos` are not both empty | the Comms Panel sends a message and/or a waypoint; at most one every 2 s |
 | `cyberblock:ui` `t:"breach"` | S2C | `id` (the puzzle id, whole), `dev` (the device's decimal id), `size` 5..7, `grid` (`size`² codes, row by row, each one of `1C`, `55`, `BD`, `E9`, `7A`, `FF`), `buffer` 4..8, `picks` (the cells picked so far, at most `buffer`), `seqs:[{id, codes, ok}]` 1 to 3 daemon sequences (`id` a daemon id, `codes` 2 to `buffer` codes, `ok` true when the picks contain it in order), `total` (the timer in seconds, 1..300), `left` (seconds left, 0..`total`), `state` ∈ `run`, `solved`, `failed`, `timeout`, `aborted`, `strength` (0..3, 0 until the end) | a player right-clicks a Net Port, and again after every valid pick and at the end |
 | `cyberblock:ui` `t:"feed"` | S2C | `owner` (the host's UUID), `w` exactly 128, `h` exactly 128, `px` (base64 of 16384 map-colour bytes, as in the DLL's `feed`) | the server forwards the host's `feed` to every player who asked for it (at most one per second per host) |
@@ -1292,14 +1305,23 @@ payloads) this section fixes it; the integrator confirms it against the packages
 - **The server decides everything.** `rhack` names no owner and no Night City id: the server finds the car's owner and id from its own figure (as `scan`
   and `hit` do), the camera's from its device registry, and for an area it sends one DOWN `rhack` to every active session whose V is within 50 m of
   the centre and whose `hacks` toggle allows it. The client never names an owner or an id, except `feedreq.owner` and `comms.to`, which are checked against
-  the roster (a host who is not active, or a `to` who is not online, is dropped).
+  the roster (a host who is not active, or a `to` who is not online, is dropped); a guest's `feedreq` also needs that host's `hacks` toggle.
 - **Breach.** The server builds the puzzle (`breach_tier` and `daemon` content, a seed of its own), sends `breach` and validates **every** pick: the first
   pick is in row 0, then the pick alternates column, row, column, ... of the previous pick, no cell twice. A pick that breaks the rule or comes after
   the end is ignored (the screen data is sent again). The right-click on a Net Port block sends no payload (Minecraft's own use path).
-  `solved` sends the `daemon`; `failed` and `timeout` send the `daemon` with `["alarm"]` (a failed Breach also costs Heat, Phase 8's meter).
-  Every `act` is at most 8000 bytes.
-- **Dropped quietly.** An `act` of these four `t` that breaks a limit above, comes from a player that cannot act on that target, or names a
-  target out of reach (more than 8 blocks from the player's eyes for a block, 50 m for a car) is dropped (logged at debug level, not counted).
+  `solved` sends the `daemon`; `failed`, `timeout` and an `aborted` Breach after the first pick send the `daemon` with `["alarm"]` (a failed Breach
+  also costs Heat, Phase 8's meter). The puzzle's timer starts when the screen opens.
+- **An abort is not a free re-roll.** `op:"abort"` (or the screen closed) **after the first pick** is a failure: `state:"aborted"`, the alarm and
+  the Heat. An abort before the first pick sends nothing, but the server **keeps that puzzle** (the same grid, daemons and running timer) for that
+  player and device until it is solved, failed or timed out, so the next right-click opens it again as it was and its timeout is a failure too.
+  After a failure the same player cannot breach that device again for **10 s** (a right-click shows `cyberblock.breach.cooldown` on the action
+  bar). Every `act` is at most 8000 bytes.
+- **Dropped quietly.** An `act` of these four `t` that breaks a limit above or comes from a player that cannot act on that target is dropped
+  (logged at debug level, not counted). **The player-reach rule covers only the acts that stand for a hand use:** a Breach pick (the player's
+  eyes within 8 blocks of the Net Port block) and a Vehicle Panel opened by right-clicking a car figure (the car figure within 50 m of the
+  player when the panel opens). **Net Map and Traffic Tool `rhack` acts (the `cam_feed` `pos`, an area's `pos`, a vehicle target picked on the
+  map) and the `comms` `pos` are not checked against the player's position**: the `rhack` ones are bounded only by the V-based 50 m rule above
+  and by the owning host's sanity radius (160 blocks), the `comms` `pos` only by the block limits, so a guest can use them from anywhere.
 
 ### Phase 6 names
 - **Remote hack names** (`rhack.hack`, the 1.9 row 6 list) — `veh_lock`, `veh_engine_off`, `veh_brake`, `veh_start`, `veh_jam`, `traffic_switch`, `gridlock`, `blackout`, `cam_feed`, `outline`, `ping_area`
@@ -1331,7 +1353,7 @@ Phase 6 examples, Cyberpunk to Minecraft:
 
 Phase 6 examples, Minecraft to Cyberpunk:
 ```jsonl
-{"t":"rhack","id":21,"target":"4503599627370497","hack":"veh_brake"}
+{"t":"rhack","id":21,"target":"4503599627370497","hack":"veh_brake","secs":30}
 {"t":"rhack","id":22,"target":"11529215046068469765","hack":"cam_feed"}
 {"t":"rhack","id":23,"target":null,"hack":"blackout","p":[-1236.5,64.0,810.5],"r":60,"secs":180}
 {"t":"daemon","id":24,"dev":"11529215046068469770","list":["open_door","disable_cameras"],"strength":2}

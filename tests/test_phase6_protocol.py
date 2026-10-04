@@ -41,15 +41,23 @@ def block_pos_ok(pos) -> bool:
     return isinstance(pos, list) and len(pos) == 3 and all(whole(c, -POS_LIMIT, POS_LIMIT) for c in pos)
 
 
+TIMED_AREA_HACKS = ("traffic_switch", "gridlock", "blackout")  # they change Cyberpunk state, so `secs` is 1..600 and the scripts put it back
+SECS_MAX = 600
+
+
 def rhack_ok(m) -> bool:
-    """DOWN `rhack`: a vehicle hack needs a car's id and nothing else, `cam_feed` a camera's id, an area hack `target:null` and `p`, `r`, `secs`."""
+    """DOWN `rhack`: a vehicle hack needs a car's id and `secs` 1..600, `cam_feed` a camera's id and nothing else, an area hack `target:null` and `p`,
+    `r`, `secs` (1..600 for the timed ones, 0..600 for `outline` and `ping_area`)."""
     base = {"t", "id", "target", "hack"}
     if not (isinstance(m, dict) and base <= set(m) and request_id_ok(m["id"]) and isinstance(m["hack"], str)):
         return False
     hack = m["hack"]
     if hack in AREA_HACKS:
-        return (set(m) == base | {"p", "r", "secs"} and m["target"] is None and vec3(m["p"]) and whole(m["r"], 1, 150) and whole(m["secs"], 0, 600))
-    return set(m) == base and hack in REMOTE_HACKS and dev_id_ok(m["target"])
+        low = 1 if hack in TIMED_AREA_HACKS else 0
+        return (set(m) == base | {"p", "r", "secs"} and m["target"] is None and vec3(m["p"]) and whole(m["r"], 1, 150) and whole(m["secs"], low, SECS_MAX))
+    if hack in VEHICLE_HACKS:
+        return set(m) == base | {"secs"} and dev_id_ok(m["target"]) and whole(m["secs"], 1, SECS_MAX)
+    return set(m) == base and hack == "cam_feed" and dev_id_ok(m["target"])
 
 
 def daemon_ok(m) -> bool:
@@ -184,6 +192,7 @@ def test_p6_the_examples_show_every_form_and_tell_one_story():
     rhacks = [m for t, m in P6_EXAMPLES if t == "rhack"]
     assert [m["hack"] for m in rhacks] == ["veh_brake", "cam_feed", "blackout"]  # a car, a camera, an area
     assert rhacks[0]["target"] and rhacks[1]["target"] and rhacks[2]["target"] is None and {"p", "r", "secs"} <= set(rhacks[2])
+    assert rhacks[0]["secs"] == 30 and "secs" not in rhacks[1] and rhacks[2]["secs"] == 180  # the server's durations: a car hack 30 s, a blackout 180 s
     daemons = [m for t, m in P6_EXAMPLES if t == "daemon"]
     assert daemons[1]["list"] == ["alarm"] and "alarm" not in daemons[0]["list"] and len(daemons[0]["list"]) == 2  # a solved Breach and the failure alarm
     results = [m for t, m in P6_EXAMPLES if t == "hackresult"]
@@ -288,6 +297,32 @@ def test_p6_rules_are_stated_in_the_document():
         assert phrase in text, f"{phrase!r} is not stated"
 
 
+def test_p6_reach_effects_feed_and_abort_rules_close_the_review_gaps():
+    """The 6P review fixes: the player-reach rule only for hand uses, every Cyberpunk effect timed and restored (session end, link drop, save), the
+    photo feed behind the owner's `hacks` toggle, and an abort that is not a free re-roll."""
+    text = " ".join((section(P6_SECTION) + section(P6_PAYLOADS) + section(P6_MC_TO_CP)).split())
+    for phrase in (
+            # reach: only hand uses are checked against the player; the Net Map and the Traffic Tool are not
+            "The player-reach rule covers only the acts that stand for a hand use:", "a Breach pick (the player's eyes within 8 blocks of the Net Port block)",
+            "a Vehicle Panel opened by right-clicking a car figure", "**Net Map and Traffic Tool `rhack` acts (the `cam_feed` `pos`, an area's `pos`, a vehicle target picked on the map) and the `comms` `pos` are not checked against the player's position**",
+            "bounded only by the V-based 50 m rule above and by the owning host's sanity radius (160 blocks)",
+            # every effect ends
+            "a **vehicle** hack also carries `secs` (a whole number 1..600", "1..600 for `traffic_switch`, `gridlock` and `blackout`", "`secs` 0 is accepted only for `outline` and `ping_area`",
+            "restore **every pending effect at once** when the session goes to `none`, `guest` or `refused` and on a link drop", "**a save never holds one**",
+            "hold a save lock (source `n\"CyberblockHack\"`", "V's own car and the car V sits in are not exempt", "restarts its timer and keeps the first saved state",
+            # the photo feed
+            "A guest's `feedreq` needs the owner's `hacks` toggle; the host's own client is always allowed", "removes that host's guest viewers **at once**",
+            "stops forwarding `cyberblock:ui` `feed` to them", "sends the DLL `feedreq` `on:false`",
+            # abort
+            "an `aborted` Breach after the first pick send the `daemon` with `[\"alarm\"]`", "**An abort is not a free re-roll.**", "the server **keeps that puzzle**",
+            "for **10 s**", "`cyberblock.breach.cooldown`", "The puzzle's timer starts when the screen opens"):
+        assert phrase in text, f"{phrase!r} is not stated"
+    assert "more than 8 blocks from the player's eyes for a block, 50 m for a car" not in text  # the old rule that reach-checked every act
+    assert "0 = no timer" not in text
+    session = " ".join(TEXT.split("- **`session`:**", 1)[1].split("- **", 1)[0].split())
+    assert "every pending blackout, traffic and vehicle hack effect restored and its save lock released" in session
+
+
 def test_p6_section_sits_between_phase_5_and_the_shared_memory_section():
     assert TEXT.index("## Phase 5 (figures and skins)") < TEXT.index("## Phase 6 (hacking and the interaction map)") < TEXT.index("## Shared memory")
     assert "2026-10-04-multiplayer-megaplan.md" in TEXT.split("## Phase 6 (hacking and the interaction map)", 1)[1].split("###", 1)[0]
@@ -309,6 +344,9 @@ def _bad_rhack():
         area(target="123"), area(r=0), area(r=151), area(r=1.5), area(secs=-1), area(secs=601), area(p=[0, 0]), area(p=[0, float("nan"), 0]), area(p=[3e7, 0, 0]),
         {k: v for k, v in area().items() if k != "secs"}, {k: v for k, v in area().items() if k != "p"}, {k: v for k, v in area().items() if k != "r"},
         area(hack="veh_lock"),  # a vehicle hack with an area's fields
+        # every effect ends: a vehicle hack always carries secs 1..600, a timed area hack never secs 0, cam_feed never carries secs
+        {k: v for k, v in car().items() if k != "secs"}, car(secs=0), car(secs=601), car(secs=1.5), car(secs=True), car(secs=None),
+        {**p6("rhack", 1), "secs": 30}, area(secs=0), area(hack="traffic_switch", secs=0), area(hack="gridlock", secs=0),
     ]
 
 
@@ -344,10 +382,13 @@ def test_p6_validators_reject_out_of_limit_messages(t, m):
 
 def test_p6_validators_accept_the_limits_themselves():
     car = lambda **kw: p6("rhack", 0, **kw)  # noqa: E731
-    assert all(rhack_ok(car(hack=h, id=0, target="18446744073709551615")) for h in VEHICLE_HACKS) and rhack_ok(car(hack="cam_feed", target="1"))
+    assert all(rhack_ok(car(hack=h, id=0, target="18446744073709551615", secs=s)) for h in VEHICLE_HACKS for s in (1, SECS_MAX))
+    assert rhack_ok({"t": "rhack", "id": 1, "target": "1", "hack": "cam_feed"})
     for hack in AREA_HACKS:
-        for r, secs in ((1, 0), (150, 600)):
+        low = 1 if hack in TIMED_AREA_HACKS else 0
+        for r, secs in ((1, low), (150, SECS_MAX)):
             assert rhack_ok({"t": "rhack", "id": 2**31 - 1, "target": None, "hack": hack, "p": [-29_999_999, -64, 29_999_999], "r": r, "secs": secs}), hack
+    assert set(TIMED_AREA_HACKS) < set(AREA_HACKS) and rhack_ok(p6("rhack", 2, hack="ping_area", secs=0)) and rhack_ok(p6("rhack", 2, hack="outline", secs=0))
     assert daemon_ok(p6("daemon", 0, list=["a", "b_2", "x" * 32], strength=3)) and daemon_ok(p6("daemon", 0, list=["alarm"], strength=1)) and daemon_ok(p6("daemon", 0, list=["z"], id=0))
     assert feedreq_ok({"t": "feedreq", "on": False}) and feed_ok(p6("feed", px=base64.b64encode(bytes(FEED_BYTES)).decode()))
     assert hackresult_ok({"t": "hackresult", "id": 0, "ok": False, "reason": "x" * 64}) and hackresult_ok({"t": "hackresult", "id": 7, "ok": True, "reason": ""})
