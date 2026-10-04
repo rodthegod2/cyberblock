@@ -38,7 +38,7 @@ renderer, the cyber skins, the scripts and the art have their own entries. The i
   `arch`, `anim`, `vc`, `col` and `hp`, with validators and limits. The DLL sets the walk and run bits of `anim` from the position deltas
   between lists (thresholds in `world.hpp`), and converts the car's colour-template triple once, as hue, saturation and brightness until
   Phase 0's CET line F2 confirms it (it logs `npcs: colour format hsb (unconfirmed)`). Runtime-path log lines: `npcs: tags full|faction only`
-  and a 10-second summary. `shared/vectors.json` gains `colour`, written by `tools.gen_vectors` from `tools.cbmath.colour_hex`.
+  (printed by the scripts only, full = gender and archetype) and the DLL's 10-second summary. `shared/vectors.json` gains `colour`, written by `tools.gen_vectors` from `tools.cbmath.colour_hex`.
 - **Protocol.** `shared/protocol.md` "Phase 5": the `npcs` row extension, semantics and limits, names, log lines and an example;
   `P5_VALIDATORS` in `tests/test_protocol_md.py`.
 - **Fake host.** `tools.fakehost --figures`: 46 tagged figures, one person per skin group (five again in the other gender), every

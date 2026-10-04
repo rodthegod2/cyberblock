@@ -951,13 +951,6 @@ namespace cb::world
 		return json{{"t", "npcs"}, {"list", std::move(list)}};
 	}
 
-	const char *NpcTagSummary::path() const
-	{
-		if (people > 0 && (male + female > 0 || withArchetype > 0))
-			return "full";
-		return withFaction > 0 ? "faction only" : "none";
-	}
-
 	NpcTagSummary summarize_npcs(const json &list)
 	{
 		NpcTagSummary s;

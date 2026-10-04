@@ -197,7 +197,7 @@ Open `red4ext\logs\Cyberblock.log` and copy these lines to Claude. The right col
 
 | Search for | The line says |
 |---|---|
-| `npcs: tags` | `npcs: tags full` = people arrive with gender or archetype; `npcs: tags faction only` = only the faction arrived (fallback: skins by faction and threat, women classic) |
+| `npcs: tags` | `npcs: tags full` = people arrive with both gender and archetype; `npcs: tags faction only` = they do not (fallback: skins by faction and threat, women classic). It appears only while people are near, again when it changes |
 | `npcs: colour format` | `npcs: colour format hsb (unconfirmed)`: the three template numbers are read as hue, saturation, brightness. If F2's `main=` numbers look like red, green, blue (for example `200,30,30` for a red car) and the cars come out the wrong colour, tell Claude: it is a one-line change |
 | `npcs: ` followed by a count | every 10 s: people, how many have a faction, role, archetype, the gender counts (male, female, unknown) and how many walk or run, and cars with a colour. All people "unknown" gender means the gender names of F1 did not match: paste the F1 line |
 | `Cyberblock_SubmitNpcs2` | only a warning when the script and the plugin disagree on the array lengths: it should not appear |

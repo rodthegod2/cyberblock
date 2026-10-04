@@ -63,10 +63,18 @@ def test_re_test_phase_5_sits_next_to_phase_3_and_has_the_plan_checks():
 def test_re_test_phase_5_names_the_runtime_path_lines_the_dll_prints():
     table = flat(section_of(TESTING, "### P5-6. Which way is it working? (the runtime paths)"))
     world = (ROOT / "cp" / "plugin" / "src" / "natives.cpp").read_text(encoding="utf-8")
-    for needle in ("npcs: tags %s", "Cyberblock_SubmitNpcs2: arrays differ in length", "npcs: %d people"):
+    for needle in ("Cyberblock_SubmitNpcs2: arrays differ in length", "npcs: %d people"):
         assert needle in world, needle  # the lines the table talks about exist in the DLL
-    for fact in ("`npcs: tags full`", "`npcs: tags faction only`", "`npcs: colour format hsb (unconfirmed)`", "unknown", "paste the F1 line", "one-line change"):
+    assert "npcs: tags %s" not in world  # the tags path line has one source, the scripts (Npcs.reds)
+    for fact in ("`npcs: tags full`", "`npcs: tags faction only`", "both gender and archetype", "`npcs: colour format hsb (unconfirmed)`", "unknown",
+                 "paste the F1 line", "one-line change"):
         assert fact in table, fact
+
+
+def test_the_tags_path_rule_is_gender_and_archetype_everywhere():
+    protocol = flat((ROOT / "shared" / "protocol.md").read_text(encoding="utf-8"))
+    assert "carries both a gender and an archetype" in protocol and "gender or an archetype" not in protocol
+    assert "gender or archetype" not in flat(TESTING) and "both gender and archetype" in flat(section_of(GUIDE, FIGURES))
 
 
 def test_the_changelog_has_a_phase_5_entry_above_the_join_password_one():

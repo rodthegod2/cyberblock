@@ -1116,8 +1116,9 @@ light bar, an armoured van, aerodynes and more), **in the car's own colour** whe
 
 **Which way is it working? (for the test.)** The plugin cannot read everything from the game, so some of this has a **written
 fallback**, and `Cyberblock.log` says which one is active:
-- `npcs: tags full ...` means people arrive with faction, gender and archetype; `npcs: tags faction only ...` means only the
-  faction arrived (the skin then comes from the faction and the threat alone, and every woman is drawn classic);
+- `npcs: tags full ...` means people arrive with faction, gender and archetype (both gender and archetype are needed);
+  `npcs: tags faction only ...` means they do not (the skin then comes from the faction and the threat alone, and every woman is
+  drawn classic); the line appears only while people are near;
 - **fixers, bartenders, medics and mechanics** are never in the game's data: the server's content (`npc_role`, `skin_map`) decides
   those looks; vendors and ripperdocs come from the game's vendor type;
 - **walk and run** are not readable in the game either, so the plugin works them out from how far each figure moved between two

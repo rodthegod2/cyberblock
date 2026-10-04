@@ -325,19 +325,17 @@ TEST(npcs2_motion_is_in_ground_metres_whatever_the_level_offset)
 	CHECK(list[0].at("anim") == 2); // 3.5 m/s
 }
 
-TEST(npc_tag_summary_names_the_runtime_path)
+TEST(npc_tag_summary_counts_the_tags_of_the_list)
 {
-	const json none = json::array({{{"kind", "human"}}, {{"kind", "vehicle"}}});
-	CHECK(std::string(cb::world::summarize_npcs(none).path()) == "none");
 	const json factionOnly = json::array({{{"kind", "human"}, {"fac", "NCPD"}, {"g", 0}, {"anim", 0}}, {{"kind", "human"}, {"fac", "Maelstrom"}}});
 	const auto f = cb::world::summarize_npcs(factionOnly);
-	CHECK(std::string(f.path()) == "faction only" && f.people == 2 && f.withFaction == 2 && f.unknownGender == 2);
+	CHECK(f.people == 2 && f.withFaction == 2 && f.withArchetype == 0 && f.unknownGender == 2 && f.vehicles == 0);
 	const json full = json::array({{{"kind", "human"}, {"fac", "NCPD"}, {"g", 2}, {"arch", "Gunner"}, {"role", "RipperDoc"}, {"anim", 3}},
 								   {{"kind", "human"}, {"g", 1}, {"anim", 1}},
 								   {{"kind", "vehicle"}, {"col", "#000000"}}});
 	const auto s = cb::world::summarize_npcs(full);
-	CHECK(std::string(s.path()) == "full" && s.people == 2 && s.vehicles == 1 && s.male == 1 && s.female == 1);
+	CHECK(s.people == 2 && s.vehicles == 1 && s.male == 1 && s.female == 1);
 	CHECK(s.withRole == 1 && s.withArchetype == 1 && s.withColour == 1 && s.walking == 2 && s.running == 1);
-	CHECK(std::string(cb::world::summarize_npcs(json::array()).path()) == "none");
-	CHECK(std::string(cb::world::summarize_npcs(json(5)).path()) == "none");
+	CHECK(cb::world::summarize_npcs(json::array()).people == 0);
+	CHECK(cb::world::summarize_npcs(json(5)).people == 0);
 }

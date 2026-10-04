@@ -357,13 +357,11 @@ namespace cb::world
 											 std::span<const uint8_t> hostile, double off, std::span<const uint8_t> dead,
 											 const NpcTags &tags, NpcMotion *motion, double nowSeconds);
 
-	/// What one npcs list carries, for the path log lines (1.14 style): how many entries have which tag.
+	/// What one npcs list carries, for the DLL's 10 s summary line (1.14 style): how many entries have which tag.
 	struct NpcTagSummary
 	{
 		int people = 0, vehicles = 0, withFaction = 0, withRole = 0, withArchetype = 0, male = 0, female = 0, unknownGender = 0,
 			withColour = 0, walking = 0, running = 0;
-		/// "none" (no tags at all, or no people), "faction only" (faction but no archetype or gender) or "full".
-		const char *path() const;
 	};
 	NpcTagSummary summarize_npcs(const nlohmann::json &list);
 

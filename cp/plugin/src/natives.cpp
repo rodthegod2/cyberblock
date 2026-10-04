@@ -544,12 +544,10 @@ namespace
 
 	// ---- Phase 5 (megaplan 2026-10-04 sections 1.8 and 1.9 with the Phase 0 amendment, item 7; task 5-D1) -------------
 
-	/// The people's last positions for the walk and run bits (the scripts cannot read them, Phase 0 f), the log state of
-	/// the tag path, and the lock around both.
+	/// The people's last positions for the walk and run bits (the scripts cannot read them, Phase 0 f), the log state,
+	/// and the lock around both.
 	std::mutex g_npcLock;
 	cb::world::NpcMotion g_npcMotion;
-	std::string g_npcPath;     // the last logged tags path ("full", "faction only", "none"); "" before the first list
-	int g_npcPathChanges = 0;  // path lines logged (at most 10, like the materials path)
 	bool g_npcColourLogged = false;
 	std::chrono::steady_clock::time_point g_npcSummaryAt;
 
@@ -562,8 +560,9 @@ namespace
 		return out;
 	}
 
-	/// The runtime path lines of the user's test: which tags the scripts really deliver (`npcs: tags full|faction only`),
-	/// the colour format once, and every 10 s what the list carried. Called with the list that was sent.
+	/// The DLL's runtime path lines of the user's test: the colour format once, and every 10 s what the list carried.
+	/// The tags path line (`npcs: tags full|faction only`) has one source, the scripts (Npcs.reds), which see the gender
+	/// and archetype names before they are packed. Called with the list that was sent.
 	void log_npc_paths(const nlohmann::json &message)
 	{
 		if (!std::exchange(g_npcColourLogged, true))
@@ -571,14 +570,6 @@ namespace
 		const cb::world::NpcTagSummary tags = cb::world::summarize_npcs(message.at("list"));
 		if (tags.people == 0 && tags.vehicles == 0)
 			return;
-		const std::string path = tags.path();
-		if (path != g_npcPath && g_npcPathChanges < 10)
-		{
-			++g_npcPathChanges;
-			cb::log::info("npcs: tags %s (role, faction, gender, archetype: full; faction only: the fallback of Phase 0 f)",
-						  path.c_str());
-		}
-		g_npcPath = path;
 		const auto now = std::chrono::steady_clock::now();
 		if (now - g_npcSummaryAt < std::chrono::seconds(10))
 			return;

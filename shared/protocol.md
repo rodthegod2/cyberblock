@@ -1052,12 +1052,14 @@ the layer 2 `npcs` list gains optional keys per entry, and the redscript side ha
 - **Genders** (`npcs[].g`, 0 first) — `unknown`, `male`, `female`
 
 ### Phase 5 log lines
-The DLL prints which runtime path is active, so the in-game test can tell fallback from full tags (Re-test 5 in `docs/TESTING-PLAN.md`):
-- `npcs: colour format hsb (unconfirmed)` once, at the first list.
-- `npcs: tags full (…)` when the people carry a gender or an archetype, `npcs: tags faction only (…)` when they carry only a faction
-  (the fallback), printed when the path changes (at most 10 times).
-- every 10 s: `npcs: N people (faction N, role N, archetype N; gender male N female N unknown N; walk N run N), N vehicles (colour N)`.
-- `Cyberblock_SubmitNpcs2: arrays differ in length (…)` once, when a list is dropped.
+`Cyberblock.log` says which runtime path is active, so the in-game test can tell fallback from full tags (Re-test 5 in
+`docs/TESTING-PLAN.md`). Each line has one source:
+- the scripts (`Npcs.reds`): `npcs: tags full (…)` when at least one person entry carries both a gender and an archetype,
+  `npcs: tags faction only (…)` otherwise (the fallback); printed when people are near, once and again when the path changes.
+  Lists with only cars print no tags line.
+- the DLL: `npcs: colour format hsb (unconfirmed)` once, at the first list.
+- the DLL, every 10 s: `npcs: N people (faction N, role N, archetype N; gender male N female N unknown N; walk N run N), N vehicles (colour N)`.
+- the DLL: `Cyberblock_SubmitNpcs2: arrays differ in length (…)` once, when a list is dropped.
 
 ### Phase 5 examples
 One message per line (JSON Lines): a gunner who is walking, aiming and firing, a female ripperdoc, a car with a colour, and a
