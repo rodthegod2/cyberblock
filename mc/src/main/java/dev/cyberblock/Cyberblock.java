@@ -29,6 +29,8 @@ public class Cyberblock implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
+		// megaplan section 1.3: payload types (both sides) and the server receivers
+		dev.cyberblock.net.ServerNet.init();
 		ProxyEntities.register();
 		Bridge.proxyById = ProxyManager::byId;
 		Bridge.proxyIdOf = ProxyManager::idOf;
