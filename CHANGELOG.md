@@ -9,6 +9,31 @@ and the tools.
 Version 1.0.0 is set in the files on 2026-10-03; it is tagged and published only after the in-game re-test
 ([docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test 3") has passed.
 
+### Unreleased additions: Phase 6 (multiplayer plan, package 6P)
+Phase 6 of the multiplayer plan: **Redstone Hacking, Breach Protocol and the interaction map**. This entry is the protocol, tools and docs
+side; the mod, plugin and scripts of Phase 6 have their own entries. The in-game list is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md),
+"Re-test 6".
+- **Protocol.** `shared/protocol.md` "Phase 6": `rhack` (DOWN to the owner only: five vehicle hacks, `cam_feed` and five area hacks with `p`, `r` and
+  `secs`), `daemon` (a solved Breach's daemons at strength 1..3, or exactly `["alarm"]` for a failed one), `feedreq`, `feed` (a 128 x 128 picture
+  of map colours, BOTH: shown locally and relayed UP, at most once a second, rate 2 per second), `hackresult` extended to answer `rhack` and
+  `daemon`, the four `cyberblock:act` payloads (`rhack`, `breach`, `feedreq`, `comms`) and the three `cyberblock:ui` payloads (`breach`, `feed`,
+  `comms`), the 50 m range (the written fallback of Phase 0's check (h), `cyberblock.hack.out_of_range`), the `hs_ack` feature bit 8, and the 18th
+  cyberware id `firewall`; class rows, a rate row, validators, names and examples in `tests/test_phase6_protocol.py` (and the class tables of
+  `tests/test_protocol_md.py`). Every Cyberpunk effect is timed (`secs` on every vehicle hack, never 0 on a blackout, traffic switch or gridlock)
+  and restored on the session end, a link drop and before a save (a save lock while one is pending); the photo feed needs the owner's `hacks`
+  toggle; an abort after the first pick is a failed Breach (the same puzzle is kept otherwise, and a failure has a 10 s cooldown); only hand uses
+  are checked against the player's reach, the Net Map and the Traffic Tool are bounded by the 50 m from V.
+- **Fake host.** `tools.fakehost --hacks2`: the `--devices` scene plus a Net Port; every valid `rhack` and `daemon` is answered with one `hackresult`
+  (vehicle hacks change the car until their `secs` run out, `cam_feed` needs a camera, a blackout switches the devices of an area off and gives them back, `outline` and
+  `ping_area` reveal the hostile people with `hackspread`, `open_door` and `disable_cameras` change the devices, `unsupported`, `unsupported daemon`,
+  `vehicle gone` and `device gone` say why, a target past 50 m is out of range); `feedreq on` streams a 128 x 128 test card once a second.
+- **Harness.** `tools.mpcheck breach`: a guest's solved Breach sends the owner's DLL a `daemon` that it answers, a failed one the alarm, `guests hacks
+  off` blocks it and `on` brings it back, and the Net Port goes with the session. It needs `/cyberblock test breach <x> <y> <z> solve|fail`
+  (6B); the scenario is tested against a simulated server, and the real run is the integrator's.
+- **Docs.** [HOW-TO-PLAY](docs/HOW-TO-PLAY.md#redstone-hacking-phase-6) has "Redstone hacking", "Breach Protocol" and "The interaction map"; the
+  Re-test 6 list is at the top of [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md); the descopes (the remote range, the traffic and blackout fallbacks,
+  the replica camera view, the low-resolution or replica photo feed) are in `docs/notes/phase6-descopes.md`.
+
 ### Unreleased additions: Wave B integration (Phases 3, 4 and 5 together)
 Phases 4 and 5 merged on top of Phase 3 (and the Wave A leftovers) for one combined in-game test,
 [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md) "Re-test: Wave B (Phases 3, 4, 5)".

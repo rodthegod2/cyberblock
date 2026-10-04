@@ -110,6 +110,11 @@ Everything works on Night City's real NPCs, vehicles and devices.
 - **Figures and skins (Phase 5):** guests see Night City's people in their faction's skin (women on the slim model), posed and
   moving like the real ones, cars in their colours, and every linked player as V (or Lucy with `/cyberblock body female`) with a `[V]` tag
   ([details](docs/HOW-TO-PLAY.md#figures-and-skins-phase-5)).
+- **Redstone hacking and the interaction map (Phase 6):** Device Relays, Proximity and Heat Sensors, Breach Ports, Charges and the
+  Cyberdeck Link hack Night City with redstone; the Breach Protocol on a Net Port runs real daemons in the host's game; the Vehicle Panel, the
+  Traffic Tool, the Net Map (blackouts, camera feeds, the host's photo feed) and the Comms Panel cover the rest of the interaction map
+  ([redstone](docs/HOW-TO-PLAY.md#redstone-hacking-phase-6), [Breach](docs/HOW-TO-PLAY.md#breach-protocol-phase-6),
+  [the map](docs/HOW-TO-PLAY.md#the-interaction-map-phase-6)).
 
 ## Build from source
 ```

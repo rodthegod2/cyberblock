@@ -34,6 +34,11 @@ Scenarios (megaplan task 1-T2). Each one starts what it needs on its own test po
   figures       Phase 5: one fake host `--figures` (the tagged `npcs` list: a person per skin group, every animation bit, coloured cars, a police
                 chase): every person and car stands as a proxy, the dead victim's body goes and does not come back, a hit on a tagged figure
                 reaches the host (a guest's attack), the figures go with the session and the relay drops nothing
+  breach        Phase 6: one fake host `--hacks2` (the devices plus a Net Port, and the DLL's answers to `daemon`) and a guest: a solved Breach on the Net Port
+                sends the owner's DLL a `daemon` (1 to 3 known daemon ids, strength 1..3, for that device) that it answers with `hackresult ok`, a failed Breach
+                sends the alarm (`daemon` with exactly `["alarm"]`), `guests hacks off` blocks the guest's Breach and `guests hacks on` brings it back, and the
+                Net Port goes with the session. Needs the devtools command `/cyberblock test breach <x> <y> <z> solve|fail` (task 6-B1: the same server path as
+                a right-click on the Net Port and the picks of a solver or of a player who only picks wrong), run as the guest
   joinpassword  a server with a join password: a host waits as a guest until `/login`, then hosts at once; after a reconnect it
                 is remembered; five wrong passwords kick; the password is in no log (it is random per run, like the RCON one)
 
@@ -43,7 +48,8 @@ folder (it is never printed, logged or put on a command line); APEX_FTP_PASS is 
 port 25600 and `Local\\CyberblockFrame` are never used. The scenarios assume the plan's devtools commands (task 1-N4,
 `-Dcyberblock.devtools=true`): `/cyberblock test hit <host> <id> <dmg>`, `/cyberblock test explode <x> <y> <z> <power>` and
 `/cyberblock test place <x> <y> <z> <block>` (Phase 4's `devices` scenario adds `/cyberblock test device <x> <y> <z> <act>`: the same
-use of the device block that a right-click is)
+use of the device block that a right-click is; Phase 6's `breach` scenario adds `/cyberblock test breach <x> <y> <z> solve|fail`, a guest's Breach on
+the Net Port)
 run as the guest with `/execute as CbGuest1 run ...` (from the RCON console alone there is no player behind them, and an action
 with no player behind it is always allowed), and `/execute as <host> run cyberblock guests <toggle> on|off` flips that host's
 toggle. They also assume that `runServer` and `runClient` honour `-Pcyberblock.runDir` (task 1-L1) and that the dedicated
@@ -86,10 +92,10 @@ CLIENT_BASE, SERVER_BASE = 25754, 25914  # package 1T (megaplan section 1.15): c
 FRAME_PREFIX = "Local\\CyberblockFrame1T"  # + H (host client) or G (guest client), + the client number from 2 on
 OFFLINE_NAMES = ("CbHost1", "CbHost2", "CbGuest1", "CbGuest2")
 SCENARIOS = ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup", "devices",
-             "figures")
+             "figures", "breach")
 # + SERVER_BASE; scenarios run one after another, so two may share a port
 SERVER_SLOT = {"singleplayer": 0, "guest": 0, "versions": 1, "flood": 2, "reconnect": 3, "twohosts": 4, "joinpassword": 1, "replica": 0, "twohosts2": 2,
-               "meetup": 1, "devices": 3, "figures": 3}
+               "meetup": 1, "devices": 3, "figures": 3, "breach": 3}
 FORBIDDEN_PORTS = {25600}  # the user's own Minecraft <-> Cyberpunk link
 GRADLE_HEAP = "-Dorg.gradle.jvmargs=-Xmx1536m"
 # seconds: a server starting, a client opening its link port, a join, an effect to show up, "this must not happen"
@@ -1240,13 +1246,114 @@ def scenario_figures(env: Env, rep: Report) -> None:
     rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))
 
 
+# ---- Phase 6: breach (megaplan 6-P1) ----------------------------------------------------------------------------------------------------
+# The fake host `--hacks2` stands in for the DLL: it prints every `daemon` it gets and its `hackresult`. A guest's Breach on the Net Port is driven with the
+# devtools command `/cyberblock test breach <x> <y> <z> solve|fail` (run as the guest: the same server path as a right-click on the block and the picks of the
+# Breach screen; `solve` plays the server's own solution, `fail` picks wrong until the buffer is empty). A solved Breach sends `daemon` with the known daemon
+# ids of its sequences, a failed one the reserved id `alarm`; the owner's `hacks` toggle gates both. What the daemons do in Night City is the fake host's and
+# the scripts' business (Re-test 6 checks it on screen); this scenario checks what reaches the owner and what does not.
+DAEMON_EVENT = r"\[CbHost1\] daemon: (\{.*\})"
+HACK_RESULT = r"\[CbHost1\] hackresult: (\{.*\})"
+BREACH_IDS = fakehost.device_ids(fakehost.HACKS2_SCENE)
+BREACH_GUEST_AT = (4.5, 64.0, 6.0)  # the guest stands on the street, 2.5 blocks from the Net Port
+RESERVED_DAEMON = "alarm"
+BREACH_COOLDOWN_S = 11.0  # after a failed Breach the same player cannot breach that device again for 10 s (shared/protocol.md "Phase 6")
+
+
+def netport_stands(server: Server, shift: int = 0) -> bool:
+    """The Net Port is a block at its cell (which block it is belongs to 6A's art and 4B's device blocks)."""
+    x, y, z = fakehost.device_cell("netport", shift, fakehost.HACKS2_SCENE)
+    return server.passes(f"execute unless block {x} {y} {z} minecraft:air")
+
+
+def daemons_since(host: FakeHost, since: int) -> list[dict]:
+    """The `daemon` messages the fake host got after `since`."""
+    return logged_events(host.log, DAEMON_EVENT, since)
+
+
+def daemon_is_a_solved_breach(m: dict) -> bool:
+    """A `daemon` of a solved Breach on the Net Port: 1 to 3 distinct known daemon ids (never the alarm), strength 1..3, for that device."""
+    lst = m.get("list")
+    return (m.get("dev") == BREACH_IDS["netport"] and isinstance(lst, list) and 1 <= len(lst) <= 3 and len(set(map(str, lst))) == len(lst)
+            and all(isinstance(d, str) and re.fullmatch(r"[a-z0-9_]{1,32}", d) and d != RESERVED_DAEMON for d in lst)
+            and isinstance(m.get("strength"), int) and not isinstance(m.get("strength"), bool) and 1 <= m["strength"] <= 3)
+
+
+def daemon_is_the_alarm(m: dict) -> bool:
+    return (m.get("dev") == BREACH_IDS["netport"] and m.get("list") == [RESERVED_DAEMON] and isinstance(m.get("strength"), int)
+            and not isinstance(m.get("strength"), bool) and 1 <= m["strength"] <= 3)
+
+
+def answered_ok(host: FakeHost, daemon_events: list[dict], since: int) -> bool:
+    """Every daemon in `daemon_events` was answered with a `hackresult ok:true` of the same id after `since`."""
+    ok_ids = {m.get("id") for m in logged_events(host.log, HACK_RESULT, since) if m.get("ok") is True}
+    return bool(daemon_events) and all(m.get("id") in ok_ids for m in daemon_events)
+
+
+def guest_breach(server: Server, how: str) -> None:
+    """As the guest: Breach the Net Port the way a right-click and the picks do (`how`: `solve` or `fail`)."""
+    x, y, z = fakehost.device_cell("netport", 0, fakehost.HACKS2_SCENE)
+    time.sleep(GUEST_GAP_S)
+    server.test(f"breach {x} {y} {z} {how}", as_player="CbGuest1")
+
+
+def guests_hacks(server: Server, on: bool) -> None:
+    """As the host: `/cyberblock guests hacks on|off` (a guest's scans, quickhacks, remote hacks and Breaches)."""
+    server.rcon(f"execute as CbHost1 run cyberblock guests hacks {'on' if on else 'off'}")
+
+
+def scenario_breach(env: Env, rep: Report) -> None:
+    server = env.server("breach", max_hosts=1)
+    _, host = start_host(env, rep, server, "CbHost1", ver=env.mod_version, layers=(), modes=("hacks2",), wait_host=T_JOIN)
+    rep.step("the street's ground stands under the devices", lambda: poll(lambda: landmarks_stand(server), T_EFFECT, T_POLL, "the street"), must=True)
+    rep.step("the Net Port stands as a block at its position", lambda: poll(lambda: netport_stands(server), DEVICE_PLACE_TIMEOUT, T_POLL, "the Net Port"), must=True)
+    env.client("CbGuest1", join=server.port)
+    rep.step("a guest joins", lambda: server.log.wait(r"handshake: CbGuest1 .*-> guest", T_JOIN), must=True)
+    server.rcon(f"tp CbGuest1 {BREACH_GUEST_AT[0]} {BREACH_GUEST_AT[1]} {BREACH_GUEST_AT[2]}")  # next to the Net Port
+    mark = host.log.mark()
+    guest_breach(server, "solve")
+    rep.step("a solved Breach sends the owner's DLL a `daemon` for the Net Port: 1 to 3 known daemon ids, strength 1..3",
+             lambda: poll(lambda: any(daemon_is_a_solved_breach(m) for m in daemons_since(host, mark)), T_EFFECT, T_POLL, "the daemon"))
+    solved = [m for m in daemons_since(host, mark) if daemon_is_a_solved_breach(m)]
+    rep.step("the DLL answers it with `hackresult ok:true` for the same request id (the daemons ran)",
+             lambda: poll(lambda: answered_ok(host, solved, mark), T_EFFECT, T_POLL, "the hackresult"))
+    rep.step("a solved Breach sends no alarm", lambda: not any(daemon_is_the_alarm(m) for m in daemons_since(host, mark)))
+    mark = host.log.mark()
+    guest_breach(server, "fail")
+    rep.step('a failed Breach sends the alarm: a `daemon` with exactly `["alarm"]` for the Net Port',
+             lambda: poll(lambda: any(daemon_is_the_alarm(m) for m in daemons_since(host, mark)), T_EFFECT, T_POLL, "the alarm"))
+    alarms = [m for m in daemons_since(host, mark) if daemon_is_the_alarm(m)]
+    rep.step("... answered with `hackresult ok:true` too, and no solved daemon came with it",
+             lambda: poll(lambda: answered_ok(host, alarms, mark), T_EFFECT, T_POLL, "the hackresult")
+             and not any(daemon_is_a_solved_breach(m) for m in daemons_since(host, mark)))
+    time.sleep(BREACH_COOLDOWN_S)  # wait out the failure's cooldown, so the toggle (not the cooldown) is what blocks the next Breach
+    guests_hacks(server, False)
+    mark = host.log.mark()
+    guest_breach(server, "solve")
+    time.sleep(T_QUIET)
+    rep.step("with `/cyberblock guests hacks off` a guest's Breach never reaches the DLL", lambda: not daemons_since(host, mark))
+    guests_hacks(server, True)
+    mark = host.log.mark()
+    guest_breach(server, "solve")
+    rep.step("with `guests hacks on` the Breach works again",
+             lambda: poll(lambda: any(daemon_is_a_solved_breach(m) for m in daemons_since(host, mark)), T_EFFECT, T_POLL, "the daemon"))
+    rep.step("every answer of the fake host to a `daemon` is a valid `hackresult` (a request id, `ok`, a reason of at most 64 characters)",
+             lambda: all(isinstance(m.get("id"), int) and isinstance(m.get("ok"), bool) and isinstance(m.get("reason"), str) and len(m["reason"]) <= 64
+                         for m in logged_events(host.log, HACK_RESULT)))
+    rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))
+    mark = server.log.mark()
+    host.stop()  # Cyberpunk is closed: the session ends and its devices go
+    rep.step("the session ends when the link drops", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, mark), must=True)
+    rep.step("the Net Port goes with the session", lambda: poll(lambda: not netport_stands(server), DEVICE_PLACE_TIMEOUT, T_POLL, "the Net Port to go"))
+
+
 SCENARIO_FUNCS = {"singleplayer": scenario_singleplayer, "guest": scenario_guest, "versions": scenario_versions, "flood": scenario_flood,
                   "reconnect": scenario_reconnect, "twohosts": scenario_twohosts, "joinpassword": scenario_joinpassword,
                   "replica": scenario_replica, "twohosts2": scenario_twohosts2, "meetup": scenario_meetup, "devices": scenario_devices,
-                  "figures": scenario_figures}
+                  "figures": scenario_figures, "breach": scenario_breach}
 PHASE3 = ("replica", "twohosts2", "meetup")  # the scenarios whose fake host runs `--replica`
-# the fake host mode (and no layer) of each scenario after Phase 1: --replica (Phase 3), --devices (Phase 4), --figures (Phase 5)
-SCENARIO_MODES = {**dict.fromkeys(PHASE3, ("replica",)), "devices": ("devices",), "figures": ("figures",)}
+# the fake host mode (and no layer) of each scenario after Phase 1: --replica (Phase 3), --devices (Phase 4), --figures (Phase 5), --hacks2 (Phase 6)
+SCENARIO_MODES = {**dict.fromkeys(PHASE3, ("replica",)), "devices": ("devices",), "figures": ("figures",), "breach": ("hacks2",)}
 
 
 class Flooder(threading.Thread):
