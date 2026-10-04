@@ -24,7 +24,8 @@
 //      indoors too), else from 300 m above (the highest surface); V is put there facing the requested yaw, and the ok
 //      answer follows 0.2 s later (the hold undone then), once the game has moved V.
 //   No settle within 15 s: "timeout"; settled but neither snap ray hits: "no ground". On every failure V is put back
-//   where V stood, facing as then. A session that ends (or a script reload) aborts a running teleport ("blocked (...)").
+//   where V stood, facing as then. A session that ends, a script reload or this host no longer being host (Session.reds)
+//   aborts a running teleport ("blocked (...)").
 // Log lines: 'teleport: <id> (<why>) started ...', 'teleport: <id> done at (...)', 'teleport: <id> failed: <reason> ...',
 // 'teleport: <id> (<why>) refused: blocked (<why>)'.
 //
@@ -45,10 +46,9 @@ public class CyberblockTeleport {
   private let why: CName;
   private let target: Vector4;
   private let yaw: Float;
-  // Where V stood and faced when the request began, and V's own invisibility then.
+  // Where V stood and faced when the request began.
   private let home: Vector4;
   private let homeYaw: Float;
-  private let wasInvisible: Bool;
   // Sim time the request began; the settle probe's last result and since when it has stayed the same.
   private let startedAt: Float;
   private let signature: String;
@@ -88,7 +88,6 @@ public class CyberblockTeleport {
     this.signature = "";
     this.stableSince = this.startedAt;
     this.landed = false;
-    this.wasInvisible = player.IsInvisible();
     player.SetInvisible(true);
     GameInstance.GetGodModeSystem(game).AddGodMode(player.GetEntityID(), gameGodModeType.Invulnerable, n"CyberblockTeleport");
     SaveLocksManager.RequestSaveLockAdd(game, n"CyberblockTeleport");
@@ -268,10 +267,11 @@ public class CyberblockTeleport {
     Cyberblock_TeleportDone(this.id, ok, reason);
   }
 
-  // V's own invisibility back, the god mode source and the save lock removed.
+  // V's invisibility as the Minecraft invisibility potion wants it (CyberblockBuffs.ApplyInvisible; pending is already
+  // false), the god mode source and the save lock removed.
   private func Undo(game: GameInstance, player: ref<PlayerPuppet>) -> Void {
     if IsDefined(player) {
-      player.SetInvisible(this.wasInvisible);
+      CyberblockBuffs.ApplyInvisible(game, player);
       GameInstance.GetGodModeSystem(game).RemoveGodMode(player.GetEntityID(), gameGodModeType.Invulnerable, n"CyberblockTeleport");
     }
     SaveLocksManager.RequestSaveLockRemove(game, n"CyberblockTeleport");

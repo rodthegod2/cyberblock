@@ -6,8 +6,10 @@
 //        locked (SaveLocksManager, n"CyberblockPark"), and movement and camera are locked (status effects
 //        GameplayRestriction.NoMovement and GameplayRestriction.NoCameraControl). Refused (logged) without a player,
 //        while Cyberblock is not active, in a vehicle, dead, during a teleport or the Atlas survey tour.
-//   off: everything undone, V's own invisibility as it was. Also when Cyberblock stops being On (F9, Minecraft lost),
-//        at session end and on detach, so V is never left frozen.
+//   off: everything undone; V's invisibility is then what the Minecraft invisibility potion wants (CyberblockBuffs.
+//        ApplyInvisible; no snapshot is restored, so a potion that ended meanwhile never leaves V hidden).
+//        Also when Cyberblock stops being On (F9, Minecraft lost; before Buffs is cleared), at session end, on detach and
+//        when this host stops being host (Session.reds: session none, guest or refused), so V is never left frozen.
 // The CET lines G5/G6 were not run, so each step is feature-checked at runtime: SetInvisible must leave IsInvisible true,
 // the god mode source must show in GetGodModeSources, the SaveLocksManager system must exist, and each status effect
 // record must exist and apply. If any step is unavailable, the written fallback (plan 4.1 g) is used: V goes to the
@@ -28,7 +30,6 @@
 public class CyberblockPark {
   private let parked: Bool;
   // What on applied, so off undoes exactly that.
-  private let wasInvisible: Bool;
   private let effects: array<TweakDBID>;
   private let saveLocked: Bool;
   // The fallback moved V to a fast-travel point from here.
@@ -67,7 +68,6 @@ public class CyberblockPark {
     this.homeYaw = Vector4.ToRotation(player.GetWorldForward()).Yaw;
     let missing: array<String>;
 
-    this.wasInvisible = player.IsInvisible();
     player.SetInvisible(true);
     if !player.IsInvisible() {
       ArrayPush(missing, "unseen");
@@ -109,7 +109,7 @@ public class CyberblockPark {
     Cyberblock_Log(s"park: on (fallback: nearest fast-travel point \(name), \(RoundF(distance)) m away, invisible and invulnerable; unavailable: \(unavailable))");
   }
 
-  // Undoes on (`reason` for the log: requested, Cyberblock off, Minecraft lost, session end, detach).
+  // Undoes on (`reason` for the log: requested, Cyberblock off, Minecraft lost, session end, detach, session <state>).
   public func Release(game: GameInstance, reason: String) -> Void {
     if !this.parked {
       if Equals(reason, "requested") {
@@ -125,7 +125,7 @@ public class CyberblockPark {
         StatusEffectHelper.RemoveStatusEffect(player, effect);
       }
       GameInstance.GetGodModeSystem(game).RemoveGodMode(player.GetEntityID(), gameGodModeType.Invulnerable, n"CyberblockPark");
-      player.SetInvisible(this.wasInvisible);
+      CyberblockBuffs.ApplyInvisible(game, player);
       if this.fallback {
         CyberblockEffectsService.Get().SuppressFall(game, 3.0);
         GameInstance.GetTeleportationFacility(game).Teleport(player, this.home, CyberblockEffects.Facing(this.homeYaw));

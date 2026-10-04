@@ -466,9 +466,10 @@ public class CyberblockSystem extends ScriptableSystem {
     if wasOn && !active {
       // Minecraft still listens: take down its prompt, choices and subtitles before it stops being shown.
       this.hud.ClearMinecraft();
-      CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
-      // A parked V is never left frozen once Minecraft is no longer shown (Park.reds).
+      // A parked V is never left frozen once Minecraft is no longer shown (Park.reds). Released before ClearWorld so
+      // Buffs' cleanup decides V's invisibility last (CyberblockBuffs.ApplyInvisible).
       this.park.Release(this.GetGameInstance(), Equals(next, CyberblockState.Lost) ? "Minecraft lost" : "Cyberblock off");
+      CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
       CyberblockInk.RestoreFor(this.GetGameInstance(), Equals(next, CyberblockState.Lost) ? "lost" : "off");
     }
     Cyberblock_SetActive(active, mounted);

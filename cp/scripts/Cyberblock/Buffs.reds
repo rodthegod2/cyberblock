@@ -28,7 +28,8 @@
 //     DrunkSFX effector: no attack, so no damage, although it inherits the Debuff/DoT/Poison tags from Poisoned.
 //   AIQuickHackStatusEffect.HackBlind: VFX and SFX status_blinded, effectors StopAndPlayVFX hacking_glitch_low,
 //     weapon-sway stat group, WeaponMalfunctionHudEffector; no attack. Immunity stat BlindImmunity.
-//   BaseStatusEffect.OpticalCamoPlayerBuffRare and SetInvisible: audit C.3 (snippets Camo and Invisible).
+//   BaseStatusEffect.OpticalCamoPlayerBuffRare and SetInvisible: audit C.3 (snippets Camo and Invisible). SetInvisible
+//     goes through ApplyInvisible, shared with Park.reds and Teleport.reds.
 //   StatusEffectSystem.ApplyStatusEffect(EntityID, TweakDBID, instigator TweakDBID) with our own instigator record id,
 //     ObjectHasStatusEffect, SetStatusEffectRemainingDuration, RemoveStatusEffect; RPGManager.CreateStatModifier +
 //     StatsSystem.AddModifier / RemoveModifier. Expiry on engine time (GameInstance.GetEngineTime).
@@ -205,8 +206,8 @@ public abstract class CyberblockBuffs {
     buffs.camo = CyberblockBuffs.Status(player, t"BaseStatusEffect.OpticalCamoPlayerBuffRare", camoLeft, buffs.camo, refresh, reapply);
     let invisible = camoLeft > 0.0;
     if NotEquals(invisible, buffs.invisible) {
-      player.SetInvisible(invisible);
       buffs.invisible = invisible;
+      CyberblockBuffs.ApplyInvisible(game, player);
     }
     buffs.drunk = CyberblockBuffs.Status(player, t"BaseStatusEffect.Drunk", CyberblockBuffs.Remaining(buffs, n"nausea", n"nausea", now), buffs.drunk, refresh, reapply);
     buffs.blind = CyberblockBuffs.Status(player, t"AIQuickHackStatusEffect.HackBlind", CyberblockBuffs.Remaining(buffs, n"blindness", n"darkness", now), buffs.blind, refresh, reapply);
@@ -244,11 +245,20 @@ public abstract class CyberblockBuffs {
       buffs.blind = false;
     }
     if buffs.invisible {
-      if IsDefined(player) {
-        player.SetInvisible(false);
-      }
       buffs.invisible = false;
+      if IsDefined(player) {
+        CyberblockBuffs.ApplyInvisible(game, player);
+      }
     }
+  }
+
+  // The one place V's invisibility is decided: hidden while the invisibility potion is on V or while Park or Teleport
+  // holds V. Park.Release and Teleport.Undo call it after clearing their own hold instead of restoring a snapshot, so
+  // the potion ending during a hold (or Buffs being cleared first) never leaves V invisible after Cyberblock is off.
+  public static func ApplyInvisible(game: GameInstance, player: ref<PlayerPuppet>) -> Void {
+    let buffs = CyberblockBuffsService.Get();
+    let potion = IsDefined(buffs) && buffs.invisible;
+    player.SetInvisible(potion || CyberblockPark.Parked(game) || CyberblockTeleport.Busy(game));
   }
 
   // Replaces a multiplier modifier: removes current (if any) and adds stat x value when value > 0. Returns the new one.

@@ -6,8 +6,9 @@
 //
 // When the state is not host, Night City is cleaned exactly as on a link drop while the WebSocket stays open: the
 // collision boxes and their registry are reset (the next host session sends `blocks reset:true` and every block
-// again), puppets are despawned and tethers released, and the Atlas survey tour stops (Survey.reds counts the tour
-// blocked while IsHost is false, which ends a running tour with V put back). The DLL has already done its side (flight
+// again), puppets are despawned and tethers released, a running V teleport is aborted and a parked V released
+// (Teleport.reds, Park.reds), and the Atlas survey tour stops (Survey.reds counts the tour blocked while IsHost is false,
+// which ends a running tour with V put back). The DLL has already done its side (flight
 // stop, Minecraft pause released). A refused reason shows once as Cyberpunk's own warning, and only while Minecraft is
 // not drawn (Cyberblock not On, or the link gone): while it is, Minecraft shows the reason itself.
 //
@@ -15,7 +16,8 @@
 // older mod behaves as before.
 //
 // 2.31 script API (NativeDB, redscript): only the natives (Natives.reds), CyberblockCollision.Reset,
-// CyberblockPuppets.Clear, CyberblockTether.Clear, CyberblockSystem.Get/InkOn/Notify (UI_Notifications.WarningMessage).
+// CyberblockPuppets.Clear, CyberblockTether.Clear, CyberblockSystem.Get/InkOn/Notify (UI_Notifications.WarningMessage),
+// CyberblockTeleport.Abort, CyberblockPark.Release.
 
 public class CyberblockSession {
   // The last state was none, guest or refused (false before any session event).
@@ -42,9 +44,15 @@ public class CyberblockSession {
     CyberblockCollision.Reset(game);
     CyberblockPuppets.Clear(game);
     CyberblockTether.Clear(game);
+    // A running V teleport is aborted (answered "blocked (session <state>)" while linked) and a parked V released
+    // ('park: off (session <state>)'), so nothing a host session started holds V after the server said otherwise.
+    let system = CyberblockSystem.Get(game);
+    if IsDefined(system) {
+      system.Teleport().Abort(game, s"session \(NameToString(state))");
+      system.Park().Release(game, s"session \(NameToString(state))");
+    }
     Cyberblock_Log(s"session: cleaned (\(StrLen(reason) > 0 ? reason : NameToString(state)))");
     if Equals(state, n"refused") && StrLen(reason) > 0 && NotEquals(reason, this.shownRefusal) {
-      let system = CyberblockSystem.Get(game);
       if IsDefined(system) && (!system.InkOn() || !Cyberblock_IsLinked()) {
         system.Notify(reason);
         this.shownRefusal = reason;
