@@ -108,6 +108,12 @@ public class Cyberblock implements ModInitializer {
 		source.sendSystemMessage(Component.translatableWithFallback("cyberblock.outline.erase." + (now ? "on" : "off"), now
 			? "Creative can erase the replica permanently: ON (broken outline blocks stay until the probes see the cell again)"
 			: "Creative can erase the replica permanently: OFF (broken outline blocks come back in about 10 s)"));
+		if (OutlineRules.creativeErasesSource() == OutlineRules.Source.SERVER_JSON) {
+			// megaplan 1.13: server.json wins when it sets the value explicitly; the world's setting is kept for when it does not
+			source.sendSystemMessage(Component.translatableWithFallback("cyberblock.outline.erase.forced",
+				"Set by config/cyberblock/server.json (creativeErasesReplica: true); change it there and restart to use this world's setting"));
+		}
+
 		return 1;
 	}
 

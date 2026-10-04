@@ -59,6 +59,22 @@ class OutlineRulesTest {
 		assertEquals("{}", OutlineRules.Settings.CODEC.encodeStart(JsonOps.INSTANCE, new OutlineRules.Settings()).getOrThrow().toString());
 	}
 
+	/** Megaplan 1.13: server.json's creativeErasesReplica wins when set explicitly (true), else the world's setting applies. */
+	@Test
+	void serverJsonTrueWinsAndFalseLeavesItToTheWorld() {
+		assertTrue(OutlineRules.effective(true, false), "server.json true forces it on");
+		assertTrue(OutlineRules.effective(true, true));
+		assertTrue(OutlineRules.effective(false, true), "the default false: the world's setting decides");
+		assertFalse(OutlineRules.effective(false, false));
+		assertEquals(OutlineRules.Source.SERVER_JSON, OutlineRules.source(true));
+		assertEquals(OutlineRules.Source.WORLD, OutlineRules.source(false));
+		assertEquals("server.json", OutlineRules.Source.SERVER_JSON.label());
+		assertEquals("world setting", OutlineRules.Source.WORLD.label());
+		assertEquals(OutlineRules.Source.WORLD, OutlineRules.creativeErasesSource(), "the default config leaves it to the world");
+		assertEquals("creative erases replica: on (server.json)", OutlineRules.statusLine(true, OutlineRules.Source.SERVER_JSON));
+		assertEquals("creative erases replica: off (world setting)", OutlineRules.statusLine());
+	}
+
 	@Test
 	void withoutAWorldThereIsNothingToChange() {
 		assertFalse(OutlineRules.setCreativeErases(true));

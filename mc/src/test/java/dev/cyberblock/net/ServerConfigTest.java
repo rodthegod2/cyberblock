@@ -38,6 +38,18 @@ class ServerConfigTest {
 		assertEquals(new ServerConfig.Backups(true, 7, 5), ServerConfig.DEFAULT.backups());
 	}
 
+	/** Megaplan 1.13: creativeErasesReplica true in server.json wins over the world's setting; the default false leaves it to the world. */
+	@Test
+	void creativeErasesReplicaTrueForcesTheOutlineSettingOn() {
+		assertFalse(dev.cyberblock.OutlineRules.creativeErases());
+		assertEquals(dev.cyberblock.OutlineRules.Source.WORLD, dev.cyberblock.OutlineRules.creativeErasesSource());
+		JsonObject o = JsonParser.parseString(DEFAULTS).getAsJsonObject();
+		o.addProperty("creativeErasesReplica", true);
+		ServerConfig.set(ServerConfig.parse(o, p -> fail(p)));
+		assertTrue(dev.cyberblock.OutlineRules.creativeErases());
+		assertEquals(dev.cyberblock.OutlineRules.Source.SERVER_JSON, dev.cyberblock.OutlineRules.creativeErasesSource());
+	}
+
 	@Test
 	void theWrittenDefaultsReadBackAsTheDefaults() {
 		List<String> problems = new ArrayList<>();

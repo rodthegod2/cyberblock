@@ -149,6 +149,8 @@ public final class ServerAdmin {
 			source.sendSuccess(() -> Component.literal(line), false);
 		}
 
+		// megaplan 1.13: the effective "Creative can erase the replica permanently" and where it comes from
+		source.sendSuccess(() -> Component.literal(dev.cyberblock.OutlineRules.statusLine()), false);
 		return rows.size();
 	}
 

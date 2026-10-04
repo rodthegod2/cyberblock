@@ -2,6 +2,7 @@ package dev.cyberblock;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import dev.cyberblock.net.ServerConfig;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.resources.Identifier;
@@ -75,8 +76,51 @@ public final class OutlineRules {
 		creativeErases = false;
 	}
 
+	/**
+	 * Where the effective "Creative can erase the replica permanently" comes from (megaplan 1.13): server.json's
+	 * {@code creativeErasesReplica} wins when it is set explicitly, else the world's setting (the settings screen,
+	 * {@code /cyberblock outline erase}) applies. Every server.json written so far carries the default {@code false}, so only
+	 * {@code true} is explicit: it forces the setting on for every world; {@code false} leaves it to each world.
+	 */
+	public enum Source {
+		SERVER_JSON("server.json"), WORLD("world setting");
+
+		private final String label;
+
+		Source(final String label) {
+			this.label = label;
+		}
+
+		public String label() {
+			return this.label;
+		}
+	}
+
+	static Source source(final boolean serverJson) {
+		return serverJson ? Source.SERVER_JSON : Source.WORLD;
+	}
+
+	static boolean effective(final boolean serverJson, final boolean world) {
+		return source(serverJson) == Source.SERVER_JSON || world;
+	}
+
+	/** The effective setting: server.json's {@code creativeErasesReplica: true}, else the running world's value. Any thread. */
 	public static boolean creativeErases() {
-		return creativeErases;
+		return effective(ServerConfig.get().creativeErasesReplica(), creativeErases);
+	}
+
+	/** Where {@link #creativeErases()} comes from now. */
+	public static Source creativeErasesSource() {
+		return source(ServerConfig.get().creativeErasesReplica());
+	}
+
+	/** The /cyberblock status line: the effective value and its source. */
+	public static String statusLine() {
+		return statusLine(creativeErases(), creativeErasesSource());
+	}
+
+	static String statusLine(final boolean on, final Source source) {
+		return "creative erases replica: " + (on ? "on" : "off") + " (" + source.label() + ")";
 	}
 
 	/** Server thread: changes the running world's setting (no world: nothing to change). True when it changed. */
