@@ -64,8 +64,8 @@ public final class HostLink extends WebSocketServer {
 		out.accept(json);
 	}
 
-	/** Tests: sends go to {@code to} instead; returns the previous target. */
-	static Consumer<String> swapOut(final Consumer<String> to) {
+	/** Tests (also in other client packages): sends go to {@code to} instead; returns the previous target. */
+	public static Consumer<String> swapOut(final Consumer<String> to) {
 		Consumer<String> was = out;
 		out = to;
 		return was;
@@ -240,8 +240,11 @@ public final class HostLink extends WebSocketServer {
 		return true;
 	}
 
-	/** The client listeners for this type (link thread). A listener that throws is logged, never fatal. */
-	static void dispatch(final String type, final JsonObject message) {
+	/**
+	 * The client listeners for this type (link thread; public for tests in other client packages). A listener that throws is logged,
+	 * never fatal.
+	 */
+	public static void dispatch(final String type, final JsonObject message) {
 		List<Consumer<JsonObject>> list = listeners.get(type);
 		if (list == null) {
 			return;

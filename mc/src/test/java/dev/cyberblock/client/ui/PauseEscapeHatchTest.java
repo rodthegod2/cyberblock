@@ -4,8 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import dev.cyberblock.Bridge;
-import dev.cyberblock.Cyberblock;
+import dev.cyberblock.client.HostLink;
 import dev.cyberblock.client.ui.screen.NightCityPauseScreen;
 import dev.cyberblock.client.ui.screen.NightCityPauseScreen.Item;
 import java.util.ArrayList;
@@ -26,18 +25,17 @@ class PauseEscapeHatchTest {
 	@BeforeEach
 	void capture() {
 		UiLink.register();
-		this.before = Cyberblock.events;
-		Cyberblock.events = this.sent::add;
+		this.before = HostLink.swapOut(this.sent::add);
 	}
 
 	@AfterEach
 	void restore() {
-		Cyberblock.events = this.before;
+		HostLink.swapOut(this.before);
 		UiLink.forgetHost();
 	}
 
 	private static void hostSpeaks() {
-		Bridge.dispatch("cam", new JsonObject());
+		HostLink.dispatch("cam", new JsonObject());
 	}
 
 	@Test

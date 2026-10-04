@@ -5,7 +5,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.FlightRules;
-import dev.cyberblock.HostDamage;
 import dev.cyberblock.Wire;
 import dev.cyberblock.cyber.CyberData;
 import dev.cyberblock.cyber.Cyberware;
@@ -234,10 +233,6 @@ public final class Flight {
 			return;
 		}
 
-		if (follow.seen()) {
-			HostDamage.fallFreeUntil = now + FlightRules.FALL_GRACE_NANOS;
-		}
-
 		if (mode == Mode.LAUNCH) {
 			if (FlightRules.launchLanded(player.onGround(), player.isInWater(), now - launchStart)) {
 				land(player, p);
@@ -402,7 +397,6 @@ public final class Flight {
 		driving = false;
 		landed = true;
 		touchdownNanos = System.nanoTime();
-		HostDamage.fallFreeUntil = touchdownNanos + FlightRules.FALL_GRACE_NANOS;
 		Vec3 feet = player.position();
 		landingSpot = feet;
 		boolean launch = mode == Mode.LAUNCH;
@@ -428,7 +422,6 @@ public final class Flight {
 		landed = false; // followsCam at once
 		// a host that does not follow would otherwise get a new glide every second of a long fall
 		retryAt = now + FlightRules.RETRY_NANOS;
-		HostDamage.fallFreeUntil = followed ? now + FlightRules.FALL_GRACE_NANOS : Long.MIN_VALUE;
 		Vec3 at = p == null ? player.position() : new Vec3(p.px(), p.py(), p.pz());
 		boolean launch = mode == Mode.LAUNCH;
 		HostLink.send(Wire.flight(false, at.x, at.y, at.z, 0.0, 0.0, 0.0, player.getYRot(), player.getXRot(), launch, clock(now)));

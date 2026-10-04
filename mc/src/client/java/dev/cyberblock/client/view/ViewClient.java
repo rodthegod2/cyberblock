@@ -2,8 +2,8 @@ package dev.cyberblock.client.view;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.client.HostLink;
 import dev.cyberblock.client.settings.CyberblockSettingsScreen;
 import dev.cyberblock.client.settings.DebugFlags;
 import java.io.IOException;
@@ -34,8 +34,8 @@ public final class ViewClient {
 	public static void init() {
 		prefs = load();
 		// after each host hello the DLL is back on its defaults: tell it ours (link thread)
-		Bridge.listen("hello", m -> send());
-		Bridge.listen("cam", ViewDebugHud::cam);
+		HostLink.listen("hello", m -> send());
+		HostLink.listen("cam", ViewDebugHud::cam);
 		HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(Cyberblock.ID, "view_debug"), ViewDebugHud::draw);
 		ClientTickEvents.END_CLIENT_TICK.register(minecraft -> {
 			ViewDebugHud.tick();
@@ -74,7 +74,7 @@ public final class ViewClient {
 	private static synchronized void send() {
 		boolean debug = DebugFlags.view();
 		sentDebug = debug;
-		Cyberblock.events.accept(prefs.message(debug).toString());
+		HostLink.send(prefs.message(debug).toString());
 	}
 
 	private static ViewPrefs load() {
