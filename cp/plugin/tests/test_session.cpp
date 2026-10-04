@@ -249,3 +249,28 @@ TEST(leaving_the_host_role_asks_for_the_link_drop_cleanup_once)
 	CHECK(cb::world::take_session_cleanup());
 	fresh();
 }
+
+TEST(a_non_host_session_drops_the_block_events_queued_before_it)
+{
+	// next() hands out the session event before the block changes: if they stayed, they would come out after Session.reds's
+	// collision reset and put the boxes back while this host is no longer the host
+	fresh();
+	cb::world::EventQueue &q = cb::world::events();
+	deliver(R"({"t":"session","state":"host"})");
+	CHECK(q.next() == EventKind::Session);
+	deliver(R"({"t":"blocks","reset":true,"c":[10,4,-21]})");
+	deliver(R"({"t":"block","op":"remove","pos":[5,6,7]})");
+	CHECK(q.stats().queued == 3); // the reset, one add, one remove
+	deliver(R"({"t":"session","state":"none","reason":"server connection lost"})");
+	CHECK(q.next() == EventKind::Session && q.current().name == "none");
+	CHECK(q.next() == EventKind::None);
+
+	// a host session keeps them: they belong to it
+	deliver(R"({"t":"session","state":"host"})");
+	deliver(R"({"t":"blocks","reset":true,"c":[10,4,-21]})");
+	CHECK(q.next() == EventKind::Session && q.current().name == "host");
+	CHECK(q.next() == EventKind::BlockReset);
+	CHECK(q.next() == EventKind::BlockAdd);
+	CHECK(q.next() == EventKind::None);
+	fresh();
+}

@@ -161,6 +161,9 @@ namespace cb::world
 		Event current() const;
 		/// Forgets every queued event and the current one (Minecraft reconnected: they belong to the old session).
 		void clear();
+		/// Forgets the pending block changes and `block_reset` only (a non-host `session` resets the collision registry, so
+		/// block events queued before it must not come out after it and put boxes back).
+		void clear_blocks();
 		QueueStats stats() const;
 
 	private:

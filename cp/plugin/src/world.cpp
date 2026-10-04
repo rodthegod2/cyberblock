@@ -528,6 +528,13 @@ namespace cb::world
 		m_current = {};
 	}
 
+	void EventQueue::clear_blocks()
+	{
+		std::lock_guard<std::mutex> lock(m_lock);
+		m_blockReset = false;
+		m_blocks.clear();
+	}
+
 	QueueStats EventQueue::stats() const
 	{
 		std::lock_guard<std::mutex> lock(m_lock);
@@ -903,6 +910,10 @@ namespace cb::world
 		e.name = session_state_name(session.state);
 		e.text = session.reason;
 		e.extra = session.perms;
+		// next() hands out the FIFO (where this event goes) before the block changes, and Session.reds resets the collision
+		// registry on every non-host state: block events queued before it would come out after it and bring boxes back
+		if (session.state != SessionState::Host)
+			events().clear_blocks();
 		events().push(e);
 
 		const bool wasHost = previous.state == SessionState::Host;
