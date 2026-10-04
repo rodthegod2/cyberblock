@@ -129,9 +129,7 @@ public final class WorldBridge {
 		Bridge.alignK = k;
 		Cyberblock.LOG.info("ground alignment: k {} -> {} (offset {} m) at Cyberpunk z {} ({})", was, k, GroundAlign.offset(k), z, why);
 		for (HostSession s : HostSessions.all()) {
-			if (s.active()) {
-				resync(s);
-			} else {
+			if (!s.active() || !resync(s)) {
 				host(s.uuid()).feed.hello();
 			}
 		}
@@ -139,17 +137,22 @@ public final class WorldBridge {
 		return was;
 	}
 
-	/** Starts this host's resync now: align, then the reset with the blocks nearest to its Steve first. */
-	private static void resync(final HostSession s) {
+	/**
+	 * Starts this host's resync now: align, then the reset with the blocks nearest to its Steve first. False when it cannot start (no
+	 * world, or the host's player is not online this tick).
+	 */
+	private static boolean resync(final HostSession s) {
 		PlacedBlocks p = placed;
-		if (p == null) {
-			return;
+		ServerPlayer player = s.player();
+		if (p == null || player == null) {
+			return false;
 		}
 
 		long[] cells = p.snapshot();
-		BlockPos at = s.player().blockPosition();
+		BlockPos at = player.blockPosition();
 		host(s.uuid()).feed.start(k(), cells, at.getX(), at.getY(), at.getZ(), s::send);
-		Cyberblock.LOG.info("block resync for {}: {} cells", s.player().getName().getString(), cells.length);
+		Cyberblock.LOG.info("block resync for {}: {} cells", player.getName().getString(), cells.length);
+		return true;
 	}
 
 	/** {"t":"ground"} from a host: barriers, only into air (or a cell another host already made one). */
@@ -195,11 +198,12 @@ public final class WorldBridge {
 						if (claims.release(owner, cell) && !temp(cell) && level.getBlockState(pos).is(Blocks.BARRIER)) {
 							level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
 						}
-					} else if (claims.claimed(cell)) {
-						claims.claim(owner, cell); // another host's barrier already stands there
 					} else if (level.getBlockState(pos).isAir()) {
+						// air first: a claimed barrier a player broke comes back when any of its hosts reports it again (plan Q-B6)
 						level.setBlock(pos, barrier, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
 						claims.claim(owner, cell);
+					} else if (claims.claimed(cell)) {
+						claims.claim(owner, cell); // another host's barrier already stands there
 					} else if (promote(cell) && level.getBlockState(pos).is(Blocks.BARRIER)) {
 						claims.claim(owner, cell); // a projectile's barrier the probes now report as ground stays
 					}
@@ -352,18 +356,28 @@ public final class WorldBridge {
 				removeTemp(level, h.pcells.expire(s.getTickCount()));
 			}
 
+			// the session's DOWN queue dropped messages (plan section 1.3): its blocks need a resync, from its next active tick
+			if (session.takeResync()) {
+				h.feed.hello();
+			}
+
+			ServerPlayer player = session.player();
+			if (player == null) {
+				continue; // not online this tick (a respawn edge, a revoke before its end): it is picked up again once it is
+			}
+
 			boolean active = session.active();
 			// a world (new or from before re-test 2) without an alignment gets one the first time a host's V stands in it
 			GroundAlign a = align;
 			if (active && a != null && a.k() == GroundAlign.UNSET && vStands(session)) {
-				level(session, "first activation of " + session.player().getName().getString());
+				level(session, "first activation of " + player.getName().getString());
 			}
 
 			if (h.feed.resyncWanted(active)) {
 				resync(session);
 			}
 
-			BlockPos at = session.player().blockPosition();
+			BlockPos at = player.blockPosition();
 			h.feed.tick(active, at.getX(), at.getZ(), session::send);
 		}
 
@@ -396,8 +410,14 @@ public final class WorldBridge {
 		long cell = pos.asLong();
 		p.apply(cell, op);
 		for (HostSession session : HostSessions.all()) {
-			BlockPos at = session.player().blockPosition();
-			host(session.uuid()).feed.change(cell, op, session.active(), at.getX(), at.getZ());
+			ServerPlayer player = session.player();
+			BlockFeed feed = host(session.uuid()).feed;
+			if (player == null) {
+				feed.hello(); // not online this tick, so not routable by distance: every block again once it is back and active
+			} else {
+				BlockPos at = player.blockPosition();
+				feed.change(cell, op, session.active(), at.getX(), at.getZ());
+			}
 		}
 	}
 }

@@ -242,8 +242,8 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 		this.lastDamage = damage;
 		this.damageCooldown = COOLDOWN_TICKS;
 		// the headhunter perk: Steve's arrow in a pedestrian's head (its top 0.35 m) counts double
-		if (medium == ProxyDamage.Medium.ARROW && actor == ProxyDamage.Actor.PLAYER && direct != null && this.getType() == ProxyEntities.HUMAN
-			&& ProxyDamage.headshot(direct.getY(), this.getY(), this.getBbHeight()) && perk("headhunter")) {
+		if (medium == ProxyDamage.Medium.ARROW && attacker instanceof Player shooter && direct != null && this.getType() == ProxyEntities.HUMAN
+			&& ProxyDamage.headshot(direct.getY(), this.getY(), this.getBbHeight()) && perk(shooter, "headhunter")) {
 			counted *= ProxyDamage.HEADSHOT;
 		}
 
@@ -282,8 +282,8 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	 * either.
 	 */
 	private static boolean gorillaArms(final Player attacker, final boolean vehicle) {
-		boolean implant = Bridge.installedCyberware.contains("gorilla_arms") && attacker.getMainHandItem().isEmpty();
-		boolean perk = perk("gorilla_arms");
+		boolean implant = WorldModule.hasCyberware.test(attacker, "gorilla_arms") && attacker.getMainHandItem().isEmpty();
+		boolean perk = perk(attacker, "gorilla_arms");
 		return vehicle ? perk || implant : perk && !implant;
 	}
 
@@ -293,9 +293,9 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 		return weapon == null || weapon.isEmpty() ? 0.0F : EnchantmentHelper.modifyKnockback(level, weapon, this, source, 0.0F);
 	}
 
-	/** Server thread: Steve owns this perk (plan section 1.5; the cyber track keeps the ranks). */
-	private static boolean perk(final String id) {
-		return Bridge.perkRank.applyAsInt(id) > 0;
+	/** Server thread: the attacking player owns this perk (plan section 1.5; the cyber track keeps each player's ranks). */
+	private static boolean perk(final Player attacker, final String id) {
+		return WorldModule.perkRank.applyAsInt(attacker, id) > 0;
 	}
 
 	@Override

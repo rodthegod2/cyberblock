@@ -109,8 +109,8 @@ public final class Projectiles {
 		// a projectile at rest (an arrow stuck in a wall, a hook hanging still) has nowhere to go
 		for (Projectile p : level.getEntities(PROJECTILES, p -> p.isAlive() && tracked(p) && p.getDeltaMovement().lengthSqr() > 1.0E-8)) {
 			HostSession host = WorldModule.activeSession(p.getOwner());
-			if (host != null) {
-				ServerPlayer steve = host.player();
+			ServerPlayer steve = host == null ? null : host.player();
+			if (steve != null) {
 				Vec3 v = p.getDeltaMovement().scale(20.0);
 				flying.computeIfAbsent(host, h -> new ArrayList<>())
 					.add(new Flying(p.getId(), p.getX(), p.getY(), p.getZ(), v.x, v.y, v.z, gravity(p.getGravity()), p.distanceToSqr(steve)));

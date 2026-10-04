@@ -2,13 +2,16 @@ package dev.cyberblock;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import dev.cyberblock.cyber.CyberData;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.Permissions;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.function.BiConsumer;
+import java.util.function.BiPredicate;
 import java.util.function.Predicate;
+import java.util.function.ToIntBiFunction;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -30,8 +33,13 @@ import org.jspecify.annotations.Nullable;
  * them every tick (HostSession.active, held, vehicle, stands, feetCpZ, flying, launching), so no handler depends on listener order.
  */
 public final class WorldModule {
-	/** Guest toggles (plan section 1.6) the world track gates. */
-	static final String EXPLOSIONS = "explosions", DAMAGE = "damage";
+	/**
+	 * The acting player's perk rank by perk id, 0 when not owned (plan section 1.5). Per player, never the server's first player:
+	 * a guest's punch or TNT gets the guest's own perks. init() points it at the cyber track's CyberData; tests may replace it.
+	 */
+	static volatile ToIntBiFunction<Player, String> perkRank = (player, id) -> 0;
+	/** The player has this implant installed (plan retest2 section 1.7 ids). init() points it at CyberData; tests may replace it. */
+	static volatile BiPredicate<Player, String> hasCyberware = (player, id) -> false;
 	/**
 	 * Steve is launched (plan retest2 R5) on this client: Minecraft's physics move him. The client entrypoint installs it (its Flight);
 	 * the server reads the session's hstate instead (launching(Player)).
@@ -44,6 +52,9 @@ public final class WorldModule {
 
 	public static void init() {
 		ProxyEntities.register();
+		// the cyber track keeps perks and implants on each player (Fabric attachments); read lazily, at game time
+		perkRank = CyberData::rank;
+		hasCyberware = (player, id) -> CyberData.slots(player).containsValue(id);
 		Bridge.proxyById = ProxyManager::byId;
 		Bridge.proxyOwnerOf = ProxyManager::ownerOf;
 		Bridge.proxyIdOf = ProxyManager::idOf;
@@ -124,7 +135,7 @@ public final class WorldModule {
 	 * Plan section 1.6: whether an action reaches the owner's Cyberpunk game. The owner's own actions and those with no player behind
 	 * them (a mob, a lone creeper, lava) always do; a guest's only with the owner's toggle on.
 	 */
-	static boolean allows(final UUID owner, final @Nullable Entity actor, final String toggle) {
+	static boolean allows(final UUID owner, final @Nullable Entity actor, final Permissions.Toggle toggle) {
 		UUID guest = actor instanceof Player player ? player.getUUID() : null;
 		return !byGuest(owner, guest) || Permissions.allows(owner, guest, toggle);
 	}

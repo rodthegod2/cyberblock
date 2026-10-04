@@ -107,7 +107,7 @@ public final class HostDamage {
 
 	private static void hurt(final HostSession s, final Hit hit) {
 		ServerPlayer steve = s.player();
-		if (ignoredFall(hit.kind(), System.nanoTime(), fallFreeUntil.getOrDefault(s.uuid(), Long.MIN_VALUE), steve.hasEffect(MobEffects.SLOW_FALLING))) {
+		if (steve == null || ignoredFall(hit.kind(), System.nanoTime(), fallFreeUntil.getOrDefault(s.uuid(), Long.MIN_VALUE), steve.hasEffect(MobEffects.SLOW_FALLING))) {
 			return;
 		}
 

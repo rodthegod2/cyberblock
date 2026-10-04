@@ -3,6 +3,7 @@ package dev.cyberblock;
 import com.google.gson.JsonObject;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
+import dev.cyberblock.net.Permissions;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -259,7 +260,7 @@ public final class ProxyManager {
 			return false;
 		}
 
-		if (!WorldModule.allows(owner, actor, WorldModule.DAMAGE)) {
+		if (!WorldModule.allows(owner, actor, Permissions.Toggle.DAMAGE)) {
 			WorldModule.blocked(actor);
 			return false;
 		}

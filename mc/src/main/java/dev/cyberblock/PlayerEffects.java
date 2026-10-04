@@ -84,9 +84,12 @@ public final class PlayerEffects {
 				wasActive.remove(owner);
 			}
 
-			if (resend) {
+			ServerPlayer player = s.player();
+			if (resend && player == null) {
+				resendDue.add(owner); // not online this tick (a respawn edge): the set goes once it is
+			} else if (resend) {
 				resendDue.remove(owner);
-				for (MobEffectInstance effect : s.player().getActiveEffects()) {
+				for (MobEffectInstance effect : player.getActiveEffects()) {
 					send(s, effect, false);
 				}
 			}

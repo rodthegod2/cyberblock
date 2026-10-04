@@ -6,8 +6,10 @@ import dev.cyberblock.mixin.MobAccessor;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -86,8 +88,16 @@ public final class MobWar {
 	static void tick(final MinecraftServer s) {
 		held.removeIf(e -> e.isRemoved() || !e.isAlive());
 		ServerLevel level = s.overworld();
-		List<HostSession> hosts = HostSessions.active().stream().filter(h -> h.player().level() == level).toList();
-		reported.removeIf(owner -> hosts.stream().noneMatch(h -> h.uuid().equals(owner))); // a host drops the list by itself when it gets old
+		// each active host with its Steve in this world (a session whose player is not online this tick is skipped)
+		Map<HostSession, ServerPlayer> hosts = new LinkedHashMap<>();
+		for (HostSession h : HostSessions.active()) {
+			ServerPlayer steve = h.player();
+			if (steve != null && steve.level() == level) {
+				hosts.put(h, steve);
+			}
+		}
+
+		reported.removeIf(owner -> hosts.keySet().stream().noneMatch(h -> h.uuid().equals(owner))); // a host drops the list by itself when it gets old
 		if (hosts.isEmpty()) {
 			return;
 		}
@@ -95,15 +105,15 @@ public final class MobWar {
 		boolean report = ++ticks % 2 == 0;
 		Map<HostSession, List<MobRules.Seen>> seen = new HashMap<>();
 		for (Mob mob : level.getEntities(MOBS, mob -> mob.isAlive() && fighter(mob))) {
-			hold(level, mob, nearest(hosts, mob));
+			hold(level, mob, nearest(hosts.values(), mob));
 			if (!report) {
 				continue;
 			}
 
-			for (HostSession h : hosts) {
-				double distanceSq = h.player().distanceToSqr(mob);
+			for (Map.Entry<HostSession, ServerPlayer> h : hosts.entrySet()) {
+				double distanceSq = h.getValue().distanceToSqr(mob);
 				if (distanceSq <= MobRules.RANGE * MobRules.RANGE) {
-					seen.computeIfAbsent(h, k -> new ArrayList<>()).add(new MobRules.Seen(mob.getId(), BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).getPath(),
+					seen.computeIfAbsent(h.getKey(), k -> new ArrayList<>()).add(new MobRules.Seen(mob.getId(), BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).getPath(),
 						mob.getX(), mob.getY(), mob.getZ(), mob.getYRot(), mob.getBbWidth(), mob.getBbHeight(), mob.getHealth(), mob.getMaxHealth(), distanceSq));
 				}
 			}
@@ -113,7 +123,7 @@ public final class MobWar {
 			return;
 		}
 
-		for (HostSession h : hosts) {
+		for (HostSession h : hosts.keySet()) {
 			List<MobRules.Seen> list = seen.getOrDefault(h, List.of());
 			if (!list.isEmpty() || reported.contains(h.uuid())) {
 				h.send(Wire.mobs(MobRules.nearest(list)));
@@ -126,12 +136,11 @@ public final class MobWar {
 		}
 	}
 
-	/** The Steve of the given hosts nearest to the mob, horizontally (the probed ground is around him). */
-	private static ServerPlayer nearest(final List<HostSession> hosts, final Mob mob) {
-		ServerPlayer best = hosts.get(0).player();
+	/** The Steve (of the hosts' players, at least one) nearest to the mob, horizontally (the probed ground is around him). */
+	private static ServerPlayer nearest(final Collection<ServerPlayer> steves, final Mob mob) {
+		ServerPlayer best = steves.iterator().next();
 		double bestSq = Double.MAX_VALUE;
-		for (HostSession h : hosts) {
-			ServerPlayer p = h.player();
+		for (ServerPlayer p : steves) {
 			double dx = p.getX() - mob.getX(), dz = p.getZ() - mob.getZ();
 			if (dx * dx + dz * dz < bestSq) {
 				best = p;

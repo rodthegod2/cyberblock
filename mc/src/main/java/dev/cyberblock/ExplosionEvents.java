@@ -2,6 +2,7 @@ package dev.cyberblock;
 
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
+import dev.cyberblock.net.Permissions;
 import java.util.Map;
 import java.util.WeakHashMap;
 import net.minecraft.server.level.ServerLevel;
@@ -65,11 +66,12 @@ public final class ExplosionEvents {
 
 	/**
 	 * Server thread, from ServerLevel.explode before it runs: the radius it runs with. Steve's explosions are the ones he caused (his
-	 * TNT, a fireball he sent back, anything whose damage names him) and creepers he lit.
+	 * TNT, a fireball he sent back, anything whose damage names him) and creepers he lit; the perk is that player's own.
 	 */
 	public static float radius(final Level.ExplosionInteraction interaction, final @Nullable Entity source, final @Nullable DamageSource damageSource, final float r) {
-		boolean steves = cause(source, damageSource) instanceof ServerPlayer;
-		return radius(interaction, r, steves, Bridge.perkRank.applyAsInt("demolitions") > 0);
+		Entity cause = cause(source, damageSource);
+		boolean demolitions = cause instanceof ServerPlayer player && WorldModule.perkRank.applyAsInt(player, "demolitions") > 0;
+		return radius(interaction, r, cause instanceof ServerPlayer, demolitions);
 	}
 
 	/** Server thread: the player behind an explosion (his TNT, a fireball he sent back, a creeper he lit), else whatever caused it. */
@@ -99,11 +101,11 @@ public final class ExplosionEvents {
 		boolean blocked = false;
 		for (HostSession s : HostSessions.active()) {
 			ServerPlayer steve = s.player();
-			if (steve.level() != level || !reaches(steve.getX() - x, steve.getY() - y, steve.getZ() - z)) {
+			if (steve == null || steve.level() != level || !reaches(steve.getX() - x, steve.getY() - y, steve.getZ() - z)) {
 				continue;
 			}
 
-			if (WorldModule.allows(s.uuid(), cause, WorldModule.EXPLOSIONS)) {
+			if (WorldModule.allows(s.uuid(), cause, Permissions.Toggle.EXPLOSIONS)) {
 				s.send(message);
 			} else {
 				blocked = true;

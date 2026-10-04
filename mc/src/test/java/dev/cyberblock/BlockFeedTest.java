@@ -49,6 +49,37 @@ class BlockFeedTest {
 		assertFalse(feed.resyncWanted(true), "one resync per hello");
 	}
 
+	/**
+	 * Plan section 1.3: past the DOWN queue's bound the oldest droppable message goes and a blocks resync is scheduled. WorldBridge.tick
+	 * turns HostSession.takeResync() into hello(): a resync that is under way, and the live changes queued, start over from align and
+	 * the reset on the next active tick.
+	 */
+	@Test
+	void aDownQueueOverflowRestartsTheResyncOnTheNextActiveTick() {
+		long[] world = new long[BlockSync.PER_MESSAGE * 3];
+		for (int i = 0; i < world.length; i++) {
+			world[i] = cell(i, 64, 0);
+		}
+
+		BlockFeed feed = new BlockFeed();
+		List<String> sent = new ArrayList<>();
+		feed.tick(true, 0, 0, sent::add);
+		feed.start(9, world.clone(), 0, 64, 0, sent::add);
+		feed.change(cell(1, 70, 1), Op.ADD, true, 0, 0);
+		feed.tick(true, 0, 0, sent::add);
+		assertFalse(feed.resyncWanted(true), "under way, nothing lost yet");
+
+		feed.hello(); // the session's queue dropped some of those messages
+		assertFalse(feed.resyncWanted(false), "it waits for the host to be active");
+		assertTrue(feed.resyncWanted(true));
+		sent.clear();
+		feed.start(9, world.clone(), 0, 64, 0, sent::add);
+		feed.tick(true, 0, 0, sent::add);
+		assertEquals(List.of("align", "blocks"), types(sent), "align then the reset again; the stale live change is not replayed");
+		assertTrue(json(sent.get(1)).get("reset").getAsBoolean());
+		assertFalse(feed.resyncWanted(true), "one resync per overflow");
+	}
+
 	@Test
 	void nearChangesGoAtOnceFarOnesWhenThePlayerComesWithinRange() {
 		BlockFeed feed = new BlockFeed();
