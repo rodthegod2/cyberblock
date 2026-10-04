@@ -217,6 +217,32 @@ TEST(modes_observer_queues_events_and_answers_unsupported_spawns)
 	q.set_active(false);
 }
 
+TEST(modes_a_spawn_that_waited_too_long_in_the_queue_is_answered_expired)
+{
+	auto &q = cb::world::events();
+	q.clear();
+	q.set_active(true);
+	const double before = cb::steady_seconds();
+	cb::modes::on_minecraft_message(json::parse(R"({"t":"spawn","id":21,"rec":"ganger","p":[0,0,0],"n":2,"hostile":true})"));
+	CHECK(q.next() == EventKind::Spawn);
+	const cb::world::Event e = q.current();
+	CHECK(e.received >= before && e.received <= cb::steady_seconds()); // stamped when the link thread queued it
+	CHECK(!cb::modes::expired_spawn(e, e.received));                                     // fresh
+	CHECK(!cb::modes::expired_spawn(e, e.received + cb::modes::kMaxSpawnQueueSeconds)); // at the limit: still handed out
+	const auto stale = cb::modes::expired_spawn(e, e.received + 10.0); // e.g. 10 s in the pause menu
+	CHECK(stale && (*stale)["t"] == "spawnresult" && (*stale)["id"] == 21 && (*stale)["ok"] == false && (*stale)["n"] == 0 &&
+		  (*stale)["reason"] == "expired");
+	cb::world::Event unstamped = e;
+	unstamped.received = 0.0;
+	CHECK(!cb::modes::expired_spawn(unstamped, e.received + 10.0));
+	cb::world::Event heat = e; // only spawns expire: state and other answered kinds still reach the scripts
+	heat.kind = EventKind::Heat;
+	CHECK(!cb::modes::expired_spawn(heat, e.received + 10.0));
+	CHECK(cb::modes::kMaxSpawnQueueSeconds + 3.0 < 5.0); // queue + the scripts' 3 s answer stay under NcSpawns' 5 s
+	q.set_active(false);
+	drain();
+}
+
 TEST(modes_spawn_heat_and_attitude_are_kept_while_not_active_and_glitch_is_not)
 {
 	auto &q = cb::world::events();

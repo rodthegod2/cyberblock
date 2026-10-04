@@ -683,11 +683,25 @@ namespace
 	// kept while not Active: Cyberblock_SpawnResult answers it), n"heat" (EventAmount the tier 0..5; kept while not
 	// Active, the newest wins), n"attitude" (EventName the faction, EventText friendly|neutral|hostile, EventAmount +1 / 0
 	// / -1; kept while not Active) and n"glitch" (EventAmount the seconds 0..10, 0 = cured; dropped while not Active; the
-	// DLL draws the screen glitch itself); n"" (the empty CName, hash 0) when there is none.
+	// DLL draws the screen glitch itself); n"" (the empty CName, hash 0) when there is none. A `spawn` that waited longer
+	// than modes::kMaxSpawnQueueSeconds (the tick stood still: pause menu, loading, saving) never reaches the scripts: the
+	// DLL answers it `expired` itself, since the server has (or soon will have) sent its Minecraft squad instead.
 	void NextEvent(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
 	{
 		++frame->code;
-		const cb::world::EventKind kind = cb::world::events().next();
+		cb::world::EventKind kind = cb::world::events().next();
+		while (kind == cb::world::EventKind::Spawn)
+		{
+			const cb::world::Event e = cb::world::events().current();
+			const double now = cb::steady_seconds();
+			const auto expired = cb::modes::expired_spawn(e, now);
+			if (!expired)
+				break;
+			cb::link().send(*expired);
+			cb::log::info("spawn: %d expired after %.1f s in the queue (the game was not ticking); spawnresult expired", e.id,
+						  now - e.received);
+			kind = cb::world::events().next();
+		}
 		if (kind == cb::world::EventKind::VTeleport || kind == cb::world::EventKind::Park)
 		{
 			const cb::world::Event e = cb::world::events().current();

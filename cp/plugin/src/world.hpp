@@ -93,6 +93,7 @@ namespace cb::world
 		// Phase 8 (modes.hpp): spawn: id the request, name the record kind, pos the spot, amount the count, flag hostile,
 		// text the faction ("" none) | heat: amount the tier | attitude: name the faction, text the direction, amount +1
 		// friendly, 0 neutral, -1 hostile | glitch: amount the seconds
+		double received = 0; // cb::steady_seconds() when the link thread queued it (0: not stamped); spawn uses it
 	};
 
 	/// The ten hack names of plan section 1.5 (`hack.hack`) and the twenty perk ids (`perks[].id`, `perkfx.id`).

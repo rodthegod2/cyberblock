@@ -179,6 +179,13 @@ namespace cb::modes
 		return json{{"t", "spawnresult"}, {"id", id}, {"ok", ok}, {"n", std::clamp(n, 0, kMaxSpawnCount)}, {"reason", why}};
 	}
 
+	std::optional<json> expired_spawn(const world::Event &event, double now)
+	{
+		if (event.kind != world::EventKind::Spawn || event.received <= 0.0 || now - event.received <= kMaxSpawnQueueSeconds)
+			return std::nullopt;
+		return make_spawnresult(event.id, false, 0, "expired");
+	}
+
 	void on_minecraft_message(const json &message)
 	{
 		const auto type = message.find("t");
@@ -212,6 +219,7 @@ namespace cb::modes
 
 		static std::atomic<int> logged{0};
 		constexpr int kMaxLogged = 50;
+		request.event.received = cb::steady_seconds(); // a spawn too old when the scripts pull it is expired_spawn
 		const world::Event &e = request.event;
 		switch (request.status)
 		{

@@ -13,6 +13,7 @@
 //               the count, EventFlag hostile, EventText the faction. A well-formed spawn of an unknown kind is answered at
 //               once with {"t":"spawnresult","id","ok":false,"n":0,"reason":"unsupported"}.
 //   spawnresult UP   {"t":"spawnresult","id","ok","n":0..8,"reason"}: built by make_spawnresult (Cyberblock_SpawnResult).
+//               The DLL itself answers reason "expired" for a spawn that sat in the queue too long (expired_spawn).
 //   heat        DOWN {"t":"heat","tier":0..5}: the server's Heat tier for this host. Event n"heat": EventAmount the tier.
 //               State: kept while not Active, and a newer one replaces the queued one.
 //   attitude    DOWN {"t":"attitude","faction","toward" in friendly|neutral|hostile}. Event n"attitude": EventName the
@@ -60,6 +61,16 @@ namespace cb::modes
 	/// `reason` is "" when `ok`, else cut to 64 UTF-8 bytes with control characters dropped ("failed" when nothing is
 	/// left). nullopt when `id` is negative.
 	std::optional<nlohmann::json> make_spawnresult(int32_t id, bool ok, int32_t n, std::string_view reason);
+
+	/// Oldest a queued `spawn` may be when the scripts pull it, in seconds since the link thread got it. The server gives
+	/// up on a spawn 5 s after sending it (NcSpawns.ANSWER_MS) and sends that spawn's Minecraft squad, and the scripts
+	/// answer at the latest 3 s after they pull the event, so the time it waits here must stay well under 2 s. Events.reds
+	/// drains the queue every tick, so only a stalled tick (pause menu, loading, saving) gets near this.
+	inline constexpr double kMaxSpawnQueueSeconds = 1.0;
+	/// The answer the DLL itself sends for a `spawn` that waited in the queue longer than kMaxSpawnQueueSeconds at `now`
+	/// (cb::steady_seconds()): {"t":"spawnresult","id","ok":false,"n":0,"reason":"expired"}; the event is then skipped so
+	/// the scripts never spawn it. nullopt for any other event, a fresh spawn, or one never stamped (`received` 0).
+	std::optional<nlohmann::json> expired_spawn(const world::Event &event, double now);
 
 	/// The link's observer for this layer (link thread, after world::on_minecraft_message): valid messages are queued in
 	/// world::events(), an unknown spawn kind is answered `unsupported` at once, an invalid message is counted
