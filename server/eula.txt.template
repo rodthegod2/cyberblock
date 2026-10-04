@@ -1,0 +1,4 @@
+# Minecraft EULA acceptance for the local Cyberblock test servers (https://aka.ms/MinecraftEULA).
+# `tools/mpcheck.py` and the `runServer` Gradle task copy this file to eula.txt in a throw-away run folder; by running the
+# test server you accept the EULA for it. The real Apex server has its own eula.txt and is never touched by this file.
+eula=true
