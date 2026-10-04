@@ -44,6 +44,7 @@ public final class JoinLock {
 	static final String KICK_WRONG = "Cyberblock: wrong join password " + JoinGate.MAX_ATTEMPTS + " times. Ask the server owner for the password.";
 	static final String KICK_TIMEOUT = "Cyberblock: no join password within " + JoinGate.TIMEOUT_MS / 1000
 		+ " s. Type /login <password> right after you join.";
+	static final String KICK_WAIT = "Cyberblock: too many wrong join passwords. Try again in %d min, or ask the server owner for the password.";
 	/** How far a locked player may drift from where they joined before being put back (squared, blocks). */
 	private static final double DRIFT_SQ = 0.25;
 	private static final JoinGate gate = new JoinGate();
@@ -154,11 +155,25 @@ public final class JoinLock {
 		return ServerConfig.get().joinPasswordOn() && !ServerNet.isOwner(server, player) && !data.verified(player.getUUID());
 	}
 
-	/** A player joined (before its client's hs is handled): locked when the join password applies to it. */
+	/**
+	 * A player joined (before its client's hs is handled): locked when the join password applies to it. Wrong attempts survive a
+	 * reconnect (JoinGate.STRIKE_MEMORY_MS), so a player who used all five is refused at once until they are forgotten.
+	 */
 	static void onJoin(final ServerPlayer player, final MinecraftServer server) {
-		if (required(server, player)) {
-			lock(player);
+		if (!required(server, player)) {
+			return;
 		}
+
+		long now = System.currentTimeMillis();
+		if (gate.exhausted(player.getUUID(), now)) {
+			long minutes = gate.minutesUntilRetry(player.getUUID(), now);
+			Cyberblock.LOG.info("login: {} refused ({} wrong passwords in the last {} min)", player.getPlainTextName(), JoinGate.MAX_ATTEMPTS,
+				JoinGate.STRIKE_MEMORY_MS / 60_000);
+			player.connection.disconnect(Component.literal(KICK_WAIT.formatted(minutes)));
+			return;
+		}
+
+		lock(player);
 	}
 
 	static void onLeave(final UUID player) {

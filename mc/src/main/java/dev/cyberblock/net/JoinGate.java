@@ -11,13 +11,17 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The join password's rules without Minecraft (JoinLock applies them): who is locked, the /login attempts (one per second, five
- * wrong ones kick) and the 120 s limit. One instance per server; the map is concurrent because the lock checks also run from
- * mixins, but every change happens on the server thread.
+ * wrong ones kick) and the 120 s limit. The wrong-attempt count is kept per UUID, in memory only, across reconnects until
+ * STRIKE_MEMORY_MS pass without an attempt, so leaving and joining again does not reset the five tries (the typed text is never
+ * kept). One instance per server; the maps are concurrent because the lock checks also run from mixins, but every change happens
+ * on the server thread.
  */
 final class JoinGate {
 	static final int MAX_ATTEMPTS = 5;
 	static final long ATTEMPT_GAP_MS = 1_000;
 	static final long TIMEOUT_MS = 120_000;
+	/** Wrong attempts are remembered this long after the last one (10 minutes). */
+	static final long STRIKE_MEMORY_MS = 600_000;
 
 	enum Outcome {
 		/** The player is not locked (no join password, or already verified): nothing was checked. */
@@ -35,7 +39,6 @@ final class JoinGate {
 
 	private static final class Pending {
 		final long since;
-		int wrong;
 		long last;
 		boolean tried;
 
@@ -44,7 +47,12 @@ final class JoinGate {
 		}
 	}
 
+	/** One UUID's wrong attempts and when the last one was made; it outlives the connection. */
+	private record Strikes(int wrong, long last) {
+	}
+
 	private final Map<UUID, Pending> locked = new ConcurrentHashMap<>();
+	private final Map<UUID, Strikes> strikes = new ConcurrentHashMap<>();
 
 	boolean locked(final UUID player) {
 		return this.locked.containsKey(player);
@@ -64,8 +72,36 @@ final class JoinGate {
 		this.locked.remove(player);
 	}
 
+	/** Server stop: the locks and the remembered wrong attempts go. */
 	void clear() {
 		this.locked.clear();
+		this.strikes.clear();
+	}
+
+	/** Wrong attempts this UUID made in the last STRIKE_MEMORY_MS (counted from its last attempt), also over earlier connections. */
+	int wrong(final UUID player, final long nowMs) {
+		Strikes s = this.strikes.get(player);
+		if (s == null) {
+			return 0;
+		}
+
+		if (nowMs - s.last() >= STRIKE_MEMORY_MS) {
+			this.strikes.remove(player);
+			return 0;
+		}
+
+		return s.wrong();
+	}
+
+	/** All five tries are used up and not yet forgotten: the player is refused at once when it joins. */
+	boolean exhausted(final UUID player, final long nowMs) {
+		return this.wrong(player, nowMs) >= MAX_ATTEMPTS;
+	}
+
+	/** Minutes until an exhausted player may try again (at least 1). */
+	long minutesUntilRetry(final UUID player, final long nowMs) {
+		Strikes s = this.strikes.get(player);
+		return s == null ? 0 : Math.max(1, (s.last() + STRIKE_MEMORY_MS - nowMs + 59_999) / 60_000);
 	}
 
 	/** Seconds the player has left to log in (0 when not locked or out of time). */
@@ -81,24 +117,28 @@ final class JoinGate {
 			return new Result(Outcome.NOT_LOCKED, MAX_ATTEMPTS);
 		}
 
+		int wrong = this.wrong(player, nowMs);
 		if (p.tried && nowMs - p.last < ATTEMPT_GAP_MS) {
-			return new Result(Outcome.TOO_FAST, MAX_ATTEMPTS - p.wrong);
+			return new Result(Outcome.TOO_FAST, Math.max(0, MAX_ATTEMPTS - wrong));
 		}
 
 		p.tried = true;
 		p.last = nowMs;
-		if (matches(typed, password)) {
+		if (wrong < MAX_ATTEMPTS && matches(typed, password)) {
 			this.locked.remove(player);
-			return new Result(Outcome.OK, MAX_ATTEMPTS - p.wrong);
+			this.strikes.remove(player);
+			return new Result(Outcome.OK, MAX_ATTEMPTS - wrong);
 		}
 
-		p.wrong++;
-		int left = MAX_ATTEMPTS - p.wrong;
-		return new Result(left <= 0 ? Outcome.KICK : Outcome.WRONG, Math.max(0, left));
+		wrong = Math.min(MAX_ATTEMPTS, wrong + 1);
+		this.strikes.put(player, new Strikes(wrong, nowMs));
+		int left = MAX_ATTEMPTS - wrong;
+		return new Result(left <= 0 ? Outcome.KICK : Outcome.WRONG, left);
 	}
 
-	/** The locked players whose 120 s are up (they stay locked until the caller kicks them and they leave). */
+	/** The locked players whose 120 s are up (they stay locked until the caller kicks them and they leave); forgotten strikes go. */
 	List<UUID> timedOut(final long nowMs) {
+		this.strikes.values().removeIf(s -> nowMs - s.last() >= STRIKE_MEMORY_MS);
 		List<UUID> out = new ArrayList<>();
 		this.locked.forEach((uuid, p) -> {
 			if (nowMs - p.since >= TIMEOUT_MS) {
