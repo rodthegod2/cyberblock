@@ -8,9 +8,9 @@ import pytest
 from PIL import Image
 from websockets.asyncio.server import serve
 
-from test_protocol_md import (AT_VALIDATORS, L36_EXAMPLES, L36_NEW_CP_TO_MC, R3_EXT_CP, R3_NEW_CP, R3_VALIDATORS,  # shared/protocol.md: the example
-                              VALIDATORS)  # messages and the documented limits of layers 3-6, re-test 3 and the Atlas
-from tools import fakehost, shm
+from test_protocol_md import (AT_VALIDATORS, L36_EXAMPLES, L36_NEW_CP_TO_MC, MP_EXAMPLES, R3_EXT_CP, R3_NEW_CP,  # shared/protocol.md: the example
+                              R3_VALIDATORS, VALIDATORS, mp_hello_ok)  # messages and documented limits of layers 3-6, re-test 3, the Atlas, Multiplayer
+from tools import fakehost, package, shm
 
 HELLO = {"t": "hello", "proto": 1, "mod": "cyberblock", "mc": "26.3"}
 STATUS = {"t": "status", "hp": 20, "maxHp": 20, "food": 20, "gm": "survival", "screen": False}
@@ -667,3 +667,115 @@ def test_modes_print_persp_and_the_six_key_binds_and_nothing_of_other_modes(tmp_
     lines = printed(capsys)
     assert lines["persp"] == [persp] and lines["binds"] == [binds]
     assert ("hack" in lines) == (mode == "hacks")
+
+
+# ---- multiplayer (plan 2026-10-04 task 1-T2): --name, --ver, --ids-from and the printed `session` ----
+SESSION_HOST = next(m for t, m in MP_EXAMPLES if t == "session" and m["state"] == "host")
+SESSION_REFUSED = next(m for t, m in MP_EXAMPLES if t == "session" and m["state"] == "refused")
+OLD_IDS = ["9007199254740993", "18446744073709551615", "4503599627370497"]
+
+
+def test_hello_carries_the_dll_version_when_one_is_given_and_is_valid(tmp_path, exporting):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, ver="1.2.3")
+    assert got[0] == {"t": "hello", "proto": 1, "game": "cp2077", "build": "2.31", "ver": "1.2.3"} and mp_hello_ok(got[0])
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting)
+    assert got[0] == {"t": "hello", "proto": 1, "game": "cp2077", "build": "2.31"}  # a DLL from before Phase 1 sends no ver
+
+
+def test_session_messages_are_printed_with_every_run_and_need_no_answer(tmp_path, exporting, capsys):
+    run_against_fake_minecraft(tmp_path, 30, exporting, replies=[SESSION_HOST, SESSION_REFUSED])
+    assert printed(capsys)["session"] == [SESSION_HOST, SESSION_REFUSED]
+    run_against_fake_minecraft(tmp_path, 30, exporting, replies=[SESSION_HOST], hold=0.05, layers=layer_set(3))
+    assert printed(capsys)["session"] == [SESSION_HOST]
+
+
+def test_ids_from_numbers_the_three_npcs_from_n_and_keeps_everything_else(tmp_path, exporting):
+    assert [e["id"] for e in fakehost.npcs_message()["list"]] == OLD_IDS
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, hold=0.05, ids_from=100)
+    npcs = next(m for m in got if m["t"] == "npcs")
+    assert [e["id"] for e in npcs["list"]] == ["100", "101", "102"]
+    assert [(e["kind"], e["hostile"], e["p"]) for e in npcs["list"]] == [(e["kind"], e["hostile"], e["p"]) for e in fakehost.npcs_message()["list"]]
+    dmg = next(m for m in got if m["t"] == "dmg")
+    assert dmg == fakehost.dmg_message()  # the bullet comes from the same place whatever the ids are
+    assert all(m["list"] == npcs["list"] for m in got if m["t"] == "npcs")  # every resend uses the same ids
+
+
+def test_ids_from_reaches_the_canned_answers_so_two_hosts_collide_on_purpose(tmp_path, exporting):
+    ids = lambda base: [str(base + i) for i in range(3)]  # noqa: E731
+    scan, hack = {"t": "scan", "id": 7, "target": "200"}, {"t": "hack", "id": 8, "target": "202", "hack": "short_circuit", "chain": False}
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[scan, hack], hold=0.1, layers=layer_set(6), ids_from=200)
+    info = next(m for m in got if m["t"] == "scaninfo")
+    assert info["target"] == "200" and info["id"] == 7 and VALIDATORS["scaninfo"](info)
+    assert next(m for m in got if m["t"] == "npcs")["list"][0]["id"] == "200"
+    assert fakehost.hostile_human(300)["id"] == "300" and fakehost.hostile_human()["id"] == OLD_IDS[0]
+    assert fakehost.hack_kind("short_circuit", "301", 1, ids_from=300) == "crowd"  # the second human
+    assert fakehost.hack_kind("short_circuit", "302", 1, ids_from=300) == "driver"  # the vehicle
+    assert fakehost.hack_kind("short_circuit", "300", 1, ids_from=300) == "squad"
+    assert ids(5) == [e["id"] for e in fakehost.npcs_message(5)["list"]]
+
+
+def test_two_fake_hosts_with_the_same_ids_from_send_the_same_ids_and_with_other_ones_do_not_overlap():
+    a, b, c = (fakehost.npcs_message(n) for n in (1000, 1000, 2000))
+    ids = lambda m: {e["id"] for e in m["list"]}  # noqa: E731
+    assert ids(a) == ids(b) and not ids(a) & ids(c)
+
+
+@pytest.mark.parametrize("n", [0, -1, 2**64 - 2, 2**64])
+def test_ids_from_outside_the_uint64_range_is_refused(n):
+    with pytest.raises(ValueError):
+        fakehost.npcs_message(n)
+
+
+def test_the_highest_ids_from_still_fits_a_uint64():
+    ids = [e["id"] for e in fakehost.npcs_message(2**64 - 3)["list"]]
+    assert ids[-1] == str(2**64 - 1) and all(int(i) < 2**64 for i in ids)
+
+
+def test_name_prefixes_every_printed_line(tmp_path, exporting, capsys):
+    run_against_fake_minecraft(tmp_path, 30, exporting, replies=[SESSION_HOST, EVENTS[0]], hold=0.05, name="CbHost1")
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert lines and all(line.startswith("[CbHost1] ") for line in lines)
+    assert any(line.startswith("[CbHost1] session: ") for line in lines) and any(line.startswith("[CbHost1] block: ") for line in lines)
+    assert any(line.startswith("[CbHost1] hello: ") for line in lines)
+
+
+def test_no_name_keeps_the_old_output_format(tmp_path, exporting, capsys):
+    run_against_fake_minecraft(tmp_path, 30, exporting, replies=[EVENTS[0]], hold=0.05)
+    assert printed(capsys)["block"] == [EVENTS[0]]
+
+
+@pytest.mark.parametrize("bad", ["", "a b", "x" * 33, "a;b", "[x]"])
+def test_a_bad_name_is_refused(monkeypatch, bad):
+    monkeypatch.setattr("sys.argv", ["fakehost", "--name", bad])
+    with pytest.raises(SystemExit) as e:
+        fakehost.main()
+    assert e.value.code == 2
+
+
+def test_multiplayer_flags_reach_run_after_the_old_arguments(monkeypatch):
+    seen = []
+
+    async def fake_run(*args):
+        seen.append(args)
+        return 1
+
+    monkeypatch.setattr(fakehost, "run", fake_run)
+    for argv in (["--name", "CbHost2", "--ver", "9.9.9", "--ids-from", "500"], ["--ver", ""], []):
+        monkeypatch.setattr("sys.argv", ["fakehost", *argv])
+        assert fakehost.main() == 0
+    assert [a[10:] for a in seen] == [("CbHost2", "9.9.9", 500), (None, None, None), (None, package.version(), None)]
+    assert all(len(a) == 13 for a in seen)  # the old nine arguments stay where they were
+
+
+def test_ids_from_and_ver_are_checked(monkeypatch):
+    for argv in (["--ids-from", "0"], ["--ids-from", str(2**64 - 2)], ["--ids-from", "x"], ["--ver", "v" * 33]):
+        monkeypatch.setattr("sys.argv", ["fakehost", *argv])
+        with pytest.raises(SystemExit) as e:
+            fakehost.main()
+        assert e.value.code == 2
+
+
+def test_the_documented_example_hello_is_what_the_fake_host_sends_with_a_version(tmp_path, exporting):
+    example = next(m for t, m in MP_EXAMPLES if t == "hello")
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, ver=example["ver"])
+    assert got[0] == example
