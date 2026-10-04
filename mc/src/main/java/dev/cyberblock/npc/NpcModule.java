@@ -47,8 +47,8 @@ public final class NpcModule {
 			HubNpcs.tick(server);
 		});
 		ServerLifecycleEvents.SERVER_STARTED.register(server -> {
-			Cyberblock.LOG.info("npc: {} roles, {} dialogue files, {} contracts, {} ripperdoc catalogues; breach gigs advance through Gigs.breached "
-				+ "(Phase 6 Breach), defeat gigs on any player hit (melee or projectile)", NpcContent.roles().size(), NpcContent.dialogue().size(),
+			Cyberblock.LOG.info("npc: {} roles, {} dialogue files, {} contracts, {} ripperdoc catalogues; breach gigs advance on a solved "
+				+ "device breach, defeat gigs on any player hit (melee or projectile)", NpcContent.roles().size(), NpcContent.dialogue().size(),
 				NpcContent.contracts().size(), NpcContent.catalogues().size());
 			Cyberblock.LOG.info("npc: mechanic: Cyberpunk car repair not available yet (no confirmed repair answer from the host's game); "
 				+ "fallback active: armour and elytra repair only");

@@ -255,7 +255,7 @@ public final class Gigs implements Visit.Service {
 
 	/**
 	 * A solved Breach Protocol on a device of this section 1.11 kind (door, terminal, camera, turret, ...): one step of a breach gig.
-	 * Phase 6's Breach (6B) calls this; until it does, breach gigs cannot progress (said in the log at server start).
+	 * Phase 6's Breach calls this when a device breach is solved and its daemon sent.
 	 */
 	public static void breached(final ServerPlayer player, final String deviceKind) {
 		GigData.Gig gig = gig(player);
