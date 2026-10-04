@@ -66,6 +66,7 @@ public class Cyberblock implements ModInitializer {
 
 			dispatcher.register(Commands.literal("cyberblock").then(survey));
 		});
+		dev.cyberblock.net.admin.ServerAdmin.init();
 		LOG.info("cyberblock loaded");
 	}
 
