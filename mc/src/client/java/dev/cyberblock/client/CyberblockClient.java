@@ -58,6 +58,8 @@ public class CyberblockClient implements ClientModInitializer {
 		SettingsClient.init();
 		ViewClient.init();
 		dev.cyberblock.client.replica.ReplicaRender.init();
+		// Phase 4B: device blocks hidden for an active host, camera cones, turret heads, screens, the vending screen (megaplan 4-B1)
+		dev.cyberblock.client.device.DeviceClient.init();
 		// proxies are figures for guests and nothing for an active host, whose Cyberpunk shows the real NPCs (megaplan 3-F1)
 		FigureRenderer.register();
 		// Phase 3E: the Meet Up request and the Offline Builds summary as toasts

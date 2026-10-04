@@ -100,6 +100,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.env.EnvSync.init(); dev.cyberblock.meetup.MeetUp.init(); dev.cyberblock.env.OfflineBuilds.init();
 		// dedicated-server admin bits (megaplan 2-M1): startup line, whitelist warning, /cyberblock status and hosts add|remove
 		dev.cyberblock.net.admin.ServerAdmin.init();
+		// Phase 4B: the device blocks, their block entities and the Minecraft eddies (megaplan 4-B1)
+		dev.cyberblock.device.block.DeviceBlocks.register();
 		LOG.info("cyberblock loaded");
 	}
 
