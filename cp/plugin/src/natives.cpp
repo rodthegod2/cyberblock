@@ -17,6 +17,7 @@
 #include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -547,6 +548,118 @@ namespace
 							  "hostile %zu, dead %zu); dropping the list (logged once)",
 							  idList.size(), feetList.size(), yawList.size(), vehicleList.size(), hostileList.size(),
 							  deadList.size());
+		}
+	}
+
+	// ---- Phase 5 (megaplan 2026-10-04 sections 1.8 and 1.9 with the Phase 0 amendment, item 7; task 5-D1) -------------
+
+	/// The people's last positions for the walk and run bits (the scripts cannot read them, Phase 0 f), the log state,
+	/// and the lock around both.
+	std::mutex g_npcLock;
+	cb::world::NpcMotion g_npcMotion;
+	bool g_npcColourLogged = false;
+	std::chrono::steady_clock::time_point g_npcSummaryAt;
+
+	std::vector<std::string> name_list(const RED4ext::DynArray<RED4ext::CName> &names)
+	{
+		std::vector<std::string> out;
+		out.reserve(names.Size());
+		for (const RED4ext::CName &name : names)
+			out.push_back(name_text(name));
+		return out;
+	}
+
+	/// The DLL's runtime path lines of the user's test: the colour format once, and every 10 s what the list carried.
+	/// The tags path line (`npcs: tags full|faction only`) has one source, the scripts (Npcs.reds), which see the gender
+	/// and archetype names before they are packed. Called with the list that was sent.
+	void log_npc_paths(const nlohmann::json &message)
+	{
+		if (!std::exchange(g_npcColourLogged, true))
+			cb::log::info("%s", cb::world::kColourFormatLog);
+		const cb::world::NpcTagSummary tags = cb::world::summarize_npcs(message.at("list"));
+		if (tags.people == 0 && tags.vehicles == 0)
+			return;
+		const auto now = std::chrono::steady_clock::now();
+		if (now - g_npcSummaryAt < std::chrono::seconds(10))
+			return;
+		g_npcSummaryAt = now;
+		cb::log::info("npcs: %d people (faction %d, role %d, archetype %d; gender male %d female %d unknown %d; walk %d run %d), "
+					  "%d vehicles (colour %d)",
+					  tags.people, tags.withFaction, tags.withRole, tags.withArchetype, tags.male, tags.female,
+					  tags.unknownGender, tags.walking, tags.running, tags.vehicles, tags.withColour);
+	}
+
+	// Cyberblock_SubmitNpcs2(ids, feet, yaws, vehicles, hostile, dead, roles: array<CName>, factions: array<CName>,
+	// genders: array<Int32>, archetypes: array<CName>, anims: array<Int32>, vclass: array<CName>, colours: array<Int32>,
+	// hp: array<Float>) -> Void: Cyberblock_SubmitNpcs plus the Phase 5 figure tags, parallel to ids (Npcs.reds). The
+	// DLL adds the walk and run bits of `anims` from position deltas. Cyberblock_SubmitNpcs stays for older scripts.
+	void SubmitNpcs2(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		RED4ext::DynArray<uint64_t> ids;
+		RED4ext::DynArray<RED4ext::Vector4> feet;
+		RED4ext::DynArray<float> yaws;
+		RED4ext::DynArray<bool> vehicles;
+		RED4ext::DynArray<bool> hostile;
+		RED4ext::DynArray<bool> dead;
+		RED4ext::DynArray<RED4ext::CName> roles;
+		RED4ext::DynArray<RED4ext::CName> factions;
+		RED4ext::DynArray<int32_t> genders;
+		RED4ext::DynArray<RED4ext::CName> archetypes;
+		RED4ext::DynArray<int32_t> anims;
+		RED4ext::DynArray<RED4ext::CName> vclass;
+		RED4ext::DynArray<int32_t> colours;
+		RED4ext::DynArray<float> hp;
+		RED4ext::GetParameter(frame, &ids);
+		RED4ext::GetParameter(frame, &feet);
+		RED4ext::GetParameter(frame, &yaws);
+		RED4ext::GetParameter(frame, &vehicles);
+		RED4ext::GetParameter(frame, &hostile);
+		RED4ext::GetParameter(frame, &dead);
+		RED4ext::GetParameter(frame, &roles);
+		RED4ext::GetParameter(frame, &factions);
+		RED4ext::GetParameter(frame, &genders);
+		RED4ext::GetParameter(frame, &archetypes);
+		RED4ext::GetParameter(frame, &anims);
+		RED4ext::GetParameter(frame, &vclass);
+		RED4ext::GetParameter(frame, &colours);
+		RED4ext::GetParameter(frame, &hp);
+		++frame->code;
+
+		if (!cb::natives::active)
+			return;
+		const std::vector<uint64_t> idList = to_vector<uint64_t>(ids);
+		const std::vector<cb::Vec3> feetList = to_vec3(feet);
+		const std::vector<double> yawList = to_vector<double>(yaws);
+		const std::vector<uint8_t> vehicleList = to_vector<uint8_t>(vehicles);
+		const std::vector<uint8_t> hostileList = to_vector<uint8_t>(hostile);
+		const std::vector<uint8_t> deadList = to_vector<uint8_t>(dead);
+		const std::vector<std::string> roleList = name_list(roles), factionList = name_list(factions),
+									   archetypeList = name_list(archetypes), vclassList = name_list(vclass);
+		const std::vector<int32_t> genderList = to_vector<int32_t>(genders), animList = to_vector<int32_t>(anims),
+								   colourList = to_vector<int32_t>(colours);
+		const std::vector<double> hpList = to_vector<double>(hp);
+		const cb::world::NpcTags tags{roleList, factionList, archetypeList, vclassList, genderList, animList, colourList, hpList};
+		const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+
+		std::lock_guard<std::mutex> lock(g_npcLock);
+		const auto message = cb::world::make_npcs2(idList, feetList, yawList, vehicleList, hostileList, level_offset(), deadList,
+												   tags, &g_npcMotion, now);
+		if (message)
+		{
+			cb::link().send(*message);
+			log_npc_paths(*message);
+		}
+		else
+		{
+			g_npcMotion.clear();
+			static bool warned = false;
+			if (!std::exchange(warned, true))
+				cb::log::warn("Cyberblock_SubmitNpcs2: arrays differ in length (ids %zu, feet %zu, yaws %zu, vehicles %zu, "
+							  "hostile %zu, dead %zu, roles %zu, factions %zu, genders %zu, archetypes %zu, anims %zu, "
+							  "vclass %zu, colours %zu, hp %zu); dropping the list (logged once)",
+							  idList.size(), feetList.size(), yawList.size(), vehicleList.size(), hostileList.size(),
+							  deadList.size(), roleList.size(), factionList.size(), genderList.size(), archetypeList.size(),
+							  animList.size(), vclassList.size(), colourList.size(), hpList.size());
 		}
 	}
 
@@ -1410,6 +1523,11 @@ namespace cb::natives
 		add(rtti, "Cyberblock_SubmitNpcs", &SubmitNpcs, nullptr,
 			{{"array:Uint64", "ids"}, {"array:Vector4", "feet"}, {"array:Float", "yaws"}, {"array:Bool", "vehicles"},
 			 {"array:Bool", "hostile"}, {"array:Bool", "dead"}});
+		add(rtti, "Cyberblock_SubmitNpcs2", &SubmitNpcs2, nullptr, // Phase 5 (task 5-D1)
+			{{"array:Uint64", "ids"}, {"array:Vector4", "feet"}, {"array:Float", "yaws"}, {"array:Bool", "vehicles"},
+			 {"array:Bool", "hostile"}, {"array:Bool", "dead"}, {"array:CName", "roles"}, {"array:CName", "factions"},
+			 {"array:Int32", "genders"}, {"array:CName", "archetypes"}, {"array:Int32", "anims"}, {"array:CName", "vclass"},
+			 {"array:Int32", "colours"}, {"array:Float", "hp"}});
 		add(rtti, "Cyberblock_NextEvent", &NextEvent, "CName");
 		add(rtti, "Cyberblock_EventPos", &EventPos, "Vector4");
 		add(rtti, "Cyberblock_EventTarget", &EventTarget, "Uint64");

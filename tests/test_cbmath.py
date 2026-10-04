@@ -314,3 +314,25 @@ def test_env_ticks_follow_the_plan_formula():
     assert [cbmath.env_ticks(h, 0) for h in (6, 12, 18, 0)] == [0, 6000, 12000, 18000]
     assert cbmath.env_ticks(22, 30) == 16500 and cbmath.env_ticks(23, 59) == 17983 and cbmath.env_ticks(5, 59) == 23983
     assert all(0 <= cbmath.env_ticks(h, m) < 24000 for h in range(24) for m in range(60))
+
+
+# ---- Phase 5: vehicle colours (megaplan 1.9 amendment item 7, 5-D1) ----------------------------------------------------------
+def test_colour_hex_reads_the_template_triple_as_hsb_by_default():
+    pack = lambda a, b, c: (a << 16) | (b << 8) | c
+    assert cbmath.COLOUR_FORMAT == "hsb"
+    assert cbmath.colour_hex(pack(0, 255, 255)) == "#FF0000" and cbmath.colour_hex(pack(128, 255, 255)) == "#00FFFF"
+    assert cbmath.colour_hex(pack(40, 0, 200)) == "#C8C8C8" and cbmath.colour_hex(pack(200, 255, 0)) == "#000000"
+    assert cbmath.colour_hex(pack(56, 55, 64)) == "#3C4032"  # archer_hella__basic_poor_1 of docs/notes/phase0-feasibility.md
+    assert cbmath.colour_hex(pack(10, 200, 255), "rgb") == "#0AC8FF"
+
+
+def test_colour_hex_refuses_none_and_non_bytes():
+    assert cbmath.colour_hex(-1) is None and cbmath.colour_hex(0x1000000) is None and cbmath.colour_hex(-2**31, "rgb") is None
+    assert cbmath.colour_hex(0) == "#000000" and cbmath.colour_hex(0xFFFFFF, "rgb") == "#FFFFFF"
+
+
+def test_colour_vectors_match_truth():
+    colour = json.loads(Path("shared/vectors.json").read_text())["colour"]
+    assert len(colour) >= 20 and {c["format"] for c in colour} == set(cbmath.COLOUR_FORMATS)
+    assert all(cbmath.colour_hex(c["packed"], c["format"]) == c["hex"] for c in colour)
+    assert any(c["hex"] is None for c in colour) and any(c["hex"] is not None for c in colour)

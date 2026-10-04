@@ -89,6 +89,13 @@ asks the devices to do) and `devresult` (what this fake DLL answered)):
              ok on the kinds they make sense for (a refusal says why: `locked`, `not a door`, `not applicable`), `call`, `buy` and `breach` are
              `unsupported` (so is any other name), a quest-locked device answers `quest locked` and an unknown device id `device gone`. A
              `devact` whose id, dev or act has the wrong type is dropped.
+Phase 5 mode (shared/protocol.md "Phase 5"; combinable with the layer flags and the camera modes, not with --replica; same --hold, --cmd, --port, --name,
+--ids-from and NPC resend):
+  --figures  the `npcs` list the Phase 5 DLL sends, tags included (`role`, `fac`, `arch`, `g`, `anim`, `vc`, `col`, `hp`): 46 figures on the slab, one person per
+             skin group of megaplan 5-A2 (civilians, nine gangs, corporations and law, ripperdoc, vendor, fixer, bartender, cyberpsycho; five of them again in
+             the other gender), a row of poses the scripts set (aim, fire, crouch, combat, ragdoll), a victim who fights and is listed once more flagged dead at
+             8 s, a walker (1.4 m/s) and a runner (4 m/s) with the bits the DLL derives from speed, four parked cars (three with a colour, one with none: the class
+             default), and a hostile NCPD cruiser chasing a car at 9 m/s against 8. Every `anim` bit appears. --ids-from numbers the 46 ids from N.
 Multiplayer (shared/protocol.md "Multiplayer (Phase 1)"; tools/mpcheck.py starts one fake host per host client):
   --name NAME      prefixes every line this tool prints with `[NAME] `, so the output of two fake hosts can be told apart.
   --ver VERSION    the DLL version in the `hello` (`ver`, at most 32 characters). The default is this checkout's version, the
@@ -139,9 +146,9 @@ JUMP_AT, JUMP_FOR = 0.5, 0.1  # layer 4: seconds after the scenario starts, and 
 HACK_KEY, SKILLS_KEY, KILLED_AT = (1.0, 2.0), (2.5, 2.6), 3.0  # layer 6: (down, up) and the kill, in seconds
 CYBERWARE_KEYS, ACTIVATE_KEY = ((3.5, 3.6), (4.0, 4.1)), (4.5, 4.6)  # layer 6: U opens the Cyberware screen then closes it; Y is a tap
 PCELLS_AHEAD, MAX_PCELLS = 0.5, 64  # layer 4: seconds ahead of a projectile for its wall, and the `pcells` cap
-MODES = ("ui", "hacks", "seat", "view", "stairs", "replica", "devices")  # re-test 3: --ui, --hacks, --seat; Phase Q: --view, --stairs; Phase 3: --replica; Phase 4: --devices
+MODES = ("ui", "hacks", "seat", "view", "stairs", "replica", "devices", "figures")  # re-test 3: --ui, --hacks, --seat; Phase Q: --view, --stairs; Phase 3: --replica; Phase 4: --devices; Phase 5: --figures
 MODE_EVENTS = {"ui": {"uiact", "persp", "binds"}, "hacks": {"hack", "uiact", "persp", "binds"}, "seat": {"persp", "binds"},
-               "view": {"prefs"}, "stairs": {"prefs"}, "replica": {"vteleport", "park"}, "devices": {"devact"}}
+               "view": {"prefs"}, "stairs": {"prefs"}, "replica": {"vteleport", "park"}, "devices": {"devact"}, "figures": set()}
 CAMERA_OWNERS = ("view", "stairs", "seat", "replica")  # the modes that drive the camera by themselves
 UI_MENU = (6.0, 7.0)  # --ui: seconds in which `cam.menu` is true (a pass-through menu is open)
 PERSPECTIVE_KEY = (8.0, 8.1)  # --ui: the F5 tap that makes Minecraft answer `persp`
@@ -712,6 +719,98 @@ def devact_answers(table: dict[str, dict], m: dict) -> list[dict] | None:
 def npc_door_step(u: float) -> int:
     """How many NPC door changes have happened `u` seconds (unscaled) into the scenario (the first one at NPC_DOOR_EVERY)."""
     return int(u / NPC_DOOR_EVERY)
+# ---- --figures (megaplan 5-P1): one figure per skin group, every animation bit, cars with colours, a police chase ----------------------------
+# The `npcs` list as the Phase 5 DLL sends it (shared/protocol.md "Phase 5"): the tags of Cyberblock_SubmitNpcs2 on every entry. The people stand in
+# rows on the slab, one per skin group of megaplan 5-A2; a row of figures shows the animation bits the scripts set; a walker and a runner carry the bits
+# the DLL derives from their speed; a few parked cars show their colours; a hostile police cruiser chases a car along the road. Deterministic.
+# The faction, archetype and vendor type names are stand-ins for the game's enum names (Phase 0 CET line F1 shows the real ones); the server's
+# `skin_map` (package 5A) maps whatever arrives, so the groups here are what the plan lists, not a copy of that table.
+FIGURE_GROUPS = (  # (group, fac, role, arch, g): g 1 male, 2 female; an empty role is "not a vendor"
+    ("civ_corpo", "Civilian", "", "Civilian", 2), ("civ_street", "Civilian", "", "Civilian", 1), ("civ_worker", "Civilian", "", "Civilian", 1),
+    ("civ_tourist", "Civilian", "", "Civilian", 2), ("civ_homeless", "Civilian", "", "Civilian", 1),
+    ("gang_tyger_claws", "TygerClaws", "", "Gunner", 1), ("gang_valentinos", "Valentinos", "", "Gunner", 1), ("gang_maelstrom", "Maelstrom", "", "Gunner", 1),
+    ("gang_6th_street", "SixthStreet", "", "Gunner", 1), ("gang_animals", "Animals", "", "Heavy", 1), ("gang_scavengers", "Scavengers", "", "Gunner", 2),
+    ("gang_voodoo_boys", "VoodooBoys", "", "Netrunner", 1), ("gang_mox", "Mox", "", "Gunner", 2), ("gang_aldecaldos", "Aldecaldos", "", "Gunner", 2),
+    ("corp_arasaka", "Arasaka", "", "Gunner", 1), ("corp_militech", "Militech", "", "Gunner", 1), ("corp_kang_tao", "KangTao", "", "Gunner", 2),
+    ("law_ncpd_patrol", "NCPD", "", "Gunner", 1), ("law_ncpd_swat", "NCPD", "", "Heavy", 1), ("law_maxtac", "MaxTac", "", "Heavy", 2),
+    ("law_trauma_team", "TraumaTeam", "", "Medic", 2), ("law_netwatch", "Netwatch", "", "Netrunner", 1),
+    ("role_ripperdoc", "Civilian", "RipperDoc", "Civilian", 2), ("role_vendor", "Civilian", "Clothes", "Civilian", 1),
+    ("role_fixer", "Civilian", "", "Civilian", 2), ("role_bartender", "Civilian", "Drinks", "Civilian", 1), ("cyberpsycho", "Unaffiliated", "", "Cyberpsycho", 1),
+)  # megaplan 5-A2: civilians, gangs, corporations and law, roles (the fixer comes from the server's content: the game gives no role), a cyberpsycho
+FIGURE_EXTRA_GENDERS = (0, 1, 4, 17, 22)  # indexes into FIGURE_GROUPS that also appear in the other gender (the plan's male and female variants)
+FIGURE_ANIM_BITS = {"walk": 1, "run": 2, "aim": 4, "fire": 8, "ragdoll": 16, "dead": 32, "crouch": 64, "combat": 128}  # the protocol.md names
+FIGURE_COLUMNS, FIGURE_X0, FIGURE_DX = 11, -7.5, 1.5  # the people stand in rows of 11
+FIGURE_ROWS_Z = (-7.0, -5.5, -4.0)
+FIGURE_POSE_Z, FIGURE_WALK_Z, FIGURE_RUN_Z, FIGURE_ROAD_Z, FIGURE_PARK_Z = -2.5, -0.5, 0.5, 2.5, 6.0
+FIGURE_WALK, FIGURE_RUN, FIGURE_CAR, FIGURE_CHASE = 1.4, 4.0, 8.0, 9.0  # m/s along the street; the cruiser is faster than the car it chases
+FIGURE_GAP = 5.0  # m between the cruiser and the car it chases at t = 0
+FIGURE_DEAD_AT, FIGURE_DEAD_FOR = 8.0, 0.5  # seconds: the victim fights, then is listed flagged dead for this long, then is gone
+FIGURE_PARKED = (  # (vc, MainColor triple packed as the scripts send it, or None for "no template": the class default colour)
+    ("Car/Turbo", (4 << 16) | (230 << 8) | 215), ("Car/Galena", (38 << 16) | (240 << 8) | 235), ("Bike/Arch", (150 << 16) | (200 << 8) | 180),
+    ("Car/Type66", None))
+FIGURE_FLEEING, FIGURE_CRUISER = ("Car/Turbo", (200 << 16) | (220 << 8) | 200), ("Car/Emperor", (0 << 16) | (0 << 8) | 40)
+FIGURE_POSES = (  # the stationary row: (pose, anim bits, fac, arch, g, hostile, hp)
+    ("aim", FIGURE_ANIM_BITS["aim"] | FIGURE_ANIM_BITS["combat"], "Maelstrom", "Gunner", 1, True, 1.0),
+    ("fire", FIGURE_ANIM_BITS["aim"] | FIGURE_ANIM_BITS["fire"] | FIGURE_ANIM_BITS["combat"], "Maelstrom", "Gunner", 2, True, 0.4),
+    ("crouch", FIGURE_ANIM_BITS["crouch"], "NCPD", "Gunner", 1, False, 1.0),
+    ("combat", FIGURE_ANIM_BITS["combat"], "NCPD", "Heavy", 1, True, 1.0),
+    ("ragdoll", FIGURE_ANIM_BITS["ragdoll"], "Civilian", "Civilian", 2, False, 0.2),
+)
+
+
+def figure_roster() -> list[tuple]:
+    """The people of the rows: (group, fac, role, arch, g), the plan's groups once each, then five of them again in the other gender."""
+    other = [(g, fac, role, arch, 3 - gender) for i, (g, fac, role, arch, gender) in enumerate(FIGURE_GROUPS) if i in FIGURE_EXTRA_GENDERS]
+    return [*FIGURE_GROUPS, *other]
+
+
+FIGURE_COUNT = len(figure_roster()) + len(FIGURE_POSES) + 3 + len(FIGURE_PARKED) + 2  # people, poses, victim + walker + runner, parked cars, cruiser + car
+
+
+def figure_ids(ids_from: int | None = None) -> tuple[str, ...]:
+    """The ids of the FIGURE_COUNT figures, in list order: above 2**53 (they stay strings) unless `ids_from` numbers them N, N+1, ... (--ids-from)."""
+    base = 9007199254740993 + 1000 if ids_from is None else ids_from
+    if not 1 <= base <= 2**64 - FIGURE_COUNT:
+        raise ValueError(f"--ids-from must be 1..{2**64 - FIGURE_COUNT} so that all {FIGURE_COUNT} ids are non-zero uint64 values, not {ids_from}")
+    return tuple(str(base + i) for i in range(FIGURE_COUNT))
+
+
+def figures_npcs(t: float, ids_from: int | None = None) -> dict:
+    """The `npcs` list at `t` seconds (unscaled), tagged as the DLL sends it. Entries keep their id and place in the list for the whole run
+    (the victim of the fight leaves it after FIGURE_DEAD_AT + FIGURE_DEAD_FOR)."""
+    ids, feet, out = iter(figure_ids(ids_from)), SLAB_Y + 1.0, []
+
+    def person(x: float, z: float, yaw: float, fac: str, role: str, arch: str, g: int, anim: int = 0, hostile: bool = False, hp: float = 1.0, **flags) -> dict:
+        e = {"id": next(ids), "p": [x, feet, z], "yaw": yaw, "kind": "human", "hostile": hostile, **flags}
+        e.update({k: v for k, v in (("role", role), ("fac", fac), ("arch", arch)) if v})
+        return {**e, "g": g, "anim": anim, "hp": hp}
+
+    def car(x: float, z: float, yaw: float, fac: str, vc: str, packed: int | None, hostile: bool = False, hp: float = 1.0) -> dict:
+        e = {"id": next(ids), "p": [x, feet, z], "yaw": yaw, "kind": "vehicle", "hostile": hostile, "fac": fac, "g": 0, "anim": 0, "vc": vc}
+        if packed is not None:
+            e["col"] = cbmath.colour_hex(packed)
+        return {**e, "hp": hp}
+
+    for i, (_, fac, role, arch, g) in enumerate(figure_roster()):  # the skin groups: standing in rows, facing the camera's side (+z)
+        row, col = divmod(i, FIGURE_COLUMNS)
+        out.append(person(FIGURE_X0 + FIGURE_DX * col, FIGURE_ROWS_Z[row], 0.0, fac, role, arch, g))
+    for i, (_, anim, fac, arch, g, hostile, hp) in enumerate(FIGURE_POSES):  # the poses the scripts set: aim, fire, crouch, combat, ragdoll
+        out.append(person(-6.0 + 3.0 * i, FIGURE_POSE_Z, 0.0, fac, "", arch, g, anim, hostile, hp))
+    fight = FIGURE_ANIM_BITS["fire"] | FIGURE_ANIM_BITS["combat"]  # the victim fights, is flagged dead once, then leaves the list
+    if t < FIGURE_DEAD_AT:
+        out.append(person(7.5, FIGURE_POSE_Z, 0.0, "Maelstrom", "", "Gunner", 1, fight, True, 0.1))
+    elif t < FIGURE_DEAD_AT + FIGURE_DEAD_FOR:
+        out.append(person(7.5, FIGURE_POSE_Z, 0.0, "Maelstrom", "", "Gunner", 1, FIGURE_ANIM_BITS["dead"], True, 0.0, dead=True))
+    else:
+        next(ids)  # the id stays the victim's
+    # the DLL derives walk and run from the position deltas: here the speed is known, so the bits are set the way the DLL would
+    out.append(person(loop_x(-6.0, FIGURE_WALK, t), FIGURE_WALK_Z, -90.0, "Civilian", "", "Civilian", 1, FIGURE_ANIM_BITS["walk"]))
+    out.append(person(loop_x(0.0, -FIGURE_RUN, t), FIGURE_RUN_Z, 90.0, "Maelstrom", "", "Gunner", 2, FIGURE_ANIM_BITS["run"], True))
+    for i, (vc, packed) in enumerate(FIGURE_PARKED):
+        out.append(car(-6.0 + 4.0 * i, FIGURE_PARK_Z, 0.0, "Civilian", vc, packed))
+    out.append(car(loop_x(-3.0 - FIGURE_GAP, FIGURE_CHASE, t), FIGURE_ROAD_Z, -90.0, "NCPD", FIGURE_CRUISER[0], FIGURE_CRUISER[1], True, 0.8))
+    out.append(car(loop_x(-3.0, FIGURE_CAR, t), FIGURE_ROAD_Z, -90.0, "Civilian", FIGURE_FLEEING[0], FIGURE_FLEEING[1]))
+    return {"t": "npcs", "list": out}
 
 
 class Body:
@@ -749,6 +848,7 @@ class Cyberpunk:
         self.layers, self.modes, self.mobdmg_sent = layers, modes, False
         self.shift, self.env_hours = shift, env_hours  # --replica: the street's x shift and the clock shift of a second host
         self.replica = "replica" in modes
+        self.figures = "figures" in modes  # --figures: the `npcs` list carries the Phase 5 tags
         self.arrived: list[float] | None = None  # --replica: where a `vteleport` put V (the camera follows)
         self.env_step = -1  # --replica: the last ENV_CYCLE step sent
         self.body = Body(GLIDE_FROM if "view" in modes else FALL_FROM)
@@ -805,6 +905,8 @@ class Cyberpunk:
         """The `npcs` list `t` seconds (scaled scenario time) into the scenario: the figures of --replica move, the others stand."""
         if self.replica:
             return replica_npcs(t / SCRIPT_SCALE, self.shift, self.ids_from)
+        if self.figures:
+            return figures_npcs(t / SCRIPT_SCALE, self.ids_from)
         return npcs_message(self.ids_from)
 
     def setup_commands(self) -> list[str]:
@@ -1027,6 +1129,8 @@ async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str
     npc_ids(ids_from)  # a bad --ids-from fails here, before anything is sent
     if "replica" in modes:
         replica_ids(ids_from)
+    if "figures" in modes:
+        figure_ids(ids_from)
     host = Cyberpunk(layers if hold is not None else frozenset(), modes if hold is not None else frozenset(), ids_from, name, shift, env_hours)
     async with connect(url, max_size=None) as ws:
         listener = asyncio.create_task(listen(ws, host))
@@ -1086,6 +1190,7 @@ def main() -> int:
     ap.add_argument("--stairs", action="store_true", help="after the orbit: place a staircase of five blocks, walk V up it (step-up assist lifts), send aim at the block faces (box 2 mm in front); print prefs")
     ap.add_argument("--replica", action="store_true", help="after the orbit: the Phase 3 replica script: a street of ground with materials (`ground.m`), `unground seen`, walking and driving figures, `env` changes, `vteleport` answered after 2 s; print vteleport/park")
     ap.add_argument("--devices", action="store_true", help="after the orbit: the Phase 4 device scene on the --replica street's ground (a door, a light, a camera, a vending machine, an elevator, a sealed quest door and a door a Night City person opens and closes every 4 s): `devices` lists, `devstate`, every `devact` answered with `devresult` (ok for the supported acts, unsupported for call/buy/breach); print devact/devresult")
+    ap.add_argument("--figures", action="store_true", help="after the orbit: the Phase 5 `npcs` list with the figure tags: one person per skin group, every animation bit, cars with colours, a hostile police cruiser chasing a car; print nothing extra")
     ap.add_argument("--shift", type=int, default=None, metavar="DX", help="--replica or --devices: move the street, the figures, the devices and V DX blocks east (a second fake host that overlaps the first)")
     ap.add_argument("--env-hours", type=int, default=None, metavar="H", help="--replica: add H hours to the `env` clock and make the weather fog (a second host whose sky must never reach the server)")
     ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica, --devices: seconds to keep the link up and listen (default 10)")
@@ -1113,7 +1218,11 @@ def main() -> int:
     if args.hold < 0:
         ap.error("--hold must not be negative")
     if args.cmd and not (layers or modes):
-        ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica or --devices")
+        ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica, --devices or --figures")
+    if "figures" in modes and "replica" in modes:
+        ap.error("--figures and --replica each send their own npcs list: use only one of them")
+    if "figures" in modes and args.ids_from is not None and args.ids_from > 2**64 - FIGURE_COUNT:
+        ap.error(f"--ids-from must be at most {2**64 - FIGURE_COUNT} with --figures (it numbers {FIGURE_COUNT} figures)")
     if len(modes & set(CAMERA_OWNERS)) > 1 or (modes & {"view", "stairs", "replica"} and 4 in layers):
         ap.error("--view, --stairs, --seat, --replica and --layer4 each drive the camera: use only one of them")
     if "devices" in modes and (modes & {"view", "stairs", "seat"} or 4 in layers):

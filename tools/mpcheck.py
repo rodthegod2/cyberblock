@@ -31,6 +31,9 @@ Scenarios (megaplan task 1-T2). Each one starts what it needs on its own test po
                 changes show, a quest door and an elevator call change nothing, `guests devices door off` blocks only the doors, the whole
                 `guests devices` toggle blocks all, and the devices go with the session; a door is a block of `#minecraft:doors` or 4B's
                 `cyberblock:device_door` / `cyberblock:device_iron_door` (with the vanilla `open` property)
+  figures       Phase 5: one fake host `--figures` (the tagged `npcs` list: a person per skin group, every animation bit, coloured cars, a police
+                chase): every person and car stands as a proxy, the dead victim's body goes and does not come back, a hit on a tagged figure
+                reaches the host (a guest's attack), the figures go with the session and the relay drops nothing
   joinpassword  a server with a join password: a host waits as a guest until `/login`, then hosts at once; after a reconnect it
                 is remembered; five wrong passwords kick; the password is in no log (it is random per run, like the RCON one)
 
@@ -82,10 +85,11 @@ COMMIT_LIMIT_GB, COMMIT_RECHECK_S, COMMIT_MAX_WAIT_S = 60.0, 60.0, 1800.0  # meg
 CLIENT_BASE, SERVER_BASE = 25754, 25914  # package 1T (megaplan section 1.15): client 25754.., harness servers 25914-25918
 FRAME_PREFIX = "Local\\CyberblockFrame1T"  # + H (host client) or G (guest client), + the client number from 2 on
 OFFLINE_NAMES = ("CbHost1", "CbHost2", "CbGuest1", "CbGuest2")
-SCENARIOS = ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup", "devices")
+SCENARIOS = ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup", "devices",
+             "figures")
 # + SERVER_BASE; scenarios run one after another, so two may share a port
 SERVER_SLOT = {"singleplayer": 0, "guest": 0, "versions": 1, "flood": 2, "reconnect": 3, "twohosts": 4, "joinpassword": 1, "replica": 0, "twohosts2": 2,
-               "meetup": 1, "devices": 3}
+               "meetup": 1, "devices": 3, "figures": 3}
 FORBIDDEN_PORTS = {25600}  # the user's own Minecraft <-> Cyberpunk link
 GRADLE_HEAP = "-Dorg.gradle.jvmargs=-Xmx1536m"
 # seconds: a server starting, a client opening its link port, a join, an effect to show up, "this must not happen"
@@ -902,9 +906,9 @@ def reported_cells(text: str, name: str) -> set[tuple[int, int, int]]:
     return cells
 
 
-def proxy_count(server: Server) -> int:
-    """How many Night City people stand as proxies (26.3: `Test passed. Count: N`; 0 when none)."""
-    answer = server.rcon("execute if entity @e[type=cyberblock:proxy_human]")
+def proxy_count(server: Server, kind: str = "human") -> int:
+    """How many Night City people (`human`) or cars (`vehicle`) stand as proxies (26.3: `Test passed. Count: N`; 0 when none)."""
+    answer = server.rcon(f"execute if entity @e[type=cyberblock:proxy_{kind}]")
     match = re.search(r"count: (\d+)", answer, re.I)
     return int(match.group(1)) if match else int(passed(answer))
 
@@ -1191,13 +1195,43 @@ def scenario_devices(env: Env, rep: Report) -> None:
     rep.step("the session ends when the link drops", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, mark), must=True)
     rep.step("the devices go with the session (no door stands any more)",
              lambda: poll(lambda: not any(device_stands(server, k) for k in DOOR_KEYS), DEVICE_PLACE_TIMEOUT, T_POLL, "the devices to go"))
+# ---- Phase 5: figures (megaplan 5-P1) -----------------------------------------------------------------------------------------
+# The fake host `--figures` sends the Phase 5 `npcs` list (tools/fakehost.py figures_npcs): 46 tagged figures, 6 of them cars. The server's proxies
+# must follow it exactly as before (the extra keys are only tags). This checks the part that does not depend on the figure renderer (packages 5F and
+# 5K): counts, the dead victim, a hit on a tagged id, the session end, the relay. Skins and poses are checked on screen (Re-test 5).
+FIGURE_PEOPLE = len(fakehost.figure_roster()) + len(fakehost.FIGURE_POSES) + 2  # people at rest: the rows, the poses, the walker and the runner
+FIGURE_CARS = len(fakehost.FIGURE_PARKED) + 2  # the parked cars, the cruiser and the car it chases
+FIGURE_HIT = fakehost.figure_ids()[len(fakehost.figure_roster())]  # the first pose: a hostile Maelstrom gunner who aims
+
+
+def scenario_figures(env: Env, rep: Report) -> None:
+    server = env.server("figures", max_hosts=1)
+    _, host = start_host(env, rep, server, "CbHost1", ver=env.mod_version, layers=(), modes=("figures",), wait_host=T_JOIN)
+    rep.step(f"every tagged person and car stands as a proxy ({FIGURE_PEOPLE} people once the victim's body has gone, {FIGURE_CARS} cars)",
+             lambda: poll(lambda: proxy_count(server) == FIGURE_PEOPLE and proxy_count(server, "vehicle") == FIGURE_CARS, T_EFFECT, T_POLL, "the figures"), must=True)
+    time.sleep(T_QUIET)
+    rep.step("the dead victim does not come back and no figure is added or lost",
+             lambda: proxy_count(server) == FIGURE_PEOPLE and proxy_count(server, "vehicle") == FIGURE_CARS)
+    env.client("CbGuest1", join=server.port)
+    rep.step("a guest joined", lambda: server.log.wait(r"handshake: CbGuest1 .*-> guest", T_JOIN), must=True)
+    mark = host.log.mark()
+    server.test(f"hit CbHost1 {FIGURE_HIT} 5.0", as_player="CbGuest1")  # a player's attack: a hit from the console is no `hit` for Cyberpunk
+    rep.step("a guest's hit on a tagged figure reaches the fake host by its id", lambda: host.log.wait(hit_pattern("CbHost1", FIGURE_HIT), T_EFFECT, mark))
+    mark = server.log.mark()
+    host.stop()  # Cyberpunk is closed: the DLL link drops
+    rep.step("the session ends when the link drops", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, mark), must=True)
+    rep.step("the figures go with the session",
+             lambda: poll(lambda: proxy_count(server) == 0 and proxy_count(server, "vehicle") == 0, T_EFFECT, T_POLL, "the figures to go"))
+    rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))
 
 
 SCENARIO_FUNCS = {"singleplayer": scenario_singleplayer, "guest": scenario_guest, "versions": scenario_versions, "flood": scenario_flood,
                   "reconnect": scenario_reconnect, "twohosts": scenario_twohosts, "joinpassword": scenario_joinpassword,
-                  "replica": scenario_replica, "twohosts2": scenario_twohosts2, "meetup": scenario_meetup, "devices": scenario_devices}
+                  "replica": scenario_replica, "twohosts2": scenario_twohosts2, "meetup": scenario_meetup, "devices": scenario_devices,
+                  "figures": scenario_figures}
 PHASE3 = ("replica", "twohosts2", "meetup")  # the scenarios whose fake host runs `--replica`
-PHASE4 = ("devices",)  # the scenarios whose fake host runs `--devices`
+# the fake host mode (and no layer) of each scenario after Phase 1: --replica (Phase 3), --devices (Phase 4), --figures (Phase 5)
+SCENARIO_MODES = {**dict.fromkeys(PHASE3, ("replica",)), "devices": ("devices",), "figures": ("figures",)}
 
 
 class Flooder(threading.Thread):
@@ -1295,8 +1329,7 @@ def dry_run(repo: Path, ports: Ports, names: list[str], lan_port: int | None, sa
                                                          join=None if name == "singleplayer" else ports.server(name),
                                                          world="<world>" if name == "singleplayer" else None)))
         say("fake host: " + " ".join(fakehost_argv(port=ports.client("CbHost1"), name="CbHost1", ver="<mod version>", frame=ports.frame("CbHost1"), out_dir=d / "frames",
-                                                    layers=() if name in PHASE3 + PHASE4 else (2,),
-                                                    modes=("replica",) if name in PHASE3 else ("devices",) if name in PHASE4 else ())))
+                                                    layers=() if name in SCENARIO_MODES else (2,), modes=SCENARIO_MODES.get(name, ()))))
 
 
 def main(argv: list[str] | None = None, repo: Path = ROOT) -> int:

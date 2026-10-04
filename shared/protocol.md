@@ -36,7 +36,7 @@ Messages are JSON text frames, one object per frame, discriminated by `t`.
 | `cursor` | `x, y` in 0..1 of the window | only while `status.screen` |
 | `click` | `b` 0 left, 1 right, 2 middle, `down:bool` | only while `status.screen` |
 | `dmg` | `frac` 0..4 (fraction of V's max health the hit would have taken), `kind` ∈ `bullet, explosion, melee, fall, vehicle, fire, other`, `from:[x,y,z]` or `null` | each damage event on V while active (layer 2) |
-| `npcs` | `list:[{id:"<uint64 as decimal string>", p:[x,y,z] feet, yaw, kind:"human"\|"vehicle", hostile:bool, dead:true (optional)}]` | 10 Hz while active: everything alive within 48 m, nearest first, at most 48 entries; an id missing from the list is gone (layer 2). Phase 3: an NPC that died (or is defeated) or a vehicle that was destroyed, whoever caused it, is listed once more after the living with `dead:true` (its last sighting; the key is only ever `true` and absent otherwise), and Minecraft leaves a body for 3 s or a wreck for 5 s; `killed` stays the report of V's own kills (XP) |
+| `npcs` | `list:[{id:"<uint64 as decimal string>", p:[x,y,z] feet, yaw, kind:"human"\|"vehicle", hostile:bool, dead:true (optional)}]` | 10 Hz while active: everything alive within 48 m, nearest first, at most 48 entries; an id missing from the list is gone (layer 2). Phase 3: an NPC that died (or is defeated) or a vehicle that was destroyed, whoever caused it, is listed once more after the living with `dead:true` (its last sighting; the key is only ever `true` and absent otherwise), and Minecraft leaves a body for 3 s or a wreck for 5 s; `killed` stays the report of V's own kills (XP). Phase 5 adds optional tags to each entry (see [Phase 5](#phase-5-figures-and-skins)) |
 
 ### Minecraft → Cyberpunk
 | `t` | fields | when |
@@ -1134,6 +1134,74 @@ Phase 4 examples, client to server (`cyberblock:act`, `t:"devact"`):
 Phase 4 examples, server to client (`cyberblock:ui`, `t:"shop"`):
 ```jsonl
 {"pos":[-1242,64,806],"title":"","eddies":85,"result":"ok","lines":[{"id":"0","item":"minecraft:honey_bottle","n":1,"price":15,"stock":-1},{"id":"1","item":"minecraft:bread","n":2,"price":10,"stock":4}]}
+```
+
+## Phase 5 (figures and skins)
+
+Same wire, same conventions; `proto` stays 1 and older builds ignore the new fields. Plan:
+`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 1.9 (row 5) and section 1.8 (row 5), with the dated Phase 0
+amendment (items 7 of both) as the working contract. Night City's people and cars carry **tags** so the server can pick a skin or a
+vehicle model for each proxy (`skin_map` and `vehicle_map` are content, megaplan 1.7) and the client can pose it. There is no new `t`:
+the layer 2 `npcs` list gains optional keys per entry, and the redscript side hands them to the DLL through a new native,
+`Cyberblock_SubmitNpcs2` (the old `Cyberblock_SubmitNpcs` stays and sends the old entries).
+
+### Phase 5: Cyberpunk → Minecraft
+| `t` | fields | when |
+|---|---|---|
+| `npcs` | **extends layer 2 and Phase 3:** each `list` entry adds optional `role` (vendor type name), `fac` (faction), `arch` (archetype), `g` (0 unknown, 1 male, 2 female), `anim` (bit mask 0..255, see the names below), `vc` (vehicle class `<type>/<model>`, vehicles only), `col` (`#RRGGBB`, vehicles only) and `hp` (0..1 fraction of health) | as before: 10 Hz while active, UP |
+
+### Phase 5 semantics and limits
+- **Where the tags come from** (Phase 0 check (f)). `role` is the vendor type name (`RipperDoc`, `Clothes`, …) and absent for everyone
+  else: fixers, bartenders, medics and mechanics come from the server's content (`npc_role`, `skin_map`), not from the game. `fac` is the
+  faction (`Character_Record.Affiliation().EnumName()`), `arch` the archetype (`ArchetypeData().Type().EnumName()`), `g` the resolved
+  gender name (`GetResolvedGenderName`: male 1, female 2, anything else 0). `vc` is `<type>/<model>` from `Vehicle_Record.Type()` and
+  `Model()` (for example `Car/Turbo`, `Bike/Arch`). `hp` comes from the Health stat pool; a figure whose health is unknown has no `hp`.
+- **`anim` bits.** Set by the scripts: 4 aim, 8 fire, 16 ragdoll, 32 dead, 64 crouch, 128 combat. **Bits 1 (walk) and 2 (run) are set by
+  the DLL**, because the game has no script reader for them: from the horizontal speed between two submits (about 0.1 s apart) of the
+  same id. Walk starts above 0.6 m/s and ends below 0.3 m/s, run starts above 3.2 m/s and drops back to walk below 2.6 m/s (two
+  thresholds each, so a standing or cruising figure does not flicker); faster than 15 m/s is a respawn or a fast travel and sets
+  nothing, and so does a gap of more than 1 s between two sightings or the first sighting. A dead or ragdolling figure never walks, and
+  a vehicle has `g` 0 and `anim` 0 (Minecraft takes a car's speed from its positions).
+- **Colour.** `col` is only present when the car's appearance matches a `VehicleColorTemplate` (`MainColor`: three numbers). The scripts
+  send the triple packed in one number (first × 65536 + second × 256 + third, each 0..255, −1 for no template) and **the DLL converts it
+  once**, reading the triple as hue, saturation and brightness (each 0..255, hue 0..255 is 0..360 degrees) until Phase 0's CET line F2
+  says otherwise; it logs `npcs: colour format hsb (unconfirmed)` once. `shared/vectors.json` `colour` pins the conversion for both
+  readings. A car without `col` is drawn in its class's default colour from `vehicle_map`.
+- **Limits and validation (DLL and receivers).** `role`, `fac`, `arch` and `vc` are 1 to 32 characters of `A-Z a-z 0-9 _ . / -`; anything
+  else is dropped (the key is left out, never cut short). `g` is 0, 1 or 2. `anim` is a whole number 0..255. `col` is `#` and six
+  hex digits. `hp` is a number 0..1. `vc` and `col` belong to `kind:"vehicle"`. All keys are optional and unknown ones are ignored: a
+  list from an older DLL (no tags) must still produce proxies. The tag arrays of `Cyberblock_SubmitNpcs2` are empty (the key is left
+  out of every entry) or as long as `ids`; any other length drops the whole list (one warning). At most 48 entries as before; an entry
+  is at most about 330 bytes, so a full list stays under the 30000-byte payload cap.
+- **Fallbacks** (Phase 0 f, applied now). No role from the game: skins by faction and threat plus the content roles. No walk or run
+  reader: the DLL derives them from deltas (above). No colour: the class default colour. The scripts send the tags they can read; the DLL
+  never invents one.
+- **The natives.** `Cyberblock_SubmitNpcs2(ids, feet, yaws, vehicles, hostile, dead, roles, factions, genders, archetypes, anims, vclass,
+  colours, hp)`: the six arrays of `Cyberblock_SubmitNpcs` followed by `roles`, `factions`, `archetypes`, `vclass` (`array<CName>`),
+  `genders`, `anims`, `colours` (`array<Int32>`) and `hp` (`array<Float>`), as the megaplan's Phase 0 amendment names them
+  (item 7 of section 1.8). `genders` carries 0, 1 or 2, `colours` the packed triple or −1.
+
+### Phase 5 names
+- **Animation bits** (`npcs[].anim`, bit 1 first) — `walk`, `run`, `aim`, `fire`, `ragdoll`, `dead`, `crouch`, `combat`
+- **Genders** (`npcs[].g`, 0 first) — `unknown`, `male`, `female`
+
+### Phase 5 log lines
+`Cyberblock.log` says which runtime path is active, so the in-game test can tell fallback from full tags (Re-test 5 in
+`docs/TESTING-PLAN.md`). Each line has one source:
+- the scripts (`Npcs.reds`): `npcs: tags full (…)` when at least one person entry carries both a gender and an archetype,
+  `npcs: tags faction only (…)` otherwise (the fallback); printed when people are near, once and again when the path changes.
+  Lists with only cars print no tags line.
+- the DLL: `npcs: colour format hsb (unconfirmed)` once, at the first list.
+- the DLL, every 10 s: `npcs: N people (faction N, role N, archetype N; gender male N female N unknown N; walk N run N), N vehicles (colour N)`.
+- the DLL: `Cyberblock_SubmitNpcs2: arrays differ in length (…)` once, when a list is dropped.
+
+### Phase 5 examples
+One message per line (JSON Lines): a gunner who is walking, aiming and firing, a female ripperdoc, a car with a colour, and a
+person who just died (listed once more after the living, as in Phase 3).
+
+Phase 5 examples, Cyberpunk to Minecraft:
+```jsonl
+{"t":"npcs","list":[{"id":"9007199254740993","p":[-1243.0,64.9,808.5],"yaw":90.0,"kind":"human","hostile":true,"fac":"Maelstrom","arch":"Gunner","g":1,"anim":141,"hp":0.75},{"id":"18446744073709551615","p":[-1240.25,64.9,815.0],"yaw":-45.0,"kind":"human","hostile":false,"role":"RipperDoc","fac":"Civilian","arch":"Civilian","g":2,"anim":0,"hp":1.0},{"id":"4503599627370497","p":[-1252.0,64.9,820.5],"yaw":180.0,"kind":"vehicle","hostile":false,"fac":"Civilian","g":0,"anim":0,"vc":"Car/Turbo","col":"#3C4032","hp":1.0},{"id":"4503599627370499","p":[-1236.5,64.9,812.0],"yaw":0.0,"kind":"human","hostile":true,"dead":true,"fac":"NCPD","arch":"Gunner","g":2,"anim":32,"hp":0.0}]}
 ```
 
 ## Shared memory `Local\CyberblockFrame`

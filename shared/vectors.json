@@ -3986,5 +3986,157 @@
    ],
    "ticks": 18017
   }
+ ],
+ "colour": [
+  {
+   "packed": -1,
+   "format": "hsb",
+   "hex": null
+  },
+  {
+   "packed": 0,
+   "format": "hsb",
+   "hex": "#000000"
+  },
+  {
+   "packed": 16777215,
+   "format": "hsb",
+   "hex": "#FF0006"
+  },
+  {
+   "packed": 16777216,
+   "format": "hsb",
+   "hex": null
+  },
+  {
+   "packed": 65535,
+   "format": "hsb",
+   "hex": "#FF0000"
+  },
+  {
+   "packed": 5636095,
+   "format": "hsb",
+   "hex": "#02FF00"
+  },
+  {
+   "packed": 8454143,
+   "format": "hsb",
+   "hex": "#00FFFF"
+  },
+  {
+   "packed": 12648447,
+   "format": "hsb",
+   "hex": "#8000FF"
+  },
+  {
+   "packed": 2621640,
+   "format": "hsb",
+   "hex": "#C8C8C8"
+  },
+  {
+   "packed": 13172480,
+   "format": "hsb",
+   "hex": "#000000"
+  },
+  {
+   "packed": 3684160,
+   "format": "hsb",
+   "hex": "#3C4032"
+  },
+  {
+   "packed": 16777215,
+   "format": "hsb",
+   "hex": "#FF0006"
+  },
+  {
+   "packed": 706815,
+   "format": "hsb",
+   "hex": "#FF6637"
+  },
+  {
+   "packed": 1409152,
+   "format": "hsb",
+   "hex": "#805F40"
+  },
+  {
+   "packed": 11164390,
+   "format": "hsb",
+   "hex": "#9596E6"
+  },
+  {
+   "packed": -1,
+   "format": "rgb",
+   "hex": null
+  },
+  {
+   "packed": 0,
+   "format": "rgb",
+   "hex": "#000000"
+  },
+  {
+   "packed": 16777215,
+   "format": "rgb",
+   "hex": "#FFFFFF"
+  },
+  {
+   "packed": 16777216,
+   "format": "rgb",
+   "hex": null
+  },
+  {
+   "packed": 65535,
+   "format": "rgb",
+   "hex": "#00FFFF"
+  },
+  {
+   "packed": 5636095,
+   "format": "rgb",
+   "hex": "#55FFFF"
+  },
+  {
+   "packed": 8454143,
+   "format": "rgb",
+   "hex": "#80FFFF"
+  },
+  {
+   "packed": 12648447,
+   "format": "rgb",
+   "hex": "#C0FFFF"
+  },
+  {
+   "packed": 2621640,
+   "format": "rgb",
+   "hex": "#2800C8"
+  },
+  {
+   "packed": 13172480,
+   "format": "rgb",
+   "hex": "#C8FF00"
+  },
+  {
+   "packed": 3684160,
+   "format": "rgb",
+   "hex": "#383740"
+  },
+  {
+   "packed": 16777215,
+   "format": "rgb",
+   "hex": "#FFFFFF"
+  },
+  {
+   "packed": 706815,
+   "format": "rgb",
+   "hex": "#0AC8FF"
+  },
+  {
+   "packed": 1409152,
+   "format": "rgb",
+   "hex": "#158080"
+  },
+  {
+   "packed": 11164390,
+   "format": "rgb",
+   "hex": "#AA5AE6"
+  }
  ]
 }

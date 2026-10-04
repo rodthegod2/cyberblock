@@ -1046,7 +1046,7 @@ permanently** on, a broken block stays broken until a host's probes report the s
 different: they are yours, they become collision in the hosts' Night City and can be broken by anyone allowed to.
 
 **People and cars.** A guest sees the host's Night City **people and cars as figures** moving at real speed: a plain human
-figure for people, a box car for vehicles (hostile people get a red name tag; the full Night City look comes in a later phase).
+figure for people, a box car for vehicles (hostile people get a red name tag; since Phase 5 they also get [skins, poses and colours](#figures-and-skins-phase-5)).
 A car that V destroyed (shot, hit with a rocket or blown up after V damaged it) stays as a dark wreck for 5 seconds, a person
 who dies lies down for 3 seconds. A car that wrecks itself without V's help (it crashes into a wall on its own) just goes: the
 plugin reports only deaths of what V hurt. The host does not see
@@ -1151,6 +1151,58 @@ hash, or the position fallback), one saying how **changes** are found (the game'
 [Re-test: Wave B, Phase 4](TESTING-PLAN.md) lists what to search for.
 
 
+### Figures and skins (Phase 5)
+With Phase 5 a guest no longer sees plain boxes and grey humans: **Night City's people and cars look and move like Night City's.**
+The figures come from the host's game (the same list as in [Night City as Minecraft](#night-city-as-minecraft-phase-3)); what is new is
+that every person and car now carries a few **tags** that the server turns into a look.
+
+**People.** Each figure gets a skin from its **faction, role, gender and type**: gangers in their gang's colours (Tyger Claws,
+Valentinos, Maelstrom, 6th Street, Animals, Scavengers, Voodoo Boys, Mox, Aldecaldos), corporate security (Arasaka, Militech, Kang Tao),
+NCPD patrol and SWAT, Max-Tac, Trauma Team and Netwatch, civilians (corpo, street, worker, tourist, homeless), a ripperdoc and other
+vendors, a fixer, a bartender and cyberpsychos. About 30 original skins, drawn by a script (pixel art of our own: no logos and no
+copied art). **Women are drawn on the slim model**, men on the classic one; a person whose gender the game does not say is drawn
+classic.
+
+**Poses and animations.** A figure stands, **walks** and **runs** at the pace it has in Cyberpunk, **aims**, **fires** (a muzzle flash),
+**crouches**, **tumbles when it is knocked over** (a limp ragdoll) and **lies down when it dies** (3 seconds, then it goes). A walking
+figure moves smoothly at real speed; there is no rubber-banding at 10 updates a second.
+
+**Hostile people.** A person who is hostile to V has a **red outline you can see through walls** (the same technique as the Kiroshi
+outline), a name tag in the threat colour, a red flash and heart particles when hurt and explosion particles when blown up.
+
+**Cars.** About twelve vehicle models built in the mod (a sedan, a sports car, a truck, a van, a bike, a taxi, a police cruiser with a
+light bar, an armoured van, aerodynes and more), **in the car's own colour** when Cyberpunk says it; a police car that is **hostile
+(a chase) flashes its lights**, and a destroyed car stays as a dark wreck for 5 seconds.
+
+**Which way is it working? (for the test.)** The plugin cannot read everything from the game, so some of this has a **written
+fallback**, and `Cyberblock.log` says which one is active:
+- `npcs: tags full ...` means people arrive with faction, gender and archetype (both gender and archetype are needed);
+  `npcs: tags faction only ...` means they do not (the skin then comes from the faction and the threat alone, and every woman is
+  drawn classic); the line appears only while people are near;
+- **fixers, bartenders, medics and mechanics** are never in the game's data: the server's content (`npc_role`, `skin_map`) decides
+  those looks; vendors and ripperdocs come from the game's vendor type;
+- **walk and run** are not readable in the game either, so the plugin works them out from how far each figure moved between two
+  updates (walking above 0.6 m/s, running above 3.2 m/s);
+- **car colours** come from the game's colour template of the car's look; a car without one gets its model's default colour, and
+  `npcs: colour format hsb (unconfirmed)` says how the three numbers are read until the colour check (Phase 0, F2) has run.
+[Re-test 5](TESTING-PLAN.md) lists what to look for and which lines to paste to Claude.
+
+**Limits.** The skins are procedural pixel art, so expect "recognisable by faction", not portraits; what a figure does is only as
+good as what the game tells the plugin (a person in a cutscene may stand still).
+
+### Your cyber skin (Phase 5)
+**A host always looks like V, to everyone.** A player whose Cyberpunk is linked (a host) is drawn in the **cyber skin** on every
+screen, including their own in third person: **male V** by default, or **Lucy** (female V, on the slim model) with
+`/cyberblock body female`; `/cyberblock body male` switches back. The choice is saved on the server for that player and every client
+shows the change at once. A guest (no Cyberpunk link) keeps the normal Minecraft skin.
+- It is forced: there is no option to turn it off, and no skin from the internet is needed (both skins are inside the mod, so it
+  also works offline).
+- A host's name tag starts with a coloured **`[V]`**, and the player list (Tab) shows a small marker next to linked players.
+- **Allies:** players on your team show as coloured outlines through walls. Teams come with the matches of a later phase; until then
+  nobody is an ally and the hook stays empty.
+- NPC figures follow their own gender, not the host's body choice.
+Check it with [Re-test 5](TESTING-PLAN.md), P5-5.
+
 ---
 
 ## 6. Game modes and the starter kit
@@ -1229,6 +1281,7 @@ Useful commands: `/cyberblock kit`, `/cyberblock settings` (the [settings screen
 `/cyberblock meetup <player>` and `/cyberblock meetup accept` (go to a friend, see [Night City as Minecraft](#night-city-as-minecraft-phase-3)),
 `/cyberblock changes` (what guests built while you were away),
 `/cyberblock guests devices <type> on|off` (which Night City devices guests may use, see [Devices](#devices-phase-4)),
+`/cyberblock body male|female` (your cyber skin: V or Lucy, see [Your cyber skin](#your-cyber-skin-phase-5)),
 `/cyberblock perks free on|off` (free skill points), `/gamemode creative`, `/gamemode survival`,
 `/xp add @s 30 levels`, `/effect clear @s`. Playing with friends: `/cyberblock guests <toggle> on|off` and, for server
 operators, `/cyberblock hosts`, `/cyberblock status` and `/cyberblock hosts add|remove <name>` (see

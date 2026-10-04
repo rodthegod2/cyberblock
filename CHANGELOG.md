@@ -50,6 +50,24 @@ mod, plugin and scripts of Phase 3 have their own entries. The in-game list is [
   hand), `docs/WEBMAP.md` (a BlueMap build for Fabric 26.3 exists; nothing of
   it is tested yet), `docs/notes/phase3-descopes.md`.
 
+### Unreleased additions: Phase 5 (multiplayer plan, packages 5D and 5P)
+Phase 5 of the multiplayer plan: **figures and skins**. This entry is the DLL extension, protocol, tools and docs side; the figure
+renderer, the cyber skins, the scripts and the art have their own entries. The in-game list is
+[docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test: Wave B, Phase 5".
+- **DLL.** New native `Cyberblock_SubmitNpcs2` (the old `Cyberblock_SubmitNpcs` stays): the `npcs` entries gain `role`, `fac`, `g`,
+  `arch`, `anim`, `vc`, `col` and `hp`, with validators and limits. The DLL sets the walk and run bits of `anim` from the position deltas
+  between lists (thresholds in `world.hpp`), and converts the car's colour-template triple once, as hue, saturation and brightness until
+  Phase 0's CET line F2 confirms it (it logs `npcs: colour format hsb (unconfirmed)`). Runtime-path log lines: `npcs: tags full|faction only`
+  (printed by the scripts only, full = gender and archetype) and the DLL's 10-second summary. `shared/vectors.json` gains `colour`, written by `tools.gen_vectors` from `tools.cbmath.colour_hex`.
+- **Protocol.** `shared/protocol.md` "Phase 5": the `npcs` row extension, semantics and limits, names, log lines and an example;
+  `P5_VALIDATORS` in `tests/test_protocol_md.py`.
+- **Fake host.** `tools.fakehost --figures`: 46 tagged figures, one person per skin group (five again in the other gender), every
+  animation bit, a victim who dies, coloured parked cars and a hostile police car chasing a car.
+- **Harness.** `tools.mpcheck figures`: every tagged figure stands as a proxy, the dead victim goes and stays gone, a hit on a tagged
+  figure reaches the host, the figures go with the session, and the relay drops nothing.
+- **Docs.** HOW-TO-PLAY "Figures and skins (Phase 5)" and "Your cyber skin (Phase 5)" (`/cyberblock body male|female`, the `[V]` prefix, the
+  list marker), and Re-test: Wave B, Phase 5 with the runtime-path lines and fallbacks.
+
 ### Unreleased additions: join password
 - **Join password for dedicated servers.** `joinPassword` in `config/cyberblock/server.json` (default `""`, off) lets a
   server run without a whitelist: a player who joins is held in place and can do nothing (no building, items, chat, damage

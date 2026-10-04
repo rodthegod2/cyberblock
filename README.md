@@ -107,6 +107,9 @@ Everything works on Night City's real NPCs, vehicles and devices.
   lifts, turrets and screens stand in Minecraft as blocks a guest can use (a door opens in the host's game, a pedestrian's door opens
   in Minecraft); vending machines sell for eddies; hosts switch each kind off with `/cyberblock guests devices <type> off`
   ([details](docs/HOW-TO-PLAY.md#devices-phase-4)).
+- **Figures and skins (Phase 5):** guests see Night City's people in their faction's skin (women on the slim model), posed and
+  moving like the real ones, cars in their colours, and every linked player as V (or Lucy with `/cyberblock body female`) with a `[V]` tag
+  ([details](docs/HOW-TO-PLAY.md#figures-and-skins-phase-5)).
 
 ## Build from source
 ```

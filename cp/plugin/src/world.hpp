@@ -279,6 +279,95 @@ namespace cb::world
 											std::span<const uint8_t> hostile, double off,
 											std::span<const uint8_t> dead = {});
 
+	// ---- Phase 5 (megaplan 2026-10-04 sections 1.8 and 1.9 with the Phase 0 amendment, items 7; task 5-D1) -----------
+	// The `npcs` extension: Cyberblock_SubmitNpcs2 adds role, faction, gender, archetype, animation bits, vehicle class,
+	// colour and hp to every entry. Everything below is pure (no game); natives.cpp is the thin layer over it.
+
+	/// `anim` bits (1.9): the scripts set 4..128, the DLL sets 1 and 2 from position deltas (the scripts have no walk or run).
+	inline constexpr int kAnimWalk = 1, kAnimRun = 2, kAnimAim = 4, kAnimFire = 8, kAnimRagdoll = 16, kAnimDead = 32,
+						 kAnimCrouch = 64, kAnimCombat = 128;
+	inline constexpr int kAnimMask = 255;
+	/// Longest `role`, `fac`, `arch` and `vc` in characters (1.9: `vc` <= 32, for example `Car/Turbo`).
+	inline constexpr size_t kMaxFigureTag = 32;
+
+	/// Walk and run from the horizontal speed between two submits (m/s, Cyberpunk metres are Minecraft metres). A person
+	/// strolls at about 1.4 m/s, jogs at 3.5 and sprints at 5 or more. Each bit has two thresholds (on above, off below)
+	/// so the speed jitter of a standing or cruising NPC does not flicker the pose. Faster than kTeleportSpeed is a
+	/// respawn or a fast travel, not walking: no bit. Samples closer than kMinMotionInterval carry the last bits; samples
+	/// further apart than kMaxMotionInterval say nothing (the NPC was out of the list in between).
+	inline constexpr double kWalkOn = 0.6, kWalkOff = 0.3, kRunOn = 3.2, kRunOff = 2.6, kTeleportSpeed = 15.0;
+	inline constexpr double kMinMotionInterval = 0.02, kMaxMotionInterval = 1.0;
+
+	/// How the three numbers of a `VehicleColorTemplate.MainColor` are read (Phase 0 CET F2 decides; unconfirmed, so HSB
+	/// is the working assumption: the game's own colour picker stores hue, saturation and brightness, each 0..255).
+	enum class ColourFormat
+	{
+		Hsb,
+		Rgb,
+	};
+	/// The one place the format is chosen; change it (and the log line) if F2 says RGB.
+	inline constexpr ColourFormat kColourFormat = ColourFormat::Hsb;
+	inline constexpr const char *kColourFormatLog = "npcs: colour format hsb (unconfirmed)";
+
+	/// `colours[i]` from the scripts: the template's three numbers packed (first << 16 | second << 8 | third, each 0..255),
+	/// -1 when the car has no colour template. "#RRGGBB" (upper case) for a packed value, nullopt for -1 or anything that
+	/// is not three bytes. Hsb: hue 0..255 is 0..360 degrees, saturation and brightness 0..255 are 0..1.
+	std::optional<std::string> colour_hex(int32_t packed, ColourFormat format = kColourFormat);
+
+	/// A figure tag as sent: the text itself when it is 1..kMaxFigureTag characters of [A-Za-z0-9_./-] (the enum and
+	/// vendor type names of the game, "Car/Turbo"), else nullopt (the key is then left out; a cut-off name would be wrong).
+	std::optional<std::string> figure_tag(std::string_view text);
+
+	/// Walk and run bits for the people of consecutive npcs lists (Phase 0 f: the scripts cannot read them). Remembers
+	/// the last feet position of every person; whoever is missing from a list is forgotten. Vehicles are not tracked.
+	class NpcMotion
+	{
+	public:
+		/// The bits (kAnimWalk, kAnimRun or 0) of every entry, from the positions (Cyberpunk space, any consistent
+		/// offset) and `nowSeconds` (a monotonic clock). `vehicles[i] != 0` entries get 0 and are not remembered.
+		std::vector<int> update(std::span<const uint64_t> ids, std::span<const Vec3> feetCp,
+								std::span<const uint8_t> vehicles, double nowSeconds);
+		void clear() { m_known.clear(); }
+		size_t size() const { return m_known.size(); }
+
+	private:
+		struct Sample
+		{
+			Vec3 feet;
+			double at;
+			int bits;
+		};
+		std::map<uint64_t, Sample> m_known;
+	};
+
+	/// The parallel arrays of Cyberblock_SubmitNpcs2 beyond the six of SubmitNpcs. Each is empty (the key is left out of
+	/// every entry) or as long as `ids`.
+	struct NpcTags
+	{
+		std::span<const std::string> roles, factions, archetypes, vclass; // CNames as text
+		std::span<const int32_t> genders, anims, colours;
+		std::span<const double> hp;
+	};
+
+	/// {"t":"npcs","list":[...]} with the Phase 5 keys per entry: `role`, `fac`, `arch` (a valid figure_tag, else absent),
+	/// `g` 0 unknown / 1 male / 2 female (anything else, and every vehicle, 0), `anim` (the scripts' bits 4..128; 0 for a
+	/// vehicle; bits 1 and 2 are set from `motion` for living people who are not ragdolling), `vc` (vehicles only), `col`
+	/// (vehicles only, when `colours` decodes), `hp` 0..1 (absent when negative or not finite). A tag array that is not
+	/// empty and not as long as `ids` makes the whole list nullopt, like the old arrays. `motion` null leaves bits 1 and 2
+	/// out. With empty `tags` and no `motion` this is exactly make_npcs.
+	std::optional<nlohmann::json> make_npcs2(std::span<const uint64_t> ids, std::span<const Vec3> feetCp,
+											 std::span<const double> yawsCp, std::span<const uint8_t> vehicles,
+											 std::span<const uint8_t> hostile, double off, std::span<const uint8_t> dead,
+											 const NpcTags &tags, NpcMotion *motion, double nowSeconds);
+
+	/// What one npcs list carries, for the DLL's 10 s summary line (1.14 style): how many entries have which tag.
+	struct NpcTagSummary
+	{
+		int people = 0, vehicles = 0, withFaction = 0, withRole = 0, withArchetype = 0, male = 0, female = 0, unknownGender = 0,
+			withColour = 0, walking = 0, running = 0;
+	};
+	NpcTagSummary summarize_npcs(const nlohmann::json &list);
+
 	// ---- layers 3-6 (plan 2026-10-03 section 1.2) ----
 
 	/// The threat levels `scaninfo.threat` knows; anything else is sent as "none".

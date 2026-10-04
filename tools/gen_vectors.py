@@ -110,6 +110,11 @@ materials = {
 }
 # The clock (3-E1) is its own top-level key: `materials` holds only the name table, which 3D's cb_tests reads key by key.
 clock = [{"time": [h, m], "ticks": cbmath.env_ticks(h, m)} for h, m in ((6, 0), (12, 0), (18, 0), (0, 0), (22, 30), (5, 45), (23, 59), (0, 1))]
+# Phase 5 (5-D1): the vehicle colour of `npcs.col`; cases for both readings of the template triple (F2 may pick RGB)
+colour_packed = [-1, 0, 0xFFFFFF, 0x1000000, (0 << 16) | (255 << 8) | 255, (85 << 16) | (255 << 8) | 255, (128 << 16) | (255 << 8) | 255,
+                 (192 << 16) | (255 << 8) | 255, (40 << 16) | (0 << 8) | 200, (200 << 16) | (255 << 8) | 0, (56 << 16) | (55 << 8) | 64,
+                 (255 << 16) | (255 << 8) | 255, (10 << 16) | (200 << 8) | 255, (21 << 16) | (128 << 8) | 128, (170 << 16) | (90 << 8) | 230]
+colour = [{"packed": p, "format": f, "hex": cbmath.colour_hex(p, f)} for f in cbmath.COLOUR_FORMATS for p in colour_packed]
 
 
 out = {
@@ -133,6 +138,7 @@ out = {
                     for given, current in prefs_given for expect, bad in [cbmath.apply_prefs(given, current)]],
     "materials": materials,
     "clock": clock,
+    "colour": colour,
 }
 Path("shared/vectors.json").write_text(json.dumps(out, indent=1), newline="\n")
 print(f"wrote {len(out['quat'])} quat, {len(out['down'])} down, {len(out['wall'])} wall, "
@@ -141,4 +147,4 @@ print(f"wrote {len(out['quat'])} quat, {len(out['down'])} down, {len(out['wall']
       f"{len(out['binds_apply'])} binds_apply, {len(out['survey'])} survey, {len(out['survey_column'])} survey_column, "
       f"{len(out['prefs_apply'])} prefs_apply cases, "
 
-      f"{len(materials['codes'])} material codes, {len(materials['cases'])} material cases, {len(clock)} clock")
+      f"{len(materials['codes'])} material codes, {len(materials['cases'])} material cases, {len(clock)} clock, {len(colour)} colour")
