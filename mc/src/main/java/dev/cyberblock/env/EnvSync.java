@@ -17,6 +17,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.clock.ServerClockManager;
 import net.minecraft.world.clock.WorldClock;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.saveddata.WeatherData;
 import org.jspecify.annotations.Nullable;
@@ -29,6 +30,11 @@ import org.jspecify.annotations.Nullable;
  * the current weather, and one line says which path is active ({@code env: weather from host <name> (<value>)} or
  * {@code env: time only (weather unreadable)}) whenever it changes. With no host the world keeps the last values; a second host
  * never changes them. Server thread only.
+ *
+ * <p>Vanilla draws rain, plays its sound and strikes lightning only where the biome has precipitation. The nightcity preset's
+ * {@code minecraft:the_void} has none ({@code has_precipitation: false} in the 26.3 jar), so there rain and storm only dim the
+ * sky; the line then says so ({@code ... (rain): rain set, not drawn (biome minecraft:the_void has no precipitation)}),
+ * checked on the host's biome at each change, so a biome with precipitation shows the plain line.
  *
  * <p>26.3 names (javap on the Loom jar): the day time lives on the dimension's default {@code WorldClock} in
  * {@code MinecraftServer.clockManager()} (what {@code /time set} uses); weather is {@code MinecraftServer.setWeatherParameters}
@@ -85,8 +91,9 @@ public final class EnvSync {
 
 		JsonElement raw = m.get("weather");
 		Weather w = weather(raw);
-		logPath(pathLine(s.name(), raw != null && raw.isJsonPrimitive() && raw.getAsJsonPrimitive().isString() ? raw.getAsString() : null, w));
 		ServerPlayer player = s.player();
+		logPath(pathLine(s.name(), raw != null && raw.isJsonPrimitive() && raw.getAsJsonPrimitive().isString() ? raw.getAsString() : null, w,
+			w == Weather.RAIN || w == Weather.THUNDER ? dryBiome(player) : null));
 		if (w != Weather.KEEP && player != null) {
 			setWeather(player.level().getServer(), w);
 		}
@@ -145,9 +152,27 @@ public final class EnvSync {
 		return v >= 0 && v <= max && v == Math.rint(v) ? (int) v : -1;
 	}
 
-	/** The line that says where the world's weather comes from. */
-	static String pathLine(final String host, final @Nullable String raw, final Weather w) {
-		return w == Weather.KEEP ? TIME_ONLY : "env: weather from host " + host + " (" + raw + ")";
+	/**
+	 * The line that says where the world's weather comes from; {@code dryBiome} names the biome without precipitation where the
+	 * set rain is not drawn (null when it is drawn or the weather is clear).
+	 */
+	static String pathLine(final String host, final @Nullable String raw, final Weather w, final @Nullable String dryBiome) {
+		if (w == Weather.KEEP) {
+			return TIME_ONLY;
+		}
+
+		String line = "env: weather from host " + host + " (" + raw + ")";
+		return dryBiome == null ? line : line + ": rain set, not drawn (biome " + dryBiome + " has no precipitation)";
+	}
+
+	/** The id of the biome at the player when it has no precipitation (rain there is not drawn), else null. */
+	private static @Nullable String dryBiome(final @Nullable ServerPlayer player) {
+		if (player == null) {
+			return null;
+		}
+
+		Holder<Biome> biome = player.level().getBiome(player.blockPosition());
+		return biome.value().hasPrecipitation() ? null : biome.unwrapKey().map(k -> k.identifier().toString()).orElse("unknown");
 	}
 
 	private static void logPath(final String line) {

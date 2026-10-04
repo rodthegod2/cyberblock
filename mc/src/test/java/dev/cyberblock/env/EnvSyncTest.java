@@ -75,9 +75,11 @@ class EnvSyncTest {
 
 	@Test
 	void thePathLineSaysWhereTheWeatherComesFrom() {
-		assertEquals("env: weather from host CbHost1 (rain)", EnvSync.pathLine("CbHost1", "rain", Weather.RAIN));
-		assertEquals("env: weather from host CbHost1 (cloudy)", EnvSync.pathLine("CbHost1", "cloudy", Weather.CLEAR));
-		assertEquals("env: time only (weather unreadable)", EnvSync.pathLine("CbHost1", "other", Weather.KEEP));
-		assertEquals("env: time only (weather unreadable)", EnvSync.pathLine("CbHost1", null, Weather.KEEP));
+		assertEquals("env: weather from host CbHost1 (rain)", EnvSync.pathLine("CbHost1", "rain", Weather.RAIN, null));
+		assertEquals("env: weather from host CbHost1 (cloudy)", EnvSync.pathLine("CbHost1", "cloudy", Weather.CLEAR, null));
+		assertEquals("env: weather from host CbHost1 (storm): rain set, not drawn (biome minecraft:the_void has no precipitation)",
+			EnvSync.pathLine("CbHost1", "storm", Weather.THUNDER, "minecraft:the_void"));
+		assertEquals("env: time only (weather unreadable)", EnvSync.pathLine("CbHost1", "other", Weather.KEEP, null));
+		assertEquals("env: time only (weather unreadable)", EnvSync.pathLine("CbHost1", null, Weather.KEEP, null));
 	}
 }
