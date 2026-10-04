@@ -9,6 +9,26 @@ and the tools.
 Version 1.0.0 is set in the files on 2026-10-03; it is tagged and published only after the in-game re-test
 ([docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test 3") has passed.
 
+### Unreleased additions: Phase 3 (multiplayer plan, package 3P)
+Phase 3 of the multiplayer plan: **Night City as Minecraft** on a server. This entry is the protocol, tools and docs side; the
+mod, plugin and scripts of Phase 3 have their own entries. The in-game list is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md),
+"Re-test: Wave B, Phase 3".
+- **Protocol.** `shared/protocol.md` "Phase 3": `ground.m` (one material code 0..26 per range), `unground.seen`, `env` (clock and
+  weather), `vteleport`/`vteleported` (Meet Up), `park`/`parked`, the `maptile` exchange for the shared map, class and rate rows for
+  the new UP types, validators and examples in `tests/test_protocol_md.py`.
+- **Material codes.** `tools.cbmath` (`material_code`, `material_block`, `env_ticks`) and the new `materials` key of
+  `shared/vectors.json` (written by `tools.gen_vectors`): the codes (0 unknown, 1 to 10 the surface blocks, 11 to 26 the sixteen
+  `nc_neon_<dye>`), the name rules and 38 name cases, and the clock formula. The substrings are a working table until Phase 0's
+  CET lines B1 to B5 show the real names.
+- **Fake host.** `tools.fakehost --replica`: a street of ground with materials, `seen` and plain removals, figures walking and
+  driving at real speed (and a destroyed car), `env` steps, `vteleport` answered after 2 s, `park` answered at once; `--shift`
+  and `--env-hours` make a second host that overlaps the first and has another sky.
+- **Harness.** `tools.mpcheck replica twohosts2 meetup`: the street's replica blocks by material, the `seen` rule, `clear`, the
+  clock and weather, the replica staying when the host leaves, a guest's wall reaching the returning host, two overlapping
+  hosts with colliding ids, Meet Up both ways with its cooldown.
+- **Docs.** HOW-TO-PLAY "Night City as Minecraft (Phase 3)", `docs/WEBMAP.md` (a BlueMap build for Fabric 26.3 exists; nothing of
+  it is tested yet), `docs/notes/phase3-descopes.md`.
+
 ### Unreleased additions: join password
 - **Join password for dedicated servers.** `joinPassword` in `config/cyberblock/server.json` (default `""`, off) lets a
   server run without a whitelist: a player who joins is held in place and can do nothing (no building, items, chat, damage

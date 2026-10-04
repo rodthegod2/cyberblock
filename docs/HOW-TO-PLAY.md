@@ -950,8 +950,8 @@ from the same release (the version must match in major and minor, for example 1.
 
 **Start.** In your Minecraft press Esc, **Open to LAN**, **Start LAN World**. Minecraft prints the port in chat ("Local game
 hosted on port ..."). Your friend adds your address and that port under Multiplayer, Direct Connection (same network or a
-VPN; nothing is opened to the internet by Cyberblock). Only one Cyberpunk host per server for now: a second linked player
-joins as a guest.
+VPN; nothing is opened to the internet by Cyberblock). A world you open to LAN has one Cyberpunk host (you); a dedicated server
+allows up to `maxHosts` (4 from Phase 3), and a linked player beyond that joins as a guest.
 
 **What reaches your Cyberpunk game** (a guest's actions are real Minecraft actions that Cyberblock turns into Night City
 effects, exactly like yours):
@@ -959,8 +959,8 @@ effects, exactly like yours):
 - Hits, arrows, fire, leads and fishing rods on an NPC or car hurt it (they hit the same invisible proxies as yours).
 - Blocks the guest places become collision in your Night City; a scan or quickhack of the guest on one of your NPCs runs
   in your game.
-- Not yet: the guest does not see Night City's people and cars as figures (that comes in a later phase); they see the
-  Minecraft world and what their actions do.
+- Since Phase 3 the guest also **sees Night City**: the streets as solid replica blocks and the people and cars as figures
+  (see [Night City as Minecraft](#night-city-as-minecraft-phase-3)).
 
 **Your guests' permissions.** You decide what guests may do to *your* game: `/cyberblock guests <explosions | damage | hacks |
 devices | spawns> on|off`. Explosions, damage, hacks and devices are on, spawns are off. A switched-off action still
@@ -1016,6 +1016,75 @@ player guide for it comes with the Phase 2 docs. What is already there:
   (`dist/cyberblock-<version>.mrpack`) and the resource pack for friends.
 - **Join Cyberblock.** A modpack with a `config/cyberblock/join.json` adds a **Join Cyberblock** button to the title screen
   that connects to that server.
+
+### Night City as Minecraft (Phase 3)
+Until now a guest saw only the Minecraft world and what their actions did. With Phase 3 a guest sees **Night City itself, built
+as Minecraft** from what the hosts have explored, and can play in it even when no host is online.
+
+**The replica.** Whatever a host's Cyberpunk game sees around V (streets, sidewalks, walls, glass, metal, brick, tile, water,
+neon signs) becomes **solid material blocks** in the server's world, the colour of what they stand for: grey and dark concrete,
+asphalt, sidewalk, glass, metal, brick, tile, ground, water, and **16 glowing neon colours** (light level 15, the vanilla dye
+colours). Doors, gates and other devices are left out on purpose, so a door never becomes a wall. The blocks are saved in the
+world:
+- the map **grows as anyone explores**; leaving a host's probe radius never removes anything, only a spot that Cyberpunk saw
+  empty again (a car that drove away, a door that opened) does;
+- when the host quits Cyberpunk, the replica **stays**; the host's own people and cars go with the session (no live figures
+  without their owner);
+- **your own screen is not changed:** a host sees real Night City, so the replica blocks are simply not drawn on a host's
+  client while Cyberblock is active (nothing is drawn twice); guests and hosts who are Off see them;
+- replica blocks are **never sent back to Cyberpunk** as player blocks, and breaking one never changes Night City;
+- explosions never remove replica blocks (Night City does not break); a guest's TNT still reaches the host's game when the
+  host allows `explosions`;
+- the [Atlas](#the-atlas-map) and the radar of a guest draw from the same shared map the server keeps (a host also adds
+  what its own Cyberpunk surveys), so every player's map is the one growing Night City.
+
+**Breaking replica blocks (the Q5 rule).** They are like the outline blocks of [Creative mode](#creative-mode-and-the-outline-blocks):
+in **survival and adventure** a replica block cannot be broken; in **creative** you may break one, and it **comes back in about
+10 seconds** (or at once when a host's Cyberpunk reports that spot again). With the setting **Creative can erase the replica
+permanently** on, a broken block stays broken until a host's probes report the spot again. Blocks that players place are
+different: they are yours, they become collision in the hosts' Night City and can be broken by anyone allowed to.
+
+**People and cars.** A guest sees the host's Night City **people and cars as figures** moving at real speed: a plain human
+figure for people, a box car for vehicles (hostile people get a red name tag; the full Night City look comes in a later phase).
+A car that is destroyed stays as a dark wreck for 5 seconds, a person who dies lies down for 3 seconds. The host does not see
+them (the host sees the real ones). They exist only while their owner is playing.
+
+**Time of day and weather.** While a host is playing, the Minecraft world follows that host's Cyberpunk: **Cyberpunk's night is
+Minecraft's night** (the clock is set from the game time every second; 06:00 is sunrise and 00:00 midnight, and the daylight
+cycle is switched off), and rain and storms follow Cyberpunk's weather when the game lets the plugin read it (a storm is rain
+with thunder; any other weather is clear). With several hosts the **first host is the primary**: a second host never changes
+the time or the weather. With no host online the world keeps the last values.
+
+**Offline Builds.** Guests may build on the replica **while the host is away**. When the host's Cyberpunk starts again, the
+usual resync gives the host every block that was placed, so a wall a guest built across a street **stops V at once**, and the
+host sees a toast "While you were away: N blocks placed, M removed (by A, B)". `/cyberblock changes` lists the changes by
+region with coordinates (the server keeps the last 30 days).
+
+**Meet Up.** `/cyberblock meetup <player>` asks that player to meet you; they accept with the clickable chat line (or
+`/cyberblock meetup accept`) within 60 seconds.
+- A **host** who asks anyone: V is teleported in Night City to the same coordinates as the player (Cyberpunk waits for the
+  streets to load there, then puts V on the ground), and Steve follows V. If it cannot, the reason is shown ("no ground",
+  "timeout" after 15 seconds, or "blocked" in a vehicle, a scene or a fight).
+- A **guest** who asks a host: the guest is teleported next to the host's Steve.
+- 30 seconds between your requests; not into a match zone (a later phase); not while your V is held or in a vehicle.
+
+**More than one host.** A Phase 3 server allows **4 hosts at once** (`maxHosts` in `config/cyberblock/server.json`, default 4;
+a singleplayer or LAN world keeps one host). Each host's people, cars, hits and hacks stay with their own game even when two
+hosts' ids collide, and where two hosts' streets overlap the first block placed wins.
+
+**The Apex server's world.** The dedicated server runs a **void world** (level type `cyberblock:nightcity`, level name
+`nightcity`), so the only ground in it is the replica and the small **spawn platform** where players arrive before Night City
+is explored. At start the server checks that its world really is the void world (`worldcheck`) and says so in its log.
+
+**A web map.** A live map of the replica for people with a browser is possible with BlueMap (a Fabric 26.3 build exists):
+[docs/WEBMAP.md](WEBMAP.md).
+
+**Which way is it working? (for the test.)** Some features have a written fallback if the game does not offer the exact call,
+and the plugin writes **one line saying which way is active** into `Cyberblock.log`: where the surface **material** of a probe
+hit comes from (the hit's material name, the mesh name, or the guess by height and district), how the **weather** is read (or
+that it cannot be), how **Meet Up** moves V (waits for the streets to load, then snaps to the ground) and how **park** keeps V
+unseen. [Re-test: Wave B, Phase 3](TESTING-PLAN.md) lists what to look for.
+
 
 ---
 
@@ -1092,6 +1161,8 @@ time.)
 Useful commands: `/cyberblock kit`, `/cyberblock settings` (the [settings screen](#the-cyberblock-settings-screen)),
 `/cyberblock outline erase on|off`, `/cyberblock debug aim|view on|off`, `/cyberblock level` (re-align the ground to where V stands), `/cyberblock survey`
 (map all of Night City once for the [Atlas](#the-atlas-map); `stop`, `status`, `redo`),
+`/cyberblock meetup <player>` and `/cyberblock meetup accept` (go to a friend, see [Night City as Minecraft](#night-city-as-minecraft-phase-3)),
+`/cyberblock changes` (what guests built while you were away),
 `/cyberblock perks free on|off` (free skill points), `/gamemode creative`, `/gamemode survival`,
 `/xp add @s 30 levels`, `/effect clear @s`. Playing with friends: `/cyberblock guests <toggle> on|off` and, for server
 operators, `/cyberblock hosts`, `/cyberblock status` and `/cyberblock hosts add|remove <name>` (see
