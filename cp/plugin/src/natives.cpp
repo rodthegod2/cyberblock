@@ -77,6 +77,7 @@ namespace
 		cb::natives::seated = false;
 		cb::natives::seatTpp = false;
 		cb::natives::hipsX = cb::natives::hipsY = cb::natives::hipsZ = 0.0f;
+		cb::natives::seatFwdX = cb::natives::seatFwdY = 0.0f;
 		log_seat(false, false);
 	}
 
@@ -846,6 +847,18 @@ namespace
 		log_seat(true, tpp);
 	}
 
+	// Cyberblock_SetSeatForward(forward: Vector4) -> Void: the car's forward while V is seated (CyberblockSeat.Tick).
+	void SetSeatForward(IScriptable *, CStackFrame *frame, void *, int64_t)
+	{
+		RED4ext::Vector4 forward{};
+		RED4ext::GetParameter(frame, &forward);
+		++frame->code;
+		const float n = std::hypot(forward.X, forward.Y);
+		const bool ok = std::isfinite(n) && n > 1e-3f;
+		cb::natives::seatFwdX = ok ? forward.X / n : 0.0f;
+		cb::natives::seatFwdY = ok ? forward.Y / n : 0.0f;
+	}
+
 	// Cyberblock_SetViewAllowed(allowed: Bool) -> Void: the third-person view may be applied now (Active on foot, not held,
 	// no menu, no braindance, no photo mode; CyberblockView.Tick, 10 Hz). Cleared by Cyberblock_SetActive(false).
 	void SetViewAllowed(IScriptable *, CStackFrame *frame, void *, int64_t)
@@ -994,6 +1007,7 @@ namespace cb::natives
 		add(rtti, "Cyberblock_SetChoices", &SetChoices, nullptr, {{"Bool", "open"}});
 		add(rtti, "Cyberblock_SetLookCapture", &SetLookCapture, nullptr, {{"Bool", "on"}});
 		add(rtti, "Cyberblock_SetSeat", &SetSeat, nullptr, {{"Bool", "seated"}, {"Bool", "tpp"}, {"Vector4", "hipsLocal"}});
+		add(rtti, "Cyberblock_SetSeatForward", &SetSeatForward, nullptr, {{"Vector4", "forward"}});
 		add(rtti, "Cyberblock_SetViewAllowed", &SetViewAllowed, nullptr, {{"Bool", "allowed"}});
 		add(rtti, "Cyberblock_ViewEye", &ViewEye, "Vector4");
 		add(rtti, "Cyberblock_SetSlowMoFx", &SetSlowMoFx, nullptr, {{"CName", "id"}, {"Float", "seconds"}});

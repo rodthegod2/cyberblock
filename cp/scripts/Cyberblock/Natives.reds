@@ -69,6 +69,7 @@ public native func Cyberblock_Killed(target: Uint64, vehicle: Bool, hostile: Boo
 public native func Cyberblock_HackResult(id: Int32, ok: Bool, reason: String, upload: Float, kind: CName) -> Void; // CHANGED: upload clamped 0..30, kind checked against kHackKinds (n"" allowed when !ok)
 public native func Cyberblock_HackSpread(id: Int32, target: Uint64, why: CName) -> Void;   // why in chain|spread|ping|frenzy; ≤ 16 per id
 public native func Cyberblock_SetSeat(seated: Bool, tpp: Bool, hipsLocal: Vector4) -> Void; // 10 Hz and on camera switch; hipsLocal in V's local axes (Y forward, Z up), metres
+public native func Cyberblock_SetSeatForward(forward: Vector4) -> Void; // the car's forward while seated (Steve faces it)
 public native func Cyberblock_SetSlowMoFx(id: CName, seconds: Float) -> Void;               // n"sandevistan"|n"kerenzikov", 0..30; n"" / 0 ends it
 public native func Cyberblock_SetViewAllowed(allowed: Bool) -> Void;                        // third person may be applied (Active on foot, not held, no menu, no braindance, no photo mode)
 public native func Cyberblock_ViewEye() -> Vector4;                                         // V's first-person eye (the camera without the third-person offset)

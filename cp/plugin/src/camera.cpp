@@ -164,6 +164,12 @@ namespace cb::camera
 			aspect = 16.0f / 9.0f;
 		const double vfov = fovIsHorizontal ? vfov_from_hfov(fov, aspect) : fov;
 		const Vec3 feetMc = cp_to_mc_pos(body.x, body.y, body.z, off);
+		if (seated)
+		{
+			const float fx = natives::seatFwdX.load(), fy = natives::seatFwdY.load();
+			if (fx != 0.0f || fy != 0.0f)
+				facing = RED4ext::Vector4{fx, fy, 0.0f, 0.0f}; // the car's forward: V's does not turn with the car
+		}
 		const Vec3 facingMc = cp_dir_to_mc(facing.X, facing.Y, facing.Z);
 		const double bodyYaw = std::hypot(facingMc.x, facingMc.z) > 1e-6 ? mc_yaw_pitch(facingMc.x, 0.0, facingMc.z).yaw : look.yaw;
 

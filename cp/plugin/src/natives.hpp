@@ -50,6 +50,9 @@ namespace cb
 		inline std::atomic<bool> seated{false};
 		inline std::atomic<bool> seatTpp{false};
 		inline std::atomic<float> hipsX{0.0f}, hipsY{0.0f}, hipsZ{0.0f};
+		/// The car's forward (Cyberpunk space) from Cyberblock_SetSeatForward: seated Steve faces it, because V's own forward
+		/// does not turn with the car (in-game 2026-10-03). Zero = not known; cleared with the seat.
+		inline std::atomic<float> seatFwdX{0.0f}, seatFwdY{0.0f};
 
 		/// Re-test 3 (plan section 1.2, task D6): set by Cyberblock_SetPhonePrompt: a call rings or an actionable
 		/// notification shows, so T is Cyberpunk's (keys::Context::phone) while no Minecraft screen is open. Cleared by

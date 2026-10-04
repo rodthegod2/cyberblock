@@ -88,6 +88,26 @@ public abstract class CyberblockSeat {
     seat.tpp = IsDefined(cameras) && cameras.IsTPPActive();
     let hips = CyberblockSeat.Hips(player, seat);
     Cyberblock_SetSeat(true, seat.tpp, hips);
+    // Steve faces where the car faces: V's own forward does not turn with the car while mounted (in-game 2026-10-03:
+    // seated Steve faced the camera).
+    Cyberblock_SetSeatForward(vehicle.GetWorldForward());
+  }
+
+  // The world point of V's seat: the vehicle's slot for the mounting slot V uses (seat_front_left, ...). In-game
+  // 2026-10-03 V had no Hips slot while mounted and V's own position is not at the seat, so Steve sat on the roof.
+  private static func SeatPoint(player: ref<PlayerPuppet>, out point: Vector4) -> Bool {
+    let vehicle = GetMountedVehicle(player);
+    if !IsDefined(vehicle) {
+      return false;
+    }
+    let mount = GameInstance.GetMountingFacility(player.GetGame()).GetMountingInfoSingleWithObjects(player);
+    let slots = vehicle.FindComponentByName(n"vehicle_slots") as SlotComponent;
+    let transform: WorldTransform;
+    if !IsDefined(slots) || !slots.GetSlotTransform(mount.slotId.id, transform) {
+      return false;
+    }
+    point = WorldPosition.ToVector4(WorldTransform.GetWorldPosition(transform));
+    return true;
   }
 
   public static func Clear(game: GameInstance) -> Void {
@@ -107,7 +127,13 @@ public abstract class CyberblockSeat {
     let local = new Vector4(0.0, 0.0, 0.45, 0.0);
     let slots = player.GetSlotComponent();
     let transform: WorldTransform;
-    if IsDefined(slots) && slots.GetSlotTransform(n"Hips", transform) {
+    let seatPoint: Vector4;
+    if CyberblockSeat.SeatPoint(player, seatPoint) {
+      slot = "vehicle seat";
+      let offset = seatPoint - player.GetWorldPosition();
+      local = Quaternion.TransformInverse(player.GetWorldOrientation(), new Vector4(offset.X, offset.Y, offset.Z, 0.0));
+      local.W = 0.0;
+    } else if IsDefined(slots) && slots.GetSlotTransform(n"Hips", transform) {
       let world = WorldPosition.ToVector4(WorldTransform.GetWorldPosition(transform));
       let offset = world - player.GetWorldPosition();
       local = Quaternion.TransformInverse(player.GetWorldOrientation(), new Vector4(offset.X, offset.Y, offset.Z, 0.0));
