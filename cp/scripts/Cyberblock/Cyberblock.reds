@@ -270,6 +270,8 @@ public class CyberblockSystem extends ScriptableSystem {
     // Package S (plan section 1.4): seat data for Steve in vehicles, and the third-person view gate.
     CyberblockSeat.Tick(game, player, live);
     CyberblockView.Tick(game, player, active, held, CyberblockDisable.InMenu(game));
+    // Megaplan Q-S2: no vault/climb onto our boxes, and the step-up assist (Locomotion.reds).
+    CyberblockLocomotion.Tick(game, player, active);
     if !this.saving {
       this.events.Tick(game, live);
     }
@@ -320,6 +322,7 @@ public class CyberblockSystem extends ScriptableSystem {
     CyberblockBuffs.Clear(game, leaving);
     CyberblockSeat.Clear(game);
     CyberblockView.Clear(game);
+    CyberblockLocomotion.Clear(game);
   }
 
   // Crouched as the game's own crouch indicator counts it: Crouch, CrouchDodge or Slide

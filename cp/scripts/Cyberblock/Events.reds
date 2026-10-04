@@ -12,6 +12,7 @@
 //   effect -> CyberblockBuffs.Effect           hack -> CyberblockHacks.Hack       scan -> CyberblockScan.Scan
 //   perk -> CyberblockPerks.Set                perkfx -> CyberblockPerks.Fx (hands it to CyberblockCyberware.Fx)
 //   cyber -> CyberblockCyberware.Set           cyberfx -> CyberblockCyberware.Fx  (plan 2026-10-03-retest2 1.3)
+//   prefs -> CyberblockLocomotion.SetStepUp(flag = prefs.stepup)  (megaplan 2026-10-04 Q-D1/Q-S2; recorded whatever the state)
 //
 // While a save is written, CyberblockSystem does not call Tick at all: the events wait in the DLL's queue and are applied
 // after the save. While not live otherwise (Off, Lost, no player) Night City is left alone:
@@ -62,6 +63,8 @@ public class CyberblockEvents {
           CyberblockPerks.Set(game, Cyberblock_EventName(), RoundF(Cyberblock_EventAmount()));
         } else if Equals(kind, n"cyber") {
           CyberblockCyberware.Set(game, Cyberblock_EventName(), RoundF(Cyberblock_EventAmount()) == 1);
+        } else if Equals(kind, n"prefs") {
+          CyberblockLocomotion.SetStepUp(Cyberblock_EventFlag());
         } else if !live {
           if !CyberblockEvents.Refuse(kind) {
             dropped += 1;

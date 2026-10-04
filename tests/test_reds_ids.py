@@ -133,6 +133,56 @@ def test_strikes_on_people_carry_a_hit_shape():
                    "ArrayPush(hit.hitRepresentationResult.hitShapes, shape)"):
         assert needed in shape, needed
 
+# Megaplan Q-S1: the aim ray drops hits on our collision boxes (tag test on the hit entity) and casts again from just past
+# the box, at most 4 times, so the aim distance is the Night City surface behind a placed block.
+def test_aim_ray_passes_through_at_most_four_boxes():
+    code = strip_comments((SCRIPTS / "Probes.reds").read_text(encoding="utf-8"))
+    aim = code[code.index("private func Aim("):]
+    aim = aim[:aim.index("\n  }\n")]
+    assert re.search(r"TraceNightCity\([^;]*,\s*4\)", aim), "Aim must trace with a 4-box limit"
+    trace = code[code.index("private static func TraceNightCity("):]
+    trace = trace[:trace.index("\n  }\n")]
+    assert "maxBoxes: Int32" in trace and "boxes <= maxBoxes" in trace
+    assert "IsTagged(entity.GetEntityID(), CyberblockCollisionService.Tag())" in trace
+
+
+# Megaplan Q-S2: no vault or climb onto our boxes, a read-only registry lookup, the step-up assist fed by event prefs.
+ENTER = ("protected const func EnterCondition(const stateContext: ref<StateContext>, "
+         "const scriptInterface: ref<StateGameScriptInterface>) -> Bool {")
+
+
+def test_vault_and_climb_are_refused_on_our_boxes():
+    code = strip_comments((SCRIPTS / "Locomotion.reds").read_text(encoding="utf-8"))
+    for cls in ("ClimbDecisions", "VaultDecisions"):
+        assert f"@wrapMethod({cls})\n{ENTER}" in code, cls
+    assert 's"locomotion: \\(what) refused on Cyberblock box"' in code
+    assert 'Refuse(scriptInterface, "climb")' in code and 'Refuse(scriptInterface, "vault")' in code
+    collision = strip_comments((SCRIPTS / "Collision.reds").read_text(encoding="utf-8"))
+    assert "public func Has(point: Vector4) -> Bool" in collision
+    assert "public func Find(point: Vector4, out aabbMin: Vector4) -> Bool" in collision
+
+
+def test_step_up_follows_the_prefs_event_whatever_the_state():
+    code = strip_comments((SCRIPTS / "Events.reds").read_text(encoding="utf-8"))
+    tick = code[code.index("public func Tick("):code.index("private func Apply(")]
+    prefs = tick.index('Equals(kind, n"prefs")')
+    assert prefs < tick.index("} else if !live {"), "prefs must be recorded while not live too"
+    assert "CyberblockLocomotion.SetStepUp(Cyberblock_EventFlag())" in tick
+    system = strip_comments((SCRIPTS / "Cyberblock.reds").read_text(encoding="utf-8"))
+    assert "CyberblockLocomotion.Tick(game, player, active)" in system
+    assert "CyberblockLocomotion.Clear(game);" in system
+
+
+# Megaplan Q-S3: the third-person gate names why it changed, and the vehicle camera perspective is probed for Q-D1.
+def test_view_gate_logs_its_reason_and_probes_the_vehicle_camera():
+    code = strip_comments((SCRIPTS / "View.reds").read_text(encoding="utf-8"))
+    assert 's"view: gate \\(reason)"' in code
+    assert "GetCameraManager().GetActivePerspective()" in code or "cameras.GetActivePerspective()" in code
+    assert 's"view: vehicle camera ' in code
+    for reason in ('"braindance"', '"photo mode"', '"menu"', '"vehicle"'):
+        assert reason in code, reason
+
+
 # Every native the scripts declare is registered by the DLL with the same parameter count (cb::natives::add), so a script
 # call can never reach a missing function or read its arguments wrongly (the Atlas survey natives included).
 DECL = re.compile(r"native func (Cyberblock_\w+)\(([^)]*)\)")
