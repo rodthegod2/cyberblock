@@ -575,6 +575,254 @@ Atlas examples, Minecraft to Cyberpunk:
 {"t":"survey","op":"start","done":[-6,4,-5,4]}
 ```
 
+## Multiplayer (Phase 1)
+
+Plan: `docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 1 (the contracts), section 5 (Phase 1). The wire
+between the DLL and its own host's Minecraft client (everything above) **does not change shape** and `proto` stays 1: a
+Cyberpunk game still talks to the Minecraft client on `127.0.0.1:25600`, and the client decides what stays on the PC and
+what goes to the server. From Phase 1 on, singleplayer goes through exactly the same path: the integrated server receives
+the local client's payloads over the in-memory connection, and opening the world to LAN makes it a small multiplayer
+server with no other change. Older builds ignore the new `t` values and fields as always.
+
+**Terms.** A **host** is a player whose Minecraft client has a live link to its own `Cyberblock.dll` and whose handshake
+was granted the host role; a **guest** is any other player (Minecraft only). A **session** is the server's state for one
+host, keyed by the player's UUID. Night City ids (NPC, vehicle, device) are only meaningful together with their owner, the
+session whose Cyberpunk game they belong to: the server keys them as `(owner UUID, id)`, so two hosts never collide.
+
+**Classes.** Each message of the wire protocol is one of:
+- **LOCAL:** stays between the DLL and its own host's Minecraft client and never leaves the PC;
+- **UP:** sent by the DLL, forwarded by the host's client to the server as a `cyberblock:up` payload;
+- **DOWN:** built on the server, sent to the owner's client as `cyberblock:down` and forwarded verbatim to its DLL;
+- **BOTH:** used locally and also relayed UP.
+
+The client forwards UP messages as they are (JSON text) and forwards DOWN messages to the DLL unchanged. The server runs
+the same validators the client ran before (the limits above), plus the envelope checks below.
+
+### Multiplayer: Cyberpunk → Minecraft classes
+| `t` | class | After Phase 1, handled by | notes |
+|---|---|---|---|
+| `hello` | BOTH | client handshake (LOCAL); UP as the "host session (re)started" notice with the DLL's new `ver` | the server then sends `align`, `perks`, `cyberware`, the `effect` set and the block resync DOWN (the order after each host `hello`) |
+| `cam` | LOCAL | `HostState`, `PlayerSync`, `FrameExporter` (client) | the server never sees it, it gets the derived `hstate` |
+| `ground` | UP | `WorldBridge` per session (server) | the client splits arrays to fit the payload cap |
+| `unground` | UP | `WorldBridge` per session (server) | split like `ground` |
+| `clear` | UP | `WorldBridge` per session (server) | |
+| `state` | BOTH | client HUD and vehicle rules; session `active`, `vehicle` | |
+| `view` | LOCAL | client | |
+| `hud` | LOCAL | client | |
+| `aim` | BOTH | client pick limit (`HostState.aimLimit`); session aim distance for the server-side scan pick and the host's reach check | |
+| `key` | LOCAL | `ClientInput`, cyber key listeners | the actions they trigger go to the server through vanilla packets or the typed payloads |
+| `slot` | LOCAL | `ClientInput` | |
+| `scroll` | LOCAL | `ClientInput` | |
+| `cursor` | LOCAL | `ClientInput` | |
+| `click` | LOCAL | `ClientInput` | |
+| `char` | LOCAL | `ClientInput` | |
+| `skey` | LOCAL | `ClientInput` | |
+| `dmg` | UP | `HostDamage` for the session's player | |
+| `npcs` | BOTH | client radar (LOCAL); `ProxyManager` per session (UP) | the client splits long lists under the payload cap |
+| `mobdmg` | UP | `MobWar` | |
+| `pcells` | UP | `WorldBridge` temp cells | |
+| `unlead` | UP | `ProxyManager` | |
+| `killed` | UP | `Kills` | |
+| `scaninfo` | UP | `Hacking` (server), routed to the player who asked | a reply: it must carry a request id the session issued |
+| `hackresult` | UP | `Hacking` (server), routed to the player who asked | a reply, as `scaninfo` |
+| `hackspread` | UP | `Hacking` (server), routed to the player who asked | a reply, as `scaninfo` |
+| `look` | LOCAL | unused | |
+| `stats` | BOTH | client HUD (LOCAL); UP at 1 Hz at most as the session's `money`, `wanted`, `district`, `time` | shops paid in eddies, Heat, time of day |
+| `quest` | LOCAL | client UI (`UiLink`) | the host's own Night City UI |
+| `pins` | LOCAL | client UI (`UiLink`) | |
+| `prompt` | LOCAL | client UI (`UiLink`) | |
+| `choices` | LOCAL | client UI (`UiLink`) | |
+| `sub` | LOCAL | client UI (`UiLink`) | |
+| `call` | LOCAL | client UI (`UiLink`) | |
+| `notify` | LOCAL | client UI (`UiLink`) | |
+| `screen` | LOCAL | client UI (`UiLink`) | |
+| `reply` | LOCAL | client UI (`UiLink`) | |
+| `terrain` | LOCAL | `AtlasStore` (client) | LOCAL until Phase 3, then BOTH: UP into the server's shared Night City map |
+| `surveystate` | LOCAL | `SurveyClient` | |
+| `cmd` | LOCAL | `WorldBridge.command` in a dev client | test tools only: never relayed (the relay drops it), a dedicated server refuses it |
+
+The frame export (`Local\CyberblockFrame`) is LOCAL: `FrameExporter` on the client.
+
+### Multiplayer: Minecraft → Cyberpunk classes
+| `t` | class | Built by (after Phase 1) | notes |
+|---|---|---|---|
+| `hello` | LOCAL | client `HostLink` | |
+| `status` | LOCAL | client `StatusReporter` | |
+| `binds` | LOCAL | client `CyberKeys` | |
+| `uiact` | LOCAL | client `UiLink` | |
+| `persp` | LOCAL | client `ClientInput` | |
+| `flight` | LOCAL | client `Flight` | the client owns Steve's glide physics |
+| `survey` | LOCAL | client `SurveyClient` | `/cyberblock survey` becomes a server command that asks the issuing host's client over `cyberblock:down` (`survey_cmd`, below) |
+| `block` | DOWN | `WorldBridge` per session | |
+| `blocks` | DOWN | `WorldBridge` per session | |
+| `align` | DOWN | `WorldBridge` per session | one ground alignment `k` per world: every host uses it |
+| `explosion` | DOWN | `ExplosionEvents`: to every active session whose V is within 128 m | subject to the owner's `explosions` toggle when a guest caused it |
+| `knock` | DOWN | wind charges, routed like `explosion` | subject to the owner's `explosions` toggle |
+| `hit` | DOWN | `ProxyManager` and `ProxyEntity`: to the owner of the proxy | subject to the owner's `damage` toggle when a guest caused it |
+| `ignite` | DOWN | as `hit` | `damage` toggle |
+| `lead` | DOWN | as `hit` | `damage` toggle |
+| `pull` | DOWN | as `hit` | `damage` toggle |
+| `mobs` | DOWN | `MobWar` for that host's player | |
+| `proj` | DOWN | `Projectiles` for that host's player | |
+| `teleport` | DOWN | `ThrownEnderpearlMixin` for that host's player | |
+| `effect` | DOWN | `PlayerEffects` for that host's player | |
+| `scan` | DOWN | `Hacking`: to the owner of the target (a guest's request too) | `target:null` is only valid for the host's own game; the owner's `hacks` toggle |
+| `hack` | DOWN | `Hacking`: to the owner of the target (a guest's request too) | the owner's `hacks` toggle |
+| `perks` | DOWN | `PerkShop` for that host | |
+| `cyberware` | DOWN | `Ripperdoc` for that host | |
+| `cyberfx` | DOWN | `CyberwareEffects` for that host | `perkfx` stays superseded (never sent) |
+| `pteleport` | DOWN | `ServerPlayerMixin` | Steve was teleported by a command; documented below |
+
+### Multiplayer: new messages
+| `t` | class | fields | when |
+|---|---|---|---|
+| `hstate` | UP (client → server, built by the client; never on the DLL wire) | `active`, `vehicle`, `air`, `cr`, `held`, `fly`, `launch`, `seat` (booleans), `lv` int 0..63, `feetCpZ` a finite number or absent | at 5 Hz and on change, from `cam`, `state` and `Flight`; it replaces the JVM-shared `Bridge.hostAirborne`, `hostCrouching`, `hostHeld`, `hostInVehicle`, `hostFeetCpZ`, `hostStands` and `Cyberblock.launching` on the server |
+| `session` | client → DLL | `state` ∈ `none, host, guest, refused`, `reason` (≤ 128 UTF-8 bytes, `""` when there is none), `perms:{explosions, damage, hacks, devices, spawns}` (booleans) | after every handshake result, server disconnect and reconnect |
+| `pteleport` | DOWN → DLL | `pos:[x, y, z]` Minecraft position, finite with `\|c\| < 3e7` | a command (`/tp`) moved Steve: the position he was teleported to, three decimals. **Undocumented until Phase 1**; the DLL ignores it today like any unknown `t` |
+| `survey_cmd` | DOWN, client only | `op` ∈ `start, redo, stop, status` | `/cyberblock survey` on the server asks the issuing host's client; **the client handles it (`SurveyClient`) and never forwards it to the DLL** |
+| `hello` | DLL → client (**extends layer 1**) | adds `ver` (the DLL version, ≤ 32 chars) | on connect, as Minecraft's `hello` already has |
+
+- **`session`:** on `none`, `guest` or `refused` the DLL and the scripts clean Cyberpunk state exactly as on a link drop
+  (collision boxes reset, puppets despawned, tethers released, Minecraft pause released, survey stopped, parked V released)
+  while keeping the WebSocket. On a change **to** `host` the DLL forgets its probe state and sends `clear`, so the new
+  server session receives the whole ground again. `refused` carries the reason to show (a version mismatch, for example).
+  `perms` is what that host currently lets guests do to its game (`explosions`, `damage`, `hacks`, `devices`, `spawns`),
+  as the server sends it in `hs_ack.perms`. The client cuts `reason` at 128 bytes on a character boundary before it sends
+  (the version mismatch text of the handshake is exactly 128 bytes for `X.Y.Z` versions); a receiver that still gets a
+  longer one cuts it and never drops the whole message.
+- **`hstate`** is the server's only view of the host's body: `cam` never leaves the PC. `lv` is the alignment `k` the DLL
+  converted the latest `cam` with; `feetCpZ` is V's feet height in Cyberpunk z (absent while unknown).
+- **`pteleport.pos`** is a Minecraft position (the client does not shift it): a receiver maps it with the world's
+  alignment like any other position (`cp_to_mc_pos` inverse, [Ground alignment](#ground-alignment-re-test-2)).
+- **`survey_cmd`** carries the same four operations as the `/cyberblock survey` command; `redo` is a `start` that lists no
+  finished squares (the client builds the `survey` message for the DLL).
+- **Validation:** types and limits are checked on both sides; a bad message is dropped and counted, never fatal. Unknown
+  `state` or `op` values make the whole message invalid.
+
+### Multiplayer: payloads (client ↔ server)
+Registered with Fabric's payload registry and play networking (the 26.3 class names are fixed in task 1-N1). Every payload
+is a record with a `StreamCodec`; strings are UTF-8 with a length cap. Receivers run on the server thread (server) or are
+moved to the client thread (client). For reference; the owner of the exact caps is the integrator.
+
+| Id | Direction | Fields | When |
+|---|---|---|---|
+| `cyberblock:hs` | C2S | `proto` int (1), `mod` ≤ 32 (the mod version), `dll` ≤ 32 (`""` = no DLL linked), `wantHost` bool | on join; again when the DLL link comes up, drops or its `ver` changes |
+| `cyberblock:hs_ack` | S2C | `proto` int, `server` ≤ 32 (the server's mod version), `ok` bool, `role` ∈ `host, guest`, `reason` ≤ 256 (shown to the player when not empty), `perms` int bitmask, `maxHosts` int, `features` int bitmask | the answer to every `hs` |
+| `cyberblock:up` | C2S | `seq` int (per connection, +1 each), `t` ≤ 16, `json` ≤ 30000 bytes | one UP message |
+| `cyberblock:down` | S2C | `json` ≤ 1 000 000 bytes | one DOWN message for this client's DLL (or the client-only `survey_cmd`) |
+| `cyberblock:roster` | S2C | `list:[{uuid, name, linked, body ∈ male/female, team int (-1 none), pvp, downed, hidden}]` ≤ 200 | on join and on every change |
+| `cyberblock:perms` | C2S | `perms` int bitmask, `devices` int bitmask | a host changes what guests may do to its game |
+| `cyberblock:content` | S2C | `kind` ≤ 32, `json` ≤ 1 000 000 | content a client needs, on join and after `/reload` |
+| `cyberblock:act` | C2S | `t` ≤ 16, `json` ≤ 8000 | a player's request that the server routes to an owner: `scan`, `hack`, ... (each phase lists its `t`) |
+| `cyberblock:ui` | S2C | `t` ≤ 16, `json` ≤ 1 000 000 | server data for a screen |
+
+- **Bitmasks.** `perms`: 1 `explosions`, 2 `damage`, 4 `hacks`, 8 `devices`, 16 `spawns`. `features` (phase features the
+  server has): 1 replica, 2 devices, 4 figures, 8 hacking, 16 hub, 32 modes.
+- **Size caps.** Vanilla limits serverbound custom payloads, so the `up` cap sits below that limit (30000 bytes; task 1-N1
+  confirms the 26.3 number and adjusts it). The client relay splits `ground`, `unground` and `terrain` arrays (whole
+  quadruples) and `npcs` lists into several UP messages under the cap; any other UP message over the cap is dropped and
+  counted.
+- **Order.** UP messages of one host arrive in `seq` order and are processed in order on the server thread. The `align`
+  immediately followed by `blocks reset:true` rule of [Ground alignment](#ground-alignment-re-test-2) holds: the server
+  builds both in one tick into one session's DOWN queue.
+- **Down queue.** Per session, bounded at 2048 messages: the newest `mobs` and `proj` replace a queued one of the same
+  type; past the bound the oldest droppable message goes and a `blocks` resync is scheduled. A client that is not the
+  session's host ignores `down` (counted).
+
+### Multiplayer: handshake and sessions
+- **Handshake.** On join the client sends `hs`; the server answers `hs_ack`. A different `proto`, or mod versions that
+  differ in major.minor, give `ok:false` and a disconnect with "Cyberblock version mismatch: server X, your mod Y. Update
+  from the modpack." A linked DLL whose `ver` differs from the client's mod version plays as a guest with a reason (and the
+  client sends `session state:"refused"` to the DLL). Host role refused for another reason (not whitelisted, not in `hosts`,
+  `maxHosts` reached, `allowHosts` false) is `role:guest` with the reason; otherwise `role:host` when `wantHost`, else
+  `role:guest`. No `hs` within 10 s means no Cyberblock mod: with `requireMod:true` the server disconnects the client. The
+  client re-sends `hs` whenever its DLL link comes up, drops or reports another `ver`; a role change is answered with a new
+  `hs_ack`. On a lost server connection the client sends `session state:"none"` to the DLL and reconnects after 5, 10, 20,
+  40 and then every 60 s for 10 minutes.
+- **Session lifecycle.** `NONE` (no granted host role) → `LINKED` (`hs_ack role:host` and a host `hello` UP) → `ACTIVE`
+  (`hstate.active`) → back to `LINKED` when Cyberpunk goes Off → end on disconnect, a DLL link loss (`hs` with `dll:""`), a
+  role revoke or a server stop. On end the server removes that session's outline barriers, temp cells, proxies and figures,
+  mob targets and tethers and forgets its pending requests. After each host `hello` the server sends `align`, `perks`,
+  `cyberware`, the `effect` set and the block resync (`align` immediately followed by `blocks reset:true`) in one tick.
+- **Several hosts.** The model is multi-host from Phase 1; `maxHosts` (server config) is 1 until a later phase's multi-host
+  check passes.
+- **Log lines** (tests grep for them). Server: `handshake: <name> mod X dll Y -> host|guest (<reason>)`, `session: <name>
+  started|active|ended (<reason>)`, `relay: <name> dropped <t> x N (<why>)`. Client: `handshake: server X -> <role>`,
+  `relay: up N msgs/s, down N msgs/s`, `reconnect: in N s (<reason>)`. DLL: `session: <state> (<reason>)`,
+  `hello ver <ver>`. Scripts: `session: cleaned (<reason>)`.
+
+### Multiplayer: security, rate limits and guest toggles
+- **Who may send `up`.** Only a player with an active host role. An `up` from anyone else is dropped and counted, and 50 of
+  them within a minute kick the player.
+- **Envelope checks on every `up`** (server, before any handler): `t` is one of the UP types of the tables above; `json`
+  parses and its `t` equals the envelope `t`; the size is within the cap; the per-type token bucket below has a token; for
+  types with positions, every position is within the session's **sanity radius** of the host's player (160 blocks
+  horizontally, `terrain` 400 blocks); replies (`scaninfo`, `hackresult`, `hackspread`, later `devresult`, `spawnresult`)
+  carry a request id the session issued. A failing message or entry is dropped and counted; the counters are logged every
+  5 s (`relay: <name> dropped <t> x N (<why>)`).
+- **Rate limits** (token buckets per type and session; the server config's `rate` multiplier scales all of them):
+
+| `t` | tokens per second | burst | note |
+|---|---|---|---|
+| `ground`, `unground`, `clear` | 40 | 120 | at most 20000 cells per second |
+| `npcs` | 15 | 30 | |
+| `dmg` | 20 | 40 | |
+| `aim` | 15 | 30 | |
+| `hstate`, `state` | 10 | 20 | |
+| `mobdmg`, `pcells` | 30 | 60 | |
+| `scaninfo`, `hackresult`, `hackspread` | 40 | 80 | |
+| `killed`, `unlead` | 10 | 20 | |
+| `stats` | 2 | 4 | |
+| `terrain` | 30 | 200 | the burst is 200 during a survey |
+| `hello` | 1 | 3 | |
+| `devices`, `devstate`, `devresult` | 10 | 40 | Phase 4 and later |
+
+- **Overflow.** A session that keeps overflowing at five times its rate for 10 s is ended and the player kicked with
+  "Cyberblock: too many messages from your Cyberpunk link".
+- **Host permissions (toggles).** Each host decides what guests may do to its own Cyberpunk game: `explosions` (guest
+  explosions and wind charges near this host's V), `damage` (guest hits, fire, leads and rods on its NPCs and cars), `hacks`
+  (guest scans and quickhacks), `devices` (guest device control; Phase 4 adds one bit per type), `spawns` (guest spawns of
+  Night City NPCs; off by default, the others on). A gated action still happens in the Minecraft world; it just does not
+  reach that host's Cyberpunk game, and the guest sees `cyberblock.guest.blocked` on the action bar. The host's own actions
+  are always allowed. `/cyberblock guests <toggle> on|off` (the host, for its own game) changes them.
+- **`cmd`** is never relayed and a dedicated server refuses it.
+
+### Multiplayer names
+- **Payload ids** (`cyberblock:<id>`) — `hs`, `hs_ack`, `up`, `down`, `roster`, `perms`, `content`, `act`, `ui`
+- **Message classes** — `LOCAL`, `UP`, `DOWN`, `BOTH`
+- **Session states** (`session.state`) — `none`, `host`, `guest`, `refused`
+- **Roles** (`hs_ack.role`) — `host`, `guest`
+- **Survey commands** (`survey_cmd.op`) — `start`, `redo`, `stop`, `status`
+- **Guest toggles** (`session.perms` keys, in bit order) — `explosions`, `damage`, `hacks`, `devices`, `spawns`
+
+### Multiplayer examples
+One message per line (JSON Lines). Every new message has at least one line; `session` shows all four states.
+
+Multiplayer examples, Cyberpunk to Minecraft:
+```jsonl
+{"t":"hello","proto":1,"game":"cp2077","build":"2.31","ver":"1.1.0"}
+```
+
+Multiplayer examples, Minecraft to Cyberpunk:
+```jsonl
+{"t":"session","state":"host","reason":"","perms":{"explosions":true,"damage":true,"hacks":true,"devices":true,"spawns":false}}
+{"t":"session","state":"guest","reason":"","perms":{"explosions":false,"damage":false,"hacks":false,"devices":false,"spawns":false}}
+{"t":"session","state":"refused","reason":"Cyberblock: your Cyberpunk plugin is 1.0.0 but your mod is 1.1.0; you can play as a guest. Reinstall both from the same release.","perms":{"explosions":false,"damage":false,"hacks":false,"devices":false,"spawns":false}}
+{"t":"session","state":"none","reason":"disconnected from the server","perms":{"explosions":false,"damage":false,"hacks":false,"devices":false,"spawns":false}}
+{"t":"pteleport","pos":[-1230.5,65.0,820.5]}
+```
+
+Multiplayer examples, client to server (`cyberblock:up`):
+```jsonl
+{"t":"hstate","active":true,"vehicle":false,"air":false,"cr":false,"held":false,"fly":false,"launch":false,"seat":false,"lv":57,"feetCpZ":64.9}
+{"t":"hstate","active":false,"vehicle":true,"air":false,"cr":true,"held":true,"fly":false,"launch":false,"seat":true,"lv":0}
+```
+
+Multiplayer examples, server to client only (`cyberblock:down`):
+```jsonl
+{"t":"survey_cmd","op":"start"}
+```
+
 ## Shared memory `Local\CyberblockFrame`
 Exactly the reference `FrameExporter` layout (see its Javadoc) with magic `0x52464243` ("CBFR"). The
 reference flags (zero-to-one depth, bottom-up rows, reversed-Z) are kept.
