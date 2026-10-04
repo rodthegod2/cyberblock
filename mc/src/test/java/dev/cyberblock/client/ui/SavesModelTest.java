@@ -55,7 +55,32 @@ class SavesModelTest {
 		assertEquals(-1, bare.level());
 		assertEquals(-1L, bare.played());
 		assertNull(bare.time());
-		assertTrue(bare.loadable());
+		assertFalse(bare.hasMetadata());
+		assertFalse(bare.loadable(), "its validity is unknown: Night City Menu... loads it, never Minecraft");
+	}
+
+	@Test
+	void onlyASaveWhoseMetadataCameIsLoadable() {
+		SavesModel.Saves s = SavesModel.of(reply(status("ok"), save(0, "Watson", false, line(1, "ManualSave-1")),
+			save(1, "Watson", false, line(1, "ManualSave-2"), line(2, "ManualSave|5|60|1700000000|Corporate")),
+			save(2, "Watson", false, line(1, "ManualSave-3"), line(2, "|||1700000000|"))));
+		assertEquals(List.of(false, true, true), s.list().stream().sorted(java.util.Comparator.comparing(SavesModel.Save::key)).map(
+			SavesModel.Save::loadable).toList());
+	}
+
+	@Test
+	void aSelectionIsFoundAgainByNameAfterANewSaveShiftsTheRows() {
+		SavesModel.Saves before = SavesModel.of(reply(status("ok"), save(0, "Watson", false, line(1, "ManualSave-1"), line(2, "ManualSave|5|60|1700000000|")),
+			save(1, "Watson", false, line(1, "ManualSave-2"), line(2, "ManualSave|5|60|1600000000|"))));
+		String picked = before.list().get(1).key();
+		assertEquals("ManualSave-2", picked);
+		SavesModel.Saves after = SavesModel.of(reply(status("ok"), save(0, "Watson", false, line(1, "ManualSave-1"), line(2, "ManualSave|5|60|1700000000|")),
+			save(1, "Watson", false, line(1, "ManualSave-2"), line(2, "ManualSave|5|60|1600000000|")),
+			save(2, "Watson", false, line(1, "ManualSave-3"), line(2, "ManualSave|5|60|1800000000|"))));
+		assertEquals(2, SavesModel.indexOf(after.list(), picked), "the new save on top moves the picked one down a row");
+		assertEquals(-1, SavesModel.indexOf(after.list(), "ManualSave-0"), "a save that is gone selects nothing");
+		assertEquals(-1, SavesModel.indexOf(after.list(), null));
+		assertEquals(-1, SavesModel.indexOf(after.list(), ""));
 	}
 
 	@Test
@@ -82,8 +107,9 @@ class SavesModelTest {
 
 	@Test
 	void damagedAndOverlongSavesAreNotLoadable() {
-		SavesModel.Saves s = SavesModel.of(reply(status("ok"), save(0, "Bad", true, line(1, "ManualSave-1")), save(1, "Long", false, line(1, "x".repeat(65))),
-			save(2, "NoKey", false)));
+		String meta = "ManualSave|5|60|1700000000|Nomad";
+		SavesModel.Saves s = SavesModel.of(reply(status("ok"), save(0, "Bad", true, line(1, "ManualSave-1"), line(2, meta)), save(1, "Long", false, line(1,
+			"x".repeat(65)), line(2, meta)), save(2, "NoKey", false, line(2, meta))));
 		assertTrue(s.list().stream().noneMatch(SavesModel.Save::loadable));
 		assertTrue(SavesModel.fitsArg("x".repeat(64)));
 		assertFalse(SavesModel.fitsArg("é".repeat(33)), "66 UTF-8 bytes");

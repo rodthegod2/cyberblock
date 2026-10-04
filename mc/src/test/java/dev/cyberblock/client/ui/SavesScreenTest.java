@@ -90,6 +90,24 @@ class SavesScreenTest {
 	}
 
 	@Test
+	void aSaveWithoutMetadataIsNeverSent() {
+		hostSpeaks();
+		assertFalse(SavesScreen.load(new SavesModel.Save(6, "QuickSave-1", "Watson", "", -1, -1L, null, "", "", false)));
+		assertTrue(this.sent.isEmpty());
+	}
+
+	@Test
+	void theConfirmationTellsTwoSavesAtOnePlaceApart() {
+		SavesModel.Save undated = new SavesModel.Save(7, "AutoSave-4", "Japantown", "", 20, 90000L, null, "", "Nomad", false);
+		assertEquals("AutoSave-4", SavesScreen.describe(undated), "no date and no type: its name");
+		SavesModel.Save dated = new SavesModel.Save(8, "ManualSave-10", "Japantown", "ManualSave", 20, 90000L, java.time.Instant.ofEpochSecond(1_759_000_000L),
+			"", "Nomad", false);
+		String text = SavesScreen.describe(dated);
+		assertTrue(text.startsWith("Manual save, "), text);
+		assertNotEquals(SavesScreen.describe(SAVE), text);
+	}
+
+	@Test
 	void newSaveSendsSaveNew() {
 		hostSpeaks();
 		assertTrue(SavesScreen.newSave());

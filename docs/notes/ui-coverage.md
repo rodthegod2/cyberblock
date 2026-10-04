@@ -82,9 +82,12 @@ save's metadata, so the metadata is expected to follow the list; whatever has no
 (the save is listed by its name, log `saves: metadata for <k> of <n>`).
 
 **The screen.** Esc, then "Saves...": the saves newest first (location, type, level, play time, date, tracked job),
-Load (with a confirmation), New Save (a manual save), Quick Save, Load Last Save, Night City Menu... and Back. A save that
-Cyberpunk marks invalid, or whose name is longer than the 64 bytes a `uiact` can carry, is listed but not loadable from
-Minecraft (Night City Menu... still loads it). At most 127 saves are listed (the reply's group cap). The wire carries
+Load (with a confirmation naming the place, the type and the date, or the save's name when the date is unknown, so two
+saves at one place can be told apart), New Save (a manual save), Quick Save, Load Last Save, Night City Menu... and Back.
+The selection is kept by the save's name, so the list asked for again after a save (the new one sorts to the top) does
+not move it onto another save; a save that is gone leaves nothing selected. A save that Cyberpunk marks invalid, whose
+metadata did not come (its validity is unknown), or whose name is longer than the 64 bytes a `uiact` can carry, is
+listed but not loadable from Minecraft (Night City Menu... still offers it, with Cyberpunk's own check). At most 127 saves are listed (the reply's group cap). The wire carries
 nothing new: the list is `uiact journalreq arg:"saves"` with a `reply` of kind `journal` (the Saves.reds header has the
 exact shape), a load is `uiact loadlast arg:<save name> id:<index>`, a new save `uiact save arg:"new"`.
 
@@ -100,7 +103,43 @@ appears is part of the in-game check, and Quick Save stays as the proven way to 
 
 **A load is by name.** Minecraft sends the save's name and index; Saves.reds asks for the list again and loads the save
 with exactly that name (the index only while it still names that save), so a save made in between cannot shift the load
-onto another one. Night City's pause ends first, as with Load Last Save.
+onto another one. It then waits up to 1.5 s for that save's metadata and loads only when `isValid` is true, the
+check Cyberpunk's own load menu makes, so a corrupt save, one from a newer version or one needing a missing DLC never
+reaches `LoadSavedGame`; otherwise a warning toast and `saves: load "<name>" dropped (not valid)` (or `(not valid: no
+metadata in 1.5 s)`). Night City's pause ends first, as with Load Last Save.
+
+**For the integrator (9U owns neither `shared/protocol.md` nor `tools/fakehost.py`).** Text for protocol.md, a
+"Phase 9" table after the Phase 7 one, in the same form:
+
+| `t` | fields | when |
+|---|---|---|
+| `uiact` | **extends re-test 3 and Phase 7:** `journalreq` with `arg:"saves"` asks for Night City's save list, answered by a `reply` `kind:"journal"` (shape below). `loadlast` with an `arg` (the save's name, as line 1 of its group) and `id` (its index, the group's `hash`) loads that save: the host asks for the list again, finds the save by its exact name (the index only while it still names that save) and loads it only when Cyberpunk calls it valid; without an `arg` it is still "Load Last Save". `save` with `arg:"new"` makes a new manual save; without an `arg` it is still the quick save | the Minecraft "Night City saves" screen (9-U1); LOCAL |
+
+- **The saves `reply`.** Group 0 is the status: `hash:0`, `title` `"ok"` or `"unavailable: <why>"`, `done` = not ok,
+  no lines; an unavailable list has no further groups. Then one group per save, in Cyberpunk's order, at most 127:
+  `hash` = the save's index in Cyberpunk's list, `title` = its location (else its name), `done` = Cyberpunk marks it
+  invalid; lines: `hash:1` the save's name (the load key), `hash:2` `"<type>|<level>|<seconds played>|<timestamp>|<life
+  path>"` (only when its metadata came; type is the `inkSaveType` name), `hash:3` the tracked job (only when it has
+  one). Minecraft offers a load only for a save whose line 2 came, whose `done` is false and whose name fits `arg`.
+
+Follow-up for `tools/fakehost.py --ui`: `ui_replies` answers every `journalreq` with the sample journal, which
+SavesScreen reads as "not a save list". Answer `arg:"saves"` first, so SavesScreen can be rendered and screenshotted:
+
+```python
+if m.get("a") == "journalreq" and m.get("arg") == "saves":
+    return [{"t": "reply", "kind": "journal", "id": rid, "pins": [], "groups": [
+        {"hash": 0, "title": "ok", "kind": "other", "tracked": False, "done": False, "lines": []},
+        {"hash": 0, "title": "Watson", "kind": "other", "tracked": False, "done": False, "lines": [
+            {"hash": 1, "text": "ManualSave-2", "state": 0},
+            {"hash": 2, "text": "ManualSave|12|43500|1759000000|StreetKid", "state": 0},
+            {"hash": 3, "text": "The Pickup", "state": 0}]},
+        {"hash": 1, "title": "Watson", "kind": "other", "tracked": False, "done": False, "lines": [
+            {"hash": 1, "text": "AutoSave-1", "state": 0},
+            {"hash": 2, "text": "AutoSave|11|40200|1758900000|StreetKid", "state": 0}]}]}]
+```
+
+(Group hash 0 appears twice on purpose: the status, then the save at index 0; SavesModel reads group 0 of the list as
+the status by position.)
 
 ## 4. World-space layers (never touched)
 

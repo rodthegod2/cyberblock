@@ -45,7 +45,8 @@ public final class SavesScreen extends Screen {
 	private final @Nullable Screen parent;
 	private SavesModel.@Nullable Saves saves;
 	private int requestId = -1;
-	private int selected = -1;
+	/** The selected save's name, not its row: a refresh puts a new save on top and shifts every row (null = none). */
+	private @Nullable String selectedKey;
 	private int scroll;
 	private int refreshIn = -1;
 	private final Map<Item, Button> buttons = new EnumMap<>(Item.class);
@@ -130,7 +131,10 @@ public final class SavesScreen extends Screen {
 				Cyberblock.LOG.info("ui: saves unavailable ({}): Night City Menu... has Cyberpunk's own lists", s.why());
 			}
 
-			this.selected = s.list().isEmpty() ? -1 : Math.clamp(this.selected, 0, s.list().size() - 1);
+			if (SavesModel.indexOf(s.list(), this.selectedKey) < 0) {
+				this.selectedKey = null; // that save is gone: nothing is selected rather than its neighbour
+			}
+
 			this.update(UiLink.linked());
 		});
 	}
@@ -153,7 +157,15 @@ public final class SavesScreen extends Screen {
 
 	private SavesModel.@Nullable Save selectedSave() {
 		SavesModel.Saves s = this.saves;
-		return s != null && this.selected >= 0 && this.selected < s.list().size() ? s.list().get(this.selected) : null;
+		int row = s == null ? -1 : SavesModel.indexOf(s.list(), this.selectedKey);
+		return s == null || row < 0 ? null : s.list().get(row);
+	}
+
+	/** What tells two saves at the same place apart in the confirmation: its type and date, or its name when the date is unknown. */
+	public static String describe(final SavesModel.Save save) {
+		String when = save.time() != null ? WHEN.format(save.time().atZone(ZoneId.systemDefault())) : save.key();
+		String type = typeName(save.type());
+		return type.isEmpty() ? when : type + ", " + when;
 	}
 
 	private void confirmLoad() {
@@ -169,7 +181,7 @@ public final class SavesScreen extends Screen {
 				this.minecraft.gui.setScreen(this);
 			}
 		}, NightCityPauseScreen.ui("saves.load_title", "Load %s?", save.title()),
-			NightCityPauseScreen.ui("saves.load_confirm", "Unsaved progress is lost.")));
+			NightCityPauseScreen.ui("saves.load_confirm", "%s. Unsaved progress is lost.", describe(save))));
 	}
 
 	private int listLeft() {
@@ -212,18 +224,19 @@ public final class SavesScreen extends Screen {
 
 		this.scroll = Math.clamp(this.scroll, 0, Math.max(0, list.size() - this.visibleRows()));
 		graphics.enableScissor(x - 2, TOP - 2, x + LIST_W + 2, this.listBottom() + 2);
-		int y = TOP;
+		int y = TOP, selected = SavesModel.indexOf(list, this.selectedKey);
 		for (int i = this.scroll; i < list.size() && y < this.listBottom(); i++, y += ROW_H) {
-			this.row(graphics, list.get(i), i, x, y, mouseX, mouseY);
+			this.row(graphics, list.get(i), i == selected, x, y, mouseX, mouseY);
 		}
 
 		graphics.disableScissor();
 	}
 
 	/** One save, drawn like a world in Minecraft's world list: name, then type, level and play time, then date and job. */
-	private void row(final GuiGraphicsExtractor graphics, final SavesModel.Save save, final int i, final int x, final int y, final int mouseX, final int mouseY) {
+	private void row(final GuiGraphicsExtractor graphics, final SavesModel.Save save, final boolean selected, final int x, final int y, final int mouseX,
+		final int mouseY) {
 		boolean hovered = mouseX >= x && mouseX < x + LIST_W && mouseY >= y && mouseY < y + ROW_H - 2 && mouseY < this.listBottom();
-		if (i == this.selected) {
+		if (selected) {
 			graphics.fill(x - 2, y - 2, x + LIST_W + 2, y + ROW_H - 2, McTheme.WHITE);
 			graphics.fill(x - 1, y - 1, x + LIST_W + 1, y + ROW_H - 3, 0xFF000000);
 		} else if (hovered) {
@@ -288,7 +301,7 @@ public final class SavesScreen extends Screen {
 			return false;
 		}
 
-		this.selected = row;
+		this.selectedKey = s.list().get(row).key();
 		this.update(UiLink.linked());
 		if (doubleClick) {
 			this.confirmLoad();

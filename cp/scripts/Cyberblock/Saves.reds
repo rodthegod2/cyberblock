@@ -10,7 +10,10 @@
 //     when its metadata came), hash 3 = the tracked job (only when it has one).
 //   - `uiact loadlast arg:<the save's name> id:<its index>` loads that save: the list is asked for again first and
 //     the save is found by its exact name (the index only while its name still matches), so a save made in
-//     the meantime cannot shift the load onto another one. `loadlast` without an arg is the old "Load Last Save".
+//     the meantime cannot shift the load onto another one. It then waits for that save's metadata (at most 45 pumps)
+//     and loads only when Cyberpunk says it is valid (SaveMetadataInfo.isValid), the check Cyberpunk's own load menu
+//     makes: a corrupt save, one from a newer version or one needing a missing DLC is never handed to LoadSavedGame.
+//     `loadlast` without an arg is the old "Load Last Save".
 //   - `uiact save arg:"new"` makes a new manual save; `save` without an arg is the old quick save.
 //
 // The list comes from the calls Cyberpunk's own load menu makes (LoadGameMenuGameController): RequestSavesForLoad,
@@ -23,8 +26,8 @@
 //   'saves: Minecraft save list active (RequestSavesForLoad answered, <n> saves)'
 //   'saves: pass-through (RequestSavesForLoad gave no answer in 3 s; Night City Menu... has the lists)'
 // Metadata that has not all come 45 pumps after the list is sent as far as it came ('saves: metadata for <k> of <n>').
-// Other log lines: 'saves: load "<name>" (index <i>)', 'saves: load "<name>" dropped (<why>)', 'saves: new manual
-// save requested'.
+// Other log lines: 'saves: load "<name>" (index <i>)', 'saves: load "<name>" dropped (<why>)' (why: "no save list",
+// "not in the list any more", "not valid", "not valid: no metadata in 1.5 s"), 'saves: new manual save requested'.
 //
 // 2.31 script API (NativeDB, redscript), each call proven by compile_check: inkISystemRequestsHandler
 // RegisterToCallback/UnregisterFromCallback, RequestSavesForLoad, LoadSavedGame(saveId: Int32), ManualSave(saveName:
@@ -43,10 +46,12 @@ public class CyberblockSaveService extends ScriptableService {
   // UI pumps since the request, and since the list came.
   public let waitPumps: Int32;
   public let metaPumps: Int32;
-  // The request id of Minecraft's list request (-1 none) and a load waiting for the fresh list ("" none).
+  // The request id of Minecraft's list request (-1 none) and a load waiting for the fresh list and then for that save's
+  // metadata ("" none; loadFound is its index in the fresh list, -1 until the list came).
   public let listId: Int32;
   public let loadKey: String;
   public let loadIndex: Int32;
+  public let loadFound: Int32;
   // The list and each save's metadata (null until it came), by index.
   public let names: array<String>;
   public let infos: array<ref<SaveMetadataInfo>>;
@@ -73,6 +78,7 @@ public class CyberblockSaveService extends ScriptableService {
     this.waitPumps = 0;
     this.metaPumps = 0;
     this.metaCount = 0;
+    this.loadFound = -1;
     ArrayClear(this.names);
     ArrayClear(this.infos);
     // registered fresh each time: the handler may be a new one after a load
@@ -93,15 +99,12 @@ public class CyberblockSaveService extends ScriptableService {
     ArrayResize(this.infos, ArraySize(saves));
     this.Verdict(s"Minecraft save list active (RequestSavesForLoad answered, \(ArraySize(saves)) saves)");
     if StrLen(this.loadKey) > 0 {
-      this.LoadNow();
+      this.FindLoad();
     }
-    if this.listId < 0 {
-      this.asking = false;
-    } else {
-      if ArraySize(saves) == 0 {
-        this.Reply("ok");
-      }
+    if this.listId >= 0 && ArraySize(saves) == 0 {
+      this.Reply("ok");
     }
+    this.Settle();
     return true;
   }
 
@@ -113,11 +116,22 @@ public class CyberblockSaveService extends ScriptableService {
     if i >= 0 && i < ArraySize(this.infos) && !IsDefined(this.infos[i]) {
       this.infos[i] = info;
       this.metaCount += 1;
+      if StrLen(this.loadKey) > 0 && i == this.loadFound {
+        this.LoadNow(info);
+      }
       if this.metaCount >= ArraySize(this.names) && this.listId >= 0 {
         this.Reply("ok");
       }
+      this.Settle();
     }
     return true;
+  }
+
+  // Nothing waits any more (no list request, no load): stop listening for this list.
+  private func Settle() -> Void {
+    if this.listId < 0 && StrLen(this.loadKey) == 0 {
+      this.asking = false;
+    }
   }
 
   // Each UI pump (CyberblockRestyle.Update): the timeouts of the feature check.
@@ -133,9 +147,16 @@ public class CyberblockSaveService extends ScriptableService {
       return;
     }
     this.metaPumps += 1;
-    if this.metaPumps >= 45 && this.listId >= 0 {
-      Cyberblock_Log(s"saves: metadata for \(this.metaCount) of \(ArraySize(this.names))");
-      this.Reply("ok");
+    if this.metaPumps >= 45 {
+      if this.listId >= 0 {
+        Cyberblock_Log(s"saves: metadata for \(this.metaCount) of \(ArraySize(this.names))");
+        this.Reply("ok");
+      }
+      if StrLen(this.loadKey) > 0 {
+        // its validity is unknown: never hand it to LoadSavedGame
+        this.DropLoad("not valid: no metadata in 1.5 s", "Night City could not check that save: load it through Night City Menu...");
+      }
+      this.asking = false;
     }
   }
 
@@ -143,14 +164,19 @@ public class CyberblockSaveService extends ScriptableService {
   private func Fail(why: String) -> Void {
     this.Verdict(s"pass-through (\(why); Night City Menu... has the lists)");
     if StrLen(this.loadKey) > 0 {
-      Cyberblock_Log(s"saves: load \"\(this.loadKey)\" dropped (no save list)");
-      Cyberblock_Notify(n"warning", "Load", "Night City did not list its saves: use Night City Menu...", 4.0);
-      this.loadKey = "";
+      this.DropLoad("no save list", "Night City did not list its saves: use Night City Menu...");
     }
     if this.listId >= 0 {
       this.Reply(s"unavailable: \(why)");
     }
     this.asking = false;
+  }
+
+  private func DropLoad(why: String, notice: String) -> Void {
+    Cyberblock_Log(s"saves: load \"\(this.loadKey)\" dropped (\(why))");
+    Cyberblock_Notify(n"warning", "Load", notice, 4.0);
+    this.loadKey = "";
+    this.loadFound = -1;
   }
 
   private func Verdict(path: String) -> Void {
@@ -160,10 +186,10 @@ public class CyberblockSaveService extends ScriptableService {
     }
   }
 
-  // The waiting load, on the fresh list: by its exact name, the index only while its name still matches.
-  private func LoadNow() -> Void {
+  // The waiting load, on the fresh list: by its exact name, the index only while its name still matches. It then
+  // waits for that save's metadata (OnSaveMetadataReady, or dropped by Update's timeout).
+  private func FindLoad() -> Void {
     let key = this.loadKey;
-    this.loadKey = "";
     let found = -1;
     if this.loadIndex >= 0 && this.loadIndex < ArraySize(this.names) && Equals(this.names[this.loadIndex], key) {
       found = this.loadIndex;
@@ -176,10 +202,24 @@ public class CyberblockSaveService extends ScriptableService {
       i += 1;
     }
     if found < 0 {
-      Cyberblock_Log(s"saves: load \"\(key)\" dropped (not in the list any more)");
-      Cyberblock_Notify(n"warning", "Load", "That save is not in the list any more", 4.0);
+      this.DropLoad("not in the list any more", "That save is not in the list any more");
       return;
     }
+    this.loadFound = found;
+    if IsDefined(this.infos[found]) {
+      this.LoadNow(this.infos[found]);
+    }
+  }
+
+  // The waiting load, with its metadata: only a save Cyberpunk calls valid is loaded.
+  private func LoadNow(info: ref<SaveMetadataInfo>) -> Void {
+    let found = this.loadFound;
+    if !info.isValid {
+      this.DropLoad("not valid", "Night City cannot load that save");
+      return;
+    }
+    this.loadKey = "";
+    this.loadFound = -1;
     let requests = GameInstance.GetSystemRequestsHandler();
     let ui = CyberblockUiService.Get();
     if IsDefined(ui) {

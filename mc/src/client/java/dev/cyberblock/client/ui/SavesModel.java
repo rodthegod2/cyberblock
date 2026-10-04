@@ -37,9 +37,17 @@ public final class SavesModel {
 	 */
 	public record Save(int index, String key, String title, String type, int level, long played, @Nullable Instant time, String job, String lifePath,
 		boolean damaged) {
-		/** It can be loaded from Minecraft: Cyberpunk does not mark it invalid and its name fits {@code uiact.arg}. */
+		/**
+		 * It can be loaded from Minecraft: its metadata came (so Cyberpunk checked it) and does not mark it invalid, and its name fits
+		 * {@code uiact.arg}. A save whose validity is unknown is loaded through Night City Menu... only.
+		 */
 		public boolean loadable() {
-			return !this.damaged && !this.key.isEmpty() && fitsArg(this.key);
+			return this.hasMetadata() && !this.damaged && !this.key.isEmpty() && fitsArg(this.key);
+		}
+
+		/** Its metadata line came (the type or the date is known); without it Cyberpunk's validity check is unknown. */
+		public boolean hasMetadata() {
+			return !this.type.isEmpty() || this.time != null;
 		}
 	}
 
@@ -143,5 +151,20 @@ public final class SavesModel {
 	/** A save name fits {@code uiact.arg} (at most 64 UTF-8 bytes, no control characters the wire would strip). */
 	public static boolean fitsArg(final String key) {
 		return key.getBytes(StandardCharsets.UTF_8).length <= ARG_BYTES && UiModel.clean(key, ARG_BYTES).equals(key);
+	}
+
+	/** The row of the save with this name in a list, -1 when it is not there (a selection is kept by name across refreshes). */
+	public static int indexOf(final List<Save> list, final @Nullable String key) {
+		if (key == null || key.isEmpty()) {
+			return -1;
+		}
+
+		for (int i = 0; i < list.size(); i++) {
+			if (list.get(i).key().equals(key)) {
+				return i;
+			}
+		}
+
+		return -1;
 	}
 }
