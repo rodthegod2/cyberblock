@@ -1688,7 +1688,7 @@ def test_hub_scenario_passes_against_an_ideal_server(tmp_path):
     rep = run_scenario(sim, "hub")
     assert rep.ok, failed(rep)
     assert len(rep.checks) == 15 and sim.max_hosts == 1
-    assert mpcheck.hub_events(sim.hosts["CbHost1"]["log"]) == [("park", True), ("hub", True), ("hub", False), ("park", False), ("park", True), ("hub", True)]  # enter, leave, enter again: nothing else, nothing for the guest
+    assert mpcheck.hub_events(mpcheck.FakeHost("CbHost1", SimProc(), sim.hosts["CbHost1"]["log"], None)) == [("park", True), ("hub", True), ("hub", False), ("park", False), ("park", True), ("hub", True)]  # enter, leave, enter again: nothing else, nothing for the guest
 
 
 def test_hub_scenario_accepts_a_server_that_leaves_with_its_own_command(tmp_path):
