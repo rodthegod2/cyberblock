@@ -30,6 +30,26 @@
 // Codeware 1.20.3: TraceResult.GetHitEntity(script_ref<TraceResult>) -> ref<Entity>,
 // StaticEntitySystem.IsTagged(EntityID, CName); the boxes are 1 m cubes centred on their entity position, tagged
 // CyberblockCollisionService.Tag().
+//
+// Megaplan 2026-10-04 task 3-S1 (section 1.8 amendment items 1 and 2, Phase 0 check (b); the CET lines B1-B5 were not
+// run, so both are feature-checked at runtime and the log names the path in use):
+//   - Materials: every down and wall hit gets a name, sent right before Cyberblock_SubmitProbes through
+//     Cyberblock_SubmitProbeMaterials (parallel to the hit arrays): TraceResult.material when it names something, else
+//     the mesh appearance of the hit world node (Codeware TraceResult.GetHitObject -> worldINodeInstance.GetNode ->
+//     worldMeshNode / worldInstancedMeshNode .meshAppearance), else n"". The DLL maps the names to material_palette
+//     codes through the shared table (shared/vectors.json key `materials`); the scripts only pass names. Once per session,
+//     after the first 64 hits: 'probes: materials from trace|mesh appearance|none (heuristic palette)' with the counts.
+//   - Device hits: a probe ray whose hit entity is a Device (Door extends InteractiveDevice extends Device, door.swift 2,
+//     interactiveDevice.swift 2) is cast again from 10 cm past the hit, as our boxes are, so doors and gates never enter
+//     the static replica; 'probes: device hits recast' once, when the first one is seen. The aim ray, Blocked (Scan's
+//     line of sight) and the survey keep treating devices as solid (a closed door stops reach and sight).
+// 2.31 script API (NativeDB, redscript): TraceResult.material: CName (orphans.swift), IsNameValid(CName) -> Bool;
+// Codeware 1.20.3: TraceResult.GetHitObject(script_ref<TraceResult>) -> ref<ISerializable>, worldINodeInstance.GetNode()
+// -> ref<worldNode>, worldMeshNode.meshAppearance, worldInstancedMeshNode.meshAppearance (CName).
+
+// Declared here (rule 0.14), implemented by Cyberblock.dll (natives.cpp, probes.cpp; package 3D): the material name of
+// each hit of the Cyberblock_SubmitProbes call that follows it, in the same order (n"" when nothing is known).
+public native func Cyberblock_SubmitProbeMaterials(down: array<CName>, wall: array<CName>) -> Void;
 
 public class CyberblockProbes {
   // Column offsets (metres from V's 1-m cell) sorted by ring, so the ground under V is probed first.
@@ -47,6 +67,12 @@ public class CyberblockProbes {
   private let lastTime: Float;
   // Raycasts used so far this tick (a ray through our boxes takes one more per box).
   private let casts: Int32;
+  // Where the hits' material names came from (trace, mesh appearance, none) until the once-per-session log line.
+  private let fromTrace: Int32;
+  private let fromMesh: Int32;
+  private let fromNone: Int32;
+  private let materialsLogged: Bool;
+  private let devicesLogged: Bool;
 
   public func Tick(player: ref<PlayerPuppet>) -> Void {
     let game = player.GetGame();
@@ -76,6 +102,8 @@ public class CyberblockProbes {
 
     let downHits: array<Vector4>;
     let wallHits: array<Vector4>;
+    let downMaterials: array<CName>;
+    let wallMaterials: array<CName>;
     let result: TraceResult;
     this.casts = 0;
     while this.casts < budget {
@@ -87,6 +115,7 @@ public class CyberblockProbes {
         let bottom = new Vector4(x, y, feet.Z - depth, 1.0);
         if this.Trace(queries, filter, top, bottom, result) {
           ArrayPush(downHits, Cast<Vector4>(result.position));
+          ArrayPush(downMaterials, this.Material(result));
         }
       } else {
         let w = -1 - i;
@@ -96,9 +125,12 @@ public class CyberblockProbes {
         let end = new Vector4(feet.X + radius * CosF(angle), feet.Y + radius * SinF(angle), feet.Z + height, 1.0);
         if this.Trace(queries, filter, start, end, result) {
           ArrayPush(wallHits, Cast<Vector4>(result.position));
+          ArrayPush(wallMaterials, this.Material(result));
         }
       }
     }
+    this.LogMaterials();
+    Cyberblock_SubmitProbeMaterials(downMaterials, wallMaterials);
     Cyberblock_SubmitProbes(feet, downHits, wallHits, radius);
     this.Aim(player, queries, filter);
     if !CyberblockSurveyTour.Running(game) {
@@ -135,7 +167,8 @@ public class CyberblockProbes {
     let used = 0;
     let top = new Vector4(x, y, aroundZ + 500.0, 1.0);
     let bottom = new Vector4(x, y, aroundZ - 200.0, 1.0);
-    let hit = CyberblockProbes.TraceNightCity(queries, surface, top, bottom, result, used, 16);
+    let devices = 0;
+    let hit = CyberblockProbes.TraceNightCity(queries, surface, top, bottom, result, used, false, devices, 16);
     casts += used;
     if !hit {
       return new Vector4(x, y, 0.0, 0.0);
@@ -149,12 +182,18 @@ public class CyberblockProbes {
     return new Vector4(x, y, z, isWater ? 2.0 : 1.0);
   }
 
-  // A raycast against Night City (Static + Terrain) that passes through our collision boxes: from just beyond the
-  // box it hit, it casts again, up to 16 boxes deep. True with `result` on the first hit that is not ours.
+  // A probe raycast against Night City (Static + Terrain) that passes through our collision boxes and through devices:
+  // from just beyond the box or device it hit, it casts again, up to 16 deep. True with `result` on the first hit that
+  // is neither.
   private func Trace(queries: ref<SpatialQueriesSystem>, filter: QueryFilter, from: Vector4, to: Vector4, out result: TraceResult) -> Bool {
     let casts = 0;
-    let hit = CyberblockProbes.TraceNightCity(queries, filter, from, to, result, casts, 16);
+    let devices = 0;
+    let hit = CyberblockProbes.TraceNightCity(queries, filter, from, to, result, casts, true, devices, 16);
     this.casts += casts;
+    if devices > 0 && !this.devicesLogged {
+      this.devicesLogged = true;
+      Cyberblock_Log("probes: device hits recast");
+    }
     return hit;
   }
 
@@ -165,12 +204,26 @@ public class CyberblockProbes {
     QueryFilter.AddGroup(filter, n"Terrain");
     let result: TraceResult;
     let casts = 0;
-    return CyberblockProbes.TraceNightCity(GameInstance.GetSpatialQueriesSystem(game), filter, from, to, result, casts, 16);
+    let devices = 0;
+    return CyberblockProbes.TraceNightCity(GameInstance.GetSpatialQueriesSystem(game), filter, from, to, result, casts, false, devices, 16);
+  }
+
+  // Night City surface between two points for the scripts' other callers (Teleport.reds' settle probe and ground snap):
+  // through our boxes and devices, as the probes see it.
+  public static func Surface(queries: ref<SpatialQueriesSystem>, from: Vector4, to: Vector4, out result: TraceResult) -> Bool {
+    let filter: QueryFilter;
+    QueryFilter.AddGroup(filter, n"Static");
+    QueryFilter.AddGroup(filter, n"Terrain");
+    let casts = 0;
+    let devices = 0;
+    return CyberblockProbes.TraceNightCity(queries, filter, from, to, result, casts, true, devices, 16);
   }
 
   // Trace's raycast; `casts` counts the rays it took. A hit on one of our boxes is dropped and the ray cast again from
-  // just past it, through at most `maxBoxes` boxes (false when there are more).
-  private static func TraceNightCity(queries: ref<SpatialQueriesSystem>, filter: QueryFilter, from: Vector4, to: Vector4, out result: TraceResult, out casts: Int32, maxBoxes: Int32) -> Bool {
+  // just past it, through at most `maxBoxes` boxes (false when there are more). With `passDevices`, a hit on a Device
+  // (doors included) is dropped the same way and cast again from 10 cm past the hit point (`devices` counts them; they
+  // share the `maxBoxes` limit).
+  private static func TraceNightCity(queries: ref<SpatialQueriesSystem>, filter: QueryFilter, from: Vector4, to: Vector4, out result: TraceResult, out casts: Int32, passDevices: Bool, out devices: Int32, maxBoxes: Int32) -> Bool {
     let entities = GameInstance.GetStaticEntitySystem();
     let start = from;
     let boxes = 0;
@@ -181,16 +234,87 @@ public class CyberblockProbes {
         return false;
       }
       let entity = TraceResult.GetHitEntity(hit);
-      if !IsDefined(entity) || !IsDefined(entities) || !entities.IsTagged(entity.GetEntityID(), CyberblockCollisionService.Tag()) {
+      let device = passDevices && IsDefined(entity) && (IsDefined(entity as Device) || IsDefined(entity as Door));
+      if !device && (!IsDefined(entity) || !IsDefined(entities) || !entities.IsTagged(entity.GetEntityID(), CyberblockCollisionService.Tag())) {
         result = hit;
         return true;
       }
-      if !CyberblockProbes.PastBox(start, to, entity.GetWorldPosition(), start) {
-        return false;
+      if device {
+        devices += 1;
+        if !CyberblockProbes.PastPoint(start, to, Cast<Vector4>(hit.position), 0.1, start) {
+          return false;
+        }
+      } else {
+        if !CyberblockProbes.PastBox(start, to, entity.GetWorldPosition(), start) {
+          return false;
+        }
       }
       boxes += 1;
     }
     return false;
+  }
+
+  // The point `step` metres past `point` along the ray from -> to; false when that is beyond `to`.
+  private static func PastPoint(from: Vector4, to: Vector4, point: Vector4, step: Float, out next: Vector4) -> Bool {
+    let d = to - from;
+    let length = Vector4.Length(d);
+    if length <= 0.0 {
+      return false;
+    }
+    let along = Vector4.Distance(from, point) + step;
+    if along >= length {
+      return false;
+    }
+    let t = along / length;
+    next = new Vector4(from.X + d.X * t, from.Y + d.Y * t, from.Z + d.Z * t, 1.0);
+    return true;
+  }
+
+  // The hit's material name: TraceResult.material when it names something, else the mesh appearance of the hit world
+  // node, else n"" (counted for the once-per-session log line).
+  private func Material(out result: TraceResult) -> CName {
+    let material = result.material;
+    if IsNameValid(material) && NotEquals(material, n"None") {
+      this.fromTrace += 1;
+      return material;
+    }
+    let look = CyberblockProbes.MeshAppearance(result);
+    if IsNameValid(look) && NotEquals(look, n"None") {
+      this.fromMesh += 1;
+      return look;
+    }
+    this.fromNone += 1;
+    return n"";
+  }
+
+  // The mesh appearance of the world node a ray hit (a static mesh or an instanced mesh), n"" for anything else.
+  private static func MeshAppearance(out result: TraceResult) -> CName {
+    let instance = TraceResult.GetHitObject(result) as worldINodeInstance;
+    if !IsDefined(instance) {
+      return n"";
+    }
+    let node = instance.GetNode();
+    let mesh = node as worldMeshNode;
+    if IsDefined(mesh) {
+      return mesh.meshAppearance;
+    }
+    let instanced = node as worldInstancedMeshNode;
+    if IsDefined(instanced) {
+      return instanced.meshAppearance;
+    }
+    return n"";
+  }
+
+  // 'probes: materials from trace|mesh appearance|none (heuristic palette) (...)' once per session, after 64 hits:
+  // trace when any hit carried a physics material, else mesh appearance when any carried one, else none.
+  private func LogMaterials() -> Void {
+    let total = this.fromTrace + this.fromMesh + this.fromNone;
+    if this.materialsLogged || total < 64 {
+      return;
+    }
+    this.materialsLogged = true;
+    let source = this.fromTrace > 0 ? "trace" : (this.fromMesh > 0 ? "mesh appearance" : "none (heuristic palette)");
+    Cyberblock_Log(s"probes: materials from \(source) (of \(total) hits: \(this.fromTrace) trace, \(this.fromMesh) mesh appearance, \(this.fromNone) none)");
   }
 
   // The point 1 cm past where the ray from -> to leaves the 1 m box centred on `center`; false when that is beyond `to`.
@@ -313,7 +437,8 @@ public class CyberblockProbes {
     let to = new Vector4(from.X + forward.X * 8.0, from.Y + forward.Y * 8.0, from.Z + forward.Z * 8.0, 1.0);
     let result: TraceResult;
     let casts = 0;
-    let hit = CyberblockProbes.TraceNightCity(queries, filter, from, to, result, casts, 4);
+    let devices = 0;
+    let hit = CyberblockProbes.TraceNightCity(queries, filter, from, to, result, casts, false, devices, 4);
     this.casts += casts;
     if hit {
       Cyberblock_SetAim(Vector4.Distance(from, Cast<Vector4>(result.position)));

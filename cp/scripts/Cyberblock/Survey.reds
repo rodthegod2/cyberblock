@@ -80,6 +80,13 @@ public class CyberblockSurveyTour {
     if player.IsInCombat() {
       return n"combat";
     }
+    // Megaplan 3-S1: never while a V teleport holds V or V is parked (Teleport.reds and Park.reds refuse the tour's time).
+    if CyberblockTeleport.Busy(game) {
+      return n"teleport";
+    }
+    if CyberblockPark.Parked(game) {
+      return n"parked";
+    }
     if !this.applied && (CyberblockFlight.IsFlying(game) || Cyberblock_FlightDriving()) {
       return n"flight";
     }

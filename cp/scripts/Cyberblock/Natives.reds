@@ -27,6 +27,14 @@ public native func Cyberblock_EventExtra() -> Float;    // knock strength | effe
 public native func Cyberblock_EventId() -> Int32;       // hit: mob id (-1 none) | hack/scan: request id
 // ---- Phase 1 (megaplan 2026-10-04 section 1.8): n"session" events (name = state, text = reason, extra = perms bits) ----
 public native func Cyberblock_EventText() -> String;    // the current event's string payload: session reason | (else "")
+// ---- Phase 3 (megaplan 2026-10-04 section 1.8 + amendment item 4, task 3-S1) ----
+// Events, filled by the DLL (package 3D) from `vteleport` / `park` (1.9), read with the getters above:
+//   n"vteleport": EventPos = target feet (Cyberpunk space), EventAmount = yaw to face (Cyberpunk degrees, as n"teleport"),
+//                 EventId = request id, EventName = why (n"meetup" | n"holo" | n"hub_exit"); answered by
+//                 Cyberblock_TeleportDone (declared in Teleport.reds).
+//   n"park":      EventFlag = on.
+// Natives declared where they are called (rule 0.14): Cyberblock_SubmitProbeMaterials (Probes.reds), Cyberblock_SetEnv
+// (Env.reds), Cyberblock_TeleportDone (Teleport.reds).
 // Stance, menus, game mode
 public native func Cyberblock_SetStance(crouched: Bool, inAir: Bool, held: Bool) -> Void; // carried as cam.cr / cam.air / cam.held until changed
 public native func Cyberblock_SetMenu(open: Bool) -> Void;           // a Cyberpunk menu is open: input forwarding pauses; cam.menu

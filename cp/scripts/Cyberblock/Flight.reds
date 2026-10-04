@@ -113,6 +113,13 @@ public abstract class CyberblockFlight {
     if VehicleComponent.IsMountedToVehicle(game, player) {
       return n"vehicle";
     }
+    // Megaplan 3-S1: a V teleport holds V itself, and a parked V stays put (Teleport.reds, Park.reds).
+    if CyberblockTeleport.Busy(game) {
+      return n"teleport";
+    }
+    if CyberblockPark.Parked(game) {
+      return n"parked";
+    }
     return CyberblockEffects.LockReason(game, player);
   }
 }

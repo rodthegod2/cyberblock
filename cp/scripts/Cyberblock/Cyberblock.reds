@@ -46,6 +46,11 @@
 //
 // Phase 1 (megaplan 2026-10-04 task 1-H1): the system owns the CyberblockSession (Session.reds), which Events.reds hands
 // every n"session" event; while the server does not count this host as host it cleans Night City as a link drop does.
+//
+// Phase 3 (megaplan 2026-10-04 task 3-S1): the system also owns CyberblockEnv (Env.reds: time and weather at 1 Hz while
+// linked), CyberblockTeleport (Teleport.reds: n"vteleport", ticked every tick with a player; the probes pause while it
+// holds V) and CyberblockPark (Park.reds: n"park"). A running teleport is aborted and a park released at session end and
+// on detach (forgotten on session ready); a park is also released when Cyberblock stops being On.
 
 enum CyberblockState {
   Off = 0,
@@ -75,6 +80,9 @@ public class CyberblockSystem extends ScriptableSystem {
   private let hud: ref<CyberblockHud>;
   private let surveyTour: ref<CyberblockSurveyTour>;
   private let session: ref<CyberblockSession>;
+  private let env: ref<CyberblockEnv>;
+  private let teleport: ref<CyberblockTeleport>;
+  private let park: ref<CyberblockPark>;
   private let saving: Bool;
   private let savingTicks: Int32;
   private let savingPumps: Int32;
@@ -91,6 +99,9 @@ public class CyberblockSystem extends ScriptableSystem {
     this.hud = new CyberblockHud();
     this.surveyTour = new CyberblockSurveyTour();
     this.session = new CyberblockSession();
+    this.env = new CyberblockEnv();
+    this.teleport = new CyberblockTeleport();
+    this.park = new CyberblockPark();
     Cyberblock_SetActive(false, false);
     // A menu can pause the game (and with it this tick), so its opening is also taken straight from the blackboard.
     let ui = GameInstance.GetBlackboardSystem(this.GetGameInstance()).Get(GetAllBlackboardDefs().UI_System);
@@ -117,6 +128,8 @@ public class CyberblockSystem extends ScriptableSystem {
     this.hud.Unregister();
     Cyberblock_SurveyTourReset();
     this.surveyTour.Undo(this.GetGameInstance(), GetPlayer(this.GetGameInstance()));
+    this.teleport.Abort(this.GetGameInstance(), "detach");
+    this.park.Release(this.GetGameInstance(), "detach");
     CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
@@ -160,6 +173,8 @@ public class CyberblockSystem extends ScriptableSystem {
     this.saving = false;
     let player = GetPlayer(this.GetGameInstance());
     CyberblockInk.RestoreFor(this.GetGameInstance(), "session ready");
+    this.teleport.Forget();
+    this.park.Forget();
     this.playerState.Clear(player);
     this.creative.Clear(player);
     if IsDefined(player) {
@@ -178,6 +193,8 @@ public class CyberblockSystem extends ScriptableSystem {
     this.saving = false;
     Cyberblock_SurveyTourReset();
     this.surveyTour.Undo(this.GetGameInstance(), GetPlayer(this.GetGameInstance()));
+    this.teleport.Abort(this.GetGameInstance(), "session end");
+    this.park.Release(this.GetGameInstance(), "session end");
     CyberblockInk.RestoreFor(this.GetGameInstance(), "session end");
     this.hud.ClearMinecraft();
     this.hud.Unregister();
@@ -228,6 +245,15 @@ public class CyberblockSystem extends ScriptableSystem {
     return this.session;
   }
 
+  // V teleport and park requests (Teleport.reds, Park.reds; Events.reds hands them their events).
+  public func Teleport() -> ref<CyberblockTeleport> {
+    return this.teleport;
+  }
+
+  public func Park() -> ref<CyberblockPark> {
+    return this.park;
+  }
+
   // The HUD data stream (Hud.reds); Notifications.reds tells it about actionable notifications.
   public func Hud() -> ref<CyberblockHud> {
     return this.hud;
@@ -269,7 +295,8 @@ public class CyberblockSystem extends ScriptableSystem {
     Cyberblock_SetChoices(Equals(this.state, CyberblockState.Active) && CyberblockSystem.ChoiceCount(game) >= 2);
     this.UpdatePlayer(player);
     let on = CyberblockSystem.IsOn(this.state);
-    if on {
+    // No probes while a teleport holds V high over its target (Teleport.reds): nothing there is V's surroundings yet.
+    if on && !CyberblockTeleport.Busy(game) {
       this.probes.Tick(player);
     }
     let live = on && !this.saving;
@@ -285,6 +312,8 @@ public class CyberblockSystem extends ScriptableSystem {
     if !this.saving {
       this.events.Tick(game, live);
     }
+    // Megaplan 3-S1: a running V teleport (Meet Up) holds, probes and snaps V every tick until it is done (Teleport.reds).
+    this.teleport.Tick(game, player);
     if live {
       CyberblockCollision.Stream(game, CyberblockFlight.Center(game, player));
     }
@@ -304,6 +333,8 @@ public class CyberblockSystem extends ScriptableSystem {
     // reload in the middle of a session.
     this.hud.Register(game);
     this.hud.Tick(player, live);
+    // Megaplan 3-S1: Cyberpunk's time and weather for Minecraft, 1 Hz (Env.reds).
+    this.env.Tick(game, !this.saving && Cyberblock_IsLinked());
     // Notifications shown while Off are dropped here; while On (saves included) CyberblockUi.Pump reports them at once.
     CyberblockNotifications.Poll(game, on);
     // The DLL pumps the UI bridge at 30 Hz; while it does not (CyberblockUi.Pump not found yet), Minecraft's screen
@@ -435,6 +466,9 @@ public class CyberblockSystem extends ScriptableSystem {
     if wasOn && !active {
       // Minecraft still listens: take down its prompt, choices and subtitles before it stops being shown.
       this.hud.ClearMinecraft();
+      // A parked V is never left frozen once Minecraft is no longer shown (Park.reds). Released before ClearWorld so
+      // Buffs' cleanup decides V's invisibility last (CyberblockBuffs.ApplyInvisible).
+      this.park.Release(this.GetGameInstance(), Equals(next, CyberblockState.Lost) ? "Minecraft lost" : "Cyberblock off");
       CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
       CyberblockInk.RestoreFor(this.GetGameInstance(), Equals(next, CyberblockState.Lost) ? "lost" : "off");
     }

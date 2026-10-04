@@ -14,6 +14,8 @@
 //   cyber -> CyberblockCyberware.Set           cyberfx -> CyberblockCyberware.Fx  (plan 2026-10-03-retest2 1.3)
 //   prefs -> CyberblockLocomotion.SetStepUp(flag = prefs.stepup), CyberblockView.SetVehicleDistance(amount = vdist)  (megaplan 2026-10-04 Q-D1/Q-S2; recorded whatever the state)
 //   session -> CyberblockSession.OnEvent, whatever the state (megaplan 2026-10-04 task 1-H1, Session.reds)
+//   vteleport -> CyberblockTeleport.Start, park -> CyberblockPark.OnEvent: whatever the state, each refuses itself while
+//     not live, so every vteleport gets its Cyberblock_TeleportDone (megaplan 2026-10-04 task 3-S1, Teleport.reds, Park.reds)
 //
 // While a save is written, CyberblockSystem does not call Tick at all: the events wait in the DLL's queue and are applied
 // after the save. While not live otherwise (Off, Lost, no player) Night City is left alone:
@@ -71,6 +73,16 @@ public class CyberblockEvents {
           let system = CyberblockSystem.Get(game);
           if IsDefined(system) {
             system.Session().OnEvent(game);
+          }
+        } else if Equals(kind, n"vteleport") {
+          let system = CyberblockSystem.Get(game);
+          if IsDefined(system) {
+            system.Teleport().Start(game, live);
+          }
+        } else if Equals(kind, n"park") {
+          let system = CyberblockSystem.Get(game);
+          if IsDefined(system) {
+            system.Park().OnEvent(game, live);
           }
         } else if !live {
           if !CyberblockEvents.Refuse(kind) {
