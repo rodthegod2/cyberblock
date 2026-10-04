@@ -688,6 +688,9 @@ the same validators the client ran before (the limits above), plus the envelope 
 | `env` | UP | `EnvSync` (server), Phase 3 | the primary host's clock and weather |
 | `vteleported` | UP | `MeetUp` (server), routed to the request's owner, Phase 3 | a reply: it must carry a request id the session issued |
 | `parked` | UP | session (server), **Phase 7** (the hub) | the answer to `park`; the DLL builds it from Phase 3, but no Phase 3 server sends `park`, so until Phase 7 the client relay drops a `parked` (counted) and it has no rate row |
+| `devices` | UP | the device layer per session (server), Phase 4 | the devices within 48 m: changes and a full list every 5 s |
+| `devstate` | UP | the device layer per session (server), Phase 4 | one device changed state |
+| `devresult` | UP | the device layer (server), routed to the request's asker, Phase 4 | a reply: it must carry a request id the session issued |
 | `cmd` | LOCAL | `WorldBridge.command` in a dev client | test tools only: never relayed (the relay drops it), a dedicated server refuses it |
 
 The frame export (`Local\CyberblockFrame`) is LOCAL: `FrameExporter` on the client.
@@ -724,6 +727,7 @@ The frame export (`Local\CyberblockFrame`) is LOCAL: `FrameExporter` on the clie
 | `pteleport` | DOWN | `ServerPlayerMixin` | Steve was teleported by a command; documented below |
 | `vteleport` | DOWN | `MeetUp` (server), Phase 3 | to the host's session only |
 | `park` | DOWN | session (server), **Phase 7** (the hub) | to the host's session only; the DLL and scripts handle it from Phase 3, the server first sends it in Phase 7 |
+| `devact` | DOWN | the device layer (server), Phase 4 | to the device's owner only; the owner's `devices` toggle and the device type's bit when a guest asked |
 
 ### Multiplayer: new messages
 | `t` | class | fields | when |
@@ -1000,6 +1004,119 @@ Phase 3 examples, server to client (`cyberblock:ui`, `t:"maptile"`):
 ```jsonl
 {"tx":-2,"tz":5,"v":1372718144,"c":"H8Ifwh/CH8Ifwh/CH8Ifwh+7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
 {"tx":0,"tz":0,"v":0}
+```
+
+## Phase 4 (the device layer)
+
+Same wire, same conventions; `proto` stays 1 and older builds ignore the new `t` values. Plan:
+`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 1.9 (rows 4), section 1.11 and section 8, with the dated Phase 0
+amendment after section 1.9 (`size` omitted, `st` ranges, `fl` bits, `by` rule, the `act` list, the `unsupported` answer). Night
+City's **devices** (doors, gates, lights, cameras, terminals, vending machines, traffic lights, lifts, turrets, screens, containers)
+become Minecraft blocks on the server, and a player's action on such a block reaches the real device in its owner's Cyberpunk game.
+Positions and yaw are already in Minecraft convention (the DLL applies the [ground alignment](#ground-alignment-re-test-2) offset
+before it sends, as for `npcs`).
+
+### Phase 4: Cyberpunk → Minecraft
+| `t` | fields | when |
+|---|---|---|
+| `devices` | `list:[{id:"<uint64 as decimal string>", cls, kind, p:[x,y,z], yaw, st, fl}]`, at most 64 entries, nearest first; `cls` is the Cyberpunk class name (1 to 48 characters), `kind` one of the device kinds below, `p` the device's origin in Minecraft convention, `yaw` its facing, `st` its state, `fl` its flag bits; there is no `size` (Minecraft takes the box from `device_map`) | the devices within 48 m of V: every entry that is new or changed, at most every 0.5 s, plus **the full list every 5 s**; UP |
+| `devstate` | `id` the device's id, `st`, `fl`, `by` ∈ `npc`, `host`, `guest`, `script` | one device changed state (and who caused it); UP |
+| `devresult` | `id` (the `devact` request id), `ok:bool`, `reason` (`""` when `ok`, else at most 128 UTF-8 bytes) | the answer to every `devact`; UP |
+
+### Phase 4: Minecraft → Cyberpunk
+| `t` | fields | when |
+|---|---|---|
+| `devact` | `id` int ≥ 0 (a request id the session issued), `dev` the device's id (the decimal string of `devices[].id`), `act` one of the device acts below | a player used a device block (a guest, or the host's own Steve); DOWN to the device's owner only |
+
+### Phase 4 semantics and limits
+- **Kinds and toggle bits** (`devices[].kind`, the toggle bits of `cyberblock:perms.devices`): `door` 1, `gate` 2, `light` 4, `camera` 8, `terminal` 16,
+  `vending` 32, `traffic` 64, `elevator` 128, `turret` 256, `screen` 512, `container` 1024 (megaplan section 1.11). The scripts' class
+  table decides the kind of each class (`Door` is `door`; garage doors are `Door` types and road barriers `RoadBlock`, both `gate`;
+  `ElectricLight` is `light`; `SurveillanceCamera` `camera`; `Terminal` and `Computer` `terminal`; `VendingMachine` `vending`;
+  `TrafficLight` `traffic`; `LiftDevice` `elevator`; `SecurityTurret` `turret`; `TV` and the billboard devices `screen`).
+- **State** (`st`, a whole number -2 to 1): a door's is `EDoorStatus` (`SEALED` -2, `LOCKED` -1, `CLOSED` 0, `OPENED` 1), every other device's is
+  `EDeviceStatus` (`DISABLED` -2, `UNPOWERED` -1, `OFF` 0, `ON` 1). **Flags** (`fl`, a whole number 0 to 31): 1 locked, 2 secure, 4 quest-locked
+  (a sealed door or a disabled device), 8 broken, 16 powered (the state is not `UNPOWERED`). Phase 4 carries nothing else about a device (a
+  lift's floor, a traffic light's colour or a camera's alarm have no field in this contract).
+- **Ids.** `devices[].id`, `devstate.id` and `devact.dev` are the device's id as a decimal string, exactly like `npcs[].id` (`0` is never a
+  device). The scripts use the device's entity-id hash when it is stable and the hash of its position rounded to 25 cm plus its class when it
+  is not (a moved device is then a new device); ids are only meaningful together with the owner session. `devact.id` and `devresult.id` are
+  a request id (an int ≥ 0 the server issued for that owner), echoed back.
+- **The list.** A `devices` message is not marked as full or partial: every entry in it is the device's current data, and **the server keeps
+  a device alive for as long as it shows up in some `devices` list**. The full list every 5 s therefore keeps every device within 48 m
+  alive, and a device that is in no list for 10 s is gone (it left the 48 m, or Night City unloaded it). An entry that fails its limits is
+  dropped (counted) and the others are kept; a list over 64 entries is cut at 64 (nearest first). The server builds nothing from `devices`
+  for a session that is not active.
+- **`devstate`** says that a device changed and who did it: `host` when the executor is V, `npc` when it is a person of Night City (a
+  pedestrian opening a door shows in Minecraft), `script` when there is none, and `guest` when the change came from a guest's `devact` (the
+  DLL remembers that request for 2 s). Minecraft updates the block's state from `devstate`, never from its own guess.
+- **`devact`.** The `act` list is `open`, `close`, `lock`, `unlock`, `on`, `off`, `toggle`, `call`, `buy`, `disable`, `enable`, `friendly`,
+  `breach`, `distract`; any other value is an invalid message (dropped and counted). The DLL runs **`open`, `close`, `toggle`, `lock`,
+  `unlock`, `on`, `off`, `disable`, `enable`, `distract` and `friendly`** through the device's own persistent-state actions and answers
+  `devresult ok:true` once it did (and sends the `devstate`); `call`, `buy` and `breach` are not Cyberpunk actions (a lift call is unproven,
+  vending is a Minecraft shop paid in eddies, Breach is a Minecraft minigame whose daemons send the supported acts), so the DLL answers
+  `{ok:false, reason:"unsupported"}`. The server greys those controls (`cyberblock.device.unsupported`) and does not send them. A device
+  that is quest-locked is never touched (`reason` `quest locked`), and a device that is gone answers `device gone`; the reason is free
+  text of at most 128 UTF-8 bytes, `""` exactly when `ok` is true.
+- **Who may send it.** `devact` is DOWN to the device's **owner only**. A guest's request needs the owner's `devices` toggle **and** the bit of the
+  device's kind in `cyberblock:perms.devices`; a host acting on its own game is always allowed; a refused request still leaves the Minecraft
+  block as it was and shows `cyberblock.guest.blocked`. The block changes only after `devresult ok:true` (or the next `devstate`), so Minecraft
+  never shows a state Night City refused. `/cyberblock guests devices <type> on|off` flips one kind's bit (and `/cyberblock guests devices on|off`
+  the whole layer).
+- **Validation (receivers).** `devices.list` has at most 64 entries; `id` is a decimal string below 2^64; `cls` 1 to 48 characters; `kind` one of
+  the eleven names; `p` finite with `|c| < 3e7`; `yaw` finite; `st` -2..1; `fl` 0..31; `devstate.by` one of the four names; `devresult.reason` at most
+  128 UTF-8 bytes and `""` when `ok` is true; `devact.id` a whole number ≥ 0; `devact.dev` a decimal string; `devact.act` one of the fourteen names. A
+  bad message is counted and dropped, never fatal. The rate limit (10 per second, burst 40) and the sanity radius of
+  [Multiplayer: security](#multiplayer-security-rate-limits-and-guest-toggles) apply to `devices` and `devstate`; `devresult` also needs a request
+  id the session issued.
+- **Doors are not walls.** A probe ray that hits a device is cast again past it (Phase 3), and the server never makes a replica block inside a
+  device's box: the device is the block, the replica stays out of its way. Quest-locked devices show greyed (`cyberblock.device.quest_locked`).
+- **Features.** `hs_ack.features` bit 2 (devices) is set by a Phase 4 server.
+
+### Phase 4: payloads (client ↔ server)
+| Id | Direction | Fields | When |
+|---|---|---|---|
+| `cyberblock:act` `t:"devact"` | C2S | `pos:[x, y, z]` the block the player used (three whole numbers, `\|c\| ≤ 30000000`), `act` one of the fourteen device acts | a player right-clicks a device block (a door, a lamp switch, a camera, a lift call button, a turret); `json` is at most 8000 bytes like every `act` |
+
+- **Which device.** The server finds the device whose block stands at `pos` (any block of a multi-block device counts) and takes its owner and id from
+  its own registry, so the client never names an owner or an id: a `pos` with no device block is dropped (counted). The server turns the request into the
+  DOWN `devact` above (with a fresh request id remembered for the asker) after the permission check.
+- **Answers.** A `devresult` is routed to the asker the request id was issued for; `ok:false` shows its reason on the action bar. The next
+  `devstate` (or the `devresult ok:true`) updates the block for everyone.
+
+### Phase 4 names
+- **Device kinds** (`devices[].kind`, in bit order) — `door`, `gate`, `light`, `camera`, `terminal`, `vending`, `traffic`, `elevator`, `turret`, `screen`, `container`
+- **Device acts** (`devact.act`) — `open`, `close`, `lock`, `unlock`, `on`, `off`, `toggle`, `call`, `buy`, `disable`, `enable`, `friendly`, `breach`, `distract`
+- **Supported acts** (the DLL runs them) — `open`, `close`, `toggle`, `lock`, `unlock`, `on`, `off`, `disable`, `enable`, `distract`, `friendly`
+- **State changers** (`devstate.by`) — `npc`, `host`, `guest`, `script`
+- **Flag bits** (`devices[].fl`) — 1 locked, 2 secure, 4 quest-locked, 8 broken, 16 powered
+
+### Phase 4 log lines
+In-game checks grep for them (Re-test 4 in `docs/TESTING-PLAN.md`). The exact text belongs to the packages that print them (4S and 4D in Cyberpunk,
+4M on the server); the integrator copies the final lines into Re-test 4.
+- Each device feature that has a fallback prints **one line saying which runtime path is active**: where the **ids** come from (the entity hash or the
+  position fallback), how **changes** are found (the events of `Device` or the 2 Hz poll within 48 m), and whether the **device-box filter** for probe
+  hits is needed (rays that hit a device are cast past it, or hits inside a known device box are dropped).
+- The server logs the devices it placed and removed, and every `devact` it routed or refused.
+
+### Phase 4 examples
+One message per line (JSON Lines). Every new `t` has a line; the list shows a door, a light, a camera, a vending machine, a lift and a sealed (quest-locked) door.
+
+Phase 4 examples, Cyberpunk to Minecraft:
+```jsonl
+{"t":"devices","list":[{"id":"11529215046068469763","cls":"Door","kind":"door","p":[-1238.5,64.0,811.5],"yaw":90.0,"st":0,"fl":16},{"id":"11529215046068469764","cls":"ElectricLight","kind":"light","p":[-1236.5,66.0,809.5],"yaw":0.0,"st":1,"fl":16},{"id":"11529215046068469765","cls":"SurveillanceCamera","kind":"camera","p":[-1233.5,67.0,812.5],"yaw":-135.0,"st":1,"fl":16},{"id":"11529215046068469766","cls":"VendingMachine","kind":"vending","p":[-1241.5,64.0,806.5],"yaw":180.0,"st":1,"fl":16},{"id":"11529215046068469767","cls":"LiftDevice","kind":"elevator","p":[-1230.5,64.0,815.5],"yaw":0.0,"st":0,"fl":16},{"id":"11529215046068469768","cls":"Door","kind":"door","p":[-1244.5,64.0,811.5],"yaw":90.0,"st":-2,"fl":20}]}
+{"t":"devstate","id":"11529215046068469763","st":1,"fl":16,"by":"guest"}
+{"t":"devresult","id":7,"ok":true,"reason":""}
+```
+
+Phase 4 examples, Minecraft to Cyberpunk:
+```jsonl
+{"t":"devact","id":7,"dev":"11529215046068469763","act":"open"}
+```
+
+Phase 4 examples, client to server (`cyberblock:act`, `t:"devact"`):
+```jsonl
+{"pos":[-1239,64,811],"act":"open"}
 ```
 
 ## Shared memory `Local\CyberblockFrame`

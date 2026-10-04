@@ -1063,14 +1063,14 @@ SESSION_REASON_BYTES = 128
 MP_CP_CLASSES = {
     **dict.fromkeys(("hello", "state", "aim", "npcs", "stats"), "BOTH"),
     **dict.fromkeys(("ground", "unground", "clear", "dmg", "mobdmg", "pcells", "unlead", "killed", "scaninfo", "hackresult", "hackspread",
-                     "env", "vteleported", "parked"), "UP"),  # the last three: Phase 3
+                     "env", "vteleported", "parked", "devices", "devstate", "devresult"), "UP"),  # env .. parked: Phase 3; the last three: Phase 4
     **dict.fromkeys(("cam", "view", "hud", "key", "slot", "scroll", "cursor", "click", "char", "skey", "look", "quest", "pins", "prompt",
                      "choices", "sub", "call", "notify", "screen", "reply", "terrain", "surveystate", "cmd"), "LOCAL"),
 }
 MP_MC_CLASSES = {
     **dict.fromkeys(("hello", "status", "binds", "uiact", "persp", "flight", "survey", "prefs"), "LOCAL"),
     **dict.fromkeys(("block", "blocks", "align", "explosion", "knock", "hit", "ignite", "lead", "pull", "mobs", "proj", "teleport", "effect",
-                     "scan", "hack", "perks", "cyberware", "cyberfx", "pteleport", "vteleport", "park"), "DOWN"),  # the last two: Phase 3
+                     "scan", "hack", "perks", "cyberware", "cyberfx", "pteleport", "vteleport", "park", "devact"), "DOWN"),  # vteleport and park: Phase 3; devact: Phase 4
 }
 MP_RATES = {  # plan section 1.6: type -> (tokens per second, burst)
     **dict.fromkeys(("ground", "unground", "clear"), (40, 120)), "npcs": (15, 30), "dmg": (20, 40), "aim": (15, 30),
@@ -1199,8 +1199,8 @@ def test_mp_class_tables_classify_every_wire_message_once_with_the_plan_class():
 
 
 def test_mp_class_tables_cover_every_documented_type_of_the_wire():
-    cp = documented(CP_TO_MC) | documented(L36_CP_TO_MC) | documented(R3_CP_TO_MC) | documented(AT_CP_TO_MC) | documented(P3_CP_TO_MC)
-    mc = documented(MC_TO_CP) | documented(L36_MC_TO_CP) | documented(R3_MC_TO_CP) | documented(AT_MC_TO_CP) | documented(PQ_MC_TO_CP) | documented(P3_MC_TO_CP)
+    cp = documented(CP_TO_MC) | documented(L36_CP_TO_MC) | documented(R3_CP_TO_MC) | documented(AT_CP_TO_MC) | documented(P3_CP_TO_MC) | documented(P4_CP_TO_MC)
+    mc = documented(MC_TO_CP) | documented(L36_MC_TO_CP) | documented(R3_MC_TO_CP) | documented(AT_MC_TO_CP) | documented(PQ_MC_TO_CP) | documented(P3_MC_TO_CP) | documented(P4_MC_TO_CP)
     assert set(MP_CP_CLASSES) == cp | {"cmd"}  # `cmd` is the test tools' command, documented only here
     assert set(MP_MC_CLASSES) == (mc - {"perkfx"}) | {"pteleport"}  # `perkfx` is superseded and never sent; `pteleport` was undocumented
     assert {"hello"} <= set(MP_CP_CLASSES) & set(MP_MC_CLASSES)
@@ -1691,3 +1691,199 @@ def test_p3_new_up_types_have_rate_limits_and_class_rows():
 def test_p3_section_sits_between_multiplayer_and_the_shared_memory_section():
     assert TEXT.index("## Multiplayer (Phase 1)") < TEXT.index("## Phase 3 (the Night City replica)") < TEXT.index("## Shared memory")
     assert "2026-10-04-multiplayer-megaplan.md" in TEXT.split("## Phase 3 (the Night City replica)", 1)[1].split("###", 1)[0]
+
+
+# ---- Phase 4 (the device layer): `devices`, `devstate`, `devresult`, `devact` and the `cyberblock:act` `devact` payload ---------------
+# Plan 2026-10-04 megaplan sections 1.9 (rows 4), 1.11 and 8, with the Phase 0 amendment (size omitted, st ranges, fl bits, by rule, act list).
+P4_CP_TO_MC, P4_MC_TO_CP = "Phase 4: Cyberpunk → Minecraft", "Phase 4: Minecraft → Cyberpunk"
+P4_CP_EXAMPLES, P4_MC_EXAMPLES = "Phase 4 examples, Cyberpunk to Minecraft:", "Phase 4 examples, Minecraft to Cyberpunk:"
+P4_ACT_EXAMPLES = "Phase 4 examples, client to server (`cyberblock:act`, `t:\"devact\"`):"
+P4_SECTION, P4_PAYLOADS = "Phase 4 semantics and limits", "Phase 4: payloads (client ↔ server)"
+DEVICE_KINDS, DEVICE_ACTS = names("Device kinds"), names("Device acts")
+SUPPORTED_ACTS, DEVICE_BY = names("Supported acts"), names("State changers")
+UNSUPPORTED_ACTS = ("call", "buy", "breach")  # the amendment: not Cyberpunk actions, the DLL answers `unsupported`
+MAX_DEVICES, MAX_CLS = 64, 48
+POS_LIMIT = 30_000_000
+
+
+def dev_id_ok(s) -> bool:
+    return uint64_string(s) and int(s) != 0  # `0` is never a device
+
+
+def dev_entry_ok(e) -> bool:
+    return (isinstance(e, dict) and set(e) == {"id", "cls", "kind", "p", "yaw", "st", "fl"} and dev_id_ok(e["id"])
+            and isinstance(e["cls"], str) and 1 <= len(e["cls"]) <= MAX_CLS and e["kind"] in DEVICE_KINDS and vec3(e["p"])
+            and num(e["yaw"], -3e7, 3e7) and whole(e["st"], -2, 1) and whole(e["fl"], 0, 31))
+
+
+def devices_ok(m) -> bool:
+    return set(m) == {"t", "list"} and isinstance(m["list"], list) and len(m["list"]) <= MAX_DEVICES and all(dev_entry_ok(e) for e in m["list"])
+
+
+def devstate_ok(m) -> bool:
+    return set(m) == {"t", "id", "st", "fl", "by"} and dev_id_ok(m["id"]) and whole(m["st"], -2, 1) and whole(m["fl"], 0, 31) and m["by"] in DEVICE_BY
+
+
+def devresult_ok(m) -> bool:
+    return set(m) == {"t", "id", "ok", "reason"} and whole(m["id"]) and isinstance(m["ok"], bool) and reason_ok(m["ok"], m["reason"])
+
+
+def devact_ok(m) -> bool:
+    return set(m) == {"t", "id", "dev", "act"} and whole(m["id"]) and dev_id_ok(m["dev"]) and m["act"] in DEVICE_ACTS
+
+
+def devact_payload_ok(m) -> bool:
+    """`cyberblock:act` `t:"devact"`: the block the player used and the act (the server finds the device and its owner)."""
+    pos = m["pos"]
+    return (set(m) == {"pos", "act"} and isinstance(pos, list) and len(pos) == 3 and all(whole(c, -POS_LIMIT, POS_LIMIT) for c in pos)
+            and m["act"] in DEVICE_ACTS)
+
+
+P4_VALIDATORS = {"devices": devices_ok, "devstate": devstate_ok, "devresult": devresult_ok, "devact": devact_ok}
+P4_EXAMPLES = [(m["t"], m) for first in (P4_CP_EXAMPLES, P4_MC_EXAMPLES) for m in examples(first)]
+
+
+def p4_example(t, **changes):
+    m = copy.deepcopy(next(m for u, m in P4_EXAMPLES if u == t))
+    m.update(changes)
+    return m
+
+
+def p4_entry(**changes):
+    e = copy.deepcopy(p4_example("devices")["list"][0])
+    e.update(changes)
+    return e
+
+
+def test_p4_every_type_has_a_row_an_example_and_a_validator():
+    assert documented(P4_CP_TO_MC) == {"devices", "devstate", "devresult"} and documented(P4_MC_TO_CP) == {"devact"}
+    assert {t for t, _ in P4_EXAMPLES} == set(P4_VALIDATORS) and len(P4_EXAMPLES) == len(P4_VALIDATORS)
+    rows = {**rows_by_type(P4_CP_TO_MC), **rows_by_type(P4_MC_TO_CP)}
+    assert not any("**extends" in row for row in rows.values())  # four new types, none extends an older one
+
+
+def test_p4_every_example_field_is_named_in_its_row():
+    rows = {**rows_by_type(P4_CP_TO_MC), **rows_by_type(P4_MC_TO_CP)}
+    for t, m in P4_EXAMPLES:
+        keys = set(m) - {"t"}
+        if t == "devices":
+            keys |= set(m["list"][0]) - {"list"}
+        for key in keys:
+            assert re.search(rf"\b{key}\b", rows[t]), f"{t}.{key} is not described in its Phase 4 row"
+    assert "there is no `size`" in rows["devices"]  # the amendment: Minecraft takes the box from device_map
+
+
+@pytest.mark.parametrize("t, m", P4_EXAMPLES, ids=[f"{t}-{i}" for i, (t, _) in enumerate(P4_EXAMPLES)])
+def test_p4_example_obeys_the_documented_limits(t, m):
+    assert P4_VALIDATORS[t](m)
+
+
+def test_p4_the_act_payload_example_is_valid_and_matches_the_devact_example():
+    payloads = examples(P4_ACT_EXAMPLES)
+    assert len(payloads) == 1 and devact_payload_ok(payloads[0])
+    assert payloads[0]["act"] == p4_example("devact")["act"] and payloads[0]["pos"] == [math.floor(c) for c in p4_example("devices")["list"][0]["p"]]
+
+
+def test_p4_names_have_the_plan_values():
+    assert DEVICE_KINDS == ["door", "gate", "light", "camera", "terminal", "vending", "traffic", "elevator", "turret", "screen", "container"]
+    assert DEVICE_ACTS == ["open", "close", "lock", "unlock", "on", "off", "toggle", "call", "buy", "disable", "enable", "friendly", "breach", "distract"]
+    assert set(SUPPORTED_ACTS) == set(DEVICE_ACTS) - set(UNSUPPORTED_ACTS) and len(SUPPORTED_ACTS) == 11
+    assert DEVICE_BY == ["npc", "host", "guest", "script"]
+
+
+def test_p4_kind_bits_in_the_document_are_the_plan_toggle_bits():
+    bullet = section(P4_SECTION).split("- **Kinds and toggle bits**", 1)[1].split("\n- **", 1)[0]  # the bullet runs over several lines
+    bits = {kind: int(bit) for kind, bit in re.findall(r"`(\w+)` (\d+)", bullet.split("):", 1)[1])}
+    assert bits == {kind: 1 << i for i, kind in enumerate(DEVICE_KINDS)} and bits["container"] == 1024  # 11 bits, the 0x7FF of Permissions.ALL_DEVICES
+    assert 2**len(DEVICE_KINDS) - 1 == 0x7FF
+
+
+def test_p4_the_examples_show_every_kind_of_the_sample_scene_and_tell_one_story():
+    entries = p4_example("devices")["list"]
+    assert [e["kind"] for e in entries] == ["door", "light", "camera", "vending", "elevator", "door"]
+    assert len({e["id"] for e in entries}) == len(entries) and all(e["fl"] & 16 for e in entries)  # unique ids, all powered
+    sealed = entries[-1]
+    assert sealed["st"] == -2 and sealed["fl"] & 4  # a sealed door is quest-locked: it shows greyed
+    door, state, result, act = entries[0], p4_example("devstate"), p4_example("devresult"), p4_example("devact")
+    assert act["dev"] == door["id"] == state["id"] and act["id"] == result["id"]  # one request, its result, the device's new state
+    assert state["by"] == "guest" and state["st"] == 1 and result["ok"] is True and result["reason"] == ""
+
+
+def test_p4_rules_are_stated_in_the_document():
+    text = " ".join((section(P4_SECTION) + section(P4_PAYLOADS) + section(P4_CP_TO_MC) + section(P4_MC_TO_CP)).split())
+    for phrase in ("there is no `size`", "the full list every 5 s", "at most 64 entries", "nearest first", "a device that is in no list for 10 s is gone",
+                   "not marked as full or partial", "`EDoorStatus`", "`EDeviceStatus`", "`SEALED` -2", "`DISABLED` -2", "quest-locked", "powered",
+                   "decimal string", "a moved device is then a new device", "25 cm", "`host` when the executor is V", "`npc` when it is a person of Night City",
+                   "`script` when there is none", "remembers that request for 2 s", "never from its own guess", 'reason:"unsupported"', "`call`, `buy` and `breach`",
+                   "greys those controls", "`cyberblock.device.unsupported`", "`quest locked`", "never touched", "DOWN to the device's **owner only**",
+                   "needs the owner's `devices` toggle **and** the bit of the device's kind", "`cyberblock.guest.blocked`", "never shows a state Night City refused",
+                   "`/cyberblock guests devices <type> on|off`", "never fatal", "10 per second, burst 40", "probe ray that hits a device is cast again past it",
+                   "never makes a replica block inside a device's box", "`cyberblock.device.quest_locked`", "bit 2 (devices)",
+                   "the client never names an owner or an id", "a `pos` with no device block is dropped", "fresh request id", "8000 bytes"):
+        assert phrase in text, f"{phrase!r} is not stated"
+
+
+def test_p4_new_up_types_have_rate_limits_and_class_rows_and_the_feature_bit():
+    assert rate_rows()["devices"] == rate_rows()["devstate"] == rate_rows()["devresult"] == (10, 40)
+    cp, mc = dict(class_rows(MP_CP)), dict(class_rows(MP_MC))
+    assert cp["devices"] == cp["devstate"] == cp["devresult"] == "UP" and mc["devact"] == "DOWN"
+    assert "2 devices" in " ".join(section(MP_PAYLOADS).split())  # hs_ack.features: 1 replica, 2 devices, ...
+
+
+def test_p4_section_sits_between_phase_3_and_the_shared_memory_section():
+    assert TEXT.index("## Phase 3 (the Night City replica)") < TEXT.index("## Phase 4 (the device layer)") < TEXT.index("## Shared memory")
+    assert "2026-10-04-multiplayer-megaplan.md" in TEXT.split("## Phase 4 (the device layer)", 1)[1].split("###", 1)[0]
+
+
+def _p4_out_of_limits():
+    entry = p4_entry
+    many = lambda n: {"t": "devices", "list": [p4_entry(id=str(i + 1)) for i in range(n)]}  # noqa: E731
+    bad_result = lambda **kw: p4_example("devresult", **kw)  # noqa: E731
+    return [
+        ("devices", many(MAX_DEVICES + 1)), ("devices", {"t": "devices"}), ("devices", p4_example("devices", list="none")),
+        ("devices", {"t": "devices", "list": [entry(id="0")]}), ("devices", {"t": "devices", "list": [entry(id="18446744073709551616")]}),
+        ("devices", {"t": "devices", "list": [entry(id=5)]}), ("devices", {"t": "devices", "list": [entry(id="-5")]}),
+        ("devices", {"t": "devices", "list": [entry(cls="")]}), ("devices", {"t": "devices", "list": [entry(cls="x" * (MAX_CLS + 1))]}),
+        ("devices", {"t": "devices", "list": [entry(kind="garage")]}), ("devices", {"t": "devices", "list": [entry(kind=None)]}),
+        ("devices", {"t": "devices", "list": [entry(p=[1, 2])]}), ("devices", {"t": "devices", "list": [entry(p=[0, float("nan"), 0])]}),
+        ("devices", {"t": "devices", "list": [entry(p=[3e7, 0, 0])]}), ("devices", {"t": "devices", "list": [entry(yaw=float("inf"))]}),
+        ("devices", {"t": "devices", "list": [entry(yaw="90")]}), ("devices", {"t": "devices", "list": [entry(st=2)]}),
+        ("devices", {"t": "devices", "list": [entry(st=-3)]}), ("devices", {"t": "devices", "list": [entry(st=0.5)]}),
+        ("devices", {"t": "devices", "list": [entry(st=True)]}), ("devices", {"t": "devices", "list": [entry(fl=32)]}),
+        ("devices", {"t": "devices", "list": [entry(fl=-1)]}), ("devices", {"t": "devices", "list": [{**entry(), "size": [1, 2, 1]}]}),
+        ("devices", {"t": "devices", "list": [{k: v for k, v in entry().items() if k != "fl"}]}),
+        ("devstate", p4_example("devstate", by="player")), ("devstate", p4_example("devstate", by=None)), ("devstate", p4_example("devstate", st=5)),
+        ("devstate", p4_example("devstate", fl=99)), ("devstate", p4_example("devstate", id="0")), ("devstate", p4_example("devstate", id=12)),
+        ("devstate", {k: v for k, v in p4_example("devstate").items() if k != "by"}),
+        ("devresult", bad_result(id=-1)), ("devresult", bad_result(id=1.5)), ("devresult", bad_result(ok=1)), ("devresult", bad_result(reason="fine")),
+        ("devresult", bad_result(ok=False, reason="x" * 129)), ("devresult", {k: v for k, v in p4_example("devresult").items() if k != "id"}),
+        ("devact", p4_example("devact", act="explode")), ("devact", p4_example("devact", act=None)), ("devact", p4_example("devact", id=-1)),
+        ("devact", p4_example("devact", id="7")), ("devact", p4_example("devact", dev=12)), ("devact", p4_example("devact", dev="")),
+        ("devact", {k: v for k, v in p4_example("devact").items() if k != "dev"}), ("devact", {**p4_example("devact"), "owner": "x"}),
+    ]
+
+
+P4_OUT_OF_LIMITS = _p4_out_of_limits()
+
+
+@pytest.mark.parametrize("t, m", P4_OUT_OF_LIMITS, ids=[f"{t}-{i}" for i, (t, _) in enumerate(P4_OUT_OF_LIMITS)])
+def test_p4_validators_reject_out_of_limit_messages(t, m):
+    try:
+        ok = P4_VALIDATORS[t](m)
+    except (KeyError, TypeError):
+        ok = False
+    assert not ok
+
+
+def test_p4_validators_accept_the_limits_themselves():
+    assert devices_ok({"t": "devices", "list": []}) and devices_ok({"t": "devices", "list": [p4_entry(id=str(i + 1)) for i in range(MAX_DEVICES)]})
+    assert dev_entry_ok(p4_entry(id="18446744073709551615", cls="x" * MAX_CLS, p=[-29_999_999, -64, 29_999_999], st=-2, fl=0))
+    assert all(dev_entry_ok(p4_entry(kind=kind, st=st, fl=fl)) for kind in DEVICE_KINDS for st in (-2, -1, 0, 1) for fl in (0, 31))
+    assert all(devstate_ok(p4_example("devstate", by=by)) for by in DEVICE_BY) and all(devact_ok(p4_example("devact", act=act)) for act in DEVICE_ACTS)
+    assert devresult_ok(p4_example("devresult", ok=False, reason="unsupported")) and devresult_ok(p4_example("devresult", ok=False, reason="é" * 64))
+    assert not devresult_ok(p4_example("devresult", ok=False, reason="é" * 65))  # 130 bytes
+    assert devact_ok(p4_example("devact", id=0)) and devact_ok(p4_example("devact", id=2**31 - 1))
+    assert all(devact_payload_ok({"pos": [-POS_LIMIT, 0, POS_LIMIT], "act": act}) for act in DEVICE_ACTS)
+    for bad in ({"pos": [1, 2], "act": "open"}, {"pos": [1.5, 2, 3], "act": "open"}, {"pos": [POS_LIMIT + 1, 0, 0], "act": "open"},
+                {"pos": [0, 0, 0], "act": "dig"}, {"pos": [0, 0, 0]}, {"pos": [0, 0, 0], "act": "open", "owner": "x"}, {"pos": "0,0,0", "act": "open"}):
+        assert not devact_payload_ok(bad), bad
