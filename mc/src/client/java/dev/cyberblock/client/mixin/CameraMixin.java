@@ -4,6 +4,7 @@ package dev.cyberblock.client.mixin;
 import dev.cyberblock.client.FrameExporter;
 import dev.cyberblock.client.HostState;
 import dev.cyberblock.client.PlayerSync;
+import dev.cyberblock.client.view.ViewDebugHud;
 import net.minecraft.client.Camera;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -43,6 +44,7 @@ abstract class CameraMixin {
 	private void cyberblock$beginFrame(final DeltaTracker deltaTracker, final CallbackInfo ci) {
 		HostState.beginFrame();
 		PlayerSync.frame(deltaTracker.getGameTimeDeltaPartialTick(true));
+		ViewDebugHud.frame();
 	}
 
 	@Inject(method = "alignWithEntity", at = @At("TAIL"))

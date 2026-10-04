@@ -1,6 +1,7 @@
 // Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
 package dev.cyberblock.client.mixin;
 
+import dev.cyberblock.client.Flight;
 import dev.cyberblock.client.HostState;
 import dev.cyberblock.client.PlayerSync;
 import net.minecraft.client.player.LocalPlayer;
@@ -12,13 +13,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * The local player is placed every frame, so its own tick movement is ~0: animate the walk from the host's movement. Seated in a
- * vehicle (plan retest3 M2) the car moves him, not his legs: the walk stands still.
+ * vehicle (plan retest3 M2) the car moves him, not his legs: the walk stands still. Gliding or launched (Q-V2) Minecraft's physics
+ * move him: vanilla's own animation from that motion, not the last stride he took with V frozen in mid-air.
  */
 @Mixin(LivingEntity.class)
 abstract class LivingEntityMixin {
 	@Inject(method = "updateWalkAnimation", at = @At("HEAD"), cancellable = true)
 	private void cyberblock$hostWalk(final float distance, final CallbackInfo ci) {
-		if ((Object) this instanceof LocalPlayer player && HostState.frame() != null) {
+		if ((Object) this instanceof LocalPlayer player && HostState.frame() != null && !Flight.driving()) {
 			if (HostState.vehicle()) {
 				player.walkAnimation.stop();
 			} else {

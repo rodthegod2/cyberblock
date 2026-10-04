@@ -79,6 +79,22 @@ public final class Flight {
 		return driving;
 	}
 
+	/** Steve glides on his elytra (a glide, or a launch that opened them): from the start tick to the landing tick. */
+	public static boolean gliding() {
+		return driving && mode == Mode.GLIDE;
+	}
+
+	/** When the current glide started (System.nanoTime), for the pose's fall-flying ramp. */
+	private static long glideStart;
+
+	/**
+	 * Q-V2: ticks (fractional) since the glide started, for the render state's fall-flying time: counted from Flight's own start,
+	 * so a blip in the synced fall-flying flag never restarts the body's tilt into the glide. 0 while not gliding.
+	 */
+	public static float glideTicks() {
+		return gliding() ? (System.nanoTime() - glideStart) / 50_000_000.0F : 0.0F;
+	}
+
 	/**
 	 * Steve is placed at the host's V: not while he flies, nor after touchdown until the host has placed V at the landing spot (a
 	 * pose that arrived since says V no longer follows and stands within 1.5 m of it), half a second at most.
@@ -237,6 +253,7 @@ public final class Flight {
 
 		player.connection.send(new ServerboundPlayerCommandPacket(player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING));
 		mode = Mode.GLIDE;
+		glideStart = System.nanoTime();
 		Cyberblock.LOG.info("launch turned into a glide at {}, yaw {}", player.position(), player.getYRot());
 	}
 
@@ -354,6 +371,7 @@ public final class Flight {
 		gravity(player, true, false);
 		driving = true;
 		mode = Mode.GLIDE;
+		glideStart = System.nanoTime();
 		landed = false;
 		lookFromDeltas = false;
 		lastSent = 0L;
