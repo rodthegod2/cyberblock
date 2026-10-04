@@ -113,6 +113,16 @@ their own entries. The in-game list is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.
   checks (d) and (e) in `docs/notes/phase8-descopes.md`: Minecraft squads when spawning fails or the spawned NPCs stay passive, no real wanted level and no reputation effect when the
   writes are not available.
 
+### Unreleased additions: Phase 8 integration (Wave C)
+- **Merged packages** (in the plan's order): 8D (DLL), 8S (scripts), 8A (art and data), 8T (Heat, Downed, spectate), 8X (player hacks), 8M (matches, PvP,
+  Gang Wars), 8O (Overlord), 8V (Hacker in the Van), 8P (protocol, tools, docs).
+- **Wiring.** The packages were built behind fail-closed hooks; `dev.cyberblock.mode.ModeWiring` now installs them: the Overlord acts only in a running match
+  and inside its zone and its Auto-Director reads the Server Heat, player hacks use the PvP toggle, the war zones and the match teams, Downed revives go to match
+  teammates, and the Match Terminal's spectators, the kill feed and the caster overlay's scoreboard come from the matches. The roster carries each player's
+  match team, PvP toggle and downed flag.
+- **Contract.** A heavy `ncpd` palette entry goes on the wire as `rec:"ncpd_heavy"` (no `heavy` key); `/cyberblock test overlord spawn <palette id> <player>`
+  (devtools) queues a spawn through the console's own path; the `spawnresult` relay rows have tests; megaplan section 1 has the dated Phase 8 amendment.
+
 ### Unreleased additions: Wave B integration (Phases 3, 4 and 5 together)
 Phases 4 and 5 merged on top of Phase 3 (and the Wave A leftovers) for one combined in-game test,
 [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md) "Re-test: Wave B (Phases 3, 4, 5)".
