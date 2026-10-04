@@ -24,7 +24,9 @@
 // columns Cyberblock_SurveyNext hands out around V (from feet.z + 500 to feet.z - 200 m, through our boxes like every
 // probe): the highest Static, Terrain or Water surface of each column. A hit gets one short Water-only ray (0.5 m
 // above to 0.5 m below it) that tells water from ground; the collision group n"Water" is the one vanilla's swim checks
-// pass to RaycastWithASingleGroup (defaultTransition.swift).
+// pass to RaycastWithASingleGroup (defaultTransition.swift). In a vehicle Cyberblock_SurveyNext hands out nothing once the
+// DLL casts its own rays (survey_game.cpp frame(): 1.5 ms of rays every frame, columns 66-96 m from V), and never during
+// the survey tour.
 // Codeware 1.20.3: TraceResult.GetHitEntity(script_ref<TraceResult>) -> ref<Entity>,
 // StaticEntitySystem.IsTagged(EntityID, CName); the boxes are 1 m cubes centred on their entity position, tagged
 // CyberblockCollisionService.Tag().

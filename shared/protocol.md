@@ -512,13 +512,13 @@ everywhere.
 | `t` | fields | when |
 |---|---|---|
 | `terrain` | `c:[cx, cz, y, s, …]` integer quadruples, at most 64 cells: `cx = floor(x / 2)`, `cz = floor(z / 2)` the 2-m cell in Minecraft blocks, `y` the Minecraft y of the highest Night City surface there (the nearest whole y of `z − off`), `s` 0 ground or building, 1 water | survey hits, at most 10 Hz while On (more messages per tick during a tour) |
-| `surveystate` | `state` (a survey state, below), `done` and `total` stops (ints ≥ 0, `done ≤ total`), `eta` seconds (−1 unknown), `reason` ≤ 64, optional `stop:[gx, gy]` (a stop that has just been finished) | on every change of the tour, each finished stop, every 1 s while it runs, and as the answer to `survey` |
+| `surveystate` | `state` (a survey state, below), `done` and `total` squares (ints ≥ 0, `done ≤ total`), `eta` seconds (−1 unknown), `reason` ≤ 64 (while running: the pass, `city`, `city retry`, `outskirts` or `outskirts retry`), optional `stop:[gx, gy]` (a square that has just been finished) | on every change of the tour, each finished square, every 1 s while it runs, and as the answer to `survey` |
 | `reply` | **extends re-test 3:** an atlas pin may add `d` (its district, ≤ 64), and `pins` may hold up to 1024 entries | answer to `uiact atlasreq` |
 
 ### Atlas: Minecraft → Cyberpunk
 | `t` | fields | when |
 |---|---|---|
-| `survey` | `op` ∈ `start, stop, status`; `start` adds `done:[gx, gy, …]`, the stops Minecraft already has (at most 4096 pairs of whole numbers, \|v\| ≤ 100000) | `/cyberblock survey start`, `stop`, `status` |
+| `survey` | `op` ∈ `start, stop, status`; `start` adds `done:[gx, gy, …]`, the squares Minecraft already has (at most 4096 pairs of whole numbers, \|v\| ≤ 100000) | `/cyberblock survey start`, `stop`, `status` |
 
 ### Atlas semantics and limits
 - **Cells:** a 2 × 2 block cell. The DLL converts a hit at Cyberpunk `(x, y, z)` with `survey_cell(x, y, z, off)`
@@ -527,21 +527,33 @@ everywhere.
   holds the `survey` and `survey_column` sets.
 - **Walking survey:** after the probes, the scripts cast up to 48 more rays per 100 ms tick, from V's feet `z + 500` to
   `z − 200` m against Static, Terrain and Water, at the cells within 96 m of V, nearest first; a cell is not cast again for
-  300 s (20 s after a miss). Each hit gets one short Water-only ray: water is `s:1`.
+  300 s (20 s after a miss). Each hit gets one short Water-only ray: water is `s:1`. In a vehicle the DLL casts them
+  itself instead, 1.5 ms of rays every frame, at the cells 66 to 96 m from V (beyond Cyberblock's own collision boxes).
 - **Validation:** the receiver drops a `terrain` whose `c` is not whole quadruples or holds more than 64 cells, any
   `|cx|, |cz| ≥ 1.5e7`, `|y| > 20000` or `s` not 0 or 1; a `surveystate` with an unknown `state`, `done > total`, a
   negative count or a `reason` over 64 bytes; a `survey` with an unknown `op` or a bad `done` list. A bad message is
   counted and dropped and never ends the link.
-- **Tour:** the stops form a grid 200 m apart (stop `(gx, gy)` at Cyberpunk `(200·gx, 200·gy)`), visited in serpentine
-  order over the bounds the scripts derive from the game: the x/y extents of every Map mappin and every known fast-travel
-  point, widened by 200 m, cut to 9 km per axis and to `|x|, |y| ≤ 8000`, at least 8 pins. At each stop the DLL holds V
-  every frame at 150 m (or 25 m above the last stop's highest surface), the scripts cast a 3 × 3 grid of probes 80 m apart
-  until they stay the same for 1 s (at least 1.5 s after arriving, 15 s at most), then every cell of the 220 m square around
-  the stop (up to 400 rays per tick). A stop with only water or nothing streamed is skipped. V is invisible,
-  invulnerable and saving is locked while it runs; at the end, on `stop`, F9, a vehicle, a scene, combat, death or a dropped
-  link, V is put back exactly where V stood. A Cyberpunk menu pauses it.
-- **Resume:** Minecraft keeps every `surveystate.stop` and the cells it has; `start` lists the stops already done (those
-  reported, and those whose 220 m square Minecraft already knows to 90 %), and the tour skips them.
+- **Tour:** planned to a **time budget**: the whole tour (city and outskirts) aims to end within 12 minutes and stops
+  after 15 (a later `start` resumes). The **area** comes from the game: the city is the convex hull of the fast-travel
+  points outside the Badlands (each map pin joins the district of its nearest fast-travel point within 800 m; at least 8
+  pins; with fewer than 6 city points the city is where the pins are dense), widened by 300 m; the outskirts are the hull
+  of every pin widened by 300 m, minus the city. Open sea beyond them is never visited. The area is cut into **squares**
+  200 m apart (square `(gx, gy)` centred on Cyberpunk `(200·gx, 200·gy)`, 100 × 100 cells). A square is cast at every
+  stride-th cell each way, and one ray fills its stride × stride block of cells: the city at 2, 4, 8 or 10 m, the outskirts
+  (after the city) at 8, 10 or 20 m; the finest city cell that fits the budget wins, then the finest outskirts cell. The
+  plan starts from guessed rates and is made again from the measured ones (seconds per column, seconds per stop, squares
+  per stop) every second while sampling; the `eta` is that estimate. The **stops**: V is held every frame at 150 m (or
+  25 m above the highest surface seen), over the next square (nearest to V, pulled towards where the tour started). The
+  DLL casts its own rays every frame (as many as fit a 40 ms frame, 2 to 25 ms): a 3 × 3 grid of probes 60 m apart until
+  they stay the same for 0.5 s (2 s at most); rings of 12 probes from 150 to 600 m measure how far loaded collision
+  reaches (10 of 12 must hit); then every open column of every unfinished square within that reach, while V flies up to
+  150 m on towards the next stop so its collision streams in. A square is finished when every column hit, or when it lay
+  wholly inside a settled stop's reach and 90 % of its columns hit; a stop that did not settle sends its square to one
+  retry, skipped once the 12 minutes are used. V is invisible, invulnerable and saving is locked while it runs; at the
+  end, on `stop`, F9, a vehicle, a scene, combat, death or a dropped link, V is put back exactly where V stood. A
+  Cyberpunk menu pauses it.
+- **Resume:** Minecraft keeps every `surveystate.stop` and the cells it has; `start` lists the squares already done (those
+  reported, and those Minecraft already knows to 90 %), and the tour skips them.
 - **Sending in the DLL:** `terrain` and `surveystate` are queued like `ground` (never superseded).
 
 ### Atlas names
@@ -554,7 +566,7 @@ One message per line (JSON Lines). Every `t` of the two Atlas tables has at leas
 Atlas examples, Cyberpunk to Minecraft:
 ```jsonl
 {"t":"terrain","c":[-623,-407,67,0,-623,-406,12,0,-700,-380,0,1]}
-{"t":"surveystate","state":"running","done":12,"total":980,"eta":11520,"reason":"","stop":[-6,4]}
+{"t":"surveystate","state":"running","done":12,"total":980,"eta":540,"reason":"city","stop":[-6,4]}
 {"t":"reply","kind":"atlas","id":24,"groups":[],"pins":[{"p":[-1240.0,65.0,830.0],"kind":"fasttravel","name":"Japantown West","i":-1,"d":"Westbrook"},{"p":[-1201.5,64.0,845.0],"kind":"vendor","name":"Gun Shop","i":-1}]}
 ```
 

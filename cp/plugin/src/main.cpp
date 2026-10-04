@@ -1,7 +1,7 @@
 // Cyberblock.dll: a RED4ext plugin (loaded from red4ext\plugins\Cyberblock\) that also registers itself as a ReShade
 // add-on (compositor.h). It links to the Minecraft mod (link.hpp), gives redscript its natives (natives.hpp),
 // moves V after Steve's flights every frame (drive.hpp), applies the third-person view (view.hpp), publishes Cyberpunk's
-// camera every frame (camera.hpp), forwards input from Cyberpunk's window (input.hpp) and pumps the UI bridge (ui.hpp).
+// camera every frame (camera.hpp), casts the Atlas survey's rays every frame (survey_game.hpp), forwards input from Cyberpunk's window (input.hpp) and pumps the UI bridge (ui.hpp).
 #include <RED4ext/RED4ext.hpp>
 
 #include "camera.hpp"
@@ -49,6 +49,7 @@ namespace
 		// the mouse X of this frame: the drive turns V by it during a glide (it owns V's yaw), the camera learns the rate
 		const int64_t dx = cb::input::take_mouse_x();
 		cb::drive::tick(dx, cb::camera::degrees_per_count()); // before the camera: cam.fly is true on the first frame V is moved
+		cb::survey_game::frame();                             // the survey's rays, at the stop the drive just held V at
 		cb::view::tick();                                     // before the camera: cam.fp says whether the view applied
 		cb::camera::publish(dx);
 		cb::input::tick();

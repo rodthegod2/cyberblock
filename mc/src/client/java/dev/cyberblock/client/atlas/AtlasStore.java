@@ -101,7 +101,7 @@ public final class AtlasStore {
 			}
 
 			if (before != null && before.running() && !state.running()) {
-				Cyberblock.LOG.info("atlas: survey {} ({}), {} of {} stops", state.state(), state.reason(), state.done(), state.total());
+				Cyberblock.LOG.info("atlas: survey {} ({}), {} of {} squares", state.state(), state.reason(), state.done(), state.total());
 				switch (state.state()) {
 					case "done" -> UiLink.toast("level", "Atlas survey done", "All of Night City is on the map", 8.0);
 					case "stopped" -> UiLink.toast("warning", "Atlas survey stopped", state.reason() + " (" + state.done() + "/" + state.total() + ")", 6.0);
