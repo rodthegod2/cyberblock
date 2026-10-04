@@ -2,6 +2,9 @@ package dev.cyberblock;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.mojang.serialization.JsonOps;
 import dev.cyberblock.OutlineRules.Decision;
 import dev.cyberblock.OutlineRules.Kind;
 import net.minecraft.SharedConstants;
@@ -40,6 +43,25 @@ class OutlineRulesTest {
 
 	@Test
 	void permanentEraseIsOffByDefault() {
+		assertFalse(OutlineRules.creativeErases());
+	}
+
+	/** Plan Q-B5: saved with the world (cyberblock:settings); an older save without the field reads as off. */
+	@Test
+	void theSettingIsSavedWithTheWorld() {
+		JsonElement saved = OutlineRules.Settings.CODEC.encodeStart(JsonOps.INSTANCE, new OutlineRules.Settings(true)).getOrThrow();
+		assertEquals("{\"creativeErasesReplica\":true}", saved.toString());
+		OutlineRules.Settings back = OutlineRules.Settings.CODEC.parse(JsonOps.INSTANCE, saved).getOrThrow();
+		assertEquals(saved, OutlineRules.Settings.CODEC.encodeStart(JsonOps.INSTANCE, back).getOrThrow());
+		OutlineRules.Settings empty = OutlineRules.Settings.CODEC.parse(JsonOps.INSTANCE, new JsonObject()).getOrThrow();
+		// off is the default, which the codec leaves out: an empty save and the default setting are the same thing
+		assertEquals("{}", OutlineRules.Settings.CODEC.encodeStart(JsonOps.INSTANCE, empty).getOrThrow().toString());
+		assertEquals("{}", OutlineRules.Settings.CODEC.encodeStart(JsonOps.INSTANCE, new OutlineRules.Settings()).getOrThrow().toString());
+	}
+
+	@Test
+	void withoutAWorldThereIsNothingToChange() {
+		assertFalse(OutlineRules.setCreativeErases(true));
 		assertFalse(OutlineRules.creativeErases());
 	}
 

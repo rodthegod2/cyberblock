@@ -45,11 +45,13 @@ public class Cyberblock implements ModInitializer {
 			}
 		};
 		ServerLifecycleEvents.SERVER_STARTED.register(WorldBridge::attach);
+		ServerLifecycleEvents.SERVER_STARTED.register(OutlineRules::attach);
 		// before the world is saved, so Night City's barriers and the proxies are never kept in the save
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
 			ProxyManager.clear();
 			MobWar.clear();
 			WorldBridge.detach();
+			OutlineRules.detach();
 		});
 		// outline blocks: survival may not break them, creative breaks come back (plan Q-B4); server side only
 		PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, blockEntity) ->
@@ -90,8 +92,16 @@ public class Cyberblock implements ModInitializer {
 				debug = debug.then(node);
 			}
 
-			dispatcher.register(Commands.literal("cyberblock").then(debug));
+			dispatcher.register(Commands.literal("cyberblock").then(debug)
+				.then(Commands.literal("settings").executes(command -> clientOnly(command.getSource()))));
 		});
+		// /cyberblock outline [erase on|off] (plan Q-B5): operators and the singleplayer owner
+		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> dispatcher.register(
+			Commands.literal("cyberblock").then(Commands.literal("outline").requires(OutlineRules::mayChange)
+				.executes(command -> outline(command.getSource(), null))
+				.then(Commands.literal("erase")
+					.then(Commands.literal("on").executes(command -> outline(command.getSource(), true)))
+					.then(Commands.literal("off").executes(command -> outline(command.getSource(), false)))))));
 		LOG.info("cyberblock loaded");
 	}
 
@@ -112,6 +122,20 @@ public class Cyberblock implements ModInitializer {
 	private static int survey(final CommandSourceStack source, final String op) {
 		String line = Bridge.surveyCommand.apply(op);
 		source.sendSuccess(() -> Component.literal(line), false);
+		return 1;
+	}
+
+	/** /cyberblock outline (on null: the status) and /cyberblock outline erase on|off. */
+	private static int outline(final CommandSourceStack source, final Boolean on) {
+		if (on != null && OutlineRules.setCreativeErases(on)) {
+			LOG.info("outline: permanent erase {} (by {})", on ? "on" : "off", source.getTextName());
+		}
+
+		boolean now = OutlineRules.creativeErases();
+		// a system message: the world's send_command_feedback is off (CyberblockClient), which would hide sendSuccess
+		source.sendSystemMessage(Component.translatableWithFallback("cyberblock.outline.erase." + (now ? "on" : "off"), now
+			? "Creative can erase the replica permanently: ON (broken outline blocks stay until the probes see the cell again)"
+			: "Creative can erase the replica permanently: OFF (broken outline blocks come back in about 10 s)"));
 		return 1;
 	}
 
