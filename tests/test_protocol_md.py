@@ -1007,3 +1007,113 @@ def test_guide_documents_the_atlas_and_the_one_time_survey():
                    "Quests, Travel, Shops, Gigs, Places", "**Track**"):
         assert phrase in text, f"HOW-TO-PLAY.md does not say {phrase!r}"
     assert "Nothing of Cyberpunk's own map art is used" in text
+
+
+# ---- Phase Q (third-person view and step-up assist): `prefs` and `cam.vdbg` (plan 2026-10-04 megaplan section 1.9) ----------
+PQ_CP_TO_MC, PQ_MC_TO_CP = "Phase Q: Cyberpunk → Minecraft", "Phase Q: Minecraft → Cyberpunk"
+PQ_CP_EXAMPLES, PQ_MC_EXAMPLES = "Phase Q examples, Cyberpunk to Minecraft:", "Phase Q examples, Minecraft to Cyberpunk:"
+PREFS_FIELDS = {"dist", "shoulder", "fov", "recenter", "vdist", "stepup"}
+PREFS_DEFAULTS = {"dist": 3.2, "shoulder": 0.45, "fov": 0, "recenter": True, "vdist": 0, "stepup": True}  # section 1.9 / Q-D1
+
+
+def zero_or(x, lo, hi) -> bool:
+    return x == 0 or num(x, lo, hi)
+
+
+def prefs_ok(m) -> bool:
+    """What Minecraft may send: all six fields, each inside its range (the DLL clamps instead of dropping)."""
+    return (set(m) - {"t"} == PREFS_FIELDS and num(m["dist"], 1.5, 8) and num(m["shoulder"], -1, 1) and zero_or(m["fov"], 50, 110)
+            and isinstance(m["recenter"], bool) and zero_or(m["vdist"], 3, 14) and isinstance(m["stepup"], bool))
+
+
+def vdbg_ok(v) -> bool:
+    return isinstance(v, list) and len(v) == 3 and num(v[0], 0, 100) and num(v[1], 0, 100) and num(v[2], 0, 60000)
+
+
+def cam_vdbg_ok(m) -> bool:
+    """A `cam` is the re-test 3 `cam` plus an optional `vdbg` (a bad `vdbg` is ignored by the receiver, so the validator of the
+    whole message only judges the part that is there: a `cam` with a good or no `vdbg`)."""
+    return R3_VALIDATORS["cam"](m) and ("vdbg" not in m or vdbg_ok(m["vdbg"]))
+
+
+PQ_VALIDATORS = {"cam": cam_vdbg_ok, "prefs": prefs_ok}
+PQ_EXAMPLES = [(m["t"], m) for first in (PQ_CP_EXAMPLES, PQ_MC_EXAMPLES) for m in examples(first)]
+
+
+def pq_example(t, **changes):
+    m = copy.deepcopy(next(m for u, m in PQ_EXAMPLES if u == t))
+    m.update(changes)
+    return m
+
+
+def test_phase_q_every_type_has_a_row_an_example_and_a_validator():
+    assert documented(PQ_CP_TO_MC) == {"cam"} and documented(PQ_MC_TO_CP) == {"prefs"}
+    assert {m["t"] for m in examples(PQ_CP_EXAMPLES)} == {"cam"} and {m["t"] for m in examples(PQ_MC_EXAMPLES)} == {"prefs"}
+    assert {t for t, _ in PQ_EXAMPLES} == set(PQ_VALIDATORS)
+    assert "**extends layer 1, layers 3–6 and re-test 3:**" in rows_by_type(PQ_CP_TO_MC)["cam"]
+
+
+def test_phase_q_every_example_field_is_named_in_its_row():
+    cp_row, mc_row = rows_by_type(PQ_CP_TO_MC)["cam"], rows_by_type(PQ_MC_TO_CP)["prefs"]
+    cam = next(m for t, m in PQ_EXAMPLES if t == "cam")
+    inherited = set(next(m for t, m in R3_EXAMPLES if t == "cam")) - {"seat"}  # what the older `cam` rows already name
+    assert set(cam) - {"t"} - inherited == {"vdbg"} and re.search(r"\bvdbg\b", cp_row)
+    assert set(cam) >= set(example(R3_OLD_EXAMPLE_OF["cam"], "cam"))  # the example keeps every layer 1 and layers 3-6 field
+    for key in set(next(m for t, m in PQ_EXAMPLES if t == "prefs")) - {"t"}:
+        assert re.search(rf"\b{key}\b", mc_row), f"prefs.{key} is not described in its row"
+
+
+@pytest.mark.parametrize("t, m", PQ_EXAMPLES, ids=[t for t, _ in PQ_EXAMPLES])
+def test_phase_q_example_obeys_the_documented_limits(t, m):
+    assert PQ_VALIDATORS[t](m)
+
+
+def test_phase_q_cam_example_is_third_person_and_prefs_example_is_the_defaults():
+    cam = next(m for t, m in PQ_EXAMPLES if t == "cam")
+    assert cam["fp"] is False and len(cam["vdbg"]) == 3
+    assert next(m for t, m in PQ_EXAMPLES if t == "prefs") == {"t": "prefs", **PREFS_DEFAULTS}
+
+
+PQ_OUT_OF_LIMITS = [
+    ("prefs", pq_example("prefs", dist=1.4)), ("prefs", pq_example("prefs", dist=8.01)), ("prefs", pq_example("prefs", shoulder=-1.01)),
+    ("prefs", pq_example("prefs", shoulder=1.01)), ("prefs", pq_example("prefs", fov=49)), ("prefs", pq_example("prefs", fov=110.5)),
+    ("prefs", pq_example("prefs", fov=-1)), ("prefs", pq_example("prefs", vdist=2.9)), ("prefs", pq_example("prefs", vdist=14.1)),
+    ("prefs", pq_example("prefs", recenter=1)), ("prefs", pq_example("prefs", stepup="yes")), ("prefs", pq_example("prefs", dist=float("nan"))),
+    ("prefs", pq_example("prefs", dist=True)), ("prefs", {k: v for k, v in pq_example("prefs").items() if k != "dist"}),
+    ("prefs", pq_example("prefs", scale=0.8)),  # a seventh field is a later phase's: not part of this contract
+    ("cam", pq_example("cam", vdbg=[3.2, 2.8])), ("cam", pq_example("cam", vdbg=[3.2, 2.8, 14, 0])), ("cam", pq_example("cam", vdbg=[-0.1, 2.8, 14])),
+    ("cam", pq_example("cam", vdbg=[100.1, 2.8, 14])), ("cam", pq_example("cam", vdbg=[3.2, 100.1, 14])), ("cam", pq_example("cam", vdbg=[3.2, 2.8, 60001])),
+    ("cam", pq_example("cam", vdbg=[3.2, 2.8, -1])), ("cam", pq_example("cam", vdbg="3.2")), ("cam", pq_example("cam", vdbg=[3.2, None, 14])),
+    ("cam", pq_example("cam", vdbg=[True, 2.8, 14])),
+]
+
+
+@pytest.mark.parametrize("t, m", PQ_OUT_OF_LIMITS, ids=[f"{t}-{i}" for i, (t, _) in enumerate(PQ_OUT_OF_LIMITS)])
+def test_phase_q_validators_reject_out_of_limit_messages(t, m):
+    try:
+        ok = PQ_VALIDATORS[t](m)
+    except (KeyError, TypeError):
+        ok = False
+    assert not ok
+
+
+def test_phase_q_validators_accept_the_limits_themselves():
+    for dist, shoulder, fov, vdist in ((1.5, -1, 50, 3), (8, 1, 110, 14), (3.2, 0, 0, 0)):
+        assert prefs_ok(pq_example("prefs", dist=dist, shoulder=shoulder, fov=fov, vdist=vdist))
+    assert prefs_ok(pq_example("prefs", recenter=False, stepup=False))
+    assert cam_vdbg_ok(pq_example("cam", vdbg=[0, 0, 0])) and cam_vdbg_ok(pq_example("cam", vdbg=[100, 100, 60000]))
+    assert cam_vdbg_ok({k: v for k, v in pq_example("cam").items() if k != "vdbg"})  # vdbg is optional: absent unless the debug flag is on
+
+
+def test_phase_q_rules_are_stated_in_the_document():
+    text = " ".join((section("Phase Q semantics and limits") + section(PQ_CP_TO_MC) + section(PQ_MC_TO_CP)).split())
+    for phrase in ("dist 3.2, shoulder 0.45, fov 0, recenter true, vdist 0, stepup true", "on each `hello`", "all six fields", "clamps", "a negative `fov` or `vdist` becomes 0",
+                   "1.5..8", "−1..1", "50..110", "3..14", "event pump", "1.05 m", "2 m of free space", "never stepped on", "only the `vdbg` is ignored",
+                   "`/cyberblock debug view`", "only while", "nearest hit minus 0.25 m", "fp:false"):
+        assert phrase in text, f"{phrase!r} is not stated"
+
+
+def test_phase_q_documented_defaults_match_the_checked_ones():
+    text = section("Phase Q semantics and limits")
+    for key, value in PREFS_DEFAULTS.items():
+        assert re.search(rf"\b{key} {str(value).lower()}\b", text), f"default {key} {value} is not in the Defaults bullet"

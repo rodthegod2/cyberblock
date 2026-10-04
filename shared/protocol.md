@@ -575,6 +575,50 @@ Atlas examples, Minecraft to Cyberpunk:
 {"t":"survey","op":"start","done":[-6,4,-5,4]}
 ```
 
+## Phase Q (third-person view and step-up assist)
+
+Same wire, same conventions; `proto` stays 1 and older builds ignore the new `t` values and fields. Plan:
+`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 1.9 (rows Q2, Q3). Minecraft owns the options (the
+Cyberblock settings screen, `/cyberblock debug view`); the DLL owns the third-person camera (collision, smoothing,
+over-the-shoulder offset, distance, FOV) and tells Minecraft what it did through `vdbg`.
+
+### Phase Q: Cyberpunk → Minecraft
+| `t` | fields | when |
+|---|---|---|
+| `cam` | **extends layer 1, layers 3–6 and re-test 3:** adds `vdbg:[collide, smooth, age]`, the camera's own numbers: `collide` m (the distance after camera collision: nearest hit minus 0.25 m, capped at the wanted distance), `smooth` m (the distance actually used after smoothing), `age` ms (how old the pose is when it is sent); Minecraft's view debug overlay shows them | every Cyberpunk frame, only while `/cyberblock debug view` is on; absent otherwise |
+
+### Phase Q: Minecraft → Cyberpunk
+| `t` | fields | when |
+|---|---|---|
+| `prefs` | `dist` m (third-person camera distance, 1.5..8, default 3.2), `shoulder` m (over-the-shoulder offset to the right, −1..1, default 0.45), `fov` (0 = the game's own, or 50..110 degrees), `recenter:bool` (swing the shoulder offset to the centre near a wall, default true), `vdist` m (vehicle camera distance: 0 = the game's own, or 3..14; only used when the game's vehicle camera allows it), `stepup:bool` (step-up assist for stairs of placed blocks, default true) | after each host `hello`, and whenever one of the six values changes in the settings screen |
+
+### Phase Q semantics and limits
+- **Defaults:** the DLL starts every link with `dist 3.2, shoulder 0.45, fov 0, recenter true, vdist 0, stepup true` and
+  goes back to them on each `hello`, until a `prefs` arrives. Minecraft always sends all six fields.
+- **Validation (receiver):** the DLL clamps every number into its range (`dist` 1.5..8, `shoulder` −1..1, `fov` 0 or
+  50..110, `vdist` 0 or 3..14; a value above 0 and below the lower bound is raised to it, a negative `fov` or `vdist`
+  becomes 0), keeps the current value of a field that is missing, not finite or of the wrong type, and ignores any other
+  field. A bad `prefs` is counted and never ends the link.
+- **`stepup`:** the DLL passes it to the scripts through the event pump as the event `prefs`; with it on, V is lifted onto a
+  single Cyberblock box in the way (at most 1.05 m above V's feet, 2 m of free space above it). Night City geometry is
+  never stepped on.
+- **`vdbg`:** three finite numbers, `collide` and `smooth` 0..100 m, `age` 0..60000 ms. A `cam` whose `vdbg` is bad is
+  still a valid `cam`: only the `vdbg` is ignored (like a bad `flight.ts`), so a debug aid never drops camera frames.
+- **Camera `fp`:** in third person the DLL sends `fp:false` and `p` is the camera position, `pl` stays V's feet.
+
+### Phase Q examples
+One message per line (JSON Lines). Every `t` of the two Phase Q tables has one line.
+
+Phase Q examples, Cyberpunk to Minecraft:
+```jsonl
+{"t":"cam","f":2210,"p":[-1245.9,66.9,809.1],"r":[150.0,10.0,0.0],"fov":58.7,"fp":false,"pl":[-1245.5,64.9,812.25],"h":150.0,"cr":false,"air":false,"held":false,"menu":false,"fly":false,"lv":57,"vdbg":[3.2,2.85,14.0]}
+```
+
+Phase Q examples, Minecraft to Cyberpunk:
+```jsonl
+{"t":"prefs","dist":3.2,"shoulder":0.45,"fov":0,"recenter":true,"vdist":0,"stepup":true}
+```
+
 ## Shared memory `Local\CyberblockFrame`
 Exactly the reference `FrameExporter` layout (see its Javadoc) with magic `0x52464243` ("CBFR"). The
 reference flags (zero-to-one depth, bottom-up rows, reversed-Z) are kept.

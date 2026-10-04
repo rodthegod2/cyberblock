@@ -51,6 +51,19 @@ Re-test 3 modes (shared/protocol.md "Re-test 3"; combinable with each other and 
            (`key arms`) and Optical Camo (`key camo`) keys. Prints `hack`, `uiact`, `persp` and `binds` (six keys).
   --seat   V rides in a vehicle: `state vehicle:true`, `cam seat:true` with `pl` at V's hips, and `fp` flipping every
            2 s (a first-person then a third-person vehicle camera). Prints `persp` and `binds`.
+
+Phase Q modes (shared/protocol.md "Phase Q"; combinable with the layer flags except --layer4, but each of --view, --stairs and
+--seat drives the camera, so use only one of them; same --hold, --cmd, --port and NPC resend; they print what Minecraft reports,
+`prefs` included):
+  --view   third-person view (`fp:false`, `vdbg` on every `cam`): V walks (4.3 m/s) for 3 s and sprints (5.6 m/s, `key sprint`) for 3 s
+           round a circle on the slab, with the camera 3.2 m behind and 0.45 m to the right (it follows Minecraft's `prefs`: dist,
+           shoulder, fov), then falls and glides: a `key jump` tap 0.5 s into the fall, after which the `cam` follows Minecraft's
+           `flight` like --layer4 (`fly:true`, `air:true`). `vdbg` shows the camera pulled in by a wall between 4 s and 5 s. Use
+           --hold 20 to see all three poses.
+  --stairs a staircase of five placed blocks (cobblestone columns 1..5 high, `cmd fill` at the start) with ground under it (the slab);
+           V walks up it at 1.5 m/s in first person, each step lifting V by 1 m in 0.15 s as the step-up assist does, then stands on top.
+           `aim` is sent at 10 Hz at the face of the block under the crosshair (looking 20 degrees down), 2 mm in front of it: the
+           Cyberblock box in front of the block, the case Phase Q's aim margin has to tolerate; `persp back` makes `fp` false.
 """
 import argparse
 import asyncio
@@ -88,11 +101,23 @@ JUMP_AT, JUMP_FOR = 0.5, 0.1  # layer 4: seconds after the scenario starts, and 
 HACK_KEY, SKILLS_KEY, KILLED_AT = (1.0, 2.0), (2.5, 2.6), 3.0  # layer 6: (down, up) and the kill, in seconds
 CYBERWARE_KEYS, ACTIVATE_KEY = ((3.5, 3.6), (4.0, 4.1)), (4.5, 4.6)  # layer 6: U opens the Cyberware screen then closes it; Y is a tap
 PCELLS_AHEAD, MAX_PCELLS = 0.5, 64  # layer 4: seconds ahead of a projectile for its wall, and the `pcells` cap
-MODES = ("ui", "hacks", "seat")  # re-test 3: --ui, --hacks, --seat
-MODE_EVENTS = {"ui": {"uiact", "persp", "binds"}, "hacks": {"hack", "uiact", "persp", "binds"}, "seat": {"persp", "binds"}}
+MODES = ("ui", "hacks", "seat", "view", "stairs")  # re-test 3: --ui, --hacks, --seat; Phase Q: --view, --stairs
+MODE_EVENTS = {"ui": {"uiact", "persp", "binds"}, "hacks": {"hack", "uiact", "persp", "binds"}, "seat": {"persp", "binds"},
+               "view": {"prefs"}, "stairs": {"prefs"}}
+CAMERA_OWNERS = ("view", "stairs", "seat")  # the modes that drive the camera by themselves
 UI_MENU = (6.0, 7.0)  # --ui: seconds in which `cam.menu` is true (a pass-through menu is open)
 PERSPECTIVE_KEY = (8.0, 8.1)  # --ui: the F5 tap that makes Minecraft answer `persp`
 HACKS_KEYS = {"hack": (1.0, 2.0), "arms": (2.5, 2.6), "camo": (3.0, 3.1)}  # --hacks: (down, up) in seconds
+PREFS_DEFAULT = {"dist": 3.2, "shoulder": 0.45, "fov": 0, "recenter": True, "vdist": 0, "stepup": True}  # Phase Q: the DLL's defaults
+PREFS_RANGES = {"dist": (1.5, 8.0), "shoulder": (-1.0, 1.0), "fov": (50.0, 110.0), "vdist": (3.0, 14.0)}  # `fov` and `vdist` also take 0
+WALK_SPEED, SPRINT_SPEED, WALK_FOR, SPRINT_FOR, VIEW_RADIUS = 4.3, 5.6, 3.0, 3.0, 5.0  # --view: m/s, seconds each, circle radius (m)
+VIEW_PITCH, GLIDE_FROM = 10.0, SLAB_Y + 1.0 + 40.0  # --view: camera pitch (degrees, down) on the ground; the glide starts 40 m up
+WALL_WINDOW, WALL_DIST, SMOOTH_LAG = (4.0, 5.0), 1.2, 0.15  # --view vdbg: when a wall pulls the camera in, to what distance, how late `smooth` follows
+STAIRS_Z, STAIRS_X0, STAIRS_STEPS, STAIRS_SPEED, STAIRS_RISE = 6, -2, 5, 1.5, 0.15  # --stairs: row z, first column x, columns 1..5 high, m/s, seconds per step
+STAIRS_START_X, STAIRS_REACH, STAIRS_PITCH = -4.5, 0.3, 20.0  # --stairs: V's start x, V's radius (a step lifts V at x + REACH = column edge), look pitch
+AIM_BIAS, AIM_MAX, AIM_EVERY, AIM_STEP = -0.002, 8.0, 0.1, 0.02  # --stairs: the box face sits 2 mm in front of the block face; 8 m cap; 10 Hz; 2 cm change
+STAIRS_COMMANDS = [f"fill {STAIRS_X0 + k} {SLAB_Y + 1} {STAIRS_Z} {STAIRS_X0 + k} {SLAB_Y + 1 + k} {STAIRS_Z} minecraft:cobblestone"
+                   for k in range(STAIRS_STEPS)]  # column k (0-based) is k + 1 blocks high on the slab's surface (y 64)
 SEAT_PERIOD = 2.0  # --seat: seconds between camera switches (first person <-> third person)
 SEAT_FEET, HIPS_UP = (-1.0, SLAB_Y + 1.0, -1.0), 0.6  # --seat: V's feet; `pl` is the hips point, HIPS_UP above them
 HACK_UPLOAD = {"short_circuit": 0.6, "overheat": 1.0, "reboot_optics": 0.8, "cripple_movement": 1.2, "contagion": 1.5,
@@ -279,13 +304,101 @@ def seat_cam(f: int, t: float) -> dict:
             "cr": False, "seat": True}
 
 
+def clamp_prefs(m: dict, current: dict) -> dict:
+    """The DLL's rule for `prefs` (protocol.md "Phase Q"): every number is clamped into its range (`fov` and `vdist` also
+    allow 0, and a value above 0 below the lower bound is raised to it), a field that is missing, not finite or of the wrong
+    type keeps its current value."""
+    out = dict(current)
+    for key, (lo, hi) in PREFS_RANGES.items():
+        v = m.get(key)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+            out[key] = 0 if key in ("fov", "vdist") and v <= 0 else min(max(v, lo), hi)
+    for key in ("recenter", "stepup"):
+        if isinstance(m.get(key), bool):
+            out[key] = m[key]
+    return out
+
+
+def third_person_eye(feet: Sequence[float], yaw: float, pitch: float, dist: float, shoulder: float) -> list[float]:
+    """The third-person camera position: V's eye, `dist` m back along the look direction and `shoulder` m to the right of it."""
+    yr, pr = math.radians(yaw), math.radians(pitch)
+    look = (-math.sin(yr) * math.cos(pr), -math.sin(pr), math.cos(yr) * math.cos(pr))  # Minecraft look vector (yaw 0 faces +z)
+    right = (-math.cos(yr), 0.0, -math.sin(yr))
+    eye = (feet[0], feet[1] + EYE_HEIGHT, feet[2])
+    return [eye[i] - look[i] * dist + right[i] * shoulder for i in range(3)]
+
+
+def walk_pose(t: float) -> tuple[list[float], float]:
+    """--view: V's feet and yaw t seconds in, on a circle of VIEW_RADIUS round the centre: walking for WALK_FOR s, then
+    sprinting for SPRINT_FOR s (held at the end of the sprint afterwards)."""
+    t = min(max(t, 0.0), WALK_FOR + SPRINT_FOR)
+    walked = min(t, WALK_FOR)
+    a = (WALK_SPEED * walked + SPRINT_SPEED * (t - walked)) / VIEW_RADIUS
+    return [VIEW_RADIUS * math.sin(a), FLOOR_Y, VIEW_RADIUS * math.cos(a)], cbmath.mc_yaw_pitch(math.cos(a), 0.0, -math.sin(a))[0]
+
+
+def view_collide(t: float, dist: float) -> float:
+    """--view: the distance after camera collision: `dist`, pulled in to WALL_DIST (a triangle) while the wall window is open."""
+    lo, hi = WALL_WINDOW
+    bump = max(0.0, 1.0 - abs(t - (lo + hi) / 2) / ((hi - lo) / 2))
+    return dist - (dist - min(dist, WALL_DIST)) * bump
+
+
+def view_vdbg(f: int, t: float, dist: float) -> list[float]:
+    """--view: `cam.vdbg` = [collide m, smooth m, age ms]. `smooth` is `collide` SMOOTH_LAG s late; `age` is a steady 12 to 18 ms."""
+    return [round(view_collide(t, dist), 3), round(view_collide(max(0.0, t - SMOOTH_LAG), dist), 3), 12.0 + 2.0 * (f % 4)]
+
+
+def stairs_top_x() -> float:
+    """--stairs: where V stops: the middle of the last (highest) column."""
+    return STAIRS_X0 + STAIRS_STEPS - 0.5
+
+
+def stairs_feet(t: float) -> list[float]:
+    """--stairs: V's feet t seconds in: walking +x at STAIRS_SPEED from STAIRS_START_X, and each column edge (minus V's radius) lifts V
+    by 1 m over STAIRS_RISE s (the step-up assist), up to the top of the last column."""
+    x = min(STAIRS_START_X + STAIRS_SPEED * t, stairs_top_x())
+    y = FLOOR_Y
+    for k in range(STAIRS_STEPS):
+        reached = (STAIRS_X0 + k - STAIRS_REACH - STAIRS_START_X) / STAIRS_SPEED
+        y += min(max((t - reached) / STAIRS_RISE, 0.0), 1.0)
+    return [x, y, STAIRS_Z + 0.5]
+
+
+def ray_box(origin: Sequence[float], direction: Sequence[float], lo: Sequence[float], hi: Sequence[float]) -> float | None:
+    """Distance along a unit `direction` to the entry of the box [lo, hi] (0 when `origin` is inside it), None for a miss (slab method)."""
+    near, far = 0.0, math.inf
+    for o, d, a, b in zip(origin, direction, lo, hi):
+        if abs(d) < 1e-12:
+            if not a <= o <= b:
+                return None
+            continue
+        t1, t2 = (a - o) / d, (b - o) / d
+        near, far = max(near, min(t1, t2)), min(far, max(t1, t2))
+    return near if near <= far else None
+
+
+def stairs_aim(eye: Sequence[float], yaw: float, pitch: float) -> float:
+    """--stairs: the `aim.d` for a crosshair along (yaw, pitch) from `eye`: the distance to the first block face (the cobblestone
+    columns), AIM_BIAS in front of it, or to the slab's surface, whichever is nearer; -1 when nothing is within AIM_MAX."""
+    yr, pr = math.radians(yaw), math.radians(pitch)
+    look = (-math.sin(yr) * math.cos(pr), -math.sin(pr), math.cos(yr) * math.cos(pr))
+    hits = [h + AIM_BIAS for k in range(STAIRS_STEPS)
+            if (h := ray_box(eye, look, (STAIRS_X0 + k, FLOOR_Y, STAIRS_Z), (STAIRS_X0 + k + 1, FLOOR_Y + k + 1, STAIRS_Z + 1))) is not None]
+    if look[1] < -1e-9 and (ground := (FLOOR_Y - eye[1]) / look[1]) >= 0:
+        hits.append(ground)
+    d = min(hits, default=-1.0)
+    return round(d, 3) if 0 <= d <= AIM_MAX else -1.0
+
+
 class Body:
     """Where V is in layer 4: falls from FALL_FROM at FALL_SPEED until Minecraft reports `flight`, then follows it (and
     says `fly:true`, as the real host's drive does); a touchdown (`flight` inactive) or an ender pearl's `teleport` puts V
     down at that spot. A `flight` sample's `kind` (glide or launch) and `ts` make no difference to the fake host."""
 
-    def __init__(self) -> None:
-        self.mode, self.feet, self.yaw, self.pitch = "fall", [FALL_XZ[0], FALL_FROM, FALL_XZ[1]], 0.0, 0.0
+    def __init__(self, start_y: float = FALL_FROM) -> None:
+        self.start_y = start_y
+        self.mode, self.feet, self.yaw, self.pitch = "fall", [FALL_XZ[0], start_y, FALL_XZ[1]], 0.0, 0.0
 
     def update(self, m: dict) -> None:
         feet = m.get("p")
@@ -300,7 +413,7 @@ class Body:
         """The `cam` message for frame f, t seconds into the scenario."""
         x, y, z = self.feet
         if self.mode == "fall":
-            y = max(FLOOR_Y, FALL_FROM - FALL_SPEED * t)
+            y = max(FLOOR_Y, self.start_y - FALL_SPEED * t)
         return {"t": "cam", "f": f, "p": [x, y + EYE_HEIGHT, z], "r": [self.yaw, self.pitch, 0.0], "fov": FOV, "fp": True,
                 "pl": [x, y, z], "h": self.yaw, "cr": False, "fly": self.mode == "flight"}
 
@@ -309,7 +422,10 @@ class Cyberpunk:
     """Cyberpunk's side of layers 2-6 once the orbit is over: the timed messages it sends by itself and its answers."""
 
     def __init__(self, layers: frozenset[int], modes: frozenset[str] = frozenset()) -> None:
-        self.layers, self.modes, self.body, self.mobdmg_sent = layers, modes, Body(), False
+        self.layers, self.modes, self.mobdmg_sent = layers, modes, False
+        self.body = Body(GLIDE_FROM if "view" in modes else FALL_FROM)
+        self.prefs = dict(PREFS_DEFAULT)  # Phase Q: what Minecraft's last `prefs` set (--view and --stairs place the camera by it)
+        self.aim_at, self.aim_d = None, None  # --stairs: when (scenario seconds) the aim was last looked at, and the last `aim.d` sent
         self.view_back = False  # --ui: Minecraft asked for the third-person view (`persp back`), so `cam.fp` is false
         self.delayed: list[tuple[float, dict]] = []  # (perf_counter due time, message): the `ping` and `frenzy` spreads of --hacks
 
@@ -334,7 +450,48 @@ class Cyberpunk:
             events += [(0.0, {"t": "state", "active": True, "vehicle": True})]
         if "ui" in self.modes:
             events += ui_script()
+        if "view" in self.modes:
+            glide = WALK_FOR + SPRINT_FOR
+            events += [(WALK_FOR, key("sprint", True)), (glide, key("sprint", False)),
+                       (glide + JUMP_AT, key("jump", True)), (glide + JUMP_AT + JUMP_FOR, key("jump", False))]
         return sorted(((t * SCRIPT_SCALE, m) for t, m in events), key=lambda e: e[0])
+
+    def setup_commands(self) -> list[str]:
+        """The server commands the mode sends by itself at the start of the scenario: --stairs places its staircase."""
+        return list(STAIRS_COMMANDS) if "stairs" in self.modes else []
+
+    def view_cam(self, f: int, t: float) -> dict:
+        """--view: V walks, sprints, then falls and glides (the body follows Minecraft's `flight`), seen from the third-person
+        camera of Minecraft's `prefs`; `vdbg` rides on every `cam`."""
+        p, glide = self.prefs, (WALK_FOR + SPRINT_FOR) * SCRIPT_SCALE
+        if t < glide:
+            feet, yaw = walk_pose(t / SCRIPT_SCALE)
+            pitch, fly = VIEW_PITCH, False
+        else:
+            body = self.body.cam(f, t - glide)
+            feet, (yaw, pitch), fly = body["pl"], body["r"][:2], body["fly"]
+        eye = third_person_eye(feet, yaw, pitch, p["dist"], p["shoulder"])
+        return {"t": "cam", "f": f, "p": eye, "r": [yaw, pitch, 0.0], "fov": p["fov"] or FOV, "fp": False, "pl": feet, "h": yaw,
+                "cr": False, "air": feet[1] > FLOOR_Y + 1e-6, "fly": fly, "vdbg": view_vdbg(f, t / SCRIPT_SCALE, p["dist"])}
+
+    def stairs_cam(self, f: int, t: float) -> dict:
+        """--stairs: V walks up the staircase in first person looking STAIRS_PITCH degrees down (`persp back` makes `fp` false)."""
+        feet = stairs_feet(t / SCRIPT_SCALE)
+        yaw = cbmath.mc_yaw_pitch(1.0, 0.0, 0.0)[0]
+        return {"t": "cam", "f": f, "p": [feet[0], feet[1] + EYE_HEIGHT, feet[2]], "r": [yaw, STAIRS_PITCH, 0.0], "fov": FOV,
+                "fp": not self.view_back, "pl": feet, "h": yaw, "cr": False, "air": False, "fly": False}
+
+    def frame_messages(self, t: float) -> list[dict]:
+        """Messages sent alongside a frame's `cam`: --stairs looks at the aim every AIM_EVERY s and sends `aim` when it changed by AIM_STEP."""
+        if "stairs" not in self.modes or (self.aim_at is not None and t - self.aim_at < AIM_EVERY * SCRIPT_SCALE - 1e-9):
+            return []
+        self.aim_at = t
+        cam = self.stairs_cam(0, t)
+        d = stairs_aim(cam["p"], cam["r"][0], cam["r"][1])
+        if self.aim_d is not None and abs(d - self.aim_d) < AIM_STEP and (d < 0) == (self.aim_d < 0):
+            return []
+        self.aim_d = d
+        return [{"t": "aim", "d": d}]
 
     def due(self, now: float) -> list[dict]:
         """The delayed messages (--hacks) whose time has come, oldest first; they are removed."""
@@ -347,6 +504,10 @@ class Cyberpunk:
         orbit pose held (`fp:false` once Minecraft asked for the third-person view, `menu:true` while --ui shows a pass-through menu)."""
         if "seat" in self.modes:
             return seat_cam(f, t)
+        if "view" in self.modes:
+            return self.view_cam(f, t)
+        if "stairs" in self.modes:
+            return self.stairs_cam(f, t)
         cam = self.body.cam(f, t) if 4 in self.layers else {**held, "f": f}
         if self.view_back:
             cam["fp"] = False
@@ -359,6 +520,10 @@ class Cyberpunk:
         t, items, rid = m.get("t"), m.get("list"), m.get("id")
         if t == "persp" and m.get("mode") in ("first", "back"):
             self.view_back = m["mode"] == "back"
+        if t == "prefs":
+            self.prefs = clamp_prefs(m, self.prefs)
+        if "view" in self.modes:
+            self.body.update(m)
         if "ui" in self.modes and t == "uiact":
             return ui_replies(m)
         if "hacks" in self.modes and t == "hack" and isinstance(rid, int) and isinstance(m.get("target"), str) and m.get("hack") in HACK_UPLOAD:
@@ -424,6 +589,7 @@ async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, com
     """Cyberpunk's side of layers 2-6: the NPC list, the layer 2 bullet hit, the commands; then for `hold` seconds the
     camera (`host.cam`: `cam` held, or V's body in layer 4), the NPC list at 10 Hz and the layers' timed messages."""
     npcs = npcs_message()
+    commands = [*host.setup_commands(), *commands]
     for m in (npcs, *([dmg_message()] if 2 in host.layers else []), *({"t": "cmd", "c": c} for c in commands)):
         await ws.send(json.dumps(m))
     label = ", ".join([*(f"layer {n}" for n in sorted(host.layers)), *(f"--{m}" for m in sorted(host.modes))])
@@ -441,6 +607,8 @@ async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, com
         for m in host.due(time.perf_counter()):
             await ws.send(json.dumps(m))
         await ws.send(json.dumps(host.cam(first_frame + i, t, cam)))
+        for m in host.frame_messages(t):
+            await ws.send(json.dumps(m))
         await asyncio.sleep(max(0.0, t0 + (i + 1) / fps - time.perf_counter()))
 
 
@@ -500,8 +668,10 @@ def main() -> int:
     ap.add_argument("--ui", action="store_true", help="after the orbit: play the Minecraft-drawn UI stream (stats, quest, pins, prompt, choices, subtitle, call, toasts, pause and pass-through screens), answer uiact requests; print uiact/persp/binds/status")
     ap.add_argument("--hacks", action="store_true", help="after the orbit: answer every hack with hackresult (upload, kind) and hackspread, tap the Arms and Camo keys; print hack/uiact/persp/binds")
     ap.add_argument("--seat", action="store_true", help="after the orbit: V rides in a vehicle (cam seat:true, pl at the hips, fp flipping every 2 s); print persp/binds")
-    ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6, --ui, --hacks, --seat: seconds to keep the link up and listen (default 10)")
-    ap.add_argument("--cmd", action="append", default=[], metavar="COMMAND", help='--layer2 .. --layer6, --ui, --hacks, --seat: a server command to send after the npcs, e.g. "summon tnt 0 64 0" (repeatable)')
+    ap.add_argument("--view", action="store_true", help="after the orbit: third-person view (cam fp:false with vdbg): V walks, sprints, then falls and glides; the camera follows Minecraft's prefs; print prefs")
+    ap.add_argument("--stairs", action="store_true", help="after the orbit: place a staircase of five blocks, walk V up it (step-up assist lifts), send aim at the block faces (box 2 mm in front); print prefs")
+    ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs: seconds to keep the link up and listen (default 10)")
+    ap.add_argument("--cmd", action="append", default=[], metavar="COMMAND", help='--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs: a server command to send after the npcs, e.g. "summon tnt 0 64 0" (repeatable)')
     args = ap.parse_args()
     layers = frozenset(n for n in range(2, 7) if getattr(args, f"layer{n}"))
     modes = frozenset(m for m in MODES if getattr(args, m))
@@ -511,7 +681,9 @@ def main() -> int:
     if args.hold < 0:
         ap.error("--hold must not be negative")
     if args.cmd and not (layers or modes):
-        ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks or --seat")
+        ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks, --seat, --view or --stairs")
+    if len(modes & set(CAMERA_OWNERS)) > 1 or (modes & {"view", "stairs"} and 4 in layers):
+        ap.error("--view, --stairs, --seat and --layer4 each drive the camera: use only one of them")
     try:
         saved = asyncio.run(run(url, args.frames, args.out, args.fps, args.shm, not args.no_setup,
                                 args.hold if layers or modes else None, args.cmd, layers, modes))

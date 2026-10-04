@@ -8,8 +8,8 @@ import pytest
 from PIL import Image
 from websockets.asyncio.server import serve
 
-from test_protocol_md import (AT_VALIDATORS, L36_EXAMPLES, L36_NEW_CP_TO_MC, R3_EXT_CP, R3_NEW_CP, R3_VALIDATORS,  # shared/protocol.md: the example
-                              VALIDATORS)  # messages and the documented limits of layers 3-6, re-test 3 and the Atlas
+from test_protocol_md import (AT_VALIDATORS, L36_EXAMPLES, L36_NEW_CP_TO_MC, PQ_EXAMPLES, PQ_VALIDATORS, R3_EXT_CP, R3_NEW_CP,  # shared/protocol.md: the
+                              R3_VALIDATORS, VALIDATORS, vdbg_ok)  # example messages and the documented limits of layers 3-6, re-test 3, the Atlas and Phase Q
 from tools import fakehost, shm
 
 HELLO = {"t": "hello", "proto": 1, "mod": "cyberblock", "mc": "26.3"}
@@ -667,3 +667,224 @@ def test_modes_print_persp_and_the_six_key_binds_and_nothing_of_other_modes(tmp_
     lines = printed(capsys)
     assert lines["persp"] == [persp] and lines["binds"] == [binds]
     assert ("hack" in lines) == (mode == "hacks")
+
+
+# ---- Phase Q modes (plan 2026-10-04 megaplan Q-P1): --view and --stairs ----
+def validq(m):
+    """A message the Phase Q modes sent obeys the documented limits (`cam` with its `vdbg`, `aim`'s distance, else as before)."""
+    if m["t"] == "cam":
+        return PQ_VALIDATORS["cam"](m)
+    if m["t"] == "aim":
+        return set(m) == {"t", "d"} and (m["d"] == -1 or 0 <= m["d"] <= 8)
+    return valid3(m)
+
+
+def prefs_message(**changes):
+    return {**next(m for t, m in PQ_EXAMPLES if t == "prefs"), **changes}
+
+
+def eye_of(cam):
+    """V's eye (feet + 1.62 m) of a `cam` message."""
+    return [cam["pl"][0], cam["pl"][1] + fakehost.EYE_HEIGHT, cam["pl"][2]]
+
+
+def test_view_walk_pose_walks_at_4_3_then_sprints_at_5_6_round_the_circle_and_faces_where_it_goes():
+    dt = 1e-3
+    for t, speed in ((0.5, fakehost.WALK_SPEED), (2.9, fakehost.WALK_SPEED), (3.1, fakehost.SPRINT_SPEED), (5.9, fakehost.SPRINT_SPEED)):
+        (x, y, z), yaw = fakehost.walk_pose(t)
+        (x2, _, z2), _ = fakehost.walk_pose(t + dt)
+        assert y == fakehost.FLOOR_Y and math.hypot(x, z) == pytest.approx(fakehost.VIEW_RADIUS)
+        assert math.hypot(x2 - x, z2 - z) / dt == pytest.approx(speed, rel=1e-2)
+        assert yaw == pytest.approx(math.degrees(math.atan2(-(x2 - x), z2 - z)), abs=0.1)  # the body faces its heading
+    assert fakehost.walk_pose(99.0) == fakehost.walk_pose(fakehost.WALK_FOR + fakehost.SPRINT_FOR) and fakehost.walk_pose(-1.0) == fakehost.walk_pose(0.0)
+    assert fakehost.WALK_FOR * fakehost.WALK_SPEED + fakehost.SPRINT_FOR * fakehost.SPRINT_SPEED < 2 * math.pi * fakehost.VIEW_RADIUS  # less than one lap
+
+
+def test_view_circle_stays_on_the_slab_clear_of_the_setup_blocks():
+    for i in range(61):
+        (x, _, z), _ = fakehost.walk_pose(i * 0.1)
+        assert max(abs(x), abs(z)) < fakehost.SLAB_HALF - 1
+        assert min(math.hypot(x - bx, z - bz) for bx, bz in ((0, 0), (3, 0), (-3, 0), (0, 3), (0, -3))) > 1.5
+
+
+def test_third_person_eye_sits_behind_the_head_and_to_the_right():
+    eye = fakehost.third_person_eye([10.0, 64.0, 20.0], 0.0, 0.0, 3.2, 0.45)  # yaw 0 faces +z: behind is -z, right is -x
+    assert eye == pytest.approx([10.0 - 0.45, 64.0 + 1.62, 20.0 - 3.2])
+    east = fakehost.third_person_eye([0.0, 64.0, 0.0], -90.0, 0.0, 2.0, 0.0)  # yaw -90 faces +x
+    assert east == pytest.approx([-2.0, 65.62, 0.0])
+    down = fakehost.third_person_eye([0.0, 64.0, 0.0], 0.0, 90.0, 4.0, 0.0)  # looking straight down: the camera is above the head
+    assert down == pytest.approx([0.0, 65.62 + 4.0, 0.0])
+    for yaw, pitch in ((30.0, 10.0), (-135.0, -20.0)):
+        e = fakehost.third_person_eye([0.0, 0.0, 0.0], yaw, pitch, 3.2, 0.45)
+        assert math.dist(e, [0.0, 1.62, 0.0]) == pytest.approx(math.hypot(3.2, 0.45))
+
+
+def test_clamp_prefs_clamps_keeps_the_current_value_of_a_bad_field_and_allows_zero_for_fov_and_vdist():
+    cur = dict(fakehost.PREFS_DEFAULT)
+    assert fakehost.clamp_prefs({k: v for k, v in prefs_message().items() if k != "t"}, cur) == cur
+    low = fakehost.clamp_prefs({"dist": 0.1, "shoulder": -9, "fov": 10, "vdist": 1}, cur)
+    assert low == {**cur, "dist": 1.5, "shoulder": -1.0, "fov": 50.0, "vdist": 3.0}  # above 0 and below the lower bound: raised to it
+    high = fakehost.clamp_prefs({"dist": 99, "shoulder": 99, "fov": 500, "vdist": 99, "recenter": False, "stepup": False}, cur)
+    assert high == {"dist": 8.0, "shoulder": 1.0, "fov": 110.0, "vdist": 14.0, "recenter": False, "stepup": False}
+    assert fakehost.clamp_prefs({"fov": 0, "vdist": 0}, {**cur, "fov": 80, "vdist": 9}) == {**cur, "fov": 0, "vdist": 0}
+    assert fakehost.clamp_prefs({"fov": -5}, {**cur, "fov": 80})["fov"] == 0
+    bad = {"dist": "far", "shoulder": float("nan"), "fov": None, "vdist": True, "recenter": 1, "stepup": "yes"}
+    assert fakehost.clamp_prefs(bad, cur) == cur and fakehost.clamp_prefs({}, cur) == cur
+
+
+def test_view_vdbg_pulls_the_camera_in_at_the_wall_and_smooth_follows_late():
+    lo, hi = fakehost.WALL_WINDOW
+    mid = (lo + hi) / 2
+    assert fakehost.view_collide(0.0, 3.2) == 3.2 and fakehost.view_collide(lo - 0.1, 3.2) == 3.2 and fakehost.view_collide(hi + 0.1, 3.2) == 3.2
+    assert fakehost.view_collide(mid, 3.2) == pytest.approx(fakehost.WALL_DIST) and fakehost.view_collide(mid, 1.1) == pytest.approx(1.1)  # never above `dist`
+    assert fakehost.view_collide(mid - 0.2, 3.2) > fakehost.view_collide(mid - 0.1, 3.2) > fakehost.view_collide(mid, 3.2)  # a smooth dip
+    for f in range(1, 9):
+        collide, smooth, age = fakehost.view_vdbg(f, mid, 3.2)
+        assert vdbg_ok([collide, smooth, age]) and 12 <= age <= 18 and collide == pytest.approx(1.2)
+        assert smooth == pytest.approx(fakehost.view_collide(mid - fakehost.SMOOTH_LAG, 3.2), abs=1e-3) and smooth > collide  # the dip arrives late
+    assert fakehost.view_vdbg(1, 0.0, 3.2)[:2] == [3.2, 3.2]
+
+
+def test_view_mode_plays_walk_sprint_and_glide_in_third_person_with_vdbg_on_every_cam(tmp_path, exporting, quick, capsys):
+    flight = {"t": "flight", "active": True, "kind": "glide", "ts": 5.0, "p": [4.0, 100.0, 5.0], "v": [3.0, -1.0, 3.0], "yaw": 40.0, "pitch": 25.0}
+    react = lambda m: [flight] if m["t"] == "key" and m["k"] == "jump" and m["down"] else []
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[prefs_message()], react=react, hold=0.6, modes=mode_set("view"))
+    cams = hold_cams(got)
+    assert len(cams) >= 400 and all(validq(m) for m in got) and all(m["fp"] is False and "vdbg" in m and m["cr"] is False for m in cams)
+    walking = [m for m in cams if m["pl"][1] == fakehost.FLOOR_Y and not m["fly"]]
+    assert walking[0] is cams[0] and all(math.hypot(m["pl"][0], m["pl"][2]) == pytest.approx(fakehost.VIEW_RADIUS) for m in cams[:50])
+    assert all(m["air"] is False for m in walking[:100])
+    glide = [m for m in cams if m["fly"]]
+    assert glide and all(m["air"] is True and m["pl"] == [4.0, 100.0, 5.0] and m["r"][:2] == [40.0, 25.0] for m in glide)  # follows Minecraft's flight
+    assert math.dist(glide[0]["p"], eye_of(glide[0])) == pytest.approx(math.hypot(3.2, 0.45)) and glide[0]["p"][1] > 100.0  # camera behind and above V's head
+    assert [(m["k"], m["down"]) for m in got if m["t"] == "key"] == [("sprint", True), ("sprint", False), ("jump", True), ("jump", False)]
+    assert all(m["vdbg"][2] >= 12 for m in cams) and any(m["vdbg"][0] < 3.2 for m in cams)  # the wall window shows
+    assert printed(capsys)["prefs"] == [prefs_message()]
+
+
+def test_view_mode_places_the_camera_by_minecraft_prefs(tmp_path, exporting, quick):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[prefs_message(dist=6.0, shoulder=0.0, fov=90)], hold=0.2, modes=mode_set("view"))
+    cams = hold_cams(got)
+    assert cams and all(validq(m) for m in cams) and all(m["fov"] == 90.0 for m in cams[10:])
+    assert all(math.dist(m["p"], eye_of(m)) == pytest.approx(6.0) for m in cams[10:])
+
+
+def test_view_mode_without_prefs_uses_the_dll_defaults(tmp_path, exporting, quick):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, hold=0.1, modes=mode_set("view"))
+    cams = hold_cams(got)
+    assert all(m["fov"] == fakehost.FOV for m in cams)
+    assert math.dist(cams[0]["p"], eye_of(cams[0])) == pytest.approx(math.hypot(3.2, 0.45))
+
+
+def test_stairs_commands_put_five_columns_one_to_five_high_on_the_slab_clear_of_the_setup_blocks():
+    cmds = fakehost.STAIRS_COMMANDS
+    assert len(cmds) == 5
+    for k, c in enumerate(cmds):
+        word, x1, y1, z1, x2, y2, z2, block = c.split()
+        assert word == "fill" and block == "minecraft:cobblestone" and (x1, z1) == (x2, z2) == (str(fakehost.STAIRS_X0 + k), str(fakehost.STAIRS_Z))
+        assert int(y1) == fakehost.SLAB_Y + 1 and int(y2) - int(y1) + 1 == k + 1  # on the slab's surface, k + 1 blocks high
+        assert abs(int(x1)) <= fakehost.SLAB_HALF and abs(int(z1)) <= fakehost.SLAB_HALF
+    assert not {tuple(c.split()[1:4]) for c in cmds} & {tuple(c.split()[1:4]) for c in fakehost.SETUP_COMMANDS}
+
+
+def test_stairs_feet_walk_up_one_metre_per_column_in_0_15_s():
+    assert fakehost.stairs_feet(0.0) == [fakehost.STAIRS_START_X, fakehost.FLOOR_Y, fakehost.STAIRS_Z + 0.5]
+    ys = [fakehost.stairs_feet(i * 0.01)[1] for i in range(700)]
+    assert ys == sorted(ys) and ys[-1] == fakehost.FLOOR_Y + 5 and all(0 <= y - fakehost.FLOOR_Y <= 5 for y in ys)
+    for k in range(5):  # each column edge, less V's radius, starts one 0.15 s lift of exactly 1 m
+        reached = (fakehost.STAIRS_X0 + k - fakehost.STAIRS_REACH - fakehost.STAIRS_START_X) / fakehost.STAIRS_SPEED
+        assert fakehost.stairs_feet(reached)[1] == pytest.approx(fakehost.FLOOR_Y + k)
+        assert fakehost.stairs_feet(reached + fakehost.STAIRS_RISE)[1] == pytest.approx(fakehost.FLOOR_Y + k + 1)
+        assert fakehost.stairs_feet(reached + fakehost.STAIRS_RISE / 2)[1] == pytest.approx(fakehost.FLOOR_Y + k + 0.5)
+    assert fakehost.stairs_feet(99.0) == [2.5, fakehost.FLOOR_Y + 5, fakehost.STAIRS_Z + 0.5]  # stands on the top column
+    assert all(fakehost.stairs_feet(i * 0.01)[0] <= fakehost.stairs_top_x() for i in range(900))
+
+
+def test_ray_box_hits_misses_and_starts_inside():
+    lo, hi = (0, 0, 0), (1, 1, 1)
+    assert fakehost.ray_box((-2, 0.5, 0.5), (1, 0, 0), lo, hi) == pytest.approx(2.0)
+    assert fakehost.ray_box((-2, 0.5, 0.5), (-1, 0, 0), lo, hi) is None  # pointing away
+    assert fakehost.ray_box((-2, 1.5, 0.5), (1, 0, 0), lo, hi) is None  # passes over it
+    assert fakehost.ray_box((0.5, 0.5, 0.5), (1, 0, 0), lo, hi) == 0.0  # starts inside
+    s = 1 / math.sqrt(2)
+    assert fakehost.ray_box((-1, 0.0, 0.5), (s, s, 0), lo, hi) == pytest.approx(math.sqrt(2))  # a diagonal from (-1, 0) enters at x 0, y 1: the corner
+    assert fakehost.ray_box((5, 5, 5), (0, 1, 0), lo, hi) is None
+
+
+def test_stairs_aim_is_the_block_face_2_mm_in_front_and_ground_or_none_otherwise():
+    eye = [fakehost.STAIRS_START_X, fakehost.FLOOR_Y + 1.62, fakehost.STAIRS_Z + 0.5]
+    yaw = -90.0  # facing +x
+    riser = (fakehost.STAIRS_X0 - eye[0]) / math.cos(math.radians(fakehost.STAIRS_PITCH))  # the first column's face at x -2, 2.5 m ahead
+    assert fakehost.stairs_aim(eye, yaw, fakehost.STAIRS_PITCH) == pytest.approx(riser + fakehost.AIM_BIAS, abs=1e-3)
+    assert fakehost.AIM_BIAS == -0.002  # the Cyberblock box face is 2 mm in front of the block face
+    assert fakehost.stairs_aim(eye, yaw, 0.0) == pytest.approx(fakehost.STAIRS_X0 + 1 - eye[0] + fakehost.AIM_BIAS, abs=1e-3)  # over column 1, into column 2's face
+    ground = fakehost.stairs_aim([-6.5, fakehost.FLOOR_Y + 1.62, fakehost.STAIRS_Z + 0.5], yaw, 80.0)  # steeply down: the slab, not a block
+    assert ground == pytest.approx(1.62 / math.sin(math.radians(80)), abs=1e-3)
+    top = [fakehost.stairs_top_x(), fakehost.FLOOR_Y + 5 + 1.62, fakehost.STAIRS_Z + 0.5]
+    assert fakehost.stairs_aim(top, yaw, -20.0) == -1.0 and fakehost.stairs_aim(top, yaw, 0.0) == -1.0  # nothing ahead within 8 m
+    assert fakehost.stairs_aim([-4.5, fakehost.FLOOR_Y + 1.62, 3.0], yaw, 0.0) == -1.0  # beside the staircase
+
+
+def test_stairs_mode_places_the_staircase_walks_up_it_and_sends_aim_at_the_faces(tmp_path, exporting, quick, capsys):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[prefs_message()], hold=0.5, modes=mode_set("stairs"))
+    assert all(validq(m) for m in got)
+    cmds = [m["c"] for m in got if m["t"] == "cmd"]
+    assert cmds[len(fakehost.SETUP_COMMANDS):] == fakehost.STAIRS_COMMANDS  # after the orbit's setup, before the walk
+    first_cam = next(i for i, m in enumerate(got) if m["t"] == "cam" and m["f"] > 30)
+    assert max(i for i, m in enumerate(got) if m["t"] == "cmd") < first_cam
+    cams = hold_cams(got)
+    assert all(m["fp"] is True and m["pl"][2] == fakehost.STAIRS_Z + 0.5 and m["r"][0] == pytest.approx(-90.0) and m["r"][1] == fakehost.STAIRS_PITCH for m in cams)
+    ys = [m["pl"][1] for m in cams]
+    assert ys == sorted(ys) and ys[0] == fakehost.FLOOR_Y and ys[-1] == fakehost.FLOOR_Y + 5 and cams[-1]["pl"][0] == fakehost.stairs_top_x()
+    aims = [m for m in got if m["t"] == "aim"]
+    assert aims and aims[0]["d"] == pytest.approx(2.5 / math.cos(math.radians(20)) - 0.002, abs=1e-3)  # first look: the first column's face
+    assert any(a["d"] == -1 for a in aims) and any(0 < a["d"] < 8 for a in aims)  # nothing in front on the top, faces on the way up
+    for a, b in zip(aims, aims[1:]):
+        assert abs(b["d"] - a["d"]) >= fakehost.AIM_STEP - 1e-9 or (a["d"] < 0) != (b["d"] < 0)  # only on change
+    assert len(aims) < len(cams) / 3  # at most 10 Hz (scaled), not every frame
+    assert printed(capsys)["prefs"] == [prefs_message()]
+
+
+def test_stairs_mode_follows_persp_back_with_a_third_person_flag(tmp_path, exporting, quick):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[{"t": "persp", "mode": "back"}], hold=0.1, modes=mode_set("stairs"))
+    cams = hold_cams(got)
+    assert cams and all(m["fp"] is False for m in cams[5:])
+
+
+def test_view_and_stairs_modes_combine_with_layer2_and_every_message_is_valid(tmp_path, exporting, quick):
+    for mode in ("view", "stairs"):
+        _, got = run_against_fake_minecraft(tmp_path, 30, exporting, hold=0.2, layers=layer_set(2), modes=mode_set(mode))
+        assert {"npcs", "dmg", "cam"} <= set(types(got)) and all(validq(m) for m in got)
+
+
+@pytest.mark.parametrize("mode", ["view", "stairs"])
+def test_phase_q_modes_print_prefs_and_nothing_of_other_modes(tmp_path, exporting, capsys, mode):
+    persp, binds = {"t": "persp", "mode": "back"}, {"t": "binds", "keys": dict(zip(("hack", "skills", "cyberware", "activate", "arms", "camo"), (71, 75, 85, 89, 76, 79)))}
+    run_against_fake_minecraft(tmp_path, 30, exporting, replies=[prefs_message(), persp, binds], hold=0.1, modes=mode_set(mode))
+    lines = printed(capsys)
+    assert lines["prefs"] == [prefs_message()] and "persp" not in lines and "binds" not in lines
+
+
+def test_prefs_is_not_printed_without_a_phase_q_mode(tmp_path, exporting, capsys):
+    run_against_fake_minecraft(tmp_path, 30, exporting, replies=[prefs_message()], hold=0.1, modes=mode_set("seat"))
+    assert "prefs" not in printed(capsys)
+
+
+def test_phase_q_flags_pick_the_modes_and_refuse_a_second_camera_owner(monkeypatch):
+    seen = []
+
+    async def fake_run(*args):
+        seen.append(args)
+        return 1
+
+    monkeypatch.setattr(fakehost, "run", fake_run)
+    for argv in (["--view"], ["--stairs", "--hold", "3"], ["--view", "--layer2", "--cmd", "say hi"], ["--ui", "--stairs"]):
+        monkeypatch.setattr("sys.argv", ["fakehost", *argv])
+        assert fakehost.main() == 0
+    assert [a[6] for a in seen] == [10.0, 3.0, 10.0, 10.0]
+    assert [a[9] for a in seen] == [frozenset({"view"}), frozenset({"stairs"}), frozenset({"view"}), frozenset({"ui", "stairs"})]
+    for argv in (["--view", "--stairs"], ["--view", "--seat"], ["--stairs", "--seat"], ["--view", "--layer4"], ["--stairs", "--layer4"]):
+        monkeypatch.setattr("sys.argv", ["fakehost", *argv])
+        with pytest.raises(SystemExit) as e:
+            fakehost.main()
+        assert e.value.code == 2, argv
