@@ -1259,3 +1259,194 @@ def test_replica_flags_are_checked(monkeypatch, argv):
 def test_replica_combines_with_ui_and_hacks_modes(tmp_path, exporting, quick):
     _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[SESSION_HOST], hold=0.3, modes=mode_set("replica", "ui"))
     assert {"ground", "env", "stats", "quest"} <= set(types(got))
+
+
+# ---- Phase 4: --devices (megaplan 4-P1): the device scene, the NPC door, devact answered ----
+from test_protocol_md import DEVICE_ACTS, DEVICE_BY, DEVICE_KINDS, P4_EXAMPLES, P4_VALIDATORS, SUPPORTED_ACTS, UNSUPPORTED_ACTS, devact_ok, devices_ok, devresult_ok, devstate_ok  # noqa: E402
+
+DEV = fakehost.device_ids()
+HOST_SESSION = {"t": "session", "state": "host", "reason": "", "perms": {"explosions": True, "damage": True, "hacks": True, "devices": True, "spawns": False}}
+
+
+def p4_valid(m):
+    return P4_VALIDATORS[m["t"]](m) if m["t"] in P4_VALIDATORS else p3_valid(m)
+
+
+def devact(dev, act, rid=7):
+    return {"t": "devact", "id": rid, "dev": DEV[dev] if dev in DEV else dev, "act": act}
+
+
+def ask(table, dev, act, rid=7):
+    answers = fakehost.devact_answers(table, devact(dev, act, rid))
+    assert answers is not None and all(p4_valid(m) for m in answers)
+    return answers
+
+
+def test_devices_scene_has_the_device_kinds_of_the_plan_with_the_protocol_example_ids():
+    table = fakehost.device_table()
+    assert {d["kind"] for d in table.values()} >= {"door", "light", "camera", "vending", "elevator"} and len(table) == 7 <= 64
+    example = next(m for t, m in P4_EXAMPLES if t == "devices")["list"]
+    assert [e["id"] for e in example] == [DEV[k] for k in ("door", "light", "camera", "vending", "elevator", "sealed")]
+    assert [e["kind"] for e in example] == [table[e["id"]]["kind"] for e in example]  # the doc's sample scene is this scene
+    assert devices_ok(fakehost.devices_message(table)) and {d["kind"] for d in table.values()} <= set(DEVICE_KINDS)
+    assert len(set(DEV.values())) == 7 and all(uint64_string(i) for i in DEV.values())
+
+
+def test_devices_stand_in_air_on_the_street_and_never_inside_a_building_or_each_other():
+    cells = {k: fakehost.device_cell(k) for k in DEV}
+    assert len(set(cells.values())) == len(cells)
+    street = fakehost.replica_cells()
+    for key, cell in cells.items():
+        assert cell not in street, key  # not inside a replica column
+        x, y, z = cell
+        assert abs(x) <= fakehost.SLAB_HALF and abs(z) <= fakehost.SLAB_HALF and y >= fakehost.SLAB_Y + 1
+        assert fakehost.replica_code(x, z)[1] < y  # the street under it is lower than the device
+    table = fakehost.device_table(8)
+    assert [d["p"][0] for d in table.values()] == [fakehost.device_cell(k, 8)[0] + 0.5 for k in DEV]  # --shift moves them east
+    assert all(d["p"][1] == float(c[1]) for d, c in zip(table.values(), cells.values()))
+
+
+def test_the_door_ground_goes_through_the_guest_door_only():
+    ground = fakehost.device_ground(8)
+    x, y, z = fakehost.device_cell("door", 8)
+    assert ground == {"t": "ground", "c": [x, z, y, y + 1], "m": [1]} and p3_valid(ground)
+    assert (x, y, z) not in fakehost.replica_cells(8) and (x, y + 1, z) not in fakehost.replica_cells(8)  # nothing else covers the door
+
+
+def test_every_supported_act_is_ok_on_a_door_or_the_other_devices_and_changes_what_it_should():
+    table = fakehost.device_table()
+    assert [m["t"] for m in ask(table, "door", "open")] == ["devresult", "devstate"]
+    assert table[DEV["door"]]["st"] == 1 and ask(table, "door", "open", 8) == [{"t": "devresult", "id": 8, "ok": True, "reason": ""}]  # already open: no change
+    assert ask(table, "door", "close")[1] == {"t": "devstate", "id": DEV["door"], "st": 0, "fl": 16, "by": "guest"}
+    assert ask(table, "door", "toggle")[1]["st"] == 1 and ask(table, "door", "toggle")[1]["st"] == 0
+    locked = ask(table, "door", "lock")[1]
+    assert (locked["st"], locked["fl"]) == (-1, 17) and ask(table, "door", "open")[0] == {"t": "devresult", "id": 7, "ok": False, "reason": "locked"}
+    unlocked = ask(table, "door", "unlock")[1]
+    assert (unlocked["st"], unlocked["fl"]) == (0, 16)
+    assert ask(table, "light", "off")[1]["st"] == 0 and ask(table, "light", "on")[1]["st"] == 1 and ask(table, "light", "toggle")[1]["st"] == 0
+    off, on = ask(table, "camera", "disable")[1], None
+    assert (off["st"], off["fl"]) == (-2, 20)  # the amendment: a DISABLED device is quest-locked (bit 4) ...
+    on = ask(table, "camera", "enable")[1]
+    assert (on["st"], on["fl"]) == (1, 16)  # ... but one that `disable` switched off can be enabled again
+    for act in ("friendly", "distract"):  # no state of their own: ok, no devstate
+        assert ask(table, "camera", act) == [{"t": "devresult", "id": 7, "ok": True, "reason": ""}]
+    assert ask(table, "vending", "distract")[0]["ok"] is True
+
+
+def test_a_refused_act_says_why_and_changes_nothing():
+    table = fakehost.device_table()
+    before = {i: dict(d) for i, d in table.items()}
+    refused = {("light", "open"): "not a door", ("light", "lock"): "not a door", ("door", "on"): "not applicable", ("door", "disable"): "not applicable",
+               ("sealed", "open"): "quest locked", ("sealed", "toggle"): "quest locked", ("sealed", "enable"): "quest locked",
+               ("door", "call"): "unsupported", ("elevator", "call"): "unsupported", ("vending", "buy"): "unsupported", ("camera", "breach"): "unsupported",
+               ("sealed", "buy"): "unsupported", ("0", "open"): "device gone", ("12345678901234567890", "on"): "device gone"}
+    for (dev, act), reason in refused.items():
+        assert ask(table, dev, act) == [{"t": "devresult", "id": 7, "ok": False, "reason": reason}], (dev, act)
+    assert table == before
+
+
+def test_the_three_unsupported_acts_are_exactly_the_documented_ones_and_the_rest_is_ok_on_a_light():
+    assert set(fakehost.UNSUPPORTED_ACTS) == set(UNSUPPORTED_ACTS) and set(fakehost.DEVICE_ACTS) == set(DEVICE_ACTS)
+    for act in SUPPORTED_ACTS:
+        table = fakehost.device_table()
+        answer = fakehost.devact_answers(table, devact("light", act))[0]
+        assert answer["ok"] is (act not in ("open", "close", "lock", "unlock")), act  # a light is not a door
+    for act in UNSUPPORTED_ACTS:
+        assert fakehost.devact_answers(fakehost.device_table(), devact("light", act))[0]["reason"] == "unsupported"
+
+
+@pytest.mark.parametrize("bad", [{"t": "devact", "id": -1, "dev": "5", "act": "open"}, {"t": "devact", "id": True, "dev": "5", "act": "open"},
+                                 {"t": "devact", "id": "7", "dev": "5", "act": "open"}, {"t": "devact", "id": 7, "dev": 5, "act": "open"},
+                                 {"t": "devact", "id": 7, "dev": "x5", "act": "open"}, {"t": "devact", "id": 7, "dev": "5", "act": 5},
+                                 {"t": "devact", "id": 7, "dev": "5"}, {"t": "devact", "dev": "5", "act": "open"}])
+def test_a_bad_devact_is_dropped_and_not_answered(bad):
+    assert fakehost.devact_answers(fakehost.device_table(), bad) is None
+
+
+def test_an_act_the_list_does_not_have_is_answered_unsupported_like_call_buy_and_breach():
+    table = fakehost.device_table()
+    assert fakehost.devact_answers(table, {"t": "devact", "id": 7, "dev": DEV["door"], "act": "explode"}) == [
+        {"t": "devresult", "id": 7, "ok": False, "reason": "unsupported"}] and table == fakehost.device_table()
+
+
+def test_the_npc_door_changes_every_four_seconds_and_the_lists_follow():
+    host = fakehost.Cyberpunk(frozenset(), frozenset({"devices"}))
+    first = host.device_messages(0.0)
+    assert [m["t"] for m in first] == ["devices"] and devices_ok(first[0]) and host.device_messages(1.0) == [] and host.device_messages(3.9) == []
+    door = DEV["npcdoor"]
+    opened = host.device_messages(4.0)
+    assert [m["t"] for m in opened] == ["devstate", "devices"] and opened[0] == {"t": "devstate", "id": door, "st": 1, "fl": 16, "by": "npc"}
+    assert next(e for e in opened[1]["list"] if e["id"] == door)["st"] == 1  # the list agrees with the change
+    assert [m["t"] for m in host.device_messages(5.0)] == ["devices"]  # the 5 s full list
+    assert host.device_messages(7.9) == [] and host.device_messages(8.0)[0]["st"] == 0 and host.device_messages(12.0)[0]["st"] == 1
+    assert all(p4_valid(m) for m in opened) and all(m["by"] in DEVICE_BY for m in opened if m["t"] == "devstate")
+    assert host.dev_table[door]["st"] == 1
+    skipped = fakehost.Cyberpunk(frozenset(), frozenset({"devices"}))  # a slow frame loop (two changes at once) still plays both, in order
+    skipped.device_messages(0.0)
+    assert [m["st"] for m in skipped.device_messages(8.5) if m["t"] == "devstate"] == [1, 0]
+
+
+def test_a_guest_may_act_on_the_npc_door_like_on_any_other_and_only_devices_mode_answers():
+    host = fakehost.Cyberpunk(frozenset(), frozenset({"devices"}))
+    assert host.reply(devact("npcdoor", "open")) == fakehost.devact_answers(fakehost.device_table(), devact("npcdoor", "open")) and host.dev_table[DEV["npcdoor"]]["st"] == 1
+    assert fakehost.Cyberpunk(frozenset(), frozenset({"replica"})).reply(devact("door", "open")) == []  # only --devices answers
+
+
+def test_devices_session_host_brings_clear_the_street_the_door_ground_the_list_and_the_npcs():
+    host = fakehost.Cyberpunk(frozenset(), frozenset({"devices"}), shift=8)
+    got = host.reply(HOST_SESSION)
+    assert [m["t"] for m in got] == ["clear", *["ground"] * 6, "devices", "npcs"] and all(p4_valid(m) for m in got)
+    assert got[1:6] == fakehost.replica_ground(8) and got[6] == fakehost.device_ground(8) and got[7] == fakehost.devices_message(host.dev_table)
+    assert host.reply(HOST_SESSION) == []  # the same state again changes nothing
+
+
+def test_devices_alone_stands_on_the_street_like_replica_and_has_no_env_no_figures_script():
+    host = fakehost.Cyberpunk(frozenset(), frozenset({"devices"}))
+    assert host.cam(1, 0.0, {})["pl"] == [-6.5, 64.0, 0.5] and host.script() == [] and not [m for m in host.frame_messages(0.0) if m["t"] == "env"]
+    assert host.reply({"t": "vteleport", "id": 9, "p": [1.0, 64.0, 1.0], "yaw": 0.0, "why": "meetup"}) == []  # only --replica answers a teleport
+
+
+def test_devices_mode_plays_the_scene_answers_devact_and_prints_both_sides(tmp_path, exporting, quick, capsys):
+    asks = [devact("door", "open", 11), devact("sealed", "open", 12), devact("elevator", "call", 13), {"t": "devact", "id": 14, "dev": "1", "act": "nope"}, {"t": "devact", "id": 15, "dev": "1"}]
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[HOST_SESSION, *asks], hold=0.5, layers=layer_set(), modes=mode_set("devices"))
+    kinds = types(got)
+    assert kinds.count("devices") >= 2 and "devstate" in kinds and "env" not in kinds and all(p4_valid(m) for m in got if m["t"] in set(P4_VALIDATORS) | {"ground", "clear", "npcs"})
+    results = [m for m in got if m["t"] == "devresult"]
+    assert [(m["id"], m["ok"], m["reason"]) for m in results] == [(11, True, ""), (12, False, "quest locked"), (13, False, "unsupported"), (14, False, "unsupported")]  # no act at all gets nothing
+    assert next(m for m in got if m["t"] == "devstate" and m["by"] == "guest")["id"] == DEV["door"]
+    assert any(m["t"] == "devstate" and m["by"] == "npc" for m in got)  # the NPC door changed within 0.5 s of scaled time
+    lines = printed(capsys)
+    assert [m["id"] for m in lines["devact"]] == [11, 12, 13, 14, 15] and [m["id"] for m in lines["devresult"]] == [11, 12, 13, 14]
+
+
+def test_devact_is_printed_only_with_the_mode(tmp_path, exporting, capsys):
+    run_against_fake_minecraft(tmp_path, 30, exporting, replies=[devact("door", "open")], hold=0.1, modes=mode_set("seat"))
+    assert "devact" not in printed(capsys)
+
+
+def test_devices_and_replica_combine_and_a_second_host_is_shifted(tmp_path, exporting, quick):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[HOST_SESSION], hold=0.4, layers=layer_set(), modes=mode_set("replica", "devices"), shift=8)
+    assert {"ground", "env", "devices", "npcs"} <= set(types(got))
+    listed = {e["id"]: e["p"] for e in next(m for m in got if m["t"] == "devices")["list"]}
+    assert listed == {i: d["p"] for i, d in fakehost.device_table(8).items()} and listed[DEV["sealed"]][0] == -5 + 8 + 0.5
+
+
+def test_devices_flags_pick_the_mode_and_conflicts_with_the_camera_modes_are_refused(monkeypatch):
+    seen = []
+
+    async def fake_run(*args, **kwargs):
+        seen.append((args, kwargs))
+        return 1
+
+    monkeypatch.setattr(fakehost, "run", fake_run)
+    for argv in (["--devices"], ["--devices", "--replica", "--shift", "8", "--hold", "3"], ["--devices", "--layer2", "--shift", "-4"]):
+        monkeypatch.setattr("sys.argv", ["fakehost", *argv])
+        assert fakehost.main() == 0
+    assert [a[9] for a, _ in seen] == [frozenset({"devices"}), frozenset({"devices", "replica"}), frozenset({"devices"})] and all(len(a) == 13 for a, _ in seen)
+    assert [k for _, k in seen] == [{}, {"shift": 8}, {"shift": -4}]
+    for argv in (["--devices", "--view"], ["--devices", "--stairs"], ["--devices", "--seat"], ["--devices", "--layer4"], ["--devices", "--env-hours", "3"],
+                 ["--devices", "--shift", "1001"]):
+        monkeypatch.setattr("sys.argv", ["fakehost", *argv])
+        with pytest.raises(SystemExit) as e:
+            fakehost.main()
+        assert e.value.code == 2, argv

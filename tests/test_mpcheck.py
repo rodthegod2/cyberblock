@@ -26,7 +26,7 @@ def quick(monkeypatch):
     """Every wait of the scenarios shrinks to a fraction of a second (the real values are minutes)."""
     for name, value in (("T_QUIET", 0.05), ("T_EFFECT", 0.6), ("T_JOIN", 0.6), ("T_SERVER", 0.6), ("T_CLIENT", 0.6), ("FLOOD_S", 0.1), ("T_STOP", 0.05),
                         ("LOGIN_GAP_S", 0.0), ("T_ENV", 1.0), ("T_POLL", 0.01), ("COOLDOWN_S", 0.7),
-                        ("T_WRECK", 0.6), ("WRECK_MIN_S", 0.04)):
+                        ("T_WRECK", 0.6), ("WRECK_MIN_S", 0.04), ("DEVICE_PLACE_TIMEOUT", 1.0), ("GUEST_GAP_S", 0.0)):
         monkeypatch.setattr(mpcheck, name, value)
 
 
@@ -210,7 +210,7 @@ def test_default_ports_are_package_1t_and_stay_in_the_phase_1_ranges():
     p.check()
     servers = {name: p.server(name) for name in mpcheck.SCENARIOS}
     assert servers == {"singleplayer": 25914, "guest": 25914, "versions": 25915, "flood": 25916, "reconnect": 25917, "twohosts": 25918, "joinpassword": 25915,
-                       "replica": 25914, "twohosts2": 25916, "meetup": 25915}
+                       "replica": 25914, "twohosts2": 25916, "meetup": 25915, "devices": 25917}
     assert {p.client(n) for n in mpcheck.OFFLINE_NAMES} == {25754, 25755, 25756, 25757} and 25600 not in servers.values()
     assert [p.frame(n) for n in mpcheck.OFFLINE_NAMES] == ["Local\\CyberblockFrame1TH", "Local\\CyberblockFrame1TH2", "Local\\CyberblockFrame1TG", "Local\\CyberblockFrame1TG2"]
 
@@ -233,7 +233,7 @@ def test_a_frame_prefix_that_makes_the_users_frame_name_is_refused():
 
 def test_every_scenario_has_a_function_and_a_server_slot():
     assert set(mpcheck.SCENARIOS) == set(mpcheck.SCENARIO_FUNCS) == set(mpcheck.SERVER_SLOT)
-    assert mpcheck.SCENARIOS == ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup")
+    assert mpcheck.SCENARIOS == ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup", "devices")
 
 
 # ---- logs ------------------------------------------------------------------------------------------------------------------
@@ -866,7 +866,7 @@ def test_dry_run_prints_every_command_and_starts_nothing(capsys, monkeypatch):
     out = capsys.readouterr().out
     for name in mpcheck.SCENARIOS:
         assert f"== {name}" in out
-    assert out.count("runServer") == 9 and "-Pcyberblock.serverPort=25918" in out and "JAVA_TOOL_OPTIONS=-Dcyberblock.devtools=true" in out
+    assert out.count("runServer") == 10 and "-Pcyberblock.serverPort=25918" in out and "JAVA_TOOL_OPTIONS=-Dcyberblock.devtools=true" in out
     assert "--quickPlaySingleplayer" in out and "--quickPlayMultiplayer 127.0.0.1:25915" in out and "tools.fakehost" in out
 
 
@@ -1272,3 +1272,234 @@ def test_the_replica_helpers_read_the_answers_rcon_gives():
     weather = S({'execute if predicate {type:"minecraft:weather_check",raining:true}': "Test passed"})
     assert mpcheck.weather_is(weather, rain=True, thunder=False) and not mpcheck.weather_is(weather, rain=False, thunder=False)
     assert [s[:3] for s in mpcheck.ENV_STATES] == [(16500, False, False), (17000, True, False), (17500, True, True), (23750, False, False)]
+
+
+# ---- Phase 4: the `devices` scenario against a simulated server (megaplan 4-P1) ------------------------------------------------------
+# An ideal 4M/4B server as the plan describes it: the fake host's `devices` become blocks (the guest door is 4B's `cyberblock:device_door`, as 4M places it when 4B is merged, and the NPC door a vanilla door, as without 4B; the quest door 4B's iron door), a guest's `devact`
+# is checked against the owner's toggles and the device type's bit, goes to the owner's DLL (the real fake host logic answers it) and
+# its `devresult`/`devstate` change the block; NPC changes show; quest doors and unsupported acts are never sent; the devices go with the
+# session. `bugs` switch parts off. One simulated second of the fake host's script is SIM real seconds.
+DEVICE_KIND_OF = {key: kind for key, _, _, kind, *_ in fakehost.DEVICE_SCENE}
+SIM_DOOR_BLOCKS = {"door": "cyberblock:device_door", "npcdoor": "#minecraft:doors", "sealed": "cyberblock:device_iron_door"}
+
+
+class Sim4Server(Sim3Server):
+    def __init__(self, tmp, port, env_sim, bugs, join_password=""):
+        super().__init__(tmp, port, env_sim, bugs, join_password)
+        self.dev_blocks = {}  # cell -> {"id", "owner", "key", "door", "open"}: the device blocks (a door's top half is the cell above)
+        self.type_off = set()  # (owner, key's kind) the host switched off with `guests devices <type> off`
+        self.request = 0
+
+    # -- the world --------------------------------------------------------------------------------------------------------------
+    def place_devices(self, owner, msg):
+        for entry in msg["list"]:
+            key = next(k for k, i in fakehost.device_ids().items() if i == entry["id"])
+            cell = (math.floor(entry["p"][0]), math.floor(entry["p"][1]), math.floor(entry["p"][2]))
+            if cell in self.dev_blocks:
+                continue
+            if cell in self.replica and "door-replica" in self.bugs:  # the bug: a replica block is in the way of the door
+                continue
+            door = DEVICE_KIND_OF[key] == "door"  # the sealed quest door is a (greyed) door too
+            block = SIM_DOOR_BLOCKS.get(key, "cyberblock:device") if door else "cyberblock:device"
+            self.dev_blocks[cell] = {"id": entry["id"], "owner": owner, "key": key, "door": door, "block": block, "open": entry["st"] == 1}
+            for cleared in (cell, (cell[0], cell[1] + 1, cell[2])) if door else (cell,):  # the device replaces replica cells (a door's top half too)
+                self.replica.discard(cleared)
+                self.world.pop(cleared, None)
+
+    def apply_devstate(self, msg):
+        for block in self.dev_blocks.values():
+            if block["id"] == msg["id"] and block["door"]:
+                block["open"] = msg["st"] == 1
+
+    def advance(self):
+        super().advance()
+        sim, now = self.sim, time.monotonic()
+        for name, host in sim.hosts.items():
+            cp = host.get("cp")
+            if not cp:
+                continue
+            if host["linked"]:
+                for m in cp.device_messages((now - host["t0"]) / SIM):
+                    if m["t"] == "devstate" and "no-npc-sync" not in self.bugs:
+                        self.apply_devstate(m)
+            elif "devices-stay" not in self.bugs:  # the session ended: its devices go
+                self.dev_blocks = {c: b for c, b in self.dev_blocks.items() if b["owner"] != name}
+
+    # -- commands ---------------------------------------------------------------------------------------------------------------
+    def rcon(self, command):
+        self.advance()
+        if match := re.fullmatch(r"execute if block (-?\d+) (-?\d+) (-?\d+) (#minecraft:doors|cyberblock:device_door|cyberblock:device_iron_door)(\[open=true\])?", command):
+            block = self.dev_blocks.get(tuple(int(v) for v in match.groups()[:3]))
+            return "Test passed" if block and block["door"] and block["block"] == match.group(4) and (not match.group(5) or block["open"]) else "Test failed"
+        if match := re.fullmatch(r"execute unless block (-?\d+) (-?\d+) (-?\d+) minecraft:air", command):
+            cell = tuple(int(v) for v in match.groups())
+            return "Test passed" if cell in self.dev_blocks or cell in self.world else "Test failed"
+        if match := re.fullmatch(r"execute if block (-?\d+) (-?\d+) (-?\d+) (\S+)", command):  # a replica block (a device cell is no replica block)
+            cell = tuple(int(v) for v in match.groups()[:3])
+            if cell in self.dev_blocks:
+                return "Test failed"
+        actor, inner = None, command
+        if match := re.fullmatch(r"execute as (\S+) run (.*)", command):
+            actor, inner = match.groups()
+        if match := re.fullmatch(r"cyberblock guests devices (\w+) (on|off)", inner):  # one device type's bit
+            (self.type_off.add if match.group(2) == "off" else self.type_off.discard)((actor, match.group(1)))
+            return ""
+        if match := re.fullmatch(r"cyberblock test device (-?\d+) (-?\d+) (-?\d+) (\w+)", inner):
+            return self.devact(actor, tuple(int(v) for v in match.groups()[:3]), match.group(4))
+        return super().rcon(command)
+
+    def devact(self, actor, cell, act):
+        block = self.dev_blocks.get(cell) or self.dev_blocks.get((cell[0], cell[1] - 1, cell[2]))
+        if not block:
+            return ""
+        owner, key = block["owner"], block["key"]
+        guest = actor is not None and actor != owner and actor not in self.sim.hosts
+        if guest and not self.allows(owner, actor, "devices") and "ignore-toggles" not in self.bugs:
+            return ""  # the whole layer is off
+        if guest and (owner, DEVICE_KIND_OF[key]) in self.type_off and "ignore-type-bit" not in self.bugs:
+            return ""
+        if act in fakehost.UNSUPPORTED_ACTS:
+            return ""  # greyed: never sent (a server that sends them gets `unsupported` from the DLL: nothing changes either way)
+        host = self.sim.hosts[owner]
+        if key == "sealed" and "guest-opens-sealed" in self.bugs:
+            block["open"] = True  # the bug: the server opens the quest door itself
+        elif key == "sealed":
+            return ""  # greyed: quest-locked, never sent
+        self.request += 1
+        msg = {"t": "devact", "id": self.request, "dev": block["id"], "act": act}
+        append(host["log"], f"[{owner}] devact: {json.dumps(msg)}")
+        for answer in host["cp"].reply(msg):
+            if answer["t"] == "devresult":
+                append(host["log"], f"[{owner}] devresult: {json.dumps(answer)}")
+            elif answer["t"] == "devstate":
+                self.apply_devstate(answer)  # the block changes only after Night City answered
+        return ""
+
+
+class Sim4Env(Sim3Env):
+    def server(self, scenario, max_hosts=1, join_password=False):
+        self.max_hosts = max_hosts
+        self.server_obj = Sim4Server(self.tmp, self.ports.server(scenario), self, self.bugs)
+        self.server_obj.log.path.write_text("Done (1s)!\n", encoding="utf-8")
+        self.logs["server"] = self.server_obj.log
+        return self.server_obj
+
+    def grant(self, name, host, layers, modes, ids_from):
+        super().grant(name, host, layers, modes, ids_from)
+        if "devices" not in modes:
+            return
+        srv, extra = self.server_obj, self.extra.get(name, {})
+        cp = fakehost.Cyberpunk(frozenset(layers), frozenset(modes), ids_from, name, extra.get("shift", 0), extra.get("env_hours", 0))
+        for m in cp.reply(SESSION_HOST):
+            if m["t"] == "ground":
+                srv.place(m)
+            elif m["t"] == "devices":
+                srv.place_devices(name, m)
+        host.update(cp=cp, t0=time.monotonic())
+        srv.pos[name] = [fakehost.REPLICA_FEET[0], fakehost.REPLICA_FEET[1], fakehost.REPLICA_FEET[2]]
+
+
+def run4(tmp, bugs=()):
+    return run_scenario(Sim4Env(tmp, bugs), "devices")
+
+
+def test_devices_scenario_passes_against_an_ideal_server(tmp_path):
+    sim = Sim4Env(tmp_path)
+    rep = run_scenario(sim, "devices")
+    assert rep.ok, failed(rep)
+    labels = [label for label, _, _ in rep.checks]
+    assert len(labels) == 22 and sim.max_hosts == 1 and any("guests devices door off" in x for x in labels)
+    host_log = sim.hosts["CbHost1"]["log"].text()
+    acts = [json.loads(line.split("devact: ", 1)[1])["act"] for line in host_log.splitlines() if "devact: " in line]
+    assert acts == ["open", "close", "off", "on", "open"]  # the quest door, the lift call, the door-off request and the layer-off request never got there
+
+
+@pytest.mark.parametrize("bug, expected", [
+    ("door-replica", {"every device stands as a block at its position (the two doors are doors, the lift, light, camera, vending machine and quest door are not air)"}),
+    ("no-npc-sync", {"a Night City person opens the NPC door (`devstate by:npc`) and it opens in Minecraft"}),
+    ("guest-opens-sealed", {"a quest-locked (sealed) door never opens for a guest: Night City is never asked to, or refuses"}),
+    ("ignore-type-bit", {"with `/cyberblock guests devices door off` a guest's door request never reaches the DLL and the door stays shut"}),
+    ("ignore-toggles", {"with the whole `guests devices` toggle off no device request reaches the DLL"}),
+    ("devices-stay", {"the devices go with the session (no door stands any more)"}),
+])
+def test_devices_scenario_notices_each_device_bug(tmp_path, bug, expected):
+    rep = run4(tmp_path, [bug])
+    assert expected <= set(failed(rep)) and not rep.ok
+
+
+def test_devices_scenario_runs_the_guest_actions_as_the_guest_and_the_toggles_as_the_host(tmp_path, monkeypatch):
+    sent = []
+    real = Sim4Server.rcon
+    monkeypatch.setattr(Sim4Server, "rcon", lambda self, c: sent.append(c) or real(self, c))
+    assert run4(tmp_path).ok
+    x, y, z = fakehost.device_cell("door")
+    assert f"execute as CbGuest1 run cyberblock test device {x} {y} {z} open" in sent and not [c for c in sent if "test device" in c and not c.startswith("execute as CbGuest1")]
+    assert [c for c in sent if "guests devices" in c] == [f"execute as CbHost1 run cyberblock guests devices {w}" for w in ("door off", "door on", "off", "on")]
+
+
+def test_the_devices_scenario_asks_a_fake_host_for_the_devices_mode_with_no_layer(tmp_path):
+    seen = []
+
+    class Spy(Sim4Env):
+        def fakehost(self, client, **kw):
+            seen.append((client.name, kw.get("layers"), kw.get("modes"), kw.get("wait_host")))
+            return super().fakehost(client, **kw)
+
+    run_scenario(Spy(tmp_path), "devices")
+    assert seen == [("CbHost1", (), ("devices",), mpcheck.T_JOIN)]
+
+
+def test_the_devices_scenario_uses_the_borrowed_phase_7_block_when_asked(capsys):
+    argv = ["devices", "--dry-run", "--client-port-base", "25810", "--server-port-base", "25970", "--frame-prefix", "Local\\CyberblockFrame4PM"]
+    assert mpcheck.main(argv) == 0
+    out = capsys.readouterr().out
+    assert "-Pcyberblock.serverPort=25973" in out and "-Pcyberblock.port=25810" in out and "Local\\CyberblockFrame4PMH" in out and "--devices" in out and "--layer" not in out
+    assert "--replica" not in out and "25600" not in out and "Local\\CyberblockFrame " not in out
+
+
+def test_the_devices_argv_parses_with_the_real_fakehost(monkeypatch):
+    seen = []
+
+    async def fake_run(*args, **kwargs):
+        seen.append((args, kwargs))
+        return 1
+
+    monkeypatch.setattr(fakehost, "run", fake_run)
+    argv = mpcheck.fakehost_argv(port=25810, name="CbHost1", ver="1.0.0", frame="Local\\F", out_dir=Path("o"), layers=(), modes=("devices",), wait_host=150.0)
+    monkeypatch.setattr("sys.argv", ["fakehost", *argv[4:]])
+    assert fakehost.main() == 0
+    args, kwargs = seen[0]
+    assert args[9] == frozenset({"devices"}) and args[8] == frozenset() and kwargs == {"wait_host": 150.0}
+
+
+def test_the_device_log_readers_read_what_the_fake_host_prints_even_with_windows_line_ends(tmp_path):
+    log = LogFile(tmp_path / "h.log")
+    door = fakehost.device_ids()["door"]
+    log.path.write_text(f'[CbHost1] devact: {{"t": "devact", "id": 3, "dev": "{door}", "act": "open"}}\r\n[CbHost2] devact: {{"t": "devact", "id": 4}}\r\n'
+                        '[CbHost1] devresult: {"t": "devresult", "id": 3, "ok": false, "reason": "unsupported"}\r\n[CbHost1] devact: not json\r\n', encoding="utf-8")
+    host = mpcheck.FakeHost("CbHost1", SimProc(), log, None)
+    assert [m["id"] for m in mpcheck.logged_events(log, mpcheck.DEVICE_ACT)] == [3] and mpcheck.devact_seen(host, "door", "open", 0)
+    assert not mpcheck.devact_seen(host, "door", "close", 0) and not mpcheck.devact_seen(host, "light", "open", 0) and not mpcheck.devact_seen(host, "door", "open", log.mark())
+    assert not mpcheck.result_ok_since(host, 0) and mpcheck.logged_events(log, mpcheck.DEVICE_RESULT)[0]["reason"] == "unsupported"
+    assert mpcheck.logged_events(LogFile(tmp_path / "missing.log"), mpcheck.DEVICE_ACT) == []
+
+
+def test_the_device_helpers_read_the_answers_rcon_gives():
+    class S:
+        def __init__(self, answers):
+            self.answers = answers
+
+        def passes(self, command):
+            return mpcheck.passed(self.answers.get(command, "Test failed"))
+
+    x, y, z = fakehost.device_cell("door")
+    for block in ("#minecraft:doors", "cyberblock:device_door", "cyberblock:device_iron_door"):  # vanilla doors or 4B's door blocks
+        stands = S({f"execute if block {x} {y} {z} {block}": "Test passed"})
+        assert mpcheck.device_stands(stands, "door") and not mpcheck.device_stands(stands, "npcdoor") and not mpcheck.door_is_open(stands, "door")
+        assert mpcheck.door_is_open(S({f"execute if block {x} {y} {z} {block}[open=true]": "Test passed"}), "door")
+    assert not mpcheck.device_stands(S({f"execute if block {x} {y} {z} minecraft:stone": "Test passed"}), "door")  # any other block is no door
+    lx, ly, lz = fakehost.device_cell("light")
+    assert mpcheck.device_stands(S({f"execute unless block {lx} {ly} {lz} minecraft:air": "Test passed"}), "light")  # a light is any block
+    sx, sy, sz = fakehost.device_cell("sealed")
+    assert mpcheck.device_stands(S({f"execute unless block {sx} {sy} {sz} minecraft:air": "Test passed"}), "sealed")  # the sealed door shows greyed: any block
+    assert mpcheck.DOOR_KEYS == ("door", "npcdoor") and set(mpcheck.DEVICE_IDS) == {k for k, *_ in fakehost.DEVICE_SCENE}

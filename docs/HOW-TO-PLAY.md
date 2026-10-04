@@ -966,7 +966,8 @@ effects, exactly like yours):
 devices | spawns> on|off`. Explosions, damage, hacks and devices are on, spawns are off. A switched-off action still
 happens in the Minecraft world (a guest's TNT still breaks Minecraft blocks); it just does not reach your Cyberpunk
 game, and the guest sees "blocked" on the action bar. Your own actions are never limited. Server operators list sessions,
-roles, versions and message rates with `/cyberblock hosts`.
+roles, versions and message rates with `/cyberblock hosts`. Since Phase 4 the `devices` toggle has one switch per kind of device
+(`/cyberblock guests devices door off` blocks only doors; see [Devices](#devices-phase-4)).
 
 **Messages you may see.**
 | Message | Meaning and what to do |
@@ -1090,6 +1091,65 @@ hit comes from (the hit's material name, the mesh name, or the guess by height a
 that it cannot be), how **Meet Up** moves V (waits for the streets to load, then snaps to the ground) and how **park** keeps V
 unseen. [Re-test: Wave B, Phase 3](TESTING-PLAN.md) lists what to look for.
 
+### Devices (Phase 4)
+Night City is full of things that switch: doors, gates, lights, cameras, terminals, vending machines, traffic lights, lifts, turrets,
+screens. With Phase 4 every one of them that a host's Cyberpunk game has near V (within 48 metres) shows up in Minecraft as a **block you
+can use**, and using it changes the real thing in the host's Night City, both ways:
+- a **guest opens a door** in front of V: the door opens in Night City, and V can walk through;
+- a **pedestrian opens a door** in Night City: the door opens in Minecraft a moment later;
+- the **host** does it too: Steve may use a device block like anyone, and Night City's own state always wins.
+
+**What each device is in Minecraft, and what you do with it.** Everything is a right-click on the block.
+| Night City | In Minecraft | What a right-click does | Name for the toggle |
+|---|---|---|---|
+| Doors (single and double) | a wooden door, an **iron door** for a secure one, a **red lamp** above it while it is locked | opens or closes it; a locked door stays shut (it needs Breach or a Device Relay, a later phase) | `door` |
+| Gates, garage doors, road barriers | a wide sliding gate that slides in steps | opens or closes it | `gate` |
+| Lights and neon signs | a lamp in the light's colour | switches it on or off | `light` |
+| Surveillance cameras | an eye block with a vision cone of particles | switches it on or off | `camera` |
+| Terminals and computers | a **Net Port** block | the message "Breach Protocol arrives in a later update" (Phase 6) | `terminal` |
+| Vending machines | a machine block (snack, drinks or gear machine) | opens a **shop paid in eddies** | `vending` |
+| Traffic lights | a three-colour lamp block | a "later update" message (the Traffic Tool comes with Phase 6) | `traffic` |
+| Lifts | a lift platform with a call button | the button is **greyed** (see below) | `elevator` |
+| Turrets | a turret block that shows its mode | switches it on or off; **sneak** and right-click makes it friendly | `turret` |
+| TVs and billboards | a screen in an item frame | distracts the people nearby (a distraction in Night City) | `screen` |
+| Containers | a closed **crate** (a chest, only when the loot can be read) | nothing: its contents are unknown | `container` |
+
+**Waiting for Night City.** The block never shows a state that Night City refused. You right-click, the action bar says "Waiting for Night
+City...", and the block changes only when Night City answers **yes** (a refusal says why, and nothing changes; no answer in 10 seconds
+says so). A device you cannot reach (more than 8 blocks away) or use twice within a fraction of a second is simply ignored.
+
+**Greyed devices.** Two kinds of device stay greyed, with a message, and are never sent to Night City:
+- **Quest devices.** A door that belongs to a mission (sealed), or a device the game has disabled, shows greyed with "This device belongs to
+  a mission and cannot be used now". Night City never lets a mission door be touched.
+- **What Cyberpunk cannot be asked yet.** The plugin cannot **call a lift** (nobody has proven that it can), so the lift's call button says
+  "Night City cannot do that with this device yet". **Buying** is not a Cyberpunk action at all: a vending machine is a Minecraft shop with
+  its own stock (below), nothing is bought in the host's Night City. **Breach** is the Minecraft Breach Protocol of Phase 6.
+
+**Vending machines and eddies.** A vending machine's shop sells Minecraft items for **eddies**, an item (`cyberblock:eddies`, and the
+*Eddie Chip* worth 100) that is yours like any other: gigs and sales earn them in later phases, and an operator can `/give` some. The prices, the stock and when it restocks come from the shop files (`data/cyberblock/cyberblock/shop/`), so a server can
+change them with a datapack. The host's own Cyberpunk money is a different thing and is not touched.
+
+**Who may use what.** The host decides, per kind of device, whether guests may use it: `/cyberblock guests devices <type> on|off` with a
+type from the table (`door`, `gate`, `light`, `camera`, `terminal`, `vending`, `traffic`, `elevator`, `turret`, `screen`, `container`);
+`/cyberblock guests devices <type>` alone shows whether that type is allowed, and `/cyberblock guests devices on|off` switches all of them (the `devices` toggle of
+[Playing together (LAN)](#playing-together-lan)). A blocked guest sees "blocked" on the action bar and nothing reaches Night City. The host's own
+use is never blocked.
+
+**Which devices you see.** A **host does not see these blocks on their own screen**: Night City has the real devices, so the blocks are not
+drawn (as for the replica); guests and hosts who are Off see them. They exist **only while their host is playing**: when the host quits
+Cyberpunk, or a device is no longer near V for 10 seconds, its block goes. The replica never builds a wall where a device stands (doors are not
+walls), and the blocks never replace something a player built.
+
+**What is not carried over.** Only on/off and locked or open travel: a lift's floor, a traffic light's colour or a camera's alarm have no
+field in this version of the protocol, so those blocks show a plain state. A device's identity comes from the game's own id, or, when the
+game does not give a steady one, from its position: a device that moves is then a new device. A closed crate stands where a container's
+loot cannot be read.
+
+**Which way is it working? (for the test.)** The plugin writes one line saying where the device **ids** come from (the game's own entity
+hash, or the position fallback), one saying how **changes** are found (the game's events, or polling twice a second), and one saying whether the
+**device-box filter** is needed (probe rays that hit a device are cast past it, or the DLL drops hits inside a known device box).
+[Re-test: Wave B, Phase 4](TESTING-PLAN.md) lists what to search for.
+
 
 ---
 
@@ -1168,6 +1228,7 @@ Useful commands: `/cyberblock kit`, `/cyberblock settings` (the [settings screen
 (map all of Night City once for the [Atlas](#the-atlas-map); `stop`, `status`, `redo`),
 `/cyberblock meetup <player>` and `/cyberblock meetup accept` (go to a friend, see [Night City as Minecraft](#night-city-as-minecraft-phase-3)),
 `/cyberblock changes` (what guests built while you were away),
+`/cyberblock guests devices <type> on|off` (which Night City devices guests may use, see [Devices](#devices-phase-4)),
 `/cyberblock perks free on|off` (free skill points), `/gamemode creative`, `/gamemode survival`,
 `/xp add @s 30 levels`, `/effect clear @s`. Playing with friends: `/cyberblock guests <toggle> on|off` and, for server
 operators, `/cyberblock hosts`, `/cyberblock status` and `/cyberblock hosts add|remove <name>` (see
