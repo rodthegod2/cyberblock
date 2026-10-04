@@ -282,8 +282,10 @@ def test_a_datapack_root_without_pack_mcmeta_fails_and_says_why(tmp_path, capsys
     ({"pack": {"description": "x"}}, "min_format"),
     ({"pack": {"description": "x", "min_format": "121"}}, "min_format"),
     ({"pack": {"description": "x", "min_format": 100, "max_format": 110}}, "do not cover"),
-    ({"pack": {"description": "x", "min_format": 130}}, "do not cover"),
+    ({"pack": {"description": "x", "min_format": 130, "max_format": 130}}, "do not cover"),
     ({"pack": {"description": "x", "min_format": 121, "max_format": "x"}}, "max_format"),
+    ({"pack": {"description": "x", "min_format": 121}}, "max_format is missing"),  # the game refuses min without max
+    ({"pack": {"description": "x", "pack_format": 121}}, "min_format"),  # the old form is refused for this format
 ])
 def test_a_bad_pack_mcmeta_is_a_problem(tmp_path, capsys, pack, expected):
     put(tmp_path, "friend", "test", "mine", GOOD)
@@ -294,7 +296,7 @@ def test_a_bad_pack_mcmeta_is_a_problem(tmp_path, capsys, pack, expected):
 
 
 @pytest.mark.parametrize("pack", [
-    {"pack": {"description": "x", "min_format": 121}},
+    {"pack": {"description": "x", "min_format": 121, "max_format": 121}},
     {"pack": {"description": {"text": "x"}, "min_format": [121, 0], "max_format": [121, 4]}},
     {"pack": {"description": "x", "min_format": 100, "max_format": 130}},
 ])

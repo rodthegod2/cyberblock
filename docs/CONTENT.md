@@ -69,7 +69,8 @@ Other files point at it by that id (a vending machine lists the shops it sells b
 {"pack": {"description": "Neon Crew", "min_format": 121, "max_format": 121}}
 ```
 
-`121` is the data pack format of Minecraft 26.3, the version Cyberblock runs on.
+`121` is the data pack format of Minecraft 26.3, the version Cyberblock runs on. Write both `min_format` and `max_format`:
+Minecraft refuses a pack that has only one of them.
 
 **Every file is one JSON object** that starts with `"schema": 1`. Text has a length cap (counted in bytes), colours are
 `"#RRGGBB"`, positions are Minecraft `[x, y, z]`, and references are ids. The exact rules of each kind are in

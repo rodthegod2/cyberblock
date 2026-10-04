@@ -13,8 +13,9 @@ Cyberblock keywords: `maxBytes` (a string's UTF-8 byte cap, the plan's "byte cap
 existing file of that kind, in the checked folders or the shipped defaults).
 
 A `--dir` folder that is a datapack root (it holds `data/`) must also have a usable `pack.mcmeta` (`pack.description` and an integer or
-[major, minor] `pack.min_format`, with `max_format` if given, covering the data pack format of this game version), because Minecraft
-silently ignores a datapack folder without one. A bare `data/` folder needs none.
+[major, minor] `pack.min_format` and `pack.max_format`, both required, covering the data pack format of this game version), because
+Minecraft silently ignores a datapack folder without one (it refuses min_format without max_format, and the old `pack_format` alone
+for this format). A bare `data/` folder needs none.
 
 Exit code 0: nothing wrong; 1: problems (listed one per line, `<file>: <where>: <what>`); 2: bad usage. Warnings (a file in a
 sub-folder, which the loader never reads) are listed but do not fail the check.
@@ -331,7 +332,7 @@ def check_pack_meta(folder: Path) -> list[str]:
         return []
     path = folder / "pack.mcmeta"
     if not path.is_file():
-        return ["pack.mcmeta: missing: Minecraft ignores a datapack folder without a pack.mcmeta (needs pack.description and pack.min_format)"]
+        return ["pack.mcmeta: missing: Minecraft ignores a datapack folder without a pack.mcmeta (needs pack.description, pack.min_format and pack.max_format)"]
     try:
         meta = parse(path.read_bytes())
     except ValueError as e:
@@ -345,11 +346,13 @@ def check_pack_meta(folder: Path) -> list[str]:
     low = format_major(pack.get("min_format"))
     if low is None:
         problems.append(f"pack.mcmeta: pack.min_format must be a whole number such as {DATA_PACK_FORMAT}")
-    high = format_major(pack.get("max_format")) if "max_format" in pack else None
-    if "max_format" in pack and high is None:
+    high = format_major(pack.get("max_format"))
+    if "max_format" not in pack:  # the game refuses min_format without max_format ("must declare both")
+        problems.append(f"pack.mcmeta: pack.max_format is missing: Minecraft needs both min_format and max_format (such as {DATA_PACK_FORMAT})")
+    elif high is None:
         problems.append("pack.mcmeta: pack.max_format must be a whole number or [major, minor]")
-    if low is not None and not problems and not (low <= DATA_PACK_FORMAT and (high is None or DATA_PACK_FORMAT <= high)):
-        problems.append(f"pack.mcmeta: the pack formats {low}..{high if high is not None else 'any'} do not cover this game's data pack format "
+    if not problems and not (low <= DATA_PACK_FORMAT <= high):
+        problems.append(f"pack.mcmeta: the pack formats {low}..{high} do not cover this game's data pack format "
                         f"{DATA_PACK_FORMAT}, so Minecraft will not enable it by itself")
     return problems
 
