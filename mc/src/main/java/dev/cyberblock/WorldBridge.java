@@ -1,4 +1,4 @@
-﻿// Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
+// Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
 package dev.cyberblock;
 
 import dev.cyberblock.net.HostSession;
