@@ -2008,6 +2008,17 @@ Lang owner: **7A**. Merge order: 7D, 7S, 7V, 7A, 7N, 7H, 7T, 7P.
   `vendors: <name> pass-through`: there is none, and `vendors: <name> -> minecraft screen open` is there for both; at the
   Holo-Table pick a fast-travel point (toast "when you leave the hub"), leave the hub: V fast travels there, Steve
   follows, and V stays at the destination (`fast travel: to <name> (Holo-Table)` after `park: off (hub exit)`).
+- **7S fix amendment (2026-10-04):** (1) The hub survives a load: the DLL keeps its hub through a game load or a quit to
+  the main menu and the server is not told, so `Hub.reds` keeps its hub through session ready, session end and detach
+  while linked (`hub: kept through the <reason> ...`) and parks V again at the next On; it is still forgotten on a link
+  drop, Minecraft lost and a lost host grant. (2) **Descope:** the mechanic's repair of the host's Cyberpunk car. Sections
+  1.8 and 1.9 name no `repair` message and the DLL has no event kind for it, so 7S's `Services.reds` repair hook (the
+  vanilla `VehicleRepairEvent` path with a direct-reset fallback) is unwired; wiring it needs a DOWN `repair {id}` in 1.9,
+  the DLL event kind, a result back so `Garage.java` can confirm and charge (1.16), and a server-side permission and rate
+  limit. The medic has no Cyberpunk hook (it heals Steve on the Minecraft side; the V-side heal hook was removed).
+  needsInGame once wired: `mechanic: repaired <car> (repair event, hp N %)` (vanilla path) versus `(fallback: direct
+  reset; ...)`. Re-test 7 adds: in the hub open the Cyberpunk menu, load a save, press F9: a `park: on (...)` line, V
+  invisible and frozen.
 
 ---
 

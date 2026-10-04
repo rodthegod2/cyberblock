@@ -213,6 +213,8 @@ the game window.
    cover never stays up while V is free.
 6. Enter again and **close Cyberpunk** (or press F9 Off): V must be released, nobody stays parked or invisible. **Start Cyberpunk again** (or F9 On) while
    Steve is still in the hub: **expect** full-screen Minecraft and V parked again, once (the server log shows one `hub in:true, park on:true` line).
+   **Load a save** while Steve is in the hub (Cyberpunk's menu, Load Game), then press **F9**: **expect** `hub: kept through the session ready` and a
+   `park: on (...)` line in `Cyberblock.log`, with V invisible and frozen under the full-screen Minecraft (never a free V under the cover).
 7. **Before `/login`** (a guest who just joined, not an operator): `/cyberblock hub`, the pause screen's **Cyberblock...** hub button and a hub portal do
    **nothing**; the guest stays where it joined and still has to type `/login`.
 8. **As the guest** (after `/login`, not an operator): `/cyberblock hub` (or the pause screen) simply walks you in and back; the host sees nothing (no cover, no park).
