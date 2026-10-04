@@ -29,8 +29,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Megaplan 4-A1: every device block has a blockstate and models the 26.3 deserializers accept, 16 x 16 textures, an item
- * definition and an English name; the eddies items have art; the device_map and shop defaults point at things that exist
- * (vanilla ids through the real registries). Gradle runs tests in mc/.
+ * definition and an English name; the eddies items have art (their registration is 4B's); the device_map and shop defaults
+ * point at things that exist (vanilla ids through the real registries). Gradle runs tests in mc/.
  */
 class DeviceAssetsTest {
 	private static final Path RES = Path.of("src/main/resources");
@@ -168,6 +168,8 @@ class DeviceAssetsTest {
 
 			for (JsonElement row : rows) {
 				Identifier id = Identifier.parse(row.getAsJsonObject().get("item").getAsString());
+				// Unit tests never run the mod's init, so our own items are checked by their item definition here; that
+				// cyberblock:eddies and eddie_chip are actually registered is 4B's test (megaplan 4-B1)
 				boolean exists = id.getNamespace().equals("cyberblock")
 					? Files.isRegularFile(ASSETS.resolve("items/" + id.getPath() + ".json")) : BuiltInRegistries.ITEM.containsKey(id);
 				assertTrue(exists, file + " " + id);

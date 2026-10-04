@@ -1599,9 +1599,9 @@ vanilla actions only.
 |---|---|---|---|
 | **4S** scripts | device scan within 48 m, ids, state, flags, change detection, actions, results, NPC-caused changes | new `cp/scripts/Cyberblock/Devices.reds`, `Probes.reds` (device hit drop), `Natives.reds` (declarations), `compile_check.py` | Opus |
 | **4D** DLL | `devices.cpp/hpp`: builders, deltas and the 5 s full list, validators, `devact` events, `devresult`, probe filter by device boxes | `cp/plugin/**` | Opus |
-| **4M** devices, server | device registry per owner, the section 1.11 mapping through `device_map`, block placement and both-way sync, action routing with toggles and type bits, quest-locked greying, the replica door filter, vending purchases with Minecraft eddies | new `mc/src/main/java/dev/cyberblock/device/**`, `replica/ReplicaRules.java`, `net/Permissions.java` (type bits), tests | Opus |
-| **4B** device blocks and client | custom blocks and block entities: coloured lamp, eye camera (client particle cone), Net Port, vending machine with its shop screen, three-colour traffic lamp, lift platform and call button, turret block, sliding gate, item-frame screens, crate; the shop screen | new `mc/src/main/java/dev/cyberblock/device/block/**`, new `mc/src/client/java/dev/cyberblock/client/device/**`, tests | Opus |
-| **4A** art and data | device block art and models, `device_map` and `shop` defaults, the eddies items, lang | `art/**`, `assets/cyberblock/**`, `data/cyberblock/cyberblock/device_map/**`, `.../shop/**`, schemas | Sonnet |
+| **4M** devices, server | device registry per owner, the section 1.11 mapping through `device_map`, block placement and both-way sync, action routing with toggles and type bits, quest-locked greying, the replica door filter, vending purchases with Minecraft eddies (looked up by id; 4M never registers the eddies items) | new `mc/src/main/java/dev/cyberblock/device/**`, `replica/ReplicaRules.java`, `net/Permissions.java` (type bits), tests | Opus |
+| **4B** device blocks and client | custom blocks and block entities: coloured lamp, eye camera (client particle cone), Net Port, vending machine with its shop screen, three-colour traffic lamp, lift platform and call button, turret block, sliding gate, item-frame screens, crate; the shop screen; the Java registration of the eddies items (`DeviceBlocks.EDDIES`, `DeviceBlocks.EDDIE_CHIP`, the only place they are registered) | new `mc/src/main/java/dev/cyberblock/device/block/**`, new `mc/src/client/java/dev/cyberblock/client/device/**`, tests | Opus |
+| **4A** art and data | device block art and models, `device_map` and `shop` defaults, the eddies items' art, models, item definitions and lang (their registration is 4B's), all Phase 4 lang | `art/**`, `assets/cyberblock/**`, `data/cyberblock/cyberblock/device_map/**`, `.../shop/**`, schemas | Sonnet |
 | **4P** protocol, tools, docs | protocol rows, fake host `--devices`, mpcheck `devices`, docs, Re-test 4 | as 3P | Sonnet |
 
 Lang owner: **4A**. Merge order: 4D, 4S, 4A, 4B, 4M, 4P.
@@ -1647,11 +1647,17 @@ off, a vending purchase, an elevator call).
   call button, a turret block that turns toward its target and shows its mode, a multi-block sliding gate, item frames with
   a procedural "screen" map image, a crate for unreadable containers and a vanilla chest view for readable loot.
 - [ ] Hosts (active) do not see these blocks either (render suppression as replica blocks, 3-C1 hook), guests do.
+- [ ] The eddies items of section 1.16 (amended 2026-10-04: no other package registers them; 4M looks them up by id,
+  4A ships only their art, item definitions and lang): `cyberblock:eddies` stacking to 64 and `cyberblock:eddie_chip`
+  (worth 100) with the tooltip `item.cyberblock.eddie_chip.tooltip`. A test asserts both ids and their max stack size
+  (registered in the mod's init, or built through the same properties factory the registration uses, as
+  `DeviceTestBlocks` does for blocks).
 **Done:** `gradlew test build`; screenshots of every device block.
 
 ### 4-A1. Art and data
 - [ ] `art/gen_block_art.py` extends with every device texture (original); models; `device_map` defaults for every
-  confirmed class; `shop` defaults for vending kinds; `cyberblock:eddies` and `eddie_chip` items with art; lang for
+  confirmed class; `shop` defaults for vending kinds; art, models and item definitions for the `cyberblock:eddies` and
+  `eddie_chip` items (registered in Java by 4B, see 4-B1); lang for
   devices, the shop screen, quest-locked, unsupported, per-type toggles.
 **Done:** byte-identical art; `content_check`; assets test.
 
