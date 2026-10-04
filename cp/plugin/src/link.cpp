@@ -58,6 +58,11 @@ namespace cb
 		return note;
 	}
 
+	nlohmann::json make_hello(const std::string &dllVersion)
+	{
+		return {{"t", "hello"}, {"proto", 1}, {"game", "cp2077"}, {"build", "2.31"}, {"ver", dllVersion.substr(0, kMaxVersion)}};
+	}
+
 	void OutQueue::push(const nlohmann::json &message)
 	{
 		Entry entry{message.value("t", ""), {}};
@@ -198,8 +203,10 @@ namespace cb
 					std::lock_guard<std::mutex> lock(m_lock);
 					m_queue.clear();
 				}
-				m_ws.send(dump({{"t", "hello"}, {"proto", 1}, {"game", "cp2077"}, {"build", "2.31"}}));
+				const nlohmann::json hello = make_hello(CB_VERSION);
+				m_ws.send(dump(hello));
 				log::info("connected to Minecraft on %s:%d", kHost, m_port);
+				log::info("hello ver %s", hello["ver"].get_ref<const std::string &>().c_str());
 			}
 			if (!m_ws.connected() && m_linked.exchange(false))
 			{

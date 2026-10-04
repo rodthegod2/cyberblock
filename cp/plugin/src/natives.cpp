@@ -39,6 +39,7 @@ namespace
 		bool vehicle = false;
 		int session = 0; // the link session the state below was sent to
 		int levelK = 0;  // the ground alignment `probes` was built with (plan retest2 section 1.1)
+		int groundEpoch = 0; // the server session `probes` was built for (world::ground_epoch, megaplan 1-H1)
 		cb::ProbeSet probes;
 		std::optional<cb::Vec3> lastCenter;
 	};
@@ -82,12 +83,13 @@ namespace
 		log_seat(false, false);
 	}
 
-	/// Minecraft drops all ground and is sent it again from the next probes.
+	/// Minecraft drops all ground and is sent it again from the next probes (for the current server session).
 	void restart_ground()
 	{
 		cb::link().send({{"t", "clear"}});
 		g_mashup.probes.clear();
 		g_mashup.lastCenter.reset();
+		cb::world::take_ground_restart(g_mashup.groundEpoch);
 	}
 
 	std::vector<cb::Vec3> to_vec3(const RED4ext::DynArray<RED4ext::Vector4> &points)
@@ -347,8 +349,8 @@ namespace
 	// n"ignite", n"block_add", n"block_remove", n"block_reset", n"teleport", n"lead", n"lead_release", n"pull", n"knock",
 	// n"effect", n"hack", n"scan", n"perk", n"perkfx", n"cyber" or n"cyberfx" (re-test 2: one `cyber` per entry of a
 	// `cyberware` message, kept while not Active like n"perk"; n"cyberfx" is dropped while not Active), n"prefs" (Phase Q:
-	// Minecraft's camera prefs arrived, kept while not Active; Cyberblock_EventFlag is `stepup`); n"" (the empty CName,
-	// hash 0) when there is none.
+	// Minecraft's camera prefs arrived, kept while not Active; Cyberblock_EventFlag is `stepup`), n"session" (Phase 1: the
+	// server's verdict on this host changed; kept while not Active); n"" (the empty CName, hash 0) when there is none.
 	void NextEvent(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
 	{
 		++frame->code;
@@ -398,8 +400,8 @@ namespace
 			*out = cb::world::events().current().flag;
 	}
 
-	// Cyberblock_EventName() -> CName: the effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id; n""
-	// for the other kinds.
+	// Cyberblock_EventName() -> CName: the effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id |
+	// session state (n"none", n"host", n"guest", n"refused"); n"" for the other kinds.
 	void EventName(IScriptable *, CStackFrame *frame, RED4ext::CName *out, int64_t)
 	{
 		++frame->code;
@@ -407,7 +409,8 @@ namespace
 			*out = RED4ext::CName(cb::world::events().current().name.c_str());
 	}
 
-	// Cyberblock_EventExtra() -> Float: the knock strength | effect amplifier; 0 for the other kinds.
+	// Cyberblock_EventExtra() -> Float: the knock strength | effect amplifier | session perms bitmask (1 explosions,
+	// 2 damage, 4 hacks, 8 devices, 16 spawns); 0 for the other kinds.
 	void EventExtra(IScriptable *, CStackFrame *frame, float *out, int64_t)
 	{
 		++frame->code;
@@ -421,6 +424,15 @@ namespace
 		++frame->code;
 		if (out)
 			*out = cb::world::events().current().id;
+	}
+
+	// Cyberblock_EventText() -> String (megaplan 2026-10-04 section 1.8): the string payload of the current event: a
+	// session's reason; "" for the other kinds.
+	void EventText(IScriptable *, CStackFrame *frame, RED4ext::CString *out, int64_t)
+	{
+		++frame->code;
+		if (out)
+			*out = RED4ext::CString(cb::world::events().current().text.c_str());
 	}
 
 	// ---- layer 3: mobs ----------------------------------------------------------------------------------------------
@@ -946,6 +958,16 @@ namespace cb::natives
 		phonePrompt = false;
 	}
 
+	void on_session_message()
+	{
+		std::lock_guard<std::mutex> lock(g_lock);
+		if (int seen = g_mashup.groundEpoch; !world::take_ground_restart(seen))
+			return;
+		log::info("ground: a new server session, Minecraft gets the ground again");
+		send_state();
+		restart_ground();
+	}
+
 	void post_register_types()
 	{
 		RED4ext::CRTTISystem *rtti = RED4ext::CRTTISystem::Get();
@@ -972,6 +994,7 @@ namespace cb::natives
 		add(rtti, "Cyberblock_EventName", &EventName, "CName");
 		add(rtti, "Cyberblock_EventExtra", &EventExtra, "Float");
 		add(rtti, "Cyberblock_EventId", &EventId, "Int32");
+		add(rtti, "Cyberblock_EventText", &EventText, "String");
 		add(rtti, "Cyberblock_MobCount", &MobCount, "Int32");
 		add(rtti, "Cyberblock_MobId", &MobId, "Int32", {{"Int32", "i"}});
 		add(rtti, "Cyberblock_MobKind", &MobKind, "CName", {{"Int32", "i"}});

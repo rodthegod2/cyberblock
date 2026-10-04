@@ -61,5 +61,9 @@ namespace cb
 
 		/// The link to Minecraft dropped (main.cpp's drop handler, link thread): forgets the seat and the phone prompt.
 		void on_link_dropped();
+		/// After each `session` (main.cpp's observer, link thread; megaplan 1-H1): when this host just became the server's
+		/// host (world::ground_epoch moved on), forgets the probe state and sends `state` and `clear`, so the new server
+		/// session gets the whole ground again.
+		void on_session_message();
 	}
 }

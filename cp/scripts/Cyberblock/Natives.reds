@@ -25,6 +25,8 @@ public native func Cyberblock_EventFlag() -> Bool;       // explosion fire
 public native func Cyberblock_EventName() -> CName;     // effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id
 public native func Cyberblock_EventExtra() -> Float;    // knock strength | effect amplifier | (else 0)
 public native func Cyberblock_EventId() -> Int32;       // hit: mob id (-1 none) | hack/scan: request id
+// ---- Phase 1 (megaplan 2026-10-04 section 1.8): n"session" events (name = state, text = reason, extra = perms bits) ----
+public native func Cyberblock_EventText() -> String;    // the current event's string payload: session reason | (else "")
 // Stance, menus, game mode
 public native func Cyberblock_SetStance(crouched: Bool, inAir: Bool, held: Bool) -> Void; // carried as cam.cr / cam.air / cam.held until changed
 public native func Cyberblock_SetMenu(open: Bool) -> Void;           // a Cyberpunk menu is open: input forwarding pauses; cam.menu

@@ -43,6 +43,9 @@
 // Minecraft as toasts (Cyberblock_Notify) while it is shown; "Start Minecraft first", "Minecraft lost" and the switch
 // back to Off stay Cyberpunk warnings, since Minecraft is not drawn then. Each tick also runs package S's
 // CyberblockSeat.Tick and CyberblockView.Tick (10 Hz), and every Clear path their Clear.
+//
+// Phase 1 (megaplan 2026-10-04 task 1-H1): the system owns the CyberblockSession (Session.reds), which Events.reds hands
+// every n"session" event; while the server does not count this host as host it cleans Night City as a link drop does.
 
 enum CyberblockState {
   Off = 0,
@@ -71,6 +74,7 @@ public class CyberblockSystem extends ScriptableSystem {
   private let npcs: ref<CyberblockNpcs>;
   private let hud: ref<CyberblockHud>;
   private let surveyTour: ref<CyberblockSurveyTour>;
+  private let session: ref<CyberblockSession>;
   private let saving: Bool;
   private let savingTicks: Int32;
   private let savingPumps: Int32;
@@ -86,6 +90,7 @@ public class CyberblockSystem extends ScriptableSystem {
     this.npcs.Register();
     this.hud = new CyberblockHud();
     this.surveyTour = new CyberblockSurveyTour();
+    this.session = new CyberblockSession();
     Cyberblock_SetActive(false, false);
     // A menu can pause the game (and with it this tick), so its opening is also taken straight from the blackboard.
     let ui = GameInstance.GetBlackboardSystem(this.GetGameInstance()).Get(GetAllBlackboardDefs().UI_System);
@@ -216,6 +221,11 @@ public class CyberblockSystem extends ScriptableSystem {
   // The Atlas survey tour (Survey.reds).
   public func SurveyTour() -> ref<CyberblockSurveyTour> {
     return this.surveyTour;
+  }
+
+  // The Minecraft server's verdict on this host (Session.reds; Events.reds and Survey.reds ask it).
+  public func Session() -> ref<CyberblockSession> {
+    return this.session;
   }
 
   // The HUD data stream (Hud.reds); Notifications.reds tells it about actionable notifications.
@@ -439,8 +449,8 @@ public class CyberblockSystem extends ScriptableSystem {
   }
 
   // A Cyberpunk on-screen warning, only for the moments Minecraft is not shown ("Start Minecraft first", "Minecraft
-  // lost", "Cyberblock off").
-  private func Notify(message: String) -> Void {
+  // lost", "Cyberblock off", a refused session's reason from Session.reds).
+  public func Notify(message: String) -> Void {
     let msg: SimpleScreenMessage;
     msg.isShown = true;
     msg.duration = 2.0;

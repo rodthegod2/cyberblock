@@ -100,6 +100,18 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 				cb::input::on_minecraft_message(message);
 				cb::ui::on_minecraft_message(message);
 				cb::survey_game::on_minecraft_message(message);
+				if (message.value("t", "") == "session")
+				{
+					// megaplan 1-H1: a new server session gets the whole ground again; leaving the host role cleans the DLL
+					// side as a link drop does (flight stop, unpause), but the WebSocket stays open
+					cb::natives::on_session_message();
+					if (cb::world::take_session_cleanup())
+					{
+						cb::snap::on_link_dropped();
+						cb::natives::on_link_dropped();
+						cb::ui::on_link_dropped();
+					}
+				}
 			},
 			[]
 			{
