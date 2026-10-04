@@ -51,10 +51,12 @@ public final class NpcModule {
 			HubNpcs.tick(server);
 		});
 		ServerLifecycleEvents.SERVER_STARTED.register(server -> {
-			Cyberblock.LOG.info("npc: {} roles, {} dialogue files, {} contracts, {} ripperdoc implants", NpcContent.roles().size(), NpcContent.dialogue().size(),
-				NpcContent.contracts().size(), NpcContent.implants().size());
-			Gigs.started();
+			Cyberblock.LOG.info("npc: {} roles, {} dialogue files, {} contracts, {} ripperdoc catalogues; breach gigs advance through Gigs.breached "
+				+ "(Phase 6 Breach), defeat gigs on melee strikes", NpcContent.roles().size(), NpcContent.dialogue().size(), NpcContent.contracts().size(),
+				NpcContent.catalogues().size());
+			HubNpcs.load(server);
 		});
+		ServerLifecycleEvents.END_DATA_PACK_RELOAD.register((server, resources, success) -> HubNpcs.load(server));
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
 			NpcScreens.clear();
 			HubNpcs.clear();
@@ -82,7 +84,7 @@ public final class NpcModule {
 		Contract c = Gigs.contract(gig);
 		int done = player.getAttachedOrElse(GigData.DONE, 0);
 		source.sendSystemMessage(c == null ? Component.translatableWithFallback("cyberblock.npc.gig.none", "No gig. Gigs done: %s. Ask a fixer.", done)
-			: Component.translatableWithFallback("cyberblock.npc.gig.status", "Gig: %s (%s). Gigs done: %s.", c.title(), GigRules.progressLine(c, gig.progress()), done));
+			: Component.translatableWithFallback("cyberblock.npc.gig.status", "Gig: %s %s. Gigs done: %s.", c.title(), GigRules.progress(c, gig.progress()), done));
 		return 1;
 	}
 
@@ -96,15 +98,14 @@ public final class NpcModule {
 			return 0;
 		}
 
-		NpcRole.HubSpot spot = r.hub().isEmpty() ? new NpcRole.HubSpot(0, 0, 0, 0F, r.name(), "", false) : r.hub().getFirst();
-		NpcRole.HubSpot here = new NpcRole.HubSpot(player.getX(), player.getY(), player.getZ(), player.getYRot() + 180.0F, spot.name(), spot.skin(), spot.slim());
-		HubNpc npc = HubNpcs.spawn(player.level(), id, here, "");
+		HubNpcs.Figure here = new HubNpcs.Figure("", id, player.getX(), player.getY(), player.getZ(), player.getYRot() + 180.0F, 0, "", null);
+		HubNpc npc = HubNpcs.spawn(player.level(), here);
 		if (npc == null) {
 			return 0;
 		}
 
 		Cyberblock.LOG.info("npc: {} spawned a {} NPC ({})", player.getPlainTextName(), id, r.screen());
-		source.sendSystemMessage(Component.translatableWithFallback("cyberblock.npc.spawn.done", "Spawned %s (%s)", r.name(), r.screen()));
+		source.sendSystemMessage(Component.translatableWithFallback("cyberblock.npc.spawn.done", "Spawned a %s", Component.translatable(r.titleKey())));
 		return 1;
 	}
 }

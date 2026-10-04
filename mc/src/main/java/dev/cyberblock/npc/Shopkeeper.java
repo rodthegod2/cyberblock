@@ -9,55 +9,60 @@ import java.util.Map;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import org.jspecify.annotations.Nullable;
 
 /**
- * A vendor's screen (megaplan task 7-N1, section 1.16): the stock rows of the role's {@code shop} content to buy and its sell rows to
- * sell, all for Minecraft eddies. Row ids are {@code b<shop>.<row>} and {@code s<shop>.<row>}. Each vendor (hub spot or figure) counts
- * its own sales per stock row against the row's limit until the shop's restock time is up. Server thread.
+ * A vendor's screen (megaplan task 7-N1, section 1.16): the NPC's {@code shop} content (a hub figure's own shop, else the role's
+ * {@code shop_by_tag} entry for the figure's vendor tag, else the role's {@code shop}): its stock rows to buy ({@code b<row>}) and its
+ * sell rows to sell ({@code s<row>}), all for Minecraft eddies, as the role's {@code buy} and {@code sell} services allow. Each vendor
+ * counts its own sales per stock row against the row's limit until the shop's restock time is up. Server thread.
  */
 final class Shopkeeper implements Visit.Service {
-	/** Sales per vendor and row id since that row's restock (ms). */
-	private final Map<String, Map<String, long[]>> sales = new HashMap<>();
+	/** Sales per vendor and row: {since ms, sold}. */
+	private final Map<String, Map<Integer, long[]>> sales = new HashMap<>();
 
 	@Override
 	public List<String> tabs(final Visit v) {
-		return List.of("buy", "sell");
-	}
-
-	private static List<Shops.Shop> shops(final NpcRole role) {
-		Map<Identifier, Shops.Shop> all = NpcContent.shops();
-		List<Shops.Shop> out = new ArrayList<>();
-		for (Identifier id : role.shops()) {
-			Shops.Shop s = all.get(id);
-			out.add(s);
+		List<String> tabs = new ArrayList<>();
+		if (v.role.offers("buy")) {
+			tabs.add("buy");
 		}
 
-		return out;
+		if (v.role.offers("sell")) {
+			tabs.add("sell");
+		}
+
+		return tabs;
+	}
+
+	private static Shops.@Nullable Shop shop(final Visit v) {
+		return v.shop == null ? null : NpcContent.shops().get(v.shop);
 	}
 
 	@Override
 	public List<NpcWire.Row> rows(final Visit v) {
-		List<Shops.Shop> shops = shops(v.role);
-		boolean buy = !v.tab.equals("sell");
+		Shops.Shop shop = shop(v);
+		if (shop == null) {
+			return List.of();
+		}
+
+		boolean buy = v.tab.equals("buy");
 		int eddies = Eddies.shown(v.player);
 		long now = System.currentTimeMillis();
 		List<NpcWire.Row> rows = new ArrayList<>();
-		for (int i = 0; i < shops.size(); i++) {
-			Shops.Shop shop = shops.get(i);
-			List<Shops.Row> list = shop == null ? List.of() : buy ? shop.stock() : shop.sell();
-			for (int j = 0; j < list.size() && rows.size() < NpcWire.MAX_ROWS; j++) {
-				Shops.Row r = list.get(j);
-				if (buy) {
-					int left = left(v.key, "b" + i + "." + j, r, shop, now);
-					rows.add(new NpcWire.Row("b" + i + "." + j, r.item(), r.count(), "", "", r.price(), left == 0 ? "sold_out" : "buy",
-						left != 0 && (r.price() <= eddies || v.player.isCreative())));
-				} else {
-					Item item = item(r.item());
-					boolean has = item != null && Eddies.count(v.player.getInventory(), item) >= r.count();
-					rows.add(new NpcWire.Row("s" + i + "." + j, r.item(), r.count(), "", "", r.price(), "sell", has));
-				}
+		List<Shops.Row> list = buy ? shop.stock() : shop.sell();
+		for (int j = 0; j < list.size() && rows.size() < NpcWire.MAX_ROWS; j++) {
+			Shops.Row r = list.get(j);
+			if (buy) {
+				int left = this.left(v.key, j, r, shop, now);
+				rows.add(new NpcWire.Row("b" + j, r.item(), r.count(), "", "", "", r.price(), left == 0 ? "sold_out" : "buy",
+					left != 0 && (r.price() <= eddies || v.player.isCreative())));
+			} else {
+				Item item = item(r.item());
+				boolean has = item != null && Eddies.count(v.player.getInventory(), item) >= r.count();
+				rows.add(new NpcWire.Row("s" + j, r.item(), r.count(), "", "", "", r.price(), "sell", has));
 			}
 		}
 
@@ -65,7 +70,7 @@ final class Shopkeeper implements Visit.Service {
 	}
 
 	/** How many more of a stock row this vendor sells now (-1: no limit). */
-	private int left(final String vendor, final String row, final Shops.Row r, final Shops.Shop shop, final long now) {
+	private int left(final String vendor, final int row, final Shops.Row r, final Shops.Shop shop, final long now) {
 		if (r.limit() == 0) {
 			return -1;
 		}
@@ -78,8 +83,8 @@ final class Shopkeeper implements Visit.Service {
 		return (int) Math.max(0, r.limit() - s[1]);
 	}
 
-	private void sold(final String vendor, final String row, final Shops.Shop shop, final long now) {
-		Map<String, long[]> rows = this.sales.computeIfAbsent(vendor, k -> new HashMap<>());
+	private void sold(final String vendor, final int row, final Shops.Shop shop, final long now) {
+		Map<Integer, long[]> rows = this.sales.computeIfAbsent(vendor, k -> new HashMap<>());
 		long[] s = rows.get(row);
 		if (s == null || shop.restockSeconds() > 0 && now - s[0] >= shop.restockSeconds() * 1000L) {
 			s = new long[] {now, 0};
@@ -89,33 +94,28 @@ final class Shopkeeper implements Visit.Service {
 		s[1]++;
 	}
 
-	/** {@code b1.3} → {1, 3}; null for anything else. */
-	static int @Nullable [] cell(final String row, final char kind) {
-		if (row.length() < 4 || row.charAt(0) != kind || !row.substring(1).matches("\\d{1,2}\\.\\d{1,2}")) {
-			return null;
-		}
-
-		String[] p = row.substring(1).split("\\.");
-		return new int[] {Integer.parseInt(p[0]), Integer.parseInt(p[1])};
+	/** {@code b12} → 12 (kind 'b'); -1 for anything else. */
+	static int cell(final String row, final char kind) {
+		return row.length() >= 2 && row.length() <= 3 && row.charAt(0) == kind && row.substring(1).matches("\\d{1,2}") ? Integer.parseInt(row.substring(1)) : -1;
 	}
 
 	@Override
 	public String press(final Visit v, final String row) {
 		boolean buy = row.startsWith("b");
-		int[] c = cell(row, buy ? 'b' : 's');
-		List<Shops.Shop> shops = shops(v.role);
-		Shops.Shop shop = c == null || c[0] >= shops.size() ? null : shops.get(c[0]);
+		Shops.Shop shop = shop(v);
+		int j = cell(row, buy ? 'b' : 's');
 		List<Shops.Row> list = shop == null ? List.of() : buy ? shop.stock() : shop.sell();
-		if (c == null || c[1] >= list.size()) {
+		if (j < 0 || j >= list.size() || !v.role.offers(buy ? "buy" : "sell")) {
 			return "gone";
 		}
 
-		Shops.Row r = list.get(c[1]);
+		Shops.Row r = list.get(j);
 		Item item = item(r.item());
 		if (item == null) {
 			return "gone";
 		}
 
+		String name = new ItemStack(item).getHoverName().getString();
 		if (!buy) {
 			if (Eddies.count(v.player.getInventory(), item) < r.count()) {
 				return "noitem";
@@ -123,25 +123,25 @@ final class Shopkeeper implements Visit.Service {
 
 			Eddies.take(v.player.getInventory(), item, r.count());
 			Eddies.earn(v.player, r.price());
-			Cyberblock.LOG.info("npc: {} sold {} x{} for {} eddies to {}", v.player.getPlainTextName(), r.item(), r.count(), r.price(), v.roleId);
-			v.say("thanks");
+			Cyberblock.LOG.info("npc: {} sold {} x{} for {} eddies to {}", v.player.getPlainTextName(), r.item(), r.count(), r.price(), v.shop);
+			v.say("sale", "item", name, "price", Integer.toString(r.price()));
 			return "sold";
 		}
 
 		long now = System.currentTimeMillis();
-		if (left(v.key, row, r, shop, now) == 0) {
+		if (this.left(v.key, j, r, shop, now) == 0) {
 			return "stock";
 		}
 
 		if (!Eddies.pay(v.player, r.price())) {
-			v.say("poor");
+			v.say("no_funds", "item", name, "price", Integer.toString(r.price()));
 			return "poor";
 		}
 
 		Eddies.give(v.player, item, r.count());
-		this.sold(v.key, row, shop, now);
-		Cyberblock.LOG.info("npc: {} bought {} x{} for {} eddies from {}", v.player.getPlainTextName(), r.item(), r.count(), r.price(), v.roleId);
-		v.say("thanks");
+		this.sold(v.key, j, shop, now);
+		Cyberblock.LOG.info("npc: {} bought {} x{} for {} eddies from {}", v.player.getPlainTextName(), r.item(), r.count(), r.price(), v.shop);
+		v.say("purchase", "item", name, "price", Integer.toString(r.price()));
 		return "ok";
 	}
 

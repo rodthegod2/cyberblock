@@ -35,8 +35,19 @@ class NpcScreenTest {
 
 	@Test
 	void anUnnamedNpcIsCalledByItsRole() {
-		NpcWire.Screen s = new NpcWire.Screen(1, "fixer", "", "", 0, "gigs", List.of("gigs"), List.of(), "");
+		NpcWire.Screen s = new NpcWire.Screen(1, "contracts", "", "cyberblock.role.fixer", "", 0, "gigs", List.of("gigs"), List.of(), "");
 		assertEquals("Fixer", NpcScreen.title(s).getString());
-		assertEquals("Rogue", NpcScreen.title(new NpcWire.Screen(1, "fixer", "Rogue", "", 0, "gigs", List.of("gigs"), List.of(), "")).getString());
+		assertEquals("Venn, Fixer", NpcScreen.title(new NpcWire.Screen(1, "contracts", "Venn", "cyberblock.role.fixer", "", 0, "gigs", List.of("gigs"), List.of(), ""))
+			.getString());
+	}
+
+	@Test
+	void aRowIsNamedByItsKeyThenItsTextThenItsService() {
+		NpcWire.Row drink = new NpcWire.Row("d0", "minecraft:honey_bottle", 1, "cyberblock.drink.neon_sour", "Neon Sour", "", 12, "drink", true);
+		assertEquals("Neon Sour", NpcScreen.rowName(drink, net.minecraft.world.item.ItemStack.EMPTY).getString(), "the key's English");
+		NpcWire.Row gig = new NpcWire.Row("c0", "", 0, "", "Claw Trimming", "", 260, "take", true);
+		assertEquals("Claw Trimming", NpcScreen.rowName(gig, net.minecraft.world.item.ItemStack.EMPTY).getString());
+		NpcWire.Row heal = new NpcWire.Row("heal", "", 3, "", "", "", 18, "heal", true);
+		assertEquals("Patch up 3 missing hearts", NpcScreen.rowName(heal, net.minecraft.world.item.ItemStack.EMPTY).getString());
 	}
 }

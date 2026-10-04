@@ -4,19 +4,21 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.google.gson.JsonParser;
 import java.util.List;
-import java.util.Random;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
-/** Megaplan 7-N1: the role screens' wire, the surgery timing bar, gig rules, the medic's price and the mechanic's runtime check. */
+/** Megaplan 7-N1: the role screens' wire, the surgery timing bar, gig rules, the medic's price and the host service requests. */
 class NpcRulesTest {
+	static final NpcWire.Screen SCREEN = new NpcWire.Screen(812, "shop", "Dax", "cyberblock.role.vendor", "Line", 120, "buy", List.of("buy", "sell"),
+		List.of(new NpcWire.Row("b1", "minecraft:bread", 2, "", "", "", 15, "buy", true),
+			new NpcWire.Row("ask", "", 0, "cyberblock.drink.neon_sour", "Neon Sour", "Sub", -1, "ask", false)), "ok");
+
 	@Test
 	void aScreenRoundTripsAndBadOnesAreDropped() {
-		NpcWire.Screen s = new NpcWire.Screen(812, "vendor", "Vendor", "Line", 120, "buy", List.of("buy", "sell"),
-			List.of(new NpcWire.Row("b0.1", "minecraft:bread", 2, "", "", 15, "buy", true), new NpcWire.Row("ask", "", 0, "Text", "Sub", -1, "ask", false)), "ok");
-		assertEquals(s, NpcWire.parseScreen(JsonParser.parseString(NpcWire.screen(s)).getAsJsonObject()));
-		String[] bad = {NpcWire.screen(s).replace("\"vendor\"", "\"pilot\""), NpcWire.screen(s).replace("\"buy\",\"on\"", "\"Buy!\",\"on\""),
-			NpcWire.screen(s).replace("minecraft:bread", "bread loaf"), NpcWire.screen(s).replace("\"eddies\":120", "\"eddies\":-1"), "{}"};
+		assertEquals(SCREEN, NpcWire.parseScreen(JsonParser.parseString(NpcWire.screen(SCREEN)).getAsJsonObject()));
+		String json = NpcWire.screen(SCREEN);
+		String[] bad = {json.replace("\"shop\"", "\"pilot\""), json.replace("\"buy\",\"on\"", "\"Buy!\",\"on\""), json.replace("minecraft:bread", "bread loaf"),
+			json.replace("\"eddies\":120", "\"eddies\":-1"), json.replace("cyberblock.role.vendor", "Vendor Role"), "{}"};
 		for (String b : bad) {
 			assertNull(NpcWire.parseScreen(JsonParser.parseString(b).getAsJsonObject()), b);
 		}
@@ -24,8 +26,7 @@ class NpcRulesTest {
 
 	@Test
 	void longTextIsCutToItsCapOnTheWayOut() {
-		String line = "x".repeat(400);
-		NpcWire.Screen s = new NpcWire.Screen(1, "medic", "M", line, 0, "heal", List.of("heal"), List.of(), "");
+		NpcWire.Screen s = new NpcWire.Screen(1, "medic", "M", "", "x".repeat(400), 0, "heal", List.of("heal"), List.of(), "");
 		NpcWire.Screen back = NpcWire.parseScreen(JsonParser.parseString(NpcWire.screen(s)).getAsJsonObject());
 		assertNotNull(back);
 		assertEquals(NpcWire.LINE_CAP, back.line().length());
@@ -34,32 +35,25 @@ class NpcRulesTest {
 
 	@Test
 	void actsAreCheckedBeforeTheServerUsesThem() {
-		assertEquals(new NpcWire.Act(5, "do", "b0.1"), NpcWire.parseAct(JsonParser.parseString(NpcWire.act(5, "do", "b0.1")).getAsJsonObject()));
+		assertEquals(new NpcWire.Act(5, "do", "b1"), NpcWire.parseAct(JsonParser.parseString(NpcWire.act(5, "do", "b1")).getAsJsonObject()));
 		assertNull(NpcWire.parseAct(JsonParser.parseString("{\"e\":5,\"a\":\"steal\",\"arg\":\"x\"}").getAsJsonObject()));
 		assertNull(NpcWire.parseAct(JsonParser.parseString("{\"e\":5.5,\"a\":\"do\",\"arg\":\"x\"}").getAsJsonObject()));
 		assertNull(NpcWire.parseAct(JsonParser.parseString("{\"e\":5,\"a\":\"do\",\"arg\":\"" + "y".repeat(33) + "\"}").getAsJsonObject()));
 		assertNull(NpcWire.parseAct(JsonParser.parseString("{\"e\":5,\"a\":\"do\",\"arg\":\"a b\"}").getAsJsonObject()));
-		NpcWire.Surgery sg = new NpcWire.Surgery(5, "sandevistan", 0.4F, 0.5F, 1260, 15000);
+		NpcWire.Surgery sg = new NpcWire.Surgery(5, "sandevistan", 0.41F, 0.59F, 1600, 15000);
 		assertEquals(sg, NpcWire.parseSurgery(JsonParser.parseString(NpcWire.surgery(sg)).getAsJsonObject()));
-		assertNull(NpcWire.parseSurgery(JsonParser.parseString(NpcWire.surgery(new NpcWire.Surgery(5, "x", 0.6F, 0.5F, 1260, 15000))).getAsJsonObject()));
+		assertNull(NpcWire.parseSurgery(JsonParser.parseString(NpcWire.surgery(new NpcWire.Surgery(5, "x", 0.6F, 0.5F, 1600, 15000))).getAsJsonObject()));
 	}
 
 	@Test
-	void theSurgeryBarSweepsAndTheRiskierTheHarder() {
+	void theSurgeryBarSweepsAndTheWindowIsCentred() {
 		assertEquals(0.0, Surgery.position(0, 1000), 1e-9);
 		assertEquals(1.0, Surgery.position(500, 1000), 1e-9);
 		assertEquals(0.5, Surgery.position(750, 1000), 1e-9);
 		assertEquals(0.0, Surgery.position(1000, 1000), 1e-9, "one period: back at the start");
-		assertTrue(Surgery.period(1.0) < Surgery.period(0.1));
-		assertTrue(Surgery.width(1.0) < Surgery.width(0.1));
-		Random r = new Random(3);
-		for (int i = 0; i < 200; i++) {
-			double risk = r.nextDouble();
-			double[] z = Surgery.zone(risk, r);
-			assertTrue(z[0] >= 0.15 && z[1] <= 0.85 + 1e-9, "inside the bar's middle");
-			assertEquals(Surgery.width(risk), z[1] - z[0], 1e-9);
-		}
-
+		assertArrayEquals(new double[] {0.41, 0.59}, Surgery.zone(18), 1e-9);
+		assertArrayEquals(new double[] {0.325, 0.675}, Surgery.zone(35), 1e-9);
+		assertEquals(1600, Surgery.periodMs(32), "ticks to ms");
 		assertTrue(Surgery.hit(0.5, 0.45, 0.55));
 		assertTrue(Surgery.hit(0.44, 0.45, 0.55), "the grace");
 		assertFalse(Surgery.hit(0.40, 0.45, 0.55));
@@ -70,39 +64,49 @@ class NpcRulesTest {
 
 	@Test
 	void aFailedSurgeryNeverKills() {
-		assertEquals(4.0F, Surgery.damage(0.0, 20.0F));
-		assertEquals(12.0F, Surgery.damage(1.0, 20.0F));
-		assertEquals(2.0F, Surgery.damage(1.0, 3.0F), "down to 1, not below");
-		assertEquals(0.0F, Surgery.damage(1.0, 1.0F));
-		assertEquals(0.0F, Surgery.damage(1.0, 0.5F));
-	}
-
-	static Contract contract(final String json) {
-		return Contract.parse(NpcContentTest.ID, NpcContentTest.json(json));
+		assertEquals(6.0F, Surgery.damage(6, 20.0F));
+		assertEquals(2.0F, Surgery.damage(6, 3.0F), "down to half a heart, not below");
+		assertEquals(0.0F, Surgery.damage(6, 1.0F));
+		assertEquals(0.0F, Surgery.damage(6, 0.5F));
+		assertEquals(0.0F, Surgery.damage(0, 20.0F));
 	}
 
 	@Test
 	void gigObjectives() {
-		Contract claws = contract("{\"schema\":1,\"title\":\"T\",\"type\":\"defeat\",\"target\":\"Tyger Claws\",\"count\":3}");
+		Contract claws = NpcContentTest.contract("defeat_hostiles", "{\"faction\":\"TygerClaws\",\"count\":3}");
 		assertTrue(GigRules.defeatCounts(claws, "faction:TygerClaws"));
+		assertTrue(GigRules.defeatCounts(claws, "faction:tyger_claws"));
 		assertFalse(GigRules.defeatCounts(claws, "faction:Maelstrom"));
 		assertFalse(GigRules.defeatCounts(claws, ""), "a civilian is nobody's faction");
 		assertFalse(GigRules.defeatCounts(claws, "role:TygerClaws"));
-		Contract any = contract("{\"schema\":1,\"title\":\"T\",\"type\":\"defeat\",\"target\":\"any\",\"count\":3}");
-		assertTrue(GigRules.defeatCounts(any, ""));
-		Contract breach = contract("{\"schema\":1,\"title\":\"T\",\"type\":\"breach\",\"target\":\"terminal\",\"count\":2}");
+		Contract breach = NpcContentTest.contract("breach_device", "{\"kind\":\"terminal\",\"count\":2}");
 		assertTrue(GigRules.breachCounts(breach, "terminal"));
 		assertFalse(GigRules.breachCounts(breach, "camera"));
 		assertFalse(GigRules.defeatCounts(breach, "faction:x"));
-		Contract reach = contract("{\"schema\":1,\"title\":\"T\",\"type\":\"reach\",\"pos\":[100,64,100],\"radius\":5}");
-		assertTrue(GigRules.reached(reach, new Vec3(100, 64, 100), new Vec3(103, 70, 103)));
-		assertFalse(GigRules.reached(reach, new Vec3(100, 64, 100), new Vec3(104, 64, 104)));
-		assertFalse(GigRules.reached(reach, new Vec3(100, 64, 100), new Vec3(100, 90, 100)), "not from the sky");
-		assertFalse(GigRules.reached(reach, null, new Vec3(100, 64, 100)), "no place, no arrival");
+		Contract reach = NpcContentTest.contract("reach_landmark", "{\"landmark\":\"cyberblock:corpo_plaza\"}");
+		Vec3 plaza = new Vec3(100, 64, 100);
+		assertTrue(GigRules.reached(reach, plaza, new Vec3(104, 70, 104)));
+		assertFalse(GigRules.reached(reach, plaza, new Vec3(105, 64, 105)), "more than 6 blocks");
+		assertFalse(GigRules.reached(reach, plaza, new Vec3(100, 90, 100)), "not from the sky");
+		assertFalse(GigRules.reached(reach, null, plaza), "no landmark, no arrival");
 		assertEquals(3, GigRules.next(3, 3));
-		assertEquals("2 / 3", GigRules.progressLine(claws, 2));
-		assertEquals("", GigRules.progressLine(reach, 0));
-		assertEquals(new Vec3(100, 64, 100), Gigs.target(reach));
+		assertEquals("2 / 3", GigRules.progress(claws, 2));
+		assertEquals("", GigRules.progress(reach, 0));
+		assertEquals("2 / 3  Do it.", Gigs.sub(claws, 2));
+		assertEquals("Do it.", Gigs.sub(reach, 0));
+	}
+
+	@Test
+	void finishedGigsAreOfferedAgainOnlyWhenRepeatableAndTimeLimitsRunOut() {
+		Contract once = NpcContentTest.contract("breach_device", "{\"kind\":\"door\",\"count\":1}");
+		assertTrue(GigRules.offered("cyberblock:a", once, List.of()));
+		assertFalse(GigRules.offered("cyberblock:a", once, List.of("cyberblock:a")));
+		Contract again = Contract.parse(NpcContentTest.ID, NpcContentTest.json("{\"schema\":1,\"title\":\"T\",\"text\":\"x\",\"type\":\"breach_device\","
+			+ "\"target\":{\"kind\":\"door\",\"count\":1},\"reward\":{\"eddies\":5},\"repeatable\":true,\"time_limit\":60}"));
+		assertTrue(GigRules.offered("cyberblock:a", again, List.of("cyberblock:a")));
+		assertFalse(GigRules.expired(again, 1000, 1000 + 1200));
+		assertTrue(GigRules.expired(again, 1000, 1000 + 1201));
+		assertFalse(GigRules.expired(once, 0, Long.MAX_VALUE / 2), "no limit");
 	}
 
 	@Test
@@ -114,20 +118,16 @@ class NpcRulesTest {
 	}
 
 	@Test
-	void vendorRowIdsAndTheMechanicsRuntimeCheck() {
-		assertArrayEquals(new int[] {1, 12}, Shopkeeper.cell("b1.12", 'b'));
-		assertNull(Shopkeeper.cell("s1.12", 'b'));
-		assertNull(Shopkeeper.cell("b1", 'b'));
-		assertNull(Shopkeeper.cell("b123.1", 'b'));
-		assertEquals("not_host", Garage.vehicleCheck(false, false, false));
-		assertEquals("not_active", Garage.vehicleCheck(true, false, true));
-		assertEquals("no_vehicle", Garage.vehicleCheck(true, true, false));
-		assertEquals("", Garage.vehicleCheck(true, true, true));
-		assertEquals("{\"t\":\"repair\",\"what\":\"vehicle\"}", Garage.repairMessage());
-	}
-
-	@Test
-	void hubSpotKeysAreStablePerRoleAndIndex() {
-		assertEquals("cyberblock:bartender#0", HubNpcs.spotKey(net.minecraft.resources.Identifier.fromNamespaceAndPath("cyberblock", "bartender"), 0));
+	void vendorRowIdsTheMechanicsCheckAndTheHostRequests() {
+		assertEquals(12, Shopkeeper.cell("b12", 'b'));
+		assertEquals(-1, Shopkeeper.cell("s12", 'b'));
+		assertEquals(-1, Shopkeeper.cell("b", 'b'));
+		assertEquals(-1, Shopkeeper.cell("b123", 'b'));
+		assertEquals("not_host", Garage.vehicleCheck(false, false));
+		assertEquals("not_active", Garage.vehicleCheck(true, false));
+		assertEquals("", Garage.vehicleCheck(true, true));
+		assertEquals("{\"t\":\"repair\",\"id\":7}", Services.repair(7));
+		assertEquals("{\"t\":\"heal\",\"id\":8}", Services.heal(8));
+		assertEquals("Neon Sour", Bar.words("neon_sour"));
 	}
 }

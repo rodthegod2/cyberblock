@@ -21,12 +21,12 @@ public final class NpcContent {
 	private static @Nullable ContentKind<NpcRole> roles;
 	private static @Nullable ContentKind<Dialogue> dialogue;
 	private static @Nullable ContentKind<Contract> contracts;
-	private static @Nullable ContentKind<Implant> implants;
+	private static @Nullable ContentKind<Catalogue> catalogues;
 	/** Tests: these instead of the loaded content (null: the loaded content). */
 	static @Nullable Map<Identifier, NpcRole> testRoles;
 	static @Nullable Map<Identifier, Dialogue> testDialogue;
 	static @Nullable Map<Identifier, Contract> testContracts;
-	static @Nullable Map<Identifier, Implant> testImplants;
+	static @Nullable Map<Identifier, Catalogue> testCatalogues;
 	static @Nullable Map<Identifier, Shops.Shop> testShops;
 
 	private NpcContent() {
@@ -37,7 +37,7 @@ public final class NpcContent {
 		roles = ContentKind.register("npc_role", NpcRole::parse, false);
 		dialogue = ContentKind.register("dialogue", Dialogue::parse, false);
 		contracts = ContentKind.register("contract", Contract::parse, false);
-		implants = ContentKind.register("ripperdoc", Implant::parse, false);
+		catalogues = ContentKind.register("ripperdoc", Catalogue::parse, false);
 	}
 
 	private static <T> Map<Identifier, T> all(final @Nullable ContentKind<T> kind, final @Nullable Map<Identifier, T> test) {
@@ -56,8 +56,15 @@ public final class NpcContent {
 		return all(contracts, testContracts);
 	}
 
-	static Map<Identifier, Implant> implants() {
-		return all(implants, testImplants);
+	static Map<Identifier, Catalogue> catalogues() {
+		return all(catalogues, testCatalogues);
+	}
+
+	/** A ripperdoc role's catalogue: its {@code catalogue}, else the first one loaded (null: none). */
+	static @Nullable Catalogue catalogue(final NpcRole role) {
+		Map<Identifier, Catalogue> all = catalogues();
+		Catalogue own = role.catalogue() == null ? null : all.get(role.catalogue());
+		return own != null ? own : all.values().stream().findFirst().orElse(null);
 	}
 
 	/** Phase 4's shop content (its kind is registered by device/Shops). */
@@ -71,7 +78,7 @@ public final class NpcContent {
 		return kind == null ? Map.of() : (Map<Identifier, Shops.Shop>) Content.all(kind);
 	}
 
-	/** The role for a figure's name-tag label (vendor type or faction), by role id order; null when no role names it. */
+	/** The role for a figure's name-tag label (its vendor type), by role id order; null when no role names it. */
 	static Map.@Nullable Entry<Identifier, NpcRole> roleFor(final String label) {
 		for (Map.Entry<Identifier, NpcRole> e : roles().entrySet()) {
 			if (e.getValue().matches(label)) {

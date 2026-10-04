@@ -1,14 +1,17 @@
 package dev.cyberblock.npc;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import org.jspecify.annotations.Nullable;
 
 /**
- * One player at one role NPC's screen (megaplan task 7-N1): who, which NPC and role, the tab shown, the NPC's last line and the
- * result of the last press. Server thread.
+ * One player at one role NPC's screen (megaplan task 7-N1): who, which NPC and role, what it sells, the tab shown, the NPC's last
+ * line and the result of the last press. Server thread.
  */
 final class Visit {
 	/** What each role's screen does: its tabs, the rows of the tab shown, and a press on a row (the result code). */
@@ -24,34 +27,38 @@ final class Visit {
 	final Entity npc;
 	final Identifier roleId;
 	final NpcRole role;
-	/** A hub NPC (dialogue variants {@code <context>.hub}). */
-	final boolean hub;
-	/** Who sells here, for stock limits: the hub spot, or the figure's entity. */
+	/** The NPC's own name ("" for a Night City figure: the role's title shows). */
+	final String name;
+	/** Who sells here, for stock limits: the hub figure, or the Night City figure's entity. */
 	final String key;
+	/** The shop this NPC sells from (null: none). */
+	final @Nullable Identifier shop;
 	String tab = "";
 	String line = "";
 	String result = "";
 
-	Visit(final ServerPlayer player, final Entity npc, final Identifier roleId, final NpcRole role, final boolean hub, final String key) {
+	Visit(final ServerPlayer player, final Entity npc, final Identifier roleId, final NpcRole role, final String name, final String key,
+		final @Nullable Identifier shop) {
 		this.player = player;
 		this.npc = npc;
 		this.roleId = roleId;
 		this.role = role;
-		this.hub = hub;
+		this.name = name;
 		this.key = key;
+		this.shop = shop;
 	}
 
-	/** The NPC says a line for this context (its hub variant first in the hub); nothing when content has none. */
-	void say(final String context) {
-		String line = Dialogue.pick(NpcContent.dialogue().values(), this.role.screen(), this.hub ? context + ".hub" : context,
-			ThreadLocalRandom.current());
+	/** The NPC says a line for this context (placeholders filled, {player} always); with none in content, the last line stays. */
+	void say(final String context, final String... pairs) {
+		Map<String, String> values = new HashMap<>();
+		values.put("player", this.player.getPlainTextName());
+		for (int i = 0; i + 1 < pairs.length; i += 2) {
+			values.put(pairs[i], pairs[i + 1]);
+		}
+
+		String line = Dialogue.pick(NpcContent.dialogue(), this.roleId, this.role.dialogue(), context, values, ThreadLocalRandom.current());
 		if (!line.isEmpty() || context.equals("greeting")) {
 			this.line = line;
 		}
-	}
-
-	/** The name on the screen: a hub NPC's own name, else the role's. */
-	String name() {
-		return this.npc instanceof HubNpc h && !h.npcName().isEmpty() ? h.npcName() : this.role.name();
 	}
 }

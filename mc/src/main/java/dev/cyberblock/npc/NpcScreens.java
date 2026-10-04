@@ -15,9 +15,10 @@ import net.minecraft.world.entity.Entity;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The role screens (megaplan task 7-N1): a right-click on a figure or hub NPC whose role has a screen opens it, and every press comes
- * back as {@code cyberblock:act t:"npc"}. The server checks each act again (the NPC still exists, is within reach, still has that
- * role), runs it in the role's service and sends the screen again with the result and the NPC's line. Server thread.
+ * The role screens (megaplan task 7-N1): a right-click on a Night City figure whose role tag an {@code npc_role} lists, or on a hub
+ * NPC, opens its role's screen, and every press comes back as {@code cyberblock:act t:"npc"}. The server checks each act again (the
+ * NPC still exists, is within reach, still has that role), runs it in the role's service and sends the screen again with the result
+ * and the NPC's line. Server thread.
  */
 final class NpcScreens {
 	/** How far from the NPC a player may use its screen (vanilla's entity reach, plus a margin). */
@@ -25,35 +26,31 @@ final class NpcScreens {
 	private static final Map<UUID, Visit> visits = new HashMap<>();
 	static final Shopkeeper shopkeeper = new Shopkeeper();
 	static final Clinic clinic = new Clinic();
-	static final Gigs gigs = new Gigs();
-	private static final Map<String, Visit.Service> services = Map.of("vendor", shopkeeper, "ripperdoc", clinic.ripperdoc, "medic", clinic.medic,
-		"fixer", gigs, "bartender", new Bar(), "mechanic", new Garage());
+	private static final Map<String, Visit.Service> services = Map.of("shop", shopkeeper, "ripperdoc", clinic.ripperdoc, "medic", clinic.medic,
+		"contracts", new Gigs(), "bartender", new Bar(), "mechanic", new Garage());
 
 	private NpcScreens() {
 	}
 
-	/** An NPC's role: a hub NPC's own, a living Night City person's from its name tag; null when it has none with a screen. */
+	/** The NPC's role: a hub NPC's own, a living Night City person's from its role tag; null when it has none with a screen. */
 	static @Nullable Visit visit(final ServerPlayer player, final Entity npc) {
-		Identifier roleId = null;
-		NpcRole role = null;
-		boolean hub = npc instanceof HubNpc;
 		if (npc instanceof HubNpc h && h.role() != null) {
-			roleId = h.role();
-			role = NpcContent.roles().get(roleId);
-		} else if (npc instanceof ProxyEntity proxy && proxy.getType() == ProxyEntities.HUMAN && !proxy.dead()) {
+			NpcRole role = NpcContent.roles().get(h.role());
+			Identifier shop = role == null ? null : h.shop() != null ? h.shop() : role.shopFor("");
+			return role == null ? null : new Visit(player, npc, h.role(), role, h.npcName(), h.spot().isEmpty() ? npc.getStringUUID() : "hub/" + h.spot(), shop);
+		}
+
+		if (npc instanceof ProxyEntity proxy && proxy.getType() == ProxyEntities.HUMAN && !proxy.dead()) {
 			Map.Entry<Identifier, NpcRole> e = NpcContent.roleFor(proxy.label());
-			if (e != null) {
-				roleId = e.getKey();
-				role = e.getValue();
-			}
+			return e == null ? null : new Visit(player, npc, e.getKey(), e.getValue(), "", npc.getStringUUID(), e.getValue().shopFor(NpcRole.tag(proxy.label())));
 		}
 
-		if (role == null || !role.has() || !services.containsKey(role.screen())) {
-			return null;
-		}
+		return null;
+	}
 
-		String key = npc instanceof HubNpc h ? h.spot() : npc.getStringUUID();
-		return new Visit(player, npc, roleId, role, hub, key.isEmpty() ? npc.getStringUUID() : key);
+	private static List<String> tabs(final Visit v) {
+		List<String> tabs = services.get(v.role.screen()).tabs(v);
+		return tabs.isEmpty() ? List.of("none") : tabs;
 	}
 
 	/** A right-click (UseEntityCallback): true when the NPC has a role screen and it opened. */
@@ -63,20 +60,18 @@ final class NpcScreens {
 			return false;
 		}
 
-		Visit.Service service = services.get(v.role.screen());
-		v.tab = service.tabs(v).getFirst();
+		v.tab = tabs(v).getFirst();
 		v.say("greeting");
 		visits.put(player.getUUID(), v);
-		Cyberblock.LOG.info("npc: {} opened {} ({}) at {}", player.getPlainTextName(), v.roleId, v.role.screen(), v.hub ? "the hub" : "a figure");
+		Cyberblock.LOG.info("npc: {} opened {} ({}) at {}", player.getPlainTextName(), v.roleId, v.role.screen(), npc instanceof HubNpc ? "a hub NPC" : "a figure");
 		send(v);
 		return true;
 	}
 
 	static void send(final Visit v) {
-		Visit.Service service = services.get(v.role.screen());
-		List<String> tabs = service.tabs(v);
-		ServerNet.ui(v.player, NpcWire.T_NPC, NpcWire.screen(new NpcWire.Screen(v.npc.getId(), v.role.screen(), v.name(), v.line, Eddies.shown(v.player),
-			v.tab, tabs, service.rows(v), v.result)));
+		List<NpcWire.Row> rows = v.tab.equals("none") ? List.of() : services.get(v.role.screen()).rows(v);
+		ServerNet.ui(v.player, NpcWire.T_NPC, NpcWire.screen(new NpcWire.Screen(v.npc.getId(), v.role.screen(), v.name, v.role.titleKey(), v.line,
+			Eddies.shown(v.player), v.tab, tabs(v), rows, v.result)));
 	}
 
 	/** {@code cyberblock:act t:"npc"}: a tab, a press, a surgery cut or abort. */
@@ -87,23 +82,18 @@ final class NpcScreens {
 			return;
 		}
 
-		Visit last = visits.get(player.getUUID());
-		Visit v = last != null && last.npc == npc ? last : visit(player, npc);
-		if (v == null) {
-			return;
-		}
-
 		Visit fresh = visit(player, npc);
-		if (fresh == null || !fresh.roleId.equals(v.roleId)) {
-			// a /reload took the role away (or changed it): nothing more to do here
+		Visit last = visits.get(player.getUUID());
+		if (fresh == null) {
+			// a /reload took the role away: nothing more to do here
 			visits.remove(player.getUUID());
 			return;
 		}
 
+		Visit v = last != null && last.npc == npc && last.roleId.equals(fresh.roleId) ? last : fresh;
 		visits.put(player.getUUID(), v);
-		Visit.Service service = services.get(v.role.screen());
-		List<String> tabs = service.tabs(v);
-		if (v.tab.isEmpty() || !tabs.contains(v.tab)) {
+		List<String> tabs = tabs(v);
+		if (!tabs.contains(v.tab)) {
 			v.tab = tabs.getFirst();
 		}
 
@@ -115,9 +105,13 @@ final class NpcScreens {
 				}
 			}
 			case "do" -> {
-				String result = service.press(v, act.arg());
-				if (result.isEmpty() && v.role.screen().equals("ripperdoc") && act.arg().startsWith("i.")) {
-					// a surgery started: the bar is on the player's screen; the cut answers
+				if (v.tab.equals("none")) {
+					return;
+				}
+
+				String result = services.get(v.role.screen()).press(v, act.arg());
+				if (result.isEmpty() && v.role.screen().equals("ripperdoc")) {
+					// a surgery started: the bar is on the player's screen and the cut answers
 					return;
 				}
 

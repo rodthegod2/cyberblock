@@ -1,64 +1,92 @@
 package dev.cyberblock.npc;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import dev.cyberblock.content.Content;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import net.minecraft.resources.Identifier;
 import org.jspecify.annotations.Nullable;
 
 /**
- * One {@code contract} content entry: a fixer's gig (megaplan section 1.7 and task 7-N1). The file
- * {@code data/<ns>/cyberblock/contract/<name>.json}:
+ * One {@code contract} content entry: a fixer's gig (megaplan section 1.7 and task 7-N1; 7A's
+ * {@code shared/content-schemas/contract.schema.json}):
  * <pre>
- * {"schema": 1, "title": "...", "text": "...", "type": "deliver|defeat|reach|breach", "target": "...", "count": 3,
- *  "reward": 150, "reward_item": {"item": "minecraft:emerald", "count": 1}, "pos": [x, y, z], "radius": 8}
+ * {"schema": 1, "title": "...", "text": "...", "done_text": "...", "type": "defeat_hostiles", "target": {"faction": "TygerClaws", "count": 6},
+ *  "reward": {"eddies": 260, "items": [{"item": "cyberblock:ram_shard", "count": 1}]}, "difficulty": 2, "time_limit": 0, "repeatable": true}
  * </pre>
- * {@code deliver}: bring {@code count} of the item {@code target} to any fixer. {@code defeat}: {@code count} Night City people of
- * the faction {@code target} ({@code any} for any faction) die after you struck them. {@code reach}: get within {@code radius} blocks
- * of the landmark {@code target} (a {@code landmark} content id) or of {@code pos} when given. {@code breach}: {@code count}
- * successful Breach Protocols on a device of kind {@code target} ({@code any}: any device). {@code reward} is Minecraft eddies
- * (section 1.16). Texts are original content. Pure.
+ * {@code deliver_item} {item, count}: hand the items to a fixer. {@code defeat_hostiles} {faction, count}: Night City people of that
+ * faction die after the player struck them. {@code reach_landmark} {landmark}: stand within {@link #REACH} blocks of the
+ * {@code landmark}. {@code breach_device} {kind, count}: Phase 6 Breach Protocols solved on devices of that section 1.11 kind. The
+ * reward is Minecraft eddies (section 1.16) and up to 4 item stacks; {@code time_limit} seconds (0: none); a gig that is not
+ * {@code repeatable} is offered to a player only until he has done it. Texts are original content. Pure.
  */
-public record Contract(String title, String text, Type type, String target, int count, int reward, @Nullable Identifier rewardItem,
-	int rewardCount, double @Nullable [] pos, double radius) {
-	static final int MAX_COUNT = 64, MAX_REWARD = 100_000;
+public record Contract(String title, String text, String doneText, Type type, @Nullable Identifier item, int count, String faction,
+	@Nullable Identifier landmark, String kind, int eddies, List<Reward> items, int difficulty, int timeLimit, boolean repeatable) {
+	/** Blocks from a reach_landmark gig's landmark that count as there. */
+	public static final double REACH = 6.0;
+	static final List<String> KINDS = List.of("door", "gate", "light", "camera", "terminal", "vending", "traffic", "elevator", "turret", "screen",
+		"container");
 
 	public enum Type {
-		DELIVER, DEFEAT, REACH, BREACH;
+		DELIVER_ITEM, DEFEAT_HOSTILES, REACH_LANDMARK, BREACH_DEVICE;
 
 		public String id() {
 			return this.name().toLowerCase(Locale.ROOT);
 		}
 	}
 
+	public record Reward(Identifier item, int count) {
+	}
+
 	static Contract parse(final Identifier id, final JsonObject json) {
-		String title = Content.string(json, "title", 64), text = NpcJson.string(json, "text", 256, "");
-		String typeText = Content.string(json, "type", 16);
+		String title = Content.string(json, "title", 48), text = Content.string(json, "text", 280);
+		String doneText = NpcJson.string(json, "done_text", 200, "");
 		Type type;
 		try {
-			type = Type.valueOf(typeText.toUpperCase(Locale.ROOT));
+			type = Type.valueOf(Content.string(json, "type", 24).toUpperCase(Locale.ROOT));
 		} catch (IllegalArgumentException e) {
-			throw new IllegalArgumentException("type must be deliver, defeat, reach or breach");
+			throw new IllegalArgumentException("type must be deliver_item, defeat_hostiles, reach_landmark or breach_device");
 		}
 
-		double[] pos = json.has("pos") ? Content.position(json, "pos") : null;
-		String target = type == Type.REACH && pos != null ? NpcJson.string(json, "target", 128, "") : Content.string(json, "target", 128);
-		if (type == Type.DELIVER || type == Type.REACH && !target.isEmpty()) {
-			NpcJson.id(target, "target");
-		} else if (type != Type.REACH && target.isBlank()) {
-			throw new IllegalArgumentException("target must name a faction, a device kind or any");
+		JsonObject target = NpcJson.object(json.get("target"), "target");
+		Identifier item = null, landmark = null;
+		String faction = "", kind = "";
+		int count = 1;
+		switch (type) {
+			case DELIVER_ITEM -> {
+				item = NpcJson.id(Content.string(target, "item", 128), "target.item");
+				count = NpcJson.whole(target, "count", 1, 512, 1);
+			}
+			case DEFEAT_HOSTILES -> {
+				faction = Content.string(target, "faction", 48);
+				if (!faction.matches("[A-Za-z0-9_]+")) {
+					throw new IllegalArgumentException("target.faction must be a faction name like TygerClaws");
+				}
+
+				count = NpcJson.whole(target, "count", 1, 512, 1);
+			}
+			case REACH_LANDMARK -> landmark = NpcJson.id(Content.string(target, "landmark", 128), "target.landmark");
+			case BREACH_DEVICE -> {
+				kind = Content.string(target, "kind", 16);
+				if (!KINDS.contains(kind)) {
+					throw new IllegalArgumentException("target.kind must be one of " + KINDS);
+				}
+
+				count = NpcJson.whole(target, "count", 1, 512, 1);
+			}
 		}
 
-		int count = type == Type.REACH ? 1 : NpcJson.whole(json, "count", 1, MAX_COUNT, 1);
-		Identifier rewardItem = null;
-		int rewardCount = 0;
-		if (json.has("reward_item")) {
-			JsonObject r = NpcJson.object(json.get("reward_item"), "reward_item");
-			rewardItem = NpcJson.id(Content.string(r, "item", 128), "reward_item.item");
-			rewardCount = NpcJson.whole(r, "count", 1, 64, 1);
+		JsonObject reward = NpcJson.object(json.get("reward"), "reward");
+		List<Reward> items = new ArrayList<>();
+		for (JsonElement e : NpcJson.array(reward, "items", 4)) {
+			JsonObject r = NpcJson.object(e, "a reward item");
+			items.add(new Reward(NpcJson.id(Content.string(r, "item", 128), "reward item"), NpcJson.whole(r, "count", 1, 64, 1)));
 		}
 
-		return new Contract(title, text, type, target, count, NpcJson.whole(json, "reward", 0, MAX_REWARD, 0), rewardItem, rewardCount, pos,
-			NpcJson.number(json, "radius", 2.0, 64.0, 8.0));
+		boolean repeatable = json.has("repeatable") && json.get("repeatable").isJsonPrimitive() && json.get("repeatable").getAsBoolean();
+		return new Contract(title, text, doneText, type, item, count, faction, landmark, kind, NpcJson.whole(reward, "eddies", 1, 99_999, 1),
+			List.copyOf(items), NpcJson.whole(json, "difficulty", 1, 3, 1), NpcJson.whole(json, "time_limit", 0, 86_400, 0), repeatable);
 	}
 }

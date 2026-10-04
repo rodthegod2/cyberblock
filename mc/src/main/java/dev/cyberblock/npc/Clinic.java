@@ -3,6 +3,8 @@ package dev.cyberblock.npc;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.cyber.CyberData;
 import dev.cyberblock.cyber.Ripperdoc;
+import dev.cyberblock.net.HostSession;
+import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.ServerNet;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -10,8 +12,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
-import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -20,42 +20,39 @@ import net.minecraft.world.effect.MobEffects;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The ripperdoc's and the medic's screens (megaplan task 7-N1). Ripperdoc: the {@code ripperdoc} catalogue (the role's
- * {@code implants}, or all of it) with Minecraft eddie prices, installed through the existing install (cyber/Ripperdoc; a player who
- * carries the implant pays nothing); an implant with a {@code risk} is a surgery: the timing bar (Surgery), paid only when it works,
- * and a failure costs health (never a life) and a 30 s debuff during which the ripperdoc will not operate again. Medic: heals Steve
- * to full for {@code heal_price} per missing heart. Server thread.
+ * The ripperdoc's and the medic's screens (megaplan task 7-N1). Ripperdoc: the role's {@code ripperdoc} catalogue with Minecraft
+ * eddie prices ({@code install_implant}: the plain implants; {@code surgery}: the ones with a surgery), installed through the existing
+ * install (cyber/Ripperdoc; a player who carries the implant pays nothing). A surgery is the timing bar (Surgery), paid only when it
+ * works; a miss costs the catalogue's damage (never a life) and its debuff, and the ripperdoc will not operate again until the debuff
+ * is over. Medic: Steve healed to full for {@code heal_per_heart} per missing heart; a host whose Cyberpunk is On also gets
+ * {@code {"t":"heal","id":N}} DOWN, for 7S's heal hook (V's burning, bleeding and poison removed). Server thread.
  */
 final class Clinic {
 	/** A surgery whose bar is running on the player's screen. */
-	record Pending(int npc, Implant implant, double lo, double hi, int period, long sentMs) {
+	record Pending(int npc, Catalogue.Offer offer, Catalogue catalogue, double lo, double hi, int period, long sentMs) {
 	}
 
 	private final Map<UUID, Pending> pending = new HashMap<>();
 	/** Until when (ms) a failed surgery's patient must recover before the next. */
 	private final Map<UUID, Long> recovering = new HashMap<>();
 
-	/** The implants this ripperdoc installs, in content id order. */
-	static List<Implant> catalogue(final NpcRole role) {
-		Map<Identifier, Implant> all = NpcContent.implants();
-		if (role.implants().isEmpty()) {
-			return List.copyOf(all.values());
+	/** The implants this ripperdoc installs: the plain ones with install_implant, the surgeries with surgery. */
+	static List<Catalogue.Offer> offers(final NpcRole role) {
+		Catalogue c = NpcContent.catalogue(role);
+		if (c == null) {
+			return List.of();
 		}
 
-		List<Implant> out = new ArrayList<>();
-		for (Identifier id : role.implants()) {
-			Implant i = all.get(id);
-			if (i != null) {
-				out.add(i);
-			}
-		}
-
-		return out;
+		return c.offers().stream().filter(o -> role.offers(o.surgery() ? "surgery" : "install_implant")).toList();
 	}
 
 	private boolean recovering(final ServerPlayer player) {
 		Long until = this.recovering.get(player.getUUID());
 		return until != null && System.currentTimeMillis() < until;
+	}
+
+	private static int price(final ServerPlayer player, final Catalogue.Offer offer) {
+		return Ripperdoc.owns(player, offer.cyberware()) ? 0 : offer.price();
 	}
 
 	final Visit.Service ripperdoc = new Visit.Service() {
@@ -70,12 +67,12 @@ final class Clinic {
 			int eddies = Eddies.shown(v.player);
 			boolean wait = Clinic.this.recovering(v.player);
 			List<NpcWire.Row> rows = new ArrayList<>();
-			for (Implant i : catalogue(v.role)) {
-				String id = i.cyberware().id();
+			for (Catalogue.Offer o : offers(v.role)) {
+				String id = o.cyberware().id();
 				boolean in = installed.contains(id);
-				int price = Ripperdoc.owns(v.player, i.cyberware()) ? 0 : i.price();
+				int price = price(v.player, o);
 				boolean on = !in && !wait && (price <= eddies || v.player.isCreative());
-				rows.add(new NpcWire.Row("i." + id, Cyberblock.ID + ":" + id, 1, "", "", price, in ? "installed" : i.surgery() ? "surgery" : "install", on));
+				rows.add(new NpcWire.Row("i." + id, Cyberblock.ID + ":" + id, 1, "", "", "", price, in ? "installed" : o.surgery() ? "surgery" : "install", on));
 			}
 
 			return rows;
@@ -83,18 +80,13 @@ final class Clinic {
 
 		@Override
 		public String press(final Visit v, final String row) {
-			Implant implant = null;
-			for (Implant i : catalogue(v.role)) {
-				if (row.equals("i." + i.cyberware().id())) {
-					implant = i;
-				}
-			}
-
-			if (implant == null) {
+			Catalogue.Offer offer = offers(v.role).stream().filter(o -> row.equals("i." + o.cyberware().id())).findFirst().orElse(null);
+			Catalogue catalogue = NpcContent.catalogue(v.role);
+			if (offer == null || catalogue == null) {
 				return "gone";
 			}
 
-			if (CyberData.installedIds(v.player).contains(implant.cyberware().id())) {
+			if (CyberData.installedIds(v.player).contains(offer.cyberware().id())) {
 				return "installed";
 			}
 
@@ -102,45 +94,41 @@ final class Clinic {
 				return "recovering";
 			}
 
-			int price = price(v, implant);
+			int price = price(v.player, offer);
 			if (!v.player.isCreative() && Eddies.balance(v.player) < price) {
-				v.say("poor");
+				v.say("no_funds", "implant", Ripperdoc.name(offer.cyberware()).getString(), "price", Integer.toString(price));
 				return "poor";
 			}
 
-			if (implant.surgery()) {
-				Clinic.this.startSurgery(v, implant);
+			if (offer.surgery()) {
+				Clinic.this.startSurgery(v, offer, catalogue);
 				return "";
 			}
 
-			return Clinic.this.install(v, implant, price) ? "ok" : "installed";
+			return Clinic.this.install(v, offer) ? "ok" : "installed";
 		}
 	};
 
-	private static int price(final Visit v, final Implant implant) {
-		return Ripperdoc.owns(v.player, implant.cyberware()) ? 0 : implant.price();
-	}
-
-	private boolean install(final Visit v, final Implant implant, final int price) {
+	private boolean install(final Visit v, final Catalogue.Offer offer) {
+		int price = price(v.player, offer);
 		if (!Eddies.pay(v.player, price)) {
 			return false;
 		}
 
-		boolean in = Ripperdoc.installAtRipperdoc(v.player, implant.cyberware());
-		Cyberblock.LOG.info("npc: {} had {} installed at {} for {} eddies", v.player.getPlainTextName(), implant.cyberware().id(), v.roleId, price);
-		v.say("thanks");
+		boolean in = Ripperdoc.installAtRipperdoc(v.player, offer.cyberware());
+		Cyberblock.LOG.info("npc: {} had {} installed by {} for {} eddies", v.player.getPlainTextName(), offer.cyberware().id(), v.roleId, price);
+		v.say("installed", "implant", Ripperdoc.name(offer.cyberware()).getString(), "price", Integer.toString(price));
 		return in;
 	}
 
-	private void startSurgery(final Visit v, final Implant implant) {
-		double[] zone = Surgery.zone(implant.risk(), ThreadLocalRandom.current());
-		int period = Surgery.period(implant.risk());
-		Pending p = new Pending(v.npc.getId(), implant, zone[0], zone[1], period, System.currentTimeMillis());
+	private void startSurgery(final Visit v, final Catalogue.Offer offer, final Catalogue catalogue) {
+		double[] zone = Surgery.zone(offer.window());
+		int period = Surgery.periodMs(offer.periodTicks());
+		Pending p = new Pending(v.npc.getId(), offer, catalogue, zone[0], zone[1], period, System.currentTimeMillis());
 		this.pending.put(v.player.getUUID(), p);
-		Cyberblock.LOG.info("npc: surgery for {} on {} (risk {}, zone {}..{}, {} ms)", v.player.getPlainTextName(), implant.cyberware().id(),
-			implant.risk(), String.format("%.2f", zone[0]), String.format("%.2f", zone[1]), period);
-		ServerNet.ui(v.player, NpcWire.T_SURGERY, NpcWire.surgery(new NpcWire.Surgery(p.npc(), implant.cyberware().id(), (float) zone[0],
-			(float) zone[1], period, Surgery.TIMEOUT_MS)));
+		Cyberblock.LOG.info("npc: surgery for {} on {} (window {} %, {} ms)", v.player.getPlainTextName(), offer.cyberware().id(), offer.window(), period);
+		ServerNet.ui(v.player, NpcWire.T_SURGERY, NpcWire.surgery(new NpcWire.Surgery(p.npc(), offer.cyberware().id(), (float) zone[0], (float) zone[1],
+			period, Surgery.TIMEOUT_MS)));
 	}
 
 	/** The player cut (or closed the bar: abort). The result code, null when no surgery of this NPC was running. */
@@ -151,6 +139,7 @@ final class Clinic {
 		}
 
 		if (abort) {
+			Cyberblock.LOG.info("npc: surgery on {} called off", v.player.getPlainTextName());
 			return "cancelled";
 		}
 
@@ -158,39 +147,41 @@ final class Clinic {
 		int ping = v.player.connection.latency();
 		long t = Surgery.elapsed(p.sentMs(), now, ping);
 		double at = Surgery.position(t, p.period());
-		boolean late = t > Surgery.TIMEOUT_MS + 2000L;
-		boolean ok = !late && Surgery.hit(at, p.lo(), p.hi());
+		boolean ok = t <= Surgery.TIMEOUT_MS + 2000L && Surgery.hit(at, p.lo(), p.hi());
 		Cyberblock.LOG.info("npc: surgery cut by {} at {} ({} ms, ping {} ms; zone {}..{}) -> {}", v.player.getPlainTextName(), String.format("%.3f", at), t, ping,
 			String.format("%.2f", p.lo()), String.format("%.2f", p.hi()), ok ? "ok" : "failed");
+		String implant = Ripperdoc.name(p.offer().cyberware()).getString();
 		if (ok) {
-			int price = price(v, p.implant());
-			if (!this.install(v, p.implant(), price)) {
-				v.say("poor");
+			if (!this.install(v, p.offer())) {
+				v.say("no_funds", "implant", implant, "price", Integer.toString(price(v.player, p.offer())));
 				return "poor";
 			}
 
-			v.say("surgery_ok");
+			v.say("surgery_ok", "implant", implant);
 			return "surgery_ok";
 		}
 
-		this.fail(v.player, p.implant());
-		v.say("surgery_fail");
+		this.fail(v.player, p.catalogue());
+		v.say("surgery_fail", "implant", implant);
 		return "surgery_fail";
 	}
 
-	/** A failed surgery: health lost (never death), a 30 s debuff, no implant and nothing paid. */
-	private void fail(final ServerPlayer player, final Implant implant) {
-		float damage = Surgery.damage(implant.risk(), player.getHealth());
+	/** A missed cut: the catalogue's damage (never below half a heart), its debuff; no implant and nothing paid. */
+	private void fail(final ServerPlayer player, final Catalogue catalogue) {
+		float damage = Surgery.damage(catalogue.failDamage(), player.getHealth());
 		if (damage > 0.0F) {
 			player.setHealth(player.getHealth() - damage);
 		}
 
+		int ticks = catalogue.debuffSeconds() * 20;
 		player.level().playSound(null, player.getX(), player.getY(), player.getZ(), SoundEvents.PLAYER_HURT, SoundSource.PLAYERS, 1.0F, 0.8F);
-		player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, Surgery.DEBUFF_TICKS, 0));
-		player.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, Surgery.DEBUFF_TICKS, 0));
-		player.addEffect(new MobEffectInstance(MobEffects.NAUSEA, 200, 0));
-		this.recovering.put(player.getUUID(), System.currentTimeMillis() + Surgery.DEBUFF_TICKS * 50L);
-		Cyberblock.LOG.info("npc: surgery on {} failed: -{} health, 30 s debuff", player.getPlainTextName(), damage);
+		if (ticks > 0) {
+			player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, ticks, 0));
+			player.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, ticks, 0));
+			this.recovering.put(player.getUUID(), System.currentTimeMillis() + ticks * 50L);
+		}
+
+		Cyberblock.LOG.info("npc: surgery on {} failed: -{} health, {} s debuff", player.getPlainTextName(), damage, catalogue.debuffSeconds());
 	}
 
 	final Visit.Service medic = new Visit.Service() {
@@ -202,8 +193,8 @@ final class Clinic {
 		@Override
 		public List<NpcWire.Row> rows(final Visit v) {
 			int hearts = hearts(v.player.getMaxHealth() - v.player.getHealth());
-			int price = hearts * v.role.healPrice();
-			return List.of(new NpcWire.Row("heal", "minecraft:golden_apple", Math.min(hearts, 64), "", "", price, "heal",
+			int price = hearts * v.role.healPerHeart();
+			return List.of(new NpcWire.Row("heal", "minecraft:golden_apple", hearts, "", "", "", price, "heal",
 				hearts > 0 && (price <= Eddies.shown(v.player) || v.player.isCreative())));
 		}
 
@@ -214,16 +205,22 @@ final class Clinic {
 				return "none";
 			}
 
-			int price = hearts * v.role.healPrice();
+			int price = hearts * v.role.healPerHeart();
 			if (!Eddies.pay(v.player, price)) {
-				v.say("poor");
+				v.say("no_funds", "price", Integer.toString(price));
 				return "poor";
 			}
 
 			v.player.setHealth(v.player.getMaxHealth());
 			v.player.level().playSound(null, v.player.getX(), v.player.getY(), v.player.getZ(), SoundEvents.PLAYER_LEVELUP, SoundSource.PLAYERS, 0.6F, 1.6F);
-			Cyberblock.LOG.info("npc: {} healed {} hearts for {} eddies", v.player.getPlainTextName(), hearts, price);
-			v.say("heal");
+			HostSession s = HostSessions.of(v.player);
+			boolean host = s != null && s.active();
+			if (host) {
+				s.send(Services.heal(s.newRequest(v.player.getUUID())));
+			}
+
+			Cyberblock.LOG.info("npc: {} healed {} hearts for {} eddies{}", v.player.getPlainTextName(), hearts, price, host ? " (heal DOWN to Cyberpunk)" : "");
+			v.say("healed", "price", Integer.toString(price));
 			return "healed";
 		}
 	};

@@ -42,7 +42,7 @@ public final class NpcScreen extends Screen {
 		Map.entry("take", "Take"), Map.entry("turn_in", "Turn in"), Map.entry("abandon", "Drop"), Map.entry("drink", "Drink"), Map.entry("ask", "Ask"),
 		Map.entry("heal", "Heal"), Map.entry("repair", "Repair"), Map.entry("repair_vehicle", "Repair"));
 	private static final Map<String, String> TABS = Map.of("buy", "Buy", "sell", "Sell", "implants", "Implants", "gigs", "Gigs", "drinks", "Drinks",
-		"rumours", "Rumours", "heal", "Clinic", "repair", "Repairs");
+		"rumours", "Rumours", "heal", "Clinic", "repair", "Repairs", "none", "Closed");
 	private static final Map<String, String> RESULTS = Map.ofEntries(Map.entry("ok", "Done"), Map.entry("sold", "Sold"),
 		Map.entry("poor", "Not enough eddies"), Map.entry("stock", "Sold out"), Map.entry("gone", "No longer offered"),
 		Map.entry("noitem", "You do not have the items"), Map.entry("busy", "Finish your gig first"), Map.entry("taken", "Gig taken"),
@@ -53,7 +53,8 @@ public final class NpcScreen extends Screen {
 		Map.entry("no_vehicle", "Get in your car in Cyberpunk first"), Map.entry("not_active", "Turn Cyberpunk on first"),
 		Map.entry("not_host", "Only a Cyberpunk host has a car to repair"), Map.entry("drank", "Cheers"));
 	private static final Set<String> GOOD = Set.of("ok", "sold", "taken", "done", "surgery_ok", "healed", "repaired", "repair_sent", "drank");
-	private static final Map<String, String> ROLES = Map.of("ripperdoc", "Ripperdoc", "vendor", "Vendor", "fixer", "Fixer", "bartender", "Bartender",
+	/** The English of each screen's role, when the role's title_key has no translation. */
+	private static final Map<String, String> ROLES = Map.of("ripperdoc", "Ripperdoc", "shop", "Vendor", "contracts", "Fixer", "bartender", "Bartender",
 		"medic", "Medic", "mechanic", "Mechanic");
 	private static int bad;
 	private NpcWire.Screen screen;
@@ -94,8 +95,8 @@ public final class NpcScreen extends Screen {
 	}
 
 	static Component title(final NpcWire.Screen s) {
-		return s.name().isEmpty() ? Component.translatableWithFallback("cyberblock.npc.role." + s.role(), ROLES.getOrDefault(s.role(), s.role()))
-			: Component.literal(s.name());
+		Component role = Component.translatableWithFallback(s.title().isEmpty() ? "cyberblock.role." + s.role() : s.title(), ROLES.getOrDefault(s.role(), s.role()));
+		return s.name().isEmpty() ? role : Component.translatableWithFallback("cyberblock.npc.named", "%s, %s", s.name(), role);
 	}
 
 	private void update(final NpcWire.Screen next) {
@@ -124,6 +125,10 @@ public final class NpcScreen extends Screen {
 
 	/** A row's name: its text, else the service's words, else its item's name. */
 	static Component rowName(final NpcWire.Row row, final ItemStack stack) {
+		if (!row.key().isEmpty()) {
+			return Component.translatableWithFallback(row.key(), row.text());
+		}
+
 		if (!row.text().isEmpty()) {
 			return Component.literal(row.text());
 		}
@@ -293,6 +298,6 @@ public final class NpcScreen extends Screen {
 
 		Identifier id = Identifier.tryParse(row.item());
 		Item item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
-		return item == null || item == Items.AIR ? new ItemStack(Items.BARRIER) : new ItemStack(item, Math.max(1, row.n()));
+		return item == null || item == Items.AIR ? new ItemStack(Items.BARRIER) : new ItemStack(item, Math.clamp(row.n(), 1, 64));
 	}
 }

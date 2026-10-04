@@ -15,33 +15,37 @@ import org.jspecify.annotations.Nullable;
  * decides everything: it sends what a screen shows, the client only shows it and names the row a button was pressed on.
  *
  * <pre>
- * cyberblock:ui  t:"npc"     {"e":812, "role":"vendor", "name":"Vendor", "line":"...", "eddies":120, "tab":"buy", "tabs":["buy","sell"],
- *                             "result":"", "rows":[{"id":"b0.1", "item":"minecraft:bread", "n":2, "text":"", "sub":"", "price":15,
- *                             "btn":"buy", "on":true}]}
- * cyberblock:ui  t:"surgery" {"e":812, "implant":"sandevistan", "lo":0.41, "hi":0.55, "period":1260, "timeout":15000}
+ * cyberblock:ui  t:"npc"     {"e":812, "role":"shop", "name":"Dax", "title":"cyberblock.role.vendor", "line":"...", "eddies":120,
+ *                             "tab":"buy", "tabs":["buy","sell"], "result":"",
+ *                             "rows":[{"id":"b1", "item":"minecraft:bread", "n":2, "key":"", "text":"", "sub":"", "price":15, "btn":"buy", "on":true}]}
+ * cyberblock:ui  t:"surgery" {"e":812, "implant":"sandevistan", "lo":0.41, "hi":0.59, "period":1600, "timeout":15000}
  * cyberblock:act t:"npc"     {"e":812, "a":"tab|do|cut|abort", "arg":"sell"}
  * </pre>
- * {@code e} is the NPC's entity id; {@code role} a screen of {@link NpcRole#SCREENS}; {@code name} ≤ 64 bytes; {@code line} (the
- * NPC's dialogue line, original content) ≤ 256 bytes; {@code eddies} the player's Minecraft eddies as the server counts them; at
- * most {@link #MAX_TABS} tab codes and {@link #MAX_ROWS} rows. A row: {@code id} ≤ 32 chars, {@code item} an item id for the icon
- * or "", {@code n} 0..64, {@code text} and {@code sub} literal content text (the item's own name when text is ""), {@code price}
- * eddies or -1 for none, {@code btn} the button's code ({@code cyberblock.npc.btn.<code>}), {@code on} whether it can be pressed.
- * {@code result} answers the last press ({@code cyberblock.npc.result.<code>}). The surgery's bar runs from 0 to 1 and back once per
- * {@code period} ms from the moment the client gets it; a cut inside {@code [lo, hi]} succeeds (the server times the cut itself).
+ * {@code e} is the NPC's entity id; {@code role} a screen of {@link NpcRole#SCREENS}; {@code name} the NPC's own name (≤ 64 bytes,
+ * "" for a Night City figure: the client shows the lang key {@code title}); {@code line} the NPC's dialogue line (original content,
+ * ≤ 256 bytes); {@code eddies} the player's Minecraft eddies as the server counts them; at most {@link #MAX_TABS} tab codes and
+ * {@link #MAX_ROWS} rows. A row: {@code id} ≤ 32 chars, {@code item} an item id for the icon or "", {@code n} 0..512 (the count
+ * drawn on the icon is capped at 64), {@code key} a lang key for the row's name with {@code text} as its English (both "": the
+ * item's name, or the button's service words), {@code sub} a second line of content text, {@code price} eddies or -1, {@code btn}
+ * the button's code ({@code cyberblock.npc.btn.<code>}), {@code on} whether it can be pressed. {@code result} answers the last press
+ * ({@code cyberblock.npc.result.<code>}). The surgery's marker runs from 0 to 1 and back once per {@code period} ms from the moment the
+ * client gets the bar; a cut inside {@code [lo, hi]} succeeds (the server times the cut itself).
  */
 public final class NpcWire {
 	public static final String T_NPC = "npc", T_SURGERY = "surgery", ACT = "npc";
-	public static final int MAX_TABS = 4, MAX_ROWS = 32, NAME_CAP = 64, LINE_CAP = 256, TEXT_CAP = 96, SUB_CAP = 160, ID_CAP = 32;
+	public static final int MAX_TABS = 4, MAX_ROWS = 32, NAME_CAP = 64, LINE_CAP = 256, TEXT_CAP = 96, SUB_CAP = 300, ID_CAP = 32, KEY_CAP = 96;
 	private static final Pattern CODE = Pattern.compile("[a-z_]{1,16}");
 	private static final Pattern RESULT = Pattern.compile("[a-z_]{0,16}");
+	private static final Pattern KEY = Pattern.compile("[a-z0-9_.]{0," + KEY_CAP + "}");
 	private static final Pattern ARG = Pattern.compile("[A-Za-z0-9_.:-]{0,32}");
 	private static final Pattern ITEM = Pattern.compile("([a-z0-9_.-]{1,64}:[a-z0-9_./-]{1,128})?");
 	public static final List<String> ACTS = List.of("tab", "do", "cut", "abort");
 
-	public record Row(String id, String item, int n, String text, String sub, int price, String btn, boolean on) {
+	public record Row(String id, String item, int n, String key, String text, String sub, int price, String btn, boolean on) {
 	}
 
-	public record Screen(int e, String role, String name, String line, int eddies, String tab, List<String> tabs, List<Row> rows, String result) {
+	public record Screen(int e, String role, String name, String title, String line, int eddies, String tab, List<String> tabs, List<Row> rows,
+		String result) {
 	}
 
 	public record Surgery(int e, String implant, float lo, float hi, int period, int timeout) {
@@ -85,6 +89,7 @@ public final class NpcWire {
 		m.addProperty("e", s.e());
 		m.addProperty("role", s.role());
 		m.addProperty("name", cap(s.name(), NAME_CAP));
+		m.addProperty("title", s.title());
 		m.addProperty("line", cap(s.line(), LINE_CAP));
 		m.addProperty("eddies", s.eddies());
 		m.addProperty("tab", s.tab());
@@ -98,6 +103,7 @@ public final class NpcWire {
 			o.addProperty("id", r.id());
 			o.addProperty("item", r.item());
 			o.addProperty("n", r.n());
+			o.addProperty("key", r.key());
 			o.addProperty("text", cap(r.text(), TEXT_CAP));
 			o.addProperty("sub", cap(r.sub(), SUB_CAP));
 			o.addProperty("price", r.price());
@@ -113,12 +119,13 @@ public final class NpcWire {
 	/** A {@code npc} json, or null when anything is missing or out of its limits. */
 	public static @Nullable Screen parseScreen(final JsonObject m) {
 		try {
-			String role = m.get("role").getAsString(), name = m.get("name").getAsString(), line = m.get("line").getAsString();
-			String tab = m.get("tab").getAsString(), result = m.get("result").getAsString();
+			String role = m.get("role").getAsString(), name = m.get("name").getAsString(), title = m.get("title").getAsString();
+			String line = m.get("line").getAsString(), tab = m.get("tab").getAsString(), result = m.get("result").getAsString();
 			int e = m.get("e").getAsInt(), eddies = m.get("eddies").getAsInt();
 			JsonArray tabsJson = m.getAsJsonArray("tabs"), rowsJson = m.getAsJsonArray("rows");
-			if (!NpcRole.SCREENS.contains(role) || !within(name, NAME_CAP) || !within(line, LINE_CAP) || !CODE.matcher(tab).matches()
-				|| !RESULT.matcher(result).matches() || eddies < 0 || tabsJson.size() > MAX_TABS || rowsJson.size() > MAX_ROWS) {
+			if (!NpcRole.SCREENS.contains(role) || !within(name, NAME_CAP) || !KEY.matcher(title).matches() || !within(line, LINE_CAP)
+				|| !CODE.matcher(tab).matches() || !RESULT.matcher(result).matches() || eddies < 0 || tabsJson.size() > MAX_TABS
+				|| rowsJson.size() > MAX_ROWS) {
 				return null;
 			}
 
@@ -134,18 +141,18 @@ public final class NpcWire {
 			List<Row> rows = new ArrayList<>();
 			for (JsonElement el : rowsJson) {
 				JsonObject o = el.getAsJsonObject();
-				Row r = new Row(o.get("id").getAsString(), o.get("item").getAsString(), o.get("n").getAsInt(), o.get("text").getAsString(),
-					o.get("sub").getAsString(), o.get("price").getAsInt(), o.get("btn").getAsString(), o.get("on").getAsBoolean());
-				if (r.id().isEmpty() || r.id().length() > ID_CAP || !ITEM.matcher(r.item()).matches() || r.n() < 0 || r.n() > 64
-					|| !within(r.text(), TEXT_CAP) || !within(r.sub(), SUB_CAP) || r.price() < -1 || r.price() > 1_000_000
-					|| !CODE.matcher(r.btn()).matches()) {
+				Row r = new Row(o.get("id").getAsString(), o.get("item").getAsString(), o.get("n").getAsInt(), o.get("key").getAsString(),
+					o.get("text").getAsString(), o.get("sub").getAsString(), o.get("price").getAsInt(), o.get("btn").getAsString(), o.get("on").getAsBoolean());
+				if (r.id().isEmpty() || r.id().length() > ID_CAP || !ITEM.matcher(r.item()).matches() || r.n() < 0 || r.n() > 512
+					|| !KEY.matcher(r.key()).matches() || !within(r.text(), TEXT_CAP) || !within(r.sub(), SUB_CAP) || r.price() < -1
+					|| r.price() > 1_000_000 || !CODE.matcher(r.btn()).matches()) {
 					return null;
 				}
 
 				rows.add(r);
 			}
 
-			return new Screen(e, role, name, line, eddies, tab, List.copyOf(tabs), List.copyOf(rows), result);
+			return new Screen(e, role, name, title, line, eddies, tab, List.copyOf(tabs), List.copyOf(rows), result);
 		} catch (RuntimeException ex) {
 			return null;
 		}

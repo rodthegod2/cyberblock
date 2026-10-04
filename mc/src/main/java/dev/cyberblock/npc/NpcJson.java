@@ -90,11 +90,6 @@ final class NpcJson {
 		return List.copyOf(out);
 	}
 
-	/** An optional array of ids. */
-	static List<Identifier> ids(final JsonObject json, final String key, final int max) {
-		return strings(json, key, max, 128).stream().map(s -> id(s, key)).toList();
-	}
-
 	/** An object element of an array, or a reason. */
 	static JsonObject object(final @Nullable JsonElement e, final String what) {
 		if (!(e instanceof JsonObject o)) {

@@ -1,32 +1,35 @@
 package dev.cyberblock.npc;
 
-import com.google.gson.JsonObject;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 
 /**
- * The mechanic's screen (megaplan task 7-N1). Every player: worn armour and elytra repaired to full for {@code repair_price} each. A
- * host whose Cyberpunk is On: the vehicle V sits in is repaired in Cyberpunk for {@code vehicle_price}, through {@code
- * {"t":"repair","what":"vehicle"}} DOWN to the host's game; the scripts' repair call (7S, verified there) answers nothing on the wire,
- * so the server logs the request and its runtime check: the session must be Active with V in a vehicle, else the row says so and the
- * log names the fallback (gear only). Server thread.
+ * The mechanic's screen (megaplan task 7-N1). {@code repair_gear}: worn armour and elytra repaired to full for {@code
+ * prices.repair_gear} each. {@code repair_vehicle}, for a host: the host's current Cyberpunk car repaired for {@code
+ * prices.repair_vehicle} through {@code {"t":"repair","id":N}} DOWN (7S's verified repair call, with its own runtime check and
+ * fallback in the scripts). The server's runtime check is the session: a host whose Cyberpunk is On; otherwise the row says why and
+ * the log names the fallback (gear repair only). Server thread.
  */
 final class Garage implements Visit.Service {
 	static final EquipmentSlot[] WORN = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
-	private static boolean loggedPath;
 
 	@Override
 	public List<String> tabs(final Visit v) {
 		return List.of("repair");
+	}
+
+	private static boolean host(final ServerPlayer player) {
+		HostSession s = HostSessions.of(player);
+		return s != null && s.state() != HostSession.State.NONE;
 	}
 
 	@Override
@@ -34,17 +37,19 @@ final class Garage implements Visit.Service {
 		int eddies = Eddies.shown(v.player);
 		boolean creative = v.player.isCreative();
 		List<NpcWire.Row> rows = new ArrayList<>();
-		HostSession s = HostSessions.of(v.player);
-		if (s != null && s.state() != HostSession.State.NONE) {
-			rows.add(new NpcWire.Row("vehicle", "minecraft:minecart", 1, "", "", v.role.vehiclePrice(), "repair_vehicle",
-				s.active() && s.vehicle() && (v.role.vehiclePrice() <= eddies || creative)));
+		if (v.role.offers("repair_vehicle") && host(v.player)) {
+			HostSession s = HostSessions.of(v.player);
+			rows.add(new NpcWire.Row("vehicle", "minecraft:minecart", 1, "", "", "", v.role.repairVehicle(), "repair_vehicle",
+				s != null && s.active() && (v.role.repairVehicle() <= eddies || creative)));
 		}
 
-		for (EquipmentSlot slot : WORN) {
-			ItemStack stack = v.player.getItemBySlot(slot);
-			if (!stack.isEmpty() && stack.isDamageableItem()) {
-				rows.add(new NpcWire.Row("slot." + slot.getName(), BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), 1, "", "",
-					v.role.repairPrice(), "repair", stack.isDamaged() && (v.role.repairPrice() <= eddies || creative)));
+		if (v.role.offers("repair_gear")) {
+			for (EquipmentSlot slot : WORN) {
+				ItemStack stack = v.player.getItemBySlot(slot);
+				if (!stack.isEmpty() && stack.isDamageableItem()) {
+					rows.add(new NpcWire.Row("slot." + slot.getName(), BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), 1, "", "", "",
+						v.role.repairGear(), "repair", stack.isDamaged() && (v.role.repairGear() <= eddies || creative)));
+				}
 			}
 		}
 
@@ -53,26 +58,27 @@ final class Garage implements Visit.Service {
 
 	@Override
 	public String press(final Visit v, final String row) {
-		if (row.equals("vehicle")) {
-			return this.vehicle(v);
+		if (row.equals("vehicle") && v.role.offers("repair_vehicle")) {
+			return vehicle(v);
 		}
 
 		for (EquipmentSlot slot : WORN) {
-			if (row.equals("slot." + slot.getName())) {
+			if (row.equals("slot." + slot.getName()) && v.role.offers("repair_gear")) {
 				ItemStack stack = v.player.getItemBySlot(slot);
 				if (stack.isEmpty() || !stack.isDamaged()) {
 					return "none";
 				}
 
-				if (!Eddies.pay(v.player, v.role.repairPrice())) {
-					v.say("poor");
+				String item = stack.getHoverName().getString();
+				if (!Eddies.pay(v.player, v.role.repairGear())) {
+					v.say("no_funds", "item", item, "price", Integer.toString(v.role.repairGear()));
 					return "poor";
 				}
 
 				stack.setDamageValue(0);
 				v.player.level().playSound(null, v.player.getX(), v.player.getY(), v.player.getZ(), SoundEvents.ANVIL_USE, SoundSource.PLAYERS, 0.6F, 1.2F);
-				Cyberblock.LOG.info("npc: {} had {} repaired for {} eddies", v.player.getPlainTextName(), slot.getName(), v.role.repairPrice());
-				v.say("repair");
+				Cyberblock.LOG.info("npc: {} had {} repaired for {} eddies", v.player.getPlainTextName(), slot.getName(), v.role.repairGear());
+				v.say("repaired", "item", item, "price", Integer.toString(v.role.repairGear()));
 				return "repaired";
 			}
 		}
@@ -80,43 +86,30 @@ final class Garage implements Visit.Service {
 		return "gone";
 	}
 
-	/** The host's Cyberpunk vehicle: the runtime check, then the DOWN request (logged with the path it took). */
-	private String vehicle(final Visit v) {
+	/** The host's Cyberpunk car: the session check, then the DOWN request (each path logged). */
+	private static String vehicle(final Visit v) {
 		HostSession s = HostSessions.of(v.player);
-		String check = vehicleCheck(s != null && s.state() != HostSession.State.NONE, s != null && s.active(), s != null && s.vehicle());
+		String check = vehicleCheck(s != null && s.state() != HostSession.State.NONE, s != null && s.active());
 		if (!check.isEmpty()) {
-			logPath(v.player.getPlainTextName() + ": " + check + " (fallback: armour and elytra repair only)");
+			Cyberblock.LOG.info("npc: mechanic: {} cannot have a Cyberpunk car repaired ({}; fallback: armour and elytra only)", v.player.getPlainTextName(), check);
 			return check;
 		}
 
-		if (!Eddies.pay(v.player, v.role.vehiclePrice())) {
-			v.say("poor");
+		if (!Eddies.pay(v.player, v.role.repairVehicle())) {
+			v.say("no_funds", "price", Integer.toString(v.role.repairVehicle()));
 			return "poor";
 		}
 
-		s.send(repairMessage());
-		Cyberblock.LOG.info("npc: mechanic: {} vehicle repair sent to Cyberpunk (repair DOWN, {} eddies)", v.player.getPlainTextName(), v.role.vehiclePrice());
-		logPath("vehicle repair goes to the host's Cyberpunk (repair DOWN; 7S applies the verified call)");
-		v.say("repair");
+		int id = s.newRequest(v.player.getUUID());
+		s.send(Services.repair(id));
+		Cyberblock.LOG.info("npc: mechanic: {} car repair {} sent to Cyberpunk (repair DOWN, {} eddies; the scripts check it and log their path)",
+			v.player.getPlainTextName(), id, v.role.repairVehicle());
+		v.say("repaired", "price", Integer.toString(v.role.repairVehicle()));
 		return "repair_sent";
 	}
 
-	/** Why a host's vehicle cannot be repaired now ("" when it can): not a host, Cyberpunk not On, V on foot. Pure. */
-	static String vehicleCheck(final boolean host, final boolean active, final boolean inVehicle) {
-		return !host ? "not_host" : !active ? "not_active" : !inVehicle ? "no_vehicle" : "";
-	}
-
-	static String repairMessage() {
-		JsonObject m = new JsonObject();
-		m.addProperty("t", "repair");
-		m.addProperty("what", "vehicle");
-		return m.toString();
-	}
-
-	private static void logPath(final String line) {
-		if (!loggedPath || line.startsWith("vehicle")) {
-			loggedPath = true;
-			Cyberblock.LOG.info("npc: mechanic path: {}", line.toLowerCase(Locale.ROOT));
-		}
+	/** Why a host's car cannot be repaired now ("" when it can): not a host, Cyberpunk not On. Pure. */
+	static String vehicleCheck(final boolean host, final boolean active) {
+		return !host ? "not_host" : !active ? "not_active" : "";
 	}
 }
