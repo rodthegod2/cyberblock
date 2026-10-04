@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "test",
+  "description": "The `test` content kind (megaplan task 1-N4): it exists so the loader, `/reload` and tools/content_check.py have something to run against. Later phases add one schema file per kind next to this one; see tools/content_check.py for the supported keywords.",
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$", "maxBytes": 128},
+    "colour": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+    "pos": {"type": "array", "items": {"type": "number", "minimum": -30000000, "maximum": 30000000}, "minItems": 3, "maxItems": 3}
+  },
+  "type": "object",
+  "required": ["schema", "name"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": 1},
+    "id": {"$ref": "#/$defs/id"},
+    "name": {"type": "string", "minLength": 1, "maxBytes": 64},
+    "colour": {"$ref": "#/$defs/colour"},
+    "pos": {"$ref": "#/$defs/pos"},
+    "count": {"type": "integer", "minimum": 0, "maximum": 1000},
+    "mode": {"enum": ["a", "b", "c"]},
+    "tags": {"type": "array", "items": {"type": "string", "maxBytes": 32}, "maxItems": 8, "uniqueItems": true},
+    "parent": {"allOf": [{"$ref": "#/$defs/id"}, {"x-ref": "test"}]}
+  }
+}
