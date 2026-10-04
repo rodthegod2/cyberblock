@@ -79,6 +79,8 @@ public class CyberblockClient implements ClientModInitializer {
 		dev.cyberblock.client.mode.spectate.CasterClient.init();
 		// Phase 8X: player hacks (the Intrusion warning, the glitch overlay, Ping's outlines for the hacker's team)
 		dev.cyberblock.client.mode.pvphack.PvpHackClient.init();
+		// Phase 8O: the Overlord Console on the Atlas (megaplan 8-O1)
+		dev.cyberblock.client.mode.overlord.OverlordClient.init();
 		ClientTickEvents.START_CLIENT_TICK.register(minecraft -> ClientInput.tickStart());
 		ClientTickEvents.END_CLIENT_TICK.register(CyberblockClient::tick);
 		// launcher players (plan retest3 M5): a "Play Cyberblock" button on the title screen

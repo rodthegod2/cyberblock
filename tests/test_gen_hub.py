@@ -177,6 +177,16 @@ def test_the_layout_checker_catches_a_station_that_is_not_its_block(hub, layout)
     assert any("station holo_table" in p for p in problems) and any("leaves the size" in p for p in problems)
 
 
+def test_the_overlord_console_station_is_an_empty_cell_on_the_match_dais_and_the_checker_catches_a_filled_one(hub, layout):
+    # 8-O1: the console is a block in the hub; the builder places it (8O's block), so the layout keeps the cell free
+    console, terminal = layout["stations"]["overlord_console"], layout["stations"]["match_terminal"]
+    assert console[1] == terminal[1] and abs(console[0] - terminal[0]) + abs(console[2] - terminal[2]) <= 3
+    assert not any("overlord_console" in s["block"] for s in layout["steps"])
+    filled = json.loads(json.dumps(layout))
+    filled["steps"].append({"from": console, "to": console, "block": "cyberblock:nc_metal"})
+    assert any("station overlord_console" in p for p in hub.layout_problems(filled))
+
+
 def test_the_spawn_faces_the_hall_and_the_exit_portal_is_behind_it(layout):
     spawn = layout["spawn"]
     assert spawn["yaw"] == 180 and spawn["pos"][2] > layout["areas"]["hall"]["to"][2]  # in the lobby, facing north into the hall

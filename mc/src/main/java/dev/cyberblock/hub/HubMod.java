@@ -63,8 +63,11 @@ public final class HubMod implements ModInitializer {
 		}
 
 		HubData data = HubData.get(server);
+		HubBuilder.Source source = HubBuilder.load(server);
 		if (data.built().isEmpty()) {
-			HubBuilder.build(hub, HubBuilder.load(server), data);
+			HubBuilder.build(hub, source, data);
+		} else if (data.built().equals(source.from())) {
+			HubBuilder.console(hub, source.layout(), true); // a station added after this hub was built (the Overlord Console)
 		}
 
 		Cyberblock.LOG.info("hub: the Afterlife is open (built from {})", data.built());

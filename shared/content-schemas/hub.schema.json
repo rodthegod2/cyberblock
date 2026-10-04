@@ -193,6 +193,17 @@
           },
           "minItems": 3,
           "maxItems": 3
+        },
+        "overlord_console": {
+          "description": "Optional: the Overlord Console's cell (megaplan 8-O1). It must be air in the steps; the builder places the console there facing the arrival point, and on a hub built before this station existed at the next server start.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": -512,
+            "maximum": 512
+          },
+          "minItems": 3,
+          "maxItems": 3
         }
       }
     },

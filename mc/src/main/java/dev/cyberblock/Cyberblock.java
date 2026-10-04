@@ -120,6 +120,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.mode.heat.ServerHeat.init(); dev.cyberblock.mode.downed.Downed.init(); dev.cyberblock.mode.spectate.Spectate.init();
 		// Phase 8X: hacking players (opt-in and war zones, the Intrusion warning with a short Breach, Firewall and Netrunner) (8-X1)
 		dev.cyberblock.mode.pvphack.PvpHacks.init();
+		// Phase 8O: the Overlord Console, Threat Points, fair spawns and events, the Auto-Director (megaplan 8-O1)
+		dev.cyberblock.mode.overlord.Overlord.init();
 		LOG.info("cyberblock loaded");
 	}
 
