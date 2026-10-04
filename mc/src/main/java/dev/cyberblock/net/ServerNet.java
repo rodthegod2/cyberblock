@@ -40,6 +40,7 @@ public final class ServerNet {
 		final UUID uuid;
 		final String name;
 		final int joinTick;
+		final RelayGuard guard;
 		boolean handshaken;
 		String mod = "", dll = "";
 		boolean wantHost;
@@ -49,6 +50,8 @@ public final class ServerNet {
 			this.uuid = uuid;
 			this.name = name;
 			this.joinTick = joinTick;
+			ServerConfig config = ServerConfig.get();
+			this.guard = new RelayGuard(config.rate(), config.sanityRadius(), System::currentTimeMillis);
 		}
 	}
 
@@ -178,19 +181,28 @@ public final class ServerNet {
 		return Payloads.fits(s, bytes) ? s : s.substring(0, bytes / 3);
 	}
 
+	/** Every up goes through the connection's RelayGuard (section 1.6) before the session and its listeners see it. */
 	private static void onUp(final ServerPlayer player, final Payloads.Up up) {
-		HostSession session = HostSessions.of(player);
-		if (session == null) {
+		UUID uuid = player.getUUID();
+		Conn conn = conns.computeIfAbsent(uuid, u -> new Conn(u, player.getPlainTextName(), player.level().getServer().getTickCount()));
+		HostSession session = HostSessions.of(uuid);
+		RelayGuard.Verdict verdict = conn.guard.check(session != null, up.t(), up.json(), player.getX(), player.getZ(),
+			session == null ? id -> false : session.requests()::issued);
+		if (verdict.kick() != null) {
+			Cyberblock.LOG.info("relay: {} kicked ({})", conn.name, session == null ? "guest up flood" : "overflow");
+			HostSessions.end(uuid, "overflow");
+			player.connection.disconnect(Component.translatableWithFallback("cyberblock.relay.kicked", verdict.kick()));
 			return;
 		}
 
-		JsonObject m = parse(up.json());
-		if (m == null || !m.has("t") || !up.t().equals(m.get("t").getAsString())) {
+		if (verdict.message() == null || session == null) {
 			return;
 		}
 
 		session.countUp();
-		HostSessions.receive(session, up.t(), m);
+		if (!HostSessions.receive(session, up.t(), verdict.message())) {
+			conn.guard.count(up.t(), "invalid", 1);
+		}
 	}
 
 	/** A host changes what guests may do to its game; the client hears the new bits in a fresh hs_ack. */
@@ -242,6 +254,11 @@ public final class ServerNet {
 
 		if (s.getTickCount() % 20 == 0) {
 			kickSilent(s);
+			for (Conn c : conns.values()) {
+				for (String line : c.guard.drainLog(c.name)) {
+					Cyberblock.LOG.info(line);
+				}
+			}
 		}
 
 		if (s.getTickCount() % 100 == 0) {
