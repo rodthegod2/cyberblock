@@ -131,7 +131,8 @@ public final class ServerHeat {
 		}
 
 		long now = s.getTickCount();
-		double gained = meter.feed(amount, now);
+		// the world's Heat scaling (9-S1, the settings screen's Difficulty tab) applies to the meter; chaos credit stays unscaled
+		double gained = meter.feed(amount * dev.cyberblock.settings.Difficulty.heatScale(), now);
 		if (cause != null) {
 			chaos.add(cause.getUUID(), amount);
 			int points = (int) Math.round(amount);
