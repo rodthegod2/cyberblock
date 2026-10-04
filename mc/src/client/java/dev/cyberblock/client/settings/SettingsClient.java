@@ -13,22 +13,34 @@ import net.minecraft.network.chat.Component;
 /**
  * The client half of {@code /cyberblock debug} (plan Q-B3) and {@code /cyberblock settings} (Q-B5): the chat screen's command is
  * handled here before it is sent, so both work on any server (the server registers the same literals for completion, and to answer
- * a client without the mod). Also the "Cyberblock..." button on the vanilla pause screen.
+ * a client without the mod). Also the "Cyberblock..." button on the vanilla pause screen, and the settings screen's server values, Performance
+ * values and screenshot tour (megaplan 9-S1).
  */
 public final class SettingsClient {
 	/** {@code /cyberblock settings} was typed: the screen opens on the next tick, once the chat screen has closed itself. */
 	private static boolean openSettings;
+	private static boolean toldPerformance;
 
 	private SettingsClient() {
 	}
 
 	public static void init() {
+		ServerValues.init();
+		PerformancePrefs.load();
+		SettingsShots.init();
 		ClientSendMessageEvents.ALLOW_COMMAND.register(SettingsClient::command);
 		ClientTickEvents.END_CLIENT_TICK.register(minecraft -> {
 			if (openSettings) {
 				openSettings = false;
 				CyberblockSettingsScreen.open(null);
 			}
+
+			if (!toldPerformance) {
+				toldPerformance = true;
+				performanceLine();
+			}
+
+			SettingsShots.tick(minecraft);
 		});
 		ScreenEvents.AFTER_INIT.register((minecraft, screen, width, height) -> {
 			if (screen instanceof PauseScreen pause && pause.showsPauseMenu()) {
@@ -36,6 +48,17 @@ public final class SettingsClient {
 					b -> CyberblockSettingsScreen.open(screen)).bounds(4, 4, 98, 20).build());
 			}
 		});
+	}
+
+	/**
+	 * Once, on the first client tick (every reader has registered by then): which parts of the game apply the Performance tab's values,
+	 * so a log shows whether Performance mode is really active.
+	 */
+	private static void performanceLine() {
+		PerformancePrefs p = PerformancePrefs.current();
+		String readers = PerformancePrefs.readers();
+		Cyberblock.LOG.info("settings: performance frame scale {} %, figure cap {} (config/cyberblock/performance.json); {}", p.scale(), p.figureCap(),
+			readers.isEmpty() ? "nothing applies them yet: frames export at full size and the figure cap stays the built-in one" : "applied by " + readers);
 	}
 
 	/** False when this client handled the command (it is not sent). */
