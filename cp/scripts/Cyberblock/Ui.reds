@@ -143,8 +143,6 @@ public abstract class CyberblockUi {
       guard += 1;
     }
     CyberblockMenus.UpdateBypass(game);
-    // Megaplan 7-S1: a vendor reply waiting for the stock, a trade waiting for V's money to change (VendorStock.reds).
-    CyberblockVendorStock.Pump(game);
     if IsDefined(GetPlayer(game)) {
       CyberblockInk.Apply(game, inkOn);
       CyberblockNotifications.Poll(game, inkOn);

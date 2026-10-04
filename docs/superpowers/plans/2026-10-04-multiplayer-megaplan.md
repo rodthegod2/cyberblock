@@ -469,7 +469,7 @@ style of `Cyberblock_SubmitNpcs`.
 | 4 | `Cyberblock_SubmitDevices(ids: array<Uint64>, classes: array<CName>, kinds: array<CName>, pos: array<Vector4>, yaws: array<Float>, sizes: array<Vector4>, states: array<Int32>, flags: array<Int32>) -> Void`, `Cyberblock_DeviceState(id: Uint64, state: Int32, flags: Int32, by: CName) -> Void`, `Cyberblock_DeviceResult(id: Int32, ok: Bool, reason: String) -> Void` (`Devices.reds`); events `devact` | new `devices.cpp`, `natives.cpp` | device stream and actions |
 | 5 | the NPC submit native gains parallel arrays `roles: array<CName>, factions: array<CName>, genders: array<Int32>, archetypes: array<CName>, anims: array<Int32>, vclass: array<CName>, colours: array<Int32>, hp: array<Float>` (new `Cyberblock_SubmitNpcs2`, the old one stays) (`Npcs.reds`) | `natives.cpp`, `world.cpp` | figure tags and animation flags |
 | 6 | events `rhack` (remote hack: name, target, id), `daemon` (Breach result); `Cyberblock_RemoteHackResult` reuses `Cyberblock_HackResult` | `natives.cpp` | interaction map actions |
-| 7 | `Cyberblock_ReplyVendor...` reuses the `Reply*` natives with `kind` `vendor`; events `hub` (flag), `buy`, `sell` | `ui_game.cpp` | vendor screens, hub |
+| 7 | `Cyberblock_ReplyVendor...` reuses the `Reply*` natives with `kind` `vendor`; event `hub` (flag). Buy and sell are **not** events (fixed 2026-10-04 at the 7S review): they are `uiact` `a` `buy`/`sell` (7-D1 `kUiActs`, read through `Cyberblock_UiAction*` in `Menus.reds`, traded by `Vendors.reds`, 7-V1) | `ui_game.cpp`, `world.cpp` | vendor screens, hub |
 | 8 | events `spawn` (record, pos, count, hostile, id), `heat` (tier), `attitude` (faction, delta), `glitch` (seconds); `Cyberblock_SpawnResult(id: Int32, ok: Bool, count: Int32, reason: String)` (`Spawns.reds`) | `natives.cpp` | Overlord, Heat, hacking players |
 
 ### 1.9 New DLL ↔ client wire messages, by phase (contract shapes; Phase 0 may narrow fields, never rename them)
@@ -490,7 +490,8 @@ style of `Cyberblock_SubmitNpcs`.
 | 6 | `daemon` | DOWN | `{id, dev, list:[daemon ids], strength 1..3}` |
 | 6 | `feed` | CP → MC, BOTH | `{w:128, h:128, px:"<base64 of 16384 map-colour bytes>"}` ≤ 1 per second while a feed is requested (`feedreq {on}` DOWN) |
 | 7 | `hub` | DOWN | `{in:bool}`: the DLL switches the compositor to full-screen Minecraft (the loading-cover path) and the scripts park V |
-| 7 | `reply` (ext) | UP | `kind:"vendor"`: groups = stock categories, lines = items (text, price in `state`) |
+| 7 | `reply` (ext) | UP | `kind:"vendor"` (7-V1's layout, pinned 2026-10-04): unrequested, `id` = the takeover counter; `pins[0]` = the vendor (kind `vendor` or `ripperdoc`, text = shop name); groups = stock categories (hash = category index, kind `buy`/`sell`, which the DLL files as `other`), `done:false` = the vendor's stock, `done:true` = V's items the vendor takes; lines = items (hash = low 32 bits of the item's TweakDB id, text = name, `state` = unit price in eddies) |
+| 7 | `uiact` (ext) | DOWN | `a:"buy"\|"sell"`: `hash` = the item's line hash (required, non-zero), `id` = the line's index on its side, `arg` = the quantity |
 | 8 | `spawn` / `spawnresult` | DOWN / UP | `{id, rec ∈ ganger, ncpd, maxtac, drone, turret, ..., p, n 1..8, hostile, faction}` / `{id, ok, n, reason}` |
 | 8 | `heat` | DOWN | `{tier 0..5}` (the host's real wanted level follows when Phase 0 e allows) |
 | 8 | `attitude` | DOWN | `{faction, toward ∈ friendly, neutral, hostile}` |
@@ -1884,7 +1885,7 @@ true Minecraft screens, and fast travel through the Holo-Table.
 | **7T** Holo-Table | the 3D miniature (client mesh from the shared map tiles and the replica), pins, layers, rotate/zoom/tilt, spawning from the map (landmarks, team bases, Spawn Beacons, join a friend), spawn rules, privacy, the AtlasScreen reuse | new `mc/src/main/java/dev/cyberblock/holo/**`, new `mc/src/client/java/dev/cyberblock/client/holo/**`, `client/ui/screen/AtlasScreen.java`, `AtlasView.java`, tests | Opus |
 | **7V** host vendors, ripperdoc, fast travel | Cyberpunk vendors and ripperdocs as Minecraft screens with the host's real stock and money (UI gap plan), fast travel via the Holo-Table | `client/ui/**` (except AtlasScreen/AtlasView), `cp/scripts/Cyberblock/Menus.reds`, `Restyle.reds`, new `Vendors.reds`, tests | Opus |
 | **7S** scripts | vendor stock replies, buy/sell, the hub park (Phase 3 `Park.reds`), mechanic repair and medic heal hooks, role readers | `cp/scripts/**` **except** 7V's three files | Opus |
-| **7D** DLL | `hub` (full-screen Minecraft through the loading-cover path), `reply kind:"vendor"`, `buy`/`sell` events, tests | `cp/plugin/**`, `cp/shaders/**` | Sonnet |
+| **7D** DLL | `hub` (full-screen Minecraft through the loading-cover path), `reply kind:"vendor"`, `buy`/`sell` `uiact` actions, tests | `cp/plugin/**`, `cp/shaders/**` | Sonnet |
 | **7A** art and data | `art/gen_hub.py` (the original hub layout as data), block art, `dialogue`, `contract`, `ripperdoc`, `landmark`, `npc_role`, `shop` defaults (all text original), lang | `art/**`, `assets/cyberblock/**`, `data/cyberblock/cyberblock/{dialogue,contract,ripperdoc,landmark,npc_role,shop,hub}/**`, schemas | Sonnet |
 | **7P** protocol, tools, docs | protocol rows, fake host `--vendor`, mpcheck `hub`, docs, Re-test 7 | as 3P | Sonnet |
 
@@ -1941,8 +1942,9 @@ Lang owner: **7A**. Merge order: 7D, 7S, 7V, 7A, 7N, 7H, 7T, 7P.
 **Done:** compile_check, `gradlew test build`; needsInGame: buy and sell at a gun shop as a host.
 
 ### 7-S1, 7-D1, 7-A1, 7-P1
-- [ ] Scripts: vendor stock reply and transactions, mechanic repair and medic heal hooks (verified), hub park reuse.
-  DLL: `hub` compositor mode, the vendor reply kind, `buy`/`sell` events, tests. Art and data: the hub layout generator,
+- [ ] Scripts: vendor stock reply and transactions (one path: 7V's `Vendors.reds` through `uiact buy|sell`), mechanic
+  repair and medic heal hooks (verified), hub park reuse. DLL: `hub` compositor mode, the vendor reply kind, `buy`/`sell`
+  `uiact` actions, tests. Art and data: the hub layout generator,
   blocks (Holo-Table, Spawn Beacon, hub portal, Match Terminal, leaderboard board), defaults for every content kind of this
   phase with original text, lang. Docs: HOW-TO-PLAY "Talking to Night City", "The Afterlife hub", "The Holo-Table",
   CHANGELOG, Re-test 7.
@@ -1951,7 +1953,9 @@ Lang owner: **7A**. Merge order: 7D, 7S, 7V, 7A, 7N, 7H, 7T, 7P.
 - **In-game checks (Re-test 7):** a guest buys from a vendor figure, takes a gig from a fixer and completes it, installs
   an implant at a ripperdoc (surgery minigame); you enter the hub: full-screen Minecraft, V parked (an NPC walks by and
   ignores V), leave: back in Night City; the Holo-Table shows everyone, spawn at a landmark (V teleported and Steve with
-  it), join a friend; buy and sell at a Cyberpunk gun shop through the Minecraft screen; fast travel from the Holo-Table.
+  it), join a friend; buy and sell at a Cyberpunk gun shop through the Minecraft screen; fast travel from the Holo-Table;
+  drop the link while in the hub (close or crash the Minecraft client), rejoin outside the hub: V is free (visible,
+  moves, camera works) and saving is allowed (log `hub: forgotten (Minecraft lost)` or `(the link dropped)`).
 - **What to try:** a night in the Afterlife; gigs; the Holo-Table spawn and "join a friend".
 - **Descopes and risks:** vendor stock for hosts depends on (f); the 3D table may fall back to 2D; parked V's "unseen"
   depends on (g); mechanic repair of Cyberpunk cars depends on a verified call.

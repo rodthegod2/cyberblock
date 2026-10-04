@@ -53,9 +53,9 @@
 // on detach (forgotten on session ready); a park is also released when Cyberblock stops being On.
 //
 // Phase 7 (megaplan 2026-10-04 task 7-S1): every tick with a player also runs CyberblockHub.Tick (Hub.reds: V parked
-// again while Steve is in the hub) and CyberblockServices.Tick (Services.reds: the mechanic's repair check); the hub,
-// the vendor stock (VendorStock.reds) and a pending repair are forgotten on session ready and end (the hub also on
-// detach, the vendor stock also when Cyberblock stops being On).
+// again while Steve is in the hub) and CyberblockServices.Tick (Services.reds: the mechanic's repair check); the hub and
+// a pending repair are forgotten on session ready and end (the hub also on detach, on Minecraft lost and whenever the
+// link is down: the DLL forgets its hub then too).
 
 enum CyberblockState {
   Off = 0,
@@ -182,7 +182,6 @@ public class CyberblockSystem extends ScriptableSystem {
     this.teleport.Forget();
     this.park.Forget();
     CyberblockHub.Forget("session ready");
-    CyberblockVendorStock.Forget();
     CyberblockServices.Forget();
     this.playerState.Clear(player);
     this.creative.Clear(player);
@@ -205,7 +204,6 @@ public class CyberblockSystem extends ScriptableSystem {
     this.teleport.Abort(this.GetGameInstance(), "session end");
     this.park.Release(this.GetGameInstance(), "session end");
     CyberblockHub.Forget("session end");
-    CyberblockVendorStock.Forget();
     CyberblockServices.Forget();
     CyberblockInk.RestoreFor(this.GetGameInstance(), "session end");
     this.hud.ClearMinecraft();
@@ -487,8 +485,11 @@ public class CyberblockSystem extends ScriptableSystem {
       // A parked V is never left frozen once Minecraft is no longer shown (Park.reds). Released before ClearWorld so
       // Buffs' cleanup decides V's invisibility last (CyberblockBuffs.ApplyInvisible).
       this.park.Release(this.GetGameInstance(), Equals(next, CyberblockState.Lost) ? "Minecraft lost" : "Cyberblock off");
-      // Megaplan 7-S1: Minecraft's vendor screen is gone with it (VendorStock.reds: its UI pump stops while Off).
-      CyberblockVendorStock.Forget();
+      // Megaplan 7-S1: a lost link ends the hub (the DLL forgot it at the drop; 7H says `hub in` again after the next
+      // hello if Steve is still there). Off keeps it: the link and the DLL's hub are unchanged, V is parked again at On.
+      if Equals(next, CyberblockState.Lost) {
+        CyberblockHub.Forget("Minecraft lost");
+      }
       CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
       CyberblockInk.RestoreFor(this.GetGameInstance(), Equals(next, CyberblockState.Lost) ? "lost" : "off");
     }
