@@ -24,6 +24,10 @@
 //     whatever the state, each refusing itself while not live (megaplan 2026-10-04 task 7-S1; Hub.reds, Services.reds).
 //     `repair` is not wired: no wire message or DLL event kind exists yet (the Phase 7 descope, Services.reds).
 //     A vendor's buy and sell are not events: they are `uiact buy|sell` (Menus.reds -> Vendors.reds, section 1.8).
+//   spawn -> CyberblockSpawns.OnEvent (answers every request with Cyberblock_SpawnResult, refusing while not live),
+//     heat -> CyberblockHeat.OnHeat, attitude -> CyberblockHeat.OnAttitude (both remembered whatever the state and
+//     applied while live), glitch -> CyberblockGlitch.OnEvent (only while live) (megaplan 2026-10-04 task 8-S1; Spawns.reds,
+//     Heat.reds, Glitch.reds; the event fields are listed in Natives.reds).
 //
 // While a save is written, CyberblockSystem does not call Tick at all: the events wait in the DLL's queue and are applied
 // after the save. While not live otherwise (Off, Lost, no player) Night City is left alone:
@@ -103,6 +107,14 @@ public class CyberblockEvents {
         } else if Equals(kind, n"repair") {
           // megaplan 7-S1: refuses itself while not live. Not wired yet: the DLL has no repair kind (Services.reds)
           CyberblockServices.OnEvent(game, live);
+        } else if Equals(kind, n"spawn") {
+          CyberblockSpawns.OnEvent(game, live); // megaplan 8-S1: answers every request, refusing while not live (Spawns.reds)
+        } else if Equals(kind, n"heat") {
+          CyberblockHeat.OnHeat(game, live); // megaplan 8-S1: kept, applied while live (Heat.reds)
+        } else if Equals(kind, n"attitude") {
+          CyberblockHeat.OnAttitude(game, live); // megaplan 8-S1: kept, applied while live (Heat.reds)
+        } else if Equals(kind, n"glitch") {
+          CyberblockGlitch.OnEvent(game, live); // megaplan 8-S1: only while live (Glitch.reds)
         } else if !live {
           if !CyberblockEvents.Refuse(kind) {
             dropped += 1;

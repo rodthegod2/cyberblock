@@ -57,6 +57,11 @@
 // repair is forgotten on session ready and end. The hub is kept through session ready, session end and detach while
 // linked (CyberblockHub.Keep: the DLL's hub survives a load, so V is parked again once On) and forgotten on Minecraft
 // lost and whenever the link is down (the DLL forgets its hub then too).
+//
+// Phase 8 (megaplan 2026-10-04 task 8-S1): every tick with a player also runs CyberblockSpawns.Tick and
+// CyberblockGlitch.Tick (not while a save is written) and CyberblockHeat.Tick (Spawns.reds, Glitch.reds, Heat.reds).
+// EndModes (Off, Lost, session end, detach) deletes the spawns, ends the glitch and undoes our wanted level and faction
+// attitudes; on session ready all three forget their state, and so does the death screen hand-off (Downed.reds).
 
 enum CyberblockState {
   Off = 0,
@@ -137,6 +142,7 @@ public class CyberblockSystem extends ScriptableSystem {
     this.teleport.Abort(this.GetGameInstance(), "detach");
     this.park.Release(this.GetGameInstance(), "detach");
     CyberblockHub.Keep("detach");
+    CyberblockSystem.EndModes(this.GetGameInstance(), "detach");
     CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
@@ -184,6 +190,10 @@ public class CyberblockSystem extends ScriptableSystem {
     this.park.Forget();
     CyberblockHub.Keep("session ready");
     CyberblockServices.Forget();
+    CyberblockSpawns.Forget();
+    CyberblockHeat.Forget();
+    CyberblockGlitch.Forget();
+    CyberblockDowned.Forget();
     this.playerState.Clear(player);
     this.creative.Clear(player);
     if IsDefined(player) {
@@ -206,6 +216,7 @@ public class CyberblockSystem extends ScriptableSystem {
     this.park.Release(this.GetGameInstance(), "session end");
     CyberblockHub.Keep("session end");
     CyberblockServices.Forget();
+    CyberblockSystem.EndModes(this.GetGameInstance(), "session end");
     CyberblockInk.RestoreFor(this.GetGameInstance(), "session end");
     this.hud.ClearMinecraft();
     this.hud.Unregister();
@@ -329,6 +340,13 @@ public class CyberblockSystem extends ScriptableSystem {
     // Megaplan 7-S1: V parked again while Steve is in the hub; the mechanic's repair check (Hub.reds, Services.reds).
     CyberblockHub.Tick(game, live);
     CyberblockServices.Tick(game);
+    // Megaplan 8-S1: Night City spawns (answers, hostility, limits), the server Heat tier and faction attitudes, the
+    // glitch timer (Spawns.reds, Heat.reds, Glitch.reds). Through a save the spawns and the glitch are left as they are.
+    if !this.saving {
+      CyberblockSpawns.Tick(game, player, live);
+      CyberblockGlitch.Tick(game, live);
+    }
+    CyberblockHeat.Tick(game, live);
     if live {
       CyberblockCollision.Stream(game, CyberblockFlight.Center(game, player));
     }
@@ -382,6 +400,14 @@ public class CyberblockSystem extends ScriptableSystem {
     CyberblockView.Clear(game);
     CyberblockLocomotion.Clear(game);
     CyberblockRemoteHacks.Clear(game); // megaplan 6-S1: held engines, locked doors, switched-off devices (RemoteHacks.reds)
+  }
+
+  // Megaplan 8-S1: what the Phase 8 modes put into Night City ends (Off, Lost, session end, detach; Session.reds does the
+  // same for a non-host session and also forgets the tier and factions). Saves leave it.
+  public static func EndModes(game: GameInstance, why: String) -> Void {
+    CyberblockSpawns.Clear(game, why);
+    CyberblockGlitch.Clear(game, why);
+    CyberblockHeat.Restore(game, why, false);
   }
 
   // Crouched as the game's own crouch indicator counts it: Crouch, CrouchDodge or Slide
@@ -492,6 +518,9 @@ public class CyberblockSystem extends ScriptableSystem {
       if Equals(next, CyberblockState.Lost) {
         CyberblockHub.Forget("Minecraft lost");
       }
+      // Megaplan 8-S1: the spawns go, the glitch ends, our wanted level and faction attitudes are undone (the tier and
+      // the factions are kept and applied again at On).
+      CyberblockSystem.EndModes(this.GetGameInstance(), Equals(next, CyberblockState.Lost) ? "Minecraft lost" : "Cyberblock off");
       CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
       CyberblockInk.RestoreFor(this.GetGameInstance(), Equals(next, CyberblockState.Lost) ? "lost" : "off");
     }

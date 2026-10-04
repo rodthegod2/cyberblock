@@ -59,6 +59,21 @@ public native func Cyberblock_EventText() -> String;    // the current event's s
 //              n"alarm" is a failed Breach (alarm and heat). Radius and duration per strength are the shipped daemon
 //              content's tiers (Daemons.reds); an unknown id is answered "unsupported daemon" while the rest still run.
 // Handled in RemoteHacks.reds and Daemons.reds.
+// ---- Phase 8 (megaplan 2026-10-04 section 1.8 row 8, section 1.9 rows `spawn` / `heat` / `attitude` / `glitch` with the
+// Phase 0 amendment item 8, task 8-S1) ----
+// Events, filled by the DLL (package 8D) from the DOWN messages, read with the getters above, handed over whatever the
+// state (each handler decides what it does while not live):
+//   n"spawn":    EventId = request id, EventName = rec (n"ganger" | n"ncpd" | n"ncpd_heavy" | n"maxtac" | n"drone"; no
+//                turret; anything else is answered "unsupported rec <rec>"), EventPos = the wire's `p` converted to
+//                Cyberpunk space (feet), EventAmount = `n` 1..8, EventFlag = `hostile`, EventText = `faction` ("" none).
+//                Answered with Cyberblock_SpawnResult (declared in Spawns.reds; sent UP as `spawnresult {id, ok, n,
+//                reason}`) whatever the state.
+//   n"heat":     EventAmount = `tier` 0..5.
+//   n"attitude": EventName = `faction`, EventText = `toward` (n"friendly" | "neutral" | "hostile"); the scripts also take
+//                the two the other way round, or EventAmount's sign (+1 friendly, 0 neutral, -1 hostile) for `toward`
+//                when EventText is empty (section 1.8 says "faction, delta").
+//   n"glitch":   EventAmount = `seconds` 0..10 (0 ends it).
+// Handled in Spawns.reds, Heat.reds and Glitch.reds.
 // Stance, menus, game mode
 public native func Cyberblock_SetStance(crouched: Bool, inAir: Bool, held: Bool) -> Void; // carried as cam.cr / cam.air / cam.held until changed
 public native func Cyberblock_SetMenu(open: Bool) -> Void;           // a Cyberpunk menu is open: input forwarding pauses; cam.menu
