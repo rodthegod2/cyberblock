@@ -1316,6 +1316,94 @@ behind the `hacks` toggle too: when the host turns it off, every guest watching 
 **Which way is it working? (for the test.)** The scripts and the plugin write **one line** for every Phase 6 feature that has a fallback: which
 traffic path, which blackout path, how vehicle calls are made, and whether the photo feed uses the compositor copy or the fallback. The server
 logs each remote hack it routed or refused and each Breach. [Re-test 6](TESTING-PLAN.md) lists what to search for.
+### Talking to Night City (Phase 7)
+With Phase 7 Night City's people are not only scenery: **right-click a figure that has a job** and Minecraft opens a screen with that
+person's own words and wares. Every line of dialogue is original text from the server's content files (`data/cyberblock/cyberblock/dialogue/`),
+picked by the person's job and what you are doing, so a server can change them with a datapack. Everything here is paid in **eddies**, the
+Minecraft item (`cyberblock:eddies`, and the Eddie Chip worth 100) of [Devices](#devices-phase-4); the host's real Cyberpunk money is a
+different thing and is only spent at Night City's own shops (see below).
+
+| Who | What the screen offers |
+|---|---|
+| **Ripperdoc** | the **implants** you know from [Cyberware](#cyberware-u-y-l-and-o), with eddie prices from the `ripperdoc` content. The strongest implants come with a short **surgery minigame**: a timing bar that you have to stop in the safe zone. A slip costs health and gives a **30 second debuff**; it never kills you |
+| **Vendor** | the shop's list (from the `shop` content): **buy and sell** items for eddies |
+| **Fixer** | **gigs**, from the `contract` content: take one and Minecraft tracks its objective like a quest; the reward arrives when it is done. A gig is one of four kinds: **deliver an item**, **defeat a number of hostiles of one faction**, **reach a landmark**, or **breach a device** |
+| **Bartender** | **rumours** about the city, and **drinks** that give a short potion-style buff |
+| **Medic** | **heals** Steve for eddies |
+| **Mechanic** | **repairs**: a guest's elytra and armour. For a host the plan is to repair V's current Cyberpunk car, which only works if the game call has been verified (see the limits below) |
+
+**Where a person's job comes from.** The game itself only tells the plugin a person's **vendor type** (a ripperdoc, a clothes seller, a gun shop),
+so vendors and ripperdocs get their screen from the game's data. **Fixers, bartenders, medics and mechanics are not in the game's data**:
+the server's `npc_role` and `skin_map` content decides which figure is which (the same files that give them their [skin](#figures-and-skins-phase-5)).
+The people of the [Afterlife hub](#the-afterlife-hub-phase-7) are always there, whoever is online, because the server puts them there itself.
+
+**Cyberpunk's own vendors and ripperdocs, as a Minecraft screen (hosts).** When you open a shop in your own game while Cyberblock is on, Minecraft
+now opens a **true Minecraft shop screen** instead of letting Cyberpunk's own show through: the stock is the shop's real stock, and a purchase or a sale
+goes into your game and is **paid with your real Cyberpunk money** (the amount in the HUD). One unit per click, up to ten with Shift+click; the list
+updates after every trade. The screen's **Night City vendor...** button opens Cyberpunk's own screen for the same shop (installing cyberware at a ripperdoc,
+buyback). If the plugin cannot read a shop's stock, or the shop belongs to a mission (the **ripperdoc of the prologue** and anything quest-critical), the
+usual Cyberpunk screen stays (the pass-through of [The Minecraft interface](#the-minecraft-interface)) and the log says so.
+**Fast travel** is offered in the [Holo-Table](#the-holo-table-phase-7): your game's fast-travel points, and a click fast travels you the game's own way.
+When the game does not allow it right now (a job locks fast travel, V is in a vehicle or in combat, a scene holds V) the list says so and a click only
+says "Not now".
+
+**Limits and fallbacks (Phase 0 and the in-game check).**
+- **Hosts' shop stock** depends on Phase 0 check (f): the stock is read from the shop's own screen data when you open it. If a shop's stock cannot be
+  read, that shop stays Cyberpunk's own screen (the written fallback); guests are never affected, their shops are the server's.
+- **The mechanic's repair of a Cyberpunk car** needs a game call nobody has verified yet; until it is, that part is switched off (the written
+  descope) and the mechanic repairs elytra and armour.
+- The check list is [Re-test: Wave C, Phase 7](TESTING-PLAN.md), P7-1 to P7-4 and P7-7.
+
+### The Afterlife hub (Phase 7)
+The **Afterlife** is a place of its own on the server, a Minecraft dimension (`cyberblock:afterlife`) with its own build: a bar with booths, a
+**ripperdoc corner**, a **row of shops**, the **Match Terminal**, **leaderboards** and the room of the [Holo-Table](#the-holo-table-phase-7). It is **always
+day and nothing hostile spawns**, and it is open **even when no host is online**: its people (the bartender, the ripperdoc, the vendors) are the server's, not a host's.
+The build is drawn from a layout file by a script (original, like all the art).
+
+**Getting in and out.** `/cyberblock hub` takes you there, and so does a **hub portal** block (placeable in the replica) or the **Cyberblock...**
+button of the pause screen. You leave **the same way** and are brought **back to where you came from**.
+
+**If you are a host (Cyberpunk linked):** the hub is a **full-screen Minecraft** place, so Cyberpunk's picture is hidden while you are in it, the way
+a loading screen covers the game. Meanwhile **V is parked**: invisible, invulnerable, unseen by the people of Night City (an NPC walks past and
+ignores V), the camera and movement locked and saving switched off. Leaving puts everything back: Night City comes back, V is released where it was.
+The cover only ever goes up over a parked V: you cannot go in while V is in a vehicle or held by a scene ("Not now"), and if your game still cannot park V
+you are taken straight back out with the reason. If your link drops, Cyberblock goes Off or the session ends while you are in the hub, Cyberpunk releases V
+by itself; nobody stays parked. When Cyberpunk comes back while you are still in the hub, the hub picks up again (full screen, V parked).
+Before you have typed `/login` on a server with a join password, none of the ways in works.
+**If you are a guest** there is nothing to switch: you simply walk in.
+
+**What is in it.**
+- **Shops** (hub vendors), the **bartender** and the **ripperdoc**: see [Talking to Night City](#talking-to-night-city-phase-7).
+- **Leaderboards**: boards that show the scoreboards of the server: **match wins**, **gigs done** and **chaos**.
+- The **Match Terminal**: where matches are made. It says "coming in Phase 8" until the modes arrive.
+- The **Holo-Table**, in its own room.
+
+**Limits.** The "unseen by NPCs" part of the park depends on Phase 0 check (g); when it is not available the plugin parks V by a fallback (a point near the
+nearest fast-travel point), and the log line `park: on ...` says which method was used.
+
+### The Holo-Table (Phase 7)
+The **Holo-Table** is a block in the hub. Right-click it for a **shared live 3D model of Night City**: a height model built from the server's shared
+map (the map every explored street adds to), coloured like the [Atlas](#the-atlas-map), with the replica's detail near the players. **Drag** to rotate
+it, **scroll** to zoom, tilt it as you like. If the 3D view costs too much frame time, it falls back to a **2D map** (the Atlas screen again).
+
+**Pins.** Every player is a pin on it: the player's head and name in the **team colour**, a **`[V]`** for linked players, and what they are doing (in a car,
+in combat, downed). Optional layers (switches on the screen) show NPC density, enemy hot spots, devices and events; the layers for Server Heat, Gang Wars
+territory, matches and Van drones fill in as those modes arrive.
+
+**Spawning from the map.** Click a place and spawn there:
+- the **district landmarks** (from the `landmark` content), your **team's base**, a **Spawn Beacon** (a block you can place) or **a friend** ("join a friend");
+- a **Minecraft-only player** is put in the replica at that spot; for a **linked player V is teleported** there (the plugin snaps V to the ground and waits
+  for the world to stream in) and Steve is placed to match, so both stay together. From the table in the hub you leave the hub first (Night City comes
+  back and V is released), then V is teleported;
+- you get **5 seconds of spawn protection**, then a **60 second cooldown** before the next spawn. You never spawn into a locked match zone, and inside a
+  match only your team's spawns are offered.
+- A host also gets its **fast-travel points** here (the Atlas itself stays a plain map): see [Talking to Night City](#talking-to-night-city-phase-7).
+
+**Privacy.** Outside matches everybody's pin is visible, and **"hide my pin"** hides yours. In a match you see your own team's pins plus anybody a scan
+revealed; spectators and the Overlord see all.
+
+**Limits.** The 3D table may fall back to 2D on a slow PC; a spawn that cannot find ground says why ("no ground" or "timeout") and moves nobody.
+The check list is [Re-test: Wave C, Phase 7](TESTING-PLAN.md), P7-5 and P7-6.
 
 ---
 
@@ -1397,6 +1485,7 @@ Useful commands: `/cyberblock kit`, `/cyberblock settings` (the [settings screen
 `/cyberblock guests devices <type> on|off` (which Night City devices guests may use, see [Devices](#devices-phase-4)),
 `/cyberblock guests hacks on|off` (whether guests may hack, breach and use remote hacks, see [The interaction map](#the-interaction-map-phase-6)),
 `/cyberblock body male|female` (your cyber skin: V or Lucy, see [Your cyber skin](#your-cyber-skin-phase-5)),
+`/cyberblock hub` (go to the Afterlife and back, see [The Afterlife hub](#the-afterlife-hub-phase-7)),
 `/cyberblock perks free on|off` (free skill points), `/gamemode creative`, `/gamemode survival`,
 `/xp add @s 30 levels`, `/effect clear @s`. Playing with friends: `/cyberblock guests <toggle> on|off` and, for server
 operators, `/cyberblock hosts`, `/cyberblock status` and `/cyberblock hosts add|remove <name>` (see

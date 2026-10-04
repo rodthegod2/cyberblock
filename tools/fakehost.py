@@ -111,6 +111,17 @@ Phase 6 mode (shared/protocol.md "Phase 6"; stands on the street like --devices,
              `unsupported daemon` (the others still run), and a device that is not in the table is `device gone`. `feedreq on:true` starts a `feed` (a 128 x 128
              test card of map colours that changes every frame) at once and once a second after, `on:false` stops it. A message whose id, target, hack, list or
              on has the wrong type is dropped.
+Phase 7 mode (shared/protocol.md "Phase 7"; combinable with the layer flags and the other modes except --ui (both send their own stats and screens); same
+--hold, --cmd, --port, --name and NPC resend; prints what Minecraft reports: `uiact`, `hub`, `park` and `vteleport`):
+  --vendor   a Night City gun shop and the hub: `stats` with V's money (5000 eddies), `screen pass:"vendor"` from 2 s to 8 s (`cam.menu` true) with the
+             shop's unrequested `reply kind:"vendor"` at 2 s (vendor session 3, the vendor as `pins[0]`, a "Pistols" buy group of a stack of two pistols and a
+             revolver, a "Your items" sell group with a broken radio), `uiact buy` and `sell` answered as the scripts would (`hash` and the side's index `id`,
+             `arg` units clamped to the stack and the money: a `notify money`, the new `stats` and the stock again; "Not enough eddies" and "The vendor cannot pay
+             for that" are warnings; a line no longer listed only resends the stock; a bought item joins the sell group at half its price) and `uiact atlasreq
+             arg:"fasttravel"` with the fast-travel list. `park` is answered with `parked` at once and `vteleport` 2 s later (as --replica), so a hub entry
+             (`hub in:true` then `park on:true`) and exit (`park on:false` then `hub in:false`) can be watched; the printed `hub` lines are what the server sent.
+  --park-refuse  with --vendor or --replica: `park on:true` is answered `parked ok:false` ("blocked (in a vehicle)"), as the scripts do when V cannot be
+             parked; `park on:false` is still ok.
 Multiplayer (shared/protocol.md "Multiplayer (Phase 1)"; tools/mpcheck.py starts one fake host per host client):
   --name NAME      prefixes every line this tool prints with `[NAME] `, so the output of two fake hosts can be told apart.
   --ver VERSION    the DLL version in the `hello` (`ver`, at most 32 characters). The default is this checkout's version, the
@@ -162,10 +173,10 @@ JUMP_AT, JUMP_FOR = 0.5, 0.1  # layer 4: seconds after the scenario starts, and 
 HACK_KEY, SKILLS_KEY, KILLED_AT = (1.0, 2.0), (2.5, 2.6), 3.0  # layer 6: (down, up) and the kill, in seconds
 CYBERWARE_KEYS, ACTIVATE_KEY = ((3.5, 3.6), (4.0, 4.1)), (4.5, 4.6)  # layer 6: U opens the Cyberware screen then closes it; Y is a tap
 PCELLS_AHEAD, MAX_PCELLS = 0.5, 64  # layer 4: seconds ahead of a projectile for its wall, and the `pcells` cap
-MODES = ("ui", "hacks", "seat", "view", "stairs", "replica", "devices", "figures", "hacks2")  # re-test 3: --ui, --hacks, --seat; Phase Q: --view, --stairs; Phase 3: --replica; Phase 4: --devices; Phase 5: --figures
+MODES = ("ui", "hacks", "seat", "view", "stairs", "replica", "devices", "figures", "hacks2", "vendor")  # re-test 3: --ui, --hacks, --seat; Phase Q: --view, --stairs; Phase 3: --replica; Phase 4: --devices; Phase 5: --figures; Phase 6: --hacks2; Phase 7: --vendor
 MODE_EVENTS = {"ui": {"uiact", "persp", "binds"}, "hacks": {"hack", "uiact", "persp", "binds"}, "seat": {"persp", "binds"},
                "view": {"prefs"}, "stairs": {"prefs"}, "replica": {"vteleport", "park"}, "devices": {"devact"}, "figures": set(),
-               "hacks2": {"devact", "rhack", "daemon", "feedreq"}}
+               "hacks2": {"devact", "rhack", "daemon", "feedreq"}, "vendor": {"uiact", "hub", "park", "vteleport"}}
 CAMERA_OWNERS = ("view", "stairs", "seat", "replica")  # the modes that drive the camera by themselves
 UI_MENU = (6.0, 7.0)  # --ui: seconds in which `cam.menu` is true (a pass-through menu is open)
 PERSPECTIVE_KEY = (8.0, 8.1)  # --ui: the F5 tap that makes Minecraft answer `persp`
@@ -910,6 +921,100 @@ def figures_npcs(t: float, ids_from: int | None = None) -> dict:
     return {"t": "npcs", "list": out}
 
 
+# ---- Phase 7: --vendor (shared/protocol.md "Phase 7"): a Night City gun shop and the hub messages, the way the scripts and the DLL send them ----
+# The host's money, the shop's unrequested stock (the protocol.md example: a stack of two pistols and a revolver to buy, a broken radio to sell), and the
+# answers to `uiact buy`, `sell` and `atlasreq arg:"fasttravel"`. Deterministic; the shop and item names are our own.
+VENDOR_MONEY = 5000  # V's eddies at the start (`stats.money`)
+VENDOR_CASH = 20000  # the vendor's own money: a sale it cannot pay for is refused
+VENDOR_SCREEN = (2.0, 8.0)  # seconds in which the shop's pass-through screen is open (`screen pass:"vendor"`, `cam.menu` true); the stock goes at the start
+VENDOR_SESSION = 3  # the reply `id`: the host's vendor session (one more for every vendor taken over; a resend after a trade keeps it)
+VENDOR_PIN = {"p": [-1201.5, 64.0, 845.0], "kind": "vendor", "name": "Watson Arms", "i": -1}  # pins[0]: the vendor itself
+VENDOR_GROUPS = ((2, "Pistols"), (9, "Your items"))  # (the category index as the group `hash`, its title) of the buy side and of the sell side
+VENDOR_STOCK = ((90210, "Kessler K9 pistol", 1200, 2), (90211, "Dune Runner revolver", 2400, 1))  # hash, name, unit price in eddies, how many
+VENDOR_BAG = ((4000000001, "Broken radio", 35, 1),)  # what V carries at the start: hash (above 2**31: a plain number), name, sell price, how many
+VENDOR_RESALE = 2  # a bought item sells back for its price divided by this
+VENDOR_ACTS = ("buy", "sell", "atlasreq")  # the `uiact` actions the fake shop answers (`atlasreq` only with `arg:"fasttravel"`)
+PARK_REFUSAL = "blocked (in a vehicle)"  # --park-refuse: the reason the DLL builds from the scripts' `park: on refused (in a vehicle)`
+
+
+def vendor_stats(money: int) -> dict:
+    return {"t": "stats", "money": money, "wanted": 0, "district": "Watson", "time": [14, 35], "speed": -1}
+
+
+def vendor_notify(kind: str, title: str, text: str) -> dict:
+    return {"t": "notify", "kind": kind, "title": title, "text": text, "secs": 3.0}
+
+
+def stack_text(name: str, count: int) -> str:
+    return name if count == 1 else f"{name} x{count}"
+
+
+class Shop:
+    """--vendor: V's money and bag against one gun shop. `reply` is the stock as the scripts and the DLL send it (`reply kind:"vendor"`); `act` carries out
+    a valid `uiact buy` or `sell` and returns what Cyberpunk would send: a `notify` (a deal is a money toast, a refusal a warning), the new `stats` and the
+    stock again."""
+
+    def __init__(self) -> None:
+        self.money, self.cash = VENDOR_MONEY, VENDOR_CASH
+        self.stock: dict[int, list] = {h: [name, price, n] for h, name, price, n in VENDOR_STOCK}  # hash -> [name, price, count]
+        self.bag: dict[int, list] = {h: [name, price, n] for h, name, price, n in VENDOR_BAG}  # hash -> [name, sell price, count]
+
+    @staticmethod
+    def side(items: dict[int, list]) -> list[int]:
+        """The hashes of one side's lines, in reply order (what `uiact.id` indexes)."""
+        return [h for h, (_, _, n) in items.items() if n > 0]
+
+    def reply(self) -> dict:
+        groups = []
+        for (ghash, title), items, sell in ((VENDOR_GROUPS[0], self.stock, False), (VENDOR_GROUPS[1], self.bag, True)):
+            groups.append({"hash": ghash, "title": title, "kind": "sell" if sell else "buy", "tracked": False, "done": sell,
+                           "lines": [{"hash": h, "text": stack_text(items[h][0], items[h][2]), "state": items[h][1]} for h in self.side(items)]})
+        return {"t": "reply", "kind": "vendor", "id": VENDOR_SESSION, "groups": groups, "pins": [dict(VENDOR_PIN)]}
+
+    def act(self, a: str, line: int, index: int, arg: str) -> list[dict]:
+        """`arg` units (1 when it is not a number) of the line at `index` of its side when its hash is `line`, else the first line with that hash."""
+        buy = a == "buy"
+        items = self.stock if buy else self.bag
+        hashes = self.side(items)
+        if not (0 <= index < len(hashes) and hashes[index] == line) and line not in hashes:
+            return [self.reply()]  # not in the current list: the scripts send the stock again
+        name, price, have = items[line]
+        count = max(1, min(int(arg) if arg.isdecimal() else 1, have))
+        if price > 0:
+            count = min(count, (self.money if buy else self.cash) // price)
+        if count < 1:
+            return [vendor_notify("warning", VENDOR_PIN["name"], "Not enough eddies" if buy else "The vendor cannot pay for that")]
+        items[line][2] -= count
+        what = name if count == 1 else f"{name} (x{count})"
+        if buy:
+            self.money, self.cash = self.money - price * count, self.cash + price * count
+            self.bag.setdefault(line, [name, price // VENDOR_RESALE, 0])[2] += count
+            toast = vendor_notify("money", f"Bought {what}", f"-{price * count} eddies")
+        else:
+            self.money, self.cash = self.money + price * count, self.cash - price * count
+            toast = vendor_notify("money", f"Sold {what}", f"+{price * count} eddies")
+        return [toast, vendor_stats(self.money), self.reply()]
+
+
+def fast_travel_reply(rid: int) -> dict:
+    """`uiact atlasreq arg:"fasttravel"`: the --ui Atlas sample with only its fast-travel points (each `i` its index: the host can fast travel now)."""
+    (atlas,) = ui_replies({"a": "atlasreq", "id": rid})
+    return {**atlas, "pins": [p for p in atlas["pins"] if p["kind"] == "fasttravel"]}
+
+
+def vendor_answers(shop: Shop, m: dict) -> list[dict] | None:
+    """The answers to Minecraft's `uiact` `m`: a trade for `buy` and `sell` (a `hash` of 1..2**32 - 1, `id` the side's index, `arg` the quantity) and the
+    fast-travel list for `atlasreq arg:"fasttravel"`. None for anything else, and for a bad message (the real DLL drops it)."""
+    a, line, rid, arg = m.get("a"), m.get("hash", 0), m.get("id", 0), m.get("arg", "")
+    whole_ = lambda x, lo, hi: isinstance(x, int) and not isinstance(x, bool) and lo <= x <= hi  # noqa: E731
+    if (m.get("t") != "uiact" or a not in VENDOR_ACTS or not whole_(rid, 0, 2**31 - 1) or not whole_(line, 0, 2**32 - 1)
+            or not isinstance(arg, str) or len(arg.encode("utf-8")) > 64):
+        return None
+    if a == "atlasreq":
+        return [fast_travel_reply(rid)] if arg == "fasttravel" else None
+    return shop.act(a, line, rid, arg) if line >= 1 else None
+
+
 class Body:
     """Where V is in layer 4: falls from FALL_FROM at FALL_SPEED until Minecraft reports `flight`, then follows it (and
     says `fly:true`, as the real host's drive does); a touchdown (`flight` inactive) or an ender pearl's `teleport` puts V
@@ -941,7 +1046,7 @@ class Cyberpunk:
     """Cyberpunk's side of layers 2-6 once the orbit is over: the timed messages it sends by itself and its answers."""
 
     def __init__(self, layers: frozenset[int], modes: frozenset[str] = frozenset(), ids_from: int | None = None, name: str | None = None,
-                 shift: int = 0, env_hours: int = 0) -> None:
+                 shift: int = 0, env_hours: int = 0, park_refuse: bool = False) -> None:
         self.layers, self.modes, self.mobdmg_sent = layers, modes, False
         self.shift, self.env_hours = shift, env_hours  # --replica: the street's x shift and the clock shift of a second host
         self.replica = "replica" in modes
@@ -967,6 +1072,10 @@ class Cyberpunk:
         self.car_before: dict[str, bool] = {}  # --hacks2: that field's value before the first hack on it
         self.clock = 0.0  # the scaled scenario time of the last frame (the figures a hack looks up move with it)
         self.dev_list_step, self.dev_npc_step = -1, 0  # --devices: the last full list (every DEVICE_LIST_EVERY s) and the last NPC door change
+        self.vendor = "vendor" in modes  # --vendor (Phase 7): the gun shop, the hub and park answers
+        self.shop = Shop()
+        self.hub = False  # --vendor: the last `hub.in` Minecraft sent
+        self.park_refuse = park_refuse  # --park-refuse: V cannot be parked (`parked ok:false` to every `park on:true`)
 
     def script(self) -> list[tuple[float, dict]]:
         """(seconds after the scenario starts, message), in time order: the layer 4 jump tap, the layer 6 keys and kill."""
@@ -989,6 +1098,9 @@ class Cyberpunk:
             events += [(0.0, {"t": "state", "active": True, "vehicle": True})]
         if "ui" in self.modes:
             events += ui_script()
+        if self.vendor:
+            events += [(0.0, vendor_stats(self.shop.money)), (VENDOR_SCREEN[0], {"t": "screen", "pass": "vendor"}), (VENDOR_SCREEN[0], self.shop.reply()),
+                       (VENDOR_SCREEN[1], {"t": "screen", "pass": ""})]
         if "view" in self.modes:
             glide = WALK_FOR + SPRINT_FOR
             events += [(WALK_FOR, key("sprint", True)), (glide, key("sprint", False)),
@@ -1210,6 +1322,8 @@ class Cyberpunk:
             cam["fp"] = False
         if "ui" in self.modes:
             cam["menu"] = UI_MENU[0] * SCRIPT_SCALE <= t < UI_MENU[1] * SCRIPT_SCALE
+        if self.vendor:
+            cam["menu"] = VENDOR_SCREEN[0] * SCRIPT_SCALE <= t < VENDOR_SCREEN[1] * SCRIPT_SCALE
         return cam
 
     def reply(self, m: dict) -> list[dict]:
@@ -1224,13 +1338,18 @@ class Cyberpunk:
                 ground = replica_ground(self.shift) if self.street else [{"t": "ground", "c": ground_slab()}]
                 ground += [device_ground(self.shift)] if self.devices else []  # a hit on a door the DLL did not filter out
                 devices = [devices_message(self.dev_table)] if self.devices else []  # the DLL starts over: the whole list again
-                return [{"t": "clear"}, *ground, *devices, *([self.npcs(0.0)] if self.layers or self.modes else [])]
+                money = [vendor_stats(self.shop.money)] if self.vendor else []  # the DLL's stats start over with the session too
+                return [{"t": "clear"}, *ground, *devices, *money, *([self.npcs(0.0)] if self.layers or self.modes else [])]
             return []
-        if self.replica and t == "vteleport" and (answer := teleport_answer(m)):
+        if t == "hub" and isinstance(m.get("in"), bool):
+            self.hub = m["in"]  # the real DLL switches the compositor: nothing to answer
+            return []
+        if (self.replica or self.vendor) and t == "vteleport" and (answer := teleport_answer(m)):
             self.delayed.append((time.perf_counter() + TELEPORT_DELAY * SCRIPT_SCALE, answer))  # `vteleported` after 2 s (due() lets V arrive)
             return []
-        if self.replica and t == "park" and isinstance(m.get("on"), bool):
-            return [{"t": "parked", "on": m["on"], "ok": True, "reason": ""}]
+        if (self.replica or self.vendor) and t == "park" and isinstance(m.get("on"), bool):
+            refused = self.park_refuse and m["on"]
+            return [{"t": "parked", "on": m["on"], "ok": not refused, "reason": PARK_REFUSAL if refused else ""}]
         if self.hacks2 and t in HACKS2_REQUESTS:
             return getattr(self, f"on_{t}")(m)
         if self.devices and t == "devact":
@@ -1241,6 +1360,8 @@ class Cyberpunk:
             self.prefs = clamp_prefs(m, self.prefs)
         if "view" in self.modes:
             self.body.update(m)
+        if self.vendor and t == "uiact":  # the shop's actions first, then the Atlas, journal and phone requests the same screens may make
+            return vendor_answers(self.shop, m) or ui_replies(m)
         if "ui" in self.modes and t == "uiact":
             return ui_replies(m)
         if "hacks" in self.modes and t == "hack" and isinstance(rid, int) and isinstance(m.get("target"), str) and m.get("hack") in HACK_UPLOAD:
@@ -1304,6 +1425,8 @@ async def listen(ws, host: Cyberpunk) -> None:
                 print(f"{host.tag}devresult: {json.dumps(reply)}")
             if host.hacks2 and reply.get("t") == "hackresult":  # --hacks2: the answers to `rhack` and `daemon`
                 print(f"{host.tag}hackresult: {json.dumps(reply)}")
+            if host.vendor and reply.get("t") in ("reply", "notify"):  # --vendor: what the shop answered (the stock and the toasts), for a harness or a person
+                print(f"{host.tag}vendor: {json.dumps(reply)}")
 
 
 async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, commands: Sequence[str], host: Cyberpunk) -> None:
@@ -1338,7 +1461,7 @@ async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, com
 async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str = shm.NAME, setup: bool = True,
               hold: float | None = None, commands: Sequence[str] = (), layers: frozenset[int] = frozenset({2}),
               modes: frozenset[str] = frozenset(), name: str | None = None, ver: str | None = None, ids_from: int | None = None,
-              wait_host: float | None = None, shift: int = 0, env_hours: int = 0) -> int:
+              wait_host: float | None = None, shift: int = 0, env_hours: int = 0, park_refuse: bool = False) -> int:
     """Returns the number of frame sets saved. `hold` (seconds) runs the scripts of `layers` (2 to 6) and of the re-test 3
     `modes` (ui, hacks, seat) after the orbit. Multiplayer: `name` prefixes every printed line, `ver` is the DLL version in
     the `hello` (None: no `ver`, a DLL from before Phase 1), `ids_from` numbers the NPCs (None: the protocol.md example ids)."""
@@ -1348,7 +1471,7 @@ async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str
         replica_ids(ids_from)
     if "figures" in modes:
         figure_ids(ids_from)
-    host = Cyberpunk(layers if hold is not None else frozenset(), modes if hold is not None else frozenset(), ids_from, name, shift, env_hours)
+    host = Cyberpunk(layers if hold is not None else frozenset(), modes if hold is not None else frozenset(), ids_from, name, shift, env_hours, park_refuse)
     async with connect(url, max_size=None) as ws:
         listener = asyncio.create_task(listen(ws, host))
         for m in (hello_message(ver), {"t": "view", "w": VIEW[0], "h": VIEW[1]},
@@ -1409,6 +1532,8 @@ def main() -> int:
     ap.add_argument("--devices", action="store_true", help="after the orbit: the Phase 4 device scene on the --replica street's ground (a door, a light, a camera, a vending machine, an elevator, a sealed quest door and a door a Night City person opens and closes every 4 s): `devices` lists, `devstate`, every `devact` answered with `devresult` (ok for the supported acts, unsupported for call/buy/breach); print devact/devresult")
     ap.add_argument("--figures", action="store_true", help="after the orbit: the Phase 5 `npcs` list with the figure tags: one person per skin group, every animation bit, cars with colours, a hostile police cruiser chasing a car; print nothing extra")
     ap.add_argument("--hacks2", action="store_true", help="after the orbit: the Phase 6 hacking scene: the --devices scene plus a Net Port, `rhack` (vehicle, camera and area hacks, range 50 m), `daemon` (Breach results) and `feedreq` (a 128 x 128 `feed` once a second) answered; print devact/devresult/rhack/daemon/feedreq/hackresult/feed")
+    ap.add_argument("--vendor", action="store_true", help="after the orbit: the Phase 7 gun shop and hub: `stats` with V's money, the shop's screen from 2 s to 8 s with its unrequested `reply kind:vendor` stock, `uiact buy` and `sell` answered (`notify`, `stats` and the stock again), `atlasreq arg:fasttravel` answered with the fast-travel list, `park` answered with `parked`, `vteleport` after 2 s; print uiact/hub/park/vteleport")
+    ap.add_argument("--park-refuse", action="store_true", help="--vendor or --replica: answer `park on:true` with `parked ok:false` (\"blocked (in a vehicle)\"), as the scripts do when V cannot be parked")
     ap.add_argument("--shift", type=int, default=None, metavar="DX", help="--replica, --devices or --hacks2: move the street, the figures, the devices and V DX blocks east (a second fake host that overlaps the first)")
     ap.add_argument("--env-hours", type=int, default=None, metavar="H", help="--replica: add H hours to the `env` clock and make the weather fog (a second host whose sky must never reach the server)")
     ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica, --devices: seconds to keep the link up and listen (default 10)")
@@ -1436,7 +1561,11 @@ def main() -> int:
     if args.hold < 0:
         ap.error("--hold must not be negative")
     if args.cmd and not (layers or modes):
-        ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica, --devices, --hacks2 or --figures")
+        ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica, --devices, --hacks2, --figures or --vendor")
+    if args.park_refuse and not {"vendor", "replica"} & modes:
+        ap.error("--park-refuse needs --vendor or --replica (the modes that answer `park`)")
+    if "vendor" in modes and "ui" in modes:
+        ap.error("--vendor and --ui each send their own stats and screens: use only one of them")
     if "figures" in modes and "replica" in modes:
         ap.error("--figures and --replica each send their own npcs list: use only one of them")
     if "figures" in modes and args.ids_from is not None and args.ids_from > 2**64 - FIGURE_COUNT:
@@ -1459,7 +1588,8 @@ def main() -> int:
         saved = asyncio.run(run(url, args.frames, args.out, args.fps, args.shm, not args.no_setup,
                                 args.hold if layers or modes else None, args.cmd, layers, modes, args.name, ver, args.ids_from,
                                 **({"wait_host": args.wait_host} if args.wait_host is not None else {}),
-                                **({"shift": args.shift} if args.shift else {}), **({"env_hours": args.env_hours} if args.env_hours else {})))
+                                **({"shift": args.shift} if args.shift else {}), **({"env_hours": args.env_hours} if args.env_hours else {}),
+                                **({"park_refuse": True} if args.park_refuse else {})))
     except (ConnectionError, TimeoutError, ConnectionClosed) as e:
         print(f"{tag}no connection to Minecraft at {url} ({e}); start the dev client first:\n"
               '  mc\\gradlew.bat runClient --args="--quickPlaySingleplayer cyberblock"', file=sys.stderr)

@@ -115,6 +115,11 @@ Everything works on Night City's real NPCs, vehicles and devices.
   Traffic Tool, the Net Map (blackouts, camera feeds, the host's photo feed) and the Comms Panel cover the rest of the interaction map
   ([redstone](docs/HOW-TO-PLAY.md#redstone-hacking-phase-6), [Breach](docs/HOW-TO-PLAY.md#breach-protocol-phase-6),
   [the map](docs/HOW-TO-PLAY.md#the-interaction-map-phase-6)).
+- **Talking to Night City, the Afterlife hub and the Holo-Table (Phase 7):** right-click a ripperdoc, vendor, fixer, bartender, medic or mechanic for a
+  Minecraft screen; `/cyberblock hub` takes you to the Afterlife (full-screen Minecraft, with V parked for linked players), where the Holo-Table shows a live 3D
+  model of the replica with every player on it and spawns you anywhere; hosts also get Cyberpunk's own shops as Minecraft screens
+  ([talking](docs/HOW-TO-PLAY.md#talking-to-night-city-phase-7), [hub](docs/HOW-TO-PLAY.md#the-afterlife-hub-phase-7),
+  [Holo-Table](docs/HOW-TO-PLAY.md#the-holo-table-phase-7)).
 
 ## Build from source
 ```

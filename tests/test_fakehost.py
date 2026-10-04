@@ -1594,3 +1594,214 @@ def test_figures_flags_are_checked(monkeypatch, argv):
 def test_figures_run_refuses_a_bad_id_start_before_it_connects(tmp_path):
     with pytest.raises(ValueError):
         asyncio.run(fakehost.run("ws://127.0.0.1:1", 1, tmp_path, modes=mode_set("figures"), ids_from=2**64 - 10, hold=0.1))
+
+
+# ---- Phase 7: --vendor (megaplan 7-P1): a gun shop's unrequested stock, buy, sell, the fast-travel list, and the hub's park and teleport answers ----
+from test_protocol_md import P7_EXAMPLES, hub_msg_ok, p7_example, p7_uiact_ok, vendor_reply_ok, vendor_sell_side  # noqa: E402  (a Phase 7 block of its own, so that it merges apart from the others)
+
+
+def uiact(a, hash_=0, rid=0, arg="1"):
+    return {"t": "uiact", "a": a, "arg": arg, "hash": hash_, "id": rid}
+
+
+def p7_valid(m):
+    """A message the fake shop sent obeys the documented limits (the vendor `reply` of Phase 7, the rest of re-test 3)."""
+    return vendor_reply_ok(m) if m["t"] == "reply" and m["kind"] == "vendor" else valid3(m)
+
+
+def lines(reply, sell):
+    return [(e["hash"], e["text"], e["state"]) for g in reply["groups"] if vendor_sell_side(g) == sell for e in g["lines"]]
+
+
+PISTOL, REVOLVER, RADIO = fakehost.VENDOR_STOCK[0][0], fakehost.VENDOR_STOCK[1][0], fakehost.VENDOR_BAG[0][0]
+
+
+def test_vendor_stock_is_the_protocol_example_and_valid():
+    shop = fakehost.Shop()
+    assert shop.reply() == p7_example("reply") and vendor_reply_ok(shop.reply()) and shop.reply()["id"] == fakehost.VENDOR_SESSION
+    assert lines(shop.reply(), False) == [(PISTOL, "Kessler K9 pistol x2", 1200), (REVOLVER, "Dune Runner revolver", 2400)]
+    assert lines(shop.reply(), True) == [(RADIO, "Broken radio", 35)] and RADIO > 2**31  # a hash above the signed range stays a plain number
+    assert shop.reply()["pins"] == [fakehost.VENDOR_PIN] and shop.reply()["pins"][0] is not fakehost.VENDOR_PIN  # a copy: nobody edits the constant
+    assert shop.money == fakehost.VENDOR_MONEY == 5000 and fakehost.vendor_stats(5000)["money"] == 5000 and p7_valid(fakehost.vendor_stats(5000))
+
+
+def test_buying_pays_the_price_resends_the_stock_and_the_item_joins_the_sell_side_at_half_the_price():
+    shop = fakehost.Shop()
+    toast, stats, stock = fakehost.vendor_answers(shop, uiact("buy", PISTOL, 0))
+    assert toast == {"t": "notify", "kind": "money", "title": "Bought Kessler K9 pistol", "text": "-1200 eddies", "secs": 3.0} and p7_valid(toast)
+    assert stats == fakehost.vendor_stats(3800) and p7_valid(stats) and shop.money == 3800 and stock == shop.reply() and p7_valid(stock)
+    assert lines(stock, False)[0] == (PISTOL, "Kessler K9 pistol", 1200) and (PISTOL, "Kessler K9 pistol", 600) in lines(stock, True)
+    toast, _, stock = fakehost.vendor_answers(shop, uiact("buy", PISTOL, 0))
+    assert shop.money == 2600 and [h for h, _, _ in lines(stock, False)] == [REVOLVER]  # sold out: the line goes, the revolver is index 0 now
+    assert (PISTOL, "Kessler K9 pistol x2", 600) in lines(stock, True)
+
+
+def test_the_quantity_is_clamped_to_the_stack_and_to_the_money():
+    shop = fakehost.Shop()
+    toast, stats, _ = fakehost.vendor_answers(shop, uiact("buy", PISTOL, 0, arg="10"))  # Shift: ten asked, two in the stack
+    assert toast["title"] == "Bought Kessler K9 pistol (x2)" and toast["text"] == "-2400 eddies" and shop.money == 2600
+    shop = fakehost.Shop()
+    shop.money = 2500
+    toast, _, _ = fakehost.vendor_answers(shop, uiact("buy", PISTOL, 0, arg="10"))  # two in the stack, money for two
+    assert toast["title"].endswith("(x2)") and shop.money == 100
+    shop = fakehost.Shop()
+    shop.money = 1300
+    toast, _, _ = fakehost.vendor_answers(shop, uiact("buy", PISTOL, 0, arg="2"))  # money for one
+    assert toast["title"] == "Bought Kessler K9 pistol" and shop.money == 100
+    for arg in ("", "abc", "0", "-3"):  # not a number (or none): one
+        shop = fakehost.Shop()
+        fakehost.vendor_answers(shop, uiact("buy", PISTOL, 0, arg=arg))
+        assert shop.money == 3800, arg
+
+
+def test_refusals_are_warnings_and_change_nothing():
+    shop = fakehost.Shop()
+    shop.money = 1199
+    (toast,) = fakehost.vendor_answers(shop, uiact("buy", PISTOL, 0))
+    assert toast == {"t": "notify", "kind": "warning", "title": "Watson Arms", "text": "Not enough eddies", "secs": 3.0} and shop.money == 1199 and p7_valid(toast)
+    assert lines(shop.reply(), True) == [(RADIO, "Broken radio", 35)]  # nothing was added to the bag
+    shop.cash = 34
+    (toast,) = fakehost.vendor_answers(shop, uiact("sell", RADIO, 0))
+    assert toast["kind"] == "warning" and toast["text"] == "The vendor cannot pay for that" and shop.money == 1199
+    shop.money = 1200
+    assert len(fakehost.vendor_answers(shop, uiact("buy", PISTOL, 0))) == 3 and shop.money == 0  # exactly enough is enough
+
+
+def test_a_line_that_is_gone_or_moved_is_found_by_its_hash_or_only_resends_the_stock():
+    shop = fakehost.Shop()
+    toast, _, _ = fakehost.vendor_answers(shop, uiact("buy", REVOLVER, 0))  # index 0 is the pistol: the hash wins
+    assert toast["title"] == "Bought Dune Runner revolver" and shop.money == 2600
+    assert fakehost.vendor_answers(shop, uiact("buy", REVOLVER, 1)) == [shop.reply()] and shop.money == 2600  # sold out: the stock again, no toast
+    assert fakehost.vendor_answers(shop, uiact("sell", PISTOL, 0)) == [shop.reply()]  # V carries no pistol: likewise
+    assert fakehost.vendor_answers(shop, uiact("buy", 12345, 0)) == [shop.reply()]
+
+
+def test_selling_earns_the_bag_price():
+    shop = fakehost.Shop()
+    toast, stats, stock = fakehost.vendor_answers(shop, uiact("sell", RADIO, 0, arg="10"))
+    assert toast == {"t": "notify", "kind": "money", "title": "Sold Broken radio", "text": "+35 eddies", "secs": 3.0} and stats == fakehost.vendor_stats(5035)
+    assert lines(stock, True) == [] and shop.cash == fakehost.VENDOR_CASH - 35  # the bag is empty: the sell group stays, with no lines
+    fakehost.vendor_answers(shop, uiact("buy", REVOLVER, 1))
+    fakehost.vendor_answers(shop, uiact("sell", REVOLVER, 0))
+    assert shop.money == 5035 - 2400 + 1200 and lines(shop.reply(), True) == []
+
+
+def test_the_fast_travel_list_has_only_the_points_with_their_index():
+    shop = fakehost.Shop()
+    (atlas,) = fakehost.vendor_answers(shop, uiact("atlasreq", rid=32, arg="fasttravel"))
+    assert atlas["kind"] == "atlas" and atlas["id"] == 32 and atlas["groups"] == [] and valid3(atlas)
+    assert [(p["kind"], p["name"], p["i"]) for p in atlas["pins"]] == [("fasttravel", "Watson Docks", 4)]
+    assert fakehost.vendor_answers(shop, uiact("atlasreq", rid=32, arg="")) is None  # the plain Atlas is --ui's (ui_replies)
+    assert fakehost.vendor_answers(shop, uiact("fasttravel", rid=4, arg="Watson Docks")) is None and shop.money == 5000
+
+
+@pytest.mark.parametrize("bad", [uiact("buy", 0), {"t": "uiact", "a": "sell", "hash": 0, "id": 1}, uiact("buy", 2**32), uiact("buy", -1), uiact("buy", 1.5),
+                                 uiact("buy", True), uiact("buy", PISTOL, -1), uiact("buy", PISTOL, 1.5), uiact("buy", PISTOL, 2**31), uiact("buy", PISTOL, arg=1),
+                                 uiact("buy", PISTOL, arg="x" * 65), uiact("vendorreq", rid=1), uiact("save"), uiact("cpmenu", arg="vendor"),
+                                 {"t": "uiact", "a": 5, "hash": 1}, {"t": "uiact"}, {"t": "hub", "in": True}, {"t": "persp", "mode": "first"}])
+def test_a_bad_or_foreign_uiact_gets_no_answer_from_the_shop(bad):
+    shop = fakehost.Shop()
+    assert fakehost.vendor_answers(shop, bad) is None and shop.money == 5000 and shop.reply() == p7_example("reply")
+
+
+def test_the_uiact_examples_of_the_protocol_are_what_the_shop_answers():
+    shop = fakehost.Shop()
+    for t, m in P7_EXAMPLES:
+        if t == "uiact" and m["a"] in ("buy", "sell") or (t == "uiact" and m["a"] == "atlasreq"):
+            assert p7_uiact_ok(m) and fakehost.vendor_answers(shop, m)  # every documented shop action is answered
+    assert shop.money == 5000 - 1200 + 35  # the examples buy one pistol and sell the radio (ten asked, one carried)
+
+
+def test_vendor_script_has_the_money_the_screen_window_the_stock_and_the_session_resend():
+    host = fakehost.Cyberpunk(frozenset(), frozenset({"vendor"}))
+    script = host.script()
+    assert [t for t, _ in script] == sorted(t for t, _ in script) and all(p7_valid(m) for _, m in script)
+    assert script == [(0.0, fakehost.vendor_stats(5000)), (2.0, {"t": "screen", "pass": "vendor"}), (2.0, p7_example("reply")), (8.0, {"t": "screen", "pass": ""})]
+    cam = lambda t: host.cam(1, t, {"t": "cam", "f": 0, "p": [0, 0, 0], "r": [0, 0, 0], "fov": 70, "fp": True, "pl": [0, 0, 0], "h": 0, "cr": False})  # noqa: E731
+    assert [cam(t)["menu"] for t in (0.0, 1.99, 2.0, 7.99, 8.0)] == [False, False, True, True, False] and valid3(cam(3.0))
+    got = host.reply(SESSION_HOST)
+    assert [m["t"] for m in got] == ["clear", "ground", "stats", "npcs"] and got[2] == fakehost.vendor_stats(5000)
+    host.reply(uiact("buy", PISTOL))
+    assert fakehost.Cyberpunk(frozenset(), frozenset({"seat"})).script()[0][1].get("t") != "stats"  # only --vendor sends the money
+    host.reply({**SESSION_HOST, "state": "none"})  # the server connection ended; a new one makes this DLL the host again
+    assert host.reply(SESSION_HOST)[2] == fakehost.vendor_stats(3800)  # a new server session hears the money V has now
+
+
+def test_vendor_mode_answers_the_shop_the_atlas_and_nothing_else():
+    host = fakehost.Cyberpunk(frozenset(), frozenset({"vendor"}))
+    assert [m["t"] for m in host.reply(uiact("buy", PISTOL))] == ["notify", "stats", "reply"]
+    (atlas,) = host.reply(uiact("atlasreq", rid=12, arg=""))
+    assert atlas["kind"] == "atlas" and atlas["id"] == 12 and len(atlas["pins"]) == 2  # the whole --ui Atlas sample
+    (points,) = host.reply(uiact("atlasreq", rid=13, arg="fasttravel"))
+    assert [p["i"] for p in points["pins"]] == [4]
+    assert host.reply(uiact("save")) == [] and host.reply(uiact("fasttravel", rid=4, arg="Watson Docks")) == [] and host.reply({"t": "binds", "keys": {}}) == []
+    assert fakehost.Cyberpunk(frozenset(), frozenset({"ui"})).reply(uiact("buy", PISTOL)) == []  # only --vendor answers the shop
+
+
+def test_vendor_hub_park_and_teleport_answers(monkeypatch):
+    monkeypatch.setattr(fakehost.time, "perf_counter", lambda: 100.0)
+    host = fakehost.Cyberpunk(frozenset(), frozenset({"vendor"}))
+    assert host.reply({"t": "hub", "in": True}) == [] and host.hub is True and host.reply({"t": "hub", "in": False}) == [] and host.hub is False
+    assert host.reply({"t": "hub", "in": "yes"}) == [] and host.hub is False  # a bad `hub` changes nothing
+    assert host.reply({"t": "park", "on": True}) == [{"t": "parked", "on": True, "ok": True, "reason": ""}] and p3_valid(host.reply({"t": "park", "on": False})[0])
+    assert host.reply({"t": "park", "on": "yes"}) == []
+    ask = {"t": "vteleport", "id": 9, "p": [4.5, 64.0, -2.0], "yaw": 0.0, "why": "holo"}
+    assert host.reply(ask) == [] and host.due(101.9) == [] and host.due(102.0) == [{"t": "vteleported", "id": 9, "ok": True, "reason": "", "p": [4.5, 64.0, -2.0]}]
+    assert fakehost.Cyberpunk(frozenset(), frozenset({"seat"})).reply({"t": "hub", "in": True}) == []  # other modes ignore it
+
+
+def test_park_refuse_answers_a_park_on_with_the_scripts_refusal():
+    for mode in ("vendor", "replica"):
+        host = fakehost.Cyberpunk(frozenset(), frozenset({mode}), park_refuse=True)
+        (no,) = host.reply({"t": "park", "on": True})
+        assert no == {"t": "parked", "on": True, "ok": False, "reason": "blocked (in a vehicle)"} and p3_valid(no)
+        assert host.reply({"t": "park", "on": False}) == [{"t": "parked", "on": False, "ok": True, "reason": ""}]  # a release is always fine
+
+
+def test_vendor_mode_plays_the_shop_over_the_link_and_prints_what_minecraft_asks(tmp_path, exporting, quick, capsys):
+    asks = [uiact("buy", PISTOL, 0), uiact("sell", RADIO, 0, arg="10"), uiact("atlasreq", rid=32, arg="fasttravel"), uiact("fasttravel", rid=4, arg="Watson Docks")]
+    hub, park = {"t": "hub", "in": True}, {"t": "park", "on": True}
+    react = lambda m: [SESSION_HOST] if m["t"] == "hud" else []  # noqa: E731
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[hub, park, *asks], react=react, hold=0.6, modes=mode_set("vendor"))
+    assert all(p7_valid(m) for m in got if m["t"] in ("reply", "notify", "stats", "screen", "cam", "parked"))
+    vendor = [m for m in got if m["t"] == "reply" and m["kind"] == "vendor"]
+    assert len(vendor) == 3 and {m["id"] for m in vendor} == {fakehost.VENDOR_SESSION}  # two resends after the trades and the unrequested one at 2 s
+    assert [m["kind"] for m in got if m["t"] == "notify"] == ["money", "money"] and [m["id"] for m in got if m["t"] == "reply" and m["kind"] == "atlas"] == [32]
+    money = [m["money"] for m in got if m["t"] == "stats"]  # the asks arrive during the orbit, so the script's first `stats` already has the new balance
+    assert 3800 in money and money[-1] == 3835 and set(money) <= {5000, 3800, 3835}
+    assert [m["pass"] for m in got if m["t"] == "screen"] == ["vendor", ""] and [m for m in got if m["t"] == "parked"] == [{"t": "parked", "on": True, "ok": True, "reason": ""}]
+    cams = hold_cams(got)
+    menu = [i for i, m in enumerate(cams) if m["menu"]]
+    assert menu and menu == list(range(menu[0], menu[-1] + 1)) and not cams[0]["menu"] and not cams[-1]["menu"]
+    lines_ = printed(capsys)
+    assert lines_["hub"] == [hub] and lines_["park"] == [park] and lines_["uiact"] == asks
+    assert {m["t"] for m in lines_["vendor"]} == {"reply", "notify"}  # what the shop answered (the stats lines carry no vendor prefix)
+
+
+def test_hub_park_and_uiact_are_printed_only_with_the_vendor_mode(tmp_path, exporting, capsys):
+    run_against_fake_minecraft(tmp_path, 30, exporting, replies=[{"t": "hub", "in": True}, uiact("buy", PISTOL)], hold=0.1, modes=mode_set("seat"))
+    out = printed(capsys)
+    assert "hub" not in out and "uiact" not in out and "vendor" not in out
+
+
+def test_vendor_and_park_refuse_flags_pick_the_mode_and_are_checked(monkeypatch):
+    seen = []
+
+    async def fake_run(*args, **kwargs):
+        seen.append((args, kwargs))
+        return 1
+
+    monkeypatch.setattr(fakehost, "run", fake_run)
+    for argv in (["--vendor"], ["--vendor", "--hold", "3", "--cmd", "say hi", "--layer2"], ["--vendor", "--replica"], ["--vendor", "--park-refuse"],
+                 ["--replica", "--park-refuse"]):
+        monkeypatch.setattr("sys.argv", ["fakehost", *argv])
+        assert fakehost.main() == 0
+    assert [a[9] for a, _ in seen] == [frozenset({"vendor"}), frozenset({"vendor"}), frozenset({"vendor", "replica"}), frozenset({"vendor"}), frozenset({"replica"})]
+    assert [k for _, k in seen] == [{}, {}, {}, {"park_refuse": True}, {"park_refuse": True}] and all(len(a) == 13 for a, _ in seen)
+    for bad in (["--vendor", "--ui"], ["--park-refuse"], ["--seat", "--park-refuse"]):
+        monkeypatch.setattr("sys.argv", ["fakehost", *bad])
+        with pytest.raises(SystemExit) as e:
+            fakehost.main()
+        assert e.value.code == 2, bad
+    assert "vendor" in fakehost.MODES and fakehost.MODE_EVENTS["vendor"] == {"uiact", "hub", "park", "vteleport"}
+    assert all(hub_msg_ok(m) for t, m in P7_EXAMPLES if t == "hub")

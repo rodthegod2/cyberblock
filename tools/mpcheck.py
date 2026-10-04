@@ -39,6 +39,12 @@ Scenarios (megaplan task 1-T2). Each one starts what it needs on its own test po
                 sends the alarm (`daemon` with exactly `["alarm"]`), `guests hacks off` blocks the guest's Breach and `guests hacks on` brings it back, and the
                 Net Port goes with the session. Needs the devtools command `/cyberblock test breach <x> <y> <z> solve|fail` (task 6-B1: the same server path as
                 a right-click on the Net Port and the picks of a solver or of a player who only picks wrong), run as the guest
+  hub           Phase 7, on a server with the join password: a locked host's and a locked guest's `/cyberblock hub` change nothing; after /login, one fake
+                host `--vendor` and a guest: `/cyberblock hub` sends the host's DLL `hub in:true` and then `park on:true` (once each), puts Steve in
+                `cyberblock:afterlife` and the DLL's `parked` reaches the hub, a guest's trip sends the DLL nothing, leaving sends `park on:false` and then
+                `hub in:false` and puts Steve back; in the hub a dropped link ends the session, a returning link hears the entering pair again, and a
+                Cyberpunk that refuses the park (`--park-refuse`) has the host taken out of the hub; the relay drops nothing. RCON's `execute as` carries
+                operator permission, and the pause-screen button and the portal are not driven: Re-test P7-5 checks those with a non-operator guest
   joinpassword  a server with a join password: a host waits as a guest until `/login`, then hosts at once; after a reconnect it
                 is remembered; five wrong passwords kick; the password is in no log (it is random per run, like the RCON one)
 
@@ -49,7 +55,8 @@ port 25600 and `Local\\CyberblockFrame` are never used. The scenarios assume the
 `-Dcyberblock.devtools=true`): `/cyberblock test hit <host> <id> <dmg>`, `/cyberblock test explode <x> <y> <z> <power>` and
 `/cyberblock test place <x> <y> <z> <block>` (Phase 4's `devices` scenario adds `/cyberblock test device <x> <y> <z> <act>`: the same
 use of the device block that a right-click is; Phase 6's `breach` scenario adds `/cyberblock test breach <x> <y> <z> solve|fail`, a guest's Breach on
-the Net Port)
+the Net Port; Phase 7's `hub` scenario uses the real player command `/cyberblock hub`, run again or as `/cyberblock hub leave` to come back, and reads
+each player's `Dimension` with `data get entity`)
 run as the guest with `/execute as CbGuest1 run ...` (from the RCON console alone there is no player behind them, and an action
 with no player behind it is always allowed), and `/execute as <host> run cyberblock guests <toggle> on|off` flips that host's
 toggle. They also assume that `runServer` and `runClient` honour `-Pcyberblock.runDir` (task 1-L1) and that the dedicated
@@ -92,10 +99,10 @@ CLIENT_BASE, SERVER_BASE = 25754, 25914  # package 1T (megaplan section 1.15): c
 FRAME_PREFIX = "Local\\CyberblockFrame1T"  # + H (host client) or G (guest client), + the client number from 2 on
 OFFLINE_NAMES = ("CbHost1", "CbHost2", "CbGuest1", "CbGuest2")
 SCENARIOS = ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup", "devices",
-             "figures", "breach")
+             "figures", "breach", "hub")
 # + SERVER_BASE; scenarios run one after another, so two may share a port
 SERVER_SLOT = {"singleplayer": 0, "guest": 0, "versions": 1, "flood": 2, "reconnect": 3, "twohosts": 4, "joinpassword": 1, "replica": 0, "twohosts2": 2,
-               "meetup": 1, "devices": 3, "figures": 3, "breach": 3}
+               "meetup": 1, "devices": 3, "figures": 3, "breach": 3, "hub": 2}
 FORBIDDEN_PORTS = {25600}  # the user's own Minecraft <-> Cyberpunk link
 GRADLE_HEAP = "-Dorg.gradle.jvmargs=-Xmx1536m"
 # seconds: a server starting, a client opening its link port, a join, an effect to show up, "this must not happen"
@@ -231,7 +238,7 @@ def server_argv(repo: Path, *, port: int, run_dir: Path) -> list[str]:
 
 def fakehost_argv(*, port: int, name: str, ver: str | None, frame: str, out_dir: Path, ids_from: int | None = None, hold: float = HOLD_S,
                   layers: Iterable[int] = (2,), modes: Iterable[str] = (), cmds: Iterable[str] = (), no_setup: bool = True, frames: int = 60,
-                  wait_host: float | None = None, shift: int = 0, env_hours: int = 0) -> list[str]:
+                  wait_host: float | None = None, shift: int = 0, env_hours: int = 0, park_refuse: bool = False) -> list[str]:
     """tools.fakehost as one fake host: its own link port, log prefix, frame name and DLL version. `-u`: its output goes to a
     log file that the scenarios read while it runs, so it must not sit in a buffer until the process ends."""
     argv = [sys.executable, "-u", "-m", "tools.fakehost", "--port", str(port), "--name", name, "--shm", frame, "--out", str(out_dir),
@@ -242,6 +249,7 @@ def fakehost_argv(*, port: int, name: str, ver: str | None, frame: str, out_dir:
     argv += ["--wait-host", f"{wait_host:g}"] if wait_host is not None else []
     argv += ["--shift", str(shift)] if shift else []
     argv += ["--env-hours", str(env_hours)] if env_hours else []
+    argv += ["--park-refuse"] if park_refuse else []
     for command in cmds:
         argv += ["--cmd", command]
     return argv
@@ -547,11 +555,12 @@ class Env:
 
     def fakehost(self, client: Client, *, ver: str | None, ids_from: int | None = None, layers: Iterable[int] = (2,), modes: Iterable[str] = (),
                  cmds: Iterable[str] = (), hold: float = HOLD_S, no_setup: bool = True, wait_host: float | None = None, shift: int = 0,
-                 env_hours: int = 0) -> FakeHost:
+                 env_hours: int = 0, park_refuse: bool = False) -> FakeHost:
         """A fake Cyberpunk host connected to `client`'s link (waits until the client listens)."""
         client.wait_listening()
         argv = fakehost_argv(port=client.port, name=client.name, ver=ver, frame=client.frame, out_dir=self.run / f"frames-{client.name}", ids_from=ids_from,
-                             hold=hold, layers=layers, modes=modes, cmds=cmds, no_setup=no_setup, wait_host=wait_host, shift=shift, env_hours=env_hours)
+                             hold=hold, layers=layers, modes=modes, cmds=cmds, no_setup=no_setup, wait_host=wait_host, shift=shift, env_hours=env_hours,
+                             park_refuse=park_refuse)
         proc = Proc(f"fakehost-{client.name}", argv, self.repo, self._child_env(), self.run / "logs" / f"fakehost-{client.name}-{len(self.started)}.log")
         self.started.append(proc)
         self.logs[f"fake host {client.name}"] = proc.log
@@ -1345,15 +1354,153 @@ def scenario_breach(env: Env, rep: Report) -> None:
     host.stop()  # Cyberpunk is closed: the session ends and its devices go
     rep.step("the session ends when the link drops", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, mark), must=True)
     rep.step("the Net Port goes with the session", lambda: poll(lambda: not netport_stands(server), DEVICE_PLACE_TIMEOUT, T_POLL, "the Net Port to go"))
+# ---- Phase 7: the Afterlife hub (megaplan 7-P1) ------------------------------------------------------------------------------------
+# These checks need the Phase 7 server (7H: `/cyberblock hub`, the hub dimension, `hub` and `park` DOWN, the `parked` relay) merged. The fake host
+# `--vendor` (tools/fakehost.py) plays Cyberpunk: it prints every `hub` and `park` its DLL gets (and answers `park` with `parked`, or refuses it with
+# `--park-refuse`), RCON looks at the players' dimensions. The contract is shared/protocol.md "Phase 7": on entering the server sends `hub in:true` and then
+# `park on:true`, on leaving `park on:false` and then `hub in:false`, only to linked players; every new host session of a player still in the hub hears the
+# entering pair again; a refused park takes the player out. The server has the join password on, like the live one: a locked player never gets in.
+# Limits: RCON's `execute as` carries the console's operator permission, so a hub command wrongly kept to operators would still pass here, and the
+# pause screen's button and the hub portal (a client payload, a right-click) are not driven: Re-test P7-5 covers both with a non-operator guest.
+HUB_DIMENSION = "cyberblock:afterlife"
+HUB_LINE = r"\[CbHost1\] (hub|park): (\{.*\})"
+DIMENSION = re.compile(r'entity data: "([a-z0-9_.:/-]+)"')
+HUB_ENTER = [("hub", True), ("park", True)]
+HUB_LEAVE = [("park", False), ("hub", False)]
+PARK_CONFIRMED = r"hub: park path: confirmed"  # 7H's once-a-run line when the first `parked` answer reached the server's hub
+PARK_REFUSED = r"hub: CbHost1 V not parked \(blocked"  # 7H's line for a `parked ok:false`
+
+
+def hub_events(host: FakeHost, since: int = 0) -> list[tuple[str, bool]]:
+    """What the fake host's DLL was told about the hub after `since`, in order: ("park", on) and ("hub", in); a log written on Windows ends its lines with CRLF."""
+    events = []
+    for match in re.finditer(HUB_LINE + r"\s*$", host.log.text(since), re.M):
+        with contextlib.suppress(ValueError):
+            events.append((match.group(1), json.loads(match.group(2)).get("on" if match.group(1) == "park" else "in")))
+    return events
+
+
+def dimension_of(server: Server, name: str) -> str | None:
+    match = DIMENSION.search(server.rcon(f"data get entity {name} Dimension"))
+    return match.group(1) if match else None
+
+
+def in_dimension(server: Server, name: str, dimension: str) -> bool:
+    return poll(lambda: dimension_of(server, name) == dimension, T_EFFECT, T_POLL, f"{name} in {dimension}") is True
+
+
+def hub_story(host: FakeHost, since: int, want: list[tuple[str, bool]]) -> bool:
+    """The DLL got exactly `want` after `since` (the messages, in order, once each): wait for them, give a duplicate time to show up, compare."""
+    poll(lambda: len(hub_events(host, since)) >= len(want), T_EFFECT, T_POLL, "the hub messages")
+    time.sleep(T_QUIET)
+    return hub_events(host, since) == want
+
+
+def hub_quiet(host: FakeHost, since: int) -> bool:
+    """Nothing about the hub reached the fake host's DLL after `since` (given T_QUIET to show up)."""
+    time.sleep(T_QUIET)
+    return hub_events(host, since) == []
+
+
+def enter_hub(server: Server, name: str) -> None:
+    server.rcon(f"execute as {name} run cyberblock hub")
+
+
+def leave_hub(server: Server, name: str) -> None:
+    """`/cyberblock hub` again leaves the hub; when the player is still in the hub dimension by then, `/cyberblock hub leave` is tried (a server that made
+    leaving a command of its own)."""
+    server.rcon(f"execute as {name} run cyberblock hub")
+    try:
+        poll(lambda: dimension_of(server, name) != HUB_DIMENSION, T_EFFECT, T_POLL, f"{name} out of the hub")
+    except Timeout:
+        server.rcon(f"execute as {name} run cyberblock hub leave")
+
+
+def locked_stays_out(server: Server, name: str, where: object, mark: int, host: FakeHost | None = None, mark_dll: int = 0) -> bool:
+    """A locked player's `/cyberblock hub` changed nothing: the same dimension, no hub entry logged, still not verified, nothing told to its DLL."""
+    enter_hub(server, name)
+    time.sleep(T_QUIET)
+    return (isinstance(where, str) and where != HUB_DIMENSION and dimension_of(server, name) == where and not server.log.find(rf"hub: {name} entered", mark)
+            and not server.log.find(rf"login: {name} verified", mark) and (host is None or hub_events(host, mark_dll) == []))
+
+
+def scenario_hub(env: Env, rep: Report) -> None:
+    server = env.server("hub", max_hosts=1, join_password=True)
+    client = env.client("CbHost1", join=server.port)
+    host = env.fakehost(client, ver=env.mod_version, layers=(), modes=("vendor",))
+    rep.step("the host waits locked until /login", lambda: server.log.wait(r"login: CbHost1 is locked until /login", T_JOIN), must=True)
+    held = poll(lambda: dimension_of(server, "CbHost1"), T_JOIN, T_POLL, "the host's dimension")
+    mark, mark_dll = server.log.mark(), host.log.mark()
+    rep.step("a locked host's `/cyberblock hub` leaves it where it is, still locked, and tells its DLL nothing",
+             lambda: locked_stays_out(server, "CbHost1", held, mark, host, mark_dll))
+    mark = server.log.mark()
+    server.rcon(f"execute as CbHost1 run login {server.join_password}")
+    rep.step("after /login the host's session starts", lambda: server.log.wait(r"session: CbHost1 started", T_EFFECT, mark), must=True)
+    env.client("CbGuest1", join=server.port)
+    rep.step("the guest waits locked until /login", lambda: server.log.wait(r"login: CbGuest1 is locked until /login", T_JOIN), must=True)
+    held = poll(lambda: dimension_of(server, "CbGuest1"), T_JOIN, T_POLL, "the guest's dimension")
+    mark = server.log.mark()
+    rep.step("a locked guest's `/cyberblock hub` leaves it where it is, still locked", lambda: locked_stays_out(server, "CbGuest1", held, mark))
+    mark = server.log.mark()
+    server.rcon(f"execute as CbGuest1 run login {server.join_password}")
+    rep.step("the guest is unlocked by /login", lambda: server.log.wait(r"login: CbGuest1 verified", T_EFFECT, mark), must=True)
+    home = dimension_of(server, "CbHost1")
+    rep.step(f"before the hub the host and the guest stand in the world's dimension, not in {HUB_DIMENSION}",
+             lambda: home not in (None, HUB_DIMENSION) and poll(lambda: dimension_of(server, "CbGuest1") == home, T_EFFECT, T_POLL, "the guest's dimension") is True,
+             must=True)
+
+    mark, mark_server = host.log.mark(), server.log.mark()
+    enter_hub(server, "CbHost1")
+    rep.step("`/cyberblock hub` as the host sends its DLL `hub in:true` and then `park on:true`, once each", lambda: hub_story(host, mark, HUB_ENTER), must=True)
+    rep.step("the host's Steve stands in the hub dimension (V stays where it was)", lambda: in_dimension(server, "CbHost1", HUB_DIMENSION))
+    rep.step("the DLL's `parked` reached the server's hub (its park path line)", lambda: server.log.wait(PARK_CONFIRMED, T_EFFECT, mark_server))
+    mark_guest = host.log.mark()
+    enter_hub(server, "CbGuest1")
+    rep.step("the guest enters the hub too", lambda: in_dimension(server, "CbGuest1", HUB_DIMENSION))
+    rep.step("a guest has no DLL: its trip sends nothing about the hub to the host's DLL", lambda: hub_quiet(host, mark_guest))
+
+    mark = host.log.mark()
+    leave_hub(server, "CbHost1")
+    rep.step("leaving sends `park on:false` and then `hub in:false`, once each (V is released under the cover)", lambda: hub_story(host, mark, HUB_LEAVE))
+    rep.step("the host's Steve is back in the dimension he came from", lambda: in_dimension(server, "CbHost1", home))
+    mark_guest = host.log.mark()
+    leave_hub(server, "CbGuest1")
+    rep.step("the guest is back too, and again nothing reached the host's DLL for it", lambda: in_dimension(server, "CbGuest1", home) and hub_quiet(host, mark_guest))
+
+    mark = host.log.mark()
+    enter_hub(server, "CbHost1")
+    rep.step("the host enters the hub a second time with the same two messages", lambda: hub_story(host, mark, HUB_ENTER), must=True)
+    mark = server.log.mark()
+    host.stop()  # Cyberpunk is closed while the host is in the hub: the DLL link drops (its own cover and park end on the DLL side)
+    rep.step("the session ends when the link drops", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, mark), must=True)
+    rep.step("the server keeps running and the host's Steve stays in the hub", lambda: dimension_of(server, "CbHost1") == HUB_DIMENSION)
+
+    mark = server.log.mark()
+    host = env.fakehost(client, ver=env.mod_version, layers=(), modes=("vendor",))  # Cyberpunk again: a new hello, a new session
+    rep.step("the returning link starts a new session", lambda: server.log.wait(r"session: CbHost1 started", T_JOIN, mark), must=True)
+    rep.step("the new session of a player still in the hub hears `hub in:true` and `park on:true` again, once", lambda: hub_story(host, 0, HUB_ENTER))
+    mark = server.log.mark()
+    host.stop()
+    rep.step("that session ends too", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, mark), must=True)
+
+    mark = server.log.mark()
+    host = env.fakehost(client, ver=env.mod_version, layers=(), modes=("vendor",), park_refuse=True)  # this time V cannot be parked
+    rep.step("a link whose Cyberpunk cannot park V starts a session", lambda: server.log.wait(r"session: CbHost1 started", T_JOIN, mark), must=True)
+    rep.step("`parked ok:false` takes the host out of the hub at once: `park on:false` and then `hub in:false` follow the entering pair",
+             lambda: hub_story(host, 0, HUB_ENTER + HUB_LEAVE))
+    rep.step("the refused park is logged and the host's Steve is back in the dimension he came from",
+             lambda: server.log.wait(PARK_REFUSED, T_EFFECT, mark) and in_dimension(server, "CbHost1", home))
+    rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))
 
 
 SCENARIO_FUNCS = {"singleplayer": scenario_singleplayer, "guest": scenario_guest, "versions": scenario_versions, "flood": scenario_flood,
                   "reconnect": scenario_reconnect, "twohosts": scenario_twohosts, "joinpassword": scenario_joinpassword,
                   "replica": scenario_replica, "twohosts2": scenario_twohosts2, "meetup": scenario_meetup, "devices": scenario_devices,
-                  "figures": scenario_figures, "breach": scenario_breach}
+                  "figures": scenario_figures, "breach": scenario_breach, "hub": scenario_hub}
 PHASE3 = ("replica", "twohosts2", "meetup")  # the scenarios whose fake host runs `--replica`
-# the fake host mode (and no layer) of each scenario after Phase 1: --replica (Phase 3), --devices (Phase 4), --figures (Phase 5), --hacks2 (Phase 6)
-SCENARIO_MODES = {**dict.fromkeys(PHASE3, ("replica",)), "devices": ("devices",), "figures": ("figures",), "breach": ("hacks2",)}
+# the fake host mode (and no layer) of each scenario after Phase 1: --replica (Phase 3), --devices (Phase 4), --figures (Phase 5), --hacks2 (Phase 6),
+# --vendor (Phase 7)
+SCENARIO_MODES = {**dict.fromkeys(PHASE3, ("replica",)), "devices": ("devices",), "figures": ("figures",), "breach": ("hacks2",), "hub": ("vendor",)}
 
 
 class Flooder(threading.Thread):
