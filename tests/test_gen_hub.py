@@ -51,7 +51,7 @@ def test_two_runs_are_byte_identical_and_match_the_committed_files(hub):
     assert HUB.read_bytes() == hub.layout_bytes(doc), "the committed hub layout differs: run art/gen_hub.py and commit"
     sheet = hub.preview(doc, first)
     committed = Image.open(ROOT / "art" / "hub_preview.png").convert("RGB")
-    assert list(committed.getdata()) == list(sheet.getdata()) and committed.size == sheet.size
+    assert committed.size == sheet.size and committed.tobytes() == sheet.tobytes()
 
 
 def test_the_generator_never_writes_outside_its_own_files(hub):

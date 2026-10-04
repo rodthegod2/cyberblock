@@ -161,7 +161,7 @@ def test_device_map_blocks_exist_and_sizes_fit():
 
 def test_shops_sell_known_items_for_whole_positive_eddies(lang):
     shops = entries("shop")
-    assert sorted(shops) == ["vending_drinks", "vending_gear", "vending_snacks"]
+    assert {"vending_drinks", "vending_gear", "vending_snacks"} <= set(shops)  # Phase 7 adds the afterlife_* shops beside them
     own_items = {p.stem for p in (ASSETS / "items").glob("*.json")}
     for name, shop in shops.items():
         assert shop["title_key"] in lang, name
