@@ -97,8 +97,9 @@ class ServerMapTest {
 		r.want(-3, 0, 0);
 		List<long[]> first = r.take(16, 0);
 		assertEquals(2, first.size());
-		assertArrayEquals(new long[] {1, 2, 0}, first.get(0));
-		assertArrayEquals(new long[] {-3, 0, 0}, first.get(1));
+		// the most recently drawn first
+		assertArrayEquals(new long[] {-3, 0, 0}, first.get(0));
+		assertArrayEquals(new long[] {1, 2, 0}, first.get(1));
 		// drawn every frame afterwards: not asked again before the refresh time
 		r.want(1, 2, 10 * S);
 		assertTrue(r.take(16, 10 * S).isEmpty());
@@ -127,6 +128,49 @@ class ServerMapTest {
 		assertTrue(r.take(32, 29 * S).isEmpty());
 		r.wantRegion(-1, 2, 30 * S);
 		assertEquals(32, r.take(32, 30 * S).size());
+	}
+
+	/**
+	 * A guest looked at the whole map (160 far-zoom regions, 10240 tiles) and then at the radar: the radar's tile goes in the very
+	 * next ask, and regions no longer drawn leave the queue instead of keeping it busy for minutes.
+	 */
+	@Test
+	void aTileDrawnNowGoesBeforeAWideViewsBacklog() {
+		ServerMap.Requests r = new ServerMap.Requests(30 * S);
+		for (int rx = 0; rx < 16; rx++) {
+			for (int rz = 0; rz < 10; rz++) {
+				r.wantRegion(rx, rz, 0);
+			}
+		}
+
+		assertEquals(32, r.take(32, 0).size());
+		r.want(500, -500, S / 2);
+		List<long[]> next = r.take(32, S / 2);
+		assertArrayEquals(new long[] {500, -500, 0}, next.get(0), "the newly drawn tile first");
+		assertEquals(32, next.size(), "the rest of the ask is filled from the drawn regions");
+		// the wide view closed: two seconds later only what is drawn now is asked
+		r.want(501, -500, 3 * S);
+		List<long[]> later = r.take(32, 3 * S);
+		assertEquals(1, later.size());
+		assertArrayEquals(new long[] {501, -500, 0}, later.get(0));
+		assertTrue(r.take(32, 3 * S).isEmpty(), "the stale regions left the queue");
+		// a region drawn again comes back; its tiles already asked are not asked again (63 of region (15, 9), drawn last, went)
+		r.wantRegion(15, 9, 4 * S);
+		List<long[]> back = r.take(32, 4 * S);
+		assertEquals(1, back.size());
+		assertEquals(15, AtlasTiles.regionOf((int) back.get(0)[0]));
+		assertEquals(9, AtlasTiles.regionOf((int) back.get(0)[1]));
+		assertTrue(r.take(32, 4 * S).isEmpty(), "a fully asked region waits for its refresh");
+	}
+
+	/** Regions too: the most recently drawn region is asked first. */
+	@Test
+	void theMostRecentlyDrawnRegionIsAskedFirst() {
+		ServerMap.Requests r = new ServerMap.Requests(30 * S);
+		r.wantRegion(0, 0, 0);
+		r.wantRegion(5, 5, 0);
+		r.wantRegion(0, 0, 1);
+		assertTrue(r.take(32, 1).stream().allMatch(t -> AtlasTiles.regionOf((int) t[0]) == 0 && AtlasTiles.regionOf((int) t[1]) == 0));
 	}
 
 	@Test

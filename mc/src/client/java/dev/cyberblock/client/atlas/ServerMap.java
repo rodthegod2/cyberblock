@@ -7,8 +7,7 @@ import dev.cyberblock.client.net.UiRoutes;
 import dev.cyberblock.net.Payloads;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -42,10 +41,21 @@ public final class ServerMap {
 	 * Which tiles to ask for and when (pure, tested): a tile drawn now is asked once, then again at most every {@code refreshNanos}
 	 * with the version this client has, so a changed tile arrives within that time. A far-zoom region asks for its 64 tiles at most
 	 * as often.
+	 *
+	 * <p>Only what is drawn now is asked, newest first: the radar and tile-zoom asks go before far-zoom regions, the most recently
+	 * drawn first, and anything not drawn for {@link #DRAWN_NANOS} leaves the queue (it comes back when it is drawn again). So a
+	 * guest who looked at the whole map and then at the radar or a district gets those tiles next, not after minutes of regions.
 	 */
 	static final class Requests {
+		/** A tile or region not drawn for this long is no longer asked for. */
+		static final long DRAWN_NANOS = 1_000_000_000L;
+		/** Queue bounds (the least recently drawn go first); what is drawn in a second stays far below them. */
+		static final int MAX_TILES = 4096, MAX_REGIONS = 1024;
 		private final long refreshNanos;
-		private final LinkedHashSet<Long> wanted = new LinkedHashSet<>();
+		/** Tiles drawn at tile zoom or by the radar, key -> when last drawn; the most recently drawn is last. */
+		private final LinkedHashMap<Long, Long> wanted = bounded(MAX_TILES);
+		/** Far-zoom regions drawn and not fully asked yet, key -> when last drawn; the most recently drawn is last. */
+		private final LinkedHashMap<Long, Long> regions = bounded(MAX_REGIONS);
 		private final Map<Long, Long> askedAt = new HashMap<>();
 		private final Map<Long, Long> regionAskedAt = new HashMap<>();
 		private final Map<Long, Long> versions = new HashMap<>();
@@ -54,40 +64,81 @@ public final class ServerMap {
 			this.refreshNanos = refreshNanos;
 		}
 
-		/** Tile (tx, tz) is drawn now: queued unless it was asked for less than refreshNanos ago. */
+		private static LinkedHashMap<Long, Long> bounded(final int max) {
+			return new LinkedHashMap<>() {
+				@Override
+				protected boolean removeEldestEntry(final Map.Entry<Long, Long> eldest) {
+					return this.size() > max;
+				}
+			};
+		}
+
+		/** Tile (tx, tz) is drawn now: queued (as the most recently drawn) unless it was asked for less than refreshNanos ago. */
 		void want(final int tx, final int tz, final long now) {
 			long key = AtlasTiles.key(tx, tz);
-			Long at = this.askedAt.get(key);
-			if (at == null || now - at >= this.refreshNanos) {
-				this.wanted.add(key);
+			if (this.due(key, now)) {
+				this.wanted.putLast(key, now);
 			}
 		}
 
-		/** Region (rx, rz) is drawn at far zoom now: its 64 tiles are queued, at most every refreshNanos. */
+		/** Region (rx, rz) is drawn at far zoom now: its 64 tiles are queued after the tiles, at most every refreshNanos. */
 		void wantRegion(final int rx, final int rz, final long now) {
 			long key = AtlasTiles.key(rx, rz);
 			Long at = this.regionAskedAt.get(key);
-			if (at != null && now - at < this.refreshNanos) {
-				return;
-			}
-
-			this.regionAskedAt.put(key, now);
-			for (int i = 0; i < AtlasTiles.REGION * AtlasTiles.REGION; i++) {
-				this.want(rx * AtlasTiles.REGION + i % AtlasTiles.REGION, rz * AtlasTiles.REGION + i / AtlasTiles.REGION, now);
+			if (at == null || now - at >= this.refreshNanos) {
+				this.regions.putLast(key, now);
 			}
 		}
 
-		/** Up to {@code max} queued tiles as {tx, tz, version this client has}; they count as asked now. */
+		/**
+		 * Up to {@code max} tiles as {tx, tz, version this client has}, most recently drawn first: the tiles, then the regions' tiles.
+		 * They count as asked now; a region counts as asked once all of its 64 tiles have been.
+		 */
 		List<long[]> take(final int max, final long now) {
 			List<long[]> out = new ArrayList<>();
-			for (Iterator<Long> it = this.wanted.iterator(); it.hasNext() && out.size() < max;) {
-				long key = it.next();
-				it.remove();
-				this.askedAt.put(key, now);
-				out.add(new long[] {AtlasTiles.keyA(key), AtlasTiles.keyB(key), this.versions.getOrDefault(key, 0L)});
+			while (out.size() < max && !this.wanted.isEmpty()) {
+				Map.Entry<Long, Long> e = this.wanted.pollLastEntry();
+				if (now - e.getValue() > DRAWN_NANOS) {
+					this.wanted.clear(); // the rest were drawn even longer ago
+					break;
+				}
+
+				this.ask(e.getKey(), now, out);
+			}
+
+			int side = AtlasTiles.REGION;
+			while (out.size() < max && !this.regions.isEmpty()) {
+				Map.Entry<Long, Long> e = this.regions.lastEntry();
+				if (now - e.getValue() > DRAWN_NANOS) {
+					this.regions.clear();
+					break;
+				}
+
+				int rx = AtlasTiles.keyA(e.getKey()), rz = AtlasTiles.keyB(e.getKey()), i = 0;
+				for (; i < side * side && out.size() < max; i++) {
+					this.ask(AtlasTiles.key(rx * side + i % side, rz * side + i / side), now, out);
+				}
+
+				if (i == side * side) {
+					this.regions.pollLastEntry();
+					this.regionAskedAt.put(e.getKey(), now);
+				}
 			}
 
 			return out;
+		}
+
+		private boolean due(final long key, final long now) {
+			Long at = this.askedAt.get(key);
+			return at == null || now - at >= this.refreshNanos;
+		}
+
+		/** Adds tile {@code key} to {@code out} unless it was asked for less than refreshNanos ago. */
+		private void ask(final long key, final long now, final List<long[]> out) {
+			if (this.due(key, now)) {
+				this.askedAt.put(key, now);
+				out.add(new long[] {AtlasTiles.keyA(key), AtlasTiles.keyB(key), this.versions.getOrDefault(key, 0L)});
+			}
 		}
 
 		/** The server's answer for a tile: its version is what the next ask says this client has. */
@@ -97,6 +148,7 @@ public final class ServerMap {
 
 		void clear() {
 			this.wanted.clear();
+			this.regions.clear();
 			this.askedAt.clear();
 			this.regionAskedAt.clear();
 			this.versions.clear();

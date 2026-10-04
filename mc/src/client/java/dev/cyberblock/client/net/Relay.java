@@ -4,13 +4,17 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.client.atlas.AtlasTiles;
+import dev.cyberblock.client.atlas.AtlasWire;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
+import java.util.function.LongSupplier;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -32,13 +36,30 @@ public final class Relay {
 	private static final Map<String, Integer> UNIT = Map.of("ground", 4, "unground", 4, "terrain", 4, "npcs", 1);
 	/** {@code stats} goes UP at most once a second (section 1.2); the newest waits for its turn. */
 	static final long STATS_INTERVAL_NANOS = 1_000_000_000L;
+	/**
+	 * {@code terrain} goes UP in batches: the DLL sends at most 64 cells a message and a survey tour hundreds of messages a second,
+	 * while the server takes 30 a second (burst 200) of up to 1024 cells each (3R's NightCityMap.MAX_CELLS). The client tick sends
+	 * one batch at most every 50 ms (20 a second), the oldest cells first, each under the payload cap so it is never split.
+	 */
+	static final long TERRAIN_INTERVAL_NANOS = 50_000_000L;
+	static final int TERRAIN_BATCH = 1024;
+	/** Cells waiting at most (two of the DLL's busiest survey frames); past it the oldest are dropped and counted. */
+	static final int TERRAIN_BUFFER = 32_768;
+	/** {"t":"terrain","c":[]} */
+	private static final int TERRAIN_SHELL_BYTES = 22;
 
 	private static volatile BiConsumer<String, String> sink = (t, json) -> {};
 	private static volatile int cap = 30000;
 	private static final AtomicInteger sent = new AtomicInteger();
 	private static final AtomicInteger dropped = new AtomicInteger();
+	private static LongSupplier clock = System::nanoTime;
 	private static long lastStats = Long.MIN_VALUE;
 	private static String pendingStats;
+	/** Waiting terrain cells, (cx, cz) -> {y, s}: a cell sent again keeps its newest value and moves to the back. */
+	private static final LinkedHashMap<Long, int[]> terrain = new LinkedHashMap<>();
+	private static long lastTerrain = Long.MIN_VALUE;
+	private static long terrainDropped;
+	private static boolean terrainAnnounced;
 
 	private Relay() {
 	}
@@ -62,10 +83,18 @@ public final class Relay {
 		cap = jsonCap;
 	}
 
-	/** One UP message from the DLL (link thread). {@code stats} is held to 1 Hz; the rest is split to the cap and sent in order. */
+	/**
+	 * One UP message from the DLL (link thread). {@code stats} is held to 1 Hz; {@code terrain} waits for the next batch
+	 * ({@link #tick}); the rest is split to the cap and sent in order.
+	 */
 	public static synchronized void up(final String t, final JsonObject m, final String raw) {
+		if (t.equals("terrain")) {
+			bufferTerrain(m);
+			return;
+		}
+
 		if (t.equals("stats")) {
-			long now = System.nanoTime();
+			long now = clock.getAsLong();
 			if (lastStats != Long.MIN_VALUE && now - lastStats < STATS_INTERVAL_NANOS) {
 				pendingStats = raw;
 				return;
@@ -93,13 +122,100 @@ public final class Relay {
 		send(t, json);
 	}
 
-	/** Client tick: the newest held-back {@code stats}, once its second has passed. */
+	/** Client tick: the newest held-back {@code stats}, once its second has passed, and the next {@code terrain} batch when due. */
 	public static synchronized void tick() {
-		if (pendingStats != null && System.nanoTime() - lastStats >= STATS_INTERVAL_NANOS) {
-			lastStats = System.nanoTime();
+		long now = clock.getAsLong();
+		if (pendingStats != null && now - lastStats >= STATS_INTERVAL_NANOS) {
+			lastStats = now;
 			send("stats", pendingStats);
 			pendingStats = null;
 		}
+
+		if (!terrain.isEmpty() && (lastTerrain == Long.MIN_VALUE || now - lastTerrain >= TERRAIN_INTERVAL_NANOS)) {
+			lastTerrain = now;
+			send("terrain", takeTerrainBatch());
+		}
+	}
+
+	/** A DLL {@code terrain} into the waiting cells; one that breaks protocol.md's limits is dropped whole (the server would too). */
+	private static void bufferTerrain(final JsonObject m) {
+		int[] c = AtlasWire.parseTerrain(m);
+		if (c == null) {
+			int n = dropped.incrementAndGet();
+			if (n % 100 == 1) {
+				Cyberblock.LOG.warn("relay: dropped an invalid terrain ({} dropped so far)", n);
+			}
+
+			return;
+		}
+
+		for (int i = 0; i < c.length; i += 4) {
+			terrain.putLast(AtlasTiles.key(c[i], c[i + 1]), new int[] {c[i + 2], c[i + 3]});
+		}
+
+		while (terrain.size() > TERRAIN_BUFFER) {
+			terrain.pollFirstEntry();
+			if (terrainDropped++ % 10_000 == 0) {
+				Cyberblock.LOG.warn("relay: terrain is coming faster than it can go up: dropped the oldest waiting cells ({} so far)", terrainDropped);
+			}
+		}
+	}
+
+	/** The oldest waiting cells as one terrain message: at most TERRAIN_BATCH cells and within the cap, so it is never split. */
+	private static String takeTerrainBatch() {
+		JsonArray c = new JsonArray();
+		int bytes = TERRAIN_SHELL_BYTES, cells = 0;
+		for (var it = terrain.entrySet().iterator(); it.hasNext() && cells < TERRAIN_BATCH;) {
+			var e = it.next();
+			int cx = AtlasTiles.keyA(e.getKey()), cz = AtlasTiles.keyB(e.getKey()), y = e.getValue()[0], s = e.getValue()[1];
+			int quad = digits(cx) + digits(cz) + digits(y) + digits(s) + 4; // the four numbers and their commas
+			if (bytes + quad > cap && cells > 0) {
+				break;
+			}
+
+			it.remove();
+			c.add(cx);
+			c.add(cz);
+			c.add(y);
+			c.add(s);
+			bytes += quad;
+			cells++;
+		}
+
+		if (!terrainAnnounced) {
+			terrainAnnounced = true;
+			Cyberblock.LOG.info("relay: terrain goes up to the server's shared map in batches (at most {} a second, {} cells each)",
+				1_000_000_000L / TERRAIN_INTERVAL_NANOS, TERRAIN_BATCH);
+		}
+
+		JsonObject m = new JsonObject();
+		m.addProperty("t", "terrain");
+		m.add("c", c);
+		return m.toString();
+	}
+
+	private static int digits(final int v) {
+		return Integer.toString(v).length();
+	}
+
+	/** Terrain cells waiting for a batch (tests). */
+	static synchronized int terrainWaiting() {
+		return terrain.size();
+	}
+
+	/** Terrain cells dropped because the buffer was full (tests). */
+	static synchronized long terrainDropped() {
+		return terrainDropped;
+	}
+
+	/** Tests: a fresh relay on the given clock (nanoseconds). */
+	static synchronized void reset(final LongSupplier testClock) {
+		clock = testClock;
+		lastStats = Long.MIN_VALUE;
+		pendingStats = null;
+		terrain.clear();
+		lastTerrain = Long.MIN_VALUE;
+		terrainDropped = 0;
 	}
 
 	private static void send(final String t, final String json) {
