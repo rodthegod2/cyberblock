@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"name": "Valentinos Crew",
+	"description": "Three gangers in gold and red, loud about loyalty and quick on the draw.",
+	"group": "gang",
+	"kind": "night_city",
+	"cost": 9,
+	"count": 3,
+	"hostile": true,
+	"rec": "ganger",
+	"faction": "valentinos",
+	"cooldown_s": 15,
+	"squad": {
+		"mob": "minecraft:pillager",
+		"count": 3
+	}
+}

@@ -1,0 +1,12 @@
+{
+	"schema": 1,
+	"name": "Crawler Swarm",
+	"description": "Four quick little crawlers that go for the ankles.",
+	"group": "monster",
+	"kind": "minecraft",
+	"cost": 7,
+	"count": 4,
+	"hostile": true,
+	"mob": "minecraft:endermite",
+	"cooldown_s": 15
+}

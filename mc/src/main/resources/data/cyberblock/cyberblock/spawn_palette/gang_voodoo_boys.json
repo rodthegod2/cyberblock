@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"name": "Voodoo Boys Crew",
+	"description": "Three net-bound mystics who hit you in ways the guns do not explain.",
+	"group": "gang",
+	"kind": "night_city",
+	"cost": 11,
+	"count": 3,
+	"hostile": true,
+	"rec": "ganger",
+	"faction": "voodooBoys",
+	"cooldown_s": 20,
+	"squad": {
+		"mob": "minecraft:witch",
+		"count": 3
+	}
+}

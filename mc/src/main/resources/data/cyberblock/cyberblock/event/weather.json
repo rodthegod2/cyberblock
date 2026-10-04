@@ -1,0 +1,16 @@
+{
+	"schema": 1,
+	"name": "Storm Front",
+	"description": "A thunderstorm rolls over the match area. It is loud and wet, and nobody hears you coming.",
+	"cost": 10,
+	"warning_s": 10,
+	"cooldown_s": 180,
+	"radius": 128,
+	"scales_with_intensity": false,
+	"night_city": false,
+	"effect": {
+		"type": "weather",
+		"weather": "thunder",
+		"seconds": 180
+	}
+}

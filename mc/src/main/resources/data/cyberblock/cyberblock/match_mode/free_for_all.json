@@ -1,0 +1,69 @@
+{
+	"schema": 1,
+	"name": "Free For All",
+	"description": "Everyone alone, everyone a target. The first to the limit wins; no teams, no friends, no mercy.",
+	"teams": {
+		"min": 2,
+		"max": 8
+	},
+	"team_size": {
+		"min": 1,
+		"max": 1
+	},
+	"time_limit_s": 600,
+	"score_limit": 20,
+	"scoring": {
+		"kill": 1,
+		"capture": 0
+	},
+	"respawn_s": 6,
+	"friendly_fire": true,
+	"pvp": true,
+	"zone": {
+		"min_radius": 24,
+		"max_radius": 128
+	},
+	"districts": false,
+	"reputation": false,
+	"heat_scale": 0.5,
+	"roles": [
+		"teammate",
+		"hacker",
+		"spectator",
+		"overlord"
+	],
+	"team_palette": [
+		{
+			"name": "Red",
+			"colour": "#e5384f"
+		},
+		{
+			"name": "Blue",
+			"colour": "#3a7bff"
+		},
+		{
+			"name": "Green",
+			"colour": "#35d07f"
+		},
+		{
+			"name": "Yellow",
+			"colour": "#f2c230"
+		},
+		{
+			"name": "Cyan",
+			"colour": "#2fe0ff"
+		},
+		{
+			"name": "Magenta",
+			"colour": "#ff2fb3"
+		},
+		{
+			"name": "Orange",
+			"colour": "#ff8a1f"
+		},
+		{
+			"name": "White",
+			"colour": "#e8eef5"
+		}
+	]
+}

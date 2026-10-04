@@ -1,0 +1,62 @@
+{
+	"schema": 1,
+	"name": "Gang Wars",
+	"description": "Teams stand for gangs and fight over the area's capture points. Hold a point to score; the district behind it is yours to spawn in.",
+	"teams": {
+		"min": 2,
+		"max": 4
+	},
+	"team_size": {
+		"min": 2,
+		"max": 8
+	},
+	"time_limit_s": 1800,
+	"score_limit": 300,
+	"scoring": {
+		"kill": 2,
+		"capture": 1
+	},
+	"respawn_s": 12,
+	"friendly_fire": false,
+	"pvp": true,
+	"zone": {
+		"min_radius": 96,
+		"max_radius": 320
+	},
+	"capture_points": {
+		"count": 3,
+		"radius": 8,
+		"seconds": 20
+	},
+	"districts": true,
+	"reputation": true,
+	"heat_scale": 1.0,
+	"roles": [
+		"teammate",
+		"hacker",
+		"spectator",
+		"overlord"
+	],
+	"team_palette": [
+		{
+			"name": "Tyger Claws",
+			"colour": "#d4372c",
+			"faction": "tygerClaws"
+		},
+		{
+			"name": "Valentinos",
+			"colour": "#e3b02a",
+			"faction": "valentinos"
+		},
+		{
+			"name": "Maelstrom",
+			"colour": "#c2c7d4",
+			"faction": "maelstrom"
+		},
+		{
+			"name": "6th Street",
+			"colour": "#3a9d5d",
+			"faction": "6thStreet"
+		}
+	]
+}

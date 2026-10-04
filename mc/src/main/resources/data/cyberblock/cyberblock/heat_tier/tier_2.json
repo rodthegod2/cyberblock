@@ -1,0 +1,21 @@
+{
+	"schema": 1,
+	"tier": 2,
+	"name": "Pursuit",
+	"description": "The patrols stop strolling. They chase the loudest people in the area.",
+	"enter": 35,
+	"exit": 30,
+	"decay_per_s": 0.35,
+	"grace_s": 15,
+	"host_wanted": 2,
+	"response": {
+		"target": "loudest",
+		"max_alive": 6,
+		"waves": [
+			{
+				"entry": "cyberblock:ncpd_patrol",
+				"every_s": 45
+			}
+		]
+	}
+}

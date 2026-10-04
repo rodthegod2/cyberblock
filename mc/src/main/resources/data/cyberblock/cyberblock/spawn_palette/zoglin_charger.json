@@ -1,0 +1,12 @@
+{
+	"schema": 1,
+	"name": "Rot Tusker",
+	"description": "A rotten tusked brute that charges anything that moves, the Overlord's own included.",
+	"group": "monster",
+	"kind": "minecraft",
+	"cost": 10,
+	"count": 1,
+	"hostile": true,
+	"mob": "minecraft:zoglin",
+	"cooldown_s": 25
+}

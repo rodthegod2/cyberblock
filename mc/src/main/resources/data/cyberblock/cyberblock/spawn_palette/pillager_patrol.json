@@ -1,0 +1,12 @@
+{
+	"schema": 1,
+	"name": "Crossbow Squad",
+	"description": "A crossbow squad that shoots first and never asks.",
+	"group": "monster",
+	"kind": "minecraft",
+	"cost": 12,
+	"count": 3,
+	"hostile": true,
+	"mob": "minecraft:pillager",
+	"cooldown_s": 20
+}

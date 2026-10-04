@@ -1,0 +1,12 @@
+{
+	"schema": 1,
+	"name": "Sentry Nest",
+	"description": "A fixed gun nest that tracks and fires. It cannot walk and it never blinks.",
+	"group": "machine",
+	"kind": "minecraft",
+	"cost": 10,
+	"count": 1,
+	"hostile": true,
+	"mob": "minecraft:shulker",
+	"cooldown_s": 20
+}

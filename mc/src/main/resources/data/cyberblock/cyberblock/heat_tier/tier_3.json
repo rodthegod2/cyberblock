@@ -1,0 +1,25 @@
+{
+	"schema": 1,
+	"tier": 3,
+	"name": "Heavy Response",
+	"description": "Armoured enforcers and drones join the chase. Cover is a good idea.",
+	"enter": 55,
+	"exit": 50,
+	"decay_per_s": 0.3,
+	"grace_s": 20,
+	"host_wanted": 3,
+	"response": {
+		"target": "loudest",
+		"max_alive": 8,
+		"waves": [
+			{
+				"entry": "cyberblock:ncpd_enforcers",
+				"every_s": 60
+			},
+			{
+				"entry": "cyberblock:wyvern_drones",
+				"every_s": 90
+			}
+		]
+	}
+}

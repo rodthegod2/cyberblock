@@ -1,0 +1,12 @@
+{
+	"schema": 1,
+	"name": "Walker Pack",
+	"description": "Three dry, stubborn walkers that shrug off the sun. Cheap, and they never stop coming.",
+	"group": "monster",
+	"kind": "minecraft",
+	"cost": 6,
+	"count": 3,
+	"hostile": true,
+	"mob": "minecraft:husk",
+	"cooldown_s": 10
+}

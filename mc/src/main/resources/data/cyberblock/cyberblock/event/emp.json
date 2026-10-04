@@ -1,0 +1,16 @@
+{
+	"schema": 1,
+	"name": "EMP Pulse",
+	"description": "A silent pulse. Devices stop answering and active implants go quiet for a while.",
+	"cost": 30,
+	"warning_s": 5,
+	"cooldown_s": 120,
+	"radius": 24,
+	"scales_with_intensity": true,
+	"night_city": true,
+	"effect": {
+		"type": "emp",
+		"seconds": 12,
+		"cyberware_off": true
+	}
+}

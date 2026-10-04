@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "match_mode",
+  "description": "The `match_mode` content kind (megaplan 1.7 and task 8-M1): one mode a Cyberpunk-linked player can pick at the Match Terminal (team deathmatch, free for all, Gang Wars, last team standing). One mode per file; a datapack adds a mode or replaces one with the same id. `teams` and `team_size` bound how many teams a match has and how many players each holds (free for all is many teams of one). `time_limit_s` is the default time limit (the creator may shorten it), `score_limit` the score that ends the match early. `scoring` is the points: `kill` for a player kill (the revive of a downed teammate is never a kill), `capture` for every second a team holds a capture point it owns. `respawn_s` is the wait before a defeated player returns to the team's spawn point (0: no return, the player is out until the match ends). `friendly_fire` is whether teammates hurt each other (the PvP toggle rule of 8-M1 still applies first); `pvp` is true when the mode switches the PvP toggle ON for its players for the length of the match. `zone` bounds the match area picked on the Holo-Table (the radius in blocks). `capture_points` (absent: none) is how many points the area holds, their `radius`, and the `seconds` a lone team standing in one needs to take it. `districts` is true when the area is split into districts that each team owns a spawn point in (Gang Wars). `reputation` is true when the match result changes how the game's factions treat the winners' hosts (the `attitude` message, Phase 0 (e); without the write it does nothing). `heat_scale` scales how much of the match's chaos feeds the server Heat meter (0: none). `roles` are the roles a player can take: teammate, hacker (the Van), spectator and overlord. `team_palette` is the colours and names teams take in order; an optional `faction` is the game attitude group the team stands in for (used with `reputation`). Text is original.",
+  "type": "object",
+  "required": [
+    "schema",
+    "name",
+    "description",
+    "teams",
+    "team_size",
+    "time_limit_s",
+    "score_limit",
+    "scoring",
+    "respawn_s",
+    "friendly_fire",
+    "pvp",
+    "zone",
+    "districts",
+    "reputation",
+    "heat_scale",
+    "roles",
+    "team_palette"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxBytes": 48
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxBytes": 200
+    },
+    "teams": {
+      "type": "object",
+      "required": ["min", "max"],
+      "additionalProperties": false,
+      "properties": {
+        "min": {"type": "integer", "minimum": 2, "maximum": 8},
+        "max": {"type": "integer", "minimum": 2, "maximum": 8}
+      }
+    },
+    "team_size": {
+      "type": "object",
+      "required": ["min", "max"],
+      "additionalProperties": false,
+      "properties": {
+        "min": {"type": "integer", "minimum": 1, "maximum": 16},
+        "max": {"type": "integer", "minimum": 1, "maximum": 16}
+      }
+    },
+    "time_limit_s": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 7200
+    },
+    "score_limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000
+    },
+    "scoring": {
+      "type": "object",
+      "required": ["kill", "capture"],
+      "additionalProperties": false,
+      "properties": {
+        "kill": {"type": "integer", "minimum": 0, "maximum": 100},
+        "capture": {"type": "integer", "minimum": 0, "maximum": 100}
+      }
+    },
+    "respawn_s": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 120
+    },
+    "friendly_fire": {
+      "type": "boolean"
+    },
+    "pvp": {
+      "type": "boolean"
+    },
+    "zone": {
+      "type": "object",
+      "required": ["min_radius", "max_radius"],
+      "additionalProperties": false,
+      "properties": {
+        "min_radius": {"type": "integer", "minimum": 16, "maximum": 1024},
+        "max_radius": {"type": "integer", "minimum": 16, "maximum": 1024}
+      }
+    },
+    "capture_points": {
+      "type": "object",
+      "required": ["count", "radius", "seconds"],
+      "additionalProperties": false,
+      "properties": {
+        "count": {"type": "integer", "minimum": 1, "maximum": 9},
+        "radius": {"type": "integer", "minimum": 3, "maximum": 32},
+        "seconds": {"type": "integer", "minimum": 3, "maximum": 120}
+      }
+    },
+    "districts": {
+      "type": "boolean"
+    },
+    "reputation": {
+      "type": "boolean"
+    },
+    "heat_scale": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["teammate", "hacker", "spectator", "overlord"]
+      }
+    },
+    "team_palette": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["name", "colour"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string", "minLength": 1, "maxBytes": 32},
+          "colour": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+          "faction": {"type": "string", "pattern": "^[A-Za-z0-9_]+$", "minLength": 1, "maxBytes": 32}
+        }
+      }
+    }
+  }
+}

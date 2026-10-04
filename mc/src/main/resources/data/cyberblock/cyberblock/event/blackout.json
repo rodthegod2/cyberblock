@@ -1,0 +1,15 @@
+{
+	"schema": 1,
+	"name": "Blackout",
+	"description": "The lights of the area go dark. Cameras and streetlamps fail, and hunters see the dark better than prey.",
+	"cost": 25,
+	"warning_s": 5,
+	"cooldown_s": 90,
+	"radius": 48,
+	"scales_with_intensity": true,
+	"night_city": true,
+	"effect": {
+		"type": "blackout",
+		"seconds": 40
+	}
+}

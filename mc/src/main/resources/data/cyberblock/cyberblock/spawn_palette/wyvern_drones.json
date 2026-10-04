@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"name": "Patrol Drones",
+	"description": "Two police drones that hover, scan and shoot from above.",
+	"group": "machine",
+	"kind": "night_city",
+	"cost": 12,
+	"count": 2,
+	"hostile": true,
+	"rec": "drone",
+	"faction": "police",
+	"cooldown_s": 20,
+	"squad": {
+		"mob": "minecraft:vex",
+		"count": 2
+	}
+}

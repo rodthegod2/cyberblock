@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"name": "Wraith Raiders",
+	"description": "Three desert raiders who come in fast cars and leave in the same.",
+	"group": "gang",
+	"kind": "night_city",
+	"cost": 9,
+	"count": 3,
+	"hostile": true,
+	"rec": "ganger",
+	"faction": "wraiths",
+	"cooldown_s": 15,
+	"squad": {
+		"mob": "minecraft:pillager",
+		"count": 3
+	}
+}

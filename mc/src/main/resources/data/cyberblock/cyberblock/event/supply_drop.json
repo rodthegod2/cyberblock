@@ -1,0 +1,25 @@
+{
+	"schema": 1,
+	"name": "Supply Drop",
+	"description": "A crate drops from the sky with a few eddies and supplies. The first fighter to reach it keeps it.",
+	"cost": 15,
+	"warning_s": 8,
+	"cooldown_s": 120,
+	"radius": 8,
+	"scales_with_intensity": false,
+	"night_city": false,
+	"effect": {
+		"type": "supply_drop",
+		"eddies": 25,
+		"items": [
+			{
+				"item": "minecraft:arrow",
+				"count": 16
+			},
+			{
+				"item": "minecraft:bread",
+				"count": 2
+			}
+		]
+	}
+}

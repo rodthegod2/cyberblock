@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"name": "Cyberpsycho",
+	"description": "A lone chrome casualty with a very short temper and a very long reach.",
+	"group": "gang",
+	"kind": "night_city",
+	"cost": 15,
+	"count": 1,
+	"hostile": true,
+	"rec": "ganger",
+	"faction": "scavenger",
+	"cooldown_s": 45,
+	"squad": {
+		"mob": "minecraft:vindicator",
+		"count": 1
+	}
+}

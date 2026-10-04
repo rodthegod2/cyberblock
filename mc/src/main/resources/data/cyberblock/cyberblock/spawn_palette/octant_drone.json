@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"name": "Corpo Drone",
+	"description": "A corporate security drone with a sharper eye than a patrol one.",
+	"group": "machine",
+	"kind": "night_city",
+	"cost": 14,
+	"count": 1,
+	"hostile": true,
+	"rec": "drone",
+	"faction": "arasaka",
+	"cooldown_s": 25,
+	"squad": {
+		"mob": "minecraft:vex",
+		"count": 1
+	}
+}

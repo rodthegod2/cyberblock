@@ -761,5 +761,17 @@
 	"cyberblock.hack.comms.no_host": "There is no host to send to",
 	"cyberblock.team.v": "Linked V",
 	"cyberblock.survey.no_host": "Only a player with a linked Cyberpunk game can run the Atlas survey",
-	"cyberblock.survey.asked": "Asked your Cyberpunk game: survey %s"
+	"cyberblock.survey.asked": "Asked your Cyberpunk game: survey %s",
+	"block.cyberblock.overlord_console": "Overlord Console",
+	"block.cyberblock.trauma_beacon": "Trauma Beacon",
+	"item.cyberblock.hacker_van": "Hacker Van",
+	"item.cyberblock.hacker_drone": "Hacker Drone",
+	"item.cyberblock.netrunner": "Netrunner",
+	"item.cyberblock.overlord_console.tooltip": "Place it, sit down and run a match: a top-down map, a spawn palette and a timeline of events",
+	"item.cyberblock.trauma_beacon.tooltip": "A flare post that marks where a downed player is waiting for the Trauma Team",
+	"item.cyberblock.hacker_van.tooltip": "Place it: a guest who sits in the Van runs hacks for a host from a screen and flies drones",
+	"item.cyberblock.hacker_drone.tooltip": "Launched from the Van: the netrunner's flying eyes, with a short range and a small battery",
+	"item.cyberblock.netrunner.tooltip": "Implant: player hacks against you last a shorter time",
+	"cyberware.cyberblock.netrunner.mc": "makes the effects of player hacks on you shorter",
+	"cyberware.cyberblock.netrunner.cp": "nothing: it guards your Minecraft side"
 }

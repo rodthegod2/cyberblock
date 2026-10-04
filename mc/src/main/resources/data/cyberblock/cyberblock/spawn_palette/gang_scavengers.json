@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"name": "Scavenger Pack",
+	"description": "Three desperate salvagers who swing whatever they find.",
+	"group": "gang",
+	"kind": "night_city",
+	"cost": 8,
+	"count": 3,
+	"hostile": true,
+	"rec": "ganger",
+	"faction": "scavenger",
+	"cooldown_s": 15,
+	"squad": {
+		"mob": "minecraft:husk",
+		"count": 3
+	}
+}

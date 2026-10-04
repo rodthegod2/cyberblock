@@ -1,0 +1,16 @@
+{
+	"schema": 1,
+	"name": "Cyberpsychosis Outbreak",
+	"description": "Chrome casualties break out of the crowd and rush the nearest people.",
+	"cost": 35,
+	"warning_s": 6,
+	"cooldown_s": 180,
+	"radius": 32,
+	"scales_with_intensity": true,
+	"night_city": true,
+	"effect": {
+		"type": "outbreak",
+		"spawn": "cyberblock:cyberpsycho",
+		"count": 2
+	}
+}

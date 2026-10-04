@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"name": "Animals Crew",
+	"description": "Two huge, muscled bruisers who prefer to get close.",
+	"group": "gang",
+	"kind": "night_city",
+	"cost": 10,
+	"count": 2,
+	"hostile": true,
+	"rec": "ganger",
+	"faction": "animals",
+	"cooldown_s": 15,
+	"squad": {
+		"mob": "minecraft:vindicator",
+		"count": 2
+	}
+}
