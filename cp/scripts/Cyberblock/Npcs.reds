@@ -332,20 +332,10 @@ public class CyberblockNpcs {
     return StrContains(text, "male") ? 1 : 0;
   }
 
-  // The vendor type name (RipperDoc, Clothes, ...) for a vendor whose record names one, else n"".
+  // The vendor type name (RipperDoc, Clothes, ...) for a vendor whose record names one, else n"" (the role reader of
+  // Roles.reds, megaplan task 7-S1).
   private static func Role(puppet: ref<ScriptedPuppet>, record: wref<Character_Record>) -> CName {
-    if IsDefined(puppet) && IsDefined(record) {
-      if puppet.IsVendor() {
-        let vendor = record.VendorID();
-        if IsDefined(vendor) {
-          let type = vendor.VendorType();
-          if IsDefined(type) {
-            return EnumValueToName(n"gamedataVendorType", Cast<Int64>(EnumInt(type.Type())));
-          }
-        }
-      }
-    }
-    return n"";
+    return CyberblockRoles.VendorType(puppet, record);
   }
 
   private static func Faction(record: wref<Character_Record>) -> CName {
