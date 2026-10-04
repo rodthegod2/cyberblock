@@ -2,6 +2,7 @@
 
     uv run python -m tools.server_sync backup --to "<server backup folder>"
     uv run python -m tools.server_sync backup --to "<server backup folder>" --from-mount <folder>
+    uv run python -m tools.server_sync pull-backups --to "<folder for the world zips>"
     uv run python -m tools.server_sync verify --backup "<server backup folder>"
     uv run python -m tools.server_sync upload --stage <folder>          # dry run: lists what would be written
     uv run python -m tools.server_sync upload --stage <folder> --go     # really uploads
@@ -17,6 +18,9 @@ backup: a resumable recursive download (a file is skipped when its size and modi
 <to>/server/, then <to>/manifest.json (path, size, sha256 per file) and <to>/summary.json (files, bytes, the level-name
 from server.properties, the jars at the root and in plugins/). --from-mount copies from a mounted folder instead
 (no credentials). A destination inside the repository is refused.
+pull-backups: downloads the mod's own daily world zips (the server writes backups/cyberblock-<date>.zip at backups.hour and keeps
+backups.keep of them; see server.json) into <to>, skipping the ones already complete there, and test-reads every new zip. Run it in
+your own terminal; same connection and password rules as backup. A destination inside the repository is refused.
 verify: re-hashes <backup>/server/ against the manifest.
 upload: sends exactly the staged files, dry run unless --go. There is no delete command at all, and a remote file that
 already exists is overwritten only when its path is in ALLOWLIST, is named with --overwrite <relpath> (repeatable, for
@@ -36,9 +40,11 @@ import hashlib
 import json
 import os
 import posixpath
+import re
 import shutil
 import sys
 import time
+import zipfile
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
@@ -50,6 +56,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ALLOWLIST = ("server.properties", "server.properties.*", "mods/*", "config/cyberblock/*", "cyberblock.zip",
              "fabric-server-mc.*-launcher.*.jar")
 MIRROR, MANIFEST, SUMMARY, JOURNAL = "server", "manifest.json", "summary.json", ".cbupload.json"
+BACKUPS = "backups"  # the mod's daily world zips, <base>/backups/cyberblock-<date>[-<time>].zip (mc/.../backup/BackupRules.java)
+BACKUP_NAME = re.compile(r"cyberblock-\d{4}-\d{2}-\d{2}(-\d{6})?\.zip")
 PART = ".cbpart"  # suffix of a file still downloading; a complete file is renamed into place
 KEYRING_SERVICE = "cyberblock-apex-ftp"
 WINDOWS_BAD = set('<>:"|?*\\/') | {chr(c) for c in range(32)}
@@ -277,6 +285,52 @@ def backup(dest, conn: Conn | None = None, mount=None) -> dict:
     return summary
 
 
+def pull_backups(dest, conn: Conn) -> int:
+    """Download the server's daily world backups (<base>/backups/cyberblock-<date>.zip, megaplan 9-B1) into the flat folder
+    `dest`; a zip already complete there (size and modification time) is skipped. Each downloaded zip is test-read; a bad one is
+    deleted and reported, so the next run fetches it again. Returns the number of zips downloaded."""
+    dest = Path(dest).resolve()
+    if dest == ROOT or ROOT in dest.parents:
+        raise SyncError(f"refusing to download into the repository ({dest}); pick a folder outside it")
+    with connect(conn) as ftp:
+        try:
+            listing = list_dir(ftp, conn.path(BACKUPS))
+        except ftplib.error_perm as e:
+            if not str(e).startswith("550"):
+                raise
+            raise SyncError(f"the server has no {BACKUPS} folder yet (the first daily backup makes it)") from None
+        wanted = [(name, size, mtime) for name, is_dir, size, mtime in sorted(listing)
+                  if not is_dir and BACKUP_NAME.fullmatch(name)]
+        say(f"the server has {len(wanted)} backups")
+        if not wanted:
+            return 0
+        fetched_names = []
+
+        def fetch(rel, part):
+            fetched_names.append(rel)
+            with open(part, "wb") as f:
+                ftp.retrbinary(f"RETR {conn.path(posixpath.join(BACKUPS, rel))}", f.write, blocksize=1 << 16)
+
+        fetched, kept = mirror_files(wanted, dest, fetch)
+    bad = []
+    for name in fetched_names:
+        try:
+            with zipfile.ZipFile(dest / name) as z:
+                problem = z.testzip()
+        except (OSError, zipfile.BadZipFile) as e:
+            problem = type(e).__name__
+        if problem:
+            (dest / name).unlink()
+            bad.append(name)
+            warn(f"error: {name} is not a good zip ({problem}) and was deleted; run pull-backups again")
+        else:
+            say(f"pulled {name} ({(dest / name).stat().st_size} bytes)")
+    say(f"pulled {fetched - len(bad)} backups, {kept} were already complete, into {dest}")
+    if bad:
+        raise SyncError(f"{len(bad)} downloaded backups were damaged")
+    return fetched
+
+
 def verify(backup_dir) -> None:
     backup_dir = Path(backup_dir)
     try:
@@ -451,6 +505,8 @@ def main(argv=None) -> int:
     p = sub.add_parser("backup", help="download the server folder with a manifest")
     p.add_argument("--to", required=True, help="backup folder, outside the repository")
     p.add_argument("--from-mount", help="copy from this mounted server folder instead of FTP (no credentials)")
+    p = sub.add_parser("pull-backups", help="download the server's daily world backups (backups/*.zip)")
+    p.add_argument("--to", required=True, help="folder for the zips, outside the repository")
     p = sub.add_parser("verify", help="re-hash a backup against its manifest")
     p.add_argument("--backup", required=True)
     p = sub.add_parser("upload", help="upload the staged files (dry run unless --go)")
@@ -463,6 +519,8 @@ def main(argv=None) -> int:
     try:
         if args.command == "backup":
             backup(args.to, None if args.from_mount else conn_from_env(), args.from_mount)
+        elif args.command == "pull-backups":
+            pull_backups(args.to, conn_from_env())
         elif args.command == "verify":
             verify(args.backup)
         else:

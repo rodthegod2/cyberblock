@@ -7,6 +7,7 @@ import socket
 import socketserver
 import threading
 import time
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -245,6 +246,90 @@ def test_backup_from_mount_needs_no_credentials(tmp_path, monkeypatch):
     assert (dest / "server" / "rods_ores" / "level.dat").read_bytes() == REMOTE["rods_ores/level.dat"]
     assert json.loads((dest / "summary.json").read_text(encoding="utf-8"))["level-name"] == "rods_ores"
     assert server_sync.main(["verify", "--backup", str(dest)]) == 0
+
+
+# --- pull-backups (megaplan 9-B1) ---------------------------------------------------------------------------------
+
+def world_zip(text: str) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("cyberblock/level.dat", text)
+    return buf.getvalue()
+
+
+def put_backup(ftp, name: str, content: bytes, mtime: int = OLD):
+    path = ftp.remote / "backups" / name
+    path.parent.mkdir(exist_ok=True)
+    path.write_bytes(content)
+    os.utime(path, (mtime, mtime))
+    return content
+
+
+def test_pull_backups_downloads_only_the_world_zips(ftp, tmp_path, capsys):
+    zips = {"cyberblock-2026-10-03.zip": world_zip("a"), "cyberblock-2026-10-04.zip": world_zip("b"),
+            "cyberblock-2026-10-04-143005.zip": world_zip("c")}
+    for name, content in zips.items():
+        put_backup(ftp, name, content)
+    put_backup(ftp, "cyberblock-2026-10-05.zip.part", b"half written")  # the one being made right now
+    put_backup(ftp, "notes.txt", b"not a backup")
+    (ftp.remote / "backups" / "cyberblock-2026-01-01.zip").mkdir()  # a folder is not a backup
+    dest = tmp_path / "zips"
+    assert server_sync.main(["pull-backups", "--to", str(dest)]) == 0
+    assert sorted(p.name for p in dest.iterdir()) == sorted(zips)
+    for name, content in zips.items():
+        assert (dest / name).read_bytes() == content and int((dest / name).stat().st_mtime) == OLD
+    out = capsys.readouterr().out
+    assert "pulled 3 backups" in out and "cyberblock-2026-10-04-143005.zip" in out
+    assert_no_secret(ftp, out)
+
+
+def test_pull_backups_skips_what_it_has_and_fetches_the_new_one(ftp, tmp_path):
+    put_backup(ftp, "cyberblock-2026-10-03.zip", world_zip("a"))
+    dest = tmp_path / "zips"
+    assert server_sync.main(["pull-backups", "--to", str(dest)]) == 0
+    put_backup(ftp, "cyberblock-2026-10-04.zip", world_zip("b"))
+    ftp.commands.clear()
+    assert server_sync.main(["pull-backups", "--to", str(dest)]) == 0
+    assert ftp.sent("RETR") == ["/default/backups/cyberblock-2026-10-04.zip"]
+    assert sorted(p.name for p in dest.iterdir()) == ["cyberblock-2026-10-03.zip", "cyberblock-2026-10-04.zip"]
+
+
+def test_pull_backups_deletes_a_damaged_download_so_the_next_run_fetches_it_again(ftp, tmp_path, capsys):
+    put_backup(ftp, "cyberblock-2026-10-03.zip", b"PK this is not really a zip")
+    dest = tmp_path / "zips"
+    assert server_sync.main(["pull-backups", "--to", str(dest)]) == 1
+    assert "not a good zip" in capsys.readouterr().err and list(dest.iterdir()) == []
+    put_backup(ftp, "cyberblock-2026-10-03.zip", world_zip("fixed"))
+    assert server_sync.main(["pull-backups", "--to", str(dest)]) == 0
+    assert (dest / "cyberblock-2026-10-03.zip").read_bytes() == world_zip("fixed")
+
+
+def test_pull_backups_with_no_backups_yet(ftp, tmp_path, capsys):
+    dest = tmp_path / "zips"
+    assert server_sync.main(["pull-backups", "--to", str(dest)]) == 1
+    assert "the server has no backups folder yet" in capsys.readouterr().err
+    put_backup(ftp, "notes.txt", b"x")  # a folder with no zips is fine, not an error
+    assert server_sync.main(["pull-backups", "--to", str(dest)]) == 0
+    assert not dest.exists()
+
+
+def test_pull_backups_refuses_a_destination_inside_the_repo_and_never_writes_remotely(ftp, tmp_path, capsys):
+    target = REPO / "out" / "zz-pull-test"
+    assert server_sync.main(["pull-backups", "--to", str(target)]) == 1
+    assert "refusing to download into the repository" in capsys.readouterr().err
+    assert not target.exists() and ftp.commands == []
+    put_backup(ftp, "cyberblock-2026-10-03.zip", world_zip("a"))
+    assert server_sync.main(["pull-backups", "--to", str(tmp_path / "outside")]) == 0
+    assert not {c for c, _ in ftp.commands} & {"STOR", "MKD", "DELE", "RMD", "RNFR", "RNTO", "SITE"}
+
+
+def test_pull_backups_never_prints_the_password_even_when_login_fails(ftp, tmp_path, capsys, monkeypatch):
+    real = ftp.password
+    monkeypatch.setenv("APEX_FTP_PASS", real + "-wrong")
+    assert server_sync.main(["pull-backups", "--to", str(tmp_path / "zips")]) == 1
+    captured = capsys.readouterr()
+    assert "Login incorrect" in captured.err and "-wrong" not in captured.err
+    assert_no_secret(ftp, captured.out, captured.err)
 
 
 # --- verify -------------------------------------------------------------------------------------------------------

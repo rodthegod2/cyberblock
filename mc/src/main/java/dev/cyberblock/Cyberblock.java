@@ -126,6 +126,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.mode.van.VanModule.init();
 		// Phase 8 integration: the packages' hooks (matches into the Overlord, player hacks, Downed and spectate; Heat into the Auto-Director)
 		dev.cyberblock.mode.ModeWiring.init();
+		// Phase 9B: daily world backups and /cyberblock backup now (megaplan 9-B1)
+		dev.cyberblock.backup.Backups.init();
 		LOG.info("cyberblock loaded");
 	}
 
