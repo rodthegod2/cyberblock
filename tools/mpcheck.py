@@ -1606,6 +1606,7 @@ MATCH_MODE = "team_deathmatch"  # a shipped `match_mode` id (8A)
 # three shipped Night City `spawn_palette` entries of 8A (3 gangers each, `rec` ganger): one per spawn, so no entry's own cooldown refuses the next spawn
 OVERLORD_ENTRIES = ("gang_maelstrom", "gang_tyger_claws", "gang_valentinos")
 OVERLORD_ENTRY_N = 3  # the `count` of each of them
+OVERLORD_FLOOR = 24  # blocks of stone floor around the host for the Overlord's spawns (they land 18 blocks out at Normal)
 PVP_LOCK_S = 16.0  # after the last hit a player waits 15 s before PvP can go off (megaplan 8-M1), plus a second
 SPAWN_WARNING_S = 3.0  # the Overlord's warning before spawns near a player (megaplan 8-O1); the DLL hears the spawn after it
 WARNING_SLACK = 0.8  # the spawn must come after at least this part of the warning (the command is timed before the server starts its own clock)
@@ -1698,6 +1699,13 @@ def start_match(server: Server) -> None:
     server.rcon("gamemode spectator CbGuest1")
 
 
+def overlord_floor(server: Server) -> None:
+    """A stone floor around the host (the test world is the void and this scenario's fake host sends no replica ground): the Overlord
+    lands spawns only on ground (8O's `no_ground` refusal), OVERLORD_FLOOR blocks around the host, past the minimum distance (12, plus 6)."""
+    r = OVERLORD_FLOOR
+    server.rcon(f"execute at CbHost1 run fill ~-{r} ~-1 ~-{r} ~{r} ~-1 ~{r} minecraft:stone replace minecraft:air")
+
+
 def opt_in(server: Server) -> None:
     """As the host: `/cyberblock overlord optin on`, the match player's consent to the Overlord's spawns and events near it (8O; off until it does)."""
     server.command("cyberblock overlord optin on", as_player="CbHost1")
@@ -1775,6 +1783,7 @@ def scenario_overlord(env: Env, rep: Report) -> None:
     time.sleep(SPAWN_WARNING_S + T_QUIET)
     rep.step("a match player who did not opt in gets no spawn: nothing reaches the host's DLL", lambda: not spawns_since(host, mark))
     opt_in(server)
+    overlord_floor(server)
     mark = host.log.mark()
     sent = overlord_spawn(server, first)
     rep.step("after `/cyberblock overlord optin on` the Overlord's spawn reaches the host's DLL as a valid `spawn`",

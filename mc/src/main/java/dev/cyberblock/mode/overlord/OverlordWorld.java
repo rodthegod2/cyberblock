@@ -346,7 +346,7 @@ final class OverlordWorld {
 					entity.discard();
 				}
 
-				once(mob + " is not a mob");
+				once(type.canSpawn(level) ? mob + " is not a mob" : mob + " cannot spawn here (Peaceful difficulty, or its feature is off)");
 				return placed;
 			}
 
