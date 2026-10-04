@@ -18,7 +18,7 @@ OLD = 1_700_000_000  # fixed modification time of the fake server's files
 
 
 class FtpHandler(socketserver.StreamRequestHandler):
-    """USER PASS TYPE NOOP PASV MLSD LIST MDTM RETR STOR MKD QUIT; paths are absolute, under server.root."""
+    """USER PASS TYPE NOOP PASV MLSD LIST SIZE MDTM RETR STOR MKD QUIT; paths are absolute, under server.root."""
 
     def reply(self, line):
         self.wfile.write(f"{line}\r\n".encode())
@@ -74,23 +74,34 @@ class FtpHandler(socketserver.StreamRequestHandler):
                 self.reply("500 unknown command")
             elif cmd in ("MLSD", "LIST"):
                 folder = self.local(arg)
-                if not folder.is_dir():
+                if not folder.is_dir() or arg in srv.deny_list:
                     self.reply("550 no such folder")
                     continue
                 lines = []
                 for p in sorted(folder.iterdir()):
                     st = p.stat()
+                    if p.name in srv.hide:  # like a link or other special entry the client leaves out
+                        continue
                     if cmd == "MLSD":
                         stamp = time.strftime("%Y%m%d%H%M%S", time.gmtime(st.st_mtime))
                         kind = "dir" if p.is_dir() else "file"
                         lines.append(f"type={kind};size={st.st_size};modify={stamp}; {p.name}")
+                    elif srv.dos_list:
+                        lines.append(f"01-01-24  12:00PM {'<DIR>' if p.is_dir() else st.st_size:>14} {p.name}")
                     else:
                         lines.append(f"{'d' if p.is_dir() else '-'}rw-r--r-- 1 owner group {st.st_size:>8} Jan 01 12:00 {p.name}")
                 self.data(pasv, "".join(f"{x}\r\n" for x in lines).encode())
+            elif cmd == "SIZE" and srv.size_reply:
+                self.reply(srv.size_reply)
+            elif cmd == "SIZE":
+                p = self.local(arg)
+                self.reply(f"213 {p.stat().st_size}" if p.is_file() else "550 no such file")
             elif cmd == "MDTM":
                 p = self.local(arg)
                 self.reply(f"213 {time.strftime('%Y%m%d%H%M%S', time.gmtime(p.stat().st_mtime))}" if p.is_file()
                            else "550 no such file")
+            elif cmd == "STOR" and arg in srv.fail_stor:
+                self.reply("451 local error in processing")  # like a transfer that timed out
             elif cmd == "RETR":
                 p = self.local(arg)
                 if p.is_file():
@@ -122,7 +133,8 @@ class FtpServer(socketserver.ThreadingTCPServer):
         super().__init__(("127.0.0.1", 0), FtpHandler)
         self.root = root.resolve()
         self.user, self.password = "u" + secrets.token_hex(6), secrets.token_urlsafe(18)
-        self.commands, self.no_mlsd = [], False
+        self.commands, self.no_mlsd, self.dos_list, self.size_reply = [], False, False, None
+        self.deny_list, self.hide, self.fail_stor = set(), set(), set()  # remote paths / bare names
 
     def sent(self, cmd):
         return [arg for c, arg in self.commands if c == cmd]
@@ -313,6 +325,101 @@ def test_upload_refuses_to_overwrite_outside_the_allowlist(ftp, tmp_path, capsys
     assert ftp.sent("STOR") == []
     for rel, content in REMOTE.items():
         assert (ftp.remote / rel).read_bytes() == content
+
+
+def assert_untouched(srv):
+    assert srv.sent("STOR") == [] and srv.sent("MKD") == []
+    for rel, content in REMOTE.items():
+        assert (srv.remote / rel).read_bytes() == content
+
+
+def test_upload_refuses_when_the_listing_cannot_be_read(ftp, tmp_path, capsys):
+    ftp.no_mlsd, ftp.dos_list = True, True  # an IIS/DOS-style LIST that the Unix parser cannot read
+    files = dict(STAGED, **{"plugins/Essentials.jar": b"evil"})
+    assert server_sync.main(["upload", "--stage", str(stage(tmp_path, files)), "--go"]) == 1
+    assert "cannot read the server listing" in capsys.readouterr().err
+    assert_untouched(ftp)
+
+
+def test_upload_refuses_when_an_existing_folder_cannot_be_listed(ftp, tmp_path, capsys):
+    ftp.deny_list = {"/default/plugins"}  # 550 for a folder that is there
+    assert server_sync.main(["upload", "--stage", str(stage(tmp_path, {"plugins/Essentials.jar": b"evil"})),
+                             "--go"]) == 1
+    assert "refused to list /default/plugins although it exists" in capsys.readouterr().err
+    assert_untouched(ftp)
+
+
+def test_upload_asks_the_server_about_files_the_listing_left_out(ftp, tmp_path, capsys):
+    ftp.hide = {"Essentials.jar"}  # e.g. a link that the listing drops
+    files = {"plugins/Essentials.jar": b"evil", "plugins/NewPlugin.jar": b"fine"}
+    assert server_sync.main(["upload", "--stage", str(stage(tmp_path, files)), "--go"]) == 1
+    err = capsys.readouterr().err
+    assert "refused: plugins/Essentials.jar already exists on the server (its listing did not show it)" in err
+    assert sorted(ftp.sent("SIZE")) == ["/default/plugins/Essentials.jar", "/default/plugins/NewPlugin.jar"]
+    assert_untouched(ftp)
+
+
+@pytest.mark.parametrize("reply", ["451 try later", "200 sure"])
+def test_upload_refuses_a_new_file_the_server_cannot_confirm(ftp, tmp_path, capsys, reply):
+    ftp.size_reply = reply
+    assert server_sync.main(["upload", "--stage", str(stage(tmp_path, {"cyberblock/level.dat": b"w"})), "--go"]) == 1
+    assert "refused: cyberblock/level.dat: the server could not confirm that it is new" in capsys.readouterr().err
+    assert_untouched(ftp)
+
+
+def test_upload_falls_back_to_mdtm_when_size_is_unknown(ftp, tmp_path):
+    ftp.size_reply, ftp.hide = "502 not implemented", {"Essentials.jar"}
+    assert server_sync.main(["upload", "--stage", str(stage(tmp_path, {"plugins/Essentials.jar": b"evil"}))]) == 1
+    assert ftp.sent("MDTM") == ["/default/plugins/Essentials.jar"]
+    assert server_sync.main(["upload", "--stage", str(stage(tmp_path / "2", {"cyberblock/level.dat": b"w"})),
+                             "--go"]) == 0
+    assert (ftp.remote / "cyberblock" / "level.dat").read_bytes() == b"w"
+
+
+WORLD = {"cyberblock/level.dat": b"new world", "cyberblock/region/r.0.0.mca": b"region" * 1000}
+
+
+def test_an_interrupted_world_upload_can_be_run_again(ftp, tmp_path, capsys):
+    root = stage(tmp_path, WORLD)
+    ftp.fail_stor = {"/default/cyberblock/region/r.0.0.mca"}
+    assert server_sync.main(["upload", "--stage", str(root), "--go"]) == 1  # stops after level.dat
+    assert (ftp.remote / "cyberblock" / "level.dat").read_bytes() == WORLD["cyberblock/level.dat"]
+    ftp.fail_stor, ftp.commands[:] = set(), []
+    capsys.readouterr()
+    assert server_sync.main(["upload", "--stage", str(root), "--go"]) == 0
+    assert ftp.sent("STOR") == ["/default/cyberblock/region/r.0.0.mca"]  # level.dat is finished: skipped
+    assert "skip cyberblock/level.dat" in capsys.readouterr().out
+    for rel, content in WORLD.items():
+        assert (ftp.remote / rel).read_bytes() == content
+    (root / "cyberblock" / "level.dat").write_bytes(b"newer world!")  # changed locally: this stage may replace it
+    ftp.commands[:] = []
+    assert server_sync.main(["upload", "--stage", str(root), "--go"]) == 0
+    assert ftp.sent("STOR") == ["/default/cyberblock/level.dat"]
+    assert (ftp.remote / "cyberblock" / "level.dat").read_bytes() == b"newer world!"
+    assert not (ftp.remote / server_sync.JOURNAL).exists()  # the journal stays local
+
+
+def test_the_journal_never_unlocks_a_file_it_did_not_write(ftp, tmp_path, capsys):
+    root = stage(tmp_path, dict(WORLD, **{"rods_ores/level.dat": b"evil"}))
+    other_base = {"base": "/elsewhere", "path": "rods_ores/level.dat", "size": 4, "mtime_ns": 0, "done": False}
+    (root / server_sync.JOURNAL).write_text(json.dumps(other_base) + "\n{cut sho", encoding="utf-8")
+    assert server_sync.main(["upload", "--stage", str(root), "--go"]) == 1
+    assert "refused: rods_ores/level.dat already exists" in capsys.readouterr().err
+    assert_untouched(ftp)
+
+
+def test_overwrite_flag_restores_one_named_file(ftp, tmp_path, capsys):
+    root = stage(tmp_path, {"plugins/Essentials.jar": b"restored", "rods_ores/level.dat": b"evil"})
+    assert server_sync.main(["upload", "--stage", str(root), "--overwrite", "plugins/Essentials.jar"]) == 1
+    assert "refused: rods_ores/level.dat" in capsys.readouterr().err  # only the named file is unlocked
+    (root / "rods_ores" / "level.dat").unlink()
+    assert server_sync.main(["upload", "--stage", str(root), "--overwrite", "plugins\\Essentials.jar"]) == 0
+    assert "would upload plugins/Essentials.jar (8 bytes, overwrite, --overwrite)" in capsys.readouterr().out
+    assert ftp.sent("STOR") == []
+    assert server_sync.main(["upload", "--stage", str(root), "--overwrite", "plugins/Essentials.jar", "--go"]) == 0
+    assert (ftp.remote / "plugins" / "Essentials.jar").read_bytes() == b"restored"
+    assert server_sync.main(["upload", "--stage", str(root), "--overwrite", "plugins/Other.jar"]) == 1
+    assert "--overwrite names files that are not staged: plugins/Other.jar" in capsys.readouterr().err
 
 
 def test_there_is_no_delete_at_all(ftp, tmp_path):

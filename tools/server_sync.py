@@ -5,6 +5,7 @@
     uv run python -m tools.server_sync verify --backup "<server backup folder>"
     uv run python -m tools.server_sync upload --stage <folder>          # dry run: lists what would be written
     uv run python -m tools.server_sync upload --stage <folder> --go     # really uploads
+    uv run python -m tools.server_sync upload --stage <folder> --overwrite <relpath> [--overwrite ...] [--go]
 
 Connection, from the environment only: APEX_FTP_HOST, APEX_FTP_USER, APEX_FTP_PASS, APEX_FTP_PORT (default 21) and
 APEX_FTP_BASE (default /default). With no APEX_FTP_PASS and an interactive terminal the password is asked hidden
@@ -17,7 +18,13 @@ from server.properties, the jars at the root and in plugins/). --from-mount copi
 (no credentials). A destination inside the repository is refused.
 verify: re-hashes <backup>/server/ against the manifest.
 upload: sends exactly the staged files, dry run unless --go. There is no delete command at all, and a remote file that
-already exists is overwritten only when its path is in ALLOWLIST, so the old server's files cannot be clobbered.
+already exists is overwritten only when its path is in ALLOWLIST, is named with --overwrite <relpath> (repeatable, for
+a deliberate restore), or was written by an earlier run of this same stage (its journal), so the old server's files
+cannot be clobbered. The check fails closed: a staged path the listing does not show is confirmed absent with SIZE (or
+MDTM), a folder that cannot be listed is refused unless its parent's listing shows it missing, and an unreadable listing
+stops the upload. The journal <stage>/.cbupload.json (one JSON object per line: base, path, size, mtime_ns, done) is
+appended before and after every STOR, so an interrupted --go can simply be run again: files it already finished are
+skipped and a half-written one is overwritten. The journal is never uploaded.
 Stdlib only.
 """
 import argparse
@@ -31,7 +38,7 @@ import posixpath
 import shutil
 import sys
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
 from pathlib import Path
@@ -41,7 +48,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # (fabric-server-mc.<mc>-loader.<loader>-launcher.<launcher>.jar), which the panel runs as its Custom Jar.
 ALLOWLIST = ("server.properties", "server.properties.*", "mods/*", "config/cyberblock/*", "cyberblock.zip",
              "fabric-server-mc.*-launcher.*.jar")
-MIRROR, MANIFEST, SUMMARY = "server", "manifest.json", "summary.json"
+MIRROR, MANIFEST, SUMMARY, JOURNAL = "server", "manifest.json", "summary.json", ".cbupload.json"
 PART = ".cbpart"  # suffix of a file still downloading; a complete file is renamed into place
 WINDOWS_BAD = set('<>:"|?*\\/') | {chr(c) for c in range(32)}
 
@@ -132,7 +139,13 @@ def list_dir(ftp: ftplib.FTP, path: str) -> list[tuple[str, bool, int, int | Non
     entries = []
     for line in lines:  # drwxr-xr-x 1 owner group 4096 Jan 01 12:00 name with spaces
         parts = line.split(None, 8)
-        if len(parts) < 9 or parts[8] in (".", "..") or line[:1] not in "-d" or not parts[4].isdigit():
+        if not parts or (parts[0] == "total" and len(parts) == 2):
+            continue
+        if len(parts) < 9 or line[0] not in "-dlbcps" or not parts[4].isdigit():
+            # A listing that cannot be read must not look like an empty folder (upload would then overwrite files it
+            # did not see, backup would miss them). The line itself is not shown: it may name the FTP user.
+            raise SyncError(f"cannot read the server listing of {path} (not the Unix LIST format)")
+        if parts[8] in (".", "..") or line[0] not in "-d":
             continue
         is_dir, mtime = line[0] == "d", None
         if not is_dir:
@@ -283,39 +296,126 @@ def allowed(rel: str) -> bool:
                for pattern in ALLOWLIST)
 
 
-def upload(stage, conn: Conn, go: bool = False) -> None:
+def read_journal(stage: Path, base: str) -> tuple[set[str], dict[str, tuple[int, int]]]:
+    """From <stage>/JOURNAL, for this base folder: (paths an earlier run started to upload, {path: (size, mtime_ns)} of
+    those whose upload finished and whose staged file has not been started again since)."""
+    started, done = set(), {}
+    path = stage / JOURNAL
+    if not path.exists():
+        return started, done
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as e:
+        raise SyncError(f"cannot read the upload journal {path} ({e})") from None
+    for line in lines:
+        try:
+            rec = json.loads(line)
+            if rec["base"] != base:
+                continue
+            if rec["done"]:
+                done[rec["path"]] = (rec["size"], rec["mtime_ns"])
+            else:
+                started.add(rec["path"])
+                done.pop(rec["path"], None)
+        except (ValueError, KeyError, TypeError):
+            continue  # a line cut short when a run was killed
+    return started, done
+
+
+def remote_exists(ftp: ftplib.FTP, path: str) -> bool | None:
+    """Ask the server directly whether a file exists: True on 213, False on 550, None when it cannot tell.
+    SIZE first, MDTM when the server does not know SIZE."""
+    for cmd in ("SIZE", "MDTM"):
+        try:
+            return True if ftp.sendcmd(f"{cmd} {path}").startswith("213") else None
+        except ftplib.error_perm as e:
+            if str(e).startswith("550"):
+                return False
+            if not str(e).startswith(("500", "501", "502", "504")):  # only "unknown command" moves on to MDTM
+                return None
+        except ftplib.Error:
+            return None
+    return None
+
+
+def upload(stage, conn: Conn, go: bool = False, overwrite=()) -> None:
     stage = Path(stage)
     if not stage.is_dir():
         raise SyncError(f"the stage {stage} is not a folder")
-    files = sorted(p.relative_to(stage).as_posix() for p in stage.rglob("*") if p.is_file())
+    files = sorted(rel for p in stage.rglob("*")
+                   if p.is_file() and (rel := p.relative_to(stage).as_posix()) != JOURNAL)
     if not files:
         raise SyncError(f"nothing is staged in {stage}")
-    with connect(conn) as ftp:
-        listings: dict[str, set[str]] = {}
+    overrides = {rel.replace("\\", "/").strip("/") for rel in overwrite}
+    if unknown := sorted(overrides - set(files)):
+        raise SyncError(f"--overwrite names files that are not staged: {', '.join(unknown)}")
+    started, done = read_journal(stage, conn.base)
+    try:
+        journal = open(stage / JOURNAL, "a", encoding="utf-8") if go else nullcontext()
+    except OSError as e:
+        raise SyncError(f"cannot write the upload journal in {stage} ({e})") from None
+    with journal as log, connect(conn) as ftp:
+        listings: dict[str, dict[str, int]] = {}
 
-        def names_in(folder: str) -> set[str]:
+        def names_in(folder: str) -> dict[str, int]:
+            """{name: size} of one remote folder; {} only when the folder is known not to exist."""
             if folder not in listings:
                 try:
-                    listings[folder] = {name for name, *_ in list_dir(ftp, conn.path(folder))}
+                    listings[folder] = {name: size for name, _, size, _ in list_dir(ftp, conn.path(folder))}
                 except ftplib.error_perm as e:
                     if not str(e).startswith("550"):
                         raise
-                    listings[folder] = set()  # the folder does not exist yet
+                    # 550 also means "you may not list this": trust "missing" only when the parent's listing agrees
+                    if not folder or posixpath.basename(folder) in names_in(posixpath.dirname(folder)):
+                        raise SyncError(f"the server refused to list {conn.path(folder)} although it exists, so "
+                                        "nothing can be checked safely; nothing was uploaded") from None
+                    listings[folder] = {}
             return listings[folder]
 
-        plan = [(rel, posixpath.basename(rel) in names_in(posixpath.dirname(rel))) for rel in files]
-        if refused := [rel for rel, exists in plan if exists and not allowed(rel)]:
-            for rel in refused:
-                warn(f"refused: {rel} already exists on the server and is not in the overwrite allowlist")
-            raise SyncError(f"{len(refused)} staged files would overwrite server files outside the allowlist; "
-                            "nothing was uploaded")
-        for rel, exists in plan:
-            say(f"{'upload' if go else 'would upload'} {rel} ({(stage / rel).stat().st_size} bytes, "
-                f"{'overwrite' if exists else 'new'})")
+        plan, refused = [], []
+        for rel in files:
+            st, name = (stage / rel).stat(), posixpath.basename(rel)
+            remote = names_in(posixpath.dirname(rel))
+            exists = name in remote
+            if done.get(rel) == (st.st_size, st.st_mtime_ns) and remote.get(name) == st.st_size:
+                plan.append((rel, "skip"))
+            elif allowed(rel):
+                plan.append((rel, "overwrite" if exists else "new"))
+            elif rel in overrides:
+                plan.append((rel, "overwrite, --overwrite" if exists else "new"))
+            elif rel in started:  # this stage wrote it (perhaps half) in an earlier run
+                plan.append((rel, "overwrite, finishing an earlier upload" if exists else "new"))
+            elif exists:
+                refused.append(f"{rel} already exists on the server and is not in the overwrite allowlist")
+            elif (found := remote_exists(ftp, conn.path(rel))) is None:
+                refused.append(f"{rel}: the server could not confirm that it is new (no SIZE or MDTM answer)")
+            elif found:
+                refused.append(f"{rel} already exists on the server (its listing did not show it) and is not in "
+                               "the overwrite allowlist")
+            else:
+                plan.append((rel, "new"))
+        if refused:
+            for problem in refused:
+                warn(f"refused: {problem}")
+            raise SyncError(f"{len(refused)} staged files were refused; nothing was uploaded "
+                            "(to restore a file on purpose, name it with --overwrite <relpath>)")
+        for rel, how in plan:
+            size = (stage / rel).stat().st_size
+            if how == "skip":
+                say(f"skip {rel} ({size} bytes, already uploaded by an earlier run)")
+            else:
+                say(f"{'upload' if go else 'would upload'} {rel} ({size} bytes, {how})")
+        todo = [rel for rel, how in plan if how != "skip"]
         if not go:
-            say(f"dry run: nothing was written; add --go to upload these {len(files)} files")
+            say(f"dry run: nothing was written; add --go to upload these {len(todo)} files")
             return
-        for rel, _ in plan:
+
+        def note(rel, st, finished):
+            log.write(json.dumps({"base": conn.base, "path": rel, "size": st.st_size, "mtime_ns": st.st_mtime_ns,
+                                  "done": finished}) + "\n")
+            log.flush()
+
+        for rel in todo:
             folder = ""
             for segment in posixpath.dirname(rel).split("/") if "/" in rel else []:
                 parent, folder = folder, posixpath.join(folder, segment)
@@ -324,10 +424,13 @@ def upload(stage, conn: Conn, go: bool = False) -> None:
                         ftp.mkd(conn.path(folder))
                     except ftplib.error_perm:
                         pass  # made meanwhile; a real problem shows in STOR below
-                    names_in(parent).add(segment)
+                    names_in(parent)[segment] = 0
+            st = (stage / rel).stat()
+            note(rel, st, False)  # before STOR: a half-written remote file is still known to be ours
             with open(stage / rel, "rb") as f:
                 ftp.storbinary(f"STOR {conn.path(rel)}", f)
-        say(f"uploaded {len(files)} files to the server")
+            note(rel, st, True)
+        say(f"uploaded {len(todo)} files to the server")
 
 
 def main(argv=None) -> int:
@@ -341,6 +444,9 @@ def main(argv=None) -> int:
     p = sub.add_parser("upload", help="upload the staged files (dry run unless --go)")
     p.add_argument("--stage", required=True)
     p.add_argument("--go", action="store_true", help="really upload")
+    p.add_argument("--overwrite", action="append", default=[], metavar="RELPATH",
+                   help="allow this staged path to overwrite an existing server file outside the allowlist "
+                        "(a deliberate restore; repeat for more files)")
     args = parser.parse_args(argv)
     try:
         if args.command == "backup":
@@ -348,7 +454,7 @@ def main(argv=None) -> int:
         elif args.command == "verify":
             verify(args.backup)
         else:
-            upload(args.stage, conn_from_env(), args.go)
+            upload(args.stage, conn_from_env(), args.go, args.overwrite)
     except SyncError as e:
         warn(f"error: {e}")
         return 1
