@@ -1,0 +1,192 @@
+{
+ "about": "The DOWN `rhack` the server builds (mc ActWire.rhack, RemoteHack.downSeconds) for each of the eleven remote hacks, as the shape shared/protocol.md \"Phase 6: Minecraft -> Cyberpunk\" fixes. mc ActWireTest builds every `down` from its inputs (`target`, `p`, the blackout's `asked` length) and checks it against the document's rules; tests/test_rhack_vectors.py checks the same lines with test_phase6_protocol.rhack_ok and plays them against tools/fakehost.py --hacks2, whose scene they use (its car, its camera, V's feet).",
+ "cases": [
+  {
+   "hack": "veh_lock",
+   "id": 21,
+   "target": "4503599627370497",
+   "down": {
+    "t": "rhack",
+    "id": 21,
+    "target": "4503599627370497",
+    "hack": "veh_lock",
+    "secs": 30
+   }
+  },
+  {
+   "hack": "veh_engine_off",
+   "id": 22,
+   "target": "4503599627370497",
+   "down": {
+    "t": "rhack",
+    "id": 22,
+    "target": "4503599627370497",
+    "hack": "veh_engine_off",
+    "secs": 30
+   }
+  },
+  {
+   "hack": "veh_brake",
+   "id": 23,
+   "target": "4503599627370497",
+   "down": {
+    "t": "rhack",
+    "id": 23,
+    "target": "4503599627370497",
+    "hack": "veh_brake",
+    "secs": 30
+   }
+  },
+  {
+   "hack": "veh_start",
+   "id": 24,
+   "target": "4503599627370497",
+   "down": {
+    "t": "rhack",
+    "id": 24,
+    "target": "4503599627370497",
+    "hack": "veh_start",
+    "secs": 30
+   }
+  },
+  {
+   "hack": "veh_jam",
+   "id": 25,
+   "target": "4503599627370497",
+   "down": {
+    "t": "rhack",
+    "id": 25,
+    "target": "4503599627370497",
+    "hack": "veh_jam",
+    "secs": 30
+   }
+  },
+  {
+   "hack": "cam_feed",
+   "id": 26,
+   "target": "11529215046068469765",
+   "down": {
+    "t": "rhack",
+    "id": 26,
+    "target": "11529215046068469765",
+    "hack": "cam_feed"
+   }
+  },
+  {
+   "hack": "traffic_switch",
+   "id": 27,
+   "target": null,
+   "p": [
+    -6.5,
+    64.0,
+    0.5
+   ],
+   "down": {
+    "t": "rhack",
+    "id": 27,
+    "target": null,
+    "hack": "traffic_switch",
+    "p": [
+     -6.5,
+     64.0,
+     0.5
+    ],
+    "r": 150,
+    "secs": 60
+   }
+  },
+  {
+   "hack": "gridlock",
+   "id": 28,
+   "target": null,
+   "p": [
+    -6.5,
+    64.0,
+    20.5
+   ],
+   "down": {
+    "t": "rhack",
+    "id": 28,
+    "target": null,
+    "hack": "gridlock",
+    "p": [
+     -6.5,
+     64.0,
+     20.5
+    ],
+    "r": 24,
+    "secs": 60
+   }
+  },
+  {
+   "hack": "blackout",
+   "id": 29,
+   "target": null,
+   "p": [
+    -6.5,
+    64.0,
+    0.5
+   ],
+   "asked": 180,
+   "down": {
+    "t": "rhack",
+    "id": 29,
+    "target": null,
+    "hack": "blackout",
+    "p": [
+     -6.5,
+     64.0,
+     0.5
+    ],
+    "r": 150,
+    "secs": 180
+   }
+  },
+  {
+   "hack": "outline",
+   "id": 30,
+   "target": null,
+   "p": [
+    0.5,
+    64.0,
+    0.5
+   ],
+   "down": {
+    "t": "rhack",
+    "id": 30,
+    "target": null,
+    "hack": "outline",
+    "p": [
+     0.5,
+     64.0,
+     0.5
+    ],
+    "r": 24,
+    "secs": 20
+   }
+  },
+  {
+   "hack": "ping_area",
+   "id": 31,
+   "target": null,
+   "p": [
+    -6.5,
+    64.0,
+    10.5
+   ],
+   "down": {
+    "t": "rhack",
+    "id": 31,
+    "target": null,
+    "hack": "ping_area",
+    "p": [
+     -6.5,
+     64.0,
+     10.5
+    ],
+    "r": 32,
+    "secs": 0
+   }
+  }
+ ]
+}

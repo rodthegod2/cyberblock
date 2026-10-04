@@ -47,6 +47,25 @@ class FeedViewersTest {
 	}
 
 	@Test
+	void toggleOffThenAFrameArrivesNoGuestHolderGetsIt() {
+		// Ben (a guest) took the host's feed map while the owner allowed hacks; Ana (the owner, always allowed) watches on the Net Map
+		FeedViewers v = new FeedViewers();
+		Set<UUID> allowed = new java.util.HashSet<>(Set.of(ANA, BEN));
+		v.holding(HOST, BEN, 0L);
+		v.watch(HOST, ANA, true, 0L);
+		v.watch(HOST, OTHER, true, 0L);
+		FeedViewers.Recipients before = v.recipients(HOST, 100L, allowed::contains);
+		assertEquals(Set.of(BEN), before.maps());
+		assertEquals(Set.of(ANA), before.screens(), "a viewer the toggle never admitted gets nothing either");
+		// `/cyberblock guests hacks off`: Ben's holding entry is still live (5 s), and Ana keeps feedreq on, but the next frame skips him
+		allowed.remove(BEN);
+		FeedViewers.Recipients after = v.recipients(HOST, 200L, allowed::contains);
+		assertTrue(after.maps().isEmpty(), "no guest holder gets the frame");
+		assertEquals(Set.of(ANA), after.screens());
+		assertTrue(v.recipients(OTHER, 200L, viewer -> true).maps().isEmpty(), "only that host's holders");
+	}
+
+	@Test
 	void cooldownsRoundUp() {
 		Cooldowns c = new Cooldowns();
 		assertEquals(0L, c.secondsLeft("a", 0L));

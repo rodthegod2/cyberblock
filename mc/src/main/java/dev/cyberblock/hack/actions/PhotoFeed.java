@@ -3,14 +3,19 @@ package dev.cyberblock.hack.actions;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
+import dev.cyberblock.net.JoinLock;
 import dev.cyberblock.net.Permissions;
 import dev.cyberblock.net.ServerNet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundMapItemDataPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -28,15 +33,30 @@ import org.jspecify.annotations.Nullable;
 /**
  * A host's photo feed (megaplan tasks 6-I1 and 6-D1): the DLL sends `feed` (Cyberpunk's picture as 128 x 128 map colours, at most
  * once a second) only while someone watches, asked with `feedreq on|off`. The frames go to the Net Map viewers
- * (`cyberblock:ui t:"feed"`) and into the host's feed map, a locked vanilla filled map whose colours are the picture, so anyone
- * holding it sees the host's view like any map item. The map item remembers its host (custom data), so after a restart holding it
- * finds its host again. Server thread.
+ * (`cyberblock:ui t:"feed"`) and to the players holding the host's feed map, a locked vanilla filled map item that remembers its
+ * host (custom data), so after a restart holding it finds its host again.
+ * <p>
+ * The map's saved colours stay blank: vanilla sends a map's saved colours to every player carrying a copy (and to item-frame
+ * viewers), whatever their permissions, and a cartography table clones it. So each frame goes as a map packet of its own to each
+ * holder the owner's `hacks` toggle admits at that frame (and who is not locked by the join password), and a holder who is turned
+ * away gets a blank picture once. Server thread.
  */
 final class PhotoFeed {
 	static final String TAG = "cyberblock_feed";
 	static final FeedViewers viewers = new FeedViewers();
 	/** The feed map of each host (created on the first "take the feed map"). */
 	private static final Map<UUID, MapId> maps = new HashMap<>();
+	/** A holder's feed map: its host and map id (he may hold an older copy or a clone of another id). */
+	private record Held(UUID host, MapId id) {
+	}
+
+	/** The feed map each online holder held last. */
+	private static final Map<UUID, Held> held = new HashMap<>();
+	/** Holders whose client was last sent a picture (they get a blank one as soon as they are turned away, held or not). */
+	private static final Set<UUID> shown = new HashSet<>();
+	/** Feed map ids already blanked on this server run (a map saved by an older build may still hold a frame). */
+	private static final Set<MapId> scrubbed = new HashSet<>();
+	private static final byte[] BLANK = new byte[ActWire.FEED_BYTES];
 	private static int bad;
 
 	private PhotoFeed() {
@@ -46,6 +66,7 @@ final class PhotoFeed {
 		HostSessions.listen("feed", PhotoFeed::onFeed);
 		HostSessions.onStart(session -> viewers.restarted(session.uuid()));
 		HostSessions.onEnd(session -> viewers.ended(session.uuid()));
+		Cyberblock.LOG.info("feed: feed maps get each frame as a per-holder map packet (the map's saved colours stay blank)");
 	}
 
 	/** `cyberblock:act t:"feed"`: a Net Map viewer starts, renews or stops watching a host. */
@@ -73,6 +94,7 @@ final class PhotoFeed {
 		}
 
 		MapId id = maps.computeIfAbsent(host, h -> create(server.overworld()));
+		scrub(server, id);
 		ItemStack stack = new ItemStack(Items.FILLED_MAP);
 		stack.set(DataComponents.MAP_ID, id);
 		stack.set(DataComponents.CUSTOM_NAME, Component.translatableWithFallback("cyberblock.feed.map", "Photo feed: %s", session.name()));
@@ -93,15 +115,41 @@ final class PhotoFeed {
 
 	/**
 	 * Once a second: players holding a feed map watch its host (only a live host whose `hacks` toggle lets them in, so a map taken
-	 * before the owner switched guests off stops updating); feedreq goes on or off where that changed.
+	 * before the owner switched guests off stops updating, and its holder's picture is blanked); feedreq goes on or off where that
+	 * changed.
 	 */
 	static void tick(final MinecraftServer server, final long now) {
 		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
 			for (InteractionHand hand : InteractionHand.values()) {
-				UUID host = hostOf(p.getItemInHand(hand));
-				if (host != null && mayWatch(host, p.getUUID())) {
+				ItemStack stack = p.getItemInHand(hand);
+				UUID host = hostOf(stack);
+				MapId id = stack.get(DataComponents.MAP_ID);
+				if (host == null || id == null) {
+					continue;
+				}
+
+				scrub(server, id);
+				Held before = held.put(p.getUUID(), new Held(host, id));
+				if (before != null && !before.equals(held.get(p.getUUID()))) {
+					blank(p, before); // he switched maps: the one he holds no longer is not kept up to date
+				}
+
+				if (admitted(host, p)) {
 					viewers.holding(host, p.getUUID(), now);
 				}
+
+				break; // one feed map per player: the main hand's, else the off hand's
+			}
+		}
+
+		// turned away (the owner's `hacks` toggle, the session, the join lock): the picture his client was shown goes blank at once
+		for (UUID viewer : Set.copyOf(shown)) {
+			ServerPlayer p = server.getPlayerList().getPlayer(viewer);
+			Held h = held.get(viewer);
+			if (p == null || h == null) {
+				shown.remove(viewer);
+			} else if (!admitted(h.host(), p)) {
+				blank(p, h);
 			}
 		}
 
@@ -118,6 +166,11 @@ final class PhotoFeed {
 	static boolean mayWatch(final UUID host, final UUID viewer) {
 		HostSession session = HostSessions.of(host);
 		return session != null && session.active() && Permissions.allows(host, viewer, Permissions.Toggle.HACKS);
+	}
+
+	/** May this online player see this host's picture now: {@link #mayWatch} and not locked by the join password. */
+	private static boolean admitted(final UUID host, final ServerPlayer player) {
+		return mayWatch(host, player.getUUID()) && !JoinLock.locked(player);
 	}
 
 	/** The host a feed map item shows (and its map noted again after a restart), null for any other item. */
@@ -138,7 +191,31 @@ final class PhotoFeed {
 		}
 	}
 
-	/** `feed` UP: the frame goes to the host's Net Map viewers and into its feed map. */
+	/** Once per server run and map: its saved colours blank (vanilla then sends the blank to everyone carrying or framing it). */
+	private static void scrub(final MinecraftServer server, final MapId id) {
+		if (!scrubbed.add(id)) {
+			return;
+		}
+
+		MapItemSavedData data = server.overworld().getMapData(id);
+		if (data == null) {
+			return;
+		}
+
+		int cleared = 0;
+		for (int i = 0; i < data.colors.length; i++) {
+			if (data.colors[i] != 0) {
+				data.setColor(i % ActWire.FEED_SIDE, i / ActWire.FEED_SIDE, (byte) 0);
+				cleared++;
+			}
+		}
+
+		if (cleared > 0) {
+			Cyberblock.LOG.info("feed: map {} held a saved frame; blanked", id.id());
+		}
+	}
+
+	/** `feed` UP: the frame goes to the host's Net Map viewers and feed map holders that are admitted at this frame. */
 	static void onFeed(final HostSession session, final com.google.gson.JsonObject m) {
 		byte[] px = ActWire.parseFeed(m);
 		ServerPlayer host = session.player();
@@ -151,32 +228,53 @@ final class PhotoFeed {
 		}
 
 		MinecraftServer server = host.level().getServer();
-		String json = ActWire.feedUi(session.uuid(), px);
-		// the same clock as watch() (Util.getMillis, not the wall clock), and the toggle again: it may have changed since the watch
-		for (UUID viewer : viewers.screenViewers(session.uuid(), Util.getMillis())) {
+		// the same clock as watch() (Util.getMillis, not the wall clock); the toggle, the session and the join lock again at every frame
+		FeedViewers.Recipients to = viewers.recipients(session.uuid(), Util.getMillis(), viewer -> {
 			ServerPlayer p = server.getPlayerList().getPlayer(viewer);
-			if (p != null && Permissions.allows(session.uuid(), viewer, Permissions.Toggle.HACKS)) {
+			return p != null && admitted(session.uuid(), p);
+		});
+		String json = ActWire.feedUi(session.uuid(), px);
+		for (UUID viewer : to.screens()) {
+			ServerPlayer p = server.getPlayerList().getPlayer(viewer);
+			if (p != null) {
 				ServerNet.ui(p, ActWire.UI_FEED, json);
 			}
 		}
 
-		MapId id = maps.get(session.uuid());
-		MapItemSavedData data = id == null ? null : server.overworld().getMapData(id);
-		if (data != null) {
-			for (int z = 0; z < ActWire.FEED_SIDE; z++) {
-				for (int x = 0; x < ActWire.FEED_SIDE; x++) {
-					data.setColor(x, z, px[z * ActWire.FEED_SIDE + x]);
-				}
+		for (UUID viewer : to.maps()) {
+			Held h = held.get(viewer);
+			ServerPlayer p = server.getPlayerList().getPlayer(viewer);
+			if (h != null && p != null && h.host().equals(session.uuid())) {
+				p.connection.send(picture(h.id(), px));
+				shown.add(viewer);
 			}
 		}
 	}
 
+	/** Blanks the feed map a holder's client was shown, once. */
+	private static void blank(final ServerPlayer player, final Held h) {
+		if (shown.remove(player.getUUID())) {
+			player.connection.send(picture(h.id(), BLANK));
+		}
+	}
+
+	/** One whole 128 x 128 picture for this map id on one client only; the map's saved colours are not touched. */
+	private static ClientboundMapItemDataPacket picture(final MapId id, final byte[] px) {
+		return new ClientboundMapItemDataPacket(id, (byte) 0, true, Optional.empty(),
+			Optional.of(new MapItemSavedData.MapPatch(0, 0, ActWire.FEED_SIDE, ActWire.FEED_SIDE, px)));
+	}
+
 	static void left(final UUID player) {
 		viewers.left(player);
+		held.remove(player);
+		shown.remove(player);
 	}
 
 	static void clear() {
 		viewers.clear();
 		maps.clear();
+		held.clear();
+		shown.clear();
+		scrubbed.clear();
 	}
 }
