@@ -267,3 +267,17 @@ def test_the_survey_tour_is_blocked_while_not_host():
     blocked = survey[survey.index("private func Blocked("):]
     blocked = blocked[:blocked.index("\n  }\n")]
     assert re.search(r'!system\.Session\(\)\.IsHost\(\) \{\s*return n"session";', blocked)
+
+
+def test_night_city_is_paused_only_while_the_dll_pump_can_deliver_the_resume():
+    # 2026-10-04 live bug: the DLL never found CyberblockUi.Pump, the pause came from CyberblockSystem's tick, which stands
+    # still while paused, so the `resume` was never drained and Night City stayed paused.
+    code = all_code()
+    callers = sorted(name for name, text in code.items() if re.search(r"(?<!Unpause)\bPauseGame\(", text))
+    assert callers == ["Menus.reds"], "only Menus.reds may pause Night City"
+    menus = code["Menus.reds"]
+    case = menus[menus.index('case n"pause":'):]
+    case = case[:case.index('case n"resume":')]
+    assert len(re.findall(r"(?<!Unpause)\bPauseGame\(", case)) == len(re.findall(r"(?<!Unpause)\bPauseGame\(", menus)) == 1
+    assert re.search(r"if Cyberblock_UiPumpLive\(\) \{\s*requests\.PauseGame\(\);", case)
+    assert '"ui: not pausing Night City (the DLL pump is not running, a resume could not be delivered)"' in case
