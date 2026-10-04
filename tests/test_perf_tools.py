@@ -85,6 +85,7 @@ def test_report_lines_are_read_back():
     assert perfcheck.export_lines(line) == [{"w": 960, "h": 540, "fps": 59.8, "readback_ms": 12.1, "readback_p95_ms": 20.4, "copy_ms": 0.81}]
     fig = "figures: 48.0 drawn of 96.0 near (max 48, cap 48), 20.5 animated; client 140 fps"
     assert perfcheck.figure_lines(fig) == [{"drawn": 48.0, "near": 96.0, "max": 48, "cap": "48", "animated": 20.5, "fps": 140}]
+    assert perfcheck.BUDGET_LINE.findall("x\n[Server thread/INFO] (cyberblock) budget: last 60 s: replica 3 messages\ny") == ["budget: last 60 s: replica 3 messages"]
     assert perfcheck.relay_drops("relay: CbHost1 dropped ground x 3 (rate)\nrelay: CbHost1 dropped ground x 2 (rate)") == {"ground": 5}
 
 

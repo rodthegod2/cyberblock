@@ -44,6 +44,7 @@ LOAD_LINE = re.compile(r"\[(\w+)\] load: (\{.*\})")
 EXPORT_LINE = re.compile(r"frame export: (\d+)x(\d+), ([\d.]+) fps, readback ([\d.]+) ms avg \(p95 ([\d.]+) ms\), copy ([\d.]+) ms avg")
 FIGURES_LINE = re.compile(r"figures: ([\d.]+) drawn of ([\d.]+) near \(max (\d+), cap (\w+)\), ([\d.]+) animated; client (\d+) fps")
 DROPS = re.compile(r"relay: \w+ dropped (\w+) x (\d+)")
+BUDGET_LINE = re.compile(r"budget: last 60 s: .*")
 
 
 @dataclass
@@ -184,6 +185,7 @@ def measure(env: mpcheck.Env, args: argparse.Namespace) -> dict:
     report["export"] = {name: export_lines(clients[name].log.text()) for name in HOST_PORTS}
     report["figures"] = {name: figure_lines(clients[name].log.text()) for name in GUEST_NAMES[:args.guests]}
     report["relay_drops"] = relay_drops(server.log.text())
+    report["budget_lines"] = BUDGET_LINE.findall(server.log.text())  # megaplan 9-F1: what had to wait for the next ticks (none before 9-F1)
     return report
 
 
