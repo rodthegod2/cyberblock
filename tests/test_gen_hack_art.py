@@ -2,6 +2,7 @@
 import importlib.util
 import itertools
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -129,6 +130,10 @@ def test_no_file_collides_with_a_phase_4_device_file(art):
 def test_every_daemon_is_a_valid_file_with_original_codes_and_three_rising_tiers(lang):
     daemons = entries("daemon")
     assert sorted(daemons) == sorted(ACTIONS)
+    # The `daemon` message `list` carries each daemon's `action` (the protocol allows [a-z0-9_]{1,32}), never its content id or file
+    # name; the shipped defaults merely name each file after its action, a datapack daemon may use any name.
+    schema_actions = read(ROOT / "shared" / "content-schemas" / "daemon.schema.json")["properties"]["action"]["enum"]
+    assert schema_actions == ACTIONS and all(re.fullmatch(r"[a-z0-9_]{1,32}", a) for a in ACTIONS)
     for name, d in daemons.items():
         assert d["action"] == name and set(d["sequence"]) <= CODES and 2 <= len(d["sequence"]) <= 4, name
         assert len({tuple(x["sequence"]) for x in daemons.values()}) == len(daemons), "two daemons share a sequence"
