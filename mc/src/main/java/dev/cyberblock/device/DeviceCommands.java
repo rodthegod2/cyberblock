@@ -20,7 +20,7 @@ import net.minecraft.server.level.ServerPlayer;
 /**
  * {@code /cyberblock guests devices <type> [on|off]} (a host lets guests use one device type of its Night City, or not; section 1.11's
  * toggle bits on top of {@code /cyberblock guests devices on|off}), and with {@code -Dcyberblock.devtools=true} for ops the harness
- * commands {@code /cyberblock test devact <x> <y> <z> <act> [row]} (a use of the device block there, as the source player: {@code use},
+ * commands {@code /cyberblock test devact|device <x> <y> <z> <act> [row]} (a use of the device block there, as the source player: {@code use},
  * {@code sneak}, a device act or {@code buy}; with a row, {@code buy} buys it) and {@code /cyberblock test devicelist <host>} (the host's
  * devices). Brigadier merges these literals with the other {@code /cyberblock} commands.
  */
@@ -39,12 +39,17 @@ final class DeviceCommands {
 
 		dispatcher.register(Commands.literal("cyberblock").then(Commands.literal("guests").then(devices)));
 		if (DevCommands.enabled()) {
+			// test devact (the plan's name) and test device (the name 4P's harness uses) are the same command
+			for (String name : new String[] {"devact", "device"}) {
+				dispatcher.register(Commands.literal("cyberblock").then(Commands.literal("test").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+					.then(Commands.literal(name).then(Commands.argument("x", IntegerArgumentType.integer()).then(Commands.argument("y", IntegerArgumentType.integer())
+						.then(Commands.argument("z", IntegerArgumentType.integer()).then(Commands.argument("act", StringArgumentType.word())
+							.executes(c -> test(c.getSource(), pos(c), StringArgumentType.getString(c, "act"), -1))
+							.then(Commands.argument("row", IntegerArgumentType.integer(0, Shops.MAX_ROWS - 1))
+								.executes(c -> test(c.getSource(), pos(c), StringArgumentType.getString(c, "act"), IntegerArgumentType.getInteger(c, "row")))))))))));
+			}
+
 			dispatcher.register(Commands.literal("cyberblock").then(Commands.literal("test").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
-				.then(Commands.literal("devact").then(Commands.argument("x", IntegerArgumentType.integer()).then(Commands.argument("y", IntegerArgumentType.integer())
-					.then(Commands.argument("z", IntegerArgumentType.integer()).then(Commands.argument("act", StringArgumentType.word())
-						.executes(c -> test(c.getSource(), pos(c), StringArgumentType.getString(c, "act"), -1))
-						.then(Commands.argument("row", IntegerArgumentType.integer(0, Shops.MAX_ROWS - 1))
-							.executes(c -> test(c.getSource(), pos(c), StringArgumentType.getString(c, "act"), IntegerArgumentType.getInteger(c, "row")))))))))
 				.then(Commands.literal("devicelist").then(Commands.argument("host", StringArgumentType.word())
 					.executes(c -> list(c.getSource(), StringArgumentType.getString(c, "host")))))));
 		}

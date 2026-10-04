@@ -5,11 +5,12 @@ import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongLinkedOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import net.minecraft.world.level.block.Blocks;
@@ -202,7 +203,7 @@ public final class DeviceRegistry {
 			}
 		}
 
-		List<Long> allowed = new ArrayList<>();
+		Set<Long> allowed = new LinkedHashSet<>();
 		for (Map.Entry<Long, BlockState> e : want.entrySet()) {
 			long cell = e.getKey();
 			Key holder = this.cellOwner.get(cell);
@@ -214,7 +215,8 @@ public final class DeviceRegistry {
 			}
 		}
 
-		boolean whole = allowed.size() == want.size();
+		// a door stands whole or not at all (its attachments, the lock lamp, may be missing)
+		boolean whole = want.entrySet().stream().allMatch(e -> allowed.contains(e.getKey()) || e.getValue().getBlock() != look.blocks().block().getBlock());
 		if (whole || t.device.type() != DeviceType.DOOR) {
 			for (long cell : allowed) {
 				BlockState state = want.get(cell);

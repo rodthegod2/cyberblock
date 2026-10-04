@@ -24,9 +24,9 @@ import org.jspecify.annotations.Nullable;
  * off|red|amber|green; screen_frame on) and 4B's blocks (lamp color + lit; sliding_gate axis; traffic_lamp light off|red|yellow|green;
  * lift_call_button unsupported); camera and turret mode, facing, broken and quest_locked are the same in both.
  *
- * <p>Runtime feature check: an id that is not registered first tries the other naming ({@code <ns>:lamp_<dye>} is {@code <ns>:lamp}
- * with that color), then falls back to the type's vanilla stand-in, logged once per id ({@code devices: block <id> is not registered:
- * <type> uses <stand-in>}).
+ * <p>Runtime feature check: 4B's device doors replace device_map's vanilla doors when they are registered; an id that is not registered
+ * first tries the other naming ({@code <ns>:lamp_<dye>} is {@code <ns>:lamp} with that color), then falls back to the type's vanilla
+ * stand-in, logged once per id ({@code devices: block <id> is not registered: <type> uses <stand-in>}).
  */
 public final class DeviceBlocks {
 	public static final String LAMP = "cyberblock:lamp_white", LOCK_LAMP = "cyberblock:lamp_red", CAMERA = "cyberblock:eye_camera",
@@ -36,6 +36,8 @@ public final class DeviceBlocks {
 	/** The sliding gate's last step (4A's blockstates): fully open. */
 	static final String GATE_OPEN_STEP = "4";
 	private static final Pattern DYED_LAMP = Pattern.compile("([a-z0-9_.-]+):lamp_([a-z_]+)");
+	private static final Map<String, String> PREFERRED = Map.of("minecraft:oak_door", "cyberblock:device_door", "minecraft:iron_door",
+		"cyberblock:device_iron_door");
 	/** Plain vanilla blocks with no redstone output and no screen of their own, one per type, for a missing block. */
 	private static final Map<DeviceType, Block> STAND_INS = new EnumMap<>(DeviceType.class);
 	private static final Set<String> warned = ConcurrentHashMap.newKeySet();
@@ -83,7 +85,11 @@ public final class DeviceBlocks {
 	}
 
 	private static @Nullable BlockState find(final String id) {
-		BlockState s = registered(id);
+		// 4B's device doors stand for the vanilla doors of device_map when they exist: hidden for active hosts (no Minecraft door drawn
+		// over Night City's), unbreakable, spared by explosions, no drops
+		String preferred = PREFERRED.get(id);
+		BlockState s = preferred == null ? null : registered(preferred);
+		s = s != null ? s : registered(id);
 		Matcher lamp = DYED_LAMP.matcher(id);
 		if (s == null && lamp.matches()) {
 			BlockState one = registered(lamp.group(1) + ":lamp");

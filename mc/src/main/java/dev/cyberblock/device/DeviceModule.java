@@ -290,7 +290,10 @@ public final class DeviceModule {
 		}
 
 		switch (u.outcome()) {
-			case REFUSED -> player.sendOverlayMessage(Component.translatableWithFallback(u.key(), u.fallback()));
+			case REFUSED -> {
+				player.sendOverlayMessage(Component.translatableWithFallback(u.key(), u.fallback()));
+				Cyberblock.LOG.info("devices: {} used {} -> refused here ({})", who, what, u.key());
+			}
 			case SHOP -> {
 				if (row < 0) {
 					Vending.open(player, t, pos);

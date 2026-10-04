@@ -118,6 +118,14 @@ class DeviceRegistryTest {
 	}
 
 	@Test
+	void aPlayersBlockWhereTheLockLampGoesLeavesOnlyTheLampOut() {
+		this.world.put(cell(0, 66, 0), Blocks.STONE.defaultBlockState());
+		this.registry.update(HOST, List.of(door(1, 0, Device.DOOR_LOCKED, Device.LOCKED | 16)), 0, this.cells);
+		assertEquals(Blocks.OAK_DOOR, this.world.get(cell(0, 64, 0)).getBlock());
+		assertEquals(Blocks.STONE, this.world.get(cell(0, 66, 0)).getBlock());
+	}
+
+	@Test
 	void aSecureDoorIsIronAndAMovedDeviceMovesItsBlocks() {
 		this.registry.update(HOST, List.of(door(1, 0, Device.DOOR_CLOSED, Device.SECURE | 16)), 0, this.cells);
 		assertEquals(Blocks.IRON_DOOR, this.world.get(cell(0, 64, 0)).getBlock());
