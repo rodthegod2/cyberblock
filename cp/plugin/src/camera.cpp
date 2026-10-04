@@ -7,6 +7,7 @@
 //   script API core/entity/entity.swift)
 // Positions (camera, feet) take the ground alignment (plan 2026-10-03-retest2 section 1.1: Minecraft y = Cyberpunk z - k/64),
 // read once per publish and sent as `cam.lv`; directions (facing, forward, the look quaternion) never do.
+// Phase Q (megaplan section 1.9): while `prefs.debug` (the view debug flag) is on, `cam` carries view.cpp's `vdbg`.
 #include "camera.hpp"
 #include "cbmath.hpp"
 #include "compositor.h"
@@ -189,7 +190,8 @@ namespace cb::camera
 									 .menu = natives::menuOpen,
 									 .air = natives::inAir,
 									 .held = natives::held},
-									firstPerson, seated, levelK));
+									firstPerson, seated, levelK,
+									world::view_prefs().debug ? std::optional(view::vdbg()) : std::nullopt));
 		compositor::set_host_pose(float(look.yaw), float(look.pitch), 0.0f, float(vfov), position.x, position.y, position.z, steve);
 		compositor::set_host_planes(kNearClip, kFarClip);
 		learn_turn_rate(look.yaw, mouseX);
