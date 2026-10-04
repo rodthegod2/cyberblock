@@ -409,7 +409,7 @@ public final class HoloModule {
 	}
 
 	private static void refuse(final ServerPlayer player, final String kind, final String id, final String key) {
-		player.sendSystemMessage(refusalText(key, HoloRules.cooldownLeft(lastSpawn.get(player.getUUID()), System.currentTimeMillis())));
+		player.sendSystemMessage(HoloText.refusal(key, HoloRules.cooldownLeft(lastSpawn.get(player.getUUID()), System.currentTimeMillis())));
 		Cyberblock.LOG.info("holo: {} refused {} {} ({})", player.getPlainTextName(), kind, id, key);
 		if (granted(player)) {
 			send(player, false, false);
@@ -455,7 +455,7 @@ public final class HoloModule {
 	}
 
 	private static void sendTeleport(final HostSession s, final ServerPlayer player, final Pending p) {
-		s.send(HoloWire.vteleport(p.id(),p.p()[0], p.p()[1], p.p()[2], p.target().yaw()));
+		s.send(HoloWire.vteleport(p.id(), p.p()[0], p.p()[1], p.p()[2], p.target().yaw()));
 		Cyberblock.LOG.info("holo: {} -> {} {}: vteleport {} sent", player.getPlainTextName(), p.target().kind().key(), p.target().id(), p.id());
 	}
 
@@ -476,7 +476,7 @@ public final class HoloModule {
 		Target t = p.target();
 		if (!a.ok()) {
 			lastSpawn.remove(s.uuid());
-			player.sendSystemMessage(Component.translatableWithFallback("cyberblock.holo.failed", "Holo-Table spawn failed: %s", reason(a.reason())));
+			player.sendSystemMessage(Component.translatableWithFallback("cyberblock.holo.failed", "Holo-Table spawn failed: %s", HoloText.reason(a.reason())));
 			Cyberblock.LOG.info("holo: {} -> {} {} failed ({})", s.name(), t.kind().key(), t.id(), a.reason());
 			return;
 		}
@@ -487,33 +487,6 @@ public final class HoloModule {
 		protectedSince.put(s.uuid(), System.currentTimeMillis());
 		player.sendSystemMessage(Component.translatableWithFallback("cyberblock.holo.spawned", "Spawned at %s (5 s of protection)", t.name()));
 		Cyberblock.LOG.info(String.format(Locale.ROOT, "holo: %s -> %s %s ok (%.1f %.1f %.1f)", s.name(), t.kind().key(), t.id(), at[0], at[1], at[2]));
-	}
-
-	static Component reason(final String reason) {
-		return switch (reason) {
-			case "" -> Component.translatableWithFallback("cyberblock.holo.reason.unknown", "Cyberpunk gave no reason");
-			case "no ground" -> Component.translatableWithFallback("cyberblock.holo.reason.no_ground", "no ground under that spot in Night City");
-			case "timeout" -> Component.translatableWithFallback("cyberblock.holo.reason.timeout", "Night City did not load there in time");
-			default -> reason.startsWith("blocked (") && reason.endsWith(")")
-				? Component.translatableWithFallback("cyberblock.holo.reason.blocked", "blocked (%s)", reason.substring(9, reason.length() - 1))
-				: Component.literal(reason);
-		};
-	}
-
-	static Component refusalText(final String key, final long wait) {
-		return switch (key) {
-			case "cyberblock.holo.pending" -> Component.translatableWithFallback(key, "A Holo-Table spawn is already on its way");
-			case "cyberblock.holo.cooldown" -> Component.translatableWithFallback(key, "Wait %s s before the next Holo-Table spawn", wait);
-			case "cyberblock.holo.team_only" -> Component.translatableWithFallback(key, "In a match you can only spawn at your team's spawns");
-			case "cyberblock.holo.locked_zone" -> Component.translatableWithFallback(key, "That spot is inside a locked match zone");
-			case "cyberblock.holo.self" -> Component.translatableWithFallback(key, "That is you");
-			case "cyberblock.holo.friend_hidden" -> Component.translatableWithFallback(key, "That player cannot be joined right now");
-			case "cyberblock.holo.friend_away" -> Component.translatableWithFallback(key, "That player is not in Night City");
-			case "cyberblock.holo.held" -> Component.translatableWithFallback(key, "Spawn refused: the game holds V right now (a scene or a ride)");
-			case "cyberblock.holo.vehicle" -> Component.translatableWithFallback(key, "Spawn refused: V is in a vehicle");
-			case "cyberblock.holo.no_ground" -> Component.translatableWithFallback(key, "Night City is not built there yet (no ground under that spot)");
-			default -> Component.translatableWithFallback("cyberblock.holo.gone", "That spawn point is gone");
-		};
 	}
 
 	/**
