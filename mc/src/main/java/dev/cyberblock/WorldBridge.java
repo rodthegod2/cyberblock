@@ -1,8 +1,14 @@
 // Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
 package dev.cyberblock;
 
+import com.google.gson.JsonObject;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
+import dev.cyberblock.replica.NightCityMap;
+import dev.cyberblock.replica.Palette;
+import dev.cyberblock.replica.ReplicaBlocks;
+import dev.cyberblock.replica.ReplicaRules;
+import it.unimi.dsi.fastutil.longs.Long2IntMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -21,22 +27,24 @@ import net.minecraft.world.phys.AABB;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Server-side half: Night City's collision as invisible barrier blocks, per host session (plan 2026-10-04 section 1.4), and the
- * world's block changes for every host near them. Server thread only.
+ * Server-side half: Night City as replica blocks (megaplan task 3-R1; before Phase 3, invisible barriers) from every host session's
+ * probes (plan 2026-10-04 section 1.4), and the world's block changes for every host near them. The replica is saved with the world
+ * and grows as anyone explores: only an unground of cells seen empty takes blocks out; leaving the probe radius, a clear and a session
+ * end keep them. Barriers remain only for the projectile cells (pcells). Server thread only.
  */
 public final class WorldBridge {
 	/** More than this in one message is a bug or an attack: it would stall the server thread. */
 	private static final long MAX_CELLS = 16_384L;
 	private static volatile MinecraftServer server;
-	/** The barriers we placed and which hosts' ground each is (a reset only removes ours, never the player's builds). */
+	/** Which hosts report each cell as ground right now (inside their probe radius); the replica blocks themselves stay. */
 	private static final Claims claims = new Claims();
 	/** Per host session: its share of the block changes and its projectile barriers. */
 	private static final Map<UUID, Host> hosts = new HashMap<>();
 	/** While placing or removing a host's own ground: those changes aren't news to any host. */
 	private static boolean placingGround;
 	/**
-	 * Outline blocks a creative player broke, until they come back (plan Q-B6). A broken cell keeps its hosts' claims: only the
-	 * Minecraft block went, so a re-report or the snap-back puts the barrier back and an unground still lets go of it.
+	 * Replica blocks a creative player broke, until they come back (plan Q-B6, megaplan 3-R1): the snap-back or a re-report puts
+	 * the block back; an unground of the cell seen empty means Night City has nothing there any more.
 	 */
 	private static final OutlineGuard guard = new OutlineGuard();
 	/** The protocol's limit for one pcells message. */
@@ -51,6 +59,8 @@ public final class WorldBridge {
 		final BlockFeed feed = new BlockFeed();
 		/** Barriers on Night City surfaces in the way of this host's Steve's projectiles, for 3 seconds. */
 		final TempCells pcells = new TempCells();
+		/** Where this session's replica materials come from: "probes" (ground.m) or "heuristic"; null before its first ground. */
+		@Nullable String materialPath;
 	}
 
 	private WorldBridge() {
@@ -68,7 +78,7 @@ public final class WorldBridge {
 		Bridge.alignK = k();
 	}
 
-	/** Before the world is saved: take our barriers out so the save is vanilla. */
+	/** Before the world is saved: take our projectile barriers out (the replica blocks are saved with the world). */
 	static void detach() {
 		MinecraftServer s = server;
 		server = null;
@@ -78,7 +88,6 @@ public final class WorldBridge {
 
 		if (s != null) {
 			ServerLevel level = s.overworld();
-			removeBarriers(level, claims.clear());
 			for (Host h : hosts.values()) {
 				removeTemp(level, h.pcells.clear());
 			}
@@ -163,17 +172,44 @@ public final class WorldBridge {
 		return true;
 	}
 
-	/** {"t":"ground"} from a host: barriers, only into air (or a cell another host already made one). */
-	static void solid(final HostSession s, final List<Ranges.Range> ranges) {
-		edit(s.uuid(), ranges, true);
+	/**
+	 * {"t":"ground"} from a host: replica blocks into air cells only (never over a player's block), the material from ground.m through
+	 * the palette, else the heuristic (megaplan 3-R1). The session's first ground logs which path is active, and again once probes
+	 * start giving materials.
+	 */
+	static void solid(final HostSession s, final JsonObject m) {
+		List<Ranges.Range> ranges = Ranges.decode(ints(m));
+		int[] codes = ReplicaRules.codes(m, ranges.size());
+		String path = ReplicaRules.materialPath(codes);
+		Host h = host(s.uuid());
+		if (h.materialPath == null || "probes".equals(path) && !path.equals(h.materialPath)) {
+			h.materialPath = path;
+			Cyberblock.LOG.info("replica: materials from {} ({})", path, s.name());
+		}
+
+		edit(s, ranges, codes, true, false);
 	}
 
-	/** Ranges the host no longer reports as solid: our barriers there come out unless another host still reports them. */
-	static void unsolid(final HostSession s, final List<Ranges.Range> ranges) {
-		edit(s.uuid(), ranges, false);
+	/**
+	 * Ranges the host no longer reports as solid: its claims go; the replica blocks there come out only when the cells were seen empty
+	 * (unground.seen) and no other host still reports them. Cells that only left the probe radius stay.
+	 */
+	static void unsolid(final HostSession s, final JsonObject m) {
+		edit(s, Ranges.decode(ints(m)), null, false, ReplicaRules.seen(m));
 	}
 
-	private static void edit(final UUID owner, final List<Ranges.Range> ranges, final boolean place) {
+	private static int[] ints(final JsonObject m) {
+		var a = m.getAsJsonArray("c");
+		int[] out = new int[a.size()];
+		for (int i = 0; i < out.length; i++) {
+			out[i] = a.get(i).getAsInt();
+		}
+
+		return out;
+	}
+
+	private static void edit(final HostSession session, final List<Ranges.Range> ranges, final int @Nullable [] codes, final boolean place,
+		final boolean seen) {
 		MinecraftServer s = server;
 		if (s == null) {
 			return;
@@ -190,12 +226,20 @@ public final class WorldBridge {
 			return;
 		}
 
-		BlockState barrier = Blocks.BARRIER.defaultBlockState();
+		UUID owner = session.uuid();
+		ServerPlayer player = session.player();
+		String district = session.district();
 		BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 		int restored = 0;
 		placingGround = true;
 		try {
-			for (Ranges.Range r : ranges) {
+			for (int i = 0; i < ranges.size(); i++) {
+				Ranges.Range r = ranges.get(i);
+				int code = codes == null ? ReplicaBlocks.UNKNOWN : codes[i];
+				// the street the host's Steve stands on is the heuristic's reference (no player this tick: the range's own top)
+				int refY = player != null ? player.getBlockY() : r.yTop() + 1;
+				int top = NightCityMap.top(r.x(), r.z());
+				boolean water = NightCityMap.water(r.x(), r.z());
 				for (int y = Math.max(r.yBottom(), level.getMinY()); y <= Math.min(r.yTop(), level.getMaxY()); y++) {
 					pos.set(r.x(), y, r.z());
 					if (!level.isInWorldBounds(pos)) {
@@ -203,28 +247,40 @@ public final class WorldBridge {
 					}
 
 					long cell = pos.asLong();
+					BlockState state = level.getBlockState(pos);
 					if (!place) {
-						if (claims.release(owner, cell)) {
-							guard.unclaimed(cell); // no host reports it any more: a broken outline block has nothing to come back to
-							if (!temp(cell) && level.getBlockState(pos).is(Blocks.BARRIER)) {
-								level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
-							}
+						claims.release(owner, cell);
+						boolean othersClaim = claims.claimed(cell);
+						if (ReplicaRules.ungroundRemoves(seen, ReplicaBlocks.is(state), othersClaim)) {
+							level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+						}
+
+						if (seen && !othersClaim) {
+							guard.unclaimed(cell); // seen empty: a broken replica block has nothing to come back to
 						}
 
 						continue;
 					}
 
-					// a broken outline block the probes report again comes back now, whatever its decision (plan Q-B6)
+					// a broken replica block the probes report again comes back now, whatever its decision (plan Q-B6)
 					boolean wasBroken = guard.reported(cell);
-					if (level.getBlockState(pos).isAir()) {
-						// air first: a claimed barrier a player broke comes back when any of its hosts reports it again
-						level.setBlock(pos, barrier, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
-						claims.claim(owner, cell);
-						restored += wasBroken ? 1 : 0;
-					} else if (claims.claimed(cell)) {
-						claims.claim(owner, cell); // another host's barrier already stands there
-					} else if (promote(cell) && level.getBlockState(pos).is(Blocks.BARRIER)) {
-						claims.claim(owner, cell); // a projectile's barrier the probes now report as ground stays
+					boolean excluded = ReplicaRules.excluded(cell), temp = temp(cell);
+					// the spawn platform's barriers (wb-left) yield to Night City: the replica takes the cell over
+					boolean air = state.isAir() || !excluded && !temp && state.is(Blocks.BARRIER) && SafeSpots.releaseSpawnPlatformCell(pos.immutable());
+					switch (ReplicaRules.onGround(excluded, air, temp && state.is(Blocks.BARRIER))) {
+						case PLACE -> {
+							level.setBlock(pos, replica(Palette.material(code, r, y, refY, top, water, district)), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+							claims.claim(owner, cell);
+							restored += wasBroken ? 1 : 0;
+						}
+						case PROMOTE -> {
+							promote(cell); // a projectile's barrier the probes now report as ground: Night City is there
+							level.setBlock(pos, replica(Palette.material(code, r, y, refY, top, water, district)), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+							claims.claim(owner, cell);
+						}
+						case CLAIM -> claims.claim(owner, cell); // a player's block or a replica block already stands there
+						case SKIP -> {
+						}
 					}
 				}
 			}
@@ -237,44 +293,29 @@ public final class WorldBridge {
 		}
 	}
 
-	/** {"t":"clear"}: this host's barriers go (those no other host reports), and its projectile ones. */
+	/** The replica block of a material code (a barrier only if the blocks were never registered, which a running game never sees). */
+	private static BlockState replica(final int material) {
+		Block block = ReplicaBlocks.block(material);
+		return block == null ? Blocks.BARRIER.defaultBlockState() : block.defaultBlockState();
+	}
+
+	/** {"t":"clear"}: this host's claims and projectile barriers go; the replica blocks stay (megaplan 3-R1). */
 	static void clearSolid(final HostSession s) {
 		release(s.uuid(), false);
 	}
 
-	/** The session ended: its barriers and projectile barriers go, and its share of the block changes is forgotten. */
+	/** The session ended: its claims and projectile barriers go, and its share of the block changes is forgotten; the replica stays. */
 	static void end(final UUID owner) {
 		release(owner, true);
 	}
 
 	private static void release(final UUID owner, final boolean forget) {
 		MinecraftServer s = server;
-		long[] orphaned = claims.releaseAll(owner);
-		for (long cell : orphaned) {
-			guard.unclaimed(cell);
-		}
-
+		claims.releaseAll(owner);
 		Host h = forget ? hosts.remove(owner) : hosts.get(owner);
 		long[] temps = h == null ? new long[0] : h.pcells.clear();
 		if (s != null) {
-			removeBarriers(s.overworld(), orphaned);
 			removeTemp(s.overworld(), temps);
-		}
-	}
-
-	/** Takes out the given ground barriers (unless something else replaced them meanwhile). */
-	private static void removeBarriers(final ServerLevel level, final long[] cells) {
-		BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-		placingGround = true;
-		try {
-			for (long cell : cells) {
-				pos.set(BlockPos.getX(cell), BlockPos.getY(cell), BlockPos.getZ(cell));
-				if (!temp(cell) && level.getBlockState(pos).is(Blocks.BARRIER)) {
-					level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
-				}
-			}
-		} finally {
-			placingGround = false;
 		}
 	}
 
@@ -351,33 +392,41 @@ public final class WorldBridge {
 	}
 
 	/**
-	 * Broken outline blocks whose 10 s are up come back (plan Q-B6), into air with no player inside the cell. A player standing on
-	 * top of it (feet on its top face, give or take a little: Steve stands where V stands) does not count: the block comes back under
-	 * him, as Night City's ground is there. The cell kept its hosts' claims while it was broken.
+	 * Broken replica blocks whose 10 s are up come back (plan Q-B6, megaplan 3-R1), into air with no player inside the cell. A player
+	 * standing on top of it (feet on its top face, give or take a little: Steve stands where V stands) does not count: the block comes
+	 * back under him, as Night City's ground is there.
 	 */
 	private static void snapBack(final ServerLevel level, final long now) {
-		long[] due = guard.due(now, cell -> level.getBlockState(BlockPos.of(cell)).isAir(),
+		Long2IntMap due = guard.dueMaterials(now, cell -> level.getBlockState(BlockPos.of(cell)).isAir(),
 			cell -> level.getEntitiesOfClass(Player.class, new AABB(BlockPos.of(cell)).deflate(0.1)).isEmpty());
-		if (due.length == 0) {
+		if (due.isEmpty()) {
 			return;
 		}
 
 		placingGround = true;
 		try {
-			for (long cell : due) {
-				level.setBlock(BlockPos.of(cell), Blocks.BARRIER.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+			for (Long2IntMap.Entry e : due.long2IntEntrySet()) {
+				level.setBlock(BlockPos.of(e.getLongKey()), replica(e.getIntValue()), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
 			}
 		} finally {
 			placingGround = false;
 		}
 
-		Cyberblock.LOG.info("outline: restored {}", due.length);
+		Cyberblock.LOG.info("outline: restored {}", due.size());
 	}
 
-	/** Which of our outline blocks this is (before it was broken), or null when it is not one of ours. */
+	/** Which of our outline blocks this is (before it was broken): a replica block, a barrier of ours, or null. */
 	private static OutlineRules.@Nullable Kind outlineKind(final ServerLevel level, final BlockPos pos, final BlockState state) {
 		MinecraftServer s = server;
-		if (s == null || level != s.overworld() || !state.is(Blocks.BARRIER)) {
+		if (s == null || level != s.overworld()) {
+			return null;
+		}
+
+		if (ReplicaBlocks.is(state)) {
+			return OutlineRules.Kind.REPLICA;
+		}
+
+		if (!state.is(Blocks.BARRIER)) {
 			return null;
 		}
 
@@ -396,9 +445,9 @@ public final class WorldBridge {
 	}
 
 	/**
-	 * After a player broke a block (PlayerBlockBreakEvents.AFTER; state is what it was). An outline block: only the Minecraft block
-	 * went (BlockEvents.change sends nothing for barrier to air: Cyberpunk hears nothing); its hosts' claims stay, so a re-report or
-	 * the snap-back puts it back and an unground still lets go of it.
+	 * After a player broke a block (PlayerBlockBreakEvents.AFTER; state is what it was). A replica block (or an outline barrier): only
+	 * the Minecraft block went (BlockEvents.change sends nothing for it: Cyberpunk hears nothing, Night City never changes); the
+	 * snap-back or a re-report puts it back (permanent erase: only a re-report), an unground of the cell seen empty forgets it.
 	 */
 	public static void broken(final ServerLevel level, final ServerPlayer player, final BlockPos pos, final BlockState state) {
 		BlockPos cell = pos.immutable();
@@ -408,13 +457,13 @@ public final class WorldBridge {
 			return;
 		}
 
-		if (kind != OutlineRules.Kind.OUTLINE_BARRIER) {
+		if (kind == null) {
 			return;
 		}
 
 		OutlineRules.Decision decision = OutlineRules.decide(player.gameMode(), OutlineRules.creativeErases(), kind);
 		long now = level.getServer().getTickCount();
-		guard.broke(cell.asLong(), now, decision);
+		guard.broke(cell.asLong(), now, decision, ReplicaBlocks.material(state));
 		SafeSpots.outlineBroke(cell, now);
 		Cyberblock.LOG.info("outline: {} broke {} {} {} ({})", player.getName().getString(), cell.getX(), cell.getY(), cell.getZ(),
 			decision == OutlineRules.Decision.KEEP ? "kept: permanent erase" : "snap back in 10 s");

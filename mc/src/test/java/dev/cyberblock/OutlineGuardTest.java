@@ -95,6 +95,21 @@ class OutlineGuardTest {
 		assertArrayEquals(new long[0], due(guard, T + 200));
 	}
 
+	/** Megaplan 3-R1: a broken replica block comes back as the same material; a barrier as material 0. */
+	@Test
+	void replicaBlocksComeBackAsTheirMaterial() {
+		OutlineGuard guard = new OutlineGuard();
+		long other = BlockPos.asLong(1, 2, 3);
+		guard.broke(CELL, T, Decision.SNAP_BACK, dev.cyberblock.replica.ReplicaBlocks.GLASS);
+		guard.broke(other, T, Decision.SNAP_BACK);
+		var due = guard.dueMaterials(T + 200, cell -> true, cell -> true);
+		assertEquals(2, due.size());
+		assertEquals(dev.cyberblock.replica.ReplicaBlocks.GLASS, due.get(CELL));
+		assertEquals(0, due.get(other));
+		guard.broke(CELL, T, Decision.KEEP, dev.cyberblock.replica.ReplicaBlocks.ASPHALT);
+		assertTrue(guard.dueMaterials(T + 100_000, cell -> true, cell -> true).isEmpty(), "permanent erase: until the probes report it");
+	}
+
 	@Test
 	void deniedBreaksAreNotTracked() {
 		OutlineGuard guard = new OutlineGuard();

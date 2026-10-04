@@ -1,11 +1,11 @@
 package dev.cyberblock;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.cyberblock.cyber.CyberData;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.Permissions;
+import dev.cyberblock.replica.ReplicaModule;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.function.BiConsumer;
@@ -54,6 +54,7 @@ public final class WorldModule {
 
 	public static void init() {
 		ProxyEntities.register();
+		ReplicaModule.init(); // the replica blocks, material_palette, the shared Night City map, the Offline Builds log (megaplan 3R)
 		// the cyber track keeps perks and implants on each player (Fabric attachments); read lazily, at game time
 		perkRank = CyberData::rank;
 		hasCyberware = (player, id) -> CyberData.slots(player).containsValue(id);
@@ -102,8 +103,8 @@ public final class WorldModule {
 			WorldBridge.hello(s);
 			PlayerEffects.hello(s);
 		});
-		listen("ground", (s, m) -> WorldBridge.solid(s, Ranges.decode(ints(m.getAsJsonArray("c")))));
-		listen("unground", (s, m) -> WorldBridge.unsolid(s, Ranges.decode(ints(m.getAsJsonArray("c")))));
+		listen("ground", WorldBridge::solid);
+		listen("unground", WorldBridge::unsolid);
 		listen("clear", (s, m) -> WorldBridge.clearSolid(s));
 		listen("npcs", ProxyManager::update);
 		listen("dmg", HostDamage::update);
@@ -200,15 +201,6 @@ public final class WorldModule {
 
 	private static String metres(final int k) {
 		return String.format(Locale.ROOT, "%.3f", GroundAlign.offset(k));
-	}
-
-	private static int[] ints(final JsonArray a) {
-		int[] out = new int[a.size()];
-		for (int i = 0; i < out.length; i++) {
-			out[i] = a.get(i).getAsInt();
-		}
-
-		return out;
 	}
 
 	/** A hostile host could make this a log flood: say it once, then every 100th time. */

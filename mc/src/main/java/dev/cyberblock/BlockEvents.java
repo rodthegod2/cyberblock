@@ -1,5 +1,6 @@
 package dev.cyberblock;
 
+import dev.cyberblock.replica.ReplicaBlocks;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -39,10 +40,11 @@ public final class BlockEvents {
 
 	/**
 	 * True when a block in this state is something the host should know about: solid for entities, and not Night City's own
-	 * barrier. An open door or trapdoor still has a thin collision shape, but the host's boxes are 1 m: it must be passable.
+	 * barrier or replica block (megaplan 3-R1: the replica is the hosts' own ground, never a player's block, whoever breaks it). An
+	 * open door or trapdoor still has a thin collision shape, but the host's boxes are 1 m: it must be passable.
 	 */
 	public static boolean shouldReport(final BlockState state, final Cause cause) {
-		if (cause != Cause.WORLD || state.isAir() || state.is(Blocks.BARRIER)) {
+		if (cause != Cause.WORLD || state.isAir() || state.is(Blocks.BARRIER) || ReplicaBlocks.is(state)) {
 			return false;
 		}
 
