@@ -51,6 +51,19 @@ class ReplicaRulesTest {
 	}
 
 	@Test
+	void aProbeMaterialUpgradesAReplicaBlockAndAHeuristicNever() {
+		int none = ReplicaBlocks.UNKNOWN;
+		assertEquals(ReplicaBlocks.BRICK, ReplicaRules.regrade(ReplicaBlocks.CONCRETE_LIGHT, ReplicaBlocks.BRICK), "the probe's real material wins");
+		assertEquals(none, ReplicaRules.regrade(ReplicaBlocks.BRICK, ReplicaBlocks.BRICK), "already right: no setBlock");
+		assertEquals(none, ReplicaRules.regrade(ReplicaBlocks.CONCRETE_LIGHT, none), "a heuristic-only report never replaces a block");
+		assertEquals(none, ReplicaRules.regrade(none, ReplicaBlocks.BRICK), "a player's block is never replaced");
+		// end to end through the default palette: code 7 (brick) over a heuristic wall block
+		assertEquals(ReplicaBlocks.BRICK, ReplicaRules.regrade(ReplicaBlocks.material(ReplicaTestBlocks.state(ReplicaBlocks.CONCRETE_LIGHT)),
+			Palette.fromProbe(ReplicaBlocks.BRICK)));
+		assertEquals(none, ReplicaRules.regrade(ReplicaBlocks.material(Blocks.STONE.defaultBlockState()), Palette.fromProbe(ReplicaBlocks.BRICK)));
+	}
+
+	@Test
 	void ungroundRemovesOnlyCellsSeenEmpty() {
 		assertTrue(ReplicaRules.ungroundRemoves(true, true, false));
 		assertFalse(ReplicaRules.ungroundRemoves(false, true, false), "left the probe radius: the map keeps it");

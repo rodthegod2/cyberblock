@@ -279,7 +279,15 @@ public final class WorldBridge {
 							level.setBlock(pos, replica(Palette.material(code, r, y, refY, top, water, district)), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
 							claims.claim(owner, cell);
 						}
-						case CLAIM -> claims.claim(owner, cell); // a player's block or a replica block already stands there
+						case CLAIM -> { // a player's block or a replica block already stands there
+							// a probe material replaces a replica block's earlier guess (heuristic or older scripts); a heuristic never does
+							int want = ReplicaRules.regrade(ReplicaBlocks.material(state), Palette.fromProbe(code));
+							if (want != ReplicaBlocks.UNKNOWN) {
+								level.setBlock(pos, replica(want), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+							}
+
+							claims.claim(owner, cell);
+						}
 						case SKIP -> {
 						}
 					}

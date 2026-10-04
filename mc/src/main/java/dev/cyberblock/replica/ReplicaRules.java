@@ -44,6 +44,17 @@ public final class ReplicaRules {
 	}
 
 	/**
+	 * A ground report for a cell already holding something: the material a replica block there becomes, or 0 for no change. Only a
+	 * probe material (Palette.fromProbe of ground.m) replaces a replica block's material, so blocks first placed by the heuristic take
+	 * the real one once the probes send it; a heuristic-only report (0) never does, so two hosts with different refY do not flip
+	 * blocks back and forth. current is the cell's replica material (0 for a player's block, which is never replaced).
+	 */
+	public static int regrade(final int current, final int probeMaterial) {
+		boolean change = current != ReplicaBlocks.UNKNOWN && probeMaterial != ReplicaBlocks.UNKNOWN && probeMaterial != current;
+		return change ? probeMaterial : ReplicaBlocks.UNKNOWN;
+	}
+
+	/**
 	 * An unground takes the replica block out only when the cell was seen empty inside the probe radius (seen:true), holds a replica
 	 * block, and no other host still reports it as ground. Cells that only left the radius stay: the map grows.
 	 */
