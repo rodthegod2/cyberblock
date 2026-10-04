@@ -60,6 +60,9 @@ Multiplayer (shared/protocol.md "Multiplayer (Phase 1)"; tools/mpcheck.py starts
   --ids-from N     numbers the three `npcs` N, N+1 and N+2 instead of the protocol.md example ids (1 <= N <= 2**64 - 3): two fake
                    hosts given the same N send the same ids, to force an id collision between two owners ("twohosts").
 Minecraft's `session` message (the client tells the DLL its role after every handshake) is printed with every run, like `align`.
+A change to `session state:host` is answered as the real DLL does (protocol.md `session`): `clear`, the whole `ground` slab
+again and, when a layer or mode runs, the `npcs` list. The client drops what the DLL sends before it is the host, so the
+ground sent when the link opened (at the title screen, before a server join) never reached the server.
 A dedicated server refuses the reference-mod `cmd` commands: against a real client pass `--no-setup`.
 """
 import argparse
@@ -342,6 +345,7 @@ class Cyberpunk:
         self.ids_from, self.tag = ids_from, f"[{name}] " if name else ""  # --ids-from and the --name log prefix
         self.view_back = False  # --ui: Minecraft asked for the third-person view (`persp back`), so `cam.fp` is false
         self.delayed: list[tuple[float, dict]] = []  # (perf_counter due time, message): the `ping` and `frenzy` spreads of --hacks
+        self.session: str | None = None  # the last `session` state Minecraft sent (a change to host re-sends the ground)
 
     def script(self) -> list[tuple[float, dict]]:
         """(seconds after the scenario starts, message), in time order: the layer 4 jump tap, the layer 6 keys and kill."""
@@ -387,6 +391,11 @@ class Cyberpunk:
     def reply(self, m: dict) -> list[dict]:
         """What Cyberpunk answers to Minecraft's message `m` (only for the layers that were asked for)."""
         t, items, rid = m.get("t"), m.get("list"), m.get("id")
+        if t == "session":
+            was, self.session = self.session, m.get("state")
+            if self.session == "host" and was != "host":  # a new server session: it needs the whole ground and the NPCs again
+                return [{"t": "clear"}, {"t": "ground", "c": ground_slab()}, *([npcs_message(self.ids_from)] if self.layers or self.modes else [])]
+            return []
         if t == "persp" and m.get("mode") in ("first", "back"):
             self.view_back = m["mode"] == "back"
         if "ui" in self.modes and t == "uiact":

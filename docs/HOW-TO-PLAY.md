@@ -921,9 +921,10 @@ roles, versions and message rates with `/cyberblock hosts`.
 nothing of it stays in the world file. Reopen the world and the ground comes back.
 
 **Testing it yourself (developers).** From a git worktree (never the folder you play from), `uv run python -m tools.mpcheck
---guest <your LAN port>` starts one offline test guest (name `CbGuest1`); `uv run python -m tools.mpcheck --all` runs the
-automatic checks (a test server, offline clients and fake hosts; it needs about 3 GB of free commit per client and stops
-everything it started).
+--all` runs the automatic checks (a test server, offline clients and fake hosts; it needs about 3 GB of free commit per client
+and stops everything it started). `uv run python -m tools.mpcheck --guest <port>` starts one offline test guest (name
+`CbGuest1`), but a world opened to LAN checks every Minecraft login and refuses it ("Invalid session"): to try a guest in
+your own LAN world you need a second player with a real Minecraft account.
 
 ---
 

@@ -8,10 +8,10 @@ bottom (**In-game fixes 3 first**, then Re-test 3); each step says what should h
 
 **What to try (one screen):**
 1. Play singleplayer as usual (blocks, TNT, a hack, the glide, the UI): nothing should have changed.
-2. Open the world to LAN (Esc, Open to LAN, Start LAN World) and start the test guest from the integration worktree
-   (`uv run python -m tools.mpcheck --guest <your LAN port>`): the guest places TNT next to V and it explodes in Night City.
-3. `/cyberblock guests explosions off`: the same TNT no longer reaches Night City; `on` brings it back.
-4. The guest hits an NPC's hitbox (F3+B shows the proxy boxes): the NPC flinches. `/cyberblock guests damage off` stops it.
+2. Only with a second player who has a real Minecraft account (see the note below steps 2 to 4): open the world to LAN; the
+   guest places TNT next to V and it explodes in Night City.
+3. Same guest: `/cyberblock guests explosions off`: the same TNT no longer reaches Night City; `on` brings it back.
+4. Same guest: they hit an NPC's hitbox (F3+B shows the proxy boxes): the NPC flinches. `/cyberblock guests damage off` stops it.
 5. Quit and reopen the world: no collision left in Night City, and the ground comes back.
 
 | What changed | Where |
@@ -23,18 +23,23 @@ bottom (**In-game fixes 3 first**, then Re-test 3); each step says what should h
 | `tools/mpcheck.py`, `tools/content_check.py`, fake host `--name`, `--ver`, `--ids-from`, the test server templates | `tools/`, `server/` |
 
 `<integration worktree>` below is the worktree the integrator names in its report (Gradle must never run in the folder you
-play from). The harness starts only what you tell it to: `--guest` launches one offline client (name `CbGuest1`) and nothing
-else; close its window or press Ctrl+C to stop it. The automatic scenarios (`uv run python -m tools.mpcheck --all`: singleplayer,
-guest, versions, flood, reconnect, twohosts) were run by the integrator, not by you.
+play from). The automatic scenarios (`uv run python -m tools.mpcheck --all`: singleplayer, guest, versions, flood, reconnect,
+twohosts) were run by the integrator, not by you; the `guest` scenario covers steps 2 to 4 with an offline guest on a local
+test server.
+
+**Steps 2 to 4 need a second real account.** A world opened to LAN checks every player's Minecraft login, so the offline test
+guest of the harness (`tools.mpcheck --guest <port>`, name `CbGuest1`) is refused with "Failed to log in: Invalid session".
+Do steps 2 to 4 with a friend (or a second PC) signed in with their own Minecraft account on your network; without one, skip
+them (the integrator's `guest` scenario covered them on the test server).
 
 1. **Singleplayer, as before.** Start Minecraft and Cyberpunk, F9 on, and play a short pass of Re-test 3 (place blocks, set
    off TNT, one hack, one glide, open the journal). Expected: everything behaves as before.
    Log: latest.log `handshake: <name> mod X dll X -> host` (server) and `handshake: server X -> host` (client);
    `session: <name> started`.
-2. **A guest's TNT.** Esc, Open to LAN, Start LAN World; note the port in chat. In `<integration worktree>` run
-   `uv run python -m tools.mpcheck --guest <port>`. In the guest window place TNT next to V and light it. Expected: it
-   explodes in Night City too (V reacts, NPCs flee). Log: latest.log `handshake: CbGuest1 mod X dll  -> guest`; Cyberblock.log
-   shows the explosion event.
+2. **A guest's TNT (needs a second real account, see above).** Esc, Open to LAN, Start LAN World; note the port in chat.
+   Your guest joins with Multiplayer, Direct Connection, `<your PC's address>:<port>`. The guest places TNT next to V and
+   lights it. Expected: it explodes in Night City too (V reacts, NPCs flee). Log: latest.log `handshake: <guest> mod X dll  ->
+   guest`; Cyberblock.log shows the explosion event.
 3. **The explosions toggle.** Type `/cyberblock guests explosions off`, repeat the TNT. Expected: Minecraft blocks break, but
    nothing happens in Night City, and the guest's action bar says the action was blocked. `/cyberblock guests explosions on`
    brings it back.
@@ -53,7 +58,9 @@ guest, versions, flood, reconnect, twohosts) were run by the integrator, not by 
 **Descopes and risks:** `maxHosts` stays 1 until Phase 3, so a second linked player joins as a guest; the payload size cap may
 force more splitting of `ground` and `npcs` than planned (measured in 1-N1); a guest cannot see NPCs yet (figures come in
 Phase 3); the harness scenarios assume the devtools commands of 1-N4 and that `runServer` honours `-Pcyberblock.runDir`;
-the guest-side "blocked" action-bar message can only be seen in game.
+the guest-side "blocked" action-bar message can only be seen in game. The harness's offline `--guest` client cannot join
+a LAN world (26.3 authenticates every LAN login); the integrator decides between a devtools way to open a LAN world without
+authentication, the user joining an offline test server, or a second real account (escalated by package 1T).
 
 **needsInGame appendix:** the integrator copies each package's `needsInGame` list here (1N, 1W, 1C, 1L, 1H) before the test.
 

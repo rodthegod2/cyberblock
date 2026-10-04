@@ -11,11 +11,12 @@ from pathlib import Path
 import pytest
 from websockets.asyncio.server import serve
 
-from tools import mpcheck
+from tools import fakehost, mpcheck
 from tools.mpcheck import LogFile, MpError
 
 REPO = Path(__file__).resolve().parents[1]
 MOD = "1.0.0"
+SESSION_HOST = {"t": "session", "state": "host", "reason": "", "perms": {"explosions": True, "damage": True, "hacks": True, "devices": True, "spawns": False}}
 
 
 @pytest.fixture(autouse=True)
@@ -117,24 +118,44 @@ def test_client_command_for_a_world_and_for_another_mod_version():
 
 def test_server_command_names_the_port_and_the_run_folder():
     argv = mpcheck.server_argv(Path("W"), port=25915, run_dir=Path("R"))
-    assert argv[1:4] == ["--no-daemon", mpcheck.GRADLE_HEAP, "runServer"] and argv[4:] == ["-Pcyberblock.serverPort=25915", "-Pcyberblock.runDir=R"]
+    assert argv[1:4] == ["--no-daemon", mpcheck.GRADLE_HEAP, "runServer"] and argv[4:6] == ["-Pcyberblock.serverPort=25915", "-Pcyberblock.runDir=R"]
+
+
+def test_server_command_skips_the_gradle_task_that_would_rewrite_server_properties():
+    """1L's runServer depends on `cyberblockServerFiles`, which rewrites server.properties from the template: the RCON lines
+    the harness wrote would be gone and RCON would never open."""
+    argv = mpcheck.server_argv(Path("W"), port=25915, run_dir=Path("R"))
+    assert argv[argv.index("-x") + 1] == "cyberblockServerFiles"
 
 
 def test_fakehost_command_has_its_own_name_port_frame_and_version():
     argv = mpcheck.fakehost_argv(port=25754, name="CbHost1", ver="1.0.0", frame="Local\\F", out_dir=Path("O"), ids_from=5000, cmds=["say hi"], layers=(2, 6), modes=("ui",))
     joined = " ".join(argv)
-    assert argv[1:3] == ["-m", "tools.fakehost"] and "--port 25754" in joined and "--name CbHost1" in joined and "--shm Local\\F" in joined
+    assert argv[1:4] == ["-u", "-m", "tools.fakehost"] and "--port 25754" in joined and "--name CbHost1" in joined and "--shm Local\\F" in joined
     assert "--ids-from 5000" in joined and "--ver 1.0.0" in joined and "--layer2" in argv and "--layer6" in argv and "--ui" in argv and "--no-setup" in argv
     assert argv[argv.index("--cmd") + 1] == "say hi"
     plain = mpcheck.fakehost_argv(port=1, name="x", ver=None, frame="f", out_dir=Path("O"), no_setup=False)
     assert "--no-setup" not in plain and plain[plain.index("--ver") + 1] == ""  # no version: an empty --ver sends none
 
 
+def test_the_fake_hosts_output_is_unbuffered_so_the_scenarios_see_it_while_it_runs(tmp_path):
+    """Its stdout is a log file: without -u its lines would sit in Python's buffer until it exits, and every live wait on it
+    (hit, explosion, `session refused`, `blocks reset:true`) would time out while every "does not arrive" check passed blindly."""
+    argv = mpcheck.fakehost_argv(port=1, name="x", ver=None, frame="f", out_dir=Path("O"))
+    assert argv[0] == mpcheck.sys.executable and argv[1] == "-u" and argv.index("-u") < argv.index("-m")
+    # the same interpreter flag on a child that prints and keeps running: the line is in the log file while it runs
+    proc = mpcheck.Proc("child", [argv[0], "-u", "-c", "import time; print('ready'); time.sleep(30)"], tmp_path, dict(mpcheck.os.environ), tmp_path / "child.log")
+    try:
+        assert proc.log.wait("ready", 20)
+    finally:
+        proc.stop()
+
+
 def test_the_fakehost_command_line_parses_with_the_real_fakehost(monkeypatch):
     """The harness's arguments are the fake host's own (a typo would only show in a real run)."""
     from tools import fakehost
     argv = mpcheck.fakehost_argv(port=25754, name="CbHost1", ver="1.0.0", frame="Local\\F", out_dir=Path("O"), ids_from=5000, layers=(2, 3, 6),
-                                 modes=("ui", "hacks"), cmds=["summon tnt 3 64 0"], no_setup=False)[3:]
+                                 modes=("ui", "hacks"), cmds=["summon tnt 3 64 0"], no_setup=False)[4:]
     seen = []
 
     async def fake_run(*args):
@@ -147,7 +168,7 @@ def test_the_fakehost_command_line_parses_with_the_real_fakehost(monkeypatch):
     (args,) = seen
     assert args[0] == "ws://127.0.0.1:25754" and args[4] == "Local\\F" and args[5] is True and args[6] == 900 and args[7] == ["summon tnt 3 64 0"]
     assert args[8] == frozenset({2, 3, 6}) and args[9] == frozenset({"ui", "hacks"}) and args[10:] == ("CbHost1", "1.0.0", 5000)
-    monkeypatch.setattr("sys.argv", ["fakehost", *mpcheck.fakehost_argv(port=1, name="x", ver=None, frame="f", out_dir=Path("O"))[3:]])
+    monkeypatch.setattr("sys.argv", ["fakehost", *mpcheck.fakehost_argv(port=1, name="x", ver=None, frame="f", out_dir=Path("O"))[4:]])
     assert fakehost.main() == 0 and seen[-1][10:] == ("x", None, None)  # an empty --ver means no ver at all
 
 
@@ -330,6 +351,7 @@ def test_server_start_writes_the_run_folder_and_starts_runserver_with_devtools(e
     assert json.loads((d / "config" / "cyberblock" / "server.json").read_text(encoding="utf-8"))["maxHosts"] == 2
     (proc,) = FakeProc.started
     assert "runServer" in proc.argv and "-Pcyberblock.serverPort=25914" in proc.argv and proc.cwd == REPO / "mc"
+    assert proc.argv[proc.argv.index("-x") + 1] == "cyberblockServerFiles"  # Gradle must not rewrite the file with the RCON lines
     assert proc.env["JAVA_TOOL_OPTIONS"] == "-Dcyberblock.devtools=true" and proc.env["JAVA_HOME"] == str(Path("C:/jdk"))
 
 
@@ -422,22 +444,31 @@ class SimServer(mpcheck.Server):
         super().__init__(port, 0, "pw", None, LogFile(tmp / f"server-{port}.log"), tmp)
         self.sim, self.bugs, self.toggles = env_sim, bugs, {}
 
+    def allows(self, owner, actor, toggle):
+        """As 1N's Permissions.allows: no player behind the action (the console), the owner or another host is always allowed;
+        a guest only while the owner's toggle is on."""
+        guest = actor is not None and actor != owner and actor not in self.sim.hosts
+        return not guest or self.toggles.get(owner, {}).get(toggle, True) or "ignore-toggles" in self.bugs
+
     def rcon(self, command):
         sim = self.sim
         if command == "list":
             return "There are 0 of a max of 4 players online:"
         if command.startswith("execute if block"):
-            return "Test passed" if any(h["linked"] for h in sim.hosts.values()) else "Test failed"
+            return "Test passed" if any(h["linked"] and h["ground"] for h in sim.hosts.values()) else "Test failed"
         if command.startswith("execute if entity"):
             return "Test passed, count: 3" if any(h["linked"] for h in sim.hosts.values()) else "Test failed"
-        if command.startswith("execute as "):
-            _, _, name, *_, toggle, state = command.split()
-            self.toggles.setdefault(name, {})[toggle] = state == "on"
+        actor = None
+        if match := re.fullmatch(r"execute as (\S+) run (.*)", command):
+            actor, command = match.groups()
+        if command.startswith("cyberblock guests "):
+            _, _, toggle, state = command.split()
+            self.toggles.setdefault(actor, {})[toggle] = state == "on"
             return ""
         if command.startswith("cyberblock test hit "):
             _, _, _, owner, target, _ = command.split()
             host = sim.hosts.get(owner)
-            ok = host and host["linked"] and target in host["ids"] and (self.toggles.get(owner, {}).get("damage", True) or "ignore-toggles" in self.bugs)
+            ok = host and host["linked"] and target in host["ids"] and self.allows(owner, actor, "damage")
             if "drop-hits" in self.bugs:
                 ok = False
             if ok:
@@ -449,7 +480,7 @@ class SimServer(mpcheck.Server):
             return "ok"
         if command.startswith("cyberblock test explode"):
             for name, host in sim.hosts.items():
-                if host["linked"] and (self.toggles.get(name, {}).get("explosions", True) or "ignore-toggles" in self.bugs):
+                if host["linked"] and self.allows(name, actor, "explosions"):
                     append(host["log"], f'[{name}] explosion: {{"t": "explosion", "power": 4.0}}')
             return "ok"
         return ""
@@ -495,7 +526,7 @@ class SimEnv:
         log.path.write_text("", encoding="utf-8")
         proc = SimProc()
         base = ids_from if ids_from is not None else 9007199254740993
-        host = {"log": log, "linked": False, "ids": {str(base), str(base + 1), str(base + 2)}}
+        host = {"log": log, "linked": False, "ground": False, "ids": {str(base), str(base + 1), str(base + 2)}}
         if name in self.hosts:  # a host returning: the old log is replaced, the ids stay
             host["ids"] = self.hosts[name]["ids"]
         self.hosts[name] = host
@@ -521,6 +552,10 @@ class SimEnv:
             append(log, f'[{name}] session: {{"t": "session", "state": "host"}}')
             append(log, f'[{name}] blocks: {{"t": "blocks", "reset": true, "c": []}}')
             host["linked"] = True
+            # the ground the fake host sent when its link opened was dropped (it was no host yet): only what it sends in
+            # answer to `session state:host` reaches the server, as with the real client
+            answer = fakehost.Cyberpunk(frozenset(layers), frozenset(modes), ids_from, name).reply(SESSION_HOST)
+            host["ground"] = any(m["t"] == "ground" and m["c"] for m in answer)
         else:
             append(srv.log, f"[Server thread/INFO]: handshake: {name} mod {MOD} dll {ver} -> guest (plugin differs)")
             append(log, f'[{name}] session: {{"t": "session", "state": "refused", "reason": "Cyberblock: your Cyberpunk plugin is {ver} but your mod is {MOD}; you can play as a guest."}}')
@@ -562,6 +597,11 @@ def run_scenario(sim, name):
     return report
 
 
+def fresh(folder):
+    folder.mkdir(parents=True)
+    return folder
+
+
 def failed(report):
     return [label for label, ok, _ in report.checks if not ok]
 
@@ -578,6 +618,37 @@ def test_guest_scenario_passes_against_an_ideal_server(tmp_path):
 def test_guest_scenario_notices_a_server_that_ignores_the_toggles_or_drops_hits(tmp_path, bug, expected):
     rep = run_scenario(SimEnv(tmp_path, bugs=[bug]), "guest")
     assert expected <= set(failed(rep)) and not rep.ok
+
+
+def test_guest_scenario_runs_the_guest_actions_as_the_guest_not_from_the_console(tmp_path, monkeypatch):
+    """From the RCON console there is no player behind a hit or an explosion, and the server always allows those: the toggle
+    checks would fail and the guest path would never be tested."""
+    sent, real = [], mpcheck.Server.test
+    monkeypatch.setattr(mpcheck.Server, "test", lambda self, command, as_player=None: sent.append(as_player) or real(self, command, as_player))
+    rep = run_scenario(SimEnv(fresh(tmp_path / "a")), "guest")
+    assert rep.ok, failed(rep)
+    assert sent and set(sent) == {"CbGuest1"}
+    monkeypatch.setattr(mpcheck.Server, "test", lambda self, command, as_player=None: real(self, command))  # from the console
+    rep = run_scenario(SimEnv(fresh(tmp_path / "b")), "guest")
+    assert {"with `guests damage off` the hit does not reach it", "with `guests explosions off` the explosion does not reach it"} <= set(failed(rep))
+
+
+def test_a_guest_command_for_a_player_who_is_not_online_is_a_clear_error(tmp_path):
+    class S(mpcheck.Server):
+        def rcon(self, command):
+            assert command == "execute as CbGuest1 run cyberblock test explode 1 2 3 4"
+            return "No entity was found"
+
+    with pytest.raises(MpError, match="CbGuest1 is not on the server"):
+        S(1, 2, "pw", None, LogFile(tmp_path / "s.log"), tmp_path).test("explode 1 2 3 4", as_player="CbGuest1")
+
+
+def test_the_ground_shows_only_because_the_fake_host_re_sends_it_when_it_becomes_the_host(tmp_path, monkeypatch):
+    """The client drops what the DLL sends before it is the host; a fake host that does not answer `session host` with the
+    ground leaves the guest and reconnect scenarios without barriers."""
+    monkeypatch.setattr(fakehost.Cyberpunk, "reply", lambda self, m: [])
+    guest, reconnect = run_scenario(SimEnv(fresh(tmp_path / "a")), "guest"), run_scenario(SimEnv(fresh(tmp_path / "b")), "reconnect")
+    assert "the ground is there as barrier blocks" in failed(guest) and "the ground and the proxies are there" in failed(reconnect)
 
 
 def test_guest_scenario_stops_when_the_host_never_becomes_a_host(tmp_path):
@@ -648,6 +719,15 @@ def test_run_scenarios_stops_everything_between_scenarios_and_prints_logs_of_fai
     sim2, said2 = SimEnv(tmp_path), []
     ok_reports = mpcheck.run_scenarios(sim2, ["versions"], said2.append)
     assert ok_reports[0].ok and not any("last lines" in line for line in said2) and mpcheck.summary(ok_reports, said2.append) == 0
+
+
+def test_main_makes_its_output_line_buffered_so_a_captured_run_shows_progress(monkeypatch):
+    import io
+    out = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")  # like a pipe or a file: block-buffered
+    monkeypatch.setattr(mpcheck.sys, "stdout", out)
+    assert not out.line_buffering
+    assert mpcheck.main(["guest", "--dry-run"]) == 0
+    assert out.line_buffering
 
 
 def test_summary_of_nothing_is_a_failure():

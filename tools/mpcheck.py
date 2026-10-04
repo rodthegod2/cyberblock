@@ -2,7 +2,7 @@
 
     uv run python -m tools.mpcheck --all                 # every scenario, in order (the integrator's run)
     uv run python -m tools.mpcheck guest versions        # some of them
-    uv run python -m tools.mpcheck --guest <LAN port>    # Re-test 1: ONE offline guest client for the world you opened to LAN
+    uv run python -m tools.mpcheck --guest <LAN port>    # ONE offline guest client for a world opened to LAN (see Limit below)
     uv run python -m tools.mpcheck --all --dry-run       # print the commands, start nothing
 
 Run it from a git worktree, never from the main checkout: it runs Gradle (`runClient`, `runServer`), and nothing may write
@@ -23,8 +23,16 @@ mode on 127.0.0.1; its RCON password is random per run, held in memory and writt
 folder (it is never printed, logged or put on a command line); APEX_FTP_PASS is removed from the environment of every child;
 port 25600 and `Local\\CyberblockFrame` are never used. The scenarios assume the plan's devtools commands (task 1-N4,
 `-Dcyberblock.devtools=true`): `/cyberblock test hit <host> <id> <dmg>` and `/cyberblock test explode <x> <y> <z> <power>`
-act as a guest, and `/execute as <host> run cyberblock guests <toggle> on|off` flips that host's toggle. They also assume that
-`runServer` and `runClient` honour `-Pcyberblock.runDir` (task 1-L1) and that the dedicated server's world is `<run dir>/world`.
+run as the guest with `/execute as CbGuest1 run ...` (from the RCON console alone there is no player behind them, and an action
+with no player behind it is always allowed), and `/execute as <host> run cyberblock guests <toggle> on|off` flips that host's
+toggle. They also assume that `runServer` and `runClient` honour `-Pcyberblock.runDir` (task 1-L1) and that the dedicated
+server's world is `<run dir>/world`. The harness writes the whole server.properties (RCON included) and eula.txt itself, so it
+skips 1L's `cyberblockServerFiles` task (`-x`), which would rewrite server.properties from the template and drop the RCON lines.
+
+Limit (megaplan section 5 in-game check 2, escalated to the integrator): `--guest` starts an OFFLINE client, and a world opened to
+LAN in 26.3 authenticates every remote login (IntegratedServer.initServer calls setUsesAuthentication(true) and publishServer
+keeps it), so it refuses this guest ("Invalid session") unless the mod adds a devtools way to open a LAN world without
+authentication. Until then the guest checks run in the automatic `guest` scenario on the offline test server.
 """
 import argparse
 import asyncio
@@ -177,13 +185,16 @@ def client_argv(repo: Path, *, name: str, port: int, frame: str, run_dir: Path, 
 
 
 def server_argv(repo: Path, *, port: int, run_dir: Path) -> list[str]:
-    return gradle(repo, "runServer", {"cyberblock.serverPort": port, "cyberblock.runDir": run_dir})
+    """`runServer` without 1L's `cyberblockServerFiles`: that task rewrites server.properties from the template and would drop
+    the RCON lines (and port) Env.server already wrote into the run folder."""
+    return [*gradle(repo, "runServer", {"cyberblock.serverPort": port, "cyberblock.runDir": run_dir}), "-x", "cyberblockServerFiles"]
 
 
 def fakehost_argv(*, port: int, name: str, ver: str | None, frame: str, out_dir: Path, ids_from: int | None = None, hold: float = HOLD_S,
                   layers: Iterable[int] = (2,), modes: Iterable[str] = (), cmds: Iterable[str] = (), no_setup: bool = True, frames: int = 60) -> list[str]:
-    """tools.fakehost as one fake host: its own link port, log prefix, frame name and DLL version."""
-    argv = [sys.executable, "-m", "tools.fakehost", "--port", str(port), "--name", name, "--shm", frame, "--out", str(out_dir),
+    """tools.fakehost as one fake host: its own link port, log prefix, frame name and DLL version. `-u`: its output goes to a
+    log file that the scenarios read while it runs, so it must not sit in a buffer until the process ends."""
+    argv = [sys.executable, "-u", "-m", "tools.fakehost", "--port", str(port), "--name", name, "--shm", frame, "--out", str(out_dir),
             "--frames", str(frames), "--hold", f"{hold:g}", "--ver", ver if ver is not None else ""]
     argv += [f"--layer{n}" for n in layers] + [f"--{m}" for m in modes]
     argv += ["--no-setup"] if no_setup else []
@@ -326,11 +337,15 @@ class Server:
     def passes(self, command: str) -> bool:
         return passed(self.rcon(command))
 
-    def test(self, command: str) -> str:
-        """A `/cyberblock test ...` devtools command; fails loudly when the server does not know it."""
-        answer = self.rcon(f"cyberblock test {command}")
+    def test(self, command: str, as_player: str | None = None) -> str:
+        """A `/cyberblock test ...` devtools command, run as player `as_player` (`execute as <player> run ...`) or from the
+        console (no player behind it: always allowed); fails loudly when the server does not know it or the player is not online."""
+        full = f"cyberblock test {command}" if as_player is None else f"execute as {as_player} run cyberblock test {command}"
+        answer = self.rcon(full)
         if re.search(r"unknown or incomplete|incorrect argument|unknown command", answer, re.I):
-            raise MpError(f"the server refused `cyberblock test {command}`: is -Dcyberblock.devtools=true honoured and task 1-N4 merged? ({answer.strip()[:120]})")
+            raise MpError(f"the server refused `{full}`: is -Dcyberblock.devtools=true honoured and task 1-N4 merged? ({answer.strip()[:120]})")
+        if re.search(r"no entity was found", answer, re.I):
+            raise MpError(f"`{full}`: {as_player} is not on the server")
         return answer
 
 
@@ -613,14 +628,14 @@ def scenario_guest(env: Env, rep: Report) -> None:
     rep.step("the ground is there as barrier blocks", lambda: poll(lambda: ground_stands(server, SLAB_CORNERS + (SLAB,)), T_EFFECT, 1.0, "barriers"))
     rep.step("the NPCs are there as proxies", lambda: poll(lambda: proxies_stand(server), T_EFFECT, 1.0, "proxies"))
     env.client("CbGuest1", join=server.port)
-    rep.step("the second client joined as a guest", lambda: server.log.wait(r"handshake: CbGuest1 .*-> guest", T_JOIN))
+    rep.step("the second client joined as a guest", lambda: server.log.wait(r"handshake: CbGuest1 .*-> guest", T_JOIN), must=True)
     rep.step("the guest has no session", lambda: not server.log.find(r"session: CbGuest1 started"))
 
-    def send_hit() -> None:
-        server.test(f"hit CbHost1 {HOSTILE_ID} 5.0")
+    def send_hit() -> None:  # as the guest: the toggles apply to a guest's actions only
+        server.test(f"hit CbHost1 {HOSTILE_ID} 5.0", as_player="CbGuest1")
 
     def send_explosion() -> None:
-        server.test("explode 3.5 64.0 0.5 4.0")
+        server.test("explode 3.5 64.0 0.5 4.0", as_player="CbGuest1")
 
     def arrives(send: Callable[[], None], pattern: str) -> bool:
         mark = host.log.mark()
@@ -789,6 +804,8 @@ def run_guest_client(env: Env, lan_port: int) -> int:
     """Re-test 1: one offline guest client for the world the user opened to LAN; nothing else is started."""
     client = env.client("CbGuest1", join=lan_port)
     env.say(f"started the offline guest CbGuest1 for 127.0.0.1:{lan_port}; close its window or press Ctrl+C here to stop it")
+    env.say("note: a LAN world authenticates every login, so it refuses this offline guest (\"Invalid session\") unless the mod lets "
+            "you open it without authentication (see docs/TESTING-PLAN.md, Re-test 1)")
     try:
         while client.proc.alive():
             time.sleep(0.5)
@@ -817,12 +834,14 @@ def dry_run(repo: Path, ports: Ports, names: list[str], lan_port: int | None, sa
 
 
 def main(argv: list[str] | None = None, repo: Path = ROOT) -> int:
+    with contextlib.suppress(AttributeError, ValueError):  # each line shows at once, also when the output is piped or captured
+        sys.stdout.reconfigure(line_buffering=True)
     ap = argparse.ArgumentParser(description="Multiplayer harness: dedicated server, offline clients and fake hosts. Run it from a worktree.",
                                  epilog="scenarios: " + ", ".join(SCENARIOS))
     ap.add_argument("scenarios", nargs="*", metavar="scenario", help="the scenarios to run, in the order given")
     ap.add_argument("--all", action="store_true", help="run every scenario, in order")
     ap.add_argument("--guest", type=int, metavar="LAN_PORT",
-                    help="Re-test 1: start ONE offline guest client (CbGuest1) for the world you opened to LAN on this port, nothing else")
+                    help="start ONE offline guest client (CbGuest1) for 127.0.0.1 on this port, nothing else (a LAN world refuses offline logins unless the mod allows them)")
     ap.add_argument("--dry-run", action="store_true", help="print the commands and start nothing")
     ap.add_argument("--keep", action="store_true", help="keep the run folder (it holds the run's server.properties) for debugging")
     ap.add_argument("--client-port-base", type=int, default=CLIENT_BASE, help=f"first client link port (default {CLIENT_BASE}; four are used)")

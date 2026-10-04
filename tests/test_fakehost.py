@@ -682,11 +682,34 @@ def test_hello_carries_the_dll_version_when_one_is_given_and_is_valid(tmp_path, 
     assert got[0] == {"t": "hello", "proto": 1, "game": "cp2077", "build": "2.31"}  # a DLL from before Phase 1 sends no ver
 
 
-def test_session_messages_are_printed_with_every_run_and_need_no_answer(tmp_path, exporting, capsys):
+def test_session_messages_are_printed_with_every_run(tmp_path, exporting, capsys):
     run_against_fake_minecraft(tmp_path, 30, exporting, replies=[SESSION_HOST, SESSION_REFUSED])
     assert printed(capsys)["session"] == [SESSION_HOST, SESSION_REFUSED]
     run_against_fake_minecraft(tmp_path, 30, exporting, replies=[SESSION_HOST], hold=0.05, layers=layer_set(3))
     assert printed(capsys)["session"] == [SESSION_HOST]
+
+
+def test_becoming_the_host_re_sends_clear_the_whole_ground_and_the_npcs_as_the_dll_does():
+    """protocol.md `session`: on a change to host the DLL forgets its probes and sends `clear`, so the new server session gets
+    the whole ground again (the client dropped the ground sent before it was the host)."""
+    host = fakehost.Cyberpunk(layer_set(2), ids_from=100)
+    resend = host.reply(SESSION_HOST)
+    assert resend == [{"t": "clear"}, {"t": "ground", "c": fakehost.ground_slab()}, fakehost.npcs_message(100)]
+    assert host.reply(SESSION_HOST) == []  # still the host: nothing again
+    assert host.reply({**SESSION_HOST, "state": "guest"}) == [] and host.reply(SESSION_HOST) == resend  # host again: the whole ground again
+    assert fakehost.Cyberpunk(frozenset()).reply(SESSION_HOST) == resend[:2]  # no layer or mode runs: no NPCs (none are ever sent)
+    assert fakehost.Cyberpunk(layer_set(2)).reply(SESSION_REFUSED) == []
+
+
+def test_a_live_session_host_brings_the_ground_after_it(tmp_path, exporting):
+    def react(m):
+        return [SESSION_HOST] if m["t"] == "hud" else []  # the client says `session host` after the DLL's hello
+
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, react=react, hold=0.05)
+    kinds = [m["t"] for m in got]
+    assert kinds.count("clear") == 2  # the one with the hello, and the answer to `session host`
+    second = kinds.index("clear", kinds.index("hud"))
+    assert "ground" in kinds[second:] and "npcs" in kinds[kinds.index("ground", second):]
 
 
 def test_ids_from_numbers_the_three_npcs_from_n_and_keeps_everything_else(tmp_path, exporting):
