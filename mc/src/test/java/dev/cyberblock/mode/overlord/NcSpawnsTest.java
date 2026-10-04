@@ -20,6 +20,14 @@ class NcSpawnsTest {
 	}
 
 	@Test
+	void aHeavyNcpdEntryGoesAsTheNcpdHeavyRecordAndHeavyChangesNoOtherRecord() {
+		assertEquals("ncpd_heavy", NcSpawns.wireRec("ncpd", true));
+		assertEquals("ncpd", NcSpawns.wireRec("ncpd", false));
+		assertEquals("ganger", NcSpawns.wireRec("ganger", true));
+		assertEquals("maxtac", NcSpawns.wireRec("maxtac", false));
+	}
+
+	@Test
 	void anOkAnswerMarksTheHostWorking() {
 		assertEquals(NcSpawns.Mode.UNKNOWN, this.nc.mode(this.host));
 		this.send(1, 0);

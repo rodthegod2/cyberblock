@@ -204,7 +204,10 @@ public final class Overlord {
 			told.clear();
 			server = null;
 		});
-		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> commands(dispatcher));
+		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> {
+			commands(dispatcher);
+			OverlordTestCommand.register(dispatcher);
+		});
 		Cyberblock.LOG.info("overlord: ready (spawn_palette and event content; Night City spawns go as spawn DOWN with a runtime check per host, "
 			+ "Minecraft squads are the fallback and the path near Minecraft-only players)");
 	}

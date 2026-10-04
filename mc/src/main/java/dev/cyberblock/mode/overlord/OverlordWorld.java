@@ -283,7 +283,7 @@ final class OverlordWorld {
 		JsonObject msg = new JsonObject();
 		msg.addProperty("t", "spawn");
 		msg.addProperty("id", request);
-		msg.addProperty("rec", e.rec());
+		msg.addProperty("rec", NcSpawns.wireRec(e.rec(), e.heavy()));
 		JsonArray p = new JsonArray();
 		p.add(at.x);
 		p.add(at.y);
@@ -292,9 +292,6 @@ final class OverlordWorld {
 		msg.addProperty("n", e.count());
 		msg.addProperty("hostile", e.hostile());
 		msg.addProperty("faction", e.faction());
-		if (e.heavy()) {
-			msg.addProperty("heavy", true);
-		}
 
 		host.send(msg.toString());
 		String hostName = host.name();

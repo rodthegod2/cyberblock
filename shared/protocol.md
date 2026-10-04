@@ -1861,8 +1861,8 @@ Section 1 is the contract; these readings differ from its text or add to it, and
 - **No `turret` in `spawn.rec`.** Section 1.9 row 8 lists `turret` among the records; Phase 0 check (d) found no character record for it (a turret is a `SecurityTurret`
   device), so it is Minecraft-side only. 8S, 8D and 8O drop it; the Overlord's turret is a Minecraft entity.
 - **`ncpd_heavy` is a fifth `rec`.** Not in section 1.9; 8D (`kSpawnRecords`) and 8S (`Character.prevention_enforcer_rifle_ma`, the Heat tier 3 heavy unit) accept
-  it. A heavy unit is that record, never a flag: 8O's `spawn_palette` `"heavy": true` (on an `ncpd` entry) must send `rec:"ncpd_heavy"` and no `heavy` key (as built,
-  8O adds `"heavy":true`, which 8D ignores and `tools.mpcheck` rejects). The fake host and `tools.mpcheck` take the five records.
+  it. A heavy unit is that record, never a flag: 8O's `spawn_palette` `"heavy": true` (on an `ncpd` entry) must send `rec:"ncpd_heavy"` and no `heavy` key (done at the
+  merge: `NcSpawns.wireRec`). The fake host and `tools.mpcheck` take the five records.
 - **`attitude` says `toward`.** Section 1.8 row 8 names the event `attitude` `(faction, delta)`; the wire of section 1.9 carries `toward` ∈ `friendly`, `neutral`, `hostile`.
   The DLL hands the scripts the faction and the stance; the wire follows 1.9.
 - **`spawnresult.n` is the native's `count`.** The wire field is `n` (1.9), the native `Cyberblock_SpawnResult(id, ok, count, reason)` (1.8) calls it `count`: the DLL maps one to the other.
@@ -1874,7 +1874,7 @@ Section 1 is the contract; these readings differ from its text or add to it, and
   for the top chaos player), which is what the scripts write.
 - **`heat` is sent again after every `hello`.** Not in section 1; the rule of the existing restore messages (`align`, `perks`, `cyberware`, `effect`) applied to the meter.
 - **The test commands** above are the ones 8M and 8T built (8T's `heat set` is an operator command, not under `test`); 8O's `/cyberblock test overlord spawn
-  <palette id> <player>` is this section's request to 8O for the merge (as built, 8O has only `overlord status|console|optin|intensity`). One table in
+  <palette id> <player>` is this section's request to 8O, added at the merge (`OverlordTestCommand`, next to 8O's `overlord status|console|optin|intensity`). One table in
   `tools/mpcheck.py`, `PHASE8_COMMANDS`.
 
 ### Phase 8 names

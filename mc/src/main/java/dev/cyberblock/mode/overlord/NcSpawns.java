@@ -20,6 +20,14 @@ import org.jspecify.annotations.Nullable;
 final class NcSpawns {
 	static final long ANSWER_MS = 5_000L;
 
+	/**
+	 * The {@code spawn.rec} on the wire (shared/protocol.md "Phase 8"): a heavy unit is its own record, never a flag, so a
+	 * {@code spawn_palette} entry's {@code "heavy": true} on {@code ncpd} sends {@code ncpd_heavy}; every other record goes as written.
+	 */
+	static String wireRec(final String rec, final boolean heavy) {
+		return heavy && "ncpd".equals(rec) ? "ncpd_heavy" : rec;
+	}
+
 	enum Mode {
 		UNKNOWN, WORKS, FALLBACK
 	}

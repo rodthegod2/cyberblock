@@ -605,6 +605,21 @@ VALIDATORS and a fake host mode, in the phase that adds it.
 > 6. **`uiact` `buy` / `sell`:** `hash` 1..2^32-1 (required), `id` = the line index of item 1, `arg` = the quantity. 7P's
 >    protocol rows (`vendorreq`, "one unit per action", `id` = the reply's id) are aligned to this by the integrator.
 
+> **Amendment 2026-10-04 (Phase 8 contract; Wave C integrator B).** The Phase 8 rows of 1.6, 1.8 and 1.9 read as
+> `shared/protocol.md` "Phase 8" fixes them ("Phase 8 differences from megaplan section 1"), which is now the contract:
+> 1. `spawn.rec` is one of `ganger`, `ncpd`, `ncpd_heavy`, `maxtac`, `drone` (no `turret`: Phase 0 (d), turrets are
+>    Minecraft-side only). A heavy unit is the record `ncpd_heavy`, never a flag: a `spawn_palette` entry's `"heavy": true`
+>    on `ncpd` goes on the wire as `rec:"ncpd_heavy"` and a `spawn` has exactly the keys `t, id, rec, p, n, hostile, faction`.
+> 2. `attitude` carries `faction` and `toward` (`friendly`, `neutral`, `hostile`); the native's `delta` of 1.8 is that stance.
+> 3. `spawnresult.n` is the native's `count`; its rate row is 10 per second, burst 40 (as `devresult`), and an id the session
+>    did not issue is dropped and counted (1.6).
+> 4. The host's `spawns` toggle gates only `spawn`. `heat` goes to every active host (and again after each `hello`) and
+>    carries the **wanted level** the Heat tier gives that host (`host_wanted`, or `top_chaos_wanted` for the top chaos
+>    player), not the tier number; `attitude` goes only to the hosts of a Gang Wars match's teams.
+> 5. Test commands (devtools, ops; `tools/mpcheck.py` `PHASE8_COMMANDS`): `/cyberblock heat set <0..100>` (operator, no
+>    devtools), `/cyberblock test match start|join|end`, `/cyberblock test overlord spawn <palette id> <player>` (the
+>    console's own server path, `Overlord.request`).
+
 ### 1.10 Keys (unchanged; keep the table clash-free)
 | Key | Action | Rebindable |
 |---|---|---|
