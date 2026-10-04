@@ -1,5 +1,9 @@
 # Cyberblock
 
+> **Status: experimental work in progress, not a finished mod.** It is under active development, large parts have
+> barely been played in game yet, and you should expect bugs, rough edges and breaking changes. The version number is
+> an internal milestone, not a "done" release.
+
 **Play Cyberpunk 2077 as a Minecraft player.** Real Minecraft Java (26.3 with a Fabric mod) runs next to Cyberpunk 2077
 (2.31) and is drawn into Night City every frame, with the correct camera, depth and Night City collision. Cyberpunk moves V,
 Steve acts, and **Minecraft draws the whole interface**: radar, quest and waypoint, prompts, dialogue choices, phone,
