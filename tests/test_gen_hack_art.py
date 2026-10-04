@@ -144,6 +144,38 @@ def test_every_daemon_is_a_valid_file_with_original_codes_and_three_rising_tiers
         assert set(d["kinds"]) <= set(KINDS)
 
 
+def script_tiers(function: str) -> tuple[dict[str, list[int]], list[int]]:
+    """Daemons.reds' Radius() or Seconds(): {action: [strength 1, 2, 3]} and the value every other action gets."""
+    src = (ROOT / "cp" / "scripts" / "Cyberblock" / "Daemons.reds").read_text("utf-8")
+    body = re.search(rf"private static func {function}\(action: CName, strength: Int32\) -> Float \{{(.*?)\n  \}}", src, re.S).group(1)
+
+    def whole(values: str) -> list[int]:
+        numbers = [float(v) for v in values.split(",")]
+        assert all(n.is_integer() for n in numbers), (function, values)
+        return [int(n) for n in numbers]
+
+    table = {}
+    for condition, values in re.findall(r"if (.*?) \{\s*return CyberblockDaemons\.Tier\(strength, ([\d., ]+)\);\s*\}", body):
+        for action in re.findall(r'Equals\(action, n"(\w+)"\)', condition):
+            table[action] = whole(values)
+    rest = body[body.rindex("}") + 1:]  # the last return, after the last if
+    tier = re.search(r"Tier\(strength, ([\d., ]+)\)", rest)
+    other = whole(tier.group(1)) if tier else whole(re.search(r"return ([\d.]+);", rest).group(1)) * 3
+    assert table, function
+    return table, other
+
+
+def test_the_scripts_run_exactly_the_shipped_daemon_tiers():
+    # The `daemon` message carries only the strength, so the content tiers are documentation of what Daemons.reds does: keep them equal.
+    radius, _ = script_tiers("Radius")
+    seconds, untimed = script_tiers("Seconds")
+    assert set(ACTIONS) <= set(radius) and untimed == [0, 0, 0]
+    for name, d in entries("daemon").items():
+        action = d["action"]
+        assert [t["radius"] for t in d["tiers"]] == radius[action], name
+        assert [t["seconds"] for t in d["tiers"]] == seconds.get(action, untimed), name
+
+
 def test_every_device_kind_but_the_unproven_lift_offers_a_daemon_at_the_lowest_security():
     daemons = entries("daemon")
     for kind in KINDS:

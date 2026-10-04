@@ -14,15 +14,15 @@
 	"action": "traffic_switch",
 	"tiers": [
 		{
-			"seconds": 15,
+			"seconds": 0,
 			"radius": 20
 		},
 		{
-			"seconds": 30,
+			"seconds": 0,
 			"radius": 35
 		},
 		{
-			"seconds": 60,
+			"seconds": 0,
 			"radius": 60
 		}
 	],
