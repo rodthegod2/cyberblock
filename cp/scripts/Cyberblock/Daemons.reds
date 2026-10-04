@@ -7,9 +7,10 @@
 // 'daemon ...: <reason>' (followed by '(<what each did>; skipped <ids>)' when some ran).
 //
 // Daemon ids: a namespace ("cyberblock:") is dropped, case and '-' are ignored, and these names (with their aliases)
-// run, each around the breached device at its strength 1-3. Radius and duration per strength are the defaults of the
-// shipped daemon content (data/cyberblock/cyberblock/daemon/<action>.json `tiers`; the `daemon` message carries only
-// the strength), listed as radius / seconds for strength 1, 2, 3:
+// run, each around the breached device at its strength 1-3. Radius and duration per strength are fixed here and mirrored
+// by the shipped daemon content (data/cyberblock/cyberblock/daemon/<action>.json `tiers`, seconds 0 when untimed;
+// tests/test_gen_hack_art.py keeps Radius() and Seconds() equal to them; the `daemon` message carries only the
+// strength, so a datapack cannot change them), listed as radius / seconds for strength 1, 2, 3:
 //   open_door (door, open, unlock, unlock_door)        doors unlocked and opened: the device itself when it is a door,
 //                                                     else the nearest one (strength 1); every door in the radius (2-3).
 //                                                     8 / 14 / 24 m.

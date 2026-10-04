@@ -16,15 +16,15 @@
 	"action": "make_friendly",
 	"tiers": [
 		{
-			"seconds": 30,
+			"seconds": 0,
 			"radius": 10
 		},
 		{
-			"seconds": 60,
+			"seconds": 0,
 			"radius": 16
 		},
 		{
-			"seconds": 120,
+			"seconds": 0,
 			"radius": 26
 		}
 	],

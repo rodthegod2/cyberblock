@@ -27,7 +27,9 @@ import org.jspecify.annotations.Nullable;
  * "tiers":[3 x {"seconds","radius"}], "weight"?:1-10, "min_security"?:1-3}}. The daemon's wire id (the {@code daemon} DOWN's
  * {@code list}, the {@code breach} screen's {@code seqs.id}) is its {@code action}: protocol.md's ids are {@code [a-z0-9_]} and the
  * scripts run actions, so a datapack daemon that re-skins an action works without a script change. The {@code tiers} (seconds and radius
- * per strength) are checked here and belong to the scripts' side of each action.</li>
+ * per strength) are only checked here: they document the action's defaults, which Daemons.reds mirrors (tests/test_gen_hack_art.py keeps
+ * the two equal), and the {@code daemon} DOWN carries only the strength, so a datapack can change a daemon's name, sequence, kinds,
+ * weight and min_security but not its strengths. {@code seconds} is informational and 0 for the untimed actions.</li>
  * <li>{@code breach_tier}: {@code {"schema":1, "security":1-3, "grid":5-7, "buffer":4-8, "seconds":10-300, "daemons_min", "daemons_max":1-3,
  * "firewall":[3 x {"grid_add":0-2, "buffer_add":-3-0, "seconds_add":-120-0, "daemons_add":0-1}]}}: the breach for a device of that
  * security (1 ordinary, 2 secure, 3 hardened), and what the defender's Firewall rank 1-3 adds (the grid never past 7, the buffer never
