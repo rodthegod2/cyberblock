@@ -4,19 +4,33 @@
 // CyberblockDaemons.OnEvent whatever the state. Every request is answered once with Cyberblock_HackResult(id, ok,
 // reason, 0, n"device") (the reply travels as `hackresult`), after one Cyberblock_HackSpread(id, npc, n"ping") per
 // revealed or overloaded person (at most 16). Logged: 'daemon <list> s<strength> on <dev>: ok (<what each did>)' or
-// 'daemon ...: <reason>'.
+// 'daemon ...: <reason>' (followed by '(<what each did>; skipped <ids>)' when some ran).
 //
 // Daemon ids: a namespace ("cyberblock:") is dropped, case and '-' are ignored, and these names (with their aliases)
-// run, each around the breached device at its strength (1-3: radius 10 / 20 / 35 m, durations 60 / 120 / 180 s):
+// run, each around the breached device at its strength 1-3. Radius and duration per strength are the defaults of the
+// shipped daemon content (data/cyberblock/cyberblock/daemon/<action>.json `tiers`; the `daemon` message carries only
+// the strength), listed as radius / seconds for strength 1, 2, 3:
 //   open_door (door, open, unlock, unlock_door)        doors unlocked and opened: the device itself when it is a door,
 //                                                     else the nearest one (strength 1); every door in the radius (2-3).
+//                                                     8 / 14 / 24 m.
 //   disable_cameras (camera_off, cameras_off, camera_shutdown)   cameras switched off for the duration, then back on.
-//   disable_turrets (turret_off, turrets_off, turret_shutdown)   turrets likewise.
-//   friendly_cameras / friendly_turrets (camera_friendly, turrets_friendly, ...)   SetDeviceAttitude on them.
-//   lights_off (blackout, power_off)                   lights, signs and screens off for the duration, then back on.
-//   reveal_enemies (reveal, ping)                      hostile people in 20 / 35 / 50 m revealed 10 / 20 / 30 s.
+//                                                     15 / 25 / 40 m, 20 / 45 / 90 s.
+//   disable_turrets (turret_off, turrets_off, turret_shutdown)   turrets likewise. 12 / 20 / 30 m, 20 / 40 / 80 s.
+//   make_friendly                                      SetDeviceAttitude on the cameras and turrets (vanilla: it lasts
+//                                                     until the device resets). 10 / 16 / 26 m.
+//   friendly_cameras / friendly_turrets (camera_friendly, turrets_friendly, ...)   the same on cameras or turrets only.
+//   lights_out (lights_off, blackout, power_off)       lights, signs and screens off for the duration, then back on.
+//                                                     10 / 18 / 30 m, 20 / 40 / 90 s.
+//   distract                                           the Phase 4 devact `distract` (the vanilla distraction quickhack,
+//                                                     its own duration) on the screens, vending machines and lights.
+//                                                     10 / 16 / 24 m.
+//   traffic_switch                                     the intersection of the device (when it is a traffic light) or of
+//                                                     the nearest traffic light flips (CyberblockHacks.FlipIntersection).
+//                                                     20 / 35 / 60 m.
+//   reveal_enemies (reveal, ping)                      hostile people revealed. 20 / 35 / 60 m, 10 / 20 / 40 s.
 //   overload (short_circuit, overload_enemies)         the 1 / 2 / 4 nearest hackable hostile people within the radius
 //                                                     get the vanilla Overload upload (QuickHack.OverloadLvl1Hack).
+//                                                     5 / 8 / 12 m.
 //   alarm (fail, failure)                              a failed Breach: the device's security system raises an ALARM
 //                                                     (ScriptableDeviceComponentPS.TriggerSecuritySystemNotification,
 //                                                     the vanilla security path); a device with no security system
@@ -26,10 +40,11 @@
 //                                                     checked 2 s later; when it did not rise the written fallback
 //                                                     "Minecraft Heat only" takes over for good: logged by
 //                                                     RemoteHacks.reds as 'rhack: heat path: ...').
-// Other ids are skipped and named in the log line; a list with none of these answers "no such daemon". A daemon that
-// finds nothing in its radius still counts as run. The same leave-alone rules as RemoteHacks.reds: quest-marked and
-// quest-locked devices, sealed doors, V in scene tier 3-5; the breached device must be streamed (and, once Phase 0 (h)'s
-// fallback is in force, within 50 m of V). Devices switched off come back on by timer and on ClearWorld
+// Other ids are skipped: the known ones of the list still run, and the answer is ok:false "unsupported daemon" (6P
+// protocol: ok only when every id ran); the log line names what ran and what was skipped. A daemon that finds nothing
+// in its radius still counts as run. The same leave-alone rules as RemoteHacks.reds: quest-marked and quest-locked
+// devices, sealed doors, V in scene tier 3-5; the breached device must be streamed ("target gone" otherwise) and, once
+// Phase 0 (h)'s fallback is in force, within 50 m of V ("cyberblock.hack.out_of_range" otherwise). Devices switched off come back on by timer and on ClearWorld
 // (CyberblockRemoteService.SwitchOff), so a save never keeps them.
 //
 // Phase 0 runtime checks: the alarm path is chosen per device at run time (security system present or not) and named in
@@ -43,8 +58,9 @@
 // ActionSetOpened, SurveillanceCamera, SecurityTurret, SensorDevice, ElectricLight, InteractiveSign, BillboardDevice, TV,
 // GameObject.GetStimBroadcasterComponent, StimBroadcasterComponent.BroadcastStim (stimBroadcasterComponent.swift 129),
 // gamedataStimType.Alarm, stimInvestigateData, GameObject.SendForceRevealObjectEvent, StrSplit, StrLower, StrReplaceAll,
-// StrAfterFirst. Ours: CyberblockRemoteService / CyberblockRemoteHacks (RemoteHacks.reds), CyberblockHacks.Upload /
-// Refusal (Hacks.reds), CyberblockDeviceService.QuestLocked (Devices.reds).
+// StrAfterFirst, TrafficLight. Ours: CyberblockRemoteService / CyberblockRemoteHacks (RemoteHacks.reds),
+// CyberblockHacks.Upload / Refusal / FlipIntersection (Hacks.reds), CyberblockDeviceService.QuestLocked / Kind and
+// ScriptableDeviceComponentPS.CyberblockDistraction (Devices.reds), CyberblockIds.Hash.
 
 public abstract class CyberblockDaemons {
   // From CyberblockEvents.Tick for every n"daemon", whatever the state: every request gets its Cyberblock_HackResult.
@@ -116,8 +132,17 @@ public abstract class CyberblockDaemons {
     if Equals(id, "friendly_turrets") || Equals(id, "turret_friendly") || Equals(id, "turrets_friendly") {
       return n"friendly_turrets";
     }
-    if Equals(id, "lights_off") || Equals(id, "blackout") || Equals(id, "power_off") {
-      return n"lights_off";
+    if Equals(id, "make_friendly") {
+      return n"make_friendly";
+    }
+    if Equals(id, "lights_out") || Equals(id, "lights_off") || Equals(id, "blackout") || Equals(id, "power_off") {
+      return n"lights_out";
+    }
+    if Equals(id, "distract") {
+      return n"distract";
+    }
+    if Equals(id, "traffic_switch") {
+      return n"traffic_switch";
     }
     if Equals(id, "reveal_enemies") || Equals(id, "reveal") || Equals(id, "ping") {
       return n"reveal_enemies";
@@ -131,7 +156,8 @@ public abstract class CyberblockDaemons {
     return n"";
   }
 
-  // "" when at least one daemon ran (run.note says what each did), else the refusal.
+  // "" when every daemon ran (run.note says what each did), else the refusal; with an unknown id the known ones still
+  // run and the answer is "unsupported daemon".
   private static func Run(game: GameInstance, service: ref<CyberblockRemoteService>, player: ref<PlayerPuppet>, dev: Uint64, list: array<String>, strength: Int32, run: ref<CyberblockRemoteRun>) -> String {
     let tier = PlayerPuppet.GetSceneTier(player);
     if tier >= 3 && tier <= 5 {
@@ -141,11 +167,10 @@ public abstract class CyberblockDaemons {
     if !IsDefined(device) || !device.IsAttached() {
       return "target gone";
     }
-    let far = service.RangeRefusal(player, device);
+    let far = service.RangeRefusal(player, device.GetWorldPosition());
     if StrLen(far) > 0 {
       return far;
     }
-    let ran = 0;
     let notes = "";
     let skipped = "";
     for id in list {
@@ -155,30 +180,99 @@ public abstract class CyberblockDaemons {
       } else {
         let note = CyberblockDaemons.Daemon(game, service, player, device, action, strength, run);
         notes += StrLen(notes) > 0 ? s"; \(note)" : note;
-        ran += 1;
       }
     }
-    if ran == 0 {
-      return "no such daemon";
+    if StrLen(skipped) > 0 {
+      run.note = StrLen(notes) > 0 ? s"\(notes); skipped \(skipped)" : s"skipped \(skipped)";
+      return "unsupported daemon";
     }
-    run.note = StrLen(skipped) > 0 ? s"\(notes); skipped \(skipped)" : notes;
+    run.note = notes;
     return "";
   }
 
-  private static func Radius(strength: Int32) -> Float {
-    return strength >= 3 ? 35.0 : (strength == 2 ? 20.0 : 10.0);
+  // The shipped daemon content's tiers (data/cyberblock/cyberblock/daemon/*.json): radius in metres at strength 1-3.
+  private static func Radius(action: CName, strength: Int32) -> Float {
+    if Equals(action, n"open_door") {
+      return CyberblockDaemons.Tier(strength, 8.0, 14.0, 24.0);
+    }
+    if Equals(action, n"disable_cameras") {
+      return CyberblockDaemons.Tier(strength, 15.0, 25.0, 40.0);
+    }
+    if Equals(action, n"disable_turrets") {
+      return CyberblockDaemons.Tier(strength, 12.0, 20.0, 30.0);
+    }
+    if Equals(action, n"make_friendly") || Equals(action, n"friendly_cameras") || Equals(action, n"friendly_turrets") {
+      return CyberblockDaemons.Tier(strength, 10.0, 16.0, 26.0);
+    }
+    if Equals(action, n"lights_out") {
+      return CyberblockDaemons.Tier(strength, 10.0, 18.0, 30.0);
+    }
+    if Equals(action, n"distract") {
+      return CyberblockDaemons.Tier(strength, 10.0, 16.0, 24.0);
+    }
+    if Equals(action, n"traffic_switch") {
+      return CyberblockDaemons.Tier(strength, 20.0, 35.0, 60.0);
+    }
+    if Equals(action, n"reveal_enemies") {
+      return CyberblockDaemons.Tier(strength, 20.0, 35.0, 60.0);
+    }
+    if Equals(action, n"overload") {
+      return CyberblockDaemons.Tier(strength, 5.0, 8.0, 12.0);
+    }
+    return CyberblockDaemons.Tier(strength, 20.0, 30.0, 40.0); // alarm: the Alarm stim's reach
+  }
+
+  // Likewise the duration in seconds (for the daemons that time out).
+  private static func Seconds(action: CName, strength: Int32) -> Float {
+    if Equals(action, n"disable_cameras") {
+      return CyberblockDaemons.Tier(strength, 20.0, 45.0, 90.0);
+    }
+    if Equals(action, n"disable_turrets") {
+      return CyberblockDaemons.Tier(strength, 20.0, 40.0, 80.0);
+    }
+    if Equals(action, n"lights_out") {
+      return CyberblockDaemons.Tier(strength, 20.0, 40.0, 90.0);
+    }
+    if Equals(action, n"reveal_enemies") {
+      return CyberblockDaemons.Tier(strength, 10.0, 20.0, 40.0);
+    }
+    return 0.0;
+  }
+
+  private static func Tier(strength: Int32, one: Float, two: Float, three: Float) -> Float {
+    return strength >= 3 ? three : (strength == 2 ? two : one);
   }
 
   // One daemon around device; what it did, for the log.
   private static func Daemon(game: GameInstance, service: ref<CyberblockRemoteService>, player: ref<PlayerPuppet>, device: ref<Device>, action: CName, strength: Int32, run: ref<CyberblockRemoteRun>) -> String {
     let center = device.GetWorldPosition();
-    let radius = CyberblockDaemons.Radius(strength);
-    let seconds = 60.0 * Cast<Float>(strength);
+    let radius = CyberblockDaemons.Radius(action, strength);
+    let seconds = CyberblockDaemons.Seconds(action, strength);
     let name = NameToString(action);
     if Equals(action, n"open_door") {
       return s"\(name) \(CyberblockDaemons.OpenDoors(player, device, strength, radius))";
     }
-    if Equals(action, n"disable_cameras") || Equals(action, n"disable_turrets") || Equals(action, n"lights_off") {
+    if Equals(action, n"traffic_switch") {
+      let light = device as TrafficLight;
+      if !IsDefined(light) {
+        light = CyberblockRemoteHacks.NearestTrafficLight(center, radius) as TrafficLight;
+      }
+      if !IsDefined(light) {
+        return s"\(name): no traffic light within \(RoundF(radius)) m";
+      }
+      return s"\(name) intersection of light \(CyberblockIds.Hash(light)) \(CyberblockHacks.FlipIntersection(light) ? "flipped" : "not flipped (no intersection)")";
+    }
+    if Equals(action, n"distract") {
+      let n = 0;
+      for object in CyberblockRemoteHacks.NearbyDevices(center, radius, 32) {
+        let other = object as Device;
+        if IsDefined(other) && CyberblockDaemons.Matches(action, other) && CyberblockDaemons.Distract(player, other) {
+          n += 1;
+        }
+      }
+      return s"\(name) \(n)";
+    }
+    if Equals(action, n"disable_cameras") || Equals(action, n"disable_turrets") || Equals(action, n"lights_out") {
       let serial = service.NextSerial();
       let n = 0;
       for object in CyberblockRemoteHacks.NearbyDevices(center, radius, 64) {
@@ -192,7 +286,7 @@ public abstract class CyberblockDaemons {
       }
       return s"\(name) \(n) off for \(RoundF(seconds)) s";
     }
-    if Equals(action, n"friendly_cameras") || Equals(action, n"friendly_turrets") {
+    if Equals(action, n"make_friendly") || Equals(action, n"friendly_cameras") || Equals(action, n"friendly_turrets") {
       let n = 0;
       for object in CyberblockRemoteHacks.NearbyDevices(center, radius, 64) {
         let sensor = object as SensorDevice;
@@ -203,15 +297,13 @@ public abstract class CyberblockDaemons {
       return s"\(name) \(n)";
     }
     if Equals(action, n"reveal_enemies") {
-      let reach = strength >= 3 ? 50.0 : (strength == 2 ? 35.0 : 20.0);
-      let lifetime = 10.0 * Cast<Float>(strength);
       let instigator = player.GetEntityID();
-      let shown = CyberblockRemoteHacks.Nearby(game, player, center, reach, false, true, 16);
+      let shown = CyberblockRemoteHacks.Nearby(game, player, center, radius, false, true, 16);
       for found in shown {
-        GameObject.SendForceRevealObjectEvent(found, true, n"CyberblockDaemon", instigator, lifetime);
+        GameObject.SendForceRevealObjectEvent(found, true, n"CyberblockDaemon", instigator, seconds);
         run.Reveal(found);
       }
-      return s"\(name) \(ArraySize(shown)) for \(RoundF(lifetime)) s";
+      return s"\(name) \(ArraySize(shown)) for \(RoundF(seconds)) s";
     }
     if Equals(action, n"overload") {
       let count = strength >= 3 ? 4 : strength;
@@ -227,12 +319,12 @@ public abstract class CyberblockDaemons {
       return s"\(name) \(n)";
     }
     if Equals(action, n"alarm") {
-      return s"\(name) \(CyberblockDaemons.Alarm(player, device, strength)), heat \(CyberblockDaemons.Heat(game, service))";
+      return s"\(name) \(CyberblockDaemons.Alarm(player, device, radius)), heat \(CyberblockDaemons.Heat(game, service))";
     }
     return s"\(name) ?";
   }
 
-  // Which devices a switch-off or friendly daemon acts on.
+  // Which devices a switch-off, friendly or distract daemon acts on.
   private static func Matches(action: CName, device: ref<Device>) -> Bool {
     if Equals(action, n"disable_cameras") || Equals(action, n"friendly_cameras") {
       return IsDefined(device as SurveillanceCamera);
@@ -240,10 +332,32 @@ public abstract class CyberblockDaemons {
     if Equals(action, n"disable_turrets") || Equals(action, n"friendly_turrets") {
       return IsDefined(device as SecurityTurret);
     }
-    if Equals(action, n"lights_off") {
+    if Equals(action, n"make_friendly") {
+      return IsDefined(device as SurveillanceCamera) || IsDefined(device as SecurityTurret);
+    }
+    if Equals(action, n"lights_out") {
       return IsDefined(device as ElectricLight) || IsDefined(device as InteractiveSign) || IsDefined(device as BillboardDevice) || IsDefined(device as TV);
     }
+    if Equals(action, n"distract") {
+      let kind = CyberblockDeviceService.Kind(device);
+      return Equals(kind, n"screen") || Equals(kind, n"vending") || Equals(kind, n"light");
+    }
     return false;
+  }
+
+  // The Phase 4 devact `distract` (Devices.reds: ActionQuickHackDistraction, V the executor); false when left alone.
+  private static func Distract(player: ref<PlayerPuppet>, device: ref<Device>) -> Bool {
+    let ps = device.GetDevicePS();
+    if !IsDefined(ps) || ps.IsMarkedAsQuest() || CyberblockDeviceService.QuestLocked(device) || ps.IsUnpowered() {
+      return false;
+    }
+    let action = ps.CyberblockDistraction();
+    if !IsDefined(action) {
+      return false;
+    }
+    action.SetExecutor(player);
+    ps.ExecutePSAction(action);
+    return true;
   }
 
   // Unlocks (when powered) and opens doors: the breached door itself or the nearest one (strength 1), every door in the
@@ -300,7 +414,7 @@ public abstract class CyberblockDaemons {
   }
 
   // The failed Breach's alarm; which path ran.
-  private static func Alarm(player: ref<PlayerPuppet>, device: ref<Device>, strength: Int32) -> String {
+  private static func Alarm(player: ref<PlayerPuppet>, device: ref<Device>, reach: Float) -> String {
     let ps = device.GetDevicePS();
     if IsDefined(ps) && IsDefined(ps.GetSecuritySystem()) {
       ps.TriggerSecuritySystemNotification(player, player.GetWorldPosition(), ESecurityNotificationType.ALARM, true);
@@ -311,7 +425,6 @@ public abstract class CyberblockDaemons {
       investigate.attackInstigator = player;
       investigate.attackInstigatorPosition = player.GetWorldPosition();
       investigate.revealsInstigatorPosition = true;
-      let reach = strength >= 3 ? 40.0 : (strength == 2 ? 30.0 : 20.0);
       StimBroadcasterComponent.BroadcastStim(device, gamedataStimType.Alarm, reach, investigate);
       return s"via an Alarm stim from the device, \(RoundF(reach)) m (no security system)";
     }

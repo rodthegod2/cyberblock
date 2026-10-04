@@ -48,11 +48,16 @@ public native func Cyberblock_EventText() -> String;    // the current event's s
 //   n"rhack":  EventId = request id, EventName = hack (n"veh_lock" | n"veh_engine_off" | n"veh_brake" | n"veh_start" |
 //              n"veh_jam" | n"traffic_switch" | n"gridlock" | n"blackout" | n"cam_feed" | n"outline" | n"ping_area";
 //              anything else is answered "no such hack"), EventTarget = target id (a car, person or device id as the npcs
-//              / devices streams sent it; 0 = none: area hacks centre on EventPos when it is not zero, else on V),
-//              EventText = a district name (blackout; logged only), EventAmount = minutes (blackout; 0 = 2 minutes).
+//              / devices streams sent it; 0 = none), EventPos = the wire's `p` converted to Cyberpunk space (area hacks
+//              centre on it; zero = absent, they centre on V), EventExtra = the wire's `r` in metres (blackout uses
+//              min(r, 150); 0 = absent, 150), EventAmount = the wire's `secs` in SECONDS (blackout: 0 = absent, 120 s;
+//              clamped 30..600), EventText = a district name (blackout; logged only). Refusals are free text <= 64
+//              characters; the Phase 0 (h) 50 m limit answers exactly "cyberblock.hack.out_of_range", a target that is
+//              not streamed "target gone".
 //   n"daemon": EventId = request id, EventTarget = the breached device id, EventAmount = strength 1..3, EventText = the
 //              daemon ids joined with "," (when EventText is empty, EventName is read as the only one); the daemon id
-//              n"alarm" is a failed Breach (alarm and heat).
+//              n"alarm" is a failed Breach (alarm and heat). Radius and duration per strength are the shipped daemon
+//              content's tiers (Daemons.reds); an unknown id is answered "unsupported daemon" while the rest still run.
 // Handled in RemoteHacks.reds and Daemons.reds.
 // Stance, menus, game mode
 public native func Cyberblock_SetStance(crouched: Bool, inAir: Bool, held: Bool) -> Void; // carried as cam.cr / cam.air / cam.held until changed

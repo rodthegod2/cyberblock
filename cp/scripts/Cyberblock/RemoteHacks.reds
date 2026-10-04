@@ -18,16 +18,19 @@
 //   traffic_switch  the intersection of the target traffic light (or the nearest one within 40 m of the target) flips.
 //   gridlock        the cars within 25 m of the target (at most 12, never V's) stop for 60 s; the nearest intersection
 //                   within 40 m flips.
-//   blackout        the lights and devices within 150 m of V switched off for N minutes (EventAmount, default 2,
-//                   0.5..10) and the city lights forced off; then back on. EventText (a district) is only logged.
+//   blackout        the lights and devices within r (EventExtra, at most 150, 0 = 150) of `p` (EventPos, zero = V)
+//                   switched off for secs seconds (EventAmount, 0 = 120, clamped 30..600) and the city lights forced
+//                   off; then back on. EventText (a district) is only logged.
 //   cam_feed        a powered camera's position and yaw are logged and confirmed: Minecraft renders the replica from the
 //                   camera's devices-stream position and yaw (the plan's fallback for a true camera view).
 //   outline         people and cars within 25 m of the target revealed 15 s (nearest 16), each reported `ping`.
 //   ping_area       the vanilla Ping upload on the hackable person nearest the point, then the hostile people, cameras
 //                   and turrets within 30 m revealed 10 s (nearest 16 people reported `ping`).
-// Refusals (at most 64 characters, protocol hackresult.reason): "Cyberblock is not active", "target gone", "no such
-// hack", "out of range", "not hackable (<why>)", "no traffic light near", "no traffic near", "camera off". Kinds:
-// traffic_switch and gridlock `traffic`, blackout `device`, cam_feed `camera`, the rest none.
+// Refusals (at most 64 characters, protocol hackresult.reason): "Cyberblock is not active", "target gone" (the target is
+// not streamed: no device or entity for the id, or detached; 6I's RangeRule reads it as "not streamed", not as a range
+// limit, and Minecraft shows cyberblock.hack.out_of_range for it), "no such hack", "cyberblock.hack.out_of_range" (the
+// Phase 0 (h) fallback's 50 m limit, below), "not hackable (<why>)", "no traffic light near", "no traffic near",
+// "camera off". Kinds: traffic_switch and gridlock `traffic`, blackout `device`, cam_feed `camera`, the rest none.
 //
 // Phase 0 runtime checks (the CET session has not run): every call below that 0R did not prove in game is checked on its
 // first uses, and its written fallback takes over for good when it did nothing; each feature logs one
@@ -52,7 +55,9 @@
 //               action is not callable: devices stay as they are, logged).
 //   range (h)   Phase 0 (h): every streamed target, no distance limit. When a car hack took no effect by either path
 //               on a car more than 50 m from V, the written fallback takes over: remote hacks and daemons only within
-//               50 m of V (farther targets answer "out of range"); logged 'rhack: remote range: ...'.
+//               50 m of V (a farther target, area centre `p` or breached device answers "cyberblock.hack.out_of_range");
+//               logged 'rhack: remote range: ...'. A check is judged only while what it checks still stands: the
+//               lock or hold it was started for (same serial) and no Clear since (generation); else 'not judged'.
 // Not checkable from scripts (logged path, needsInGame): veh_brake on V's car, veh_jam, traffic_switch, blackout's
 // devices, cam_feed, outline and ping_area. No 2.31 script call switches traffic lights or stops a road's traffic
 // (TrafficSystem has only IsPathIntersectingWithTraffic and FindEntitiesNearPlane), and none lists the devices of a
@@ -106,17 +111,17 @@ public abstract class CyberblockRemoteHacks {
     CyberblockRemoteHacks.Answer(id, s"rhack \(NameToString(hack)) on \(target)", reason, run);
   }
 
-  // The reveals, then the one result, then the log line (shared with Daemons.reds).
+  // The reveals (whatever ran, also in a daemon list answered "unsupported daemon"), then the one result, then the log
+  // line (shared with Daemons.reds).
   public static func Answer(id: Int32, what: String, reason: String, run: ref<CyberblockRemoteRun>) -> Void {
     let ok = StrLen(reason) == 0;
-    if ok {
-      for revealed in run.spread {
-        Cyberblock_HackSpread(id, revealed, n"ping");
-      }
+    for revealed in run.spread {
+      Cyberblock_HackSpread(id, revealed, n"ping");
     }
     let kind = ok ? run.kind : n"";
     Cyberblock_HackResult(id, ok, reason, 0.0, kind);
-    Cyberblock_Log(s"\(what): \(ok ? s"ok (\(run.note))" : reason)");
+    let note = StrLen(run.note) > 0 ? s" (\(run.note))" : "";
+    Cyberblock_Log(s"\(what): \(ok ? "ok" : reason)\(note)");
   }
 
   // ClearWorld (Cyberblock.reds): everything held is restored at once.
@@ -240,6 +245,8 @@ public class CyberblockRemoteService extends ScriptableService {
   private let rangeLogged: Bool;
   // Each hold, lock and switch-off batch gets a serial; a timer only undoes the serial it was set for.
   private let serial: Int32;
+  // +1 on every Clear; a check started before it is not judged.
+  private let generation: Int32;
   // Devices we switched off (blackout, daemons) and their batch.
   private let offDevices: array<ref<ScriptableDeviceComponentPS>>;
   private let offSerials: array<Int32>;
@@ -288,7 +295,7 @@ public class CyberblockRemoteService extends ScriptableService {
       return "the nearest TrafficLight device's intersection flipped (2.31 TrafficSystem has no light call: the Phase 4 device fallback)";
     }
     if Equals(what, n"blackout") {
-      return "the lights and devices within 150 m of V off (no 2.31 script lists a district's devices: the written fallback)";
+      return "the lights and devices within r (at most 150 m) of the point or V off (no 2.31 script lists a district's devices: the written fallback)";
     }
     if Equals(what, n"citylights") {
       return fallback ? "devices only (CityLightSystem did not take the forced OFF)" : "CityLightSystem forced OFF (ForceCLSStateRequest, not savable)";
@@ -344,14 +351,15 @@ public class CyberblockRemoteService extends ScriptableService {
     }
   }
 
-  // Phase 0 (h): "" or "out of range" (only once the 50 m fallback is in force).
-  public func RangeRefusal(player: ref<PlayerPuppet>, target: ref<GameObject>) -> String {
+  // Phase 0 (h): "" or the contract's key "cyberblock.hack.out_of_range" (section 1.9 amendment, 6P protocol) for a
+  // target or centre at pos farther than 50 m from V, only once the 50 m fallback is in force.
+  public func RangeRefusal(player: ref<PlayerPuppet>, pos: Vector4) -> String {
     if !this.rangeLogged {
       this.rangeLogged = true;
       Cyberblock_Log("rhack: remote range: every streamed target, no distance limit (Phase 0 h, unconfirmed in game; car hacks check it)");
     }
-    if this.rangeLimited && IsDefined(target) && Vector4.Distance(player.GetWorldPosition(), target.GetWorldPosition()) > 50.0 {
-      return "out of range";
+    if this.rangeLimited && Vector4.Distance(player.GetWorldPosition(), pos) > 50.0 {
+      return "cyberblock.hack.out_of_range";
     }
     return "";
   }
@@ -380,11 +388,9 @@ public class CyberblockRemoteService extends ScriptableService {
     if target != 0ul && (!IsDefined(object) || !object.IsAttached()) {
       return "target gone";
     }
-    if IsDefined(object) {
-      let far = this.RangeRefusal(player, object);
-      if StrLen(far) > 0 {
-        return far;
-      }
+    let far = this.RangeRefusal(player, CyberblockRemoteHacks.Center(player, object));
+    if StrLen(far) > 0 {
+      return far;
     }
     let name = NameToString(hack);
     if StrBeginsWith(name, "veh_") {
@@ -448,10 +454,10 @@ public class CyberblockRemoteService extends ScriptableService {
       }
       let fallback = this.UsesFallback(n"veh_engine");
       let running = vehicle.IsEngineTurnedOn();
-      this.Hold(game, vehicle, mine ? 10.0 : 30.0, mine || running);
+      let serial = this.Hold(game, vehicle, mine ? 10.0 : 30.0, mine || running);
       CyberblockRemoteService.Engine(game, vehicle, false, fallback);
       if running {
-        this.Check(game, n"veh_engine_off", id, fallback ? 2 : 1, 1.5, speed, far);
+        this.Check(game, n"veh_engine_off", id, serial, fallback ? 2 : 1, 1.5, speed, far);
       } else {
         run.note += ", engine was off (not checked)";
       }
@@ -465,7 +471,7 @@ public class CyberblockRemoteService extends ScriptableService {
       }
       let fallback = this.UsesFallback(n"veh_engine");
       CyberblockRemoteService.Engine(game, vehicle, true, fallback);
-      this.Check(game, n"veh_start", id, fallback ? 2 : 1, 1.5, speed, far);
+      this.Check(game, n"veh_start", id, 0, fallback ? 2 : 1, 1.5, speed, far);
       return "";
     }
     if Equals(hack, n"veh_brake") {
@@ -483,7 +489,7 @@ public class CyberblockRemoteService extends ScriptableService {
         vehicle.ActivateNetrunnerQuickhack(VehicleNetrunnerQuickhackType.ForceBrakes);
       }
       if speed > 3.0 {
-        this.Check(game, n"veh_brake", id, fallback ? 2 : 1, 1.5, speed, far);
+        this.Check(game, n"veh_brake", id, 0, fallback ? 2 : 1, 1.5, speed, far);
       } else {
         run.note += ", standing (not checked)";
       }
@@ -523,8 +529,8 @@ public class CyberblockRemoteService extends ScriptableService {
     GameInstance.GetPersistencySystem(game).QueuePSEvent(ps.GetID(), ps.GetClassName(), evt);
   }
 
-  // Holds the car's engine off for seconds (restart: switch it back on afterwards).
-  private func Hold(game: GameInstance, vehicle: ref<VehicleObject>, seconds: Float, restart: Bool) -> Void {
+  // Holds the car's engine off for seconds (restart: switch it back on afterwards); the hold's serial.
+  private func Hold(game: GameInstance, vehicle: ref<VehicleObject>, seconds: Float, restart: Bool) -> Int32 {
     let id = CyberblockIds.Hash(vehicle);
     let serial = this.NextSerial();
     let i = ArrayFindFirst(this.heldCars, id);
@@ -536,6 +542,7 @@ public class CyberblockRemoteService extends ScriptableService {
       ArrayPush(this.heldRestart, restart);
     }
     this.Schedule(game, n"engine", id, serial, seconds);
+    return serial;
   }
 
   // Ends a hold (serial 0: whichever); restore: switch the engine back on when it ran before.
@@ -590,7 +597,7 @@ public class CyberblockRemoteService extends ScriptableService {
     this.Schedule(game, n"lock", id, serial, seconds);
     let fallback = this.UsesFallback(n"veh_lock");
     CyberblockRemoteService.Lock(game, vehicle, fallback);
-    this.Check(game, n"veh_lock", id, fallback ? 2 : 1, 1.0, 0.0, far);
+    this.Check(game, n"veh_lock", id, serial, fallback ? 2 : 1, 1.0, 0.0, far);
     return "";
   }
 
@@ -665,8 +672,9 @@ public class CyberblockRemoteService extends ScriptableService {
       if stopped < 12 && IsDefined(car) && !IsDefined(car as AVObject) && !car.IsPerformingSceneAnimation()
         && Vector4.Distance(player.GetWorldPosition(), car.GetWorldPosition()) <= limit {
         let speed = Vector4.Length(car.GetLinearVelocity());
+        let serial = 0;
         if fallback {
-          this.Hold(game, car, 60.0, car.IsEngineTurnedOn());
+          serial = this.Hold(game, car, 60.0, car.IsEngineTurnedOn());
           CyberblockRemoteService.Engine(game, car, false, true);
         } else {
           car.ForceBrakesFor(60.0);
@@ -674,7 +682,7 @@ public class CyberblockRemoteService extends ScriptableService {
         if !checked && speed > 3.0 {
           checked = true;
           let far = Vector4.Distance(player.GetWorldPosition(), car.GetWorldPosition()) > 50.0;
-          this.Check(game, n"gridlock", CyberblockIds.Hash(car), fallback ? 2 : 1, 3.0, speed, far);
+          this.Check(game, n"gridlock", CyberblockIds.Hash(car), serial, fallback ? 2 : 1, 3.0, speed, far);
         }
         stopped += 1;
       }
@@ -694,13 +702,18 @@ public class CyberblockRemoteService extends ScriptableService {
     if this.blackoutSerial != 0 {
       this.EndBlackout(game, this.blackoutSerial, "a new blackout");
     }
-    let minutes = Cyberblock_EventAmount() > 0.0 ? ClampF(Cyberblock_EventAmount(), 0.5, 10.0) : 2.0;
+    // The wire's secs (seconds) and r (metres), as Natives.reds documents the n"rhack" fields.
+    let seconds = Cyberblock_EventAmount() > 0.0 ? ClampF(Cyberblock_EventAmount(), 30.0, 600.0) : 120.0;
+    let radius = Cyberblock_EventExtra() > 0.0 ? MinF(Cyberblock_EventExtra(), 150.0) : 150.0;
+    let center = CyberblockRemoteHacks.Center(player, null);
+    let reach = this.RangeLimit();
     let serial = this.NextSerial();
     this.blackoutSerial = serial;
     let off = 0;
-    for object in CyberblockRemoteHacks.NearbyDevices(player.GetWorldPosition(), MinF(150.0, this.RangeLimit()), 160) {
+    for object in CyberblockRemoteHacks.NearbyDevices(center, radius, 160) {
       let device = object as Device;
-      if IsDefined(device) && CyberblockRemoteService.Blackoutable(device) && this.SwitchOff(device, player, serial) {
+      if IsDefined(device) && Vector4.Distance(player.GetWorldPosition(), device.GetWorldPosition()) <= reach
+        && CyberblockRemoteService.Blackoutable(device) && this.SwitchOff(device, player, serial) {
         off += 1;
       }
     }
@@ -713,14 +726,15 @@ public class CyberblockRemoteService extends ScriptableService {
     if !this.UsesFallback(n"citylights") {
       GameInstance.QueueScriptableSystemRequest(game, n"CityLightSystem", request);
       this.cityLights = true;
-      this.Check(game, n"citylights", 0ul, 1, 1.0, 0.0, false);
+      this.Check(game, n"citylights", 0ul, 0, 1, 1.0, 0.0, false);
     }
-    this.Schedule(game, n"off", 0ul, serial, minutes * 60.0);
+    this.Schedule(game, n"off", 0ul, serial, seconds);
     if off > 0 {
-      this.Check(game, n"device_off", 0ul, 1, 1.0, Cast<Float>(serial), false);
+      this.Check(game, n"device_off", 0ul, 0, 1, 1.0, Cast<Float>(serial), false);
     }
     let district = Cyberblock_EventText();
-    run.note = s"\(off) devices off for \(minutes) min within 150 m of V\(StrLen(district) > 0 ? s" (district \(district) asked)" : "")";
+    let around = Vector4.IsXYZZero(Cyberblock_EventPos()) ? "V" : "the point";
+    run.note = s"\(off) devices off for \(RoundF(seconds)) s within \(RoundF(radius)) m of \(around)\(StrLen(district) > 0 ? s" (district \(district) asked)" : "")";
     return "";
   }
 
@@ -868,7 +882,7 @@ public class CyberblockRemoteService extends ScriptableService {
   // Daemons.reds: the switch-off batch serial comes back on after seconds.
   public func ScheduleOff(game: GameInstance, serial: Int32, seconds: Float) -> Void {
     this.Schedule(game, n"off", 0ul, serial, seconds);
-    this.Check(game, n"device_off", 0ul, 1, 1.0, Cast<Float>(serial), false);
+    this.Check(game, n"device_off", 0ul, 0, 1, 1.0, Cast<Float>(serial), false);
   }
 
   public func OnTimer(game: GameInstance, what: CName, target: Uint64, serial: Int32) -> Void {
@@ -897,21 +911,45 @@ public class CyberblockRemoteService extends ScriptableService {
     }
   }
 
-  // A check of what (stage 1: the primary path ran; 2: the fallback ran) after seconds.
-  public func Check(game: GameInstance, what: CName, target: Uint64, stage: Int32, seconds: Float, speed: Float, far: Bool) -> Void {
+  // A check of what (stage 1: the primary path ran; 2: the fallback ran) after seconds; serial: the lock or hold it
+  // checks (0: none).
+  public func Check(game: GameInstance, what: CName, target: Uint64, serial: Int32, stage: Int32, seconds: Float, speed: Float, far: Bool) -> Void {
     let check = new CyberblockRemoteCheck();
     check.game = game;
     check.what = what;
     check.target = target;
+    check.serial = serial;
+    check.generation = this.generation;
     check.stage = stage;
     check.speed = speed;
     check.far = far;
     GameInstance.GetDelaySystem(game).DelayCallback(check, seconds);
   }
 
+  // What a car check judges still stands (Verify has ruled out a Clear since): its lock or hold (same serial) still in
+  // place, and for veh_start no hold put on the car since.
+  private func Stands(check: ref<CyberblockRemoteCheck>) -> Bool {
+    if Equals(check.what, n"veh_lock") {
+      let i = ArrayFindFirst(this.lockedCars, check.target);
+      return i >= 0 && this.lockedSerials[i] == check.serial;
+    }
+    if Equals(check.what, n"veh_start") {
+      return ArrayFindFirst(this.heldCars, check.target) < 0;
+    }
+    if Equals(check.what, n"veh_engine_off") || check.serial != 0 {
+      let i = ArrayFindFirst(this.heldCars, check.target);
+      return i >= 0 && this.heldSerials[i] == check.serial;
+    }
+    return true;
+  }
+
   public func Verify(check: ref<CyberblockRemoteCheck>) -> Void {
     let game = check.game;
     let what = check.what;
+    if check.generation != this.generation && !Equals(what, n"heat") {
+      Cyberblock_Log(s"rhack: \(NameToString(what)) check: cleared since it started, not judged");
+      return;
+    }
     if Equals(what, n"citylights") {
       let cls = GameInstance.GetScriptableSystemsContainer(game).Get(n"CityLightSystem") as CityLightSystem;
       if IsDefined(cls) && Equals(cls.GetState(), ECLSForcedState.ForcedOFF) {
@@ -957,6 +995,10 @@ public class CyberblockRemoteService extends ScriptableService {
       Cyberblock_Log(s"rhack: \(NameToString(what)) check on car \(check.target): car gone, not judged");
       return;
     }
+    if !this.Stands(check) {
+      Cyberblock_Log(s"rhack: \(NameToString(what)) check on car \(check.target): lock or hold undone since it started, not judged");
+      return;
+    }
     let feature = Equals(what, n"veh_engine_off") || Equals(what, n"veh_start") ? n"veh_engine" : what;
     if CyberblockRemoteService.TookEffect(what, vehicle, check.speed) {
       if check.stage == 1 {
@@ -966,8 +1008,8 @@ public class CyberblockRemoteService extends ScriptableService {
     }
     if check.stage == 1 {
       this.Fall(feature, s"no effect on car \(check.target) after the primary call");
-      this.ApplyFallback(game, what, vehicle);
-      this.Check(game, what, check.target, 2, Equals(what, n"gridlock") ? 3.0 : 1.5, check.speed, check.far);
+      let serial = this.ApplyFallback(game, what, vehicle, check.serial);
+      this.Check(game, what, check.target, serial, 2, Equals(what, n"gridlock") ? 3.0 : 1.5, check.speed, check.far);
       return;
     }
     if check.far {
@@ -993,8 +1035,9 @@ public class CyberblockRemoteService extends ScriptableService {
     return now < MaxF(2.0, 0.6 * speed);
   }
 
-  // The fallback path on the car a primary path did nothing to.
-  private func ApplyFallback(game: GameInstance, what: CName, vehicle: ref<VehicleObject>) -> Void {
+  // The fallback path on the car a primary path did nothing to (only while Stands: the lock or hold is still tracked, so
+  // its timer and Clear undo it); the serial the stage 2 check follows (gridlock's fallback is a new, tracked hold).
+  private func ApplyFallback(game: GameInstance, what: CName, vehicle: ref<VehicleObject>, serial: Int32) -> Int32 {
     if Equals(what, n"veh_lock") {
       CyberblockRemoteService.Lock(game, vehicle, true);
     } else if Equals(what, n"veh_engine_off") {
@@ -1004,9 +1047,11 @@ public class CyberblockRemoteService extends ScriptableService {
     } else if Equals(what, n"veh_brake") {
       vehicle.ForceBrakesUntilStoppedOrFor(6.0);
     } else if Equals(what, n"gridlock") {
-      this.Hold(game, vehicle, 60.0, true);
+      let hold = this.Hold(game, vehicle, 60.0, true);
       CyberblockRemoteService.Engine(game, vehicle, false, true);
+      return hold;
     }
+    return serial;
   }
 
   // ---- heat (Daemons.reds' failure alarm; Phase 0 e) ----
@@ -1028,7 +1073,7 @@ public class CyberblockRemoteService extends ScriptableService {
     let request = new SetWantedLevel();
     request.m_wantedLevel = IntEnum<EPreventionHeatStage>(before + 1);
     PreventionSystem.QueueRequest(game, request);
-    this.Check(game, n"heat", 0ul, 1, 2.0, Cast<Float>(before + 1), false);
+    this.Check(game, n"heat", 0ul, 0, 1, 2.0, Cast<Float>(before + 1), false);
     return "";
   }
 
@@ -1036,6 +1081,7 @@ public class CyberblockRemoteService extends ScriptableService {
 
   // Everything held goes back now (ClearWorld: before a save, on leaving live, on load and session end).
   public func Clear(game: GameInstance) -> Void {
+    this.generation += 1;
     if ArraySize(this.heldCars) == 0 && ArraySize(this.lockedCars) == 0 && ArraySize(this.offDevices) == 0 && !this.cityLights {
       return;
     }
@@ -1076,12 +1122,15 @@ public class CyberblockRemoteTimer extends DelayCallback {
   }
 }
 
-// A runtime check of a feature path (the header): speed is the car's speed at the start (for heat: the stars asked for);
-// far: the car was more than 50 m from V.
+// A runtime check of a feature path (the header): speed is the car's speed at the start (for heat: the stars asked for;
+// for device_off: the batch serial); far: the car was more than 50 m from V; serial: the lock or hold it checks (0:
+// none); generation: the service's Clear count when it started.
 public class CyberblockRemoteCheck extends DelayCallback {
   public let game: GameInstance;
   public let what: CName;
   public let target: Uint64;
+  public let serial: Int32;
+  public let generation: Int32;
   public let stage: Int32;
   public let speed: Float;
   public let far: Bool;
