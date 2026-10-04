@@ -318,10 +318,14 @@ public final class WorldBridge {
 		});
 	}
 
-	/** Server thread: broken outline blocks whose 10 s are up come back (plan Q-B6), into air with no player in the cell. */
+	/**
+	 * Server thread: broken outline blocks whose 10 s are up come back (plan Q-B6), into air with no player inside the cell. A player
+	 * standing on top of it (feet on its top face, give or take a little: Steve stands where V stands) does not count: the block
+	 * comes back under him, as Night City's ground is there.
+	 */
 	private static void snapBack(final ServerLevel level, final long now) {
 		long[] due = guard.due(now, cell -> level.getBlockState(BlockPos.of(cell)).isAir(),
-			cell -> level.getEntitiesOfClass(Player.class, new AABB(BlockPos.of(cell))).isEmpty());
+			cell -> level.getEntitiesOfClass(Player.class, new AABB(BlockPos.of(cell)).deflate(0.1)).isEmpty());
 		if (due.length == 0) {
 			return;
 		}
