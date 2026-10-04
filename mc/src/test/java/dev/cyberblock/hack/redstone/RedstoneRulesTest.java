@@ -2,6 +2,7 @@ package dev.cyberblock.hack.redstone;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import dev.cyberblock.cyber.Hack;
 import dev.cyberblock.device.Device;
 import dev.cyberblock.hack.redstone.RedstoneRules.Deck;
 import dev.cyberblock.hack.redstone.RedstoneRules.Refusal;
@@ -102,6 +103,20 @@ class RedstoneRulesTest {
 	}
 
 	@Test
+	void breakingAndReplacingTheCyberdeckBlockDoesNotRefillIt() {
+		long now = 1000;
+		Deck used = Deck.full(0).take(13, now);
+		assertNotNull(used);
+		assertEquals(3, used.ram(now));
+		Deck replaced = Deck.placed(now + 40); // two seconds of mining later
+		assertEquals(0, replaced.ram(now + 40), "a placed block starts empty");
+		assertTrue(replaced.ram(now + 40) <= used.ram(now + 40), "never more RAM than the block it replaced");
+		assertNull(replaced.take(Hack.CYBERPSYCHOSIS.ram(), now + 40), "no free top-tier hack");
+		assertEquals(1, replaced.ram(now + 40 + RedstoneRules.DECK_REFILL_TICKS), "it refills at the documented 1 RAM per 5 s");
+		assertEquals(RedstoneRules.DECK_MAX_RAM, replaced.ram(now + 40 + RedstoneRules.DECK_MAX_RAM * RedstoneRules.DECK_REFILL_TICKS), "full after 80 s");
+	}
+
+	@Test
 	void theCyberdeckLightsFollowTheRamAndTheNextRefillIsKnown() {
 		assertEquals(Deck.LIGHTS, Deck.full(0).lights(0));
 		assertEquals(0, new Deck(0, 0).lights(0), "dark only when empty");
@@ -118,61 +133,6 @@ class RedstoneRulesTest {
 	}
 
 	@Test
-	void theRemotePathFallsBackOnRangeRefusals() {
-		RemotePath path = new RemotePath();
-		path.configure("");
-		assertEquals(RemotePath.Mode.STREAMED, path.mode());
-		assertTrue(path.reaches(120.0));
-		assertFalse(path.observe(false, "target gone", 120.0, true), "gone from the streamed area is the documented path working");
-		assertFalse(path.observe(false, "out of range", 30.0, true), "close to V: says nothing about the 50 m rule");
-		assertFalse(path.observe(false, "out of range", 120.0, false), "not listed in the last second: says nothing");
-		assertFalse(path.observe(false, "out of range", 120.0, true), "one strike");
-		assertFalse(path.observe(true, "", 120.0, true), "a yes from that far clears the strikes");
-		assertFalse(path.observe(false, "out of range", 120.0, true));
-		assertEquals(RemotePath.Mode.STREAMED, path.mode());
-		assertTrue(path.observe(false, "not hackable (line of sight)", 120.0, true), "the second strike");
-		assertEquals(RemotePath.Mode.NEAR, path.mode());
-		assertFalse(path.reaches(51.0));
-		assertTrue(path.reaches(49.0));
-		assertTrue(path.line().contains("fallback"));
-		path.configure("near");
-		assertEquals(RemotePath.Mode.NEAR, path.mode());
-		path.configure("streamed");
-		assertEquals(RemotePath.Mode.STREAMED, path.mode());
-		assertTrue(path.line().startsWith("redstone: remote actions reach every target"));
-	}
-
-	@Test
-	void notInRangeIsTheScriptsListNotAGameCheck() {
-		RemotePath path = new RemotePath();
-		path.configure("");
-		for (int i = 0; i < 5; i++) {
-			assertFalse(path.observe(false, "not in range", 60.0, true), "Devices.reds: the device is not in its last list");
-			assertFalse(path.observe(false, "Target Gone", 60.0, true));
-		}
-
-		assertEquals(RemotePath.Mode.STREAMED, path.mode());
-		assertFalse(RemotePath.rangeRefusal("not in range"));
-		assertFalse(RemotePath.rangeRefusal("arrangement"), "whole words only");
-		assertFalse(RemotePath.rangeRefusal("insightful"));
-		assertTrue(RemotePath.rangeRefusal("out of range"));
-		assertTrue(RemotePath.rangeRefusal("not hackable (no line of sight)"));
-		assertTrue(RemotePath.rangeRefusal("Too far from V"));
-	}
-
-	@Test
-	void aNewServerStartsOnTheDefaultPath() {
-		RemotePath path = new RemotePath();
-		path.configure("");
-		path.observe(false, "out of range", 120.0, true);
-		path.observe(false, "out of range", 120.0, true);
-		assertEquals(RemotePath.Mode.NEAR, path.mode());
-		path.configure(null); // what SERVER_STOPPING does
-		assertEquals(RemotePath.Mode.STREAMED, path.mode());
-		assertFalse(path.observe(false, "out of range", 120.0, true), "the strikes start again too");
-	}
-
-	@Test
 	void theDeviceTableForgetsGoneDevicesAndEndedOwners() {
 		DeviceTable table = new DeviceTable();
 		UUID owner = new UUID(1, 1);
@@ -180,9 +140,6 @@ class RedstoneRulesTest {
 		assertEquals(1, table.of(owner, 10).size());
 		table.state(owner, 1, Device.DOOR_OPENED, 0);
 		assertTrue(table.get(owner, 1, 10).open(), "a devstate updates it");
-		assertTrue(table.listedWithin(owner, 1, RemotePath.FRESH_TICKS, RemotePath.FRESH_TICKS));
-		assertFalse(table.listedWithin(owner, 1, RemotePath.FRESH_TICKS + 1, RemotePath.FRESH_TICKS), "still in the table, but not fresh");
-		assertFalse(table.listedWithin(owner, 2, 0, RemotePath.FRESH_TICKS));
 		assertTrue(table.of(owner, DeviceTable.GONE_TICKS).isEmpty(), "no list named it for 10 s");
 		table.update(owner, List.of(door(Device.DOOR_CLOSED, 0)), 300);
 		table.end(owner);

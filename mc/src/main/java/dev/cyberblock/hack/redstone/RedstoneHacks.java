@@ -14,6 +14,7 @@ import dev.cyberblock.device.Device;
 import dev.cyberblock.device.DeviceMap;
 import dev.cyberblock.device.DeviceShape;
 import dev.cyberblock.device.DeviceWire;
+import dev.cyberblock.hack.actions.RangeRule;
 import dev.cyberblock.hack.breach.Breach;
 import dev.cyberblock.hack.redstone.RedstoneRules.Deck;
 import dev.cyberblock.hack.redstone.RedstoneRules.Refusal;
@@ -59,9 +60,9 @@ import org.jspecify.annotations.Nullable;
  * owner's device table, the Device Relay's devact, the Breach Port's quickhacks paid from a Cyberdeck block, the Charge's explosion,
  * the sensors, the rate limit (2 actions a second per block) and the loop freeze (more than 8 toggles of one device in 4 s: 30 s).
  * Every action is checked against the owner's guest toggles for the player who placed, linked or configured the block, and against the
- * Phase 0 (h) reach ({@link RemotePath}). Server thread only.
+ * Phase 0 (h) reach (the one {@link RangeRule#SERVER} every remote action shares). Server thread only.
  *
- * <p>Log lines: {@code redstone: remote actions reach ...} (once at server start, and when the fallback takes over), {@code redstone:
+ * <p>Log lines: {@code hack range: ...} (RangeRule's one line, at the first remote action and when the fallback takes over), {@code redstone:
  * <who> linked the <block> at x y z to <device>}, {@code redstone: relay at x y z -> devact <act> ...}, {@code redstone: <block> at x y
  * z refused (<why>)}, {@code redstone: loop: ... (cyberblock.redstone.loop)}, {@code redstone: breach port at x y z fired <hack> ...},
  * {@code redstone: charge at x y z exploded in N Night City games ...}.
@@ -72,7 +73,6 @@ public final class RedstoneHacks {
 	private static final DeviceTable table = new DeviceTable();
 	private static final RateLimit rate = new RateLimit();
 	private static final LoopGuard loops = new LoopGuard();
-	private static final RemotePath path = new RemotePath();
 	private static final Map<PendingKey, Pending> pending = new HashMap<>();
 	private static volatile @Nullable MinecraftServer server;
 
@@ -80,18 +80,15 @@ public final class RedstoneHacks {
 	}
 
 	/**
-	 * A devact or a hack a block sent: where from, who acts, the RAM to refund, the target's distance from V and whether the owner
-	 * listed the target within the last second (only then can a refusal speak for the Phase 0 h reach).
+	 * A devact or a hack a block sent: where from, who acts, the RAM to refund and the target's distance from V (NaN: unknown).
 	 */
-	private record Pending(String what, ResourceKey<Level> dimension, BlockPos pos, @Nullable BlockPos deck, int cost, UUID actor, double toV, boolean fresh,
-		long tick) {
+	private record Pending(String what, ResourceKey<Level> dimension, BlockPos pos, @Nullable BlockPos deck, int cost, UUID actor, double toV, long tick) {
 	}
 
 	private RedstoneHacks() {
 	}
 
 	static void init() {
-		path.configure(System.getProperty("cyberblock.remoteRange"));
 		HostSessions.listen("devices", (s, m) -> {
 			DeviceWire.Parsed p = DeviceWire.devices(m, DeviceMap::typeOf);
 			if (p != null && s.active()) {
@@ -125,12 +122,8 @@ public final class RedstoneHacks {
 		UseBlockCallback.EVENT.addPhaseOrdering(early, Event.DEFAULT_PHASE);
 		UseBlockCallback.EVENT.register(early, RedstoneHacks::onUseBlock);
 		ServerTickEvents.END_SERVER_TICK.register(RedstoneHacks::tick);
-		ServerLifecycleEvents.SERVER_STARTED.register(s -> {
-			server = s;
-			Cyberblock.LOG.info(path.line());
-		});
+		ServerLifecycleEvents.SERVER_STARTED.register(s -> server = s);
 		ServerLifecycleEvents.SERVER_STOPPING.register(s -> {
-			path.configure(System.getProperty("cyberblock.remoteRange")); // the next world in this JVM starts on the default path
 			table.clear();
 			rate.clear();
 			loops.clear();
@@ -191,7 +184,7 @@ public final class RedstoneHacks {
 		UUID actor = be.actor();
 		boolean allowed = d != null && RedstoneRules.allowedDevice(Permissions.of(link.owner()), privileged(link.owner(), actor), d.type());
 		double toV = d == null ? Double.NaN : distanceToV(s, new Vec3(d.x(), d.y(), d.z()));
-		Refusal r = RedstoneRules.relay(link != null, d, frozen, allowed, path.reaches(toV));
+		Refusal r = RedstoneRules.relay(link != null, d, frozen, allowed, reaches(toV));
 		if (r == Refusal.NONE) {
 			LoopGuard.Verdict v = loops.toggle(link.key(), now);
 			if (v != LoopGuard.Verdict.OK) {
@@ -214,11 +207,10 @@ public final class RedstoneHacks {
 		}
 
 		UUID asker = actor == null ? link.owner() : actor;
-		boolean fresh = table.listedWithin(link.owner(), d.id(), now, RemotePath.FRESH_TICKS);
 		for (String act : RedstoneRules.relayActs(d)) {
 			int request = s.newRequest(asker);
 			s.send(DeviceWire.devact(request, d, act));
-			pending.put(new PendingKey(link.owner(), request), new Pending("relay " + act, level.dimension(), pos, null, 0, asker, toV, fresh, now));
+			pending.put(new PendingKey(link.owner(), request), new Pending("relay " + act, level.dimension(), pos, null, 0, asker, toV, now));
 			Cyberblock.LOG.info("redstone: relay at {} -> devact {} {} {} of {} (request {})", pos.toShortString(), act, d.type().id(), d.idText(), s.name(), request);
 		}
 
@@ -256,7 +248,7 @@ public final class RedstoneHacks {
 			}
 
 			double toV = distanceToV(s, e.position());
-			Refusal r = RedstoneRules.hack(RedstoneRules.allowed(Permissions.of(owner), privileged(owner, actor), Permissions.Toggle.HACKS), path.reaches(toV));
+			Refusal r = RedstoneRules.hack(RedstoneRules.allowed(Permissions.of(owner), privileged(owner, actor), Permissions.Toggle.HACKS), reaches(toV));
 			if (r != Refusal.NONE) {
 				last = r;
 				continue;
@@ -272,9 +264,8 @@ public final class RedstoneHacks {
 			UUID asker = actor == null ? owner : actor;
 			int request = s.newRequest(asker);
 			s.send(CyberWire.hack(request, Bridge.proxyIdOf.applyAsLong(e), hack, false));
-			// a figure exists only while its host lists it (ProxyManager removes the ones a list leaves out): the target is fresh
 			pending.put(new PendingKey(owner, request), new Pending("breach port " + hack.wire(), level.dimension(), pos, deckEntity.getBlockPos(), hack.ram(), asker,
-				toV, true, now));
+				toV, now));
 			sent++;
 		}
 
@@ -569,8 +560,8 @@ public final class RedstoneHacks {
 			return; // the device layer's or a player's request, or a late answer
 		}
 
-		if (path.observe(ok, reason, p.toV(), p.fresh())) {
-			Cyberblock.LOG.info(path.line());
+		if (RangeRule.SERVER.observe(ok, reason, p.toV(), p.what())) {
+			Hacking.announceRange();
 		}
 
 		if (ok) {
@@ -587,7 +578,7 @@ public final class RedstoneHacks {
 			be.status = reason;
 		}
 
-		tell(p.actor(), RemotePath.rangeRefusal(reason) ? Component.translatableWithFallback(Refusal.OUT_OF_RANGE.key(), Refusal.OUT_OF_RANGE.fallback())
+		tell(p.actor(), RangeRule.rangeRefusal(reason) ? Component.translatableWithFallback(Refusal.OUT_OF_RANGE.key(), Refusal.OUT_OF_RANGE.fallback())
 			: Component.translatableWithFallback("cyberblock.device.refused", "Night City refused: %s", reason));
 		Cyberblock.LOG.info("redstone: {} at {} refused by Night City ({})", p.what(), p.pos().toShortString(), reason);
 	}
@@ -625,6 +616,15 @@ public final class RedstoneHacks {
 	/** The actor is the owner, another host, or nobody (Permissions.allows' rule): the guest toggles do not apply. */
 	private static boolean privileged(final UUID owner, final @Nullable UUID actor) {
 		return actor == null || actor.equals(owner) || HostSessions.isHost(actor);
+	}
+
+	/**
+	 * Phase 0 (h), the server's one rule: may a block's action reach a streamed target this far from V (NaN: unknown, sent only on the
+	 * documented path)? Says the rule's line at the first remote action.
+	 */
+	private static boolean reaches(final double toV) {
+		Hacking.announceRange();
+		return RangeRule.SERVER.allows(toV, true);
 	}
 
 	/** Metres from the owner's V (its player) to a place; NaN when V is not in the world. */

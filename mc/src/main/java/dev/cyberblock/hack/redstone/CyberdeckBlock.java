@@ -7,7 +7,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -18,10 +20,11 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.level.block.state.properties.IntegerProperty;
 import net.minecraft.world.phys.BlockHitResult;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The Cyberdeck block (megaplan 6-R1): RAM for the Breach Ports next to it. It holds {@link RedstoneRules#DECK_MAX_RAM} and gets one
- * point back every 5 s; a comparator reads how full it is; a right-click says so. Block state (6A's blockstate draws it): a
+ * point back every 5 s, starting empty when a player places it; a comparator reads how full it is; a right-click says so. Block state (6A's blockstate draws it): a
  * horizontal {@code facing} (its front towards whoever placed it) and {@code ram} 0..4, the lights on the front
  * ({@link Deck#lights}), kept in step by {@link #refresh} whenever the RAM changes and at each refill point until it is full.
  */
@@ -39,10 +42,19 @@ public final class CyberdeckBlock extends HackBlock {
 		builder.add(FACING, RAM);
 	}
 
-	/** A new Cyberdeck block is full. */
+	/** A placed Cyberdeck block starts dark: empty, it refills one point every 5 s ({@link Deck#placed}). */
 	@Override
 	public BlockState getStateForPlacement(final BlockPlaceContext context) {
-		return this.defaultBlockState().setValue(FACING, context.getHorizontalDirection().getOpposite());
+		return this.defaultBlockState().setValue(FACING, context.getHorizontalDirection().getOpposite()).setValue(RAM, 0);
+	}
+
+	/** Its RAM starts empty, so breaking and replacing the block does not refill it. */
+	@Override
+	public void setPlacedBy(final Level level, final BlockPos pos, final BlockState state, final @Nullable LivingEntity by, final ItemStack stack) {
+		super.setPlacedBy(level, pos, state, by, stack);
+		if (!level.isClientSide() && level.getBlockEntity(pos) instanceof HackBlockEntity be) {
+			be.deck(Deck.placed(RedstoneHacks.now(level)));
+		}
 	}
 
 	/**
