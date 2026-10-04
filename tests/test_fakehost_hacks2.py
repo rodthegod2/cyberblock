@@ -3,6 +3,7 @@ shared/protocol.md "Phase 6". The fake host is the stand-in the harness (tools/m
 import base64
 import math
 import time
+from pathlib import Path
 
 import pytest
 
@@ -220,6 +221,14 @@ def test_reveal_enemies_pings_the_hostile_people_and_overload_and_alarm_change_n
     for ids in (("overload",), ("alarm",)):
         assert h.reply(daemon(*ids, strength=1)) == [{"t": "hackresult", "id": 24, "ok": True, "reason": ""}]
     assert h.dev_table == fakehost.device_table(0, fakehost.HACKS2_SCENE)
+
+
+def test_every_shipped_daemon_content_id_is_answered_ok():
+    # a solved Breach sends ids from 6A's `daemon` content; a real DLL runs them all (Daemons.reds), so the fake one must not refuse any
+    shipped = sorted(p.stem for p in Path("mc/src/main/resources/data/cyberblock/cyberblock/daemon").glob("*.json"))
+    assert shipped
+    for i, name in enumerate(shipped):
+        assert result(host().reply(daemon(name, rid=i)))["ok"] is True, name
 
 
 def test_an_unknown_daemon_id_fails_the_result_but_the_others_still_run():

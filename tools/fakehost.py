@@ -107,7 +107,8 @@ Phase 6 mode (shared/protocol.md "Phase 6"; stands on the street like --devices,
              pending blackout and car effect back at once; a hack
              name outside the eleven is `unsupported`, and a target or centre farther than 50 m from V (the fallback of Phase 0 check (h)) is
              `cyberblock.hack.out_of_range`. Every valid `daemon` is answered with one `hackresult`: `open_door` opens the doors, `disable_cameras` disables the
-             cameras (both `devstate by:script`), `reveal_enemies` pings the hostile people, `overload` and the reserved `alarm` change nothing, any other id is
+             cameras (both `devstate by:script`), `reveal_enemies` pings the hostile people, the other shipped ids (`overload`, `disable_turrets`, `lights_out`, `make_friendly`,
+             `distract`, `traffic_switch`) and the reserved `alarm` change nothing, any other id is
              `unsupported daemon` (the others still run), and a device that is not in the table is `device gone`. `feedreq on:true` starts a `feed` (a 128 x 128
              test card of map colours that changes every frame) at once and once a second after, `on:false` stops it. A message whose id, target, hack, list or
              on has the wrong type is dropped.
@@ -767,6 +768,8 @@ VEHICLE_EFFECT = {"veh_lock": {"locked": True}, "veh_engine_off": {"engine": Fal
 HACK_RANGE_M = 50.0  # a target or an area's centre farther than this from V is out of range (the fallback of Phase 0 check (h))
 OUT_OF_RANGE = "cyberblock.hack.out_of_range"
 ALARM_DAEMON = "alarm"  # the reserved daemon id of a failed Breach
+# the shipped `daemon` content ids (and the alarm) that Daemons.reds runs but that change nothing in this fake scene: answered ok
+QUIET_DAEMONS = frozenset({"overload", "disable_turrets", "lights_out", "make_friendly", "distract", "traffic_switch", ALARM_DAEMON})
 DAEMON_RE = re.compile(r"[a-z0-9_]{1,32}")
 HACKS2_REQUESTS = ("rhack", "daemon", "feedreq")
 FEED_SIZE, FEED_EVERY = 128, 1.0  # the photo feed: 128 x 128, at most one `feed` per second
@@ -1294,7 +1297,7 @@ class Cyberpunk:
                         extras.append(devstate_message(dev_id, dev, "script"))
             elif daemon == "reveal_enemies":
                 extras += ping_spreads(rid, self.npcs(self.clock)["list"], None, 0.0)
-            elif daemon not in ("overload", ALARM_DAEMON):
+            elif daemon not in QUIET_DAEMONS:
                 failure = failure or "unsupported daemon"
         return [hack_result(rid, not failure, failure), *extras]
 
