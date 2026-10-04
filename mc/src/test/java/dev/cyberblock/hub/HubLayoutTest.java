@@ -21,7 +21,7 @@ class HubLayoutTest {
 		   {"from": [4, 1, 4], "to": [4, 1, 4], "block": "minecraft:oak_stairs[facing=east,half=bottom]"}
 		 ],
 		 "stations": {"match_terminal": [16, 1, 3], "holo_table": [26, 1, 12], "exit_portal": [16, 1, 22]},
-		 "boards": [{"pos": [10, 3, 1], "facing": "south", "objective": "cb_match_wins", "title_key": "cyberblock.hub.board.match_wins"}],
+		 "boards": [{"pos": [10, 3, 1], "facing": "south", "objective": "cb_wins", "title_key": "cyberblock.afterlife.board.wins"}],
 		 "figures": [{"id": "bartender", "role": "cyberblock:bartender", "area": "bar", "pos": [6.5, 1, 5.5], "yaw": 90, "gender": "female",
 		   "name": "Nyx"}]}
 		""";
@@ -46,7 +46,7 @@ class HubLayoutTest {
 		assertEquals(new HubLayout.Cell(16, 1, 3), l.matchTerminal());
 		assertEquals(new HubLayout.Cell(16, 1, 22), l.exitPortal());
 		assertEquals(1, l.boards().size());
-		assertEquals("cb_match_wins", l.boards().getFirst().objective());
+		assertEquals("cb_wins", l.boards().getFirst().objective());
 		assertEquals(1, l.figures(), "the figures are 7N's: only counted");
 		assertEquals(180.0F, l.spawnYaw());
 	}
@@ -98,6 +98,19 @@ class HubLayoutTest {
 		});
 		IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> HubLayout.parse(huge));
 		assertTrue(e.getMessage().contains("cells"), e.getMessage());
+	}
+
+	@Test
+	void theShippedLayoutIsReadWhenPresent() throws java.io.IOException {
+		var in = HubLayoutTest.class.getResourceAsStream("/data/cyberblock/cyberblock/hub/afterlife.json");
+		org.junit.jupiter.api.Assumptions.assumeTrue(in != null, "7A's layout is not in this branch yet");
+		try (var reader = new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8)) {
+			HubLayout l = HubLayout.parse(JsonParser.parseReader(reader).getAsJsonObject());
+			for (HubLayout.Board b : l.boards()) {
+				assertTrue(java.util.Set.of(Leaderboards.MATCH_WINS, Leaderboards.GIGS_DONE, Leaderboards.CHAOS).contains(b.objective()),
+					"a board shows one of the objectives 7N and Phase 8 feed: " + b.objective());
+			}
+		}
 	}
 
 	@Test

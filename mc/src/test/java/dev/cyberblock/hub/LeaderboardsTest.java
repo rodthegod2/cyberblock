@@ -27,9 +27,9 @@ class LeaderboardsTest {
 
 	@Test
 	void aTitleIsItsLangKeyWithEnglishBehind() {
-		TranslatableContents t = (TranslatableContents) Leaderboards.title(Leaderboards.GIGS_DONE, "cyberblock.hub.board.gigs_done").getContents();
-		assertEquals("cyberblock.hub.board.gigs_done", t.getKey());
-		assertEquals("Gigs done", t.getFallback());
+		TranslatableContents t = (TranslatableContents) Leaderboards.title(Leaderboards.GIGS_DONE, "cyberblock.afterlife.board.gigs").getContents();
+		assertEquals("cyberblock.afterlife.board.gigs", t.getKey());
+		assertEquals("Gigs Done", t.getFallback());
 		assertEquals("Chaos", Leaderboards.title(Leaderboards.CHAOS, "").getString(), "no key: the English");
 		assertEquals("cb_custom", Leaderboards.title("cb_custom", "").getString(), "a datapack's objective shows its name");
 	}

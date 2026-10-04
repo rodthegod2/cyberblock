@@ -31,8 +31,8 @@ public final class MatchTerminalBlock extends HubBlocks.Facing {
 			if (open != null) {
 				open.accept(serverPlayer, pos);
 			} else {
-				serverPlayer.sendSystemMessage(Component.translatableWithFallback("cyberblock.hub.match_terminal.soon",
-					"Match Terminal: matches are coming in Phase 8"), true);
+				serverPlayer.sendSystemMessage(Component.translatableWithFallback("cyberblock.afterlife.terminal.soon",
+					"The Match Terminal is not connected yet: matches are coming soon"), true);
 			}
 		}
 

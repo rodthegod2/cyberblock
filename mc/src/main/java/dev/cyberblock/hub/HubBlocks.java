@@ -29,14 +29,14 @@ import net.minecraft.world.level.material.MapColor;
 /**
  * The hub's blocks (megaplan 7-H1; their art, block states and names are 7A's): the hub portal ({@code cyberblock:hub_portal}, no
  * properties), placeable in the replica, takes a player to the Afterlife and, in the Afterlife, back; the Match Terminal
- * ({@code cyberblock:match_terminal}, {@code facing}) opens Phase 8's match screen; the leaderboard board ({@code cyberblock:leaderboard},
+ * ({@code cyberblock:match_terminal}, {@code facing}) opens Phase 8's match screen; the leaderboard board ({@code cyberblock:leaderboard_board},
  * {@code facing}, a block entity) shows a scoreboard objective. Like the device blocks they are placed by the hub build or by creative
  * players and operators: unbreakable in survival, spared by explosions, no drops and no mob spawns. They sit in Cyberblock's creative tab.
  */
 public final class HubBlocks {
 	public static final String HUB_PORTAL_NAME = "hub_portal";
 	public static final String MATCH_TERMINAL_NAME = "match_terminal";
-	public static final String LEADERBOARD_NAME = "leaderboard";
+	public static final String LEADERBOARD_NAME = "leaderboard_board";
 	public static final EnumProperty<Direction> FACING = HorizontalDirectionalBlock.FACING;
 	public static Block HUB_PORTAL;
 	public static Block MATCH_TERMINAL;

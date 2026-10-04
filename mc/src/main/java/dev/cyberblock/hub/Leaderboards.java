@@ -20,8 +20,8 @@ import net.minecraft.world.scores.criteria.ObjectiveCriteria;
  * {@link #LISTED} in chat. Server thread only.
  */
 public final class Leaderboards {
-	public static final String MATCH_WINS = "cb_match_wins";
-	public static final String GIGS_DONE = "cb_gigs_done";
+	public static final String MATCH_WINS = "cb_wins";
+	public static final String GIGS_DONE = "cb_gigs";
 	public static final String CHAOS = "cb_chaos";
 	static final int SHOWN = 5;
 	static final int LISTED = 10;
@@ -52,8 +52,8 @@ public final class Leaderboards {
 	/** A board's title: its lang key, with the English of the three plan objectives (or the objective's name) as the fallback. */
 	public static Component title(final String objective, final String titleKey) {
 		String english = switch (objective) {
-			case MATCH_WINS -> "Match wins";
-			case GIGS_DONE -> "Gigs done";
+			case MATCH_WINS -> "Match Wins";
+			case GIGS_DONE -> "Gigs Done";
 			case CHAOS -> "Chaos";
 			default -> objective;
 		};

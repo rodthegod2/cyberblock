@@ -188,9 +188,9 @@ public record HubLayout(String titleKey, Cell origin, Cell size, double[] spawn,
 			new Step(floor, "minecraft:polished_blackstone_bricks", false),
 			new Step(new Box(new Cell(-7, 0, -7), new Cell(7, 0, -7)), "minecraft:sea_lantern", false),
 			new Step(new Box(new Cell(-7, 0, 7), new Cell(7, 0, 7)), "minecraft:sea_lantern", false));
-		return new HubLayout("cyberblock.hub.title", new Cell(0, 64, 0), new Cell(15, 6, 15), new double[] {0.5, 1.0, 0.5}, 180.0F,
+		return new HubLayout("cyberblock.afterlife.title", new Cell(0, 64, 0), new Cell(15, 6, 15), new double[] {0.5, 1.0, 0.5}, 180.0F,
 			Map.of("hall", floor), steps, new Cell(-3, 1, -5), new Cell(3, 1, -5), new Cell(0, 1, 5),
-			List.of(new Board(new Cell(0, 2, -6), "south", Leaderboards.MATCH_WINS, "cyberblock.hub.board.match_wins")), 0);
+			List.of(new Board(new Cell(0, 2, -6), "south", Leaderboards.MATCH_WINS, "cyberblock.afterlife.board.wins")), 0);
 	}
 
 	private static JsonObject object(final @Nullable JsonElement e, final String what) {

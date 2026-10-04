@@ -106,8 +106,12 @@ final class HubBuilder {
 		return placed;
 	}
 
-	/** A station block facing the arrival point (a block without {@code facing} is placed as it is). */
+	/** A station block facing the arrival point (a block without {@code facing} as it is); kept when the steps already placed it. */
 	private static int station(final ServerLevel level, final HubLayout layout, final HubLayout.Cell cell, final Block block, final double[] spawn) {
+		if (level.getBlockState(pos(layout.world(cell))).is(block)) {
+			return 0;
+		}
+
 		BlockState state = block.defaultBlockState();
 		if (state.hasProperty(HubBlocks.FACING)) {
 			state = state.setValue(HubBlocks.FACING, Direction.byName(HubRules.facingToward(cell.x() + 0.5, cell.z() + 0.5, spawn[0], spawn[2])));
