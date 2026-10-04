@@ -1,0 +1,15 @@
+{
+	"schema": 1,
+	"name": "Traffic Jam",
+	"description": "Every car in the area stops dead. Nobody is going anywhere, in a car or around one.",
+	"cost": 20,
+	"warning_s": 4,
+	"cooldown_s": 90,
+	"radius": 64,
+	"scales_with_intensity": false,
+	"night_city": true,
+	"effect": {
+		"type": "traffic_jam",
+		"seconds": 60
+	}
+}

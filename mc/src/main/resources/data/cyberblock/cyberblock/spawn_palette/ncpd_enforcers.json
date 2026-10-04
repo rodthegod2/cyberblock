@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"name": "NCPD Enforcers",
+	"description": "Two armoured enforcers in heavy vests, here to end the argument.",
+	"group": "law",
+	"kind": "night_city",
+	"cost": 14,
+	"count": 2,
+	"hostile": true,
+	"rec": "ncpd",
+	"faction": "police",
+	"cooldown_s": 25,
+	"squad": {
+		"mob": "minecraft:vindicator",
+		"count": 2
+	}
+}

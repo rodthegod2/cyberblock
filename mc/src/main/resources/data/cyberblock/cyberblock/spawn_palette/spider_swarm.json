@@ -1,0 +1,12 @@
+{
+	"schema": 1,
+	"name": "Wall Crawlers",
+	"description": "Three crawlers that take the walls and the ceiling as their own.",
+	"group": "monster",
+	"kind": "minecraft",
+	"cost": 7,
+	"count": 3,
+	"hostile": true,
+	"mob": "minecraft:spider",
+	"cooldown_s": 15
+}

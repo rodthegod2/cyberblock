@@ -1,0 +1,26 @@
+{
+	"schema": 1,
+	"tier": 4,
+	"name": "Max-Tac Hunt",
+	"description": "The elite squad is sent after the one who caused the most chaos.",
+	"enter": 75,
+	"exit": 70,
+	"decay_per_s": 0.25,
+	"grace_s": 25,
+	"host_wanted": 4,
+	"top_chaos_wanted": 5,
+	"response": {
+		"target": "top_chaos",
+		"max_alive": 8,
+		"waves": [
+			{
+				"entry": "cyberblock:maxtac_squad",
+				"every_s": 120
+			},
+			{
+				"entry": "cyberblock:ncpd_enforcers",
+				"every_s": 60
+			}
+		]
+	}
+}

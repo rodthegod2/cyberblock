@@ -1,0 +1,53 @@
+{
+	"schema": 1,
+	"name": "Last Team Standing",
+	"description": "One life each. A downed player can still be revived; a defeated one is out. The last team on its feet wins.",
+	"teams": {
+		"min": 2,
+		"max": 4
+	},
+	"team_size": {
+		"min": 1,
+		"max": 6
+	},
+	"time_limit_s": 1200,
+	"score_limit": 1,
+	"scoring": {
+		"kill": 0,
+		"capture": 0
+	},
+	"respawn_s": 0,
+	"friendly_fire": false,
+	"pvp": true,
+	"zone": {
+		"min_radius": 32,
+		"max_radius": 192
+	},
+	"districts": false,
+	"reputation": false,
+	"heat_scale": 0.75,
+	"roles": [
+		"teammate",
+		"hacker",
+		"spectator",
+		"overlord"
+	],
+	"team_palette": [
+		{
+			"name": "Red",
+			"colour": "#e5384f"
+		},
+		{
+			"name": "Blue",
+			"colour": "#3a7bff"
+		},
+		{
+			"name": "Green",
+			"colour": "#35d07f"
+		},
+		{
+			"name": "Yellow",
+			"colour": "#f2c230"
+		}
+	]
+}

@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "heat_tier",
+  "description": "The `heat_tier` content kind (megaplan 1.7 and task 8-T1): one tier of the server-wide Heat meter (0 to 100). One tier per file, `tier` 1 to 5 (every number once; a datapack file with the same id replaces a default). The meter enters the tier when it rises to `enter` or above and leaves it when it falls below `exit` (`exit` is below `enter`, so the tier does not flicker). While the meter is in the tier it decays by `decay_per_s` points a second, after `grace_s` seconds without new chaos. `host_wanted` is the real wanted level (0 to 5) a host's game is given while the tier applies to it (the `heat` message, Phase 0 (e)); `top_chaos_wanted`, when present, replaces it for the one player who caused the most chaos (tier 4: Max-Tac hunts them). Without the Phase 0 (e) write, hosts get the Minecraft `response` like everyone else. `response` is what hunts the players of the tier in the replica: `target` says who (area: patrols near every player, loudest: the players who caused the most chaos, top_chaos: only the top one, everyone), `waves` the `spawn_palette` entries sent (one entry every `every_s` seconds, at most `max_alive` of the tier's figures at once). Night City entries go through the host's game for hosts when it allows, else they are the entry's Minecraft squad. Names and text are original.",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128
+    }
+  },
+  "type": "object",
+  "required": [
+    "schema",
+    "tier",
+    "name",
+    "description",
+    "enter",
+    "exit",
+    "decay_per_s",
+    "grace_s",
+    "host_wanted",
+    "response"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128
+    },
+    "tier": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxBytes": 48
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxBytes": 200
+    },
+    "enter": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "exit": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 99
+    },
+    "decay_per_s": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "grace_s": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 120
+    },
+    "host_wanted": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "top_chaos_wanted": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "response": {
+      "type": "object",
+      "required": ["target", "max_alive", "waves"],
+      "additionalProperties": false,
+      "properties": {
+        "target": {"enum": ["area", "loudest", "top_chaos", "everyone"]},
+        "max_alive": {"type": "integer", "minimum": 1, "maximum": 24},
+        "waves": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["entry", "every_s"],
+            "additionalProperties": false,
+            "properties": {
+              "entry": {"$ref": "#/$defs/id", "x-ref": "spawn_palette"},
+              "every_s": {"type": "integer", "minimum": 5, "maximum": 300}
+            }
+          }
+        }
+      }
+    }
+  }
+}

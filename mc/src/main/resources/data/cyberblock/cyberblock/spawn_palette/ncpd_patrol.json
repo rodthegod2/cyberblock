@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"name": "NCPD Patrol",
+	"description": "Two patrol officers who open with a warning and close with a volley.",
+	"group": "law",
+	"kind": "night_city",
+	"cost": 8,
+	"count": 2,
+	"hostile": true,
+	"rec": "ncpd",
+	"faction": "police",
+	"cooldown_s": 15,
+	"squad": {
+		"mob": "minecraft:pillager",
+		"count": 2
+	}
+}

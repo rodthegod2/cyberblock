@@ -55,7 +55,8 @@
               "biomonitor",
               "second_heart",
               "ram_upgrade",
-              "firewall"
+              "firewall",
+              "netrunner"
             ]
           },
           "price": {

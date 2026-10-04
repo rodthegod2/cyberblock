@@ -1,0 +1,29 @@
+{
+	"schema": 1,
+	"tier": 5,
+	"name": "Citywide Lockdown",
+	"description": "Everything the city has comes for everyone. Run, hide or burn it all down.",
+	"enter": 92,
+	"exit": 88,
+	"decay_per_s": 0.2,
+	"grace_s": 30,
+	"host_wanted": 5,
+	"response": {
+		"target": "everyone",
+		"max_alive": 12,
+		"waves": [
+			{
+				"entry": "cyberblock:maxtac_squad",
+				"every_s": 90
+			},
+			{
+				"entry": "cyberblock:wyvern_drones",
+				"every_s": 60
+			},
+			{
+				"entry": "cyberblock:ncpd_enforcers",
+				"every_s": 45
+			}
+		]
+	}
+}

@@ -1,0 +1,21 @@
+{
+	"schema": 1,
+	"tier": 1,
+	"name": "Noticed",
+	"description": "The city has noticed the noise. More patrols walk the streets near you.",
+	"enter": 15,
+	"exit": 10,
+	"decay_per_s": 0.4,
+	"grace_s": 10,
+	"host_wanted": 1,
+	"response": {
+		"target": "area",
+		"max_alive": 4,
+		"waves": [
+			{
+				"entry": "cyberblock:ncpd_patrol",
+				"every_s": 90
+			}
+		]
+	}
+}

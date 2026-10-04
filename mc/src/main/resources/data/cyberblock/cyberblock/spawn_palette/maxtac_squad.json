@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"name": "Max-Tac Squad",
+	"description": "Two elite response troopers. If they have come, the night went badly.",
+	"group": "law",
+	"kind": "night_city",
+	"cost": 30,
+	"count": 2,
+	"hostile": true,
+	"rec": "maxtac",
+	"faction": "police",
+	"cooldown_s": 60,
+	"squad": {
+		"mob": "minecraft:piglin_brute",
+		"count": 2
+	}
+}

@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"name": "Maelstrom Crew",
+	"description": "Three chrome-heavy gangers who treat their implants as a dare.",
+	"group": "gang",
+	"kind": "night_city",
+	"cost": 9,
+	"count": 3,
+	"hostile": true,
+	"rec": "ganger",
+	"faction": "maelstrom",
+	"cooldown_s": 15,
+	"squad": {
+		"mob": "minecraft:vindicator",
+		"count": 2
+	}
+}

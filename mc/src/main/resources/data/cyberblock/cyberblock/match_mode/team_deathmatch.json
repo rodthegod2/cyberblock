@@ -1,0 +1,53 @@
+{
+	"schema": 1,
+	"name": "Team Deathmatch",
+	"description": "Two or three teams, one area, one score: every kill counts. The first to the limit, or the best at the bell, wins.",
+	"teams": {
+		"min": 2,
+		"max": 4
+	},
+	"team_size": {
+		"min": 1,
+		"max": 8
+	},
+	"time_limit_s": 900,
+	"score_limit": 30,
+	"scoring": {
+		"kill": 1,
+		"capture": 0
+	},
+	"respawn_s": 8,
+	"friendly_fire": false,
+	"pvp": true,
+	"zone": {
+		"min_radius": 32,
+		"max_radius": 160
+	},
+	"districts": false,
+	"reputation": false,
+	"heat_scale": 0.5,
+	"roles": [
+		"teammate",
+		"hacker",
+		"spectator",
+		"overlord"
+	],
+	"team_palette": [
+		{
+			"name": "Red",
+			"colour": "#e5384f"
+		},
+		{
+			"name": "Blue",
+			"colour": "#3a7bff"
+		},
+		{
+			"name": "Green",
+			"colour": "#35d07f"
+		},
+		{
+			"name": "Yellow",
+			"colour": "#f2c230"
+		}
+	]
+}

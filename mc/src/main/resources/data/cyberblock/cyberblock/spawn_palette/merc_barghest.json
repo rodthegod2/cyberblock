@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"name": "Barghest Soldiers",
+	"description": "Two disciplined mercenaries with real kit and no sense of humour.",
+	"group": "gang",
+	"kind": "night_city",
+	"cost": 14,
+	"count": 2,
+	"hostile": true,
+	"rec": "ganger",
+	"faction": "kurtz_army",
+	"cooldown_s": 25,
+	"squad": {
+		"mob": "minecraft:piglin_brute",
+		"count": 2
+	}
+}

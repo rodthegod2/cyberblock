@@ -1,0 +1,12 @@
+{
+	"schema": 1,
+	"name": "Street Ram",
+	"description": "A horned battering ram on four legs. Clear the street.",
+	"group": "monster",
+	"kind": "minecraft",
+	"cost": 14,
+	"count": 1,
+	"hostile": true,
+	"mob": "minecraft:ravager",
+	"cooldown_s": 30
+}

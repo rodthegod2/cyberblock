@@ -1,0 +1,18 @@
+{
+	"schema": 1,
+	"name": "Airstrike",
+	"description": "A marked patch of ground is hit from above. The marker burns for a few seconds first.",
+	"cost": 40,
+	"warning_s": 6,
+	"cooldown_s": 150,
+	"radius": 20,
+	"scales_with_intensity": true,
+	"night_city": false,
+	"effect": {
+		"type": "airstrike",
+		"strikes": 8,
+		"spread": 12,
+		"power": 2.5,
+		"interval_ticks": 8
+	}
+}

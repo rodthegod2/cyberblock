@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"name": "Tyger Claws Crew",
+	"description": "Three blade-and-gun gangers from the Japantown side of the bridge.",
+	"group": "gang",
+	"kind": "night_city",
+	"cost": 9,
+	"count": 3,
+	"hostile": true,
+	"rec": "ganger",
+	"faction": "tygerClaws",
+	"cooldown_s": 15,
+	"squad": {
+		"mob": "minecraft:pillager",
+		"count": 3
+	}
+}

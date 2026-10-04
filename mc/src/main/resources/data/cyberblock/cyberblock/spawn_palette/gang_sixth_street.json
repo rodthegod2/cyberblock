@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"name": "6th Street Crew",
+	"description": "Three flag-wearing locals who defend their blocks with real guns.",
+	"group": "gang",
+	"kind": "night_city",
+	"cost": 9,
+	"count": 3,
+	"hostile": true,
+	"rec": "ganger",
+	"faction": "6thStreet",
+	"cooldown_s": 15,
+	"squad": {
+		"mob": "minecraft:pillager",
+		"count": 3
+	}
+}

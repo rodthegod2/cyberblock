@@ -1,0 +1,12 @@
+{
+	"schema": 1,
+	"name": "Axe Brute",
+	"description": "One angry fellow with an axe and nothing to lose.",
+	"group": "monster",
+	"kind": "minecraft",
+	"cost": 5,
+	"count": 1,
+	"hostile": true,
+	"mob": "minecraft:vindicator",
+	"cooldown_s": 10
+}
