@@ -1,7 +1,6 @@
 package dev.cyberblock.client.mixin;
 
-import dev.cyberblock.Bridge;
-import dev.cyberblock.Cyberblock;
+import dev.cyberblock.client.HostState;
 import net.minecraft.client.player.ClientInput;
 import net.minecraft.client.player.KeyboardInput;
 import net.minecraft.world.entity.player.Input;
@@ -20,7 +19,7 @@ abstract class KeyboardInputMixin {
 	private void cyberblock$hostCrouch(final CallbackInfo ci) {
 		ClientInput self = (ClientInput) (Object) this;
 		Input in = self.keyPresses;
-		if (Cyberblock.active && Bridge.hostCrouching && !in.shift()) {
+		if (HostState.active() && HostState.crouching() && !in.shift()) {
 			self.keyPresses = new Input(in.forward(), in.backward(), in.left(), in.right(), in.jump(), true, in.sprint());
 		}
 	}

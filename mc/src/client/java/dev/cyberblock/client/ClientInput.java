@@ -41,7 +41,7 @@ final class ClientInput {
 	/** The chosen view for the host: on F5 and after every host hello (the DLL starts each session in first person). */
 	static void sendPerspective() {
 		boolean back = thirdPerson;
-		Cyberblock.events.accept(perspMessage(back));
+		HostLink.send(perspMessage(back));
 		Cyberblock.LOG.info("persp: {}", back ? "back" : "first");
 	}
 

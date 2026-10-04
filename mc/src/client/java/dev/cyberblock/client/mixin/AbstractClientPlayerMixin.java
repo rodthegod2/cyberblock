@@ -1,7 +1,7 @@
 // Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
 package dev.cyberblock.client.mixin;
 
-import dev.cyberblock.Cyberblock;
+import dev.cyberblock.client.HostState;
 import java.util.UUID;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.resources.DefaultPlayerSkin;
@@ -19,7 +19,7 @@ abstract class AbstractClientPlayerMixin {
 
 	@Inject(method = "getSkin", at = @At("HEAD"), cancellable = true)
 	private void cyberblock$steve(final CallbackInfoReturnable<PlayerSkin> cir) {
-		if (Cyberblock.active && !Boolean.getBoolean("cyberblock.ownSkin")) {
+		if (HostState.active() && !Boolean.getBoolean("cyberblock.ownSkin")) {
 			cir.setReturnValue(DefaultPlayerSkin.get(CLASSIC_STEVE));
 		}
 	}

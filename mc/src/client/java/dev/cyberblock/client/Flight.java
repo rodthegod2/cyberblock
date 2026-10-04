@@ -3,11 +3,12 @@ package dev.cyberblock.client;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.FlightRules;
 import dev.cyberblock.HostDamage;
 import dev.cyberblock.Wire;
+import dev.cyberblock.cyber.CyberData;
+import dev.cyberblock.cyber.Cyberware;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.server.IntegratedServer;
@@ -54,6 +55,8 @@ public final class Flight {
 	private static final FlightRules.AirJumps airJumps = new FlightRules.AirJumps();
 	private static long lastPose;
 	private static boolean driving;
+	/** Steve is launched (plan retest2 R5): Minecraft's physics move him, so he collides with blocks (PlayerMixin) as while gliding. */
+	private static volatile boolean launching;
 	private static Mode mode = Mode.GLIDE;
 	private static long launchStart;
 	/** Knockback waiting for the next tick (blocks per tick): explosions add up, a motion packet replaces the last one. Null: none. */
@@ -72,6 +75,11 @@ public final class Flight {
 	private static long lastSent;
 
 	private Flight() {
+	}
+
+	/** Steve is launched (sent to the server as hstate.launch). Any thread. */
+	public static boolean launching() {
+		return launching;
 	}
 
 	/** Minecraft moves Steve (gliding or launched). */
@@ -155,7 +163,7 @@ public final class Flight {
 		}
 
 		// with the reinforced tendons implant V's first jump in the air is V's own double jump (plan retest2 section 1.7)
-		boolean glidePress = airJumps.press(p.air(), jumpPressed, Bridge.installedCyberware.contains("reinforced_tendons"));
+		boolean glidePress = airJumps.press(p.air(), jumpPressed, CyberData.has(player, Cyberware.REINFORCED_TENDONS));
 		// a host that cannot move V (held by the game, or paused in a menu) would only refuse the glide
 		if (!followsCam() || p.held() || p.menu() || System.nanoTime() - retryAt < 0L || !hasElytra(player)) {
 			return;
@@ -262,7 +270,7 @@ public final class Flight {
 		player.zo = player.zOld = at.z;
 		player.setDeltaMovement(kick);
 		gravity(player, true, false);
-		Cyberblock.launching = true; // collisions, as while gliding (PlayerMixin)
+		launching = true; // collisions, as while gliding (PlayerMixin)
 		driving = true;
 		mode = Mode.LAUNCH;
 		landed = false;
@@ -380,7 +388,7 @@ public final class Flight {
 		Vec3 feet = player.position();
 		landingSpot = feet;
 		boolean launch = mode == Mode.LAUNCH;
-		Cyberblock.events.accept(Wire.flight(false, feet.x, feet.y, feet.z, 0.0, 0.0, 0.0, player.getYRot(), player.getXRot(), launch, clock(touchdownNanos)));
+		HostLink.send(Wire.flight(false, feet.x, feet.y, feet.z, 0.0, 0.0, 0.0, player.getYRot(), player.getXRot(), launch, clock(touchdownNanos)));
 		endGlide(player);
 		Cyberblock.LOG.info("{} ended at {}, yaw {}", launch ? "launch" : "glide", feet, player.getYRot());
 	}
@@ -405,7 +413,7 @@ public final class Flight {
 		HostDamage.fallFreeUntil = followed ? now + FlightRules.FALL_GRACE_NANOS : Long.MIN_VALUE;
 		Vec3 at = p == null ? player.position() : new Vec3(p.px(), p.py(), p.pz());
 		boolean launch = mode == Mode.LAUNCH;
-		Cyberblock.events.accept(Wire.flight(false, at.x, at.y, at.z, 0.0, 0.0, 0.0, player.getYRot(), player.getXRot(), launch, clock(now)));
+		HostLink.send(Wire.flight(false, at.x, at.y, at.z, 0.0, 0.0, 0.0, player.getYRot(), player.getXRot(), launch, clock(now)));
 		endGlide(player);
 		player.setPos(at);
 		player.xo = player.xOld = at.x;
@@ -426,7 +434,7 @@ public final class Flight {
 		pausedAt = pausedVelocity = null;
 		fall.reset();
 		mode = Mode.GLIDE;
-		Cyberblock.launching = false;
+		launching = false;
 	}
 
 	/**
@@ -489,7 +497,7 @@ public final class Flight {
 		lastSent = now;
 		// where the player is drawn this frame and how fast that moves (the slope of the tick interpolation, per second)
 		Vec3 at = player.getPosition(partialTick);
-		Cyberblock.events.accept(Wire.flight(true, at.x, at.y, at.z, (player.getX() - player.xo) * 20.0, (player.getY() - player.yo) * 20.0,
+		HostLink.send(Wire.flight(true, at.x, at.y, at.z, (player.getX() - player.xo) * 20.0, (player.getY() - player.yo) * 20.0,
 			(player.getZ() - player.zo) * 20.0, yaw, pitch, mode == Mode.LAUNCH, clock(now)));
 	}
 }

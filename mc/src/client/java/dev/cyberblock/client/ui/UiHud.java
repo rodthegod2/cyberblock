@@ -50,7 +50,7 @@ public final class UiHud {
 	 */
 	static @Nullable Player player() {
 		Minecraft minecraft = Minecraft.getInstance();
-		if (!Cyberblock.active || minecraft.player == null || !UiLink.recentlyLinked() || covered()) {
+		if (!HostState.active() || minecraft.player == null || !UiLink.recentlyLinked() || covered()) {
 			return null;
 		}
 

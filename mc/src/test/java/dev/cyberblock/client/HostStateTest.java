@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import dev.cyberblock.Bridge;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -99,21 +98,21 @@ class HostStateTest {
 	@Test
 	void crouchFollowsCamCr() {
 		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'cr':true}"));
-		assertTrue(Bridge.hostCrouching);
+		assertTrue(HostState.crouching());
 		HostState.update(json("{'p':[1,2,3],'r':[0,0,0]}"));
-		assertFalse(Bridge.hostCrouching); // a host without layer 3 never sends it
+		assertFalse(HostState.crouching()); // a host without layer 3 never sends it
 		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'cr':true}"));
 		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'cr':'yes'}"));
-		assertFalse(Bridge.hostCrouching);
+		assertFalse(HostState.crouching());
 	}
 
 	@Test
 	void aRejectedCamKeepsTheCrouch() {
 		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'cr':true}"));
 		assertThrows(IllegalArgumentException.class, () -> HostState.update(json("{'p':[NaN,2,3],'r':[0,0,0],'cr':false}")));
-		assertTrue(Bridge.hostCrouching);
+		assertTrue(HostState.crouching());
 		HostState.resetKeys();
-		assertFalse(Bridge.hostCrouching);
+		assertFalse(HostState.crouching());
 	}
 
 	@Test
@@ -124,14 +123,14 @@ class HostStateTest {
 		assertTrue(p.menu());
 		assertTrue(p.air());
 		assertTrue(p.held());
-		assertTrue(Bridge.hostHeld);
+		assertTrue(HostState.held());
 		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'fly':false,'air':true}"));
 		p = HostState.live();
 		assertFalse(p.fly());
 		assertFalse(p.menu(), "absent: an older host never sends it");
 		assertTrue(p.air());
 		assertFalse(p.held());
-		assertFalse(Bridge.hostHeld);
+		assertFalse(HostState.held());
 		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'fly':'yes','menu':1,'air':null,'held':[true]}"));
 		p = HostState.live();
 		assertFalse(p.fly() || p.menu() || p.air() || p.held(), "only a JSON boolean counts");
@@ -157,17 +156,31 @@ class HostStateTest {
 	void theServerHearsWhenVIsInAVehicle() {
 		HostState.setVehicle(true);
 		assertTrue(HostState.vehicle());
-		assertTrue(Bridge.hostInVehicle);
+		assertTrue(HostState.hstate(false).vehicle(), "hstate.vehicle (megaplan section 1.2) replaces Bridge.hostInVehicle");
 		HostState.setVehicle(false);
-		assertFalse(Bridge.hostInVehicle);
+		assertFalse(HostState.hstate(false).vehicle());
+	}
+
+	/** Megaplan section 1.2: hstate carries what the server once read from the shared statics. */
+	@Test
+	void hstateFollowsTheCam() {
+		HostState.update(json("{'p':[1,70,3],'r':[0,0,0],'pl':[1,68.5,3],'lv':5,'air':true,'cr':true,'held':true,'fly':true,'seat':true}"));
+		var s = HostState.hstate(true);
+		assertTrue(s.active() && s.air() && s.cr() && s.held() && s.fly() && s.seat() && s.launch());
+		assertEquals(5, s.lv());
+		assertEquals(68.5 + 5.0 / 64.0, s.feetCpZ(), 1e-12);
+		HostState.update(json("{'p':[1,70,3],'r':[0,0,0]}"));
+		s = HostState.hstate(false);
+		assertTrue(s.active());
+		assertFalse(s.air() || s.cr() || s.held() || s.fly() || s.seat() || s.launch());
 	}
 
 	@Test
 	void theHostGoingAwayReleasesV() {
 		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'held':true}"));
-		assertTrue(Bridge.hostHeld);
+		assertTrue(HostState.held());
 		HostState.resetKeys();
-		assertFalse(Bridge.hostHeld);
+		assertFalse(HostState.held());
 	}
 
 	@Test
@@ -190,7 +203,7 @@ class HostStateTest {
 	/** Plan retest2 section 1.2: cam.lv is the k the host converted with; y is corrected to this world's k until the host has the new one. */
 	@Test
 	void camLevelIsCorrectedToTheWorldsAlignment() {
-		Bridge.alignK = 57;
+		HostState.setAlignK(57);
 		try {
 			// the host still converts with k 0: its y is 57/64 m too high for this world
 			HostState.update(json("{'p':[1,70,3],'r':[0,0,0],'pl':[1,68.5,3],'lv':0}"));
@@ -199,19 +212,19 @@ class HostStateTest {
 			assertEquals(68.5 - 57.0 / 64.0, p.py(), 1e-12);
 			assertEquals(1.0, p.px());
 			assertEquals(3.0, p.z());
-			assertEquals(68.5, Bridge.hostFeetCpZ, 1e-12, "V's feet in Cyberpunk z: pl.y + lv/64");
+			assertEquals(68.5, HostState.feetCpZ(), 1e-12, "V's feet in Cyberpunk z: pl.y + lv/64");
 			// the host has the new k: nothing to correct
 			HostState.update(json("{'p':[1,70,3],'r':[0,0,0],'pl':[1,68.5,3],'lv':57}"));
 			p = HostState.live();
 			assertEquals(70.0, p.y());
 			assertEquals(68.5, p.py());
-			assertEquals(68.5 + 57.0 / 64.0, Bridge.hostFeetCpZ, 1e-12);
+			assertEquals(68.5 + 57.0 / 64.0, HostState.feetCpZ(), 1e-12);
 			// absent (fakehost, an older host): taken to be this world's k
 			HostState.update(json("{'p':[1,70,3],'r':[0,0,0],'pl':[1,68.5,3]}"));
 			assertEquals(68.5, HostState.live().py());
-			assertEquals(68.5 + 57.0 / 64.0, Bridge.hostFeetCpZ, 1e-12);
+			assertEquals(68.5 + 57.0 / 64.0, HostState.feetCpZ(), 1e-12);
 		} finally {
-			Bridge.alignK = 0;
+			HostState.setAlignK(0);
 		}
 	}
 
@@ -226,37 +239,37 @@ class HostStateTest {
 	@Test
 	void standingAndAirborneFollowTheCam() {
 		HostState.update(json("{'p':[1,2,3],'r':[0,0,0]}"));
-		assertTrue(Bridge.hostStands);
-		assertFalse(Bridge.hostAirborne);
+		assertTrue(HostState.stands());
+		assertFalse(HostState.airborne());
 		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'air':true}"));
-		assertFalse(Bridge.hostStands);
-		assertTrue(Bridge.hostAirborne);
+		assertFalse(HostState.stands());
+		assertTrue(HostState.airborne());
 		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'held':true}"));
-		assertFalse(Bridge.hostStands, "held by a scene");
+		assertFalse(HostState.stands(), "held by a scene");
 		HostState.update(json("{'p':[1,2,3],'r':[0,0,0],'fly':true}"));
-		assertFalse(Bridge.hostStands, "following a flight");
-		assertFalse(Bridge.hostAirborne);
+		assertFalse(HostState.stands(), "following a flight");
+		assertFalse(HostState.airborne());
 		HostState.update(json("{'p':[1,2,3],'r':[0,0,0]}"));
 		HostState.resetKeys();
-		assertFalse(Bridge.hostStands, "the host went away: nothing is known of V");
-		assertTrue(Double.isNaN(Bridge.hostFeetCpZ));
+		assertFalse(HostState.stands(), "the host went away: nothing is known of V");
+		assertTrue(Double.isNaN(HostState.feetCpZ()));
 	}
 
 	@Test
 	void everyJumpKeyDownCountsOnce() {
 		HostState.resetKeys();
-		int before = Bridge.hostJumpPresses.get();
+		int before = HostState.jumpPresses();
 		HostState.setKey("jump", true);
 		HostState.setKey("jump", true); // key repeat
-		assertEquals(before + 1, Bridge.hostJumpPresses.get());
+		assertEquals(before + 1, HostState.jumpPresses());
 		HostState.takeJumpPress(); // taking the press does not consume the counter
-		assertEquals(before + 1, Bridge.hostJumpPresses.get());
+		assertEquals(before + 1, HostState.jumpPresses());
 		HostState.setKey("jump", false);
-		assertEquals(before + 1, Bridge.hostJumpPresses.get());
+		assertEquals(before + 1, HostState.jumpPresses());
 		HostState.setKey("jump", true);
-		assertEquals(before + 2, Bridge.hostJumpPresses.get());
+		assertEquals(before + 2, HostState.jumpPresses());
 		HostState.setKey("sprint", true);
-		assertEquals(before + 2, Bridge.hostJumpPresses.get());
+		assertEquals(before + 2, HostState.jumpPresses());
 		HostState.resetKeys();
 	}
 

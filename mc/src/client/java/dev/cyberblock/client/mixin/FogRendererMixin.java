@@ -1,7 +1,7 @@
 // Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
 package dev.cyberblock.client.mixin;
 
-import dev.cyberblock.Cyberblock;
+import dev.cyberblock.client.HostState;
 import net.minecraft.client.renderer.fog.FogData;
 import net.minecraft.client.renderer.fog.FogRenderer;
 import org.spongepowered.asm.mixin.Mixin;
@@ -19,7 +19,7 @@ abstract class FogRendererMixin {
 
 	@Inject(method = "updateBuffer", at = @At("HEAD"))
 	private void cyberblock$noFog(final FogData fog, final CallbackInfo ci) {
-		if (Cyberblock.active) {
+		if (HostState.active()) {
 			fog.environmentalStart = FAR_AWAY;
 			fog.environmentalEnd = FAR_AWAY * 2.0F;
 			fog.renderDistanceStart = FAR_AWAY;

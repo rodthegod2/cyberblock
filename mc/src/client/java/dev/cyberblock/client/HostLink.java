@@ -1,57 +1,50 @@
 // Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
 package dev.cyberblock.client;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import dev.cyberblock.Bridge;
+import com.google.gson.JsonPrimitive;
 import dev.cyberblock.Cyberblock;
-import dev.cyberblock.HostDamage;
-import dev.cyberblock.MobWar;
-import dev.cyberblock.PlayerEffects;
-import dev.cyberblock.Projectiles;
-import dev.cyberblock.ProxyManager;
-import dev.cyberblock.Ranges;
 import dev.cyberblock.WorldBridge;
+import dev.cyberblock.client.net.ClientNet;
+import dev.cyberblock.client.net.Relay;
 import java.net.InetSocketAddress;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import org.java_websocket.WebSocket;
 import org.java_websocket.framing.CloseFrame;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
+import org.jspecify.annotations.Nullable;
 
 /**
- * The host's connection: a WebSocket server on 127.0.0.1 (port 25600, or -Dcyberblock.port). Wire protocol v1: see
- * shared/protocol.md.
+ * The link to this PC's own Cyberblock.dll: a WebSocket server on 127.0.0.1 (port 25600, or -Dcyberblock.port). Wire protocol v1:
+ * see shared/protocol.md. Since Phase 1 it is also the relay (megaplan section 1.2): every DLL message is LOCAL (handled on this
+ * client: cam, key, hud, view, UI data), UP (sent on to the server through {@link Relay}: ground, dmg, hits, scan replies) or BOTH;
+ * {@code cmd} is a test tool of a dev client only. The server's messages for the DLL come back as {@code cyberblock:down} and go out
+ * through {@link #send} verbatim (ClientNet).
  *
- * <p>Host to Minecraft (JSON, Minecraft coordinates):
- * <ul>
- * <li>{"t":"cam","f":frame,"p":[x,y,z],"r":[yaw,pitch,roll],"fov":vertical degrees,"fp":first person,"pl":[feet x,y,z],"h":body yaw,"cr":V crouched}:
- * every number must be finite, positions within +-2.9e7 (y +-20000) and fov within 1..179, else the message is logged and
- * ignored (pitch is clamped to +-90). "lv" (0..63) is the ground alignment k it was converted with (HostState corrects y to this
- * world's k)</li>
- * <li>{"t":"ground","c":[x,z,yBottom,yTop, ...]}: solid ranges (barriers); "unground" takes the same ranges out again</li>
- * <li>{"t":"clear"}: remove the barriers placed so far</li>
- * <li>{"t":"npcs","list":[{"id":"...","p":[x,y,z],"yaw":deg,"kind":"human|vehicle","hostile":bool}, ...]}: the Cyberpunk NPCs and
- * vehicles around V, each an invisible proxy entity (see ProxyManager)</li>
- * <li>{"t":"dmg","frac":0..4,"kind":"bullet|explosion|melee|fall|vehicle|fire|other","from":[x,y,z]|null}: damage V would have
- * taken; Steve takes frac of his maximum health (see HostDamage)</li>
- * <li>{"t":"cmd","c":"setblock 0 64 0 stone"}: a server command, for test tools (not part of protocol v1)</li>
- * <li>{"t":"key","k":"use|attack|pick|inventory|drop|swap|chat|command|escape","down":bool}, and "slot": while a screen is open
- * these are key presses for that screen (E closes the inventory, Q drops the hovered stack, 1-9 swap it into the hotbar) and
- * never reach the game, so nothing is replayed when the screen closes. "jump" and "sprint" are only stored (HostState), "perspective"
- * (F5) toggles first/third person and answers with {"t":"persp","mode":"first|back"} (also sent after every host hello)</li>
- * <li>{"t":"slot","n":0-8}, {"t":"scroll","d":+-1}, {"t":"hud","hidden":bool}, {"t":"view","w":px,"h":px}</li>
- * <li>{"t":"state","active":bool,"vehicle":bool}: in a vehicle Steve, his hand and the HUD are hidden</li>
- * </ul>
- * <p>Minecraft to host: {"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3","ver":"1.0.0"} on connect, {"t":"status",...} (see
- * StatusReporter), {"t":"persp","mode":"first|back"} (ClientInput). A host hello with another proto closes the link. Unknown "t" values are ignored. After its own handling every
- * message also goes to Bridge.dispatch (the cyber track's listeners), on this thread.
+ * <p>Minecraft to host: {"t":"hello","proto":1,"mod":"cyberblock","mc":"26.3","ver":"1.0.0"} on connect, then {@code status},
+ * {@code persp}, {@code flight}, {@code uiact}, {@code binds}, {@code survey}, {@code session} and every DOWN message. A host hello
+ * with another proto closes the link. Client listeners ({@link #listen}) get every LOCAL and BOTH message on the link thread, after
+ * this class's own handling.
  */
 public final class HostLink extends WebSocketServer {
 	private static final int PROTOCOL = 1;
-	private static HostLink instance;
+	private static final int VER_MAX = 32;
+	/** Where {@link #send} goes: the connected DLL once the link is listening (tests swap it). */
+	private static volatile Consumer<String> out = json -> {};
+	/** Client listeners by "t" (link thread), in registration order; one that throws is logged and the rest still run. */
+	private static final Map<String, List<Consumer<JsonObject>>> listeners = new ConcurrentHashMap<>();
+	/** The DLL's hello.ver; "" while no DLL is linked (no hello on an open connection yet). */
+	private static volatile String dllVersion = "";
+	/** The DLL's latest hello as it came: relayed UP once the server grants the host role. */
+	private static volatile @Nullable String lastHello;
 
 	private HostLink(final int port) {
 		super(new InetSocketAddress("127.0.0.1", port));
@@ -61,9 +54,40 @@ public final class HostLink extends WebSocketServer {
 
 	static void launch() {
 		int port = Integer.getInteger("cyberblock.port", 25600);
-		instance = new HostLink(port);
-		instance.start();
-		Cyberblock.events = message -> instance.broadcast(message);
+		HostLink link = new HostLink(port);
+		link.start();
+		out = link::broadcast;
+	}
+
+	/** A message for this PC's DLL (any thread); dropped while none is connected. */
+	public static void send(final String json) {
+		out.accept(json);
+	}
+
+	/** Tests: sends go to {@code to} instead; returns the previous target. */
+	static Consumer<String> swapOut(final Consumer<String> to) {
+		Consumer<String> was = out;
+		out = to;
+		return was;
+	}
+
+	/** Adds a client listener for DLL messages of this type (LOCAL and BOTH only; the server handles UP). Runs on the link thread. */
+	public static void listen(final String type, final Consumer<JsonObject> listener) {
+		listeners.computeIfAbsent(type, t -> new CopyOnWriteArrayList<>()).add(listener);
+	}
+
+	/** A DLL is connected and said hello. */
+	public static boolean linked() {
+		return !dllVersion.isEmpty();
+	}
+
+	/** The linked DLL's version (hello.ver, "unknown" from a DLL that sends none), "" when no DLL is linked: the handshake's {@code dll}. */
+	public static String dllVersion() {
+		return dllVersion;
+	}
+
+	public static @Nullable String lastHello() {
+		return lastHello;
 	}
 
 	@Override
@@ -84,8 +108,8 @@ public final class HostLink extends WebSocketServer {
 		conn.send(hello(version()));
 	}
 
-	/** This mod's version from fabric.mod.json (gradle.properties fills it in), for hello.ver. */
-	private static String version() {
+	/** This mod's version from fabric.mod.json (gradle.properties fills it in), for hello.ver and the handshake. */
+	public static String version() {
 		return FabricLoader.getInstance().getModContainer(Cyberblock.ID).map(mod -> mod.getMetadata().getVersion().getFriendlyString()).orElse("unknown");
 	}
 
@@ -100,13 +124,28 @@ public final class HostLink extends WebSocketServer {
 		return hello.toString();
 	}
 
+	/** The DLL's hello.ver (megaplan section 1.2): at most 32 characters; absent or not a string from an older DLL: "unknown". */
+	static String dllVer(final JsonObject hello) {
+		if (hello.get("ver") instanceof JsonPrimitive v && v.isString() && !v.getAsString().isBlank()) {
+			String ver = v.getAsString();
+			return ver.length() > VER_MAX ? ver.substring(0, VER_MAX) : ver;
+		}
+
+		return "unknown";
+	}
+
 	@Override
 	public void onClose(final WebSocket conn, final int code, final String reason, final boolean remote) {
 		Cyberblock.LOG.info("host disconnected ({} {})", code, reason);
 		if (this.getConnections().isEmpty()) {
-			WorldBridge.hostGone();
+			boolean was = linked();
+			dllVersion = "";
+			lastHello = null;
 			Minecraft minecraft = Minecraft.getInstance();
 			minecraft.execute(() -> ClientInput.reset(minecraft));
+			if (was) {
+				ClientNet.linkChanged(); // hs with no DLL: the server ends the host session
+			}
 		}
 	}
 
@@ -122,12 +161,39 @@ public final class HostLink extends WebSocketServer {
 			return;
 		}
 
-		this.handle(conn, message, m, t);
-		// then the cyber track's listener for this type, if any (plan 2026-10-03 section 1.6); a bad message for us may still be its
-		Bridge.dispatch(t, m);
+		switch (Relay.route(t)) {
+			case UP -> Relay.up(t, m, message);
+			case BOTH -> {
+				if (this.handle(conn, message, m, t)) {
+					Relay.up(t, m, message);
+				}
+
+				dispatch(t, m);
+			}
+			case LOCAL -> {
+				this.handle(conn, message, m, t);
+				dispatch(t, m);
+			}
+			case DEV -> command(m);
+		}
 	}
 
-	private void handle(final WebSocket conn, final String message, final JsonObject m, final String t) {
+	/** {@code cmd}: a server command from a test tool, only in a dev client (development run or -Dcyberblock.devtools) with its own world. */
+	private static void command(final JsonObject m) {
+		if (!FabricLoader.getInstance().isDevelopmentEnvironment() && !Boolean.getBoolean("cyberblock.devtools")) {
+			Cyberblock.LOG.warn("ignoring cmd: not a dev client");
+			return;
+		}
+
+		try {
+			WorldBridge.command(m.get("c").getAsString());
+		} catch (RuntimeException e) {
+			Cyberblock.LOG.warn("bad cmd: {}", e.toString());
+		}
+	}
+
+	/** This client's own handling; returns whether a BOTH message also goes UP now (a hello waits for the handshake when it changes the link). */
+	private boolean handle(final WebSocket conn, final String message, final JsonObject m, final String t) {
 		try {
 			switch (t) {
 				case "hello" -> {
@@ -135,32 +201,26 @@ public final class HostLink extends WebSocketServer {
 					if (proto != PROTOCOL) {
 						Cyberblock.LOG.warn("host speaks protocol {}, this mod speaks {}: closing the link", proto, PROTOCOL);
 						conn.close(CloseFrame.PROTOCOL_ERROR, "protocol " + proto + " not supported");
-					} else {
-						// a new host session (or either side restarted): it knows none of our blocks nor Steve's effects
-						WorldBridge.hostHello();
-						PlayerEffects.hostHello();
-						// the host starts every session in first person: tell it the view F5 chose (plan retest3 M4)
-						ClientInput.sendPerspective();
+						return false;
+					}
+
+					String ver = dllVer(m);
+					boolean changed = !ver.equals(dllVersion);
+					dllVersion = ver;
+					lastHello = message;
+					// the host starts every session in first person: tell it the view F5 chose (plan retest3 M4)
+					ClientInput.sendPerspective();
+					if (changed) {
+						// a new hs; the hello goes UP when the server answers host (ClientNet)
+						ClientNet.linkChanged();
+						return false;
 					}
 				}
 				case "cam" -> HostState.update(m);
 				case "aim" -> HostState.updateAim(m);
-				case "ground" -> WorldBridge.solid(Ranges.decode(ints(m.getAsJsonArray("c"))));
-				case "unground" -> WorldBridge.unsolid(Ranges.decode(ints(m.getAsJsonArray("c"))));
-				case "clear" -> WorldBridge.clearSolid();
-				case "npcs" -> ProxyManager.update(m);
-				case "dmg" -> HostDamage.update(m);
-				case "mobdmg" -> MobWar.damage(m);
-				case "unlead" -> ProxyManager.unlead(m);
-				case "pcells" -> {
-					int[] cells = Projectiles.cells(m);
-					if (cells == null) {
-						Cyberblock.LOG.warn("ignoring a bad pcells message");
-					} else {
-						WorldBridge.projectileCells(cells);
-					}
+				case "npcs", "stats" -> {
+					// the client listeners (radar, HUD) are this client's whole part
 				}
-				case "cmd" -> WorldBridge.command(m.get("c").getAsString());
 				default -> {
 					Minecraft minecraft = Minecraft.getInstance();
 					minecraft.execute(() -> {
@@ -174,20 +234,30 @@ public final class HostLink extends WebSocketServer {
 			}
 		} catch (RuntimeException e) {
 			Cyberblock.LOG.warn("bad host message {}: {}", message.length() > 200 ? message.substring(0, 200) : message, e.toString());
+			return false;
+		}
+
+		return true;
+	}
+
+	/** The client listeners for this type (link thread). A listener that throws is logged, never fatal. */
+	static void dispatch(final String type, final JsonObject message) {
+		List<Consumer<JsonObject>> list = listeners.get(type);
+		if (list == null) {
+			return;
+		}
+
+		for (Consumer<JsonObject> listener : list) {
+			try {
+				listener.accept(message);
+			} catch (RuntimeException e) {
+				Cyberblock.LOG.warn("listener for {} failed: {}", type, e.toString());
+			}
 		}
 	}
 
 	@Override
 	public void onError(final WebSocket conn, final Exception e) {
 		Cyberblock.LOG.warn("host link error", e);
-	}
-
-	private static int[] ints(final JsonArray a) {
-		int[] out = new int[a.size()];
-		for (int i = 0; i < out.length; i++) {
-			out[i] = a.get(i).getAsInt();
-		}
-
-		return out;
 	}
 }

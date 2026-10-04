@@ -2,8 +2,8 @@
 package dev.cyberblock.client.mixin;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
-import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.FrameExporter;
+import dev.cyberblock.client.HostState;
 import net.minecraft.client.renderer.GameRenderer;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -24,7 +24,7 @@ abstract class GameRendererMixin {
 		index = 5
 	)
 	private boolean cyberblock$noSky(final boolean shouldRenderSky) {
-		return shouldRenderSky && !Cyberblock.active;
+		return shouldRenderSky && !HostState.active();
 	}
 
 	@Inject(

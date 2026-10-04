@@ -1,7 +1,6 @@
 // Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
 package dev.cyberblock.client;
 
-import dev.cyberblock.Bridge;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -121,7 +120,7 @@ public final class PlayerSync {
 		player.setDeltaMovement(Vec3.ZERO);
 		Abilities abilities = player.getAbilities();
 		// creative flies, except while V crouches: a flying player never takes the crouch pose (he has no gravity either way)
-		boolean fly = !Bridge.hostCrouching || player.isSpectator();
+		boolean fly = !HostState.crouching() || player.isSpectator();
 		if (abilities.mayfly && abilities.flying != fly) {
 			abilities.flying = fly;
 			player.onUpdateAbilities();

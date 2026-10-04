@@ -1,7 +1,8 @@
 package dev.cyberblock.client.atlas;
 
-import dev.cyberblock.Bridge;
+import com.google.gson.JsonParser;
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.client.HostLink;
 import dev.cyberblock.client.ui.McTheme;
 import dev.cyberblock.client.ui.UiLink;
 import java.util.List;
@@ -26,11 +27,35 @@ public final class SurveyClient {
 	}
 
 	public static void register() {
-		Bridge.surveyCommand = SurveyClient::command;
 		HudElementRegistry.addLast(HUD_ID, SurveyClient::draw);
 	}
 
-	/** The command (server thread): sends the request and returns the line it prints. */
+	/**
+	 * {"t":"survey_cmd","op":"start|redo|stop|status"}: the server's {@code /cyberblock survey} asks the issuing host's client over
+	 * {@code cyberblock:down} (megaplan section 1.2; never forwarded to the DLL). Client thread: runs it and prints its line in chat.
+	 */
+	public static void onCommand(final String json) {
+		String op;
+		try {
+			op = JsonParser.parseString(json).getAsJsonObject().get("op").getAsString();
+		} catch (RuntimeException e) {
+			Cyberblock.LOG.warn("atlas: bad survey_cmd: {}", e.toString());
+			return;
+		}
+
+		if (!List.of("start", "redo", "stop", "status").contains(op)) {
+			Cyberblock.LOG.warn("atlas: unknown survey_cmd op {}", op.length() > 16 ? op.substring(0, 16) : op);
+			return;
+		}
+
+		String line = command(op);
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft.player != null) {
+			minecraft.player.sendSystemMessage(Component.literal(line));
+		}
+	}
+
+	/** The command: sends the request and returns the line it prints. */
 	static String command(final String op) {
 		if (!UiLink.linked()) {
 			return "Night City is not connected: start Cyberpunk, load a save and press F9 first";
@@ -48,16 +73,16 @@ public final class SurveyClient {
 					AtlasStore.forgetStops();
 				}
 
-				Cyberblock.events.accept(AtlasWire.survey("start", done));
+				HostLink.send(AtlasWire.survey("start", done));
 				return op.equals("redo") ? "Atlas survey: mapping all of Night City again (15 minutes at most). Stand somewhere safe on foot and stay AFK; F9 or /cyberblock survey stop ends it."
 					: "Atlas survey: " + done.size() + " squares already mapped, mapping the rest (15 minutes at most). Stand somewhere safe on foot and stay AFK; F9 or /cyberblock survey stop ends it.";
 			}
 			case "stop" -> {
-				Cyberblock.events.accept(AtlasWire.survey("stop", List.of()));
+				HostLink.send(AtlasWire.survey("stop", List.of()));
 				return "Atlas survey: stopping, V goes back to where the survey started";
 			}
 			default -> {
-				Cyberblock.events.accept(AtlasWire.survey("status", List.of()));
+				HostLink.send(AtlasWire.survey("status", List.of()));
 				return state == null ? "Atlas survey: not started yet (/cyberblock survey)" : "Atlas survey: " + state.state() + ", " + progress(state)
 					+ (state.reason().isEmpty() ? "" : " (" + state.reason() + ")");
 			}

@@ -5,8 +5,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.client.HostLink;
 import dev.cyberblock.client.HostState;
 import dev.cyberblock.client.ui.UiLink;
 import dev.cyberblock.client.ui.UiModel;
@@ -72,7 +72,7 @@ public final class AtlasStore {
 	}
 
 	public static void register() {
-		Bridge.listen("terrain", m -> {
+		HostLink.listen("terrain", m -> {
 			int[] cells = AtlasWire.parseTerrain(m);
 			if (cells == null) {
 				warn("terrain");
@@ -83,7 +83,7 @@ public final class AtlasStore {
 				tiles.put(cells[i], cells[i + 1], cells[i + 2], cells[i + 3] == 1);
 			}
 		});
-		Bridge.listen("surveystate", m -> {
+		HostLink.listen("surveystate", m -> {
 			AtlasWire.SurveyState state = AtlasWire.parseSurveyState(m);
 			if (state == null) {
 				warn("surveystate");

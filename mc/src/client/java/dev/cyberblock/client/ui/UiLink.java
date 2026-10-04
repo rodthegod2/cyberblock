@@ -1,8 +1,8 @@
 package dev.cyberblock.client.ui;
 
 import com.google.gson.JsonObject;
-import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.client.HostLink;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The Night City UI messages (plan 2026-10-03-retest3-polish section 1.1) from the host link: HostLink hands every host message
- * to Bridge.dispatch on the link thread; these listeners parse it into UiModel and move anything that touches the game (screens,
+ * to its client listeners on the link thread; these listeners parse it into UiModel and move anything that touches the game (screens,
  * toasts, waypoints) to the client thread. Also: {@code npcs} for the radar, {@code hello} and {@code state} for resets.
  */
 public final class UiLink {
@@ -35,15 +35,15 @@ public final class UiLink {
 	}
 
 	static void register() {
-		Bridge.listen("cam", m -> lastHostNanos = System.nanoTime());
-		Bridge.listen("hello", m -> {
+		HostLink.listen("cam", m -> lastHostNanos = System.nanoTime());
+		HostLink.listen("hello", m -> {
 			// a new host session: nothing it said before holds
 			heard();
 			UiModel.reset();
 			waiting.clear();
 			onClient(UiLink::onReset);
 		});
-		Bridge.listen("state", m -> {
+		HostLink.listen("state", m -> {
 			heard();
 			if (m.has("active") && !m.get("active").getAsBoolean()) {
 				// Cyberblock off (F9) or lost: Cyberpunk shows its own UI again
@@ -51,43 +51,43 @@ public final class UiLink {
 				onClient(UiLink::onReset);
 			}
 		});
-		Bridge.listen("npcs", m -> {
+		HostLink.listen("npcs", m -> {
 			var npcs = UiModel.parseNpcs(m);
 			if (npcs != null) {
 				UiModel.npcs = npcs;
 			}
 		});
-		Bridge.listen("stats", m -> {
+		HostLink.listen("stats", m -> {
 			UiModel.Stats v = valid(UiModel.parseStats(m), "stats");
 			if (v != null) {
 				UiModel.stats = v;
 			}
 		});
-		Bridge.listen("quest", m -> {
+		HostLink.listen("quest", m -> {
 			UiModel.Quest v = valid(UiModel.parseQuest(m), "quest");
 			if (v != null) {
 				UiModel.quest = v.isEmpty() ? null : v;
 			}
 		});
-		Bridge.listen("pins", m -> {
+		HostLink.listen("pins", m -> {
 			UiModel.Pins v = valid(UiModel.parsePins(m), "pins");
 			if (v != null) {
 				UiModel.pins = v;
 			}
 		});
-		Bridge.listen("prompt", m -> {
+		HostLink.listen("prompt", m -> {
 			UiModel.Prompt v = valid(UiModel.parsePrompt(m), "prompt");
 			if (v != null) {
 				UiModel.prompt = v;
 			}
 		});
-		Bridge.listen("choices", m -> {
+		HostLink.listen("choices", m -> {
 			UiModel.Choices v = valid(UiModel.parseChoices(m, System.nanoTime()), "choices");
 			if (v != null) {
 				UiModel.choices = v;
 			}
 		});
-		Bridge.listen("sub", m -> {
+		HostLink.listen("sub", m -> {
 			UiModel.Subtitle v = valid(UiModel.parseSub(m, System.nanoTime()), "sub");
 			if (v != null) {
 				UiModel.Subtitle shown = UiModel.subtitle;
@@ -98,19 +98,19 @@ public final class UiLink {
 				}
 			}
 		});
-		Bridge.listen("call", m -> {
+		HostLink.listen("call", m -> {
 			UiModel.Call v = valid(UiModel.parseCall(m), "call");
 			if (v != null) {
 				onClient(() -> UiEvents.call(v));
 			}
 		});
-		Bridge.listen("notify", m -> {
+		HostLink.listen("notify", m -> {
 			UiModel.Notify v = valid(UiModel.parseNotify(m), "notify");
 			if (v != null) {
 				onClient(() -> UiEvents.notify(v));
 			}
 		});
-		Bridge.listen("screen", m -> {
+		HostLink.listen("screen", m -> {
 			UiModel.ScreenMsg v = valid(UiModel.parseScreen(m), "screen");
 			if (v == null) {
 				return;
@@ -123,7 +123,7 @@ public final class UiLink {
 				onClient(() -> UiEvents.open(v.open()));
 			}
 		});
-		Bridge.listen("reply", m -> {
+		HostLink.listen("reply", m -> {
 			UiModel.Reply v = valid(UiModel.parseReply(m), "reply");
 			if (v != null) {
 				Consumer<UiModel.Reply> to = waiting.remove(v.id());
@@ -170,7 +170,7 @@ public final class UiLink {
 		}
 
 		Cyberblock.LOG.info("ui: act {} {}", a, arg);
-		Cyberblock.events.accept(UiModel.uiact(a, arg, hash, id));
+		HostLink.send(UiModel.uiact(a, arg, hash, id));
 		return true;
 	}
 

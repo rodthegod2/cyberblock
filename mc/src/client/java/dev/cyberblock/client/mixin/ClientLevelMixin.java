@@ -1,7 +1,7 @@
 // Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
 package dev.cyberblock.client.mixin;
 
-import dev.cyberblock.Cyberblock;
+import dev.cyberblock.client.HostState;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
@@ -16,7 +16,7 @@ abstract class ClientLevelMixin {
 	@Inject(method = "addParticle(Lnet/minecraft/core/particles/ParticleOptions;DDDDDD)V", at = @At("HEAD"), cancellable = true)
 	private void cyberblock$noFireSmoke(final ParticleOptions particle, final double x, final double y, final double z,
 		final double xd, final double yd, final double zd, final CallbackInfo ci) {
-		if (Cyberblock.active && particle.getType() == ParticleTypes.LARGE_SMOKE) {
+		if (HostState.active() && particle.getType() == ParticleTypes.LARGE_SMOKE) {
 			ci.cancel();
 		}
 	}
