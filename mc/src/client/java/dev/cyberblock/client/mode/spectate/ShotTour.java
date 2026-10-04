@@ -61,7 +61,6 @@ final class ShotTour {
 			case 6 -> shot(minecraft, "8t_trauma_flyer");
 			case 7 -> {
 				minecraft.player.setXRot(0.0F);
-				command(minecraft, "scoreboard objectives add cb_chaos dummy \"Chaos\"");
 				command(minecraft, "scoreboard players set CbGuest2 cb_chaos 17");
 				command(minecraft, "scoreboard players set CbHost2 cb_chaos 9");
 				command(minecraft, "cyberblock spectate");
