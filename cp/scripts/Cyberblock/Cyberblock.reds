@@ -61,7 +61,7 @@
 // Phase 8 (megaplan 2026-10-04 task 8-S1): every tick with a player also runs CyberblockSpawns.Tick and
 // CyberblockGlitch.Tick (not while a save is written) and CyberblockHeat.Tick (Spawns.reds, Glitch.reds, Heat.reds).
 // EndModes (Off, Lost, session end, detach) deletes the spawns, ends the glitch and undoes our wanted level and faction
-// attitudes; on session ready all three forget their state.
+// attitudes; on session ready all three forget their state, and so does the death screen hand-off (Downed.reds).
 
 enum CyberblockState {
   Off = 0,
@@ -193,6 +193,7 @@ public class CyberblockSystem extends ScriptableSystem {
     CyberblockSpawns.Forget();
     CyberblockHeat.Forget();
     CyberblockGlitch.Forget();
+    CyberblockDowned.Forget();
     this.playerState.Clear(player);
     this.creative.Clear(player);
     if IsDefined(player) {
