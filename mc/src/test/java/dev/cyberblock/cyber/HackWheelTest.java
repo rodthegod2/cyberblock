@@ -40,6 +40,17 @@ class HackWheelTest {
 		assertNull(HackWheel.afterSlotChange(null, null));
 	}
 
+	/** Megaplan task 6-I1: a guest's tooltip names the target's host while the lock lasts. */
+	@Test
+	void aGuestSeesWhoseNightCityTheTargetIsIn() {
+		assertEquals("In %s's Night City", ((net.minecraft.network.chat.contents.TranslatableContents) HackWheel.ownerLine("Vee", 5000L, 4000L).getContents())
+			.getFallback());
+		assertNull(HackWheel.ownerLine("Vee", 5000L, 5001L));
+		assertNull(HackWheel.ownerLine("", 5000L, 4000L));
+		assertEquals("{\"name\":\"Vee\"}", Hacking.scanOwner("Vee"));
+		assertEquals(-1.0, Hacking.distanceFromV(null, new Hacking.Locked(java.util.UUID.randomUUID(), 7L, false, 0L, 5.0, 64.0, 5.0, 1.8, "x")));
+	}
+
 	@Test
 	void everyChipHasItsOwnColour() {
 		// the lever shares the redstone red on purpose (both are redstone); every other chip is distinct
