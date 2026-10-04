@@ -13,6 +13,24 @@ class DownQueueTest {
 		return out;
 	}
 
+	/** Megaplan 9-F1: at most the budget a tick, the rest in order on the next ticks, still replaced while it waits. */
+	@Test
+	void aBudgetedDrainLeavesTheRestInOrder() {
+		DownQueue q = new DownQueue();
+		for (int i = 0; i < 5; i++) {
+			q.offer("{\"t\":\"hit\",\"n\":" + i + "}");
+		}
+
+		q.offer("{\"t\":\"mobs\",\"n\":1}");
+		List<String> out = new ArrayList<>();
+		assertEquals(3, q.drain(out::add, 3));
+		assertEquals(List.of("{\"t\":\"hit\",\"n\":0}", "{\"t\":\"hit\",\"n\":1}", "{\"t\":\"hit\",\"n\":2}"), out);
+		q.offer("{\"t\":\"mobs\",\"n\":2}"); // replaces the waiting one in its place
+		assertEquals(List.of("{\"t\":\"hit\",\"n\":3}", "{\"t\":\"hit\",\"n\":4}", "{\"t\":\"mobs\",\"n\":2}"), drain(q));
+		assertEquals(0, q.drain(out::add, DownQueue.PER_TICK));
+		assertTrue(DownQueue.PER_TICK >= 64, "a normal tick never waits");
+	}
+
 	@Test
 	void typeOfReadsTheFirstT() {
 		assertEquals("align", DownQueue.typeOf("{\"t\":\"align\",\"k\":1}"));

@@ -212,11 +212,26 @@ public final class HostSessions {
 		}
 	}
 
-	/** End of the server tick: every session's DOWN queue goes out. */
+	/** End of the server tick: every session's DOWN queue goes out (at most DOWN_PER_TICK messages each). */
 	static void flushAll() {
 		for (HostSession s : sessions.values()) {
 			s.flush();
 		}
+	}
+
+	/** Megaplan 9-F1: the most DOWN messages one session sends in a server tick; the rest wait for the next tick, in order. */
+	public static final int DOWN_PER_TICK = DownQueue.PER_TICK;
+
+	/** Since the last call, over every session: {DOWN messages held over to a next tick, most one session sent in one tick}. */
+	public static long[] takeDownStats() {
+		long[] out = new long[2];
+		for (HostSession s : sessions.values()) {
+			long[] one = s.takeDownStats();
+			out[0] += one[0];
+			out[1] = Math.max(out[1], one[1]);
+		}
+
+		return out;
 	}
 
 	/** Something the roster shows changed (a join, a leave, a session start or end; later phases: body, team, pvp, downed). */

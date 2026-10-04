@@ -151,6 +151,25 @@ class HostSessionsTest {
 		assertEquals(List.of("{\"t\":\"align\",\"k\":3}", "{\"t\":\"blocks\",\"reset\":true,\"c\":[]}"), this.wire1);
 	}
 
+	/** Megaplan 9-F1: a burst goes out over several ticks, in order, and the minute's stats say so. */
+	@Test
+	void aDownBurstSpreadsOverTicks() {
+		HostSession s = this.grant1();
+		up(s, "{'t':'hello','proto':1}");
+		int n = HostSessions.DOWN_PER_TICK + 10;
+		for (int i = 0; i < n; i++) {
+			s.send("{\"t\":\"hit\",\"n\":" + i + "}");
+		}
+
+		s.flush();
+		assertEquals(HostSessions.DOWN_PER_TICK, this.wire1.size());
+		s.flush();
+		assertEquals(n, this.wire1.size());
+		assertEquals("{\"t\":\"hit\",\"n\":" + (n - 1) + "}", this.wire1.get(n - 1));
+		assertArrayEquals(new long[] {10, HostSessions.DOWN_PER_TICK}, HostSessions.takeDownStats());
+		assertArrayEquals(new long[] {0, 0}, HostSessions.takeDownStats());
+	}
+
 	@Test
 	void eachHostGetsOnlyItsOwnDown() {
 		HostSession a = this.grant1();
