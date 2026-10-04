@@ -1,0 +1,16 @@
+{
+	"schema": 1,
+	"title": "Static on the Line",
+	"text": "A Maelstrom crew is chewing the signal off the whole block. Eight of them off the grid would be a relief.",
+	"done_text": "The block has bars again. People are smiling at their phones.",
+	"type": "defeat_hostiles",
+	"target": {
+		"faction": "Maelstrom",
+		"count": 8
+	},
+	"reward": {
+		"eddies": 340
+	},
+	"difficulty": 3,
+	"repeatable": true
+}

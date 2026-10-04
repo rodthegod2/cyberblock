@@ -1,0 +1,16 @@
+{
+	"schema": 1,
+	"title": "Lowrider Toll",
+	"text": "Valentinos are charging a toll on a road that is not theirs. Six toll collectors need a new line of work.",
+	"done_text": "The road is free again. Drive safe.",
+	"type": "defeat_hostiles",
+	"target": {
+		"faction": "Valentinos",
+		"count": 6
+	},
+	"reward": {
+		"eddies": 280
+	},
+	"difficulty": 2,
+	"repeatable": true
+}

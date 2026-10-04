@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"title": "Salt Air",
+	"text": "A friend wants a photograph of the water from Coastview Pier and does not trust drones. Walk out and look.",
+	"done_text": "Grey and glittering, as promised. Your friend is paying double.",
+	"type": "reach_landmark",
+	"target": {
+		"landmark": "cyberblock:coastview_pier"
+	},
+	"reward": {
+		"eddies": 230
+	},
+	"difficulty": 2
+}

@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"title": "Postcard from Corpo Plaza",
+	"text": "A client wants proof you can walk through the glass canyons unbothered. Be at Corpo Plaza, wave at a camera, come home.",
+	"done_text": "They saw you wave. They are impressed, or amused. Either pays.",
+	"type": "reach_landmark",
+	"target": {
+		"landmark": "cyberblock:corpo_plaza"
+	},
+	"reward": {
+		"eddies": 150
+	},
+	"difficulty": 1
+}

@@ -1,0 +1,58 @@
+{
+	"schema": 1,
+	"role": "cyberblock:bartender",
+	"lines": {
+		"greeting": [
+			"Pull up a stool, {player}. The neon is free, the drinks are not.",
+			"Evening, {player}. Rough day or good night?",
+			"Welcome back. Same face, new story?",
+			"Sit. Listen. Drink. In whatever order suits you.",
+			"The glass is clean and the rumours are fresh, {player}.",
+			"You look like someone who earned a drink."
+		],
+		"farewell": [
+			"Mind the door on your way out.",
+			"Come back before the neon dims.",
+			"Safe streets, {player}.",
+			"Leave a tip in the form of a good story.",
+			"The stool will keep your shape."
+		],
+		"bark": [
+			"Somebody keep the music up, the silence is getting ideas.",
+			"That booth has been arguing with itself since noon.",
+			"Nobody orders water here. Nobody ever has.",
+			"If the lights flicker, it is the grid. Probably.",
+			"I water nothing down. Ask the regulars. Ask the regulars' liver.",
+			"Last call is a state of mind.",
+			"Careful, the floor is sticky and the ceiling is listening.",
+			"A good bar remembers faces and forgets names."
+		],
+		"rumour": [
+			"They say a courier lost a case of chrome in the Watson stalls and the case is still looking for him.",
+			"A crew in the Badlands is selling maps that change every time you read them.",
+			"Somebody in the tower district has been paying double for quiet. Nobody knows who is selling it.",
+			"The pier at Pacifica glows green on certain nights. The fishermen stopped asking why.",
+			"There is a turret on the north docks that waves at the cargo ships. It has never shot one.",
+			"A ripperdoc downtown swears she can fit a second heart in under an hour. She also swears by her cat.",
+			"Overheard: a Maelstrom crew lost a bet and a van in the same evening.",
+			"The trams run late whenever a netrunner sneezes. At least that is the story at the depot.",
+			"A vending machine in Heywood gives change in a currency nobody has heard of.",
+			"The roof of the Japantown steps is the best seat in the city and the worst kept secret.",
+			"If you hear singing from the old yard, do not answer it. Even if the song is good.",
+			"Word is a fixer is paying in spare parts again. Smart ones ask for the eddies up front.",
+			"Someone painted a staircase on the side of a tower. Three people have tried to climb it.",
+			"A drone hovered over this bar all night. It ordered nothing."
+		],
+		"drink": [
+			"One {drink}, cold and sharp. Mind the aftertaste.",
+			"A {drink}. It works for about as long as the story does.",
+			"{drink}, as ordered. No refunds on bravery.",
+			"Here, a {drink}. It hits harder on an honest day."
+		],
+		"no_funds": [
+			"Your pockets are a little light for that one, {player}.",
+			"That is {price} eddies. I take cash, not hope.",
+			"Come back with {price} and I will pour it with a flourish."
+		]
+	}
+}

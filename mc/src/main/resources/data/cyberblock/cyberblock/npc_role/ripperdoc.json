@@ -1,0 +1,18 @@
+{
+	"schema": 1,
+	"title_key": "cyberblock.role.ripperdoc",
+	"screen": "ripperdoc",
+	"services": [
+		"install_implant",
+		"surgery"
+	],
+	"tags": [
+		"RipperDoc",
+		"Cyberware"
+	],
+	"dialogue": "cyberblock:ripperdoc",
+	"catalogue": "cyberblock:afterlife",
+	"hub": {
+		"area": "clinic"
+	}
+}

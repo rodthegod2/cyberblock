@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "dialogue",
+  "description": "The `dialogue` content kind (megaplan 1.7 and task 7-A1): the original lines of one NPC role, one file per role, named after the `npc_role` it belongs to. `lines` maps a context to its lines (1 to 32 per context, at most 200 bytes each); the screen picks a context from what just happened and a line at random: `greeting` (screen opens), `farewell` (screen closes), `bark` (idle remarks said near a player), `rumour` (a rumour asked for), `purchase`, `sale` and `no_funds` (shops), `gig_offer` and `gig_done` (fixers), `drink` (bartender), `healed` (medic), `repaired` (mechanic), `installed`, `surgery_ok` and `surgery_fail` (ripperdoc). `greeting`, `farewell` and `bark` are required. A line may hold these placeholders, which the screen fills in: {player}, {item}, {price}, {title} (a gig), {reward}, {implant}, {drink}. All lines are original text, never lines of the game. A datapack replaces a role's whole file by shipping the same id.",
+  "type": "object",
+  "required": [
+    "schema",
+    "role",
+    "lines"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128
+    },
+    "role": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128,
+      "x-ref": "npc_role"
+    },
+    "lines": {
+      "type": "object",
+      "required": [
+        "greeting",
+        "farewell",
+        "bark"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "greeting": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 200
+          }
+        },
+        "farewell": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 200
+          }
+        },
+        "bark": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 200
+          }
+        },
+        "rumour": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 200
+          }
+        },
+        "purchase": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 200
+          }
+        },
+        "sale": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 200
+          }
+        },
+        "no_funds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 200
+          }
+        },
+        "gig_offer": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 200
+          }
+        },
+        "gig_done": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 200
+          }
+        },
+        "drink": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 200
+          }
+        },
+        "healed": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 200
+          }
+        },
+        "repaired": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 200
+          }
+        },
+        "installed": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 200
+          }
+        },
+        "surgery_ok": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 200
+          }
+        },
+        "surgery_fail": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 200
+          }
+        }
+      }
+    }
+  }
+}

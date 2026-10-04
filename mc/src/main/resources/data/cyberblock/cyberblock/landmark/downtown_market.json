@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"name": "Downtown Market",
+	"district": "City Center",
+	"kind": "market",
+	"pos": [
+		-1180,
+		22,
+		400
+	],
+	"yaw": 0,
+	"description": "Stalls in the shadow of the towers, open from the first bell to the last scuffle.",
+	"approx": true
+}

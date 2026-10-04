@@ -1,0 +1,16 @@
+{
+	"schema": 1,
+	"title": "Scrap Pickers",
+	"text": "Scavengers are stripping a lot that is not theirs. Ten of them gone and the lot's owner stops calling me.",
+	"done_text": "The lot is quiet. The owner sent flowers, for some reason.",
+	"type": "defeat_hostiles",
+	"target": {
+		"faction": "Scavengers",
+		"count": 10
+	},
+	"reward": {
+		"eddies": 300
+	},
+	"difficulty": 2,
+	"repeatable": true
+}

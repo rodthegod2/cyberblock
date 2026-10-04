@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"name": "Vista Del Rey Overpass",
+	"district": "Heywood",
+	"kind": "transit",
+	"pos": [
+		-1500,
+		25,
+		1150
+	],
+	"yaw": 0,
+	"description": "A concrete ribbon over cheap rooms; every driver knows the speed bumps.",
+	"approx": true
+}

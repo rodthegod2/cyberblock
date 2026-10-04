@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"name": "Northside Yards",
+	"district": "Watson",
+	"kind": "district",
+	"pos": [
+		-1700,
+		20,
+		-1750
+	],
+	"yaw": 0,
+	"description": "Container stacks and cranes; the quiet kind of busy after dark.",
+	"approx": true
+}

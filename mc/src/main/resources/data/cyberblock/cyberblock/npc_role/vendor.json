@@ -1,0 +1,44 @@
+{
+	"schema": 1,
+	"title_key": "cyberblock.role.vendor",
+	"screen": "shop",
+	"services": [
+		"buy",
+		"sell"
+	],
+	"tags": [
+		"Armorsmith",
+		"Clothes",
+		"Clothing",
+		"Food",
+		"GrilledFood",
+		"Gunsmith",
+		"Junk",
+		"Kiosk",
+		"Market",
+		"PackedFood",
+		"SkillTrainer",
+		"Tech",
+		"TechJunk"
+	],
+	"dialogue": "cyberblock:vendor",
+	"shop": "cyberblock:afterlife_gear",
+	"shop_by_tag": {
+		"Gunsmith": "cyberblock:afterlife_arms",
+		"Armorsmith": "cyberblock:afterlife_arms",
+		"Clothes": "cyberblock:afterlife_gear",
+		"Clothing": "cyberblock:afterlife_gear",
+		"Tech": "cyberblock:afterlife_tech",
+		"TechJunk": "cyberblock:afterlife_tech",
+		"SkillTrainer": "cyberblock:afterlife_tech",
+		"Junk": "cyberblock:afterlife_scrap",
+		"Food": "cyberblock:afterlife_kitchen",
+		"GrilledFood": "cyberblock:afterlife_kitchen",
+		"PackedFood": "cyberblock:afterlife_kitchen",
+		"Kiosk": "cyberblock:afterlife_kitchen",
+		"Market": "cyberblock:afterlife_kitchen"
+	},
+	"hub": {
+		"area": "shops"
+	}
+}

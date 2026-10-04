@@ -1,0 +1,37 @@
+{
+	"schema": 1,
+	"role": "cyberblock:mechanic",
+	"lines": {
+		"greeting": [
+			"Bring it in, {player}. Everything has a pulse, even a car.",
+			"What is rattling? Do not say 'the whole thing'.",
+			"I fix what the road breaks.",
+			"Wrench in hand, ears open. What is the problem?"
+		],
+		"farewell": [
+			"Drive it like it has a name.",
+			"Mind the oil. Mind the speed bumps.",
+			"If it knocks, it needs me. Come back.",
+			"Safe road, {player}."
+		],
+		"bark": [
+			"That sound is not normal. That sound is also not new.",
+			"Never trust a weld you did not watch.",
+			"Duct tape has a time and a place. This is neither.",
+			"A clean engine is a happy engine. A happy engine is a lie.",
+			"I can fix it. I cannot fix you. Different department."
+		],
+		"repaired": [
+			"All fixed. Do not ask what that third bolt was for.",
+			"Good as new, {player}. Better, in the places that matter.",
+			"Repair done for {price} eddies. Smooth rolling.",
+			"Shiny enough that the neon will be jealous.",
+			"Fixed. I put a little extra care in. You will not notice. That is the point."
+		],
+		"no_funds": [
+			"{price} eddies for the repair, {player}. Parts do not grow on trees.",
+			"I need {price} up front. The wrench works on credit, not me.",
+			"Come back with {price} and I will have it humming."
+		]
+	}
+}

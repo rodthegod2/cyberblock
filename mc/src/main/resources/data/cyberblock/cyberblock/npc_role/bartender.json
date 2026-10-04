@@ -1,0 +1,57 @@
+{
+	"schema": 1,
+	"title_key": "cyberblock.role.bartender",
+	"screen": "bartender",
+	"services": [
+		"rumours",
+		"drinks"
+	],
+	"tags": [
+		"Drinks",
+		"bartender"
+	],
+	"dialogue": "cyberblock:bartender",
+	"drinks": [
+		{
+			"key": "neon_sour",
+			"price": 12,
+			"effect": "minecraft:speed",
+			"seconds": 90
+		},
+		{
+			"key": "chrome_rum",
+			"price": 18,
+			"effect": "minecraft:resistance",
+			"seconds": 60
+		},
+		{
+			"key": "static_shot",
+			"price": 15,
+			"effect": "minecraft:haste",
+			"amplifier": 1,
+			"seconds": 60
+		},
+		{
+			"key": "night_owl",
+			"price": 10,
+			"effect": "minecraft:night_vision",
+			"seconds": 180
+		},
+		{
+			"key": "glitch_tea",
+			"price": 12,
+			"effect": "minecraft:jump_boost",
+			"amplifier": 1,
+			"seconds": 60
+		},
+		{
+			"key": "slow_burn",
+			"price": 20,
+			"effect": "minecraft:regeneration",
+			"seconds": 20
+		}
+	],
+	"hub": {
+		"area": "bar"
+	}
+}

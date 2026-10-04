@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"name": "Coastview Pier",
+	"district": "Pacifica",
+	"kind": "viewpoint",
+	"pos": [
+		-2100,
+		8,
+		1900
+	],
+	"yaw": 0,
+	"description": "The last boards before the water; good for thinking, bad for being followed.",
+	"approx": true
+}

@@ -1,0 +1,19 @@
+{
+	"schema": 1,
+	"title_key": "cyberblock.role.medic",
+	"screen": "medic",
+	"services": [
+		"heal"
+	],
+	"tags": [
+		"Medical",
+		"medic"
+	],
+	"dialogue": "cyberblock:medic",
+	"prices": {
+		"heal_per_heart": 6
+	},
+	"hub": {
+		"area": "clinic"
+	}
+}

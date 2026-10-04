@@ -1,0 +1,114 @@
+{
+	"schema": 1,
+	"title_key": "cyberblock.afterlife.clinic",
+	"implants": [
+		{
+			"implant": "reinforced_tendons",
+			"price": 500
+		},
+		{
+			"implant": "fortified_ankles",
+			"price": 600
+		},
+		{
+			"implant": "ram_upgrade",
+			"price": 650
+		},
+		{
+			"implant": "kiroshi_optics",
+			"price": 700
+		},
+		{
+			"implant": "biomonitor",
+			"price": 800
+		},
+		{
+			"implant": "lynx_paws",
+			"price": 900
+		},
+		{
+			"implant": "subdermal_armor",
+			"price": 1100
+		},
+		{
+			"implant": "cyberdeck",
+			"price": 1500
+		},
+		{
+			"implant": "mantis_blades",
+			"price": 1800,
+			"surgery": {
+				"window": 35,
+				"period": 60
+			}
+		},
+		{
+			"implant": "gorilla_arms",
+			"price": 1900,
+			"surgery": {
+				"window": 35,
+				"period": 60
+			}
+		},
+		{
+			"implant": "monowire",
+			"price": 2100,
+			"surgery": {
+				"window": 30,
+				"period": 55
+			}
+		},
+		{
+			"implant": "projectile_launch_system",
+			"price": 2400,
+			"surgery": {
+				"window": 28,
+				"period": 50
+			}
+		},
+		{
+			"implant": "kerenzikov",
+			"price": 2600,
+			"surgery": {
+				"window": 26,
+				"period": 45
+			}
+		},
+		{
+			"implant": "optical_camo",
+			"price": 3000,
+			"surgery": {
+				"window": 25,
+				"period": 45
+			}
+		},
+		{
+			"implant": "second_heart",
+			"price": 3600,
+			"surgery": {
+				"window": 22,
+				"period": 40
+			}
+		},
+		{
+			"implant": "berserk",
+			"price": 4200,
+			"surgery": {
+				"window": 20,
+				"period": 36
+			}
+		},
+		{
+			"implant": "sandevistan",
+			"price": 4800,
+			"surgery": {
+				"window": 18,
+				"period": 32
+			}
+		}
+	],
+	"failure": {
+		"damage": 6,
+		"debuff_s": 30
+	}
+}

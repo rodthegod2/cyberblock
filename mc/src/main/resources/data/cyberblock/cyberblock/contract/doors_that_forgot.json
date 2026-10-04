@@ -1,0 +1,16 @@
+{
+	"schema": 1,
+	"title": "Doors that Forgot",
+	"text": "Four locked doors, one night, no keys. Breach them for a crew that likes their warehouses open.",
+	"done_text": "Four doors that remember nobody. Clean work.",
+	"type": "breach_device",
+	"target": {
+		"kind": "door",
+		"count": 4
+	},
+	"reward": {
+		"eddies": 320
+	},
+	"difficulty": 2,
+	"repeatable": true
+}

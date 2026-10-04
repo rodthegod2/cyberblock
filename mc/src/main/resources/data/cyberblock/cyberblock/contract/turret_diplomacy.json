@@ -1,0 +1,21 @@
+{
+	"schema": 1,
+	"title": "Turret Diplomacy",
+	"text": "A pair of turrets keep shooting at my couriers. Persuade them to shoot at something else.",
+	"done_text": "Quiet on the loading dock. The couriers will tip you in rumours.",
+	"type": "breach_device",
+	"target": {
+		"kind": "turret",
+		"count": 2
+	},
+	"reward": {
+		"eddies": 420,
+		"items": [
+			{
+				"item": "cyberblock:ram_shard",
+				"count": 1
+			}
+		]
+	},
+	"difficulty": 3
+}
