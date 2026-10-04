@@ -60,6 +60,9 @@ namespace
 	std::atomic<bool> g_pause{false};
 	/// Phase 7: the hub is shown (the compositor shows Minecraft full-screen); the game thread reads it.
 	std::atomic<bool> g_hub{false};
+	/// Held while g_hub changes and its `hub` event is queued, and while on_scripts_active re-tells it: a hub-in re-told
+	/// on activation can never land after the hub-out of a change that raced it.
+	std::mutex g_hubLock;
 	/// Phase 7: the server's last word on the hub (`hub in`). It is kept while this host is not Host (a guest until /login,
 	/// a refusal, before the first `session`) and applied at the next host grant; forgotten on `hello`, a link drop and
 	/// `session none`. Link thread only.
@@ -87,6 +90,7 @@ namespace
 	/// as a `hub` event, and every `in` the server says too (`tell`): the event is kept while Cyberblock is not Active.
 	void set_hub(bool in, const char *why, bool tell)
 	{
+		std::lock_guard<std::mutex> lock(g_hubLock); // the change and its event in one step (see on_scripts_active)
 		const bool changed = g_hub.exchange(in) != in;
 		if (changed)
 			cb::log::info("hub: %s (%s); the compositor shows %s", in ? "in" : "out", why,
@@ -535,13 +539,14 @@ namespace cb::world
 		return out;
 	}
 
-	void EventQueue::set_active(bool active)
+	bool EventQueue::set_active(bool active)
 	{
 		std::lock_guard<std::mutex> lock(m_lock);
 		if (active == m_active)
-			return;
+			return false;
 		m_active = active;
 		std::erase_if(m_queue, [](const Event &e) { return transient(e.kind); });
+		return true;
 	}
 
 	void EventQueue::push(const Event &event)
@@ -779,6 +784,21 @@ namespace cb::world
 	bool hub_in()
 	{
 		return g_hub;
+	}
+
+	void on_scripts_active(bool active)
+	{
+		std::lock_guard<std::mutex> lock(g_hubLock);
+		if (!events().set_active(active) || !active || !g_hub)
+			return;
+		// the scripts forget their hub copy when they leave Active for Lost (a Minecraft stall over 2 s with the link
+		// up), a load or a session end, and the DLL hears none of it: tell them again, or V stays unparked behind the
+		// full-screen hub (Hub.reds parks V again; Park.Hold is idempotent)
+		Event e;
+		e.kind = EventKind::Hub;
+		e.flag = true;
+		events().push(e);
+		log::info("hub: in (Cyberblock active again); the scripts are told again");
 	}
 
 	ViewPrefs parse_prefs(const json &message, const ViewPrefs &current, size_t &bad, std::string &why)
