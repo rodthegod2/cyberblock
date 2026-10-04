@@ -8,11 +8,14 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.cyber.Hack;
+import dev.cyberblock.device.Device;
+import dev.cyberblock.device.DeviceRules;
 import dev.cyberblock.net.DevCommands;
 import dev.cyberblock.net.HostSession;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.function.Predicate;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -127,17 +130,24 @@ final class VanCommands {
 		return targets.stream().filter(t -> t.kind() == kind).count();
 	}
 
-	/** The nearest target of that kind the Van sees (from `seen`, or from anywhere when null), in the state's order. */
-	private static VanWire.@Nullable Target nearest(final ServerPlayer p, final VanEntity van, final VanRules.Kind kind, final VanRules.@Nullable Seen seen) {
-		return VanModule.targets(p, van, VanModule.linkedHost(van)).stream().filter(t -> t.kind() == kind && (seen == null || t.seen() == seen)).findFirst()
-			.orElse(null);
+	/** The nearest target of that kind the Van sees (from `seen`, or from anywhere when null) that passes `fits`, in the state's order. */
+	private static VanWire.@Nullable Target nearest(final ServerPlayer p, final VanEntity van, final VanRules.Kind kind, final VanRules.@Nullable Seen seen,
+		final Predicate<VanWire.Target> fits) {
+		return VanModule.targets(p, van, VanModule.linkedHost(van)).stream().filter(t -> t.kind() == kind && (seen == null || t.seen() == seen) && fits.test(t))
+			.findFirst().orElse(null);
+	}
+
+	/** A device that takes this act now (the device rules would send it: not a quest-locked or a locked door), or any device for the lever. */
+	private static boolean takes(final VanWire.Target t, final @Nullable String act) {
+		Device d = t.host() == null ? null : VanModule.devices.get(t.host(), t.dev(), VanModule.tick());
+		return act == null || d != null && VanRules.deviceActAllowed(d.type(), act) && DeviceRules.request(d, act).outcome() == DeviceRules.Outcome.SEND;
 	}
 
 	private static int hack(final CommandContext<CommandSourceStack> c, final VanRules.@Nullable Seen seen) throws CommandSyntaxException {
 		ServerPlayer p = c.getSource().getPlayerOrException();
 		VanEntity van = seated(c);
 		Hack hack = Hack.byWire(StringArgumentType.getString(c, "hack"));
-		VanWire.Target t = nearest(p, van, VanRules.Kind.PERSON, seen);
+		VanWire.Target t = nearest(p, van, VanRules.Kind.PERSON, seen, x -> true);
 		boolean sent = hack != null && !hack.needsDevice() && t != null && VanModule.figureHack(p, van, new VanWire.FigureHack(t.eid(), hack));
 		return say(c.getSource(), "test: van hack " + StringArgumentType.getString(c, "hack") + " by " + p.getPlainTextName() + " -> "
 			+ (t == null ? "no person seen" : (sent ? "sent to " : "refused for ") + t.name() + " (" + t.seen().wire() + ")"));
@@ -147,7 +157,7 @@ final class VanCommands {
 		ServerPlayer p = c.getSource().getPlayerOrException();
 		VanEntity van = seated(c);
 		String act = lever ? null : StringArgumentType.getString(c, "act");
-		VanWire.Target t = nearest(p, van, VanRules.Kind.DEVICE, seen);
+		VanWire.Target t = nearest(p, van, VanRules.Kind.DEVICE, seen, x -> takes(x, act));
 		UUID host = t == null ? null : t.host();
 		boolean sent = host != null && VanModule.deviceRequest(p, van, new VanWire.DeviceRequest(host, t.dev(), act));
 		return say(c.getSource(), "test: van " + (lever ? "lever" : "device " + act) + " by " + p.getPlainTextName() + " -> "

@@ -23,11 +23,13 @@ import dev.cyberblock.net.ServerNet;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.creativetab.v1.CreativeModeTabEvents;
@@ -178,7 +180,7 @@ public final class VanModule {
 		return Identifier.fromNamespaceAndPath(Cyberblock.ID, path);
 	}
 
-	private static long tick() {
+	static long tick() {
 		MinecraftServer s = server;
 		return s == null ? 0L : s.getTickCount();
 	}
@@ -429,18 +431,18 @@ public final class VanModule {
 	// ---- seeing ----------------------------------------------------------------------------------------------------------
 
 	/**
-	 * From where the netrunner sees a target of `owner` at `p`: the screen (the linked host's area) first, then his drone (in sight, a
-	 * clear line; `block` is the device's own cell, which may stop the line). Null: he cannot see it.
+	 * From where the netrunner sees a target of `owner` at `p`: his drone (in sight, a clear line; `block` is the device's own cell,
+	 * which may stop the line), else the screen (the linked host's area), as {@link #targets} marks it. Null: he cannot see it.
 	 */
 	static VanRules.@Nullable Seen sees(final ServerPlayer player, final VanEntity van, final UUID owner, final Vec3 p, final @Nullable BlockPos block) {
-		HostSession host = linkedHost(van);
-		ServerPlayer v = host == null ? null : host.player();
-		if (host != null && v != null && host.uuid().equals(owner) && VanRules.inArea(p, v.position())) {
-			return VanRules.Seen.SCREEN;
+		VanDrone drone = drone(van);
+		if (drone != null && Objects.equals(drone.pilot, player.getUUID()) && clearSight(drone, p, block)) {
+			return VanRules.Seen.DRONE;
 		}
 
-		VanDrone drone = drone(van);
-		return drone != null && Objects.equals(drone.pilot, player.getUUID()) && clearSight(drone, p, block) ? VanRules.Seen.DRONE : null;
+		HostSession host = linkedHost(van);
+		ServerPlayer v = host == null ? null : host.player();
+		return host != null && v != null && host.uuid().equals(owner) && VanRules.inArea(p, v.position()) ? VanRules.Seen.SCREEN : null;
 	}
 
 	/** Within the drone's sight and nothing solid between its eye and the point (a device's own block may end the line). */
@@ -455,52 +457,58 @@ public final class VanModule {
 			|| hit.getLocation().distanceToSqr(eye) >= p.distanceToSqr(eye) - 0.25;
 	}
 
-	/** Everything the netrunner can see now: the host's area, then what his drone sees, nearest first within each, capped. */
+	/**
+	 * Everything the netrunner can see now, capped: first what his drone sees (any host's figures and devices in its sight, nearest
+	 * the drone first), then the rest of the linked host's area (nearest V first). A target both show counts as the drone's: it is in
+	 * plain view.
+	 */
 	static List<VanWire.Target> targets(final ServerPlayer player, final VanEntity van, final @Nullable HostSession host) {
 		ServerLevel level = (ServerLevel) van.level();
 		List<VanWire.Target> out = new ArrayList<>();
-		List<Long> seenDevices = new ArrayList<>();
-		List<Integer> seenFigures = new ArrayList<>();
-		ServerPlayer v = host == null ? null : host.player();
+		Set<Integer> droneFigures = new HashSet<>();
+		Set<Long> droneDevices = new HashSet<>();
 		long now = tick();
-		if (host != null && v != null) {
-			Vec3 c = v.position();
-			for (ProxyEntity e : level.getEntitiesOfClass(ProxyEntity.class, new AABB(c, c).inflate(VanRules.AREA_RADIUS, 64.0, VanRules.AREA_RADIUS),
-				e -> !e.dead() && host.uuid().equals(e.owner()) && VanRules.inArea(e.position(), c))) {
-				out.add(figure(e, VanRules.Seen.SCREEN));
-				seenFigures.add(e.getId());
-			}
-
-			for (Device d : devices.of(host.uuid(), now)) {
-				if (VanRules.inArea(new Vec3(d.x(), d.y(), d.z()), c)) {
-					out.add(device(host.uuid(), d, VanRules.Seen.SCREEN));
-					seenDevices.add(d.id());
-				}
-			}
-
-			out.sort(Comparator.comparingDouble(t -> t.p().distanceToSqr(c)));
-		}
-
 		VanDrone drone = drone(van);
 		if (drone != null && Objects.equals(drone.pilot, player.getUUID())) {
 			Vec3 eye = drone.getEyePosition();
-			List<VanWire.Target> fromDrone = new ArrayList<>();
 			for (ProxyEntity e : level.getEntitiesOfClass(ProxyEntity.class, drone.getBoundingBox().inflate(VanRules.DRONE_SIGHT),
-				e -> !e.dead() && e.owner() != null && !seenFigures.contains(e.getId()) && clearSight(drone, e.getBoundingBox().getCenter(), null))) {
-				fromDrone.add(figure(e, VanRules.Seen.DRONE));
+				e -> !e.dead() && e.owner() != null && clearSight(drone, e.getBoundingBox().getCenter(), null))) {
+				out.add(figure(e, VanRules.Seen.DRONE));
+				droneFigures.add(e.getId());
 			}
 
 			for (UUID owner : devices.owners()) {
 				for (Device d : devices.of(owner, now)) {
 					Vec3 at = new Vec3(d.x(), d.y(), d.z());
-					if (!(owner.equals(host == null ? null : host.uuid()) && seenDevices.contains(d.id())) && clearSight(drone, at.add(0.0, 0.5, 0.0), BlockPos.containing(at))) {
-						fromDrone.add(device(owner, d, VanRules.Seen.DRONE));
+					if (clearSight(drone, at.add(0.0, 0.5, 0.0), BlockPos.containing(at))) {
+						out.add(device(owner, d, VanRules.Seen.DRONE));
+						if (owner.equals(host == null ? null : host.uuid())) {
+							droneDevices.add(d.id());
+						}
 					}
 				}
 			}
 
-			fromDrone.sort(Comparator.comparingDouble(t -> t.p().distanceToSqr(eye)));
-			out.addAll(fromDrone);
+			out.sort(Comparator.comparingDouble(t -> t.p().distanceToSqr(eye)));
+		}
+
+		ServerPlayer v = host == null ? null : host.player();
+		if (host != null && v != null) {
+			Vec3 c = v.position();
+			List<VanWire.Target> area = new ArrayList<>();
+			for (ProxyEntity e : level.getEntitiesOfClass(ProxyEntity.class, new AABB(c, c).inflate(VanRules.AREA_RADIUS, 64.0, VanRules.AREA_RADIUS),
+				e -> !e.dead() && host.uuid().equals(e.owner()) && VanRules.inArea(e.position(), c) && !droneFigures.contains(e.getId()))) {
+				area.add(figure(e, VanRules.Seen.SCREEN));
+			}
+
+			for (Device d : devices.of(host.uuid(), now)) {
+				if (VanRules.inArea(new Vec3(d.x(), d.y(), d.z()), c) && !droneDevices.contains(d.id())) {
+					area.add(device(host.uuid(), d, VanRules.Seen.SCREEN));
+				}
+			}
+
+			area.sort(Comparator.comparingDouble(t -> t.p().distanceToSqr(c)));
+			out.addAll(area);
 		}
 
 		return out.size() > VanRules.MAX_TARGETS ? List.copyOf(out.subList(0, VanRules.MAX_TARGETS)) : out;
