@@ -1610,7 +1610,7 @@ packages 8D, 8S, 8T, 8X, 8M, 8O and 8V.
 - **Test commands** (dedicated test server with `-Dcyberblock.devtools=true`; `tools/mpcheck.py`'s `match`, `heat` and `overlord` scenarios assume them, 8M, 8T and
   8O add them): `/cyberblock test heat set <0..100>` sets the Server Heat meter and applies its tier at once; `/cyberblock test match start <mode>` run as a
   Cyberpunk-linked player creates and starts a match of that `match_mode` id around that player (the creator is in it with PvP on for its players), `/cyberblock
-  test match join <creator> [overlord]` run as another player joins it (as a teammate, or as the Overlord), and `/cyberblock test match end` run as the creator ends
+  test match join <creator> [overlord]` run as another player joins it (on the other team from the creator, or as the Overlord), and `/cyberblock test match end` run as the creator ends
   it; `/cyberblock test overlord spawn <palette id> <n> <player>` run as the Overlord spawns `n` of a `spawn_palette` entry near that player through the same
   server path as the Overlord Console (warning, fairness and routing included). The real commands of the game are `/cyberblock spectate` and the host's `/cyberblock
   guests spawns on|off`.

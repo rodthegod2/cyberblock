@@ -45,8 +45,21 @@ Scenarios (megaplan task 1-T2). Each one starts what it needs on its own test po
                 `hub in:false` and puts Steve back; in the hub a dropped link ends the session, a returning link hears the entering pair again, and a
                 Cyberpunk that refuses the park (`--park-refuse`) has the host taken out of the hub; the relay drops nothing. RCON's `execute as` carries
                 operator permission, and the pause-screen button and the portal are not driven: Re-test P7-5 checks those with a non-operator guest
+  match         Phase 8: one fake host `--modes` and a guest: PvP is off for everyone by default (a `damage` from the guest hurts nobody), a Minecraft-only player
+                cannot create a match, the linked host's match turns PvP on for its players (a hit lands, both ways) and off again after the match and the 15 second
+                lock, `/cyberblock spectate` puts the guest in spectator mode, and the relay drops nothing
+  heat          Phase 8: one fake host `--modes`: the Server Heat meter climbs through the tiers (the host's DLL is told each new tier with `heat`, in order, up to 4
+                and 5), falls back to 0 (`heat tier:0`), a new host session of a host at tier 5 hears the tier again, and every message is valid
+  overlord      Phase 8: one fake host `--modes` and a guest Overlord: a spawn near a player who is in no match reaches nobody; once the host is in a match, the Overlord's
+                spawn reaches the host's DLL as `spawn` (at least about 3 s after the command: the warning) and the DLL's `spawnresult` is answered, every message
+                is valid (`n` 1..8 even for a bigger request), `guests spawns off` keeps spawns out of the DLL (Minecraft squads instead) and `on` brings them back
   joinpassword  a server with a join password: a host waits as a guest until `/login`, then hosts at once; after a reconnect it
                 is remembered; five wrong passwords kick; the password is in no log (it is random per run, like the RCON one)
+
+The Phase 8 scenarios (`match`, `heat`, `overlord`) need the Phase 8 server (packages 8M, 8T and 8O) and the devtools commands that `PHASE8_COMMANDS` names (the
+table is the one place to edit when the packages named them otherwise); a server without them is a clear error. With `--all` a scenario whose package folder
+(`PHASE8_NEEDS`) is not in the checkout is reported as SKIP (not a pass: the summary says so), so a checkout that has no Phase 8 server code can still run the rest.
+Naming a scenario always runs it.
 
 Safety: the commit charge must be under 60 GB before anything starts (it waits 60 s and checks again); the server is offline
 mode on 127.0.0.1; its RCON password is random per run, held in memory and written only to server.properties in the run
@@ -99,10 +112,10 @@ CLIENT_BASE, SERVER_BASE = 25754, 25914  # package 1T (megaplan section 1.15): c
 FRAME_PREFIX = "Local\\CyberblockFrame1T"  # + H (host client) or G (guest client), + the client number from 2 on
 OFFLINE_NAMES = ("CbHost1", "CbHost2", "CbGuest1", "CbGuest2")
 SCENARIOS = ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup", "devices",
-             "figures", "breach", "hub")
+             "figures", "breach", "hub", "match", "heat", "overlord")
 # + SERVER_BASE; scenarios run one after another, so two may share a port
 SERVER_SLOT = {"singleplayer": 0, "guest": 0, "versions": 1, "flood": 2, "reconnect": 3, "twohosts": 4, "joinpassword": 1, "replica": 0, "twohosts2": 2,
-               "meetup": 1, "devices": 3, "figures": 3, "breach": 3, "hub": 2}
+               "meetup": 1, "devices": 3, "figures": 3, "breach": 3, "hub": 2, "match": 0, "heat": 0, "overlord": 0}
 FORBIDDEN_PORTS = {25600}  # the user's own Minecraft <-> Cyberpunk link
 GRADLE_HEAP = "-Dorg.gradle.jvmargs=-Xmx1536m"
 # seconds: a server starting, a client opening its link port, a join, an effect to show up, "this must not happen"
@@ -611,7 +624,7 @@ class Report:
     """The checks of one scenario; every check is printed as it is made."""
 
     def __init__(self, name: str, say: Callable[[str], None] = print) -> None:
-        self.name, self.say, self.checks = name, say, []
+        self.name, self.say, self.checks, self.skipped = name, say, [], ""  # `skipped`: why it did not run (a skip is not a pass: the summary says SKIP)
 
     def step(self, label: str, fn: Callable[[], object], must: bool = False) -> bool:
         try:
@@ -626,7 +639,7 @@ class Report:
 
     @property
     def ok(self) -> bool:
-        return bool(self.checks) and all(ok for _, ok, _ in self.checks)
+        return bool(self.skipped) or (bool(self.checks) and all(ok for _, ok, _ in self.checks))
 
 
 # ---- the scenarios -----------------------------------------------------------------------------------------------------
@@ -1493,14 +1506,213 @@ def scenario_hub(env: Env, rep: Report) -> None:
     rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))
 
 
+# ---- Phase 8: match, heat and overlord (megaplan 8-P1) ----------------------------------------------------------------------------------
+# These checks need the Phase 8 server (8M: matches and PvP, 8T: Server Heat and the spectator mode, 8O: the Overlord) merged. The fake host `--modes`
+# (tools/fakehost.py) plays Cyberpunk: it prints every `spawn`, `heat`, `attitude` and `glitch` its DLL gets and answers `spawn` with `spawnresult`. The contract
+# is shared/protocol.md "Phase 8". The devtools commands below are what the scenarios ASSUME the packages added (the plan names only `/cyberblock spectate` and
+# `/cyberblock guests spawns on|off`): this table is the one place to change when they were named otherwise. A hit is played with vanilla's `/damage`, so the PvP
+# rule has to hold for any damage whose source is a player, and Health is read with `data get entity`.
+PHASE8_COMMANDS = {
+    "heat": "heat set {value}",  # sets the Server Heat meter (0..100) and applies its tier at once
+    "match_start": "match start {mode}",  # as a Cyberpunk-linked player: a match of this `match_mode` id around the player, PvP on for its players
+    "match_join": "match join {creator} {role}",  # as another player: joins that player's match on the other team, or as `overlord` (role may be empty)
+    "match_end": "match end",  # as the creator
+    "overlord_spawn": "overlord spawn {entry} {n} {player}",  # as the Overlord: n of a `spawn_palette` entry near that player, through the console's own server path
+}
+PHASE8_NEEDS = {"match": "mode/match", "heat": "mode/heat", "overlord": "mode/overlord"}  # the package folders (under dev/cyberblock/) the scenarios need
+PHASE8_SOURCE = Path("mc/src/main/java/dev/cyberblock")
+MATCH_MODE, OVERLORD_ENTRY = "team_deathmatch", "ganger"  # a shipped `match_mode` id and `spawn_palette` entry (8A's defaults)
+PVP_LOCK_S = 16.0  # after the last hit a player waits 15 s before PvP can go off (megaplan 8-M1), plus a second
+SPAWN_WARNING_S = 3.0  # the Overlord's warning before spawns near a player (megaplan 8-O1); the DLL hears the spawn after it
+WARNING_SLACK = 0.8  # the spawn must come after at least this part of the warning (the command is timed before the server starts its own clock)
+HIT_GAP_S = 1.0  # after a `/damage` of the PvP check: the invulnerability frames of the victim end before the next hit
+HEAT_STEPS = tuple(range(10, 101, 10))  # the meter values the `heat` scenario sets, one a second
+HEAT_STEP_S = 1.0
+SPAWN_EVENT = r"\[CbHost1\] spawn: (\{.*\})"
+SPAWN_RESULT = r"\[CbHost1\] spawnresult: (\{.*\})"
+HEAT_EVENT = r"\[CbHost1\] heat: (\{.*\})"
+HIT_DAMAGE = 4  # half-hearts of `/damage`: two hearts
+HEALTH = re.compile(r"entity data: (-?[\d.]+)f?\s*$")
+GAME_TYPE = re.compile(r"entity data: (-?\d+)\s*$")
+
+
+def test8(server: Server, key: str, as_player: str | None = None, **fields: object) -> str:
+    """A Phase 8 devtools command from PHASE8_COMMANDS (see the note above); a server that does not know it is a clear error that names the table."""
+    try:
+        return server.test(PHASE8_COMMANDS[key].format(**fields).strip(), as_player=as_player)
+    except MpError as e:
+        raise MpError(f"{e}; the Phase 8 scenarios assume the devtools commands of PHASE8_COMMANDS in tools/mpcheck.py (8M, 8T, 8O): edit the table if they are named otherwise") from None
+
+
+def health_of(server: Server, name: str) -> float | None:
+    match = HEALTH.search(server.rcon(f"data get entity {name} Health").strip())
+    return float(match.group(1)) if match else None
+
+
+def game_type_of(server: Server, name: str) -> int | None:
+    match = GAME_TYPE.search(server.rcon(f"data get entity {name} playerGameType").strip())
+    return int(match.group(1)) if match else None
+
+
+def hit_hurts(server: Server, attacker: str, victim: str) -> bool:
+    """One `/damage` of HIT_DAMAGE half-hearts from `attacker` to `victim` (a player attack); True when the victim's Health fell by at least one half-heart right
+    away. The hit is followed by HIT_GAP_S of quiet so the next one is not eaten by the invulnerability frames."""
+    before = health_of(server, victim)
+    server.rcon(f"damage {victim} {HIT_DAMAGE} minecraft:player_attack by {attacker}")
+    after = health_of(server, victim)
+    time.sleep(HIT_GAP_S)
+    if before is None or after is None:
+        raise MpError(f"could not read {victim}'s Health (is the player on the server?)")
+    return after <= before - 1.0
+
+
+def spawns_since(host: FakeHost, since: int = 0) -> list[dict]:
+    return logged_events(host.log, SPAWN_EVENT, since)
+
+
+def spawn_results_since(host: FakeHost, since: int = 0) -> list[dict]:
+    return logged_events(host.log, SPAWN_RESULT, since)
+
+
+def heat_tiers(host: FakeHost, since: int = 0) -> list[int]:
+    """The tiers the fake host's DLL was told after `since`, in order."""
+    return [m["tier"] for m in logged_events(host.log, HEAT_EVENT, since) if isinstance(m.get("tier"), int) and not isinstance(m["tier"], bool)]
+
+
+def spawn_is_valid(m: dict) -> bool:
+    """A `spawn` that obeys shared/protocol.md "Phase 8": id, one of the four records, a position, `n` 1..8, hostile, a faction."""
+    return (set(m) == {"t", "id", "rec", "p", "n", "hostile", "faction"} and fakehost.is_request_id(m["id"]) and m["rec"] in fakehost.SPAWN_RECORDS
+            and fakehost.finite_vec3(m["p"]) and fakehost.whole_in(m["n"], 1, 8) and isinstance(m["hostile"], bool) and isinstance(m["faction"], str)
+            and fakehost.FACTION_RE.fullmatch(m["faction"]) is not None)
+
+
+def answered_every_spawn(host: FakeHost, since: int = 0) -> bool:
+    """Every `spawn` after `since` got exactly one `spawnresult` with its id, and each of them is `ok` (the fake DLL spawns every valid record)."""
+    spawns, results = spawns_since(host, since), spawn_results_since(host, since)
+    return bool(spawns) and sorted(m["id"] for m in results) == sorted(m["id"] for m in spawns) and all(m.get("ok") is True for m in results)
+
+
+def guests_spawns(server: Server, on: bool) -> None:
+    """As the host: `/cyberblock guests spawns on|off` (Night City enemies of the Overlord in this host's game; off by default)."""
+    server.rcon(f"execute as CbHost1 run cyberblock guests spawns {'on' if on else 'off'}")
+
+
+def overlord_spawn(server: Server, n: int) -> float:
+    """As the guest Overlord: spawn `n` of OVERLORD_ENTRY near the host; returns the time the command was sent."""
+    sent = time.monotonic()
+    test8(server, "overlord_spawn", as_player="CbGuest1", entry=OVERLORD_ENTRY, n=n, player="CbHost1")
+    return sent
+
+
+def start_match(server: Server) -> None:
+    """The linked host creates a match and the guest joins it as the Overlord (the test commands go through the Match Terminal's server path)."""
+    test8(server, "match_start", as_player="CbHost1", mode=MATCH_MODE)
+    test8(server, "match_join", as_player="CbGuest1", creator="CbHost1", role="overlord")
+
+
+def scenario_match(env: Env, rep: Report) -> None:
+    server = env.server("match", max_hosts=1)
+    _, host = start_host(env, rep, server, "CbHost1", ver=env.mod_version, layers=(), modes=("modes",), wait_host=T_JOIN)
+    env.client("CbGuest1", join=server.port)
+    rep.step("a guest joins", lambda: server.log.wait(r"handshake: CbGuest1 .*-> guest", T_JOIN), must=True)
+    rep.step("PvP is off for everyone by default: a player's hit does not hurt the host", lambda: not hit_hurts(server, "CbGuest1", "CbHost1"))
+    test8(server, "match_start", as_player="CbGuest1", mode=MATCH_MODE)  # a Minecraft-only player: refused, nothing starts
+    rep.step("a Minecraft-only guest cannot create a match: PvP is still off after its attempt", lambda: not hit_hurts(server, "CbGuest1", "CbHost1"))
+    test8(server, "match_start", as_player="CbHost1", mode=MATCH_MODE)
+    test8(server, "match_join", as_player="CbGuest1", creator="CbHost1", role="")
+    rep.step("a match the linked host created turns PvP on for its players: the guest's hit hurts the host", lambda: poll(lambda: hit_hurts(server, "CbGuest1", "CbHost1"), T_EFFECT, 1.0, "the hit to land"))
+    rep.step("... and the host's hit hurts the guest", lambda: hit_hurts(server, "CbHost1", "CbGuest1"))
+    test8(server, "match_end", as_player="CbHost1")
+    time.sleep(PVP_LOCK_S)  # the 15 second lock after the last hit
+    rep.step("after the match and the 15 second lock PvP is off again for both", lambda: not hit_hurts(server, "CbGuest1", "CbHost1") and not hit_hurts(server, "CbHost1", "CbGuest1"))
+    server.rcon("execute as CbGuest1 run cyberblock spectate")
+    rep.step("`/cyberblock spectate` puts the guest in spectator mode", lambda: poll(lambda: game_type_of(server, "CbGuest1") == 3, T_EFFECT, T_POLL, "spectator mode") is True)
+    server.rcon("gamemode survival CbGuest1")
+    rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))
+    mark = server.log.mark()
+    host.stop()
+    rep.step("the session ends when the link drops", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, mark), must=True)
+
+
+def scenario_heat(env: Env, rep: Report) -> None:
+    server = env.server("heat", max_hosts=1)
+    client, host = start_host(env, rep, server, "CbHost1", ver=env.mod_version, layers=(), modes=("modes",), wait_host=T_JOIN)
+    guests_spawns(server, True)  # the working rule of shared/protocol.md "Phase 8": the host's `spawns` switch lets heat reach its game
+    mark = host.log.mark()
+    for value in HEAT_STEPS:
+        test8(server, "heat", value=value)
+        time.sleep(HEAT_STEP_S)
+    rep.step("the meter at 100 tells the host's DLL `heat` tier 5", lambda: poll(lambda: heat_tiers(host, mark)[-1:] == [5], T_EFFECT, T_POLL, "tier 5"))
+    climb = heat_tiers(host, mark)
+    rep.step("the tiers came in order, never lower than the one before, and reached 4 on the way to 5", lambda: climb == sorted(climb) and 4 in climb and climb[-1] == 5)
+    rep.step("each tier is told once (the server sends `heat` when the tier changes)", lambda: len(set(climb)) == len(climb))
+    mark = host.log.mark()
+    test8(server, "heat", value=0)
+    rep.step("the meter back at 0 tells the DLL `heat` tier 0 (the stars go back)", lambda: poll(lambda: heat_tiers(host, mark)[-1:] == [0], T_EFFECT, T_POLL, "tier 0"))
+    test8(server, "heat", value=100)
+    rep.step("at 100 again the DLL is told tier 5", lambda: poll(lambda: heat_tiers(host, mark)[-1:] == [5], T_EFFECT, T_POLL, "tier 5"))
+    ended = server.log.mark()
+    host.stop()  # Cyberpunk closes at tier 5
+    rep.step("the session ends when the link drops", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, ended), must=True)
+    started = server.log.mark()
+    host = env.fakehost(client, ver=env.mod_version, layers=(), modes=("modes",), wait_host=T_JOIN)  # Cyberpunk again: a new hello, a new session
+    rep.step("the returning link starts a new session", lambda: server.log.wait(r"session: CbHost1 started", T_JOIN, started), must=True)
+    rep.step("a new host session at tier 5 hears `heat` tier 5 again (a restarted Cyberpunk starts calm)", lambda: poll(lambda: heat_tiers(host)[:1] == [5], T_EFFECT, T_POLL, "tier 5"))
+    test8(server, "heat", value=0)
+    rep.step("and the calm after it", lambda: poll(lambda: heat_tiers(host)[-1:] == [0], T_EFFECT, T_POLL, "tier 0"))
+    rep.step("every `heat` the DLL got is a whole tier 0..5", lambda: all(fakehost.whole_in(m.get("tier"), 0, 5) and set(m) == {"t", "tier"} for m in logged_events(host.log, HEAT_EVENT)))
+    rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))
+
+
+def scenario_overlord(env: Env, rep: Report) -> None:
+    server = env.server("overlord", max_hosts=1)
+    _, host = start_host(env, rep, server, "CbHost1", ver=env.mod_version, layers=(), modes=("modes",), wait_host=T_JOIN)
+    env.client("CbGuest1", join=server.port)
+    rep.step("a guest joins", lambda: server.log.wait(r"handshake: CbGuest1 .*-> guest", T_JOIN), must=True)
+    guests_spawns(server, True)  # the host allows Night City spawns (off by default)
+    mark = host.log.mark()
+    overlord_spawn(server, 2)
+    time.sleep(SPAWN_WARNING_S + T_QUIET)
+    rep.step("a player who is in no match gets no spawn: nothing reaches the host's DLL", lambda: not spawns_since(host, mark))
+    start_match(server)
+    mark = host.log.mark()
+    sent = overlord_spawn(server, 2)
+    rep.step("the Overlord's spawn reaches the host's DLL as a valid `spawn`", lambda: poll(lambda: any(spawn_is_valid(m) for m in spawns_since(host, mark)), T_EFFECT, T_POLL, "the spawn"), must=True)
+    delay = time.monotonic() - sent
+    rep.step(f"... not before the {SPAWN_WARNING_S:g} second warning (it came {delay:.1f} s after the command)", lambda: delay >= SPAWN_WARNING_S * WARNING_SLACK)
+    rep.step("the two figures asked for were spawned in all and the DLL answered every `spawn` with an ok `spawnresult` of its id",
+             lambda: poll(lambda: sum(m["n"] for m in spawns_since(host, mark)) >= 2, T_EFFECT, T_POLL, "the figures") and answered_every_spawn(host, mark))
+    mark = host.log.mark()
+    overlord_spawn(server, 12)
+    rep.step("a request for more than eight sends only valid `spawn` messages (`n` 1..8 each)",
+             lambda: poll(lambda: spawns_since(host, mark), T_EFFECT, T_POLL, "the spawns") and all(spawn_is_valid(m) for m in spawns_since(host, mark)))
+    time.sleep(SPAWN_WARNING_S * 1.5)  # the 12 asked for are all delivered before the toggle goes off
+    guests_spawns(server, False)
+    mark = host.log.mark()
+    overlord_spawn(server, 2)
+    time.sleep(SPAWN_WARNING_S + T_QUIET)
+    rep.step("with `/cyberblock guests spawns off` nothing reaches the DLL (Minecraft squads stand in)", lambda: not spawns_since(host, mark))
+    guests_spawns(server, True)
+    mark = host.log.mark()
+    overlord_spawn(server, 2)
+    rep.step("with `guests spawns on` the spawns reach it again", lambda: poll(lambda: any(spawn_is_valid(m) for m in spawns_since(host, mark)), T_EFFECT, T_POLL, "the spawn"))
+    rep.step("every `spawn` the DLL got is valid and each was answered", lambda: all(spawn_is_valid(m) for m in spawns_since(host)) and answered_every_spawn(host))
+    rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))
+    mark = server.log.mark()
+    host.stop()
+    rep.step("the session ends when the link drops", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, mark), must=True)
+
+
 SCENARIO_FUNCS = {"singleplayer": scenario_singleplayer, "guest": scenario_guest, "versions": scenario_versions, "flood": scenario_flood,
                   "reconnect": scenario_reconnect, "twohosts": scenario_twohosts, "joinpassword": scenario_joinpassword,
                   "replica": scenario_replica, "twohosts2": scenario_twohosts2, "meetup": scenario_meetup, "devices": scenario_devices,
-                  "figures": scenario_figures, "breach": scenario_breach, "hub": scenario_hub}
+                  "figures": scenario_figures, "breach": scenario_breach, "hub": scenario_hub, "match": scenario_match, "heat": scenario_heat,
+                  "overlord": scenario_overlord}
 PHASE3 = ("replica", "twohosts2", "meetup")  # the scenarios whose fake host runs `--replica`
 # the fake host mode (and no layer) of each scenario after Phase 1: --replica (Phase 3), --devices (Phase 4), --figures (Phase 5), --hacks2 (Phase 6),
-# --vendor (Phase 7)
-SCENARIO_MODES = {**dict.fromkeys(PHASE3, ("replica",)), "devices": ("devices",), "figures": ("figures",), "breach": ("hacks2",), "hub": ("vendor",)}
+# --vendor (Phase 7), --modes (Phase 8)
+SCENARIO_MODES = {**dict.fromkeys(PHASE3, ("replica",)), "devices": ("devices",), "figures": ("figures",), "breach": ("hacks2",), "hub": ("vendor",),
+                  **dict.fromkeys(PHASE8_NEEDS, ("modes",))}
 
 
 class Flooder(threading.Thread):
@@ -1537,12 +1749,26 @@ class Flooder(threading.Thread):
 
 
 # ---- running -----------------------------------------------------------------------------------------------------------
-def run_scenarios(env: Env, names: Iterable[str], say: Callable[[str], None] = print) -> list[Report]:
-    """Run the scenarios in order; everything a scenario started is stopped before the next one (its ports must be free)."""
+def unbuilt(repo: Path | None, name: str) -> str:
+    """Why a Phase 8 scenario cannot run in this checkout ("" when it can): the folder of the package that builds its server side is not there."""
+    needs = PHASE8_NEEDS.get(name)
+    if repo is None or needs is None or (repo / PHASE8_SOURCE / needs).is_dir():
+        return ""
+    return f"the Phase 8 server code ({PHASE8_SOURCE / needs}) is not in this checkout"
+
+
+def run_scenarios(env: Env, names: Iterable[str], say: Callable[[str], None] = print, skip_unbuilt: bool = False) -> list[Report]:
+    """Run the scenarios in order; everything a scenario started is stopped before the next one (its ports must be free). With `skip_unbuilt` (`--all`) a
+    scenario whose server side is not in the checkout is reported as skipped instead of failing."""
     reports = []
     for name in names:
         say(f"== {name}")
         rep = Report(name, say)
+        if skip_unbuilt and (why := unbuilt(getattr(env, "repo", None), name)):
+            rep.skipped = why
+            say(f"  SKIP  {name}: {why}")
+            reports.append(rep)
+            continue
         try:
             SCENARIO_FUNCS[name](env, rep)
         except Abort as e:
@@ -1563,7 +1789,12 @@ def run_scenarios(env: Env, names: Iterable[str], say: Callable[[str], None] = p
 def summary(reports: list[Report], say: Callable[[str], None] = print) -> int:
     say("== summary")
     for rep in reports:
+        if rep.skipped:
+            say(f"  SKIP  {rep.name}: {rep.skipped}")
+            continue
         say(f"  {'PASS' if rep.ok else 'FAIL'}  {rep.name}: {sum(ok for _, ok, _ in rep.checks)}/{len(rep.checks)} checks")
+    if any(r.skipped for r in reports):
+        say("  (a skipped scenario did not run: it is not a pass; run it by name once its package is merged)")
     return 0 if reports and all(r.ok for r in reports) else 1
 
 
@@ -1648,7 +1879,7 @@ def main(argv: list[str] | None = None, repo: Path = ROOT) -> int:
     try:
         if args.guest is not None:
             return run_guest_client(env, args.guest)
-        return summary(run_scenarios(env, names))
+        return summary(run_scenarios(env, names, skip_unbuilt=True) if args.all else run_scenarios(env, names))
     except KeyboardInterrupt:
         print("interrupted: stopping everything this run started", file=sys.stderr)
         return 130
