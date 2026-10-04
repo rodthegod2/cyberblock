@@ -163,6 +163,79 @@ public final class AtlasWire {
 		return new ArrayList<>(done);
 	}
 
+	// ---- the server's shared Night City map (megaplan 3-R2: clients get tiles on request, cyberblock:ui t:"maptile") ----
+
+	/** Tiles asked for in one {@code cyberblock:act maptile} request (3R's NightCityMap.MAX_REQUEST). */
+	public static final int MAX_MAPTILE_TILES = 32;
+	/** Tile coordinates a request or an answer may carry (3R's limit; terrain's 1.5e7 cells are 234375 tiles). */
+	public static final int MAX_TILE = 1 << 20;
+	/** A tile's version is a CRC32 of its cells: 1 .. 2^32 - 1, 0 when the server knows nothing there. */
+	public static final long MAX_VERSION = 0xFFFFFFFFL;
+
+	/**
+	 * One tile of the shared map: {@code v} is the server's version of it (0: the server knows nothing there) and {@code cells} its
+	 * 4096 packed cells as {@link AtlasTiles} keeps them ({@code cells[z * 64 + x]}), null when the server knows nothing there.
+	 */
+	public record MapTile(int tx, int tz, long v, short @Nullable [] cells) {
+	}
+
+	/**
+	 * {@code cyberblock:act maptile}: {"tiles":[tx, tz, ...], "have":[v, ...]} for 1..32 {tx, tz, version this client has} triples
+	 * (0 = none), so the server answers only the tiles that changed since.
+	 */
+	public static String mapTileRequest(final List<long[]> asked) {
+		if (asked.isEmpty() || asked.size() > MAX_MAPTILE_TILES) {
+			throw new IllegalArgumentException("1 to " + MAX_MAPTILE_TILES + " tiles, not " + asked.size());
+		}
+
+		JsonArray tiles = new JsonArray(), have = new JsonArray();
+		for (long[] tile : asked) {
+			tiles.add(tile[0]);
+			tiles.add(tile[1]);
+			have.add(tile[2]);
+		}
+
+		JsonObject m = new JsonObject();
+		m.add("tiles", tiles);
+		m.add("have", have);
+		return m.toString();
+	}
+
+	/**
+	 * {@code cyberblock:ui maptile}: {"tx":int, "tz":int, "v":0..2^32-1, "c":"<base64 of the 4096 cells as big-endian shorts>"}
+	 * ({@code c} absent when {@code v} is 0: the server knows nothing there). Null when a field breaks its limit, {@code c} is not
+	 * base64 of exactly 8192 bytes, or {@code c} is missing for a known tile.
+	 */
+	public static @Nullable MapTile parseMapTile(final JsonObject m) {
+		Long tx = whole(m.get("tx")), tz = whole(m.get("tz")), v = whole(m.get("v"));
+		if (tx == null || tz == null || v == null || Math.abs(tx) > MAX_TILE || Math.abs(tz) > MAX_TILE || v < 0 || v > MAX_VERSION) {
+			return null;
+		}
+
+		if (!m.has("c")) {
+			return v == 0 ? new MapTile((int) (long) tx, (int) (long) tz, 0, null) : null;
+		}
+
+		if (!(m.get("c") instanceof JsonPrimitive p) || !p.isString()) {
+			return null;
+		}
+
+		byte[] bytes;
+		try {
+			bytes = java.util.Base64.getDecoder().decode(p.getAsString());
+		} catch (IllegalArgumentException e) {
+			return null;
+		}
+
+		if (bytes.length != AtlasTiles.TILE * AtlasTiles.TILE * 2) {
+			return null;
+		}
+
+		short[] cells = new short[AtlasTiles.TILE * AtlasTiles.TILE];
+		java.nio.ByteBuffer.wrap(bytes).asShortBuffer().get(cells);
+		return new MapTile((int) (long) tx, (int) (long) tz, v, cells);
+	}
+
 	/** Seconds left as the HUD shows them, rounded up: "~3 h 12 min", "~12 min", "under a minute", "unknown time" (negative). */
 	public static String eta(final double seconds) {
 		if (!(seconds >= 0.0)) {

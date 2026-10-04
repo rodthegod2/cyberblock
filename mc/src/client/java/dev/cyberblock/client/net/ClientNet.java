@@ -48,6 +48,8 @@ public final class ClientNet {
 	/** Messages this client builds for its own DLL (section 1.2, LOCAL): never accepted from the server over {@code cyberblock:down}. */
 	private static final Set<String> CLIENT_ONLY = Set.of("hello", "status", "binds", "uiact", "persp", "flight", "survey", "session", "prefs");
 	private static volatile Role role = Role.NONE;
+	/** The server's {@code hs_ack.features} bits (Payloads.FEATURE_*); 0 off a server or before the first hs_ack. */
+	private static volatile int features;
 	/** The DLL's hello still has to go UP for the current host grant (client thread). */
 	private static boolean helloPending;
 	private static volatile boolean connected;
@@ -84,9 +86,15 @@ public final class ClientNet {
 		return role;
 	}
 
+	/** The phase features the server has ({@code hs_ack.features}, Payloads.FEATURE_*); 0 off a server. */
+	public static int features() {
+		return features;
+	}
+
 	private static void onJoin(final Minecraft minecraft) {
 		connected = true;
 		role = Role.NONE;
+		features = 0;
 		seq = 0;
 		hstate.reset();
 		ServerData server = minecraft.getCurrentServer();
@@ -100,6 +108,7 @@ public final class ClientNet {
 		boolean was = connected;
 		connected = false;
 		role = Role.NONE;
+		features = 0;
 		Roster.clear();
 		HostState.setAlignK(0);
 		if (was) {
@@ -141,6 +150,7 @@ public final class ClientNet {
 		Role now = ack.ok() && ack.role().equals("host") ? Role.HOST : ack.ok() ? Role.GUEST : Role.NONE;
 		Role before = role;
 		role = now;
+		features = ack.ok() ? ack.features() : 0;
 		Cyberblock.LOG.info("handshake: server {} -> {}{}", ack.server(), ack.ok() ? ack.role() : "refused", ack.reason().isEmpty() ? "" : " (" + ack.reason() + ")");
 		if (!ack.reason().isEmpty()) {
 			UiLink.toast("warning", Component.translatableWithFallback("cyberblock.handshake.title", "Cyberblock").getString(), ack.reason(), 10.0);

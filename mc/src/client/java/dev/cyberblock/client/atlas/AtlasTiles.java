@@ -107,6 +107,22 @@ public final class AtlasTiles {
 		return true;
 	}
 
+	/**
+	 * Replaces tile (tx, tz) with {@code cells} (4096 packed cells, {@code cells[z * TILE + x]}): a guest's copy of a server tile.
+	 * The tile's version moves on, so what was drawn from it is rebuilt.
+	 */
+	public synchronized void putTile(final int tx, final int tz, final short[] cells) {
+		if (cells.length != TILE * TILE) {
+			throw new IllegalArgumentException("a tile has " + TILE * TILE + " cells, not " + cells.length);
+		}
+
+		Tile tile = this.tiles.computeIfAbsent(key(tx, tz), k -> new Tile());
+		System.arraycopy(cells, 0, tile.cells, 0, cells.length);
+		tile.version++;
+		this.version++;
+		this.dirtyRegions.add(key(regionOf(tx), regionOf(tz)));
+	}
+
 	/** The cell's packed value, 0 when unknown. */
 	public synchronized short get(final int cx, final int cz) {
 		Tile tile = this.tiles.get(key(tileOf(cx), tileOf(cz)));

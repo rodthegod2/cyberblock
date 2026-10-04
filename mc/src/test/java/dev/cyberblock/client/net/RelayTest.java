@@ -19,7 +19,7 @@ class RelayTest {
 		"aim, BOTH", "key, LOCAL", "slot, LOCAL", "scroll, LOCAL", "cursor, LOCAL", "click, LOCAL", "char, LOCAL", "skey, LOCAL",
 		"dmg, UP", "npcs, BOTH", "mobdmg, UP", "pcells, UP", "unlead, UP", "killed, UP", "scaninfo, UP", "hackresult, UP",
 		"hackspread, UP", "look, LOCAL", "stats, BOTH", "quest, LOCAL", "pins, LOCAL", "prompt, LOCAL", "choices, LOCAL",
-		"sub, LOCAL", "call, LOCAL", "notify, LOCAL", "screen, LOCAL", "reply, LOCAL", "terrain, LOCAL", "surveystate, LOCAL",
+		"sub, LOCAL", "call, LOCAL", "notify, LOCAL", "screen, LOCAL", "reply, LOCAL", "terrain, BOTH", "surveystate, LOCAL",
 		"cmd, DEV",
 		// not a DLL message: never relayed (the server's whitelist would drop it anyway)
 		"hstate, LOCAL", "session, LOCAL", "nonsense, LOCAL"
@@ -92,6 +92,203 @@ class RelayTest {
 		assertTrue(Relay.split("dmg", parse(raw), raw, 100).isEmpty());
 		String ground = "{\"t\":\"ground\",\"c\":[1,2,3]}" + " ".repeat(100);
 		assertTrue(Relay.split("ground", parse(ground), ground, 50).isEmpty(), "not whole quadruples");
+	}
+
+	/** Megaplan 1.9 Phase 3: ground.m holds one material code per quadruple; a split keeps each code with its quadruple. */
+	@Test
+	void groundMaterialsAreSplitWithTheirQuadruples() {
+		JsonObject m = new JsonObject();
+		m.addProperty("t", "ground");
+		JsonArray c = new JsonArray();
+		JsonArray codes = new JsonArray();
+		for (int q = 0; q < 900; q++) {
+			c.add(q);
+			c.add(-q);
+			c.add(60);
+			c.add(60 + q % 3);
+			codes.add(q % 7);
+		}
+
+		m.add("c", c);
+		m.add("m", codes);
+		List<String> chunks = Relay.split("ground", m, m.toString(), 2500);
+		assertTrue(chunks.size() > 1);
+		int q = 0;
+		for (String chunk : chunks) {
+			assertTrue(Relay.bytes(chunk) <= 2500, "chunk of " + Relay.bytes(chunk) + " bytes");
+			JsonObject part = parse(chunk);
+			JsonArray cells = part.getAsJsonArray("c"), mats = part.getAsJsonArray("m");
+			assertEquals(cells.size() / 4, mats.size());
+			for (int i = 0; i < mats.size(); i++, q++) {
+				assertEquals(q, cells.get(i * 4).getAsInt(), "the quadruples stay in order");
+				assertEquals(q % 7, mats.get(i).getAsInt(), "each code stays with its quadruple");
+			}
+		}
+
+		assertEquals(900, q);
+	}
+
+	/** An m of the wrong length cannot be cut with the quadruples: it is left out (materials are optional), the cells still go. */
+	@Test
+	void aGroundMaterialListOfTheWrongLengthIsLeftOut() {
+		JsonObject m = new JsonObject();
+		m.addProperty("t", "ground");
+		JsonArray c = new JsonArray();
+		for (int i = 0; i < 2000; i++) {
+			c.add(i);
+		}
+
+		m.add("c", c);
+		m.add("m", parse("{\"a\":[1,2,3]}").getAsJsonArray("a"));
+		List<String> chunks = Relay.split("ground", m, m.toString(), 1500);
+		assertTrue(chunks.size() > 1);
+		int n = 0;
+		for (String chunk : chunks) {
+			JsonObject part = parse(chunk);
+			assertFalse(part.has("m"));
+			n += part.getAsJsonArray("c").size();
+		}
+
+		assertEquals(2000, n);
+	}
+
+	/** Phase 3: terrain is split between whole quadruples like ground. */
+	@Test
+	void terrainIsSplitBetweenWholeQuadruples() {
+		JsonObject m = new JsonObject();
+		m.addProperty("t", "terrain");
+		JsonArray c = new JsonArray();
+		for (int i = 0; i < 400; i++) {
+			c.add(i);
+		}
+
+		m.add("c", c);
+		List<String> chunks = Relay.split("terrain", m, m.toString(), 600);
+		assertTrue(chunks.size() > 1);
+		assertTrue(chunks.stream().allMatch(s -> parse(s).getAsJsonArray("c").size() % 4 == 0));
+	}
+
+	/** One DLL terrain message (at most 64 cells) of cells n0 .. n0 + count - 1, spread like Night City survey hits. */
+	private static JsonObject terrain(final int n0, final int count, final int y) {
+		JsonObject m = new JsonObject();
+		m.addProperty("t", "terrain");
+		JsonArray c = new JsonArray();
+		for (int n = n0; n < n0 + count; n++) {
+			c.add(-3000 + n % 400);
+			c.add(-2000 + n / 400);
+			c.add(y + n % 50);
+			c.add(n % 7 == 0 ? 1 : 0);
+		}
+
+		m.add("c", c);
+		return m;
+	}
+
+	/** Sends the terrain batches to {@code out}; the relay runs on the clock in {@code now} (ns). */
+	private static void relayTerrainTo(final List<JsonObject> out, final long[] now) {
+		Relay.reset(() -> now[0]);
+		Relay.install((t, json) -> {
+			assertEquals("terrain", t);
+			assertTrue(Relay.bytes(json) <= 30000, "a batch of " + Relay.bytes(json) + " bytes");
+			out.add(parse(json));
+		}, 30000);
+	}
+
+	/**
+	 * A survey tour: 500 DLL messages of 64 cells in one second, the client ticking at 20 Hz. The server takes terrain at 30 a second
+	 * (burst 200) and kicks at 150 a second, so at most 25 go up, each under 1024 cells (NightCityMap.MAX_CELLS), and every cell
+	 * arrives once the backlog drains (it stayed under the buffer bound).
+	 */
+	@Test
+	void aSurveyBurstGoesUpInFewBatchesWithoutLosingCells() {
+		List<JsonObject> sent = new ArrayList<>();
+		long[] now = {0};
+		relayTerrainTo(sent, now);
+		try {
+			for (int i = 0; i < 500; i++) {
+				now[0] = i * 2_000_000L;
+				JsonObject m = terrain(i * 64, 64, 60);
+				Relay.up("terrain", m, m.toString());
+				if (i % 25 == 0) {
+					Relay.tick();
+				}
+			}
+
+			now[0] = 1_000_000_000L;
+			Relay.tick();
+			assertTrue(sent.size() <= 25, sent.size() + " terrain messages in one second");
+			for (int i = 0; i < 100 && Relay.terrainWaiting() > 0; i++) {
+				now[0] += Relay.TERRAIN_INTERVAL_NANOS;
+				Relay.tick();
+			}
+
+			assertEquals(0, Relay.terrainWaiting());
+			assertEquals(0, Relay.terrainDropped());
+			java.util.Set<Long> cells = new java.util.HashSet<>();
+			for (JsonObject batch : sent) {
+				JsonArray c = batch.getAsJsonArray("c");
+				assertTrue(c.size() % 4 == 0 && c.size() <= 4 * Relay.TERRAIN_BATCH, c.size() / 4 + " cells");
+				for (int i = 0; i < c.size(); i += 4) {
+					assertTrue(cells.add(dev.cyberblock.client.atlas.AtlasTiles.key(c.get(i).getAsInt(), c.get(i + 1).getAsInt())), "each cell once");
+				}
+			}
+
+			assertEquals(500 * 64, cells.size());
+		} finally {
+			Relay.install((t, json) -> {}, 30000);
+			Relay.reset(System::nanoTime);
+		}
+	}
+
+	/** A cell surveyed again before its batch goes keeps only its newest height; a burst never sends faster than every 50 ms. */
+	@Test
+	void aCellSentTwiceGoesUpOnceWithItsNewestValue() {
+		List<JsonObject> sent = new ArrayList<>();
+		long[] now = {0};
+		relayTerrainTo(sent, now);
+		try {
+			JsonObject old = terrain(0, 64, 60), fresh = terrain(0, 1, 90);
+			Relay.up("terrain", old, old.toString());
+			Relay.up("terrain", fresh, fresh.toString());
+			Relay.tick();
+			Relay.tick(); // a catch-up tick in the same moment sends nothing more
+			assertEquals(1, sent.size());
+			JsonArray c = sent.get(0).getAsJsonArray("c");
+			assertEquals(64 * 4, c.size());
+			assertEquals(-3000, c.get(c.size() - 4).getAsInt(), "the re-sent cell moved to the back");
+			assertEquals(90, c.get(c.size() - 2).getAsInt());
+			JsonObject bad = parse("{\"t\":\"terrain\",\"c\":[1,2,3]}");
+			Relay.up("terrain", bad, bad.toString());
+			assertEquals(0, Relay.terrainWaiting(), "an invalid terrain is dropped whole");
+		} finally {
+			Relay.install((t, json) -> {}, 30000);
+			Relay.reset(System::nanoTime);
+		}
+	}
+
+	/** Past the buffer bound the oldest waiting cells are dropped and counted; the newest stay. */
+	@Test
+	void aFullTerrainBufferDropsTheOldestCells() {
+		List<JsonObject> sent = new ArrayList<>();
+		long[] now = {0};
+		relayTerrainTo(sent, now);
+		try {
+			int messages = Relay.TERRAIN_BUFFER / 64 + 10;
+			for (int i = 0; i < messages; i++) {
+				JsonObject m = terrain(i * 64, 64, 60);
+				Relay.up("terrain", m, m.toString());
+			}
+
+			assertEquals(Relay.TERRAIN_BUFFER, Relay.terrainWaiting());
+			assertEquals(640, Relay.terrainDropped());
+			Relay.tick();
+			JsonArray c = sent.get(0).getAsJsonArray("c");
+			assertEquals(-3000 + 640 % 400, c.get(0).getAsInt(), "the first cell left is the 641st sent");
+			assertEquals(-2000 + 640 / 400, c.get(1).getAsInt());
+		} finally {
+			Relay.install((t, json) -> {}, 30000);
+			Relay.reset(System::nanoTime);
+		}
 	}
 
 	@Test
