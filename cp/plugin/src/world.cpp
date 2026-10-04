@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <iterator>
 #include <utility>
 #include <vector>
@@ -805,26 +806,181 @@ namespace cb::world
 								  std::span<const double> yawsCp, std::span<const uint8_t> vehicles,
 								  std::span<const uint8_t> hostile, double off, std::span<const uint8_t> dead)
 	{
+		return make_npcs2(ids, feetCp, yawsCp, vehicles, hostile, off, dead, NpcTags{}, nullptr, 0.0);
+	}
+
+	// ---- Phase 5 (task 5-D1) ----
+
+	std::optional<std::string> colour_hex(int32_t packed, ColourFormat format)
+	{
+		if (packed < 0 || packed > 0xFFFFFF)
+			return std::nullopt;
+		const double first = (packed >> 16) & 0xFF, second = (packed >> 8) & 0xFF, third = packed & 0xFF;
+		double r = first / 255.0, g = second / 255.0, b = third / 255.0;
+		if (format == ColourFormat::Hsb)
+		{
+			const double hue = first * 360.0 / 256.0 / 60.0; // sector 0..6
+			const double sat = second / 255.0, val = third / 255.0;
+			const double f = hue - std::floor(hue);
+			const double p = val * (1.0 - sat), q = val * (1.0 - sat * f), t = val * (1.0 - sat * (1.0 - f));
+			switch (static_cast<int>(hue) % 6)
+			{
+				case 0: r = val, g = t, b = p; break;
+				case 1: r = q, g = val, b = p; break;
+				case 2: r = p, g = val, b = t; break;
+				case 3: r = p, g = q, b = val; break;
+				case 4: r = t, g = p, b = val; break;
+				default: r = val, g = p, b = q; break;
+			}
+		}
+		char text[8];
+		std::snprintf(text, sizeof text, "#%02X%02X%02X", static_cast<int>(std::lround(r * 255.0)),
+					  static_cast<int>(std::lround(g * 255.0)), static_cast<int>(std::lround(b * 255.0)));
+		return std::string(text);
+	}
+
+	std::optional<std::string> figure_tag(std::string_view text)
+	{
+		if (text.empty() || text.size() > kMaxFigureTag)
+			return std::nullopt;
+		for (const char c : text)
+			if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '.' && c != '/' && c != '-')
+				return std::nullopt;
+		return std::string(text);
+	}
+
+	std::vector<int> NpcMotion::update(std::span<const uint64_t> ids, std::span<const Vec3> feetCp,
+									   std::span<const uint8_t> vehicles, double nowSeconds)
+	{
+		std::vector<int> bits(ids.size(), 0);
+		std::map<uint64_t, Sample> next;
+		for (size_t i = 0; i < ids.size() && i < feetCp.size() && i < vehicles.size(); ++i)
+		{
+			if (vehicles[i] != 0 || !finite(feetCp[i]))
+				continue;
+			const auto old = m_known.find(ids[i]);
+			Sample sample{feetCp[i], nowSeconds, 0};
+			if (old != m_known.end())
+			{
+				const double dt = nowSeconds - old->second.at;
+				if (dt < kMinMotionInterval && dt >= 0.0)
+				{
+					sample = old->second; // the same moment again: keep the old sample, so the next delta spans real time
+				}
+				else if (dt > 0.0 && dt <= kMaxMotionInterval)
+				{
+					const double speed = std::hypot(feetCp[i].x - old->second.feet.x, feetCp[i].y - old->second.feet.y) / dt;
+					const bool wasWalk = (old->second.bits & kAnimWalk) != 0, wasRun = (old->second.bits & kAnimRun) != 0;
+					if (speed <= kTeleportSpeed)
+					{
+						if (speed >= (wasRun ? kRunOff : kRunOn))
+							sample.bits = kAnimRun;
+						else if (speed >= (wasWalk || wasRun ? kWalkOff : kWalkOn))
+							sample.bits = kAnimWalk;
+					}
+				}
+			}
+			bits[i] = sample.bits;
+			next[ids[i]] = sample;
+		}
+		m_known = std::move(next);
+		return bits;
+	}
+
+	std::optional<json> make_npcs2(std::span<const uint64_t> ids, std::span<const Vec3> feetCp,
+								   std::span<const double> yawsCp, std::span<const uint8_t> vehicles,
+								   std::span<const uint8_t> hostile, double off, std::span<const uint8_t> dead,
+								   const NpcTags &tags, NpcMotion *motion, double nowSeconds)
+	{
 		const size_t n = ids.size();
 		if (feetCp.size() != n || yawsCp.size() != n || vehicles.size() != n || hostile.size() != n ||
 			(!dead.empty() && dead.size() != n))
 			return std::nullopt;
+		for (const size_t size : {tags.roles.size(), tags.factions.size(), tags.archetypes.size(), tags.vclass.size(),
+								  tags.genders.size(), tags.anims.size(), tags.colours.size(), tags.hp.size()})
+			if (size != 0 && size != n)
+				return std::nullopt;
+		const std::vector<int> motionBits =
+			motion != nullptr ? motion->update(ids, feetCp, vehicles, nowSeconds) : std::vector<int>(n, 0);
 		json list = json::array();
 		for (size_t i = 0; i < n; ++i)
 		{
 			if (!finite(feetCp[i]) || !std::isfinite(yawsCp[i]))
 				continue;
 			const Vec3 feet = cp_to_mc_pos(feetCp[i].x, feetCp[i].y, feetCp[i].z, off);
+			const bool vehicle = vehicles[i] != 0;
 			json entry = {{"id", std::to_string(ids[i])},
 						  {"p", triple_json(feet)},
 						  {"yaw", rounded(cp_yaw_to_mc_yaw(yawsCp[i]), 1e2)},
-						  {"kind", vehicles[i] != 0 ? "vehicle" : "human"},
+						  {"kind", vehicle ? "vehicle" : "human"},
 						  {"hostile", hostile[i] != 0}};
-			if (!dead.empty() && dead[i] != 0)
+			const bool gone = !dead.empty() && dead[i] != 0;
+			if (gone)
 				entry["dead"] = true;
+			const auto put = [&](const char *key, std::span<const std::string> from)
+			{
+				if (!from.empty())
+					if (const auto tag = figure_tag(from[i]))
+						entry[key] = *tag;
+			};
+			put("role", tags.roles);
+			put("fac", tags.factions);
+			put("arch", tags.archetypes);
+			if (!tags.genders.empty())
+				entry["g"] = tags.genders[i] == 1 || tags.genders[i] == 2 ? tags.genders[i] : 0;
+			if (!tags.anims.empty() || motion != nullptr)
+			{
+				int anim = tags.anims.empty() || tags.anims[i] < 0 ? 0 : tags.anims[i] & kAnimMask; // negative: invalid
+				anim &= ~(kAnimWalk | kAnimRun); // the scripts cannot read them (Phase 0 f); only the DLL sets them
+				if (!vehicle && !gone && (anim & (kAnimRagdoll | kAnimDead)) == 0)
+					anim |= motionBits[i];
+				entry["anim"] = anim;
+			}
+			if (vehicle)
+			{
+				put("vc", tags.vclass);
+				if (!tags.colours.empty())
+					if (const auto colour = colour_hex(tags.colours[i]))
+						entry["col"] = *colour;
+			}
+			if (!tags.hp.empty() && std::isfinite(tags.hp[i]) && tags.hp[i] >= 0.0)
+				entry["hp"] = rounded(std::min(tags.hp[i], 1.0), 1e3);
 			list.push_back(std::move(entry));
 		}
 		return json{{"t", "npcs"}, {"list", std::move(list)}};
+	}
+
+	const char *NpcTagSummary::path() const
+	{
+		if (people > 0 && (male + female > 0 || withArchetype > 0))
+			return "full";
+		return withFaction > 0 ? "faction only" : "none";
+	}
+
+	NpcTagSummary summarize_npcs(const json &list)
+	{
+		NpcTagSummary s;
+		if (!list.is_array())
+			return s;
+		for (const json &e : list)
+		{
+			if (e.value("kind", "") == "vehicle")
+			{
+				++s.vehicles;
+				s.withColour += e.contains("col") ? 1 : 0;
+				continue;
+			}
+			++s.people;
+			s.withFaction += e.contains("fac") ? 1 : 0;
+			s.withRole += e.contains("role") ? 1 : 0;
+			s.withArchetype += e.contains("arch") ? 1 : 0;
+			const int g = e.value("g", 0);
+			(g == 1 ? s.male : g == 2 ? s.female : s.unknownGender) += 1;
+			const int anim = e.value("anim", 0);
+			s.walking += (anim & kAnimWalk) != 0 ? 1 : 0;
+			s.running += (anim & kAnimRun) != 0 ? 1 : 0;
+		}
+		return s;
 	}
 
 	json make_cam(int64_t frame, Vec3 position, YawPitch look, double vfov, Vec3 feet, double bodyYaw, CamFlags flags,
