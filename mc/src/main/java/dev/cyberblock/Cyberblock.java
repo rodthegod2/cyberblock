@@ -8,9 +8,12 @@ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,6 +50,14 @@ public class Cyberblock implements ModInitializer {
 			ProxyManager.clear();
 			MobWar.clear();
 			WorldBridge.detach();
+		});
+		// outline blocks: survival may not break them, creative breaks come back (plan Q-B4); server side only
+		PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, blockEntity) ->
+			!(level instanceof ServerLevel server && player instanceof ServerPlayer breaker) || WorldBridge.mayBreak(server, breaker, pos, state));
+		PlayerBlockBreakEvents.AFTER.register((level, player, pos, state, blockEntity) -> {
+			if (level instanceof ServerLevel server && player instanceof ServerPlayer breaker) {
+				WorldBridge.broken(server, breaker, pos, state);
+			}
 		});
 		ServerEntityEvents.ENTITY_LOAD.register(MobWar::onEntityLoad);
 		ServerTickEvents.END_SERVER_TICK.register(WorldBridge::tick);

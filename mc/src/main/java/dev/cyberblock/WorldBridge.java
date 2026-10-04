@@ -318,6 +318,49 @@ public final class WorldBridge {
 		}
 	}
 
+	/** Server thread: which of our outline blocks this is (before it was broken), or null when it is not one of ours. */
+	private static OutlineRules.Kind outlineKind(final ServerLevel level, final BlockPos pos, final BlockState state) {
+		MinecraftServer s = server;
+		if (s == null || level != s.overworld() || !state.is(Blocks.BARRIER)) {
+			return null;
+		}
+
+		if (barriers.contains(pos)) {
+			return OutlineRules.Kind.OUTLINE_BARRIER;
+		}
+
+		return pcells.contains(pos.asLong()) ? OutlineRules.Kind.PROJECTILE_BARRIER : null;
+	}
+
+	/** Server thread, before a player breaks a block (PlayerBlockBreakEvents.BEFORE): false refuses the break (plan Q-B4). */
+	public static boolean mayBreak(final ServerLevel level, final ServerPlayer player, final BlockPos pos, final BlockState state) {
+		OutlineRules.Kind kind = outlineKind(level, pos.immutable(), state);
+		return kind == null || OutlineRules.decide(player.gameMode(), OutlineRules.creativeErases(), kind) != OutlineRules.Decision.DENY;
+	}
+
+	/**
+	 * Server thread, after a player broke a block (PlayerBlockBreakEvents.AFTER; state is what it was). An outline block: only the
+	 * Minecraft block went (BlockEvents.change sends nothing for barrier to air: Cyberpunk hears nothing), and the cell leaves our
+	 * barrier set, so a later unground does not try to remove it.
+	 */
+	public static void broken(final ServerLevel level, final ServerPlayer player, final BlockPos pos, final BlockState state) {
+		BlockPos cell = pos.immutable();
+		OutlineRules.Kind kind = outlineKind(level, cell, state);
+		if (kind == OutlineRules.Kind.PROJECTILE_BARRIER) {
+			pcells.promote(cell.asLong()); // forgotten: it is not ours to take out when its 3 s are up
+			return;
+		}
+
+		if (kind != OutlineRules.Kind.OUTLINE_BARRIER) {
+			return;
+		}
+
+		barriers.remove(cell);
+		OutlineRules.Decision decision = OutlineRules.decide(player.gameMode(), OutlineRules.creativeErases(), kind);
+		Cyberblock.LOG.info("outline: {} broke {} {} {} ({})", player.getName().getString(), cell.getX(), cell.getY(), cell.getZ(),
+			decision == OutlineRules.Decision.KEEP ? "kept: permanent erase" : "snap back in 10 s");
+	}
+
 	/** Run a command as the server (op). Results go to the log, not to chat (send_command_feedback is off). */
 	public static void command(final String command) {
 		MinecraftServer s = server;
