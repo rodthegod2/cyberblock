@@ -210,7 +210,7 @@ def test_default_ports_are_package_1t_and_stay_in_the_phase_1_ranges():
     p.check()
     servers = {name: p.server(name) for name in mpcheck.SCENARIOS}
     assert servers == {"singleplayer": 25914, "guest": 25914, "versions": 25915, "flood": 25916, "reconnect": 25917, "twohosts": 25918, "joinpassword": 25915,
-                       "replica": 25914, "twohosts2": 25916, "meetup": 25915, "devices": 25917, "figures": 25917}
+                       "replica": 25914, "twohosts2": 25916, "meetup": 25915, "devices": 25917, "figures": 25917, "hub": 25916}
     assert {p.client(n) for n in mpcheck.OFFLINE_NAMES} == {25754, 25755, 25756, 25757} and 25600 not in servers.values()
     assert [p.frame(n) for n in mpcheck.OFFLINE_NAMES] == ["Local\\CyberblockFrame1TH", "Local\\CyberblockFrame1TH2", "Local\\CyberblockFrame1TG", "Local\\CyberblockFrame1TG2"]
 
@@ -234,7 +234,7 @@ def test_a_frame_prefix_that_makes_the_users_frame_name_is_refused():
 def test_every_scenario_has_a_function_and_a_server_slot():
     assert set(mpcheck.SCENARIOS) == set(mpcheck.SCENARIO_FUNCS) == set(mpcheck.SERVER_SLOT)
     assert mpcheck.SCENARIOS == ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup", "devices",
-                                 "figures")
+                                 "figures", "hub")
 
 
 # ---- logs ------------------------------------------------------------------------------------------------------------------
@@ -1602,3 +1602,165 @@ def test_a_version_refusal_counts_from_the_kick_reason_or_from_the_handshake_lin
     early.path.write_text("CbGuest1 lost connection: Disconnected\n" + shake, encoding="utf-8")  # the connection loss must come after the refusal
     assert mpcheck.refused(kicked, "CbGuest1", "1.1.0", message) and mpcheck.refused(closed, "CbGuest1", "1.1.0", message)
     assert not mpcheck.refused(early, "CbGuest1", "1.1.0", message) and not mpcheck.refused(closed, "CbGuest2", "1.1.0", message)
+
+
+# ---- Phase 7: the hub scenario (megaplan 7-P1) against a simulated server ----------------------------------------------------------
+# The server as the plan has it for the Afterlife hub: `/cyberblock hub` enters (and, run again, leaves), a linked player's DLL is told `park on:true` then
+# `hub in:true` (and `hub in:false` then `park on:false`), a guest has no DLL so nobody is told, Steve is in `cyberblock:afterlife` while inside.
+SIM_HOME = "minecraft:overworld"
+
+
+class Sim7Server(SimServer):
+    def __init__(self, tmp, port, env_sim, bugs, join_password=""):
+        super().__init__(tmp, port, env_sim, bugs, join_password)
+        self.dim, self.in_hub = {}, set()
+
+    def tell(self, name, messages):
+        """The DLL of host `name` (when its link is up) is sent `messages` ((t, fields) pairs), in order."""
+        host = self.sim.hosts.get(name)
+        if host and host["linked"]:
+            for t, fields in messages:
+                append(host["log"], f'[{name}] {t}: {json.dumps({"t": t, **fields})}')
+
+    def enter(self, name):
+        self.in_hub.add(name)
+        self.dim[name] = mpcheck.HUB_DIMENSION
+        order = [("park", {"on": True}), ("hub", {"in": True})]
+        if "hub-before-park" in self.bugs:
+            order.reverse()
+        if "no-park" in self.bugs:
+            order = order[1:] if order[0][0] == "park" else order[:1]
+        if "double-hub" in self.bugs:
+            order.append(("hub", {"in": True}))
+        self.tell(name, order)
+        if "guest-gets-hub" in self.bugs and name not in self.sim.hosts:  # the bug: a guest's trip is told to every host's DLL
+            for host in self.sim.hosts:
+                self.tell(host, order)
+        if "relay-drops-parked" in self.bugs:
+            append(self.log, f"[Server thread/WARN]: relay: {name} dropped parked x 1 (no rate row)")
+
+    def leave(self, name):
+        self.in_hub.discard(name)
+        if "stay-in-hub" not in self.bugs:
+            self.dim[name] = SIM_HOME
+        order = [("hub", {"in": False}), ("park", {"on": False})]
+        if "park-first-on-leave" in self.bugs:
+            order.reverse()
+        self.tell(name, order)
+
+    def rcon(self, command):
+        if match := re.fullmatch(r"data get entity (\S+) Dimension", command):
+            dim = self.dim.get(match.group(1))
+            return f'{match.group(1)} has the following entity data: "{dim}"' if dim else "No entity was found"
+        actor, inner = None, command
+        if match := re.fullmatch(r"execute as (\S+) run (.*)", command):
+            actor, inner = match.groups()
+        if actor in self.dim and inner in ("cyberblock hub", "cyberblock hub leave"):
+            inside = actor in self.in_hub
+            if not inside and inner == "cyberblock hub":
+                self.enter(actor)
+            elif inside and (inner == "cyberblock hub leave" or "leave-command-only" not in self.bugs):
+                self.leave(actor)
+            return ""
+        return super().rcon(command)
+
+
+class Sim7Env(SimEnv):
+    def server(self, scenario, max_hosts=1, join_password=False):
+        self.max_hosts = max_hosts
+        self.server_obj = Sim7Server(self.tmp, self.ports.server(scenario), self, self.bugs)
+        self.server_obj.log.path.write_text("Done (1s)!\n", encoding="utf-8")
+        self.logs["server"] = self.server_obj.log
+        return self.server_obj
+
+    def client(self, name, **kw):
+        c = super().client(name, **kw)
+        self.server_obj.dim.setdefault(name, SIM_HOME)
+        return c
+
+
+def run7(tmp, bugs=()):
+    return run_scenario(Sim7Env(tmp, bugs), "hub")
+
+
+def test_hub_scenario_passes_against_an_ideal_server(tmp_path):
+    sim = Sim7Env(tmp_path)
+    rep = run_scenario(sim, "hub")
+    assert rep.ok, failed(rep)
+    assert len(rep.checks) == 15 and sim.max_hosts == 1
+    assert mpcheck.hub_events(sim.hosts["CbHost1"]["log"]) == [("park", True), ("hub", True), ("hub", False), ("park", False), ("park", True), ("hub", True)]  # enter, leave, enter again: nothing else, nothing for the guest
+
+
+def test_hub_scenario_accepts_a_server_that_leaves_with_its_own_command(tmp_path):
+    rep = run7(tmp_path, ["leave-command-only"])
+    assert rep.ok, failed(rep)  # `/cyberblock hub leave` is tried when `/cyberblock hub` again does not leave
+
+
+@pytest.mark.parametrize("bug, expected", [
+    ("hub-before-park", "`/cyberblock hub` as the host sends its DLL `park on:true` and then `hub in:true`"),
+    ("no-park", "`/cyberblock hub` as the host sends its DLL `park on:true` and then `hub in:true`"),
+    ("double-hub", "`/cyberblock hub` as the host sends its DLL `park on:true` and then `hub in:true`"),
+    ("guest-gets-hub", "a guest has no DLL: its trip sends nothing about the hub to the host's DLL"),
+    ("park-first-on-leave", "leaving sends `hub in:false` and then `park on:false`"),
+    ("stay-in-hub", "the host's Steve is back in the dimension he came from"),
+    ("relay-drops-parked", "the server logged no relay drops for the host"),
+    ("no-session-end", "the session ends when the link drops"),
+])
+def test_hub_scenario_notices_each_hub_bug(tmp_path, bug, expected):
+    rep = run7(tmp_path, [bug])
+    assert any(label.startswith(expected) for label in failed(rep)) and not rep.ok
+
+
+def test_hub_scenario_asks_a_fake_host_for_the_vendor_mode_with_no_layer_and_uses_its_own_server_slot(tmp_path, capsys):
+    seen = []
+
+    class Spy(Sim7Env):
+        def fakehost(self, client, **kw):
+            seen.append((client.name, kw.get("layers"), kw.get("modes"), kw.get("wait_host")))
+            return super().fakehost(client, **kw)
+
+    run_scenario(Spy(tmp_path), "hub")
+    assert seen == [("CbHost1", (), ("vendor",), mpcheck.T_JOIN)]  # the guest is a plain client: no fake host
+    assert mpcheck.Ports().server("hub") == mpcheck.SERVER_BASE + 2 and mpcheck.SCENARIOS[-1] == "hub" and mpcheck.SCENARIO_MODES["hub"] == ("vendor",)
+    assert mpcheck.main(["hub", "--dry-run", "--client-port-base", "25814", "--server-port-base", "25975", "--frame-prefix", "Local\\CyberblockFrame7PM"]) == 0
+    out = capsys.readouterr().out
+    assert "-Pcyberblock.serverPort=25977" in out and "--vendor" in out and "--layer" not in out and "Local\\CyberblockFrame7PMH" in out
+    assert "-Pcyberblock.port=25814" in out and "25600" not in out
+
+
+def test_the_hub_argv_parses_with_the_real_fakehost(monkeypatch):
+    argv = mpcheck.fakehost_argv(port=25814, name="CbHost1", ver="1.0.0", frame="Local\\CyberblockFrame7PMH", out_dir=Path("frames"), layers=(), modes=("vendor",), wait_host=60.0)
+    seen = []
+
+    async def fake_run(*args, **kwargs):
+        seen.append((args, kwargs))
+        return 1
+
+    monkeypatch.setattr(fakehost, "run", fake_run)
+    monkeypatch.setattr("sys.argv", ["fakehost", *argv[4:]])  # after `python -u -m tools.fakehost`
+    assert fakehost.main() == 0
+    args, kwargs = seen[0]
+    assert args[8] == frozenset() and args[9] == frozenset({"vendor"}) and kwargs == {"wait_host": 60.0}
+
+
+def test_the_hub_helpers_read_what_the_fake_host_prints_and_what_rcon_answers(tmp_path):
+    log = LogFile(tmp_path / "fh.log")
+    log.path.write_bytes(b'[CbHost1] session: {"t": "session", "state": "host"}\r\n[CbHost1] park: {"t": "park", "on": true}\r\n'
+                         b'[CbHost1] vteleport: {"t": "vteleport", "id": 1}\r\n[CbHost1] hub: {"t": "hub", "in": true}\r\n[CbHost1] hub: not json\r\n'
+                         b'[CbHost2] hub: {"t": "hub", "in": false}\r\n[CbHost1] hub: {"t": "hub", "in": false}\r\n[CbHost1] park: {"t": "park", "on": false}\r\n')
+    host = mpcheck.FakeHost("CbHost1", SimProc(), log, None)
+    assert mpcheck.hub_events(host) == [("park", True), ("hub", True), ("hub", False), ("park", False)]  # only CbHost1's hub and park lines, in order
+    assert mpcheck.hub_events(host, log.text().index("[CbHost1] hub: {\"t\": \"hub\", \"in\": true}")) == [("hub", True), ("hub", False), ("park", False)]
+
+    class S:
+        def __init__(self, answer):
+            self.answer = answer
+
+        def rcon(self, command):
+            assert command == "data get entity CbHost1 Dimension"
+            return self.answer
+
+    assert mpcheck.dimension_of(S('CbHost1 has the following entity data: "cyberblock:afterlife"'), "CbHost1") == "cyberblock:afterlife"
+    assert mpcheck.dimension_of(S('CbHost1 has the following entity data: "minecraft:overworld"\r\n'), "CbHost1") == "minecraft:overworld"
+    assert mpcheck.dimension_of(S("No entity was found"), "CbHost1") is None and mpcheck.HUB_DIMENSION == "cyberblock:afterlife"
+    assert mpcheck.HUB_ENTER == [("park", True), ("hub", True)] and mpcheck.HUB_LEAVE == [("hub", False), ("park", False)]
