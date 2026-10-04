@@ -6,6 +6,8 @@ EntityID.ToHash argument in our scripts must be a bare identifier (a local copy)
 
 Natives rule (plan 2026-10-03-retest3-polish sections 0 and 1.2): every native is declared exactly once, and the ones
 package S calls are declared in Natives.reds with the contract's signature.
+
+Session (megaplan 2026-10-04 section 1.8, task 1-H1): the n"session" event wiring and the cleanup it triggers.
 """
 import importlib.util
 import re
@@ -153,3 +155,41 @@ def test_every_declared_native_is_registered_with_its_parameters():
     for name, count in declared.items():
         assert name in registered, f"{name} is declared but the DLL never registers it"
         assert registered[name] == count, f"{name}: {count} script parameters, {registered[name]} registered"
+
+
+# Megaplan 2026-10-04 section 1.8 and task 1-H1: the session event. Cyberblock_EventText is declared once, in Natives.reds
+# (rule 0.14), Events.reds hands n"session" to the session object before the not-live branch (the cleanup must happen
+# whatever the state), and a state that is not host cleans Night City as a link drop does.
+def test_event_text_is_declared_once_in_natives_reds():
+    code = all_code()
+    declared = [(file, text.count("native func Cyberblock_EventText(")) for file, text in code.items()
+                if "native func Cyberblock_EventText(" in text]
+    assert declared == [("Natives.reds", 1)], declared
+    assert "public native func Cyberblock_EventText() -> String;" in code["Natives.reds"]
+
+
+def test_session_events_are_handled_whatever_the_state():
+    events = all_code()["Events.reds"]
+    session = events.index('Equals(kind, n"session")')
+    assert session < events.index("} else if !live {"), "n\"session\" must be handled before the not-live branch"
+    assert "system.Session().OnEvent(game)" in events[session:events.index("} else if !live {")]
+
+
+def test_leaving_the_host_role_cleans_night_city():
+    session = all_code()["Session.reds"]
+    on_event = session[session.index("public func OnEvent("):]
+    host = on_event.index('if Equals(state, n"host")')
+    cleanup = on_event[host:]
+    for needed in ("CyberblockCollision.Reset(game);", "CyberblockPuppets.Clear(game);", "CyberblockTether.Clear(game);",
+                   'Cyberblock_Log(s"session: cleaned ('):
+        assert needed in cleanup, needed
+    # a refused reason is a Cyberpunk warning only while Minecraft is not drawn, and once
+    assert re.search(r"!system\.InkOn\(\) \|\| !Cyberblock_IsLinked\(\)", cleanup)
+    assert "NotEquals(reason, this.shownRefusal)" in cleanup and "this.shownRefusal = reason;" in cleanup
+
+
+def test_the_survey_tour_is_blocked_while_not_host():
+    survey = all_code()["Survey.reds"]
+    blocked = survey[survey.index("private func Blocked("):]
+    blocked = blocked[:blocked.index("\n  }\n")]
+    assert re.search(r'!system\.Session\(\)\.IsHost\(\) \{\s*return n"session";', blocked)

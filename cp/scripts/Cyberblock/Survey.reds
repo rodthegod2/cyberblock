@@ -12,8 +12,8 @@
 //           the DLL then holds V over each stop every frame and casts the probes and survey rays itself;
 //   end     puts V back exactly where V stood, facing as then (TeleportationFacility.Teleport; falls are not reported for
 //           3 s), and undoes begin: V's own invisibility as it was, the god mode source and the save lock removed.
-// Anything that blocks the tour while it runs (F9, a vehicle, a scene, combat, death, the link dropping) ends it at
-// once, with V put back; a Cyberpunk menu pauses it (V stays held). A session that ends forgets it.
+// Anything that blocks the tour while it runs (F9, a vehicle, a scene, combat, death, the link dropping, the Minecraft
+// server no longer counting this host as host: Session.reds) ends it at once, with V put back; a Cyberpunk menu pauses it (V stays held). A session that ends forgets it.
 //
 // 2.31 script API (decompiled scripts): MappinSystem.GetMappins(gamemappinsMappinTargetType.Map), IMappin
 // GetWorldPosition, FastTravelSystem (scriptable system n"FastTravelSystem") GetFastTravelPoints, FastTravelPointData
@@ -62,6 +62,11 @@ public class CyberblockSurveyTour {
     }
     if !Cyberblock_IsLinked() {
       return n"unlinked";
+    }
+    // megaplan 1-H1: the Minecraft server does not count this host as host (Session.reds): no tour, a running one ends
+    let system = CyberblockSystem.Get(game);
+    if IsDefined(system) && !system.Session().IsHost() {
+      return n"session";
     }
     if player.IsDead() {
       return n"dead";
