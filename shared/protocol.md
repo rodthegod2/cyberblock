@@ -692,7 +692,7 @@ the same validators the client ran before (the limits above), plus the envelope 
 | `devstate` | UP | the device layer per session (server), Phase 4 | one device changed state |
 | `devresult` | UP | the device layer (server), routed to the request's asker, Phase 4 | a reply: it must carry a request id the session issued |
 | `spawnresult` | UP | the Overlord's spawns (server), routed to the request's owner, Phase 8 | a reply: it must carry a request id the session issued |
-| `feed` | BOTH | the host's own client shows it (LOCAL); UP into the server's photo feed (`PhotoFeed`), Phase 6 | at most 1 per second while a feed is requested; the server forwards each frame to the Net Map viewers as `cyberblock:ui` `feed` and into the host's feed map (the fallback notice is logged, not forwarded) |
+| `feed` | BOTH | the host's own client shows it (LOCAL); UP into the server's photo feed (`PhotoFeed`), Phase 6 | at most 1 per second while a feed is requested; the server forwards each frame to the Net Map viewers as `cyberblock:ui` `feed` and into the host's feed map (when the DLL sends none, the server draws its replica stand-in) |
 | `cmd` | LOCAL | `WorldBridge.command` in a dev client | test tools only: never relayed (the relay drops it), a dedicated server refuses it |
 
 The frame export (`Local\CyberblockFrame`) is LOCAL: `FrameExporter` on the client.
@@ -1772,7 +1772,7 @@ Same wire, same conventions; `proto` stays 1 and older builds ignore the new `t`
 `docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 1.9 (rows 8), section 1.8 (row 8), section 1.17 and section 12, with the dated Phase 0
 amendment (fallbacks (d) and (e): there is no turret character record, and the wanted level and the attitudes are written through the prevention and attitude
 systems) as the working contract. Almost all of Phase 8 is Minecraft and server only: the Hacker in the Van, the Overlord Console, matches, PvP, Gang Wars,
-the player hacks, the Server Heat meter, Downed and revive and the spectator mode use `cyberblock:act` and `cyberblock:ui` payloads that their packages define,
+the player hacks, the Server Heat meter, Downed and revive and the spectator mode use `cyberblock:act` and `cyberblock:ui` payloads that each package documents when it ships,
 the `roster` fields (`team`, `pvp`, `downed`, `hidden`) and the Minecraft world, and never reach a DLL. **Five things cross the DLL wire:** Night City enemies
 that the Overlord (or an event) spawns near a host (`spawn`, answered by `spawnresult`), the host's real wanted level (`heat`), the attitude of Night City's
 factions toward V (`attitude`), the glitch of a hacked linked player (`glitch`), and one more cyberware id (`netrunner`). Where the plan leaves a shape open
@@ -1833,7 +1833,7 @@ packages 8D, 8S, 8T, 8X, 8M, 8O and 8V.
   nothing crosses the wire. The glitch ends by itself, with the session and with a link drop.
 - **The session ends everything.** On a `session` that is not `host`, a `hello` and a link drop (section 1.2's cleanup, before `session: cleaned (<reason>)`)
   the scripts delete every NPC they spawned, restore every attitude and the wanted stage and end the glitch; a `spawn`, `heat`, `attitude` or `glitch` that
-  arrives without a host session is ignored.
+  arrives while no host session is up is dropped.
 - **Validation (receivers).** `spawn.id` a whole number ≥ 0; `rec` a string of 1 to 32 characters of `[a-z0-9_]` (an unknown one is answered, not dropped);
   `p` three finite numbers with `|c| < 3e7`; `n` a whole number 1..8; `hostile` a boolean; `faction` a string of 0 to 32 characters of `[A-Za-z0-9_]`;
   `heat.tier` a whole number 0..5; `attitude.faction` a string of 1 to 32 characters of `[A-Za-z0-9_]` and `toward` one of the three; `glitch.seconds` a finite
