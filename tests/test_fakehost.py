@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 from websockets.asyncio.server import serve
 
-from test_protocol_md import (AT_VALIDATORS, L36_EXAMPLES, L36_NEW_CP_TO_MC, MP_EXAMPLES, PQ_EXAMPLES, PQ_VALIDATORS, R3_EXT_CP,  # shared/protocol.md:
+from test_protocol_md import (uint64_string, vec3, AT_VALIDATORS, L36_EXAMPLES, L36_NEW_CP_TO_MC, MP_EXAMPLES, P3_VALIDATORS, PQ_EXAMPLES, PQ_VALIDATORS, R3_EXT_CP,  # shared/protocol.md:
                               R3_NEW_CP, R3_VALIDATORS, VALIDATORS, mp_hello_ok, vdbg_ok)  # the example messages and documented limits of
 from tools import fakehost, package, shm  # layers 3-6, re-test 3, the Atlas, Phase Q and Multiplayer
 
@@ -1029,3 +1029,223 @@ def test_the_documented_example_hello_is_what_the_fake_host_sends_with_a_version
     example = next(m for t, m in MP_EXAMPLES if t == "hello")
     _, got = run_against_fake_minecraft(tmp_path, 30, exporting, ver=example["ver"])
     assert got[0] == example
+
+
+# ---- Phase 3: --replica (megaplan 3-P1): the street, the figures, env, vteleport and park ----
+RUNNER, WALKER, CAR, WRECK = fakehost.replica_ids()
+
+
+def npcs_ok(m):
+    """The layer 2 `npcs` limits: at most 48 entries, decimal uint64 ids, a position, a yaw, a kind and a hostile flag."""
+    return (set(m) == {"t", "list"} and len(m["list"]) <= 48 and all(set(e) == {"id", "p", "yaw", "kind", "hostile"} and uint64_string(e["id"]) and vec3(e["p"])
+                                                                      and e["kind"] in ("human", "vehicle") and isinstance(e["hostile"], bool) for e in m["list"]))
+
+
+def p3_valid(m):
+    if m["t"] in P3_VALIDATORS:
+        return P3_VALIDATORS[m["t"]](m)
+    return npcs_ok(m) if m["t"] == "npcs" else m == {"t": "clear"} if m["t"] == "clear" else VALIDATORS[m["t"]](m)
+
+
+def test_replica_street_has_every_material_and_a_valid_ground_message_per_chunk():
+    chunks = fakehost.replica_ground()
+    assert len(chunks) == 5 and all(m["t"] == "ground" and p3_valid(m) for m in chunks)
+    codes = {c for m in chunks for c in m["m"]}
+    assert codes >= set(range(1, 11)) and {13, 20, 25} <= codes and all(1 <= c <= 26 for c in codes)  # every surface and three neon dyes
+    quads = [tuple(m["c"][i:i + 4]) for m in chunks for i in range(0, len(m["c"]), 4)]
+    assert len(quads) == sum(len(m["m"]) for m in chunks) == 17 * 17 + 2
+    assert {(x, z) for x, z, _, _ in quads} >= {(x, z) for x in range(-8, 9) for z in range(-8, 9)}  # every column of the slab area has ground
+    assert all(lo <= hi and -8 <= x <= 8 and -8 <= z <= 8 for x, z, lo, hi in quads)
+
+
+def test_replica_neon_codes_are_the_dye_blocks_of_the_material_table():
+    from tools import cbmath
+    blocks = {code: cbmath.material_block(code) for code in {c for _, c in fakehost.replica_landmarks()}}
+    assert blocks[13] == "cyberblock:nc_neon_magenta" and blocks[20] == "cyberblock:nc_neon_cyan" and blocks[25] == "cyberblock:nc_neon_red"
+    assert blocks[3] == "cyberblock:nc_asphalt" and blocks[10] == "cyberblock:nc_water" and all(blocks.values())
+
+
+def test_replica_landmarks_are_cells_of_their_own_material_and_shift_moves_them_east():
+    cells = fakehost.replica_cells()
+    for cell, code in fakehost.replica_landmarks():
+        assert cells[cell] == code, cell
+    shifted = fakehost.replica_cells(8)
+    assert {(x - 8, y, z): c for (x, y, z), c in shifted.items()} == cells
+    assert [(c[0] - 8, c[1], c[2]) for c, _ in fakehost.replica_landmarks(8)] == [c for c, _ in fakehost.replica_landmarks()]
+    assert max(x for x, _, _ in cells) == 8 and min(x for x, _, _ in shifted) == 0  # two hosts overlap on x 0..8
+
+
+def test_replica_ground_without_the_scaffolds_leaves_the_floor_under_them():
+    full, without = fakehost.replica_ground(), fakehost.replica_ground(without=[fakehost.SCAFFOLD_SEEN, fakehost.SCAFFOLD_LEFT])
+    count = lambda chunks: sum(len(m["m"]) for m in chunks)  # noqa: E731
+    assert count(full) - count(without) == 2
+    cells = {(x, y, z) for m in without for x, z, lo, hi in [m["c"][i:i + 4] for i in range(0, len(m["c"]), 4)] for y in range(lo, hi + 1)}
+    x, z = fakehost.SCAFFOLD_SEEN
+    assert (x, fakehost.SLAB_Y, z) in cells and (x, fakehost.SCAFFOLD_RANGE[0], z) not in cells
+
+
+def test_replica_unground_messages_say_seen_only_when_it_was_observed():
+    seen, left = fakehost.unground_message(7, 4), fakehost.unground_message(7, 6, seen=False)
+    assert seen == {"t": "unground", "c": [7, 4, 64, 66], "seen": True} and left == {"t": "unground", "c": [7, 6, 64, 66]}
+    assert fakehost.unground_message(7, 4, 8)["c"][0] == 15 and p3_valid(seen) and p3_valid(left)
+
+
+def test_replica_figures_move_at_real_speed_and_the_standing_car_is_destroyed():
+    at = lambda t: {e["id"]: e for e in fakehost.replica_npcs(t)["list"]}  # noqa: E731
+    a, b = at(0.5), at(1.5)
+    assert abs(b[WALKER]["p"][0] - a[WALKER]["p"][0] - fakehost.WALK_X) < 1e-9
+    assert abs(a[RUNNER]["p"][0] - b[RUNNER]["p"][0] - fakehost.RUN_X) < 1e-9  # the runner goes the other way
+    assert abs(b[CAR]["p"][0] - a[CAR]["p"][0] - fakehost.CAR_X) < 1e-9
+    assert WRECK in at(fakehost.WRECK_AT - 0.1) and WRECK not in at(fakehost.WRECK_AT)  # destroyed: gone from the list
+    assert all(p3_valid(fakehost.replica_npcs(t)) for t in (0.0, 3.3, 5.9, 6.0, 25.0))
+    assert [e["kind"] for e in fakehost.replica_npcs(0)["list"]] == ["human", "human", "vehicle", "vehicle"]
+    assert RUNNER == fakehost.hostile_human()["id"] and (RUNNER, WALKER, CAR) == fakehost.NPC_IDS  # the canned answers keep working
+
+
+def test_replica_figures_stay_on_the_street_and_wrap_round():
+    for t in range(0, 60):
+        for e in fakehost.replica_npcs(t / 2)["list"]:
+            assert -8 <= e["p"][0] < 8 and -8 <= e["p"][2] <= 8 and e["p"][1] == fakehost.SLAB_Y + 1.0
+    assert fakehost.replica_npcs(3.0, shift=8)["list"][2]["p"][0] == fakehost.replica_npcs(3.0)["list"][2]["p"][0] + 8
+
+
+def test_replica_ids_number_four_figures_and_collide_on_purpose():
+    assert fakehost.replica_ids(100) == ("100", "101", "102", "103") and fakehost.replica_ids()[:3] == fakehost.NPC_IDS
+    assert fakehost.replica_ids(2**64 - 4)[-1] == str(2**64 - 1)
+    with pytest.raises(ValueError):
+        fakehost.replica_ids(2**64 - 3)
+    a, b = fakehost.replica_npcs(1.0, ids_from=5000), fakehost.replica_npcs(1.0, shift=8, ids_from=5000)
+    assert [e["id"] for e in a["list"]] == [e["id"] for e in b["list"]]
+
+
+def test_replica_env_cycles_clock_and_weather_and_a_second_host_gets_another_sky():
+    steps = [fakehost.replica_env(t) for t in (0, 10, 20, 30, 40, 65)]
+    assert [(m["time"], m["weather"]) for m in steps] == [([22, 30], "clear"), ([23, 0], "rain"), ([23, 30], "storm"), ([5, 45], "clear"),
+                                                          ([22, 30], "clear"), ([23, 30], "storm")]
+    assert all(p3_valid(m) for m in steps)
+    second = fakehost.replica_env(10, hours=12)
+    assert second == {"t": "env", "time": [11, 0], "weather": "fog"} and p3_valid(second)
+    assert fakehost.replica_env(0, hours=-23)["time"] == [23, 30]
+    from tools import cbmath
+    ticks = {cbmath.env_ticks(*m["time"]) for m in steps}
+    assert not ticks & {cbmath.env_ticks(*fakehost.replica_env(t, hours=12)["time"]) for t in (0, 10, 20, 30)}  # the harness can tell the hosts apart
+
+
+def test_teleport_answer_accepts_a_valid_request_and_drops_a_bad_one():
+    ask = {"t": "vteleport", "id": 4, "p": [10, 64, -3.5], "yaw": 90.0, "why": "meetup"}
+    assert fakehost.teleport_answer(ask) == {"t": "vteleported", "id": 4, "ok": True, "reason": "", "p": [10.0, 64.0, -3.5]}
+    assert p3_valid(fakehost.teleport_answer(ask))
+    for bad in ({**ask, "id": -1}, {**ask, "id": "4"}, {**ask, "p": [1, 2]}, {**ask, "p": [1, 2, float("nan")]}, {**ask, "p": [3e7, 0, 0]},
+                {**ask, "why": "fun"}, {k: v for k, v in ask.items() if k != "p"}, {**ask, "id": True}):
+        assert fakehost.teleport_answer(bad) is None
+
+
+def test_replica_session_host_brings_clear_the_street_with_materials_and_the_figures():
+    host = fakehost.Cyberpunk(frozenset(), frozenset({"replica"}), shift=8)
+    got = host.reply(SESSION_HOST)
+    assert [m["t"] for m in got] == ["clear", *["ground"] * 5, "npcs"] and all(p3_valid(m) for m in got[1:6])
+    assert got[1] == fakehost.replica_ground(8)[0] and got[-1] == fakehost.replica_npcs(0.0, 8)
+    assert host.reply(SESSION_HOST) == []
+
+
+def test_replica_script_scans_seen_then_leaves_then_clears_and_regrows_without_the_scaffolds():
+    timeline = fakehost.Cyberpunk(frozenset(), frozenset({"replica"})).script()
+    kinds = [(t, m["t"], m.get("seen")) for t, m in timeline]
+    assert kinds[:3] == [(12.0, "unground", True), (12.5, "unground", None), (14.0, "clear", None)]
+    regrow = [m for t, m in timeline if t > 14.0]
+    assert len(regrow) == 5 and all(m["t"] == "ground" for m in regrow) and regrow == fakehost.replica_ground(
+        without=[fakehost.SCAFFOLD_SEEN, fakehost.SCAFFOLD_LEFT])
+    assert [t for t, _ in timeline] == sorted(t for t, _ in timeline) and all(p3_valid(m) for _, m in timeline)
+
+
+def test_replica_vteleport_is_answered_after_two_seconds_and_v_arrives(monkeypatch):
+    monkeypatch.setattr(fakehost.time, "perf_counter", lambda: 100.0)
+    host = fakehost.Cyberpunk(frozenset(), frozenset({"replica"}))
+    ask = {"t": "vteleport", "id": 9, "p": [40.5, 64.0, -12.0], "yaw": 0.0, "why": "meetup"}
+    assert host.reply(ask) == [] and host.due(101.9) == [] and host.cam(1, 0.0, {})["pl"] == [-6.5, 64.0, 0.5]  # not yet
+    assert host.due(102.0) == [{"t": "vteleported", "id": 9, "ok": True, "reason": "", "p": [40.5, 64.0, -12.0]}]
+    cam = host.cam(2, 0.0, {})
+    assert cam["pl"] == [40.5, 64.0, -12.0] and cam["fp"] is True and valid3(cam)  # Steve follows V
+    assert host.reply({**ask, "why": "fun"}) == [] and host.due(500.0) == []  # a bad request is dropped, not answered
+
+
+def test_replica_park_is_answered_at_once_with_the_state_it_is_in():
+    host = fakehost.Cyberpunk(frozenset(), frozenset({"replica"}))
+    assert host.reply({"t": "park", "on": True}) == [{"t": "parked", "on": True, "ok": True, "reason": ""}]
+    assert host.reply({"t": "park", "on": False}) == [{"t": "parked", "on": False, "ok": True, "reason": ""}]
+    assert host.reply({"t": "park", "on": "yes"}) == [] and p3_valid(host.reply({"t": "park", "on": True})[0])
+    assert fakehost.Cyberpunk(frozenset(), frozenset({"seat"})).reply({"t": "park", "on": True}) == []  # only --replica answers
+
+
+def test_replica_mode_plays_the_street_the_figures_the_env_and_answers_a_teleport(tmp_path, exporting, quick, capsys):
+    ask = {"t": "vteleport", "id": 5, "p": [30.0, 64.0, 2.0], "yaw": -90.0, "why": "meetup"}
+    react = lambda m: [SESSION_HOST] if m["t"] == "hud" else []  # noqa: E731
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[ask, {"t": "park", "on": True}], react=react, hold=1.0, layers=layer_set(),
+                                        modes=mode_set("replica"))
+    kinds = types(got)
+    assert kinds.count("clear") >= 3 and kinds.count("ground") >= 10 and "unground" in kinds and "env" in kinds
+    assert all(p3_valid(m) for m in got if m["t"] in ("ground", "unground", "env", "vteleported", "parked", "npcs", "clear"))
+    assert sum(1 for m in got if m["t"] == "ground" and "m" in m) >= 10 and all("m" in m for m in got if m["t"] == "ground" and len(m["c"]) > 4 * 17 * 17)
+    seen = [m for m in got if m["t"] == "unground"]
+    assert [m.get("seen") for m in seen] == [True, None]
+    assert [m["t"] for m in got if m["t"] in ("vteleported", "parked")] == ["parked", "vteleported"]
+    assert next(m for m in got if m["t"] == "vteleported")["p"] == [30.0, 64.0, 2.0]
+    cams = hold_cams(got)
+    assert cams[0]["pl"] == [-6.5, 64.0, 0.5] and cams[-1]["pl"] == [30.0, 64.0, 2.0] and all(valid3(m) for m in cams)
+    npcs = [m for m in got if m["t"] == "npcs"]
+    assert len({json.dumps(m) for m in npcs}) > 3 and any(len(m["list"]) == 4 for m in npcs) and any(len(m["list"]) == 3 for m in npcs)  # they move, a car goes
+    assert not {"dmg", "mobdmg"} & set(kinds)
+    assert printed(capsys)["session"] == [SESSION_HOST]
+
+
+def test_replica_prints_vteleport_and_park_and_only_with_the_mode(tmp_path, exporting, capsys):
+    ask, park = {"t": "vteleport", "id": 5, "p": [1.0, 64.0, 2.0], "yaw": 0.0, "why": "holo"}, {"t": "park", "on": False}
+    run_against_fake_minecraft(tmp_path, 30, exporting, replies=[ask, park], hold=0.1, layers=layer_set(), modes=mode_set("replica"))
+    lines = printed(capsys)
+    assert lines["vteleport"] == [ask] and lines["park"] == [park]
+    run_against_fake_minecraft(tmp_path, 30, exporting, replies=[ask, park], hold=0.1, modes=mode_set("seat"))
+    assert "vteleport" not in printed(capsys) and "park" not in printed(capsys)
+
+
+def test_two_replica_hosts_with_the_same_ids_send_overlapping_streets_and_different_skies(tmp_path, exporting, quick):
+    _, one = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[SESSION_HOST], hold=0.4, layers=layer_set(), modes=mode_set("replica"), ids_from=5000)
+    _, two = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[SESSION_HOST], hold=0.4, layers=layer_set(), modes=mode_set("replica"), ids_from=5000, shift=8, env_hours=12)
+    xs = lambda got: {m["c"][i] for m in got if m["t"] == "ground" and "m" in m for i in range(0, len(m["c"]), 4)}  # noqa: E731
+    assert min(xs(one)) == -8 and max(xs(one)) == 8 and min(xs(two)) == 0 and max(xs(two)) == 16
+    assert {e["id"] for m in one if m["t"] == "npcs" for e in m["list"]} == {e["id"] for m in two if m["t"] == "npcs" for e in m["list"]}
+    assert {m["weather"] for m in two if m["t"] == "env"} == {"fog"} and "fog" not in {m["weather"] for m in one if m["t"] == "env"}
+
+
+def test_replica_flags_pick_the_mode_and_pass_shift_and_env_hours_as_keywords(monkeypatch):
+    seen = []
+
+    async def fake_run(*args, **kwargs):
+        seen.append((args, kwargs))
+        return 1
+
+    monkeypatch.setattr(fakehost, "run", fake_run)
+    for argv in (["--replica"], ["--replica", "--hold", "3", "--shift", "8", "--env-hours", "12"], ["--replica", "--layer2", "--ids-from", "5000"]):
+        monkeypatch.setattr("sys.argv", ["fakehost", *argv])
+        assert fakehost.main() == 0
+    assert [a[9] for a, _ in seen] == [frozenset({"replica"})] * 3 and [a[6] for a, _ in seen] == [10.0, 3.0, 10.0]
+    assert [k for _, k in seen] == [{}, {"shift": 8, "env_hours": 12}, {}] and all(len(a) == 13 for a, _ in seen)  # the old thirteen stay put
+
+
+@pytest.mark.parametrize("argv", [["--shift", "8"], ["--env-hours", "3"], ["--seat", "--shift", "1"], ["--replica", "--shift", "1001"],
+                                  ["--replica", "--env-hours", "24"], ["--replica", "--env-hours", "-24"], ["--replica", "--view"],
+                                  ["--replica", "--stairs"], ["--replica", "--seat"], ["--replica", "--layer4"],
+                                  ["--replica", "--ids-from", str(2**64 - 3)]])
+def test_replica_flags_are_checked(monkeypatch, argv):
+    async def fake_run(*args, **kwargs):
+        return 1
+
+    monkeypatch.setattr(fakehost, "run", fake_run)
+    monkeypatch.setattr("sys.argv", ["fakehost", *argv])
+    with pytest.raises(SystemExit) as e:
+        fakehost.main()
+    assert e.value.code == 2
+
+
+def test_replica_combines_with_ui_and_hacks_modes(tmp_path, exporting, quick):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[SESSION_HOST], hold=0.3, modes=mode_set("replica", "ui"))
+    assert {"ground", "env", "stats", "quest"} <= set(types(got))

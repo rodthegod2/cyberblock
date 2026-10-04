@@ -65,6 +65,18 @@ Phase Q modes (shared/protocol.md "Phase Q"; combinable with the layer flags exc
            V walks up it at 1.5 m/s in first person, each step lifting V by 1 m in 0.15 s as the step-up assist does, then stands on top.
            `aim` is sent at 10 Hz at the face of the block under the crosshair (looking 20 degrees down), 2 mm in front of it: the
            Cyberblock box in front of the block, the case Phase Q's aim margin has to tolerate; `persp back` makes `fp` false.
+Phase 3 mode (shared/protocol.md "Phase 3"; combinable with the layer flags except --layer4, a camera owner like --view; same --hold,
+--cmd, --port, --name, --ids-from and NPC resend; prints what Minecraft reports, `vteleport` and `park` included):
+  --replica  the Night City replica: V stands on a street of ground (the slab's area, x and z in [-8, 8]) built from material columns:
+             asphalt road, sidewalks, brick, concrete, tile buildings, a glass shopfront, three neon signs, a metal pole, a puddle, ground
+             (`ground` with `m` codes, in chunks of 64 quadruples, sent when the client makes the DLL the host). `npcs` carries four
+             figures at real speed (a hostile runner at 4 m/s and a walker at 1.4 m/s on the sidewalks, a car at 8 m/s on the road and a
+             second car that stands until 6 s and is then gone: a destroyed car); `env` steps every 10 s through 22:30 clear, 23:00 rain,
+             23:30 storm, 05:45 clear (and again). Scripted: at 12 s `unground seen:true` of one scaffold column, at 12.5 s a plain
+             `unground` of another (it only left the radius), at 14 s `clear` and the whole ground again without both. Every `vteleport` is
+             answered 2 s later with `vteleported ok:true` (V is there from then on) and every `park` with `parked`.
+             --shift DX moves the street, the figures and V DX blocks east; --env-hours H adds H hours to the clock and makes the weather
+             fog (a second fake host that overlaps the first and whose sky must never reach the server).
 Multiplayer (shared/protocol.md "Multiplayer (Phase 1)"; tools/mpcheck.py starts one fake host per host client):
   --name NAME      prefixes every line this tool prints with `[NAME] `, so the output of two fake hosts can be told apart.
   --ver VERSION    the DLL version in the `hello` (`ver`, at most 32 characters). The default is this checkout's version, the
@@ -115,10 +127,10 @@ JUMP_AT, JUMP_FOR = 0.5, 0.1  # layer 4: seconds after the scenario starts, and 
 HACK_KEY, SKILLS_KEY, KILLED_AT = (1.0, 2.0), (2.5, 2.6), 3.0  # layer 6: (down, up) and the kill, in seconds
 CYBERWARE_KEYS, ACTIVATE_KEY = ((3.5, 3.6), (4.0, 4.1)), (4.5, 4.6)  # layer 6: U opens the Cyberware screen then closes it; Y is a tap
 PCELLS_AHEAD, MAX_PCELLS = 0.5, 64  # layer 4: seconds ahead of a projectile for its wall, and the `pcells` cap
-MODES = ("ui", "hacks", "seat", "view", "stairs")  # re-test 3: --ui, --hacks, --seat; Phase Q: --view, --stairs
+MODES = ("ui", "hacks", "seat", "view", "stairs", "replica")  # re-test 3: --ui, --hacks, --seat; Phase Q: --view, --stairs; Phase 3: --replica
 MODE_EVENTS = {"ui": {"uiact", "persp", "binds"}, "hacks": {"hack", "uiact", "persp", "binds"}, "seat": {"persp", "binds"},
-               "view": {"prefs"}, "stairs": {"prefs"}}
-CAMERA_OWNERS = ("view", "stairs", "seat")  # the modes that drive the camera by themselves
+               "view": {"prefs"}, "stairs": {"prefs"}, "replica": {"vteleport", "park"}}
+CAMERA_OWNERS = ("view", "stairs", "seat", "replica")  # the modes that drive the camera by themselves
 UI_MENU = (6.0, 7.0)  # --ui: seconds in which `cam.menu` is true (a pass-through menu is open)
 PERSPECTIVE_KEY = (8.0, 8.1)  # --ui: the F5 tap that makes Minecraft answer `persp`
 HACKS_KEYS = {"hack": (1.0, 2.0), "arms": (2.5, 2.6), "camo": (3.0, 3.1)}  # --hacks: (down, up) in seconds
@@ -423,6 +435,157 @@ def stairs_aim(eye: Sequence[float], yaw: float, pitch: float) -> float:
     return round(d, 3) if 0 <= d <= AIM_MAX else -1.0
 
 
+# ---- --replica (megaplan 3-P1): a street of ground with materials, seen removals, walking and driving figures, env, teleport ----
+# The street is the slab's area (x and z in [-SLAB_HALF, SLAB_HALF]) built from material columns; `--shift DX` moves all of it
+# (ground, figures, V) DX blocks east, so two fake hosts can overlap partly. Everything is deterministic.
+ROAD_HALF, SIDEWALK_Z = 1, (2, 3)  # the asphalt strip is |z| <= 1; sidewalks are z in -3..-2 and 2..3
+FLOOR_BOTTOM = SLAB_Y - 1  # a floor range is [top - 1, top]
+SCAFFOLD_SEEN, SCAFFOLD_LEFT = (7, 4), (7, 6)  # x, z of the two scaffold columns [SLAB_Y + 1, SLAB_Y + 3] (code 6) above the floor
+SCAFFOLD_RANGE = (SLAB_Y + 1, SLAB_Y + 3)
+SEEN_AT, LEFT_AT, CLEAR_AT = 12.0, 12.5, 14.0  # --replica script, seconds after the scenario starts: `unground seen:true` of the first
+# scaffold, `unground` (it only left the radius) of the second, then `clear` and the whole ground again without the first
+GROUND_CHUNK = 64  # quadruples per `ground` message
+REPLICA_FEET = (-6.5, SLAB_Y + 1.0, 0.5)  # V stands on the road facing east (+x); Minecraft yaw -90
+REPLICA_YAW = -90.0
+ENV_CYCLE = ((10.0, (22, 30), "clear"), (10.0, (23, 0), "rain"), (10.0, (23, 30), "storm"), (10.0, (5, 45), "clear"))  # seconds, time, weather; repeats
+ENV_SECOND_WEATHER = "fog"  # --env-hours: a second host's sky is always fog
+TELEPORT_DELAY = 2.0  # seconds before `vteleported ok` answers a `vteleport`
+WRECK_AT = 6.0  # seconds after which the standing car is gone from `npcs` (destroyed: the guest sees a wreck)
+WALK_X, RUN_X, CAR_X = 1.4, 4.0, 8.0  # m/s along the street
+TELEPORT_WHYS = ("meetup", "holo", "hub_exit")
+
+
+def replica_code(x: int, z: int) -> tuple[int, int]:
+    """(material code, top y) of the street's floor or building at (x, z) with x and z relative to the street's centre."""
+    top = SLAB_Y
+    if z <= -6:  # the building row: brick, light concrete, dark concrete, tile
+        if x <= -5:
+            return 7, SLAB_Y + 7
+        return (1, SLAB_Y + 5) if x <= -1 else (2, SLAB_Y + 9) if x <= 3 else (8, SLAB_Y + 3)
+    if abs(z) <= ROAD_HALF:
+        return 3, top
+    if z in (-3, -2) or z in SIDEWALK_Z:
+        return (6, SLAB_Y + 5) if (x, z) == (4, -3) else (4, top)  # a streetlight pole stands on the sidewalk at (4, -3)
+    if z == -4 and -3 <= x <= -1:
+        return 5, SLAB_Y + 3  # a shopfront
+    if z == -5 and 0 <= x <= 2:
+        return 13, SLAB_Y + 2  # a magenta neon sign
+    if z == -5 and x == -4:
+        return 20, SLAB_Y + 3  # a cyan neon tube
+    if z == -5 and x == 5:
+        return 25, SLAB_Y + 2  # a red neon sign
+    if z in (5, 6) and x in (5, 6):
+        return 10, FLOOR_BOTTOM  # a puddle: one block of still water
+    return 9, top
+
+
+def replica_quads(shift: int = 0) -> list[tuple[int, int, int, int, int]]:
+    """The street as (x, z, yBottom, yTop, code), x already shifted: one range per column (floor [top-1, top], buildings and signs
+    from the floor up) plus the two scaffold ranges above their floors."""
+    quads = []
+    for x in range(-SLAB_HALF, SLAB_HALF + 1):
+        for z in range(-SLAB_HALF, SLAB_HALF + 1):
+            code, top = replica_code(x, z)
+            quads.append((x + shift, z, FLOOR_BOTTOM, top, code))
+    quads += [(x + shift, z, SCAFFOLD_RANGE[0], SCAFFOLD_RANGE[1], 6) for x, z in (SCAFFOLD_SEEN, SCAFFOLD_LEFT)]
+    return quads
+
+
+def replica_ground(shift: int = 0, without: Sequence[tuple[int, int]] = ()) -> list[dict]:
+    """`ground` messages (with `m`) of the street, GROUND_CHUNK quadruples each; `without` lists scaffold columns (x, z, unshifted)
+    the DLL no longer holds."""
+    skip = {(x + shift, z) for x, z in without}
+    quads = [q for q in replica_quads(shift) if not ((q[0], q[1]) in skip and q[2] == SCAFFOLD_RANGE[0])]
+    return [{"t": "ground", "c": [v for q in chunk for v in q[:4]], "m": [q[4] for q in chunk]}
+            for chunk in (quads[i:i + GROUND_CHUNK] for i in range(0, len(quads), GROUND_CHUNK))]
+
+
+def replica_cells(shift: int = 0) -> dict[tuple[int, int, int], int]:
+    """Every cell the street's ranges cover (x, y, z) -> material code, the scaffolds included."""
+    return {(x, y, z): code for x, z, lo, hi, code in replica_quads(shift) for y in range(lo, hi + 1)}
+
+
+def replica_landmarks(shift: int = 0) -> list[tuple[tuple[int, int, int], int]]:
+    """One cell of each material of the street (the top cell of one column), ((x, y, z), code): the cells the harness looks at."""
+    wanted = {3: (0, 0), 4: (0, 2), 9: (-8, 4), 1: (-3, -7), 2: (1, -7), 7: (-7, -7), 8: (6, -7), 5: (-2, -4), 6: (4, -3), 13: (1, -5),
+              20: (-4, -5), 25: (5, -5), 10: (5, 5)}
+    out = []
+    for code, (x, z) in wanted.items():
+        found = replica_code(x, z)
+        assert found[0] == code, (code, x, z, found)
+        out.append(((x + shift, found[1], z), code))
+    return out
+
+
+def unground_message(x: int, z: int, shift: int = 0, seen: bool = True) -> dict:
+    """The `unground` of a scaffold column (range [SLAB_Y + 1, SLAB_Y + 3]): observed empty (`seen:true`) or only left the radius."""
+    return {"t": "unground", "c": [x + shift, z, *SCAFFOLD_RANGE], **({"seen": True} if seen else {})}
+
+
+def replica_ids(ids_from: int | None = None) -> tuple[str, str, str, str]:
+    """The four figures' ids: the hostile runner, the friendly walker, the driving car (the three of npc_ids) and the wreck car."""
+    base = npc_ids(ids_from)
+    if ids_from is None:
+        return (*base, "4503599627370498")
+    if ids_from > 2**64 - 4:
+        raise ValueError(f"--ids-from must be at most {2**64 - 4} with --replica (it numbers four figures)")
+    return (*base, str(ids_from + 3))
+
+
+def loop_x(start: float, speed: float, t: float) -> float:
+    """x of a figure that starts at `start` and moves at `speed` m/s along the street, wrapping from one end to the other."""
+    span = 2.0 * SLAB_HALF
+    return -SLAB_HALF + (start + SLAB_HALF + speed * t) % span
+
+
+def replica_npcs(t: float, shift: int = 0, ids_from: int | None = None) -> dict:
+    """The `npcs` list at `t` seconds (unscaled): a runner (hostile) and a walker on the sidewalks, a car driving along the road and
+    a second car that stands until WRECK_AT and is then gone from the list (a destroyed car)."""
+    feet = SLAB_Y + 1.0
+    runner, walker, car, wreck = replica_ids(ids_from)
+    out = [
+        {"id": runner, "p": [loop_x(0.0, -RUN_X, t) + shift, feet, -2.5], "yaw": 90.0, "kind": "human", "hostile": True},
+        {"id": walker, "p": [loop_x(-6.0, WALK_X, t) + shift, feet, 2.5], "yaw": -90.0, "kind": "human", "hostile": False},
+        {"id": car, "p": [loop_x(-8.0, CAR_X, t) + shift, feet, 0.5], "yaw": -90.0, "kind": "vehicle", "hostile": False},
+    ]
+    if t < WRECK_AT:
+        out.append({"id": wreck, "p": [-5.5 + shift, feet, -0.5], "yaw": 0.0, "kind": "vehicle", "hostile": False})
+    return {"t": "npcs", "list": out}
+
+
+def env_index(t: float) -> int:
+    """Which step of ENV_CYCLE is playing at `t` seconds (the cycle repeats)."""
+    at = t % sum(d for d, _, _ in ENV_CYCLE)
+    for i, (d, _, _) in enumerate(ENV_CYCLE):
+        if at < d:
+            return i
+        at -= d
+    return len(ENV_CYCLE) - 1
+
+
+def replica_env(t: float, hours: int = 0) -> dict:
+    """The `env` at `t` seconds. `hours` (--env-hours) moves the clock by that many hours and makes the weather fog: a second host
+    whose sky must never reach the server."""
+    _, (h, m), weather = ENV_CYCLE[env_index(t)]
+    return {"t": "env", "time": [(h + hours) % 24, m], "weather": ENV_SECOND_WEATHER if hours else weather}
+
+
+def replica_cam(f: int, feet: Sequence[float]) -> dict:
+    """V stands at `feet` facing east: a first-person `cam`."""
+    x, y, z = feet
+    return {"t": "cam", "f": f, "p": [x, y + EYE_HEIGHT, z], "r": [REPLICA_YAW, 0.0, 0.0], "fov": FOV, "fp": True, "pl": [x, y, z],
+            "h": REPLICA_YAW, "cr": False, "air": False, "fly": False}
+
+
+def teleport_answer(m: dict) -> dict | None:
+    """The `vteleported ok` for a valid `vteleport` (None for a bad one, which the real DLL drops too)."""
+    p, rid = m.get("p"), m.get("id")
+    if not (isinstance(rid, int) and not isinstance(rid, bool) and rid >= 0 and isinstance(p, list) and len(p) == 3 and m.get("why") in TELEPORT_WHYS
+            and all(isinstance(c, (int, float)) and not isinstance(c, bool) and math.isfinite(c) and abs(c) < 3e7 for c in p)):
+        return None
+    return {"t": "vteleported", "id": rid, "ok": True, "reason": "", "p": [float(c) for c in p]}
+
+
 class Body:
     """Where V is in layer 4: falls from FALL_FROM at FALL_SPEED until Minecraft reports `flight`, then follows it (and
     says `fly:true`, as the real host's drive does); a touchdown (`flight` inactive) or an ender pearl's `teleport` puts V
@@ -453,8 +616,13 @@ class Body:
 class Cyberpunk:
     """Cyberpunk's side of layers 2-6 once the orbit is over: the timed messages it sends by itself and its answers."""
 
-    def __init__(self, layers: frozenset[int], modes: frozenset[str] = frozenset(), ids_from: int | None = None, name: str | None = None) -> None:
+    def __init__(self, layers: frozenset[int], modes: frozenset[str] = frozenset(), ids_from: int | None = None, name: str | None = None,
+                 shift: int = 0, env_hours: int = 0) -> None:
         self.layers, self.modes, self.mobdmg_sent = layers, modes, False
+        self.shift, self.env_hours = shift, env_hours  # --replica: the street's x shift and the clock shift of a second host
+        self.replica = "replica" in modes
+        self.arrived: list[float] | None = None  # --replica: where a `vteleport` put V (the camera follows)
+        self.env_step = -1  # --replica: the last ENV_CYCLE step sent
         self.body = Body(GLIDE_FROM if "view" in modes else FALL_FROM)
         self.prefs = dict(PREFS_DEFAULT)  # Phase Q: what Minecraft's last `prefs` set (--view and --stairs place the camera by it)
         self.aim_at, self.aim_d = None, None  # --stairs: when (scenario seconds) the aim was last looked at, and the last `aim.d` sent
@@ -488,7 +656,23 @@ class Cyberpunk:
             glide = WALK_FOR + SPRINT_FOR
             events += [(WALK_FOR, key("sprint", True)), (glide, key("sprint", False)),
                        (glide + JUMP_AT, key("jump", True)), (glide + JUMP_AT + JUMP_FOR, key("jump", False))]
+        if self.replica:
+            events += self.replica_script()
         return sorted(((t * SCRIPT_SCALE, m) for t, m in events), key=lambda e: e[0])
+
+    def replica_script(self) -> list[tuple[float, dict]]:
+        """--replica: the first scaffold is observed empty (`unground seen:true`), the second only leaves the radius (`unground`), then
+        `clear` and the whole ground again without the first (the DLL starts over after a `clear`; the server keeps its replica)."""
+        events = [(SEEN_AT, unground_message(*SCAFFOLD_SEEN, self.shift)), (LEFT_AT, unground_message(*SCAFFOLD_LEFT, self.shift, seen=False)),
+                  (CLEAR_AT, {"t": "clear"})]
+        events += [(CLEAR_AT + 0.01 * (i + 1), m) for i, m in enumerate(replica_ground(self.shift, without=[SCAFFOLD_SEEN, SCAFFOLD_LEFT]))]
+        return events
+
+    def npcs(self, t: float) -> dict:
+        """The `npcs` list `t` seconds (scaled scenario time) into the scenario: the figures of --replica move, the others stand."""
+        if self.replica:
+            return replica_npcs(t / SCRIPT_SCALE, self.shift, self.ids_from)
+        return npcs_message(self.ids_from)
 
     def setup_commands(self) -> list[str]:
         """The server commands the mode sends by itself at the start of the scenario: --stairs places its staircase."""
@@ -519,7 +703,14 @@ class Cyberpunk:
                 "fp": not self.view_back, "pl": feet, "h": yaw, "cr": False, "air": False, "fly": False}
 
     def frame_messages(self, t: float) -> list[dict]:
-        """Messages sent alongside a frame's `cam`: --stairs looks at the aim every AIM_EVERY s and sends `aim` when it changed by AIM_STEP."""
+        """Messages sent alongside a frame's `cam`: --replica sends `env` when the clock or the weather steps; --stairs looks at the aim
+        every AIM_EVERY s and sends `aim` when it changed by AIM_STEP."""
+        if self.replica:
+            step = env_index(t / SCRIPT_SCALE)
+            if step == self.env_step:
+                return []
+            self.env_step = step
+            return [replica_env(t / SCRIPT_SCALE, self.env_hours)]
         if "stairs" not in self.modes or (self.aim_at is not None and t - self.aim_at < AIM_EVERY * SCRIPT_SCALE - 1e-9):
             return []
         self.aim_at = t
@@ -534,6 +725,9 @@ class Cyberpunk:
         """The delayed messages (--hacks) whose time has come, oldest first; they are removed."""
         ready = sorted((d for d in self.delayed if d[0] <= now), key=lambda d: d[0])
         self.delayed = [d for d in self.delayed if d[0] > now]
+        for _, m in ready:
+            if m.get("t") == "vteleported" and m.get("ok") is True:  # V arrives: the camera is there from now on
+                self.arrived = m["p"]
         return [m for _, m in ready]
 
     def cam(self, f: int, t: float, held: dict) -> dict:
@@ -541,6 +735,8 @@ class Cyberpunk:
         orbit pose held (`fp:false` once Minecraft asked for the third-person view, `menu:true` while --ui shows a pass-through menu)."""
         if "seat" in self.modes:
             return seat_cam(f, t)
+        if self.replica:
+            return replica_cam(f, self.arrived or (REPLICA_FEET[0] + self.shift, REPLICA_FEET[1], REPLICA_FEET[2]))
         if "view" in self.modes:
             return self.view_cam(f, t)
         if "stairs" in self.modes:
@@ -557,9 +753,16 @@ class Cyberpunk:
         t, items, rid = m.get("t"), m.get("list"), m.get("id")
         if t == "session":
             was, self.session = self.session, m.get("state")
+            self.env_step = -1  # a new server session needs the clock again
             if self.session == "host" and was != "host":  # a new server session: it needs the whole ground and the NPCs again
-                return [{"t": "clear"}, {"t": "ground", "c": ground_slab()}, *([npcs_message(self.ids_from)] if self.layers or self.modes else [])]
+                ground = replica_ground(self.shift) if self.replica else [{"t": "ground", "c": ground_slab()}]
+                return [{"t": "clear"}, *ground, *([self.npcs(0.0)] if self.layers or self.modes else [])]
             return []
+        if self.replica and t == "vteleport" and (answer := teleport_answer(m)):
+            self.delayed.append((time.perf_counter() + TELEPORT_DELAY * SCRIPT_SCALE, answer))  # `vteleported` after 2 s (due() lets V arrive)
+            return []
+        if self.replica and t == "park" and isinstance(m.get("on"), bool):
+            return [{"t": "parked", "on": m["on"], "ok": True, "reason": ""}]
         if t == "persp" and m.get("mode") in ("first", "back"):
             self.view_back = m["mode"] == "back"
         if t == "prefs":
@@ -630,7 +833,7 @@ async def listen(ws, host: Cyberpunk) -> None:
 async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, commands: Sequence[str], host: Cyberpunk) -> None:
     """Cyberpunk's side of layers 2-6: the NPC list, the layer 2 bullet hit, the commands; then for `hold` seconds the
     camera (`host.cam`: `cam` held, or V's body in layer 4), the NPC list at 10 Hz and the layers' timed messages."""
-    npcs = npcs_message(host.ids_from)
+    npcs = host.npcs(0.0)
     commands = [*host.setup_commands(), *commands]
     for m in (npcs, *([dmg_message()] if 2 in host.layers else []), *({"t": "cmd", "c": c} for c in commands)):
         await ws.send(json.dumps(m))
@@ -643,7 +846,7 @@ async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, com
     for i in range(round(hold * fps)):
         t = i / fps
         if i and i % npcs_every == 0:
-            await ws.send(json.dumps(npcs))
+            await ws.send(json.dumps(host.npcs(t)))
         while timeline and timeline[0][0] <= t:
             await ws.send(json.dumps(timeline.pop(0)[1]))
         for m in host.due(time.perf_counter()):
@@ -657,13 +860,15 @@ async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, com
 async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str = shm.NAME, setup: bool = True,
               hold: float | None = None, commands: Sequence[str] = (), layers: frozenset[int] = frozenset({2}),
               modes: frozenset[str] = frozenset(), name: str | None = None, ver: str | None = None, ids_from: int | None = None,
-              wait_host: float | None = None) -> int:
+              wait_host: float | None = None, shift: int = 0, env_hours: int = 0) -> int:
     """Returns the number of frame sets saved. `hold` (seconds) runs the scripts of `layers` (2 to 6) and of the re-test 3
     `modes` (ui, hacks, seat) after the orbit. Multiplayer: `name` prefixes every printed line, `ver` is the DLL version in
     the `hello` (None: no `ver`, a DLL from before Phase 1), `ids_from` numbers the NPCs (None: the protocol.md example ids)."""
     out.mkdir(parents=True, exist_ok=True)
     npc_ids(ids_from)  # a bad --ids-from fails here, before anything is sent
-    host = Cyberpunk(layers if hold is not None else frozenset(), modes if hold is not None else frozenset(), ids_from, name)
+    if "replica" in modes:
+        replica_ids(ids_from)
+    host = Cyberpunk(layers if hold is not None else frozenset(), modes if hold is not None else frozenset(), ids_from, name, shift, env_hours)
     async with connect(url, max_size=None) as ws:
         listener = asyncio.create_task(listen(ws, host))
         for m in (hello_message(ver), {"t": "view", "w": VIEW[0], "h": VIEW[1]},
@@ -720,7 +925,10 @@ def main() -> int:
     ap.add_argument("--seat", action="store_true", help="after the orbit: V rides in a vehicle (cam seat:true, pl at the hips, fp flipping every 2 s); print persp/binds")
     ap.add_argument("--view", action="store_true", help="after the orbit: third-person view (cam fp:false, with vdbg while prefs.debug is true): V walks, sprints, then falls and glides; the camera follows Minecraft's prefs; print prefs")
     ap.add_argument("--stairs", action="store_true", help="after the orbit: place a staircase of five blocks, walk V up it (step-up assist lifts), send aim at the block faces (box 2 mm in front); print prefs")
-    ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs: seconds to keep the link up and listen (default 10)")
+    ap.add_argument("--replica", action="store_true", help="after the orbit: the Phase 3 replica script: a street of ground with materials (`ground.m`), `unground seen`, walking and driving figures, `env` changes, `vteleport` answered after 2 s; print vteleport/park")
+    ap.add_argument("--shift", type=int, default=None, metavar="DX", help="--replica: move the street, the figures and V DX blocks east (a second fake host that overlaps the first)")
+    ap.add_argument("--env-hours", type=int, default=None, metavar="H", help="--replica: add H hours to the `env` clock and make the weather fog (a second host whose sky must never reach the server)")
+    ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica: seconds to keep the link up and listen (default 10)")
     ap.add_argument("--cmd", action="append", default=[], metavar="COMMAND", help='--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs: a server command to send after the npcs, e.g. "summon tnt 0 64 0" (repeatable)')
     ap.add_argument("--name", default=None, help="a log prefix: every printed line starts with [NAME] (letters, digits, _ . -, at most 32), for two fake hosts at once")
     ap.add_argument("--ver", default=None, help=f"the DLL version in the hello (at most {MAX_VER} characters; default: this checkout's version; an empty value sends no ver, like a DLL from before Phase 1)")
@@ -745,13 +953,22 @@ def main() -> int:
     if args.hold < 0:
         ap.error("--hold must not be negative")
     if args.cmd and not (layers or modes):
-        ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks, --seat, --view or --stairs")
-    if len(modes & set(CAMERA_OWNERS)) > 1 or (modes & {"view", "stairs"} and 4 in layers):
-        ap.error("--view, --stairs, --seat and --layer4 each drive the camera: use only one of them")
+        ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs or --replica")
+    if len(modes & set(CAMERA_OWNERS)) > 1 or (modes & {"view", "stairs", "replica"} and 4 in layers):
+        ap.error("--view, --stairs, --seat, --replica and --layer4 each drive the camera: use only one of them")
+    if (args.shift is not None or args.env_hours is not None) and "replica" not in modes:
+        ap.error("--shift and --env-hours belong to --replica")
+    if args.shift is not None and abs(args.shift) > 1000:
+        ap.error("--shift must be between -1000 and 1000 blocks")
+    if args.env_hours is not None and not -23 <= args.env_hours <= 23:
+        ap.error("--env-hours must be between -23 and 23")
+    if "replica" in modes and args.ids_from is not None and args.ids_from > 2**64 - 4:
+        ap.error("--ids-from must be at most 2**64 - 4 with --replica (it numbers four figures)")
     try:
         saved = asyncio.run(run(url, args.frames, args.out, args.fps, args.shm, not args.no_setup,
                                 args.hold if layers or modes else None, args.cmd, layers, modes, args.name, ver, args.ids_from,
-                                **({"wait_host": args.wait_host} if args.wait_host is not None else {})))
+                                **({"wait_host": args.wait_host} if args.wait_host is not None else {}),
+                                **({"shift": args.shift} if args.shift else {}), **({"env_hours": args.env_hours} if args.env_hours else {})))
     except (ConnectionError, TimeoutError, ConnectionClosed) as e:
         print(f"{tag}no connection to Minecraft at {url} ({e}); start the dev client first:\n"
               '  mc\\gradlew.bat runClient --args="--quickPlaySingleplayer cyberblock"', file=sys.stderr)
