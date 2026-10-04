@@ -35,6 +35,13 @@ public native func Cyberblock_EventText() -> String;    // the current event's s
 //   n"park":      EventFlag = on.
 // Natives declared where they are called (rule 0.14): Cyberblock_SubmitProbeMaterials (Probes.reds), Cyberblock_SetEnv
 // (Env.reds), Cyberblock_TeleportDone (Teleport.reds).
+// ---- Phase 4 (megaplan 2026-10-04 section 1.8 + amendment items 5-6, task 4-S1) ----
+// Event, filled by the DLL (package 4D) from `devact` (1.9), read with the getters above:
+//   n"devact": EventId = request id, EventTarget = device id (the id Cyberblock_SubmitDevices sent),
+//              EventName = act (n"open" | n"close" | n"toggle" | n"lock" | n"unlock" | n"on" | n"off" | n"disable" |
+//              n"enable" | n"distract" | n"friendly"; anything else is answered "unsupported"); answered by
+//              Cyberblock_DeviceResult whatever the state.
+// Natives declared in Devices.reds (section 1.8): Cyberblock_SubmitDevices, Cyberblock_DeviceState, Cyberblock_DeviceResult.
 // Stance, menus, game mode
 public native func Cyberblock_SetStance(crouched: Bool, inAir: Bool, held: Bool) -> Void; // carried as cam.cr / cam.air / cam.held until changed
 public native func Cyberblock_SetMenu(open: Bool) -> Void;           // a Cyberpunk menu is open: input forwarding pauses; cam.menu
