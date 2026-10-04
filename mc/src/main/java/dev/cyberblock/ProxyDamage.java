@@ -1,6 +1,7 @@
 package dev.cyberblock;
 
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What a hit on a proxy means for Cyberpunk: which {"t":"hit"} kind it is (or that it is not a hit at all), how much of it
@@ -32,6 +33,13 @@ public final class ProxyDamage {
 	 */
 	static final double GORILLA_STRENGTH = 0.5;
 	static final double GORILLA_VEHICLE = 3.0;
+	/**
+	 * The Gorilla Arms implant (leftover bug QG): its empty-hand ATTACK_KNOCKBACK +2 (CyberwareEffects, plan retest2 section 1.7)
+	 * made every jab 7 m/s, a knockdown on every hit. As with the perk (above), a plain blow earns a stagger and the knockdown is
+	 * the strong blow: only a charged swing (vanilla's strong attack, attack strength scale above STRONG_SWING) gets the implant's
+	 * full strength; a quick jab gets GORILLA_STRENGTH instead. Minecraft mobs keep the attribute as it is.
+	 */
+	static final float STRONG_SWING = 0.9F;
 	/** Each Punch level of the bow adds this much strength to an arrow (vanilla AbstractArrow.doKnockback: punch x 0.6). */
 	static final double PUNCH_STRENGTH = 0.6;
 	/** No hit pushes harder than this. */
@@ -106,6 +114,48 @@ public final class ProxyDamage {
 		}
 
 		return melee(dx, dz, knockbackLevel + (gorillaArms ? GORILLA_STRENGTH : 0.0));
+	}
+
+	/**
+	 * The knockback level of a player's blow on a person, Gorilla Arms weighed in. implantKnockback: what the implant's
+	 * ATTACK_KNOCKBACK modifier put into knockbackLevel's attribute (0 when it is off). With it, a charged swing keeps it all and a
+	 * quick jab trades its share for GORILLA_STRENGTH; perk and implant are one shove, never two. Without it the perk adds
+	 * GORILLA_STRENGTH, charged or not.
+	 */
+	public static double personLevel(final double knockbackLevel, final double implantKnockback, final boolean charged, final boolean perk) {
+		if (!(implantKnockback > 0.0)) {
+			return knockbackLevel + (perk ? GORILLA_STRENGTH : 0.0);
+		}
+
+		return charged ? knockbackLevel : knockbackLevel - knockbackLevel(implantKnockback, false) + GORILLA_STRENGTH;
+	}
+
+	/** Vanilla 26.3 Player.attack's strong attack: the attack strength scale it read before resetting the ticker is above 0.9. */
+	public static boolean strongSwing(final float attackStrengthScale) {
+		return attackStrengthScale > STRONG_SWING;
+	}
+
+	/**
+	 * The player whose Player.attack is running as an uncharged swing (CyberPlayerMixin), null otherwise. Server thread only: vanilla
+	 * resets the attack strength before the target is hurt, so the swing's charge is kept here for ProxyEntity to read.
+	 */
+	private static @Nullable Object unchargedSwing;
+
+	/** A player's Player.attack read its attack strength (server side): `strong` is strongSwing of it. */
+	public static void swing(final Object player, final boolean strong) {
+		unchargedSwing = strong ? null : player;
+	}
+
+	/** That player's Player.attack returned. */
+	public static void endSwing(final Object player) {
+		if (unchargedSwing == player) {
+			unchargedSwing = null;
+		}
+	}
+
+	/** Whether this attacker's blow counts as charged: everything but an uncharged swing in progress (the slam and lunge keep theirs). */
+	public static boolean charged(final Object attacker) {
+		return attacker != unchargedSwing;
 	}
 
 	/**

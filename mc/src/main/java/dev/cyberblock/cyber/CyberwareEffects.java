@@ -28,8 +28,11 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attribute;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -112,6 +115,16 @@ public final class CyberwareEffects {
 			PerkEffects.modifier(player, mod.attribute(), modifierId(mod.cyberware()), mod.amount(),
 				installed.contains(mod.cyberware()) && (emptyHand || !mod.emptyHand()));
 		}
+	}
+
+	/**
+	 * What the Gorilla Arms implant's ATTACK_KNOCKBACK modifier adds to this player's blows right now: 0 when it is off (not
+	 * installed, or a full main hand). ProxyEntity counts it on a proxy only for a charged swing (ProxyDamage.personLevel).
+	 */
+	public static double gorillaKnockback(final Player player) {
+		AttributeInstance instance = player.getAttribute(Attributes.ATTACK_KNOCKBACK);
+		AttributeModifier modifier = instance == null ? null : instance.getModifier(modifierId(Cyberware.GORILLA_ARMS));
+		return modifier == null ? 0.0 : modifier.amount();
 	}
 
 	/** Every server tick. */
