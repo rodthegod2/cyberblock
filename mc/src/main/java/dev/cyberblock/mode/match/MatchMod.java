@@ -2,6 +2,7 @@ package dev.cyberblock.mode.match;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import dev.cyberblock.net.DevCommands;
 import java.util.List;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -26,7 +27,12 @@ public final class MatchMod implements ModInitializer {
 	public void onInitialize() {
 		Pvp.init();
 		Matches.init();
-		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> dispatcher.register(command()));
+		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> {
+			dispatcher.register(command());
+			if (DevCommands.enabled()) {
+				dispatcher.register(devCommand());
+			}
+		});
 		ServerLifecycleEvents.SERVER_STARTED.register(Matches::started);
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
 			Matches.stopping();
@@ -60,6 +66,18 @@ public final class MatchMod implements ModInitializer {
 					})
 					.executes(c -> Matches.commandJoin(c.getSource().getPlayerOrException(), StringArgumentType.getString(c, "id"),
 						StringArgumentType.getString(c, "role")))))));
+	}
+
+	/**
+	 * Dev only ({@code -Dcyberblock.devtools=true}, ops; for tools/mpcheck.py over RCON with {@code execute as <player> run ...}):
+	 * {@code /cyberblock test terminal} is a right-click on a Match Terminal where the player stands (the screen opens, and creating
+	 * is allowed from there); {@code /cyberblock test match <json>} is one {@code act match} from that player, through the same code.
+	 */
+	private static LiteralArgumentBuilder<CommandSourceStack> devCommand() {
+		return Commands.literal("cyberblock").then(Commands.literal("test").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+			.then(Commands.literal("terminal").executes(c -> Matches.devTerminal(c.getSource().getPlayerOrException())))
+			.then(Commands.literal("match").then(Commands.argument("json", StringArgumentType.greedyString())
+				.executes(c -> Matches.devAct(c.getSource().getPlayerOrException(), StringArgumentType.getString(c, "json"))))));
 	}
 
 	private static int list(final CommandSourceStack source) {

@@ -1,6 +1,7 @@
 package dev.cyberblock.mode.match;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.content.Content;
 import dev.cyberblock.content.ContentKind;
@@ -392,6 +393,26 @@ public final class Matches {
 
 	static int commandLeave(final ServerPlayer player) {
 		leave(player);
+		return 1;
+	}
+
+	/** Dev command: the player right-clicked a Match Terminal where it stands. */
+	static int devTerminal(final ServerPlayer player) {
+		openTerminal(player, player.blockPosition());
+		return 1;
+	}
+
+	/** Dev command: one act match from the player. */
+	static int devAct(final ServerPlayer player, final String json) {
+		JsonObject o;
+		try {
+			o = JsonParser.parseString(json).getAsJsonObject();
+		} catch (RuntimeException e) {
+			refuse(player, "cyberblock.match.refused.bad");
+			return 0;
+		}
+
+		act(player, o);
 		return 1;
 	}
 
