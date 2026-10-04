@@ -110,6 +110,11 @@ Everything works on Night City's real NPCs, vehicles and devices.
 - **Figures and skins (Phase 5):** guests see Night City's people in their faction's skin (women on the slim model), posed and
   moving like the real ones, cars in their colours, and every linked player as V (or Lucy with `/cyberblock body female`) with a `[V]` tag
   ([details](docs/HOW-TO-PLAY.md#figures-and-skins-phase-5)).
+- **Talking to Night City, the Afterlife hub and the Holo-Table (Phase 7):** right-click a ripperdoc, vendor, fixer, bartender, medic or mechanic for a
+  Minecraft screen; `/cyberblock hub` takes you to the Afterlife (full-screen Minecraft, with V parked for linked players), where the Holo-Table shows a live 3D
+  model of the replica with every player on it and spawns you anywhere; hosts also get Cyberpunk's own shops as Minecraft screens
+  ([talking](docs/HOW-TO-PLAY.md#talking-to-night-city-phase-7), [hub](docs/HOW-TO-PLAY.md#the-afterlife-hub-phase-7),
+  [Holo-Table](docs/HOW-TO-PLAY.md#the-holo-table-phase-7)).
 
 ## Build from source
 ```

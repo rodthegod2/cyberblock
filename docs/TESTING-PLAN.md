@@ -5,6 +5,127 @@ bottom (**Re-test: Wave B (Phases 3, 4, 5) first** when you are testing Wave B, 
 **Re-test: Wave A**, which points into Re-test Q and Re-test 1 for the details; then **In-game fixes 3**, then Re-test 3); each step says what should happen. Tell Claude "F4: what you saw" or "R5 L-1: what you saw" (or "step N: ...") and it reads
 `red4ext\logs\Cyberblock.log`, Minecraft's `mc\run\logs\latest.log` and captures the game window to diagnose.
 
+## Re-test: Wave C, Phase 7 (NPC interaction, the Afterlife hub and the Holo-Table)
+
+The Phase 7 part of the Wave C session. Play it on the local test server (a host with Cyberpunk and a guest, as in Wave B) after the Wave B sections it
+builds on (Phase 3's replica and Meet Up, Phase 5's figures with roles). Minecraft players now **talk to Night City's people**, the **Afterlife hub** is a
+place of its own that is open even with no host online, and the **Holo-Table** shows the replica as a live 3D model with every player on it and spawns
+players anywhere on the map. Hosts also get Cyberpunk's own shops and ripperdocs as Minecraft screens. Plan:
+`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 11. The player guide is
+[Talking to Night City](HOW-TO-PLAY.md#talking-to-night-city-phase-7), [The Afterlife hub](HOW-TO-PLAY.md#the-afterlife-hub-phase-7) and
+[The Holo-Table](HOW-TO-PLAY.md#the-holo-table-phase-7). Tell Claude "P7-5: what you saw" and it reads `Cyberblock.log`, the server log, `latest.log` and
+the game window.
+
+**Before you start.**
+- Phase 0 is still not run. The two checks that matter here are **(f)** (a vendor's stock can be read: P7-7) and **(g)** (V can be made invisible to the
+  people of Night City: P7-5). If a result below says "fallback", that is the written fallback, not a failure.
+- A guest needs some eddies: as an operator type `/give <guest> cyberblock:eddies 64` (more than once if you like).
+- The hub, the shops and the Holo-Table work with **no host online** (P7-5 and P7-6 have a guest-only variant); the host-only items are P7-5 (the cover and
+  the park), P7-6 (V teleported), P7-7 and P7-8.
+
+**What to try (one screen):**
+1. **As the guest, right-click a vendor figure** and buy something with eddies; sell something back (P7-1).
+2. **Right-click a fixer,** take a gig, finish it, get paid (P7-2).
+3. **Right-click a ripperdoc:** install an implant; try the surgery minigame on a strong one, and miss on purpose once (P7-3).
+4. **Bartender and medic:** a rumour, a drink, a heal (P7-4).
+5. **As the host, type `/cyberblock hub`:** full-screen Minecraft, V parked while an NPC walks by; leave with the same command (P7-5).
+6. **Open the Holo-Table** in the hub: everybody is a pin, rotate and zoom it, spawn at a landmark, then "join a friend" (P7-6).
+7. **As the host, open a Cyberpunk gun shop:** it is a Minecraft screen; buy a pistol and sell something (P7-7).
+8. **Fast travel** from the Holo-Table (P7-8) and **read the "which way" lines** (P7-9).
+
+| Item | What changed |
+|---|---|
+| Figures with a job | right-click a ripperdoc, vendor, fixer, bartender, medic or mechanic for a Minecraft screen with original dialogue |
+| Afterlife hub | the `cyberblock:afterlife` dimension (bar, shops, ripperdoc corner, Match Terminal, leaderboards, Holo-Table room), `/cyberblock hub`, the hub portal block |
+| Hub for hosts | `hub` and `park` messages: full-screen Minecraft while V is parked and unseen |
+| Holo-Table | the live 3D model (2D fallback), pins, spawn at landmarks, team bases, Spawn Beacons and friends, privacy |
+| Host shops | Cyberpunk's vendors and ripperdocs as Minecraft screens in real eddies (`reply` kind vendor, `uiact` vendorreq, buy, sell), fast travel from the table |
+| Tools | `tools.fakehost --vendor`; `tools.mpcheck hub` |
+
+### P7-1. A guest buys from a vendor figure
+1. As the guest (no Cyberpunk), find a vendor figure (the host's game has a clothes or gun seller near V, or use the one in the hub's row of shops) and
+   right-click it.
+2. **Expect:** a Minecraft screen with the vendor's own greeting, a list of items with prices in eddies, and your eddies at the top. Buy one: the item is
+   in your inventory and the eddies are gone. Sell one back: the eddies come back. With too few eddies the screen says so and nothing changes.
+3. A full inventory says "no room" and takes no eddies.
+
+### P7-2. A fixer's gig
+1. Right-click a fixer (the hub has one; elsewhere a figure the server's `npc_role` content marks as a fixer).
+2. **Expect:** a list of gigs. Take one: Minecraft tracks it like a quest. Do it (the four kinds are: deliver an item, defeat some hostiles of a faction,
+   reach a landmark, breach a device). Go back: the reward comes in eddies.
+
+### P7-3. A ripperdoc and the surgery minigame
+1. Right-click a ripperdoc. **Expect:** the implants with eddie prices; a cheap one installs at once and shows in the Cyberware screen (U).
+2. Pick one of the strongest implants. **Expect:** a **timing bar**. Stop it in the safe zone: the implant installs. Miss on purpose: you lose some health
+   and get a **30 second debuff**, and you are **never killed** by it.
+
+### P7-4. Bartender, medic, mechanic
+1. The bartender gives a **rumour** (a different one each time, original text) and sells a **drink** that gives a short buff.
+2. The medic **heals** Steve for eddies. The mechanic **repairs** a damaged elytra or armour piece (the repair of a Cyberpunk car is a descope, below).
+
+### P7-5. The hub, with V parked
+1. **As the host** (Cyberblock On, V standing somewhere with people around), type `/cyberblock hub`.
+2. **Expect:** the screen turns **full-screen Minecraft** (Night City is hidden, like a loading cover) and you stand in the hub: a bar with booths, a
+   ripperdoc corner, a row of shops, the Match Terminal, leaderboards and the Holo-Table room; always daytime, nothing hostile. V stays where it was,
+   **parked**.
+3. **Expect, if (g) works:** a person of Night City walks right past V and **ignores** V (no reaction at all, nobody shoots V). If it does not work, the log says the
+   park used its fallback (P7-9): V waits at a fast-travel point instead (still invulnerable and invisible) and is brought back when you leave.
+4. Leave with `/cyberblock hub` again (or the pause screen's **Cyberblock...** button, or the portal block). **Expect:** Night City comes back at once, V is
+   where it was, you can move and save again, and Steve is back where he came from.
+5. Enter again and **close Cyberpunk** (or press F9 Off): V must be released, nobody stays parked or invisible.
+6. **As the guest:** `/cyberblock hub` (or the pause screen) simply walks you in and back; the host sees nothing (no cover, no park).
+7. The Match Terminal says "coming in Phase 8"; the leaderboards show match wins, gigs done and chaos (zero until someone earns some).
+
+### P7-6. The Holo-Table
+1. In the hub's Holo-Table room right-click the table. **Expect:** a shared **3D model** of the replica's map, coloured like the Atlas; drag turns it, the
+   scroll wheel zooms, you can tilt it. A slow PC may get the **2D** map instead (the fallback; say if the 3D one stutters).
+2. **Expect:** every player is a pin with head, name and team colour; a **`[V]`** for the host; the status shows in a car or in combat.
+3. Click a **district landmark** and spawn there. **Expect:** the guest is in the replica at that spot; for the **host** V is **teleported** there (the plugin waits for
+   the world to stream in, then snaps V to the ground) and Steve stands where V is; V and Steve are not apart. You have 5 seconds of spawn protection.
+4. Spawn again at once: **expect** a 60 second cooldown message. Place a **Spawn Beacon** (a block) and spawn at it. Use **join a friend** on the other player.
+5. Toggle **hide my pin**: the other player no longer sees yours (outside matches everybody's pin is visible by default).
+6. Descope to know about: the layers for Server Heat, Gang Wars, matches and Van drones are empty until Phases 8 and later.
+
+### P7-7. A Cyberpunk shop as a Minecraft screen (host)
+1. As the host, walk up to a **gun shop** (a vendor) in Night City and open it. **Expect:** a **Minecraft** shop screen, not Cyberpunk's own; the items are the
+   shop's real stock with real prices, and your **real Cyberpunk money** is shown.
+2. Buy a pistol. **Expect:** the money in the HUD drops by the price, the pistol is in V's inventory (check Cyberpunk's own inventory afterwards). Sell a junk
+   item: the money goes up. Cyberpunk's money and Minecraft eddies are separate: no exchange.
+3. Open the **ripperdoc of the prologue** or any shop of a mission: **expect** Cyberpunk's own screen to stay (pass-through).
+4. If a shop's stock cannot be read (fallback of (f)), the same: Cyberpunk's own screen stays and the log says so (P7-9).
+
+### P7-8. Fast travel from the Holo-Table (host)
+1. In the Holo-Table open the **fast-travel** list: your game's points. Pick one.
+2. **Expect, once verified:** the game's own fast travel (a loading, then V stands at that point). Until it is verified in game the click only shows the toast
+   "Use the Night City map": that is the descope, not a bug.
+
+### P7-9. Which way is it working? (the runtime paths)
+Open `red4ext\logs\Cyberblock.log` and the server log and copy these lines to Claude. The exact wording is the packages', so search for the word.
+
+| Search for | The line says |
+|---|---|
+| `park:` | `park: on ...` and `park: off ...` for every hub entry and exit, with the method used: the full park (invisible, invulnerable, unseen by NPCs) or the **fallback** (the nearest fast-travel point; "unavailable: unseen" means check (g) did not work) |
+| `hub` (Cyberblock.log) | the compositor switching to full-screen Minecraft and back, one line each |
+| `vendor` | which shops were read (the number of stock lines) and which stayed Cyberpunk's own screen (pass-through), and why |
+| `fast travel` | whether fast travel from the Holo-Table is on or off (off until it is verified) |
+| `hub` (server log) | one line for every entry and exit: who and how (the command, the portal, the pause screen) |
+
+### P7-10. Without Cyberpunk: the fake host
+1. Start the test server as in Wave A, then `uv run python -m tools.mpcheck hub` (it starts a throw-away server, two clients and a fake host) or, for a
+   client you started yourself, `uv run python -m tools.fakehost --vendor --no-setup --hold 120`.
+2. **Expect:** the harness reports each check of the hub (park then hub on entering, hub then park on leaving, a guest sending the DLL nothing, the relay
+   dropping nothing). With `--vendor` alone the fake host answers a shop screen from 2 s to 8 s (two pistols to buy, a broken radio to sell) and prints
+   the `uiact` lines Minecraft sends.
+
+### Phase 7 descopes and risks (short)
+- **(f)** Hosts' shop stock depends on the vendor's items being readable; a shop that is not stays Cyberpunk's own screen.
+- **Holo-Table:** the 3D model may fall back to the 2D Atlas screen when it costs too much frame time.
+- **(g)** "Unseen by NPCs" while V is parked depends on a call that Phase 0 has not confirmed; the fallback is a fast-travel point. A parked V is
+  always invulnerable.
+- **Mechanic:** repairing a Cyberpunk car needs a verified call; until then only elytra and armour.
+- **Fast travel** from the Holo-Table stays off until it is verified in game.
+- The **Match Terminal** and several Holo-Table layers wait for Phase 8.
+
 ## Re-test: Wave B (Phases 3, 4, 5)
 
 **One session for all of Wave B**: Night City as Minecraft (Phase 3), the device layer (Phase 4), figures and skins (Phase 5)
