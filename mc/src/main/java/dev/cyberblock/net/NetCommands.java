@@ -40,7 +40,7 @@ public final class NetCommands {
 		}
 
 		ServerPlayer p = source.getPlayer();
-		return p != null && !source.getServer().isDedicatedServer() && source.getServer().isSingleplayerOwner(p.nameAndId());
+		return p != null && ServerNet.isOwner(source.getServer(), p);
 	}
 
 	/** "explosions on, damage on, hacks on, devices on, spawns off". */

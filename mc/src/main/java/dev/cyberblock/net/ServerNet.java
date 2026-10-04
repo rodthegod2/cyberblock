@@ -41,7 +41,7 @@ public final class ServerNet {
 		final String name;
 		final int joinTick;
 		final RelayGuard guard;
-		boolean handshaken;
+		boolean handshaken, kicked;
 		String mod = "", dll = "";
 		boolean wantHost;
 		Handshake.Result result = new Handshake.Result(true, Payloads.ROLE_GUEST, "");
@@ -114,7 +114,7 @@ public final class ServerNet {
 	/** Why this player may not host, or null when it may: the singleplayer/LAN owner always may (section 1.6). */
 	private static Handshake.@Nullable HostRefusal refusal(final MinecraftServer s, final ServerPlayer player, final ServerConfig config) {
 		NameAndId id = player.nameAndId();
-		if (!s.isDedicatedServer() && s.isSingleplayerOwner(id)) {
+		if (isOwner(s, player)) {
 			return null;
 		}
 
@@ -276,15 +276,23 @@ public final class ServerNet {
 		}
 
 		for (Conn c : List.copyOf(conns.values())) {
-			if (!c.handshaken && s.getTickCount() - c.joinTick >= Handshake.TIMEOUT_TICKS) {
-				ServerPlayer p = s.getPlayerList().getPlayer(c.uuid);
-				c.handshaken = true; // once
-				if (p != null) {
-					Cyberblock.LOG.info("handshake: {} sent no hs in 10 s: disconnected (no Cyberblock mod)", c.name);
-					p.connection.disconnect(Component.literal(Handshake.needsMod(config.joinHelp())));
-				}
+			if (c.handshaken || c.kicked || s.getTickCount() - c.joinTick < Handshake.TIMEOUT_TICKS) {
+				continue;
+			}
+
+			ServerPlayer p = s.getPlayerList().getPlayer(c.uuid);
+			// the singleplayer/LAN owner's client is the one running this server: it has the mod, never kick it
+			if (p != null && !isOwner(s, p)) {
+				c.kicked = true;
+				Cyberblock.LOG.info("handshake: {} sent no hs in 10 s: disconnected (no Cyberblock mod)", c.name);
+				p.connection.disconnect(Component.literal(Handshake.needsMod(config.joinHelp())));
 			}
 		}
+	}
+
+	/** The singleplayer or LAN owner (never on a dedicated server). */
+	static boolean isOwner(final MinecraftServer s, final ServerPlayer player) {
+		return !s.isDedicatedServer() && s.isSingleplayerOwner(player.nameAndId());
 	}
 
 	/** Every online player (at most 200): linked = a LINKED or ACTIVE session; the rest are Phase 1 defaults. */
