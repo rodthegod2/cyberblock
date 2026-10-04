@@ -41,8 +41,11 @@ final class FeedViewers {
 	private static void mark(final Map<UUID, Map<UUID, Long>> by, final UUID host, final UUID viewer, final boolean watching, final long now) {
 		if (watching) {
 			by.computeIfAbsent(host, k -> new HashMap<>()).put(viewer, now + WATCH_MS);
-		} else if (by.containsKey(host)) {
-			by.get(host).remove(viewer);
+		} else {
+			by.computeIfPresent(host, (k, m) -> {
+				m.remove(viewer);
+				return m.isEmpty() ? null : m;
+			});
 		}
 	}
 
@@ -58,7 +61,16 @@ final class FeedViewers {
 		}
 
 		m.values().removeIf(until -> until < now);
+		if (m.isEmpty()) {
+			by.remove(host); // no host key outlives its last viewer
+		}
+
 		return Set.copyOf(m.keySet());
+	}
+
+	/** Hosts with any entry (tests: nothing is kept for hosts nobody watches). */
+	int hostsKept() {
+		return union().size();
 	}
 
 	/** The feedreq messages due now: on for a host that has viewers and is not on, off for one that is on and has none. */
@@ -108,8 +120,10 @@ final class FeedViewers {
 
 	/** A player left: he watches nothing. */
 	void left(final UUID viewer) {
-		this.screens.values().forEach(m -> m.remove(viewer));
-		this.maps.values().forEach(m -> m.remove(viewer));
+		for (Map<UUID, Map<UUID, Long>> by : List.of(this.screens, this.maps)) {
+			by.values().forEach(m -> m.remove(viewer));
+			by.values().removeIf(Map::isEmpty);
+		}
 	}
 
 	void clear() {

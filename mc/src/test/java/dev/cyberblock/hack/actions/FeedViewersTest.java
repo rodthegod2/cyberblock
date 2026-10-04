@@ -1,6 +1,7 @@
 package dev.cyberblock.hack.actions;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -55,5 +56,43 @@ class FeedViewersTest {
 		assertEquals(0L, c.secondsLeft("a", 3000L));
 		c.start("b", 0L, 0L);
 		assertEquals(0L, c.secondsLeft("b", 0L));
+		c.start("c", 0L, 300L);
+		c.cancel("c");
+		assertEquals(0L, c.secondsLeft("c", 1L), "cancelled at once");
+	}
+
+	@Test
+	void ratesCountTheLastSecond() {
+		Cooldowns c = new Cooldowns();
+		for (int i = 0; i < 4; i++) {
+			assertTrue(c.withinRate("rhack:ana", 100L * i, 4), "request " + i);
+		}
+
+		assertFalse(c.withinRate("rhack:ana", 500L, 4), "a fifth within the second");
+		assertTrue(c.withinRate("rhack:ben", 500L, 4), "per key");
+		assertTrue(c.withinRate("rhack:ana", 1000L, 4), "the first one left the window");
+	}
+
+	@Test
+	void hostsNobodyWatchesLeaveNothingBehind() {
+		// a client sending watches for random hosts must not grow the server: stops add nothing, expired entries go
+		FeedViewers v = new FeedViewers();
+		for (int i = 0; i < 1000; i++) {
+			v.watch(UUID.randomUUID(), ANA, false, 0L);
+		}
+
+		assertEquals(0, v.hostsKept());
+		v.watch(HOST, ANA, true, 0L);
+		v.holding(OTHER, BEN, 0L);
+		v.changes(0L);
+		assertEquals(2, v.hostsKept());
+		v.watch(HOST, ANA, false, 10L);
+		v.changes(FeedViewers.WATCH_MS + 1L);
+		assertEquals(0, v.hostsKept(), "the held map ran out and the watch stopped: both hosts are off and forgotten");
+		v.watch(HOST, ANA, true, 0L);
+		v.left(ANA);
+		v.changes(1L);
+		v.changes(2L);
+		assertEquals(0, v.hostsKept());
 	}
 }

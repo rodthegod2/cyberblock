@@ -212,9 +212,9 @@ public final class ActionsClient {
 		String from = text(m, "from", 32);
 		String text = text(m, "text", ActWire.MAX_TEXT);
 		Vec3 p = ActWire.position(m.get("p"));
-		Component title = Component.translatableWithFallback("cyberblock.comms.from", "Comms from %s", from);
+		Component title = Component.translatableWithFallback("cyberblock.hack.comms.toast", "Comms from %s", from);
 		Component body = !text.isEmpty() ? Component.literal(text)
-			: Component.translatableWithFallback("cyberblock.comms.waypoint", "Waypoint at %s %s %s", (int) Math.floor(p.x), (int) Math.floor(p.y),
+			: Component.translatableWithFallback("cyberblock.hack.comms.waypoint_at", "Waypoint at %s %s %s", (int) Math.floor(p.x), (int) Math.floor(p.y),
 				(int) Math.floor(p.z));
 		UiLink.toast("sms", title.getString(), body.getString(), 8.0);
 		Minecraft minecraft = Minecraft.getInstance();

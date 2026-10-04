@@ -15,7 +15,8 @@ import org.jspecify.annotations.Nullable;
  * Net Map recon: a Night City camera's view (megaplan task 6-I1, the written fallback of 6-S1: the scripts report the camera's place
  * and facing, and Minecraft renders the replica from there instead of taking over the host's Cyberpunk screen). While open, the
  * client's camera follows a marker at the camera's place, looking along its facing and a little down; a CCTV frame is drawn over
- * it. Only what this client has loaded shows (the replica within its view distance, the figures it tracks). On an active host's
+ * it. Only what this client has loaded shows (the replica within its view distance, the figures it tracks), so the server refuses
+ * a camera farther than that from the player ("Move within N blocks of the camera", RemoteActions.cameraReach). On an active host's
  * own screen Cyberpunk drives the camera, so the view stays the host's. Esc closes it.
  */
 final class CameraFeedScreen extends Screen {

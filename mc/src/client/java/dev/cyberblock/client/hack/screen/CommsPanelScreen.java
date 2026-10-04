@@ -17,7 +17,7 @@ final class CommsPanelScreen extends ToolScreen {
 	private EditBox message;
 
 	CommsPanelScreen() {
-		super(Component.translatableWithFallback("item.cyberblock.comms_panel", "Comms Panel"), 240, 20 + 4 * ROW + 40);
+		super(Component.translatableWithFallback("cyberblock.hack.comms.title", "Comms Panel"), 240, 20 + 4 * ROW + 40);
 	}
 
 	@Override
@@ -27,12 +27,12 @@ final class CommsPanelScreen extends ToolScreen {
 			ActionsClient.selected = next == null ? null : next.id();
 		});
 		this.message = new EditBox(this.font, this.left() + PAD, this.top() + 20 + ROW + 1, this.panelW() - 2 * PAD, 18,
-			Component.translatableWithFallback("cyberblock.comms.message", "Message"));
+			Component.translatableWithFallback("cyberblock.hack.comms.message", "Message"));
 		this.message.setMaxLength(ActWire.MAX_TEXT);
-		this.message.setHint(Component.translatableWithFallback("cyberblock.comms.hint", "Short message (64 characters)"));
+		this.message.setHint(Component.translatableWithFallback("cyberblock.hack.comms.hint", "Short message (64 characters)"));
 		this.addRenderableWidget(this.message);
-		this.row(2, Component.translatableWithFallback("cyberblock.comms.send", "Send message"), b -> this.send(false));
-		this.row(3, Component.translatableWithFallback("cyberblock.comms.send_waypoint", "Send message and waypoint here"), b -> this.send(true));
+		this.row(2, Component.translatableWithFallback("cyberblock.hack.comms.send", "Send"), b -> this.send(false));
+		this.row(3, Component.translatableWithFallback("cyberblock.hack.comms.waypoint", "Send my waypoint"), b -> this.send(true));
 		this.setInitialFocus(this.message);
 	}
 
@@ -46,7 +46,7 @@ final class CommsPanelScreen extends ToolScreen {
 		Vec3 p = ActionsClient.aimedPoint(this.minecraft);
 		int[] at = waypoint ? new int[] {(int) Math.floor(p.x), (int) Math.floor(p.y), (int) Math.floor(p.z)} : null;
 		boolean ok = ActionsClient.send(ActWire.T_COMMS, ActWire.comms(h.id(), text, at));
-		this.status(ok ? Component.translatableWithFallback("cyberblock.comms.sending", "Sending to %s...", h.name())
+		this.status(ok ? Component.translatableWithFallback("cyberblock.hack.comms.sending", "Sending to %s...", h.name())
 			: Component.translatableWithFallback("cyberblock.rhack.offline", "This server has no Cyberblock link"), ok ? McTheme.PANEL_TEXT : McTheme.RED);
 		if (ok) {
 			this.message.setValue("");

@@ -3,6 +3,7 @@ package dev.cyberblock.hack.actions;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
+import dev.cyberblock.net.Permissions;
 import dev.cyberblock.net.ServerNet;
 import java.util.HashMap;
 import java.util.Map;
@@ -14,6 +15,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Prediction;
+import net.minecraft.util.Util;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -51,13 +53,23 @@ final class PhotoFeed {
 		viewers.watch(watch.host(), player.getUUID(), watch.on(), now);
 	}
 
-	/** `cyberblock:act t:"feedmap"`: the player gets the host's feed map (a fresh locked map, made once per host). */
+	/**
+	 * `cyberblock:act t:"feedmap"` (RemoteActions checked the host's session, the toggle and the cooldown): the player gets the
+	 * host's feed map (a fresh locked map, made once per host), unless he already carries one of that host.
+	 */
 	static void giveMap(final ServerPlayer player, final UUID host) {
 		HostSession session = HostSessions.of(host);
 		MinecraftServer server = player.level().getServer();
 		if (session == null) {
 			player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.hack.no_link", "No Night City to reach: its host left"));
 			return;
+		}
+
+		for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+			if (host.equals(hostOf(player.getInventory().getItem(i)))) {
+				player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.feed.map_have", "You already carry %s's feed map", session.name()));
+				return;
+			}
 		}
 
 		MapId id = maps.computeIfAbsent(host, h -> create(server.overworld()));
@@ -79,12 +91,15 @@ final class PhotoFeed {
 		return id;
 	}
 
-	/** Once a second: players holding a feed map watch its host; feedreq goes on or off where that changed. */
+	/**
+	 * Once a second: players holding a feed map watch its host (only a live host whose `hacks` toggle lets them in, so a map taken
+	 * before the owner switched guests off stops updating); feedreq goes on or off where that changed.
+	 */
 	static void tick(final MinecraftServer server, final long now) {
 		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
 			for (InteractionHand hand : InteractionHand.values()) {
 				UUID host = hostOf(p.getItemInHand(hand));
-				if (host != null) {
+				if (host != null && mayWatch(host, p.getUUID())) {
 					viewers.holding(host, p.getUUID(), now);
 				}
 			}
@@ -97,6 +112,12 @@ final class PhotoFeed {
 				Cyberblock.LOG.info("feed: {} feedreq {}", session.name(), change.on() ? "on" : "off");
 			}
 		}
+	}
+
+	/** A live session of this host whose `hacks` toggle admits the viewer (the owner and other hosts always). */
+	static boolean mayWatch(final UUID host, final UUID viewer) {
+		HostSession session = HostSessions.of(host);
+		return session != null && session.active() && Permissions.allows(host, viewer, Permissions.Toggle.HACKS);
 	}
 
 	/** The host a feed map item shows (and its map noted again after a restart), null for any other item. */
@@ -131,9 +152,10 @@ final class PhotoFeed {
 
 		MinecraftServer server = host.level().getServer();
 		String json = ActWire.feedUi(session.uuid(), px);
-		for (UUID viewer : viewers.screenViewers(session.uuid(), System.currentTimeMillis())) {
+		// the same clock as watch() (Util.getMillis, not the wall clock), and the toggle again: it may have changed since the watch
+		for (UUID viewer : viewers.screenViewers(session.uuid(), Util.getMillis())) {
 			ServerPlayer p = server.getPlayerList().getPlayer(viewer);
-			if (p != null) {
+			if (p != null && Permissions.allows(session.uuid(), viewer, Permissions.Toggle.HACKS)) {
 				ServerNet.ui(p, ActWire.UI_FEED, json);
 			}
 		}

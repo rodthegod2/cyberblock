@@ -20,7 +20,7 @@ final class VehiclePanelScreen extends ToolScreen {
 	private final String name;
 
 	VehiclePanelScreen(final int eid, final String name) {
-		super(Component.translatableWithFallback("cyberblock.vpanel.title", "Vehicle Panel"), 200, 20 + HACKS.size() * ROW + 40);
+		super(Component.translatableWithFallback("cyberblock.hack.vehicle.title", "Vehicle Panel"), 200, 20 + HACKS.size() * ROW + 40);
 		this.eid = eid;
 		this.name = name;
 	}
@@ -38,14 +38,14 @@ final class VehiclePanelScreen extends ToolScreen {
 		super.tick();
 		Entity car = this.minecraft.level == null ? null : this.minecraft.level.getEntity(this.eid);
 		if (car == null || car.isRemoved()) {
-			this.status(Component.translatableWithFallback("cyberblock.vpanel.gone", "The car is gone"), McTheme.RED);
+			this.status(Component.translatableWithFallback("cyberblock.hack.vehicle.gone", "The car is gone"), McTheme.RED);
 		}
 	}
 
 	@Override
 	public void extractRenderState(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY, final float a) {
 		super.extractRenderState(graphics, mouseX, mouseY, a);
-		String car = this.name.isEmpty() ? Component.translatableWithFallback("cyberblock.vpanel.car", "Car").getString() : this.name;
+		String car = this.name.isEmpty() ? Component.translatableWithFallback("cyberblock.hack.vehicle.car", "Car").getString() : this.name;
 		graphics.text(this.font, this.font.plainSubstrByWidth(car, this.panelW() / 2), this.left() + this.panelW() - PAD - Math.min(this.font.width(car),
 			this.panelW() / 2), this.top() + 7, McTheme.DARK_GRAY, false);
 	}

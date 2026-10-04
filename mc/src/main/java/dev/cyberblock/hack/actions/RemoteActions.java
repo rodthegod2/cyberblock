@@ -58,6 +58,10 @@ public final class RemoteActions {
 	static final long COMMS_SECONDS = 2L;
 	/** At most this many cameras in one Net Map answer. */
 	static final int MAX_CAMS = 512;
+	/** One player's `rhack` requests: at most this many a second (on top of each hack's own cooldown). */
+	static final int RHACK_PER_SECOND = 4;
+	/** One feed map per player this often (each one is a new item). */
+	static final long FEEDMAP_SECONDS = 5L;
 	static final NetIndex index = new NetIndex();
 	static final Cooldowns cooldowns = new Cooldowns();
 
@@ -82,6 +86,13 @@ public final class RemoteActions {
 			ActWire.FeedWatch watch = ActWire.parseFeedWatch(m);
 			if (watch == null) {
 				warn("bad feed request dropped");
+				return;
+			}
+
+			// stopping is always fine (it never adds an entry); starting needs a live host whose `hacks` toggle lets this player in
+			Component why = watch.on() ? feedRefusal(player, watch.host()) : null;
+			if (why != null) {
+				player.sendOverlayMessage(why.copy().withStyle(ChatFormatting.RED));
 			} else {
 				PhotoFeed.watch(player, watch, Util.getMillis());
 			}
@@ -90,6 +101,12 @@ public final class RemoteActions {
 			UUID host = ActWire.parseHost(m);
 			if (host == null) {
 				warn("bad feedmap request dropped");
+				return;
+			}
+
+			Component why = feedMapRefusal(cooldowns, player.getUUID(), Util.getMillis(), feedRefusal(player, host));
+			if (why != null) {
+				player.sendOverlayMessage(why.copy().withStyle(ChatFormatting.RED));
 			} else {
 				PhotoFeed.giveMap(player, host);
 			}
@@ -98,6 +115,7 @@ public final class RemoteActions {
 		HostSessions.onEnd(session -> {
 			index.end(session.uuid());
 			pending.keySet().removeIf(k -> k.owner().equals(session.uuid()));
+			cooldowns.cancel(blackoutKey(session.uuid()));
 		});
 		PhotoFeed.init();
 		Hacking.otherResults(RemoteActions::onResult);
@@ -129,6 +147,11 @@ public final class RemoteActions {
 
 		RemoteHack hack = request.hack();
 		long now = Util.getMillis();
+		if (!cooldowns.withinRate("rhack:" + player.getUUID(), now, RHACK_PER_SECOND)) {
+			warn("rhack over " + RHACK_PER_SECOND + " a second from one player dropped");
+			return;
+		}
+
 		String coolKey = player.getUUID() + ":" + hack.wire();
 		long wait = cooldowns.secondsLeft(coolKey, now);
 		if (wait > 0) {
@@ -158,7 +181,7 @@ public final class RemoteActions {
 		}
 
 		if (hack == RemoteHack.BLACKOUT) {
-			long busy = cooldowns.secondsLeft("blackout:" + owner, now);
+			long busy = cooldowns.secondsLeft(blackoutKey(owner), now);
 			if (busy > 0) {
 				refuse(player, hack, Component.translatableWithFallback("cyberblock.rhack.busy", "%s: already running there (%s s left)", name(hack), busy), "busy");
 				return;
@@ -171,7 +194,8 @@ public final class RemoteActions {
 		pending.put(new CyberRoute.Key(owner, id), new Pending(player.getUUID(), hack, now, r.at(), distance, r.name(), r.yaw()));
 		cooldowns.start(coolKey, now, hack.cooldownSeconds());
 		if (hack == RemoteHack.BLACKOUT) {
-			cooldowns.start("blackout:" + owner, now, secs);
+			// held from the send; released at once if Night City refuses or never answers (finished)
+			cooldowns.start(blackoutKey(owner), now, secs);
 		}
 
 		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.rhack.sent", "%s: uploading...", name(hack)).withStyle(ChatFormatting.AQUA));
@@ -198,12 +222,25 @@ public final class RemoteActions {
 			case CAMERA -> {
 				HostSession session = activeSession(player, hack, request.host());
 				NetIndex.Cam cam = session == null ? null : index.camera(session.uuid(), request.dev(), Util.getMillis());
-				if (session != null && cam == null) {
+				if (session == null) {
+					return null;
+				}
+
+				if (cam == null) {
 					refuse(player, hack, Component.translatableWithFallback("cyberblock.rhack.no_camera", "That camera is gone"), "no camera");
 					return null;
 				}
 
-				return session == null ? null : new Resolved(session, cam.id(), new Vec3(cam.x(), cam.y(), cam.z()), "", cam.yaw(), true, null);
+				// the view is rendered from what this client has loaded: past its view distance it would show empty sky
+				Vec3 at = new Vec3(cam.x(), cam.y(), cam.z());
+				int reach = cameraReach(player.requestedViewDistance(), player.level().getServer().getPlayerList().getViewDistance());
+				if (!cameraInReach(player.position(), at, reach)) {
+					refuse(player, hack, Component.translatableWithFallback("cyberblock.rhack.camera_far", "Move within %s blocks of the camera to watch it", reach),
+						"camera beyond the view distance");
+					return null;
+				}
+
+				return new Resolved(session, cam.id(), at, "", cam.yaw(), true, null);
 			}
 			case DISTRICT -> {
 				HostSession session = activeSession(player, hack, request.host());
@@ -258,6 +295,77 @@ public final class RemoteActions {
 		return Component.translatableWithFallback(hack.langKey(), hack.english());
 	}
 
+	static String blackoutKey(final UUID owner) {
+		return "blackout:" + owner;
+	}
+
+	/**
+	 * Blocks around the player a camera view can show: his chunk view distance as the server applies it (vanilla's ChunkMap clamps
+	 * the client's request to 2..the server's), one chunk less for the edge.
+	 */
+	static int cameraReach(final int requestedChunks, final int serverChunks) {
+		return (Math.clamp(requestedChunks, 2, Math.max(2, serverChunks)) - 1) * 16;
+	}
+
+	/** Whether a camera lies within that reach of the player (horizontally, as chunks load). */
+	static boolean cameraInReach(final Vec3 player, final Vec3 camera, final int reach) {
+		double dx = camera.x - player.x, dz = camera.z - player.z;
+		return dx * dx + dz * dz <= (double) reach * reach;
+	}
+
+	/**
+	 * Night City's refusal as the player reads it: the scripts answer the out-of-range rule with its lang key
+	 * ("cyberblock.hack.out_of_range") and a target that is no longer streamed with "target gone" (both: out of range); any other
+	 * lang key is translated, plain text stays as it is.
+	 */
+	static Component reasonText(final String reason) {
+		if (reason.equals("target gone") || reason.equals("cyberblock.hack.out_of_range")) {
+			return Hacking.outOfRange();
+		}
+
+		return reason.startsWith("cyberblock.") ? Component.translatableWithFallback(reason, "refused") : Component.literal(reason);
+	}
+
+	/** A request is over: a blackout Night City refused or never answered frees its owner's blackout lock at once. */
+	static void finished(final Cooldowns cooldowns, final UUID owner, final RemoteHack hack, final boolean ok) {
+		if (hack == RemoteHack.BLACKOUT && !ok) {
+			cooldowns.cancel(blackoutKey(owner));
+		}
+	}
+
+	/** Why this player may not watch this host's photo feed now, or null: it needs a live host whose `hacks` toggle lets him in. */
+	private static @Nullable Component feedRefusal(final ServerPlayer player, final UUID host) {
+		HostSession session = HostSessions.of(host);
+		return feedRefusal(session != null && session.active(), session != null && Permissions.allows(host, player.getUUID(), Permissions.Toggle.HACKS));
+	}
+
+	static @Nullable Component feedRefusal(final boolean live, final boolean allowed) {
+		if (!live) {
+			return Component.translatableWithFallback("cyberblock.hack.no_link", "No Night City to reach: its host left");
+		}
+
+		return allowed ? null : Component.translatableWithFallback("cyberblock.guest.blocked", "This Cyberpunk host does not let guests do that");
+	}
+
+	/**
+	 * The feedmap act: one map per player every {@link #FEEDMAP_SECONDS} (each is a new item), and only where the feed may be
+	 * watched. Why not now, or null after starting the player's wait.
+	 */
+	static @Nullable Component feedMapRefusal(final Cooldowns cooldowns, final UUID player, final long now, final @Nullable Component feedRefusal) {
+		String key = "feedmap:" + player;
+		long wait = cooldowns.secondsLeft(key, now);
+		if (wait > 0) {
+			return Component.translatableWithFallback("cyberblock.feed.map_wait", "Feed map: wait %s s", wait);
+		}
+
+		if (feedRefusal != null) {
+			return feedRefusal;
+		}
+
+		cooldowns.start(key, now, FEEDMAP_SECONDS);
+		return null;
+	}
+
 	/** Hacking.otherResults: a `hackresult` for one of this module's requests. */
 	private static boolean onResult(final MinecraftServer server, final UUID owner, final HackResult result) {
 		Pending p = pending.remove(new CyberRoute.Key(owner, result.id()));
@@ -269,6 +377,7 @@ public final class RemoteActions {
 			Hacking.announceRange();
 		}
 
+		finished(cooldowns, owner, p.hack(), result.ok());
 		ServerPlayer player = server.getPlayerList().getPlayer(p.asker());
 		HostSession session = HostSessions.of(owner);
 		Cyberblock.LOG.info("rhack: {} answered {} {}{}", session == null ? owner : session.name(), p.hack().wire(), result.ok() ? "ok" : "refused",
@@ -278,10 +387,11 @@ public final class RemoteActions {
 		}
 
 		Component name = name(p.hack());
+		Component reason = reasonText(result.reason());
 		player.sendOverlayMessage(result.ok()
 			? Component.translatableWithFallback("cyberblock.rhack.done", "%s: done", name).withStyle(ChatFormatting.GREEN)
-			: Component.translatableWithFallback("cyberblock.rhack.failed", "%s failed: %s", name, result.reason()).withStyle(ChatFormatting.RED));
-		ServerNet.ui(player, ActWire.UI_RESULT, ActWire.result(p.hack(), result.ok(), result.reason()));
+			: Component.translatableWithFallback("cyberblock.rhack.failed", "%s failed: %s", name, reason).withStyle(ChatFormatting.RED));
+		ServerNet.ui(player, ActWire.UI_RESULT, ActWire.result(p.hack(), result.ok(), result.ok() ? "" : reason.getString()));
 		if (result.ok()) {
 			landed(player, p);
 		}
@@ -365,18 +475,18 @@ public final class RemoteActions {
 		HostSession session = HostSessions.of(comms.to());
 		ServerPlayer host = session == null ? null : session.player();
 		if (wait > 0) {
-			player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.comms.wait", "Comms: wait %s s", wait).withStyle(ChatFormatting.RED));
+			player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.hack.comms.wait", "Comms: wait %s s", wait).withStyle(ChatFormatting.RED));
 			return;
 		}
 
 		if (host == null) {
-			player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.comms.no_host", "Comms: that host is not linked").withStyle(ChatFormatting.RED));
+			player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.hack.comms.no_host", "There is no host to send to").withStyle(ChatFormatting.RED));
 			return;
 		}
 
 		cooldowns.start(key, now, COMMS_SECONDS);
 		ServerNet.ui(host, ActWire.UI_COMMS, ActWire.commsUi(player.getPlainTextName(), comms.text(), comms.p()));
-		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.comms.sent", "Comms: sent to %s", session.name()).withStyle(ChatFormatting.GREEN));
+		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.hack.comms.sent", "Sent to %s", session.name()).withStyle(ChatFormatting.GREEN));
 		Cyberblock.LOG.info("comms: {} -> {} ({}{})", player.getPlainTextName(), session.name(), comms.text().isEmpty() ? "" : "message",
 			comms.p() == null ? "" : comms.text().isEmpty() ? "waypoint" : " and waypoint");
 	}
@@ -408,7 +518,7 @@ public final class RemoteActions {
 			h.add("p", ActWire.vec(v.position()));
 			h.addProperty("district", s.district());
 			h.addProperty("active", s.active());
-			h.addProperty("blackout", cooldowns.secondsLeft("blackout:" + s.uuid(), now));
+			h.addProperty("blackout", cooldowns.secondsLeft(blackoutKey(s.uuid()), now));
 			hosts.add(h);
 		}
 
@@ -448,6 +558,7 @@ public final class RemoteActions {
 			long timeoutMs = Hacking.answerTimeout(session != null && session.active()) / 1_000_000L;
 			if (now - e.getValue().sentMs() > timeoutMs) {
 				it.remove();
+				finished(cooldowns, e.getKey().owner(), e.getValue().hack(), false);
 				ServerPlayer player = server.getPlayerList().getPlayer(e.getValue().asker());
 				if (player != null) {
 					Component why = Component.translatableWithFallback("cyberblock.rhack.no_answer", "%s: Night City did not answer", name(e.getValue().hack()));

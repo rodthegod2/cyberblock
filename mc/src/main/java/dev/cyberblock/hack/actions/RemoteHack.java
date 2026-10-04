@@ -59,7 +59,7 @@ public enum RemoteHack {
 		return this.target;
 	}
 
-	/** The device type whose bit (on top of the `devices` toggle) gates a guest's use; null: the `hacks` toggle gates it. */
+	/** The device type whose bit (on top of the `hacks` and `devices` toggles) gates a guest's use; null: only `hacks` gates it. */
 	public Permissions.@Nullable DeviceType device() {
 		return this.device;
 	}
@@ -84,12 +84,24 @@ public enum RemoteHack {
 		};
 	}
 
-	/** The lang key of its name, cyberblock.rhack.<wire>. */
+	/** The lang key of its name: the lang owner's (6A) button keys, cyberblock.hack.vehicle|traffic|netmap.*. */
 	public String langKey() {
-		return "cyberblock.rhack." + this.wire();
+		return switch (this) {
+			case VEH_LOCK -> "cyberblock.hack.vehicle.lock";
+			case VEH_ENGINE_OFF -> "cyberblock.hack.vehicle.engine_off";
+			case VEH_BRAKE -> "cyberblock.hack.vehicle.brake";
+			case VEH_START -> "cyberblock.hack.vehicle.start";
+			case VEH_JAM -> "cyberblock.hack.vehicle.jam";
+			case TRAFFIC_SWITCH -> "cyberblock.hack.traffic.switch";
+			case GRIDLOCK -> "cyberblock.hack.traffic.gridlock";
+			case BLACKOUT -> "cyberblock.hack.netmap.blackout";
+			case CAM_FEED -> "cyberblock.hack.netmap.cameras";
+			case OUTLINE -> "cyberblock.hack.netmap.outline";
+			case PING_AREA -> "cyberblock.hack.netmap.ping";
+		};
 	}
 
-	/** Plain English name (the fallback of {@link #langKey}). */
+	/** Plain English name (the fallback of {@link #langKey}, the same text as en_us.json). */
 	public String english() {
 		return switch (this) {
 			case VEH_LOCK -> "Lock doors";
@@ -97,25 +109,26 @@ public enum RemoteHack {
 			case VEH_BRAKE -> "Force brake";
 			case VEH_START -> "Remote start";
 			case VEH_JAM -> "Jam";
-			case TRAFFIC_SWITCH -> "Switch traffic lights";
-			case GRIDLOCK -> "Gridlock";
-			case BLACKOUT -> "Blackout";
-			case CAM_FEED -> "Camera feed";
-			case OUTLINE -> "Outline";
-			case PING_AREA -> "Ping";
+			case TRAFFIC_SWITCH -> "Switch the lights";
+			case GRIDLOCK -> "Gridlock this road";
+			case BLACKOUT -> "Black out district";
+			case CAM_FEED -> "Camera feeds";
+			case OUTLINE -> "Outline people";
+			case PING_AREA -> "Ping area";
 		};
 	}
 
 	/**
 	 * May this request reach the owner's game? The owner itself and other hosts always may (section 1.6, Permissions.allows); a
-	 * guest needs the `hacks` toggle, or for a device hack the `devices` toggle and the device type's bit.
+	 * guest always needs the `hacks` toggle (it gates quickhacks on the host's NPCs, cars and devices), and for a device hack also
+	 * the `devices` toggle and the device type's bit.
 	 */
 	public boolean allowed(final Permissions perms, final boolean ownerOrHost) {
 		if (ownerOrHost) {
 			return true;
 		}
 
-		return this.device == null ? perms.has(Permissions.Toggle.HACKS) : perms.device(this.device);
+		return perms.has(Permissions.Toggle.HACKS) && (this.device == null || perms.device(this.device));
 	}
 
 	public static @Nullable RemoteHack byWire(final @Nullable String wire) {

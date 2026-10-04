@@ -60,7 +60,7 @@ final class NetMapScreen extends Screen {
 		}
 
 		Component label() {
-			return this.hack != null ? ToolScreen.hackName(this.hack) : Component.translatableWithFallback("cyberblock.vpanel.title", "Vehicle Panel");
+			return this.hack != null ? ToolScreen.hackName(this.hack) : Component.translatableWithFallback("cyberblock.hack.vehicle.title", "Vehicle Panel");
 		}
 	}
 
@@ -78,7 +78,7 @@ final class NetMapScreen extends Screen {
 	private @Nullable Button hostButton, blackoutButton, feedButton;
 
 	NetMapScreen() {
-		super(Component.translatableWithFallback("item.cyberblock.net_map", "Net Map"));
+		super(Component.translatableWithFallback("cyberblock.hack.netmap.title", "Net Map"));
 		NetState.Host h = ActionsClient.selectedHost();
 		LocalPlayer player = net.minecraft.client.Minecraft.getInstance().player;
 		Vec3 centre = h != null ? h.p() : player != null ? player.position() : Vec3.ZERO;
@@ -115,12 +115,12 @@ final class NetMapScreen extends Screen {
 		this.addRenderableWidget(Button.builder(ToolScreen.hackName(RemoteHack.TRAFFIC_SWITCH), b -> this.districtHack(RemoteHack.TRAFFIC_SWITCH, 0))
 			.bounds(x, y2, trafficW, 20).build());
 		x += trafficW + 2;
-		this.addRenderableWidget(Button.builder(Component.translatableWithFallback("cyberblock.netmap.take_feed", "Take feed map"), b -> this.takeFeedMap())
+		this.addRenderableWidget(Button.builder(Component.translatableWithFallback("cyberblock.hack.netmap.take_feed", "Take feed map"), b -> this.takeFeedMap())
 			.bounds(x, y2, feedW, 20).build());
 		int right = this.width - MARGIN;
 		this.addRenderableWidget(Button.builder(Component.literal("+"), b -> this.zoom(WHEEL_STEP * WHEEL_STEP)).bounds(right - 64, y2, 20, 20).build());
 		this.addRenderableWidget(Button.builder(Component.literal("-"), b -> this.zoom(1.0 / (WHEEL_STEP * WHEEL_STEP))).bounds(right - 42, y2, 20, 20).build());
-		this.addRenderableWidget(Button.builder(Component.translatableWithFallback("cyberblock.netmap.centre", "V"), b -> this.centreOnHost())
+		this.addRenderableWidget(Button.builder(Component.translatableWithFallback("cyberblock.hack.netmap.centre", "V"), b -> this.centreOnHost())
 			.bounds(right - 20, y2, 20, 20).build());
 		this.hostButton = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
 			NetState.Host next = ActionsClient.state().next(ActionsClient.selected);
@@ -145,12 +145,12 @@ final class NetMapScreen extends Screen {
 		}
 
 		if (this.blackoutButton != null) {
-			Component label = Component.translatableWithFallback("cyberblock.netmap.blackout", "Blackout %s min", BLACKOUT_MINUTES[this.blackoutIndex]);
+			Component label = Component.translatableWithFallback("cyberblock.hack.netmap.blackout_minutes", "Blackout: %s min", BLACKOUT_MINUTES[this.blackoutIndex]);
 			this.blackoutButton.setMessage(h != null && h.blackout() > 0 ? label.copy().withStyle(ChatFormatting.DARK_GRAY) : label);
 		}
 
 		if (this.feedButton != null) {
-			Component label = Component.translatableWithFallback("cyberblock.netmap.feed", "Feed");
+			Component label = Component.translatableWithFallback("cyberblock.hack.netmap.feed", "Photo feed");
 			this.feedButton.setMessage(this.feed ? label.copy().withStyle(ChatFormatting.YELLOW, ChatFormatting.UNDERLINE) : label);
 		}
 	}
@@ -164,7 +164,7 @@ final class NetMapScreen extends Screen {
 	private void districtHack(final RemoteHack hack, final int secs) {
 		NetState.Host h = ActionsClient.selectedHost();
 		if (h == null) {
-			this.status(Component.translatableWithFallback("cyberblock.netmap.no_host", "No linked Cyberpunk host"), McTheme.RED);
+			this.status(Component.translatableWithFallback("cyberblock.hack.netmap.no_host", "No linked Cyberpunk host"), McTheme.RED);
 			return;
 		}
 
@@ -383,17 +383,17 @@ final class NetMapScreen extends Screen {
 	/** What a click does now, or why nothing can be done. */
 	private Component hint(final NetState state) {
 		if (ActionsClient.stateAge() == Long.MAX_VALUE) {
-			return Component.translatableWithFallback("cyberblock.netmap.waiting", "Asking the server...");
+			return Component.translatableWithFallback("cyberblock.hack.netmap.waiting", "Asking the server...");
 		}
 
 		if (state.hosts().isEmpty()) {
-			return Component.translatableWithFallback("cyberblock.netmap.no_host", "No linked Cyberpunk host");
+			return Component.translatableWithFallback("cyberblock.hack.netmap.no_host", "No linked Cyberpunk host");
 		}
 
 		return switch (this.mode) {
-			case CAMERA -> Component.translatableWithFallback("cyberblock.netmap.hint.camera", "Click a camera (%s seen) to watch its feed", state.cams().size());
-			case VEHICLE -> Component.translatableWithFallback("cyberblock.netmap.hint.vehicle", "Click a car to open its Vehicle Panel");
-			default -> Component.translatableWithFallback("cyberblock.netmap.hint.point", "Click the map: %s there", this.mode.label());
+			case CAMERA -> Component.translatableWithFallback("cyberblock.hack.netmap.hint.camera", "Click a camera (%s seen) to watch its feed", state.cams().size());
+			case VEHICLE -> Component.translatableWithFallback("cyberblock.hack.netmap.hint.vehicle", "Click a car to open its Vehicle Panel");
+			default -> Component.translatableWithFallback("cyberblock.hack.netmap.hint.point", "Click the map: %s there", this.mode.label());
 		};
 	}
 
@@ -454,7 +454,7 @@ final class NetMapScreen extends Screen {
 			graphics.fill(Math.min(sx, tx), Math.min(sy, tz), Math.max(sx, tx) + 1, Math.max(sy, tz) + 1, 0x8055FFFF);
 			if (this.near(cam.p(), mouseX, mouseY)) {
 				NetState.Host owner = state.host(cam.host());
-				hover = Component.translatableWithFallback("cyberblock.netmap.camera", "Camera (%s)", owner == null ? "?" : owner.name());
+				hover = Component.translatableWithFallback("cyberblock.hack.netmap.camera", "Camera (%s)", owner == null ? "?" : owner.name());
 			}
 		}
 
@@ -496,11 +496,11 @@ final class NetMapScreen extends Screen {
 		NetState.Host h = ActionsClient.selectedHost();
 		int x = this.right() - FEED_PX - 6, y = this.top() + 6;
 		McTheme.panel(graphics, x - 4, y - 14, FEED_PX + 8, FEED_PX + 18);
-		Component label = Component.translatableWithFallback("cyberblock.netmap.feed_of", "Photo feed: %s", h == null ? "?" : h.name());
+		Component label = Component.translatableWithFallback("cyberblock.hack.netmap.feed_of", "Photo feed: %s", h == null ? "?" : h.name());
 		graphics.text(this.font, this.font.plainSubstrByWidth(label.getString(), FEED_PX), x, y - 11, McTheme.PANEL_TEXT, false);
 		if (h == null || !FeedTexture.draw(graphics, h.id(), x, y, FEED_PX)) {
 			graphics.fill(x, y, x + FEED_PX, y + FEED_PX, 0xFF202020);
-			graphics.centeredText(this.font, Component.translatableWithFallback("cyberblock.netmap.feed_waiting", "Waiting for the feed..."), x + FEED_PX / 2,
+			graphics.centeredText(this.font, Component.translatableWithFallback("cyberblock.hack.netmap.feed_wait", "Waiting for the host's picture..."), x + FEED_PX / 2,
 				y + FEED_PX / 2 - 4, McTheme.GRAY);
 		} else if (FeedTexture.age(h.id()) > 3) {
 			graphics.text(this.font, FeedTexture.age(h.id()) + " s", x + 2, y + FEED_PX - 10, McTheme.RED, true);

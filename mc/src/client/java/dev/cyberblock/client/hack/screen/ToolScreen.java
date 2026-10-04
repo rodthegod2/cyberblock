@@ -67,11 +67,11 @@ abstract class ToolScreen extends Screen {
 	/** The host line of a panel: "Host: name (district)", or that no Cyberpunk host is linked. */
 	static Component hostLabel(final NetState.@Nullable Host host) {
 		if (host == null) {
-			return Component.translatableWithFallback("cyberblock.netmap.no_host", "No linked Cyberpunk host");
+			return Component.translatableWithFallback("cyberblock.hack.netmap.no_host", "No linked Cyberpunk host");
 		}
 
 		String where = host.district().isEmpty() ? "" : " (" + host.district() + ")";
-		return Component.translatableWithFallback("cyberblock.netmap.host", "Host: %s", host.name() + where);
+		return Component.translatableWithFallback("cyberblock.hack.netmap.host", "Host: %s", host.name() + where);
 	}
 
 	@Override

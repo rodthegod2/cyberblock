@@ -25,7 +25,7 @@ class RemoteHackTest {
 		assertNull(RemoteHack.byWire("CAM_FEED"));
 		assertNull(RemoteHack.byWire(null));
 		for (RemoteHack h : RemoteHack.values()) {
-			assertEquals("cyberblock.rhack." + h.wire(), h.langKey());
+			assertTrue(h.langKey().matches("cyberblock\\.hack\\.(vehicle|traffic|netmap)\\.[a-z_]+"), h.langKey());
 			assertFalse(h.english().isEmpty());
 			assertTrue(h.cooldownSeconds() > 0, h.wire());
 		}
@@ -51,7 +51,8 @@ class RemoteHackTest {
 	void guestsNeedTheOwnersToggles() {
 		Permissions none = new Permissions(0, 0);
 		Permissions hacksOnly = new Permissions(Payloads.PERM_HACKS, 0);
-		Permissions devicesNoTraffic = new Permissions(Payloads.PERM_DEVICES, Permissions.ALL_DEVICES & ~Permissions.DeviceType.TRAFFIC.bit());
+		Permissions hacksNoTraffic = new Permissions(Payloads.PERM_HACKS | Payloads.PERM_DEVICES,
+			Permissions.ALL_DEVICES & ~Permissions.DeviceType.TRAFFIC.bit());
 		// the owner itself (or another host) is never gated
 		for (RemoteHack h : RemoteHack.values()) {
 			assertTrue(h.allowed(none, true), h.wire());
@@ -62,10 +63,20 @@ class RemoteHackTest {
 		assertTrue(RemoteHack.OUTLINE.allowed(hacksOnly, false));
 		assertTrue(RemoteHack.PING_AREA.allowed(hacksOnly, false));
 		assertFalse(RemoteHack.BLACKOUT.allowed(hacksOnly, false), "a blackout is a device action");
-		assertFalse(RemoteHack.TRAFFIC_SWITCH.allowed(devicesNoTraffic, false), "the traffic bit is off");
-		assertFalse(RemoteHack.GRIDLOCK.allowed(devicesNoTraffic, false));
-		assertTrue(RemoteHack.BLACKOUT.allowed(devicesNoTraffic, false), "lights stay allowed");
-		assertTrue(RemoteHack.CAM_FEED.allowed(devicesNoTraffic, false));
+		assertFalse(RemoteHack.TRAFFIC_SWITCH.allowed(hacksNoTraffic, false), "the traffic bit is off");
+		assertFalse(RemoteHack.GRIDLOCK.allowed(hacksNoTraffic, false));
+		assertTrue(RemoteHack.BLACKOUT.allowed(hacksNoTraffic, false), "lights stay allowed");
+		assertTrue(RemoteHack.CAM_FEED.allowed(hacksNoTraffic, false));
 		assertTrue(RemoteHack.CAM_FEED.allowed(Permissions.DEFAULT, false));
+	}
+
+	@Test
+	void hacksOffBlocksDeviceHacksEvenWithTheirDeviceBitOn() {
+		// section 1.6: `hacks` gates guest quickhacks on the host's NPCs, cars AND devices (`guests hacks off` stops the Net Map)
+		Permissions devicesOnly = new Permissions(Payloads.PERM_DEVICES, Permissions.ALL_DEVICES);
+		for (RemoteHack h : List.of(RemoteHack.BLACKOUT, RemoteHack.TRAFFIC_SWITCH, RemoteHack.GRIDLOCK, RemoteHack.CAM_FEED)) {
+			assertFalse(h.allowed(devicesOnly, false), h.wire());
+			assertTrue(h.allowed(devicesOnly, true), h.wire() + ": the owner and other hosts are never gated");
+		}
 	}
 }
