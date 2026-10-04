@@ -66,6 +66,21 @@ public class Cyberblock implements ModInitializer {
 
 			dispatcher.register(Commands.literal("cyberblock").then(survey));
 		});
+		// /cyberblock debug aim|view [on|off] (plan Q-B3): the Cyberblock client handles these before they are sent; the server only
+		// has them for completion and to answer a client without the mod (permission level 0)
+		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> {
+			var debug = Commands.literal("debug");
+			for (String flag : new String[] {"aim", "view"}) {
+				var node = Commands.literal(flag).executes(command -> clientOnly(command.getSource()));
+				for (String state : new String[] {"on", "off"}) {
+					node = node.then(Commands.literal(state).executes(command -> clientOnly(command.getSource())));
+				}
+
+				debug = debug.then(node);
+			}
+
+			dispatcher.register(Commands.literal("cyberblock").then(debug));
+		});
 		LOG.info("cyberblock loaded");
 	}
 
@@ -87,6 +102,12 @@ public class Cyberblock implements ModInitializer {
 		String line = Bridge.surveyCommand.apply(op);
 		source.sendSuccess(() -> Component.literal(line), false);
 		return 1;
+	}
+
+	/** A client-side command reached the server: the player's client does not have the Cyberblock mod. */
+	private static int clientOnly(final CommandSourceStack source) {
+		source.sendFailure(Component.translatableWithFallback("cyberblock.debug.client_only", "This needs the Cyberblock mod on your client"));
+		return 0;
 	}
 
 	private static String metres(final int k) {

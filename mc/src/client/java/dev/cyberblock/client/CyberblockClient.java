@@ -4,6 +4,8 @@ package dev.cyberblock.client;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.ProxyEntities;
 import dev.cyberblock.WorldBridge;
+import dev.cyberblock.client.settings.SettingsClient;
+import dev.cyberblock.client.view.ViewClient;
 import java.util.List;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -49,6 +51,8 @@ public class CyberblockClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		HostLink.launch();
+		SettingsClient.init();
+		ViewClient.init();
 		// proxies are never drawn: Cyberpunk shows the NPC or vehicle they stand for
 		EntityRendererRegistry.register(ProxyEntities.HUMAN, NoopRenderer::new);
 		EntityRendererRegistry.register(ProxyEntities.VEHICLE, NoopRenderer::new);
