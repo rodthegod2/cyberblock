@@ -120,6 +120,10 @@ Everything works on Night City's real NPCs, vehicles and devices.
   model of the replica with every player on it and spawns you anywhere; hosts also get Cyberpunk's own shops as Minecraft screens
   ([talking](docs/HOW-TO-PLAY.md#talking-to-night-city-phase-7), [hub](docs/HOW-TO-PLAY.md#the-afterlife-hub-phase-7),
   [Holo-Table](docs/HOW-TO-PLAY.md#the-holo-table-phase-7)).
+- **Modes: the Van, the Overlord, matches and more (Phase 8):** a guest runs the host's hacks from a **Van** with flyable drones, an **Overlord** spawns enemies with a
+  fair warning, Cyberpunk-linked players make **matches** at the Match Terminal (PvP only when both opt in, Gang Wars), chips work on **players** with a Breach to
+  block them, one **Server Heat** meter brings the NCPD and Max-Tac, you go **down** and get revived (or call the Trauma Team) instead of dying, and spectators get a
+  caster overlay ([details](docs/HOW-TO-PLAY.md#modes-the-van-the-overlord-matches-and-more-phase-8)).
 
 ## Build from source
 ```
