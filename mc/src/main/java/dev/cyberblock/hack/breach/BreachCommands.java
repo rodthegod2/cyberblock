@@ -23,7 +23,8 @@ import org.jspecify.annotations.Nullable;
  * <li>{@code /cyberblock test breach <x> <y> <z> solve|fail}: opens the Breach of the Net Port at that position (as a right-click) and
  * plays it: {@code solve} picks the server's planted path (every daemon uploaded), {@code fail} fills the buffer with picks that upload
  * nothing</li>
- * <li>{@code /cyberblock test breach practice <security 1-3>} and {@code ... breach short}: a practice breach to look at (no device)</li>
+ * <li>{@code /cyberblock test breach practice <security 1-3>} and {@code ... breach short}: a practice breach to look at (no device);
+ * {@code ... breach step}: the next pick of the planted path; {@code ... breach abort}</li>
  * </ul>
  */
 final class BreachCommands {
@@ -40,6 +41,12 @@ final class BreachCommands {
 				.then(Commands.literal("practice").then(Commands.argument("security", IntegerArgumentType.integer(1, 3))
 					.executes(c -> practice(c, IntegerArgumentType.getInteger(c, "security"), false))))
 				.then(Commands.literal("short").executes(c -> practice(c, 1, true)))
+				.then(Commands.literal("step").executes(BreachCommands::step))
+				.then(Commands.literal("abort").executes(c -> {
+					ServerPlayer p = c.getSource().getPlayerOrException();
+					Breach.abort(p.getUUID());
+					return say(c.getSource(), "test: breach abort by " + p.getPlainTextName());
+				}))
 				.then(Commands.argument("x", IntegerArgumentType.integer()).then(Commands.argument("y", IntegerArgumentType.integer())
 					.then(Commands.argument("z", IntegerArgumentType.integer())
 						.then(Commands.literal("solve").executes(c -> play(c, true)))
@@ -51,6 +58,15 @@ final class BreachCommands {
 		boolean opened = Breach.practice(p, security, shortBreach, null);
 		return say(c.getSource(), "test: breach practice " + (shortBreach ? "short" : "security " + security) + " for " + p.getPlainTextName() + " -> "
 			+ (opened ? "opened" : "busy"));
+	}
+
+	/** The next pick of the planted path (while the picks so far follow it). */
+	private static int step(final CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+		ServerPlayer p = c.getSource().getPlayerOrException();
+		BreachGame g = Breach.game(p);
+		int k = g == null ? -1 : g.picks().length;
+		boolean ok = g != null && k < g.puzzle().solution().length && Breach.pick(p, g.puzzle().solution()[k]);
+		return say(c.getSource(), "test: breach step by " + p.getPlainTextName() + " -> " + (ok ? "picked " + g.puzzle().solution()[k] : "no pick"));
 	}
 
 	private static int play(final CommandContext<CommandSourceStack> c, final boolean solve) throws CommandSyntaxException {

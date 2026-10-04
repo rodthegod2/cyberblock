@@ -21,6 +21,10 @@ import net.minecraft.network.chat.Component;
  */
 public final class BreachScreen extends Screen {
 	static final int CELL = 22, BUTTON = 20, SLOT = 18, SIDE = 152, PAD = 8, TOP = 34, BOTTOM = 30;
+	/** The boss-bar sprite is 182 px wide. */
+	static final int BAR = 182;
+	/** Dark green (ChatFormatting.DARK_GREEN): readable on the light panel, where the bright green is not. */
+	static final int DONE = 0xFF00AA00;
 	private BreachWire.Screen data;
 	/** When the timer runs out (System.currentTimeMillis), or -1 while it has not started. */
 	private long deadline = -1;
@@ -145,10 +149,9 @@ public final class BreachScreen extends Screen {
 		int left = this.left(), top = this.top();
 		graphics.text(this.font, this.title, left + PAD, top + PAD, McTheme.PANEL_TEXT, false);
 		long now = System.currentTimeMillis();
-		int barWidth = width(n) - 2 * PAD - 44;
-		McTheme.bossBar(graphics, left + PAD, top + 22, barWidth, timeLeft(this.deadline, now, this.data.total(), this.data.done()));
+		McTheme.bossBar(graphics, left + PAD, top + 22, BAR, timeLeft(this.deadline, now, this.data.total(), this.data.done()));
 		double seconds = this.data.done() ? this.data.left() : this.deadline < 0 ? this.data.total() : Math.max(0, this.deadline - now) / 1000.0;
-		graphics.text(this.font, String.format(Locale.ROOT, "%.1f s", seconds), left + PAD + barWidth + 6, top + 20, McTheme.PANEL_TEXT, false);
+		graphics.text(this.font, String.format(Locale.ROOT, "%.1f s", seconds), left + PAD + BAR + 6, top + 20, McTheme.PANEL_TEXT, false);
 
 		int x = left + PAD + n * CELL + PAD;
 		int y = top + TOP;
@@ -168,14 +171,14 @@ public final class BreachScreen extends Screen {
 		}
 
 		if (this.data.done()) {
-			graphics.text(this.font, this.result(), left + PAD, top + height(n) - BOTTOM + 10, this.data.state().equals(BreachWire.SOLVED) ? McTheme.GREEN
+			graphics.text(this.font, this.result(), left + PAD, top + height(n) - BOTTOM + 10, this.data.state().equals(BreachWire.SOLVED) ? DONE
 				: this.data.state().equals("aborted") ? McTheme.PANEL_TEXT : McTheme.RED, false);
 		}
 	}
 
 	/** One daemon row: its name (green once uploaded, red when the breach ended without it) and its codes, the started ones lit. */
 	private void daemon(final GuiGraphicsExtractor graphics, final BreachWire.Seq seq, final int[] buffer, final int x, final int y) {
-		int colour = seq.ok() ? McTheme.GREEN : this.data.done() ? McTheme.RED : McTheme.PANEL_TEXT;
+		int colour = seq.ok() ? DONE : this.data.done() ? McTheme.RED : McTheme.PANEL_TEXT;
 		graphics.text(this.font, this.font.plainSubstrByWidth(BreachWire.daemonName(seq.id()).getString(), SIDE), x, y, colour, false);
 		int lit = seq.ok() ? seq.codes().length : BreachRules.matched(buffer, buffer.length, seq.codes());
 		for (int i = 0; i < seq.codes().length; i++) {
