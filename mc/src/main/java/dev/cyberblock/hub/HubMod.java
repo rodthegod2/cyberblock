@@ -8,14 +8,17 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
 
 /**
  * The Afterlife hub (megaplan 7-H1), its own entrypoint: the hub blocks, {@code /cyberblock hub [leave|status|rebuild]}, the build
@@ -32,10 +35,17 @@ public final class HubMod implements ModInitializer {
 		ServerLifecycleEvents.SERVER_STARTED.register(HubMod::started);
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> HubTravel.stopping());
 		ServerTickEvents.END_SERVER_TICK.register(HubTravel::tick);
+		// besides mayBuild (HubTravel.grounding, which covers the rest of what vanilla checks): no breaking, and none of the refused
+		// items on a block (a hub block's own use still works) or in the air
 		PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, be) -> !Afterlife.is(level) || player.isCreative());
-		UseBlockCallback.EVENT.register((player, level, hand, hit) -> Afterlife.is(level) && !player.isCreative()
-			&& player.getItemInHand(hand).getItem() instanceof BlockItem && !HubBlocks.is(level.getBlockState(hit.getBlockPos()))
-			? InteractionResult.FAIL : InteractionResult.PASS);
+		UseBlockCallback.EVENT.register((player, level, hand, hit) -> refused(player, level, hand, true)
+			&& !HubBlocks.is(level.getBlockState(hit.getBlockPos())) ? InteractionResult.FAIL : InteractionResult.PASS);
+		UseItemCallback.EVENT.register((player, level, hand) -> refused(player, level, hand, false) ? InteractionResult.FAIL : InteractionResult.PASS);
+	}
+
+	private static boolean refused(final Player player, final Level level, final InteractionHand hand, final boolean onBlock) {
+		return Afterlife.is(level) && HubRules.grounded(true, player.isCreative())
+			&& HubRules.refusedItem(player.getItemInHand(hand).getItem().getClass(), onBlock);
 	}
 
 	/** Builds the hub once, the first time the Afterlife exists; one line says whether the hub is open. */

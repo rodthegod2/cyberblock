@@ -5,6 +5,19 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import net.minecraft.world.item.ArmorStandItem;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.BoatItem;
+import net.minecraft.world.item.BoneMealItem;
+import net.minecraft.world.item.BucketItem;
+import net.minecraft.world.item.EndCrystalItem;
+import net.minecraft.world.item.FireChargeItem;
+import net.minecraft.world.item.FlintAndSteelItem;
+import net.minecraft.world.item.HangingEntityItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.MinecartItem;
+import net.minecraft.world.item.PlaceOnWaterBlockItem;
+import net.minecraft.world.item.SpawnEggItem;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -90,17 +103,48 @@ final class HubRules {
 	}
 
 	/**
-	 * The Phase 0 (g) path line (megaplan 4.1 g, unconfirmed in game until the CET checks G1-G6): which way parking is known to work.
-	 *
-	 * @param answer the DLL's parked answer to a park on, or null when none came in time
+	 * A refused park ({@code on:true, ok:false}) takes the player out of the hub at once (shared/protocol.md "The cover only stays up
+	 * over a parked V"): full-screen Minecraft must never hide a V that is neither invisible nor invulnerable.
 	 */
-	static String parkPath(final @Nullable Parked answer) {
-		if (answer == null) {
-			return "unconfirmed: no parked answer came, so the documented park (invisible, invulnerable, saving and camera locked) is assumed";
+	static boolean exitsHub(final Parked answer) {
+		return answer.on() && !answer.ok();
+	}
+
+	/**
+	 * The Phase 0 (g) path line (megaplan 4.1 g, unconfirmed in game until the CET checks G1-G6): which way parking is known to work.
+	 * Only a park that worked or one never answered says it; refusals have their own line and take the player out.
+	 *
+	 * @param answered a {@code parked on:true, ok:true} came; false: none came in time
+	 */
+	static String parkPath(final boolean answered) {
+		return answered ? "confirmed by the parked answer (V parked by the Phase 0 g method or its fast-travel-point fallback)"
+			: "unconfirmed: no parked answer came, so the documented park (invisible, invulnerable, saving and camera locked) is assumed";
+	}
+
+	/** Whether the hub takes this player's {@code mayBuild}: in the Afterlife and not in creative. */
+	static boolean grounded(final boolean inHub, final boolean creative) {
+		return inHub && !creative;
+	}
+
+	/**
+	 * Items refused to non-creative players in the Afterlife besides {@code mayBuild}: blocks, fluids, fire, bone meal, and everything
+	 * that puts an entity down (a creeper or an end crystal would break the hub).
+	 */
+	static final List<Class<? extends Item>> REFUSED_ITEMS = List.of(BlockItem.class, BucketItem.class, SpawnEggItem.class, BoatItem.class,
+		MinecartItem.class, ArmorStandItem.class, HangingEntityItem.class, EndCrystalItem.class, FlintAndSteelItem.class,
+		FireChargeItem.class, BoneMealItem.class);
+
+	/**
+	 * Whether an item of this class is refused: on a block, every {@link #REFUSED_ITEMS} one; in the air the same except plain block
+	 * items (carrots and berries are block items, and eating them is fine), but lily pads, which place on water from the air with no
+	 * ability check (as spawn eggs and boats spawn).
+	 */
+	static boolean refusedItem(final Class<? extends Item> item, final boolean onBlock) {
+		if (!onBlock && BlockItem.class.isAssignableFrom(item)) {
+			return PlaceOnWaterBlockItem.class.isAssignableFrom(item);
 		}
 
-		return answer.ok() ? "confirmed by the parked answer (V parked by the Phase 0 g method or its fast-travel-point fallback)"
-			: "refused (" + answer.reason() + "): V stays where it is, unparked";
+		return REFUSED_ITEMS.stream().anyMatch(c -> c.isAssignableFrom(item));
 	}
 
 	/** The facing of a block at (x, z) that looks toward (tx, tz): the larger of the two distances wins (ties go north-south). */

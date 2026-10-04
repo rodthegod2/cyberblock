@@ -5,6 +5,21 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.util.List;
+import net.minecraft.world.item.ArmorStandItem;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.BoatItem;
+import net.minecraft.world.item.BoneMealItem;
+import net.minecraft.world.item.BucketItem;
+import net.minecraft.world.item.EndCrystalItem;
+import net.minecraft.world.item.FireChargeItem;
+import net.minecraft.world.item.FlintAndSteelItem;
+import net.minecraft.world.item.HangingEntityItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.MinecartItem;
+import net.minecraft.world.item.PlaceOnWaterBlockItem;
+import net.minecraft.world.item.PotionItem;
+import net.minecraft.world.item.SolidBucketItem;
+import net.minecraft.world.item.SpawnEggItem;
 import org.junit.jupiter.api.Test;
 
 /** Plan 7-H1: what a linked player's DLL hears about the hub, who may enter, and the parked answer. */
@@ -64,9 +79,40 @@ class HubRulesTest {
 
 	@Test
 	void theParkPathLineSaysWhichWayIsActive() {
-		assertTrue(HubRules.parkPath(null).startsWith("unconfirmed"));
-		assertTrue(HubRules.parkPath(new HubRules.Parked(true, true, "")).startsWith("confirmed"));
-		assertTrue(HubRules.parkPath(new HubRules.Parked(false, false, "blocked (in a vehicle)")).contains("blocked (in a vehicle)"));
+		assertTrue(HubRules.parkPath(false).startsWith("unconfirmed"));
+		assertTrue(HubRules.parkPath(true).startsWith("confirmed"));
+	}
+
+	@Test
+	void aRefusedParkTakesThePlayerOut() {
+		assertTrue(HubRules.exitsHub(new HubRules.Parked(true, false, "blocked (in a vehicle)")), "the cover only stays up over a parked V");
+		assertFalse(HubRules.exitsHub(new HubRules.Parked(true, true, "")));
+		assertFalse(HubRules.exitsHub(new HubRules.Parked(false, false, "blocked")), "a failed release is only logged");
+		assertFalse(HubRules.exitsHub(new HubRules.Parked(false, true, "")));
+	}
+
+	@Test
+	void outsideCreativeNobodyBuildsInTheHub() {
+		assertTrue(HubRules.grounded(true, false));
+		assertFalse(HubRules.grounded(true, true), "creative builds the hub");
+		assertFalse(HubRules.grounded(false, false), "outside the hub nothing changes");
+	}
+
+	@Test
+	void theRefusedItems() {
+		for (Class<? extends Item> c : List.of(BlockItem.class, BucketItem.class, SolidBucketItem.class, SpawnEggItem.class, BoatItem.class,
+			MinecartItem.class, ArmorStandItem.class, HangingEntityItem.class, EndCrystalItem.class, FlintAndSteelItem.class,
+			FireChargeItem.class, BoneMealItem.class, PlaceOnWaterBlockItem.class)) {
+			assertTrue(HubRules.refusedItem(c, true), c.getSimpleName() + " on a block");
+		}
+
+		for (Class<? extends Item> c : List.of(BucketItem.class, SpawnEggItem.class, BoatItem.class, PlaceOnWaterBlockItem.class)) {
+			assertTrue(HubRules.refusedItem(c, false), c.getSimpleName() + " in the air");
+		}
+
+		assertFalse(HubRules.refusedItem(BlockItem.class, false), "eating a carrot (a block item) stays allowed");
+		assertFalse(HubRules.refusedItem(Item.class, true), "a plain item is not refused");
+		assertFalse(HubRules.refusedItem(PotionItem.class, false), "nor a drink");
 	}
 
 	@Test

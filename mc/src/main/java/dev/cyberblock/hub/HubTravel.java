@@ -6,6 +6,7 @@ import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.JoinLock;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -20,7 +21,6 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelData;
-import org.jspecify.annotations.Nullable;
 
 /**
  * Entering and leaving the Afterlife (megaplan 7-H1) and keeping a linked player's Cyberpunk in step with it. Entering (the command,
@@ -33,7 +33,8 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Log lines: {@code hub: <name> entered (from <level> <x> <y> <z>)}, {@code hub: <name> left (to <level> <x> <y> <z>)},
  * {@code hub: <name> <- hub in:<b>, park on:<b>}, {@code hub: park path: <which>} (once a run, Phase 0 g), {@code hub: <name> V not
- * parked (<reason>)}.
+ * parked (<reason>): taken out of the Afterlife} (a refused park: the cover only stays up over a parked V), {@code hub: <name> V not
+ * released (<reason>)}. Outside creative nobody builds in the hub (see grounding).
  */
 public final class HubTravel {
 	/** A park on waits this long for its parked answer before the path line says it is unconfirmed. */
@@ -43,6 +44,8 @@ public final class HubTravel {
 	/** Park ons waiting for their parked answer: player UUID -> when sent (ms). */
 	private static final Map<UUID, Long> awaiting = new HashMap<>();
 	private static final Map<UUID, Long> lastPortal = new HashMap<>();
+	/** Players whose {@code mayBuild} the hub took (see grounding). */
+	private static final Set<UUID> grounded = new HashSet<>();
 	private static boolean pathLogged;
 
 	private HubTravel() {
@@ -68,6 +71,7 @@ public final class HubTravel {
 		told.clear();
 		awaiting.clear();
 		lastPortal.clear();
+		grounded.clear();
 		pathLogged = false;
 	}
 
@@ -150,6 +154,7 @@ public final class HubTravel {
 
 	/** Once a second: every player's DLL in step with their place, fallen players back on the floor, unanswered parks noted. */
 	static void tick(final MinecraftServer server) {
+		grounding(server);
 		if (server.getTickCount() % 20 != 0) {
 			return;
 		}
@@ -170,7 +175,7 @@ public final class HubTravel {
 				return false;
 			}
 
-			logPath(null);
+			logPath(false);
 			return true;
 		});
 	}
@@ -216,26 +221,56 @@ public final class HubTravel {
 		}
 
 		awaiting.remove(s.uuid());
-		if (!a.on() && a.ok()) {
+		if (!a.on()) {
+			if (!a.ok()) {
+				Cyberblock.LOG.info("hub: {} V not released ({})", s.name(), a.reason());
+			}
+
 			return; // the answer to a release
 		}
 
-		logPath(a);
-		if (!a.ok()) {
-			Cyberblock.LOG.info("hub: {} V not parked ({})", s.name(), a.reason());
-			ServerPlayer p = s.player();
-			if (p != null) {
-				p.sendSystemMessage(Component.translatableWithFallback("cyberblock.hub.not_parked",
-					"Your Cyberpunk could not park V (%s): V stays where it is, unprotected", a.reason()));
-			}
+		if (!HubRules.exitsHub(a)) {
+			logPath(true);
+			return;
+		}
+
+		// the cover only stays up over a parked V (shared/protocol.md): an unparked V under full-screen Minecraft could be killed unseen
+		Cyberblock.LOG.info("hub: {} V not parked ({}): taken out of the Afterlife", s.name(), a.reason());
+		ServerPlayer p = s.player();
+		if (p != null && inHub(p)) {
+			leave(p);
+			p.sendSystemMessage(Component.translatableWithFallback("cyberblock.hub.not_parked",
+				"Your Cyberpunk could not park V (%s): you are back in Night City", a.reason()));
 		}
 	}
 
-	/** The Phase 0 (g) path, once a server run (a refusal is logged each time on its own line). */
-	private static void logPath(final HubRules.@Nullable Parked answer) {
+	/** The Phase 0 (g) path, once a server run, from the first confirmed park or the first unanswered one (refusals have their own line). */
+	private static void logPath(final boolean answered) {
 		if (!pathLogged) {
 			pathLogged = true;
-			Cyberblock.LOG.info("hub: park path: {}", HubRules.parkPath(answer));
+			Cyberblock.LOG.info("hub: park path: {}", HubRules.parkPath(answered));
+		}
+	}
+
+	/**
+	 * Every tick: outside creative nobody builds in the Afterlife ({@code mayBuild} off, as adventure mode has it): vanilla then refuses
+	 * placing blocks, buckets, fire, bone meal, tool conversions and entity-placing items on blocks (ItemStack.useOn, mayUseItemAt).
+	 * Only players this grounded are given it back (from their game mode), so nothing else's choice is undone.
+	 */
+	private static void grounding(final MinecraftServer server) {
+		for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+			boolean hub = HubRules.grounded(inHub(p), p.isCreative());
+			if (hub) {
+				grounded.add(p.getUUID());
+			} else if (!grounded.remove(p.getUUID())) {
+				continue;
+			}
+
+			boolean may = !hub && !p.gameMode().isBlockPlacingRestricted();
+			if (p.getAbilities().mayBuild != may) {
+				p.getAbilities().mayBuild = may;
+				p.onUpdateAbilities();
+			}
 		}
 	}
 

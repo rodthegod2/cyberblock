@@ -5,8 +5,10 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
+import dev.cyberblock.client.net.ClientNet;
 import dev.cyberblock.client.net.HState;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
 import org.jspecify.annotations.Nullable;
@@ -176,6 +178,7 @@ public final class HostState {
 	/** The host went away: no key stays held, and V is neither crouching, held, standing nor in the air (nothing is known of V). Client thread. */
 	static void resetKeys() {
 		jumpDown = sprintDown = jumpPressed = false;
+		latest = null; // the DLL's last pose is no one's now (the hub would otherwise export with it)
 		resetAim();
 		crouching = held = stands = airborne = false;
 		feetCpZ = Double.NaN;
@@ -403,6 +406,17 @@ public final class HostState {
 	 */
 	public static volatile boolean released;
 
+	/** Whether this PC's DLL is linked and its session is host (tests swap it): only then does the DLL show the hub and forward input. */
+	static volatile BooleanSupplier hostLinked = () -> HostLink.linked() && ClientNet.role() == ClientNet.Role.HOST;
+
+	/**
+	 * In the hub with the DLL showing it (linked, session host): the DLL's keys and mouse are this client's input (megaplan 1.9, 7D's
+	 * "Input in the hub"), its cursor is the one screens use, and frames keep going to it.
+	 */
+	public static boolean hostInput() {
+		return released && hostLinked.getAsBoolean();
+	}
+
 	/** The latest pose if the host is still sending (and drives Steve), else null. */
 	static Pose live() {
 		Pose p = latest;
@@ -415,11 +429,17 @@ public final class HostState {
 	}
 
 	/**
-	 * The pose a frame is exported with: this frame's; in the hub ({@link #released}) the latest one received, however old, so Minecraft's
-	 * own picture keeps reaching the DLL, whose full-screen hub mode (megaplan 7-D1) shows it as rendered. Null before any pose.
+	 * The pose a frame is exported with: this frame's; in the hub ({@link #released}) while the DLL shows it ({@link #hostInput}) the
+	 * latest one received, however old (parked V may send cam rarely), so Minecraft's own picture keeps reaching the DLL, whose
+	 * full-screen hub mode (megaplan 7-D1) shows it as rendered. Null before any pose, and in the hub without a linked host DLL (no
+	 * export: Minecraft's window keeps its own picture).
 	 */
 	public static Pose exportPose() {
-		return released ? latest : frame;
+		if (!released) {
+			return frame;
+		}
+
+		return hostInput() ? latest : null;
 	}
 
 	public static void beginFrame() {
