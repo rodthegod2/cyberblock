@@ -57,6 +57,7 @@ public class CyberblockClient implements ClientModInitializer {
 		// proxies are never drawn: Cyberpunk shows the NPC or vehicle they stand for
 		EntityRendererRegistry.register(ProxyEntities.HUMAN, NoopRenderer::new);
 		EntityRendererRegistry.register(ProxyEntities.VEHICLE, NoopRenderer::new);
+		ClientTickEvents.START_CLIENT_TICK.register(minecraft -> ClientInput.tickStart());
 		ClientTickEvents.END_CLIENT_TICK.register(CyberblockClient::tick);
 		// launcher players (plan retest3 M5): a "Play Cyberblock" button on the title screen
 		ScreenEvents.AFTER_INIT.register((minecraft, screen, width, height) -> {
@@ -102,6 +103,7 @@ public class CyberblockClient implements ClientModInitializer {
 		AutoWorld.tick(minecraft);
 		StatusReporter.tick(minecraft);
 		AimDebug.tick(minecraft);
+		ClientInput.tickEnd(minecraft);
 	}
 
 	/** Settings for sitting behind another game: keep running unfocused, and no sky/cloud/bobbing effects in the picture. */
