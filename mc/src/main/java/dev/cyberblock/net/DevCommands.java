@@ -66,7 +66,7 @@ public final class DevCommands {
 			return 0;
 		}
 
-		Entity proxy = s == null ? null : Bridge.proxyById.apply(cpId);
+		Entity proxy = s == null ? null : Bridge.proxyById.at(s.uuid(), cpId);
 		if (proxy == null || !(proxy.level() instanceof ServerLevel level)) {
 			source.sendFailure(Component.literal("test: no proxy " + id + " of host " + host));
 			return 0;
