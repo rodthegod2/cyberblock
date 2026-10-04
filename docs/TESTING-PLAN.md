@@ -5,6 +5,131 @@ bottom (**Re-test: Wave B (Phases 3, 4, 5) first** when you are testing Wave B, 
 **Re-test: Wave A**, which points into Re-test Q and Re-test 1 for the details; then **In-game fixes 3**, then Re-test 3); each step says what should happen. Tell Claude "F4: what you saw" or "R5 L-1: what you saw" (or "step N: ...") and it reads
 `red4ext\logs\Cyberblock.log`, Minecraft's `mc\run\logs\latest.log` and captures the game window to diagnose.
 
+## Re-test 6 (Phase 6: hacking and the interaction map)
+
+The Phase 6 part of the Wave C session: **Night City hacked from Minecraft with redstone and screens.** Device Relays, Proximity and Heat
+Sensors, Breach Ports, Charges and the Cyberdeck Link; the **Breach Protocol** on a Net Port; the **Vehicle Panel**, **Traffic Tool**,
+**Net Map** and **Comms Panel**; and the host's **photo feed** on a map item. Plan:
+`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 10. The player guide is
+[Redstone hacking](HOW-TO-PLAY.md#redstone-hacking-phase-6), [Breach Protocol](HOW-TO-PLAY.md#breach-protocol-phase-6) and
+[The interaction map](HOW-TO-PLAY.md#the-interaction-map-phase-6). Tell Claude "P6-4: what you saw" and it reads `Cyberblock.log`, the
+server log, `latest.log` and the game window. Wave C is **one test session for Phases 6 to 9**: play this section in the same session as the
+others, on the same test server, with the same host and guest.
+
+**Before you start.**
+- A server with **one host** (Cyberpunk running, Cyberblock On, V standing in a street with a few doors, lights, cameras and a terminal within
+  50 metres) and **one guest** (Minecraft only, survival). The host must be allowed to be a host (the join password, if the server has one).
+- The guest needs the items of Phase 6: **Cyberdeck Link**, **Device Relay**, **Proximity Sensor**, **Charge**, **Breach Port**, **Cyberdeck
+  block**, **Vehicle Panel**, **Traffic Tool**, **Net Map** (an item), **Comms Panel**, and redstone and a lever and a button. Take them from the
+  Cyberblock creative tab or let an operator `/give` them; the recipes come with the art package.
+- Phase 0's CET lines decide how far a remote hack reaches (check (h)) and which device and vehicle calls exist (check (c)). If you have not
+  run them (Wave A, W-A8), the **written fallbacks** are used: remote actions reach only what the host's game streams and **50 metres** from V,
+  traffic and blackouts use the Phase 4 devices, the camera view is a replica, and the "which way" lines (P6-9) say so.
+- Everything the host switches off (P6-10) is on at the start: `hacks`, `devices` and `explosions`.
+
+**What to try (one screen):**
+1. **Door by lever:** link a Device Relay to a door with the Cyberdeck Link; a lever opens and closes it in Night City (P6-1).
+2. **Lamp for a pedestrian:** a Proximity Sensor lights a redstone lamp when an NPC walks by (P6-2).
+3. **Boom:** a Charge with a button blows up in Night City (P6-3).
+4. **Breach a terminal:** a 5 x 5 Breach on a Net Port; solve it; the cameras go off (P6-4).
+5. **Stop a car:** the Vehicle Panel kills a car's engine in Night City (P6-5).
+6. **Blackout:** the Net Map blacks out a district for a few minutes (P6-6).
+7. **Waypoint:** the Comms Panel puts a waypoint on the host's HUD (P6-7).
+8. **Photo feed:** the host's view on a map item, once a second (P6-8).
+9. **Read the "which way" lines** and paste them to Claude (P6-9).
+10. **`/cyberblock guests hacks off`:** the guest's hacks stop reaching Night City (P6-10).
+
+| Item | What changed |
+|---|---|
+| Redstone | the Cyberdeck Link, Device Relay, Proximity Sensor, Heat Sensor, Breach Port, Charge and Cyberdeck block; at most 2 actions a second per block; a link chain that toggles one device more than 8 times in 4 s freezes for 30 s |
+| Breach | a server-made puzzle (5 x 5 to 7 x 7 by the device's security, a buffer of 4 to 8, 1 to 3 daemons, a timer), every pick checked by the server; solved daemons are real actions, a failure is an alarm |
+| Interaction map | Hack Wheel for guests, Vehicle Panel, Traffic Tool, Net Map (blackout, camera feed, outlines, pings, photo feed), Comms Panel; each action is `act`, permission check, `rhack`, `hackresult`, feedback |
+| Wire | `rhack`, `daemon`, `feedreq` (down) and `feed` (a 128 x 128 map-colour picture, at most once a second) in `shared/protocol.md` "Phase 6"; `hackresult` also answers `rhack` and `daemon`; the 18th cyberware id `firewall` |
+| Tools | `tools.fakehost --hacks2`, `tools.mpcheck breach` (a guest's solved and failed Breach, the `hacks` toggle, the session end) |
+
+### P6-1. A Device Relay opens a door with a lever
+1. Host: stand a few metres from an ordinary door (one that is a device block in Minecraft, see Re-test 4).
+2. Guest: **scan the door with the hack key (G)**, then **right-click a Device Relay with the Cyberdeck Link** (the relay says it is linked).
+3. Guest: put a **lever** next to the relay. **Flip it on: expect** the door **opens in Night City** (V sees it) and in Minecraft; flip it off
+   and on again: it closes (a rising edge toggles). Rapid flipping is limited to two actions a second.
+4. Server log (grep `redstone`) and `Cyberblock.log` (grep `devact`) show the toggle. The relay shows **unresolved** while the host is away.
+
+### P6-2. A Proximity Sensor lights a lamp
+1. Guest: place a **Proximity Sensor** by the street, set it (its screen) to **people** and a range of about 8 blocks, and put a **redstone
+   lamp** against it.
+2. **Expect:** the lamp lights when a Night City pedestrian walks within range and goes out when they leave. Set it to **cars** and **V** and
+   check those too. (A sensor sees the figures that the host's game shows; a person who is out of the streamed area does not count.)
+
+### P6-3. A Charge explodes in Night City
+1. Guest: place a **Charge** a few metres from V and a **button** that feeds it a signal. Stand back.
+2. Press the button. **Expect:** **a real explosion** in Night City at the charge's position (the sound, the fire, people and cars react),
+   and the Minecraft side shows its own effect. Server log: grep `explosion`.
+3. Host: `/cyberblock guests explosions off`, press again: Minecraft explodes, **Night City does not**.
+
+### P6-4. A 5 x 5 Breach on a Net Port disables the cameras
+1. Host: stand near a **terminal** and a **security camera**.
+2. Guest: right-click the **Net Port** block. **Expect:** a **Breach screen**: a 5 x 5 grid of the codes `1C 55 BD E9 7A FF`, a buffer, one
+   to three daemons and a timer bar. (A secure device may be 6 x 6 or 7 x 7.)
+3. Guest: pick a cell in the **top row**, then in the column of that pick, then in the row of that one, and so on. **Solve the daemon "disable
+   cameras":** **expect** the camera **goes off in Night City** (it stops turning), then Minecraft's eye block follows.
+4. Fail on purpose (let the timer run out or fill the buffer with wrong picks): **expect** an **alarm in the host's game** (the cameras of the
+   area alert, V may see people react). A failure also costs Heat; with no Heat meter yet, the host's wanted level may go up by one if the game
+   allows it: tell Claude what happened.
+5. Server log (grep `breach`): the puzzle, every daemon solved and `strength`, or the failure.
+
+### P6-5. The Vehicle Panel stops a car
+1. Host: stand near a **car** (parked or driving) that is within about 50 metres.
+2. Guest: right-click the **car figure** with the Cyberdeck Link (or open the Vehicle Panel from the Net Map). Pick **Kill engine**.
+3. **Expect:** the car's engine **dies in Night City** and it rolls to a halt. Try **Lock doors**, **Brake**, **Remote start** and **Jam**
+   too, and a car that is farther away than 50 metres: it says it is **out of range** and nothing happens.
+4. If the guest stops **the host's own car**, the host feels it: say so, that is the headline check of this phase.
+
+### P6-6. A district blackout
+1. Guest: open the **Net Map**, pick a district around V and choose **Blackout**.
+2. **Expect:** the **lights and devices go off in Night City** around V for a few minutes (the street goes dark), the device blocks in
+   Minecraft follow (the lamps are off), and then **everything comes back**. If the game's district call is unproven, the fallback blacks out
+   the **devices within 150 m of V** and the `blackout` log line says so.
+3. Also try **Traffic Tool: switch lights** and **gridlock a road** (the cars on the stretch stop for about a minute); the Phase 4
+   traffic-light devices are the fallback.
+
+### P6-7. A Comms waypoint on the host's HUD
+Guest: use the **Comms Panel**, pick the host, write "Meet me at the Afterlife" and a waypoint. **Expect:** on the **host's Minecraft HUD** a
+**toast** with the message and a **locator-bar waypoint**. Nothing changes in Night City (it is Minecraft's own HUD).
+
+### P6-8. The photo feed on a map item
+1. Guest: use the **Net Map** (or a map item bound to the host) and ask for the **photo feed**.
+2. **Expect:** a **128 x 128 picture of the host's view in map colours**, refreshed about **once a second**, only while the guest looks at it.
+   It is low-resolution by design. Look away or close it: the host's `Cyberblock.log` says the feed went off (`feedreq off`).
+3. If the picture does not appear and the log says the copy was too slow (it cost more than 0.5 ms a frame), the plugin used the fallback:
+   Minecraft draws a **top-down replica view** on the map instead. Tell Claude which one you saw.
+
+### P6-9. Which way is it working? (the runtime paths)
+The scripts and the plugin write **one line** for each Phase 6 feature that has a fallback. Open `red4ext\logs\Cyberblock.log` (and the server
+log) and copy these lines to Claude. The exact wording belongs to the packages that print them: **search for the word**.
+
+| Feature | Search for | The line says |
+|---|---|---|
+| Traffic | `traffic` | which path switches lights and gridlocks a road: the game's traffic calls, or the Phase 4 traffic-light devices (fallback) |
+| Blackout | `blackout` | the district call, or the devices within 150 m of V (fallback) |
+| Vehicle hacks | `rhack` | each remote hack the host's game ran (`ok` or `refused (reason)`), `cyberblock.hack.out_of_range` for a target past the range |
+| Breach | `breach` | on the server: the puzzle (size, daemons, timer), each pick refused, each daemon solved with its `strength`, a failure; in the game: each `daemon` it ran |
+| Photo feed | `feed` | `feedreq on` and `off`, the cost of the copy in milliseconds, and whether the compositor copy or the replica fallback is used |
+| Redstone | `redstone` | a block frozen by a loop (`cyberblock.redstone.loop`) and the links that did not resolve |
+
+### P6-10. Permissions and ranges
+1. Host: `/cyberblock guests hacks off`. Guest: breach the Net Port, use the Vehicle Panel, the Net Map and a Breach Port: the action bar says
+   **blocked**, nothing reaches Night City (a Breach still plays out in Minecraft). Comms still works (it is Minecraft's own HUD).
+2. Host: `/cyberblock guests hacks on`: they work again. `/cyberblock guests devices off` also stops the Device Relays, blackouts and camera
+   feeds. The host's own actions are never blocked.
+3. A target or a centre **more than 50 metres** from V answers **out of range** (the fallback of Phase 0's check (h)); tell Claude how far a
+   hack really reached if you can measure it.
+
+### Phase 6 descopes and risks (short)
+The remote range depends on Phase 0's check (h): until it is run, only the streamed area and 50 m from V. Traffic and blackout calls may fall
+back to the Phase 4 devices. A true Cyberpunk **camera view is replaced by a replica view** from the camera's position and facing. The
+**photo feed** is low-resolution by design and may fall back to a replica render if the copy costs too much. The Heat Sensor's Server Heat mode and the Heat a
+failed Breach costs wait for Phase 8's meter. Details: `docs/notes/phase6-descopes.md`.
+
 ## Re-test: Wave B (Phases 3, 4, 5)
 
 **One session for all of Wave B**: Night City as Minecraft (Phase 3), the device layer (Phase 4), figures and skins (Phase 5)

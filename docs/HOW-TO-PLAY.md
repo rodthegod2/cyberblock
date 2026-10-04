@@ -1100,6 +1100,7 @@ can use**, and using it changes the real thing in the host's Night City, both wa
 - a **guest opens a door** in front of V: the door opens in Night City, and V can walk through;
 - a **pedestrian opens a door** in Night City: the door opens in Minecraft a moment later;
 - the **host** does it too: Steve may use a device block like anyone, and Night City's own state always wins.
+- a **redstone block** does it for you: a Device Relay linked to a door opens it when a lever is flipped ([Redstone hacking](#redstone-hacking-phase-6), Phase 6).
 
 **What each device is in Minecraft, and what you do with it.** Everything is a right-click on the block.
 | Night City | In Minecraft | What a right-click does | Name for the toggle |
@@ -1108,9 +1109,9 @@ can use**, and using it changes the real thing in the host's Night City, both wa
 | Gates, garage doors, road barriers | a wide sliding gate that slides in steps | opens or closes it | `gate` |
 | Lights and neon signs | a lamp in the light's colour | switches it on or off | `light` |
 | Surveillance cameras | an eye block with a vision cone of particles | switches it on or off | `camera` |
-| Terminals and computers | a **Net Port** block | the message "Breach Protocol arrives in a later update" (Phase 6) | `terminal` |
+| Terminals and computers | a **Net Port** block | opens the **Breach Protocol** ([Phase 6](#breach-protocol-phase-6)) | `terminal` |
 | Vending machines | a machine block (snack, drinks or gear machine) | opens a **shop paid in eddies** | `vending` |
-| Traffic lights | a three-colour lamp block | a "later update" message (the Traffic Tool comes with Phase 6) | `traffic` |
+| Traffic lights | a three-colour lamp block | nothing on its own: the **Traffic Tool** of [Phase 6](#the-interaction-map-phase-6) switches a district's lights | `traffic` |
 | Lifts | a lift platform with a call button | the button is **greyed** (see below) | `elevator` |
 | Turrets | a turret block that shows its mode | switches it on or off; **sneak** and right-click makes it friendly | `turret` |
 | TVs and billboards | a screen in an item frame | distracts the people nearby (a distraction in Night City) | `screen` |
@@ -1125,7 +1126,7 @@ says so). A device you cannot reach (more than 8 blocks away) or use twice withi
   a mission and cannot be used now". Night City never lets a mission door be touched.
 - **What Cyberpunk cannot be asked yet.** The plugin cannot **call a lift** (nobody has proven that it can), so the lift's call button says
   "Night City cannot do that with this device yet". **Buying** is not a Cyberpunk action at all: a vending machine is a Minecraft shop with
-  its own stock (below), nothing is bought in the host's Night City. **Breach** is the Minecraft Breach Protocol of Phase 6.
+  its own stock (below), nothing is bought in the host's Night City. **Breach** is the Minecraft [Breach Protocol](#breach-protocol-phase-6) of Phase 6.
 
 **Vending machines and eddies.** A vending machine's shop sells Minecraft items for **eddies**, an item (`cyberblock:eddies`, and the
 *Eddie Chip* worth 100, as its tooltip says) that is yours like any other: gigs and sales earn them in later phases, and an operator can `/give` some. The prices, the stock and when it restocks come from the shop files (`data/cyberblock/cyberblock/shop/`), so a server can
@@ -1210,6 +1211,101 @@ shows the change at once. A guest (no Cyberpunk link) keeps the normal Minecraft
 - NPC figures follow their own gender, not the host's body choice.
 Check it with [Re-test 5](TESTING-PLAN.md), P5-5.
 
+### Redstone hacking (Phase 6)
+With Phase 6 you hack Night City **the Minecraft way: with blocks and redstone.** A handful of blocks watch Night City or act on it, and a
+redstone signal is all they need, so a lever, a button, a pressure plate, an observer or a whole clock circuit can open a door, light a lamp,
+set off a charge or fire a quickhack in the host's game. They work for **guests and hosts alike**; the host's own are never blocked, a guest's
+obey the host's permissions (see "What the host controls" below).
+
+**The Cyberdeck Link.** First you tell a block which Night City device it belongs to: **scan the device with the hack key (G)**, then
+**right-click the relay or sensor block with the Cyberdeck Link item**. The link remembers the host, the device's (rounded) position and its
+kind, not a loose id, so it still works after the host restarts Cyberpunk or the server restarts; while the host is away the block shows
+**unresolved** and does nothing.
+
+| Block | What the redstone does | What happens in Night City |
+|---|---|---|
+| **Device Relay** | a signal that **turns on** (a rising edge) toggles the linked device | a door opens or closes, a light switches, a camera, a turret or a screen toggles (`devact toggle`); the host's `devices` toggle applies to a guest's relay |
+| **Proximity Sensor** | **gives out a signal** while someone is within range (1 to 16 blocks, set on its screen) | it looks at the people and cars that the host's game shows as figures, and at the host's own Steve; the screen picks which of them count: a person, a car or V |
+| **Heat Sensor** | **gives out a signal** of 0 to 15: the nearest host's police heat, 0 to 5 stars, times 3 | a wanted level of 3 stars is signal 9; a later phase adds Server Heat as a second mode |
+| **Breach Port** | a signal makes it **fire the chosen quickhack** at the targets in range (its screen picks the hack) | the hack runs in the host's game and **costs RAM**, taken from a **Cyberdeck block** placed next to it |
+| **Charge** | a signal sets it off | **a real Cyberpunk explosion** at the block's position (the explosion goes to the host's game; the host's `explosions` toggle applies to a guest's charge) |
+| **Cyberdeck block** | (none) | stores RAM for the Breach Ports next to it and **refills slowly** |
+
+**Limits that keep the world calm.** Every block acts **at most twice a second**. A chain of links that toggles the **same device more than
+8 times in 4 seconds** is a loop: the blocks involved are **frozen for 30 seconds** with a puff of smoke (`cyberblock.redstone.loop` in the
+log). Nothing is lost, and the host's game is never flooded.
+
+**A redstone trap for NPCs.** Put a Proximity Sensor on the street, set it to people, wire it to a Charge or a Breach Port loaded with Short
+Circuit, and watch what the first pedestrian does. A door that opens when a button is pressed outside it, a lamp that lights when a car comes
+by, a lift of redstone: the blocks are plain, what you build with them is yours. Check it with [Re-test 6](TESTING-PLAN.md), P6-1 to P6-3.
+
+**What the host controls.** Device Relays and sensors count as device control (`/cyberblock guests devices <type> on|off`), Breach Ports and
+quickhacks as hacks (`/cyberblock guests hacks on|off`) and a Charge as an explosion (`/cyberblock guests explosions on|off`). A refused action
+still happens in Minecraft (the lever still clicks), it just does not reach that host's Night City, and the guest sees "blocked" on the action
+bar.
+
+### Breach Protocol (Phase 6)
+**Right-click a Net Port** (the block a terminal or computer becomes, see [Devices](#devices-phase-4)) and the **Breach Protocol** opens: a
+grid of hex codes, a buffer, a list of **daemons** to upload and a timer. It is the hacking game of the street, built from Minecraft's own
+widgets and font, and it is **played on the server**, so no client can cheat.
+- **The grid.** 5 x 5 for an ordinary device up to **7 x 7** for a well-protected one (the size comes from the device's security, set in
+  `breach_tier`); each cell is one of the codes `1C`, `55`, `BD`, `E9`, `7A` and `FF`.
+- **The picks.** You pick cells with the mouse. The **first pick is in the top row**, the next one in the **column** of the first, the next in
+  the **row** of that one, and so on, as in the classic game; a cell cannot be picked twice. Every pick goes into the **buffer** (4 to 8
+  codes), and the timer bar runs down.
+- **The daemons.** One to three sequences of codes are on the list (the daemon files of the device kind decide which). A daemon is **solved**
+  when its codes come one after another in your buffer. More daemons and longer sequences mean a **stronger effect** (strength 1 to 3).
+- **What a solved daemon does.** It is **a real action in the host's Night City**, sent to the host's game: open a door, **disable the
+  cameras** of the area, **reveal enemies** (as the Ping chip does), **overload** a device, and more (they are data files, so a datapack can
+  add one). The **Net Port that you breach is the one it runs from.**
+- **Failing.** Running out of buffer or time **raises an alarm in the host's game** (the cameras of the area alert): breaching is a risk.
+  A failure also costs **Heat**; the Heat meter belongs to a later phase, and until it exists the host's wanted level goes up by one **only
+  if the game allows that** (the plugin says which in the log).
+- **The Firewall implant.** A new 18th piece of [cyberware](#cyberware-u-y-l-and-o), the **Firewall**, makes breaching **you** harder (the
+  grid grows). It does nothing in Cyberpunk itself, and it only matters once players can hack players (a later phase).
+- **Who may.** A guest needs the host's `hacks` toggle (`/cyberblock guests hacks on|off`); a daemon that switches devices also needs the
+  `devices` toggle. A refused Breach still plays out in Minecraft, nothing reaches the host's game.
+Check it with [Re-test 6](TESTING-PLAN.md), P6-4.
+
+### The interaction map (Phase 6)
+Every kind of thing you can do to Night City from Minecraft has **one tool**, and a guest uses them all.
+
+| What you want | Your tool | What it does | Needs |
+|---|---|---|---|
+| Hack a person | the **Hack Wheel** (the hack key, G) on any figure you can see | the quickhacks you already know ([What each chip does](#what-each-chip-does)), now for guests too | the host's `hacks` toggle |
+| Stop or steal a car | the **Vehicle Panel** (right-click a car figure with the Cyberdeck Link, or open it from the Net Map) | **lock the doors, kill the engine, force a brake, start it remotely, jam it** | the host's `hacks` toggle |
+| Control traffic | the **Traffic Tool** (an item) | **switch a district's traffic lights**, **gridlock a road** (the cars on that stretch stop for a minute) | the host's `hacks` toggle |
+| Black out a district, scout | the **Net Map** (an item and a screen built on the [Atlas](#the-atlas-map)) | **black out a district for minutes** (lights and devices off, then back on), see a **camera's feed**, **outline** the figures of an area for your team, **ping** an area, and watch the host's **photo feed** on a map item | `hacks` and `devices` toggles |
+| Talk to a host | the **Comms Panel** (an item) | sends the host a **waypoint** or a short message: it shows as a **toast and a locator-bar waypoint** on the host's Minecraft HUD | nothing (it never reaches Cyberpunk) |
+| Break into a terminal | a **Net Port** | the [Breach Protocol](#breach-protocol-phase-6) | the host's `hacks` toggle |
+| Run the city | the **Overlord Console** | a later phase (Phase 8) | - |
+| Build and blow things up | your hands and TNT | the normal game, [Layer 2](#layer-2-building-explosions-weapons) | the host's `explosions` toggle |
+
+Every action is the same chain: **the tool asks the server, the server checks the host's permissions, the host's game does it, Night City
+answers, and you see the result** (a message on the action bar, a changed block, a toast).
+
+**How far a remote hack reaches.** A remote action only reaches **what the host's game is showing the server**: figures and devices within
+about **50 metres of V** (this is the written fallback of Phase 0's check (h); the real reach is found in the in-game run). Anything farther
+says it is **out of range** and nothing happens in Night City.
+
+**What the tools do behind the scenes, and what falls back.**
+- **Traffic and blackouts** use the game's traffic and district calls where the plugin has proven them; otherwise they **fall back to the
+  device layer**: the traffic lights near V and the devices within 150 metres of V. The log says which way is active.
+- **Camera feeds** are **not** Cyberpunk's own camera view (that would take over the host's screen): Minecraft draws the **replica of Night City
+  from the camera's position and facing**, with the people and cars the figures show.
+- **The photo feed** is the host's own view, shrunk to **128 x 128 map colours**, at most **once a second** and **only while someone is
+  watching it**. It is **low-resolution by design**. If copying the picture would cost the host's game more than half a millisecond a frame,
+  the plugin stops sending it and Minecraft draws a **top-down replica view** instead (the fallback, with the same map item).
+- **Comms** needs no Cyberpunk change at all: it is Minecraft's own HUD.
+
+**Who may do what.** The host's switches: `/cyberblock guests hacks on|off` (every hack, Breach and remote action),
+`/cyberblock guests devices on|off` (device control, also blackouts and camera feeds) and `/cyberblock guests explosions on|off`. A blocked
+action leaves Minecraft as it was and shows "blocked" on the action bar. The host's own actions are never blocked.
+
+**Which way is it working? (for the test.)** The scripts and the plugin write **one line** for every Phase 6 feature that has a fallback: which
+traffic path, which blackout path, how vehicle calls are made, and whether the photo feed uses the compositor copy or the fallback. The server
+logs each remote hack it routed or refused and each Breach. [Re-test 6](TESTING-PLAN.md) lists what to search for.
+
 ---
 
 ## 6. Game modes and the starter kit
@@ -1288,6 +1384,7 @@ Useful commands: `/cyberblock kit`, `/cyberblock settings` (the [settings screen
 `/cyberblock meetup <player>` and `/cyberblock meetup accept` (go to a friend, see [Night City as Minecraft](#night-city-as-minecraft-phase-3)),
 `/cyberblock changes` (what guests built while you were away),
 `/cyberblock guests devices <type> on|off` (which Night City devices guests may use, see [Devices](#devices-phase-4)),
+`/cyberblock guests hacks on|off` (whether guests may hack, breach and use remote hacks, see [The interaction map](#the-interaction-map-phase-6)),
 `/cyberblock body male|female` (your cyber skin: V or Lucy, see [Your cyber skin](#your-cyber-skin-phase-5)),
 `/cyberblock perks free on|off` (free skill points), `/gamemode creative`, `/gamemode survival`,
 `/xp add @s 30 levels`, `/effect clear @s`. Playing with friends: `/cyberblock guests <toggle> on|off` and, for server
