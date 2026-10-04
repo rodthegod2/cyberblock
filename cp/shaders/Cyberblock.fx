@@ -120,6 +120,12 @@ sampler sGhostTmp { Texture = GhostTmpTex; AddressU = CLAMP; AddressV = CLAMP; }
 // add-on finds the texture by this name. While cb_feed is false the pass costs one branch per pixel of 128 x 128.
 uniform bool cb_feed < hidden = true; > = false;
 texture CbFeedTex { Width = 128; Height = 128; Format = RGBA8; };
+// Reboot Optics from another player (Phase 8, megaplan task 8-D1, `glitch` DOWN): x the intensity 0..1 (the add-on's
+// envelope; 0 while a Cyberpunk menu is open), y the seconds since the hack landed, z its length in seconds, w 0. The
+// Glitch pass scrambles the finished picture, Minecraft's HUD included.
+uniform float4 cb_glitch < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float GlitchStrength < ui_type = "drag"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.01; ui_label = "Reboot Optics glitch strength";
+	ui_tooltip = "How strongly another player's Reboot Optics hack scrambles your screen (0 turns the effect off). Large brightness changes stay below three a second."; > = 1.0;
 
 float luma(float3 c)
 {
@@ -551,6 +557,53 @@ float4 PS_Feed(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
 	return float4(saturate(sum / 16.0), 1.0);
 }
 
+/// A repeatable pseudo-random number in 0..1 for a 2D cell (hash without sine: stable across GPUs).
+float glitch_hash(float2 p)
+{
+	float3 p3 = frac(float3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return frac((p3.x + p3.y) * p3.z);
+}
+
+/// Reboot Optics: the finished picture (world, hand and HUD) torn into sideways-shifted bands, with blocks swapped,
+/// the colour channels split, scanlines, static, and a blinding darkness that breathes. Small changes jump 12 times a
+/// second; the darkness and the big tears change 2.5 times a second (below the three flashes a second photosensitive
+/// guidance allows). Without a glitch the picture passes through untouched.
+float3 PS_Glitch(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
+{
+	const float3 clean = tex2D(ReShade::BackBuffer, uv).rgb;
+	const float k = saturate(cb_glitch.x) * GlitchStrength;
+	if (!cb_active || k <= 0.0)
+		return clean;
+	const float fast = floor(cb_glitch.y * 12.0);
+	const float slow = floor(cb_glitch.y * 2.5);
+	// sideways tears: the screen cut into 8..40 bands, some of them shifted
+	const float bands = lerp(8.0, 40.0, glitch_hash(float2(slow, 1.7)));
+	const float band = floor(uv.y * bands);
+	const float tear = glitch_hash(float2(band, fast));
+	float2 g = uv;
+	if (tear > 1.0 - 0.45 * k)
+		g.x += (glitch_hash(float2(band, fast + 0.5)) - 0.5) * 0.12 * k;
+	// corrupted blocks: a few 16 x 9 cells show another cell's picture
+	const float2 grid = float2(16.0, 9.0);
+	const float2 cell = floor(uv * grid);
+	if (glitch_hash(cell + slow * 0.37) > 1.0 - 0.12 * k)
+		g = (floor(float2(glitch_hash(cell + 3.1), glitch_hash(cell + 5.3)) * grid) + frac(uv * grid)) / grid;
+	g = saturate(g);
+	// the colour channels pulled apart, wider on torn bands
+	const float split = k * (0.004 + (tear > 0.9 ? 0.018 : 0.0));
+	float3 c = float3(tex2D(ReShade::BackBuffer, saturate(g + float2(split, 0.0))).r, tex2D(ReShade::BackBuffer, g).g,
+		tex2D(ReShade::BackBuffer, saturate(g - float2(split, 0.0))).b);
+	// scanlines and static
+	c *= 1.0 - 0.25 * k * (0.5 + 0.5 * sin(pos.y * 3.14159));
+	const float noise = glitch_hash(pos.xy + fast * 17.0);
+	c = lerp(c, noise.xxx * float3(1.0, 0.35, 0.4), 0.18 * k);
+	// blinded: the darkness sits at 55..90 % and steps 2.5 times a second; red-tinged like the game's own optics fault
+	const float blind = k * lerp(0.55, 0.9, glitch_hash(float2(slow, 9.1)));
+	c = c * (1.0 - blind) + float3(0.08, 0.0, 0.01) * blind;
+	return saturate(c);
+}
+
 /// Night City's depth in metres: black at 0 m to white at 50 m, with a red line every 5 m (task F1/F2: the ramp must
 /// follow the scene, and CB_HOST_DEPTH_MODE / "Night City depth scale" are right when the lines sit at true distances).
 float3 PS_DepthDebug(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
@@ -605,6 +658,11 @@ technique Cyberblock < ui_tooltip = "Minecraft in Night City: composites Minecra
 	{
 		VertexShader = PostProcessVS;
 		PixelShader = PS_Final;
+	}
+	pass Glitch
+	{
+		VertexShader = PostProcessVS;
+		PixelShader = PS_Glitch;
 	}
 }
 
