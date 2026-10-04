@@ -4,8 +4,11 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.content.Content;
+import dev.cyberblock.net.admin.ServerAdmin;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -71,6 +74,32 @@ public final class ServerNet {
 		ServerLifecycleEvents.SERVER_STARTED.register(ServerNet::started);
 		ServerLifecycleEvents.SERVER_STOPPING.register(s -> stopping());
 		ServerTickEvents.END_SERVER_TICK.register(ServerNet::tick);
+		wireAdmin();
+	}
+
+	/**
+	 * Package 2M's admin bits (/cyberblock status, /cyberblock hosts add|remove, joinHelp) read this package's connections, sessions,
+	 * config and content through ServerAdmin's hooks (megaplan 2-M1; wired by the Wave A integrator).
+	 */
+	private static void wireAdmin() {
+		ServerAdmin.versionOf = uuid -> {
+			Conn c = conns.get(uuid);
+			return c == null || !c.handshaken ? "" : "mod " + orNone(c.mod) + " dll " + orNone(c.dll);
+		};
+		ServerAdmin.rateOf = uuid -> {
+			HostSession s = HostSessions.of(uuid);
+			return s == null ? "" : String.format(Locale.ROOT, "up %.1f/s, dropped %d", s.upRate(), s.droppedDown());
+		};
+		ServerAdmin.contentCounts = Content::counts;
+		ServerAdmin.configChanged = () -> ServerConfig.load(configFile());
+	}
+
+	private static String orNone(final String version) {
+		return version.isEmpty() ? "none" : version;
+	}
+
+	private static java.nio.file.Path configFile() {
+		return FabricLoader.getInstance().getConfigDir().resolve(Cyberblock.ID).resolve("server.json");
 	}
 
 	/**
@@ -90,7 +119,7 @@ public final class ServerNet {
 
 	private static void started(final MinecraftServer s) {
 		server = s;
-		ServerConfig.load(FabricLoader.getInstance().getConfigDir().resolve(Cyberblock.ID).resolve("server.json"));
+		ServerConfig.load(configFile());
 		Permissions.use(s.overworld().getDataStorage().computeIfAbsent(HostsData.TYPE));
 	}
 
@@ -143,6 +172,8 @@ public final class ServerNet {
 		String version = modVersion();
 		Handshake.Result result = Handshake.decide(new Handshake.Input(hs.proto(), hs.mod(), hs.dll(), hs.wantHost(), version,
 			refusal(s, player, config), HostSessions.hostsOtherThan(uuid), config.maxHosts()));
+		// every refusal carries the server's joinHelp once (megaplan 2-M1; unchanged while joinHelp is empty)
+		result = new Handshake.Result(result.ok(), result.role(), ServerAdmin.refusal(result.reason()));
 		boolean wasHost = conn.result.host();
 		conn.handshaken = true;
 		conn.mod = hs.mod();

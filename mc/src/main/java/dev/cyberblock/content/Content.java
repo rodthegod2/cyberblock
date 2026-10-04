@@ -4,6 +4,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import net.minecraft.resources.Identifier;
@@ -42,6 +43,16 @@ public final class Content {
 
 	static @Nullable Snapshot<?> snapshot(final ContentKind<?> kind) {
 		return SNAPSHOTS.get(kind.id());
+	}
+
+	/** Loaded entries per registered kind id, sorted (for {@code /cyberblock status}, megaplan 2-M1). */
+	public static Map<String, Integer> counts() {
+		Map<String, Integer> out = new TreeMap<>();
+		for (ContentKind<?> kind : ContentKind.all()) {
+			out.put(kind.id(), all(kind).size());
+		}
+
+		return out;
 	}
 
 	/** Tests only. */
