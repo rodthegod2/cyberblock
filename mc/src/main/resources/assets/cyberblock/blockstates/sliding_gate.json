@@ -1,0 +1,154 @@
+{
+	"variants": {
+		"facing=east,quest_locked=false,step=0": {
+			"model": "cyberblock:block/sliding_gate_s0",
+			"y": 90
+		},
+		"facing=east,quest_locked=false,step=1": {
+			"model": "cyberblock:block/sliding_gate_s1",
+			"y": 90
+		},
+		"facing=east,quest_locked=false,step=2": {
+			"model": "cyberblock:block/sliding_gate_s2",
+			"y": 90
+		},
+		"facing=east,quest_locked=false,step=3": {
+			"model": "cyberblock:block/sliding_gate_s3",
+			"y": 90
+		},
+		"facing=east,quest_locked=false,step=4": {
+			"model": "cyberblock:block/sliding_gate_s4",
+			"y": 90
+		},
+		"facing=east,quest_locked=true,step=0": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s0",
+			"y": 90
+		},
+		"facing=east,quest_locked=true,step=1": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s1",
+			"y": 90
+		},
+		"facing=east,quest_locked=true,step=2": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s2",
+			"y": 90
+		},
+		"facing=east,quest_locked=true,step=3": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s3",
+			"y": 90
+		},
+		"facing=east,quest_locked=true,step=4": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s4",
+			"y": 90
+		},
+		"facing=north,quest_locked=false,step=0": {
+			"model": "cyberblock:block/sliding_gate_s0"
+		},
+		"facing=north,quest_locked=false,step=1": {
+			"model": "cyberblock:block/sliding_gate_s1"
+		},
+		"facing=north,quest_locked=false,step=2": {
+			"model": "cyberblock:block/sliding_gate_s2"
+		},
+		"facing=north,quest_locked=false,step=3": {
+			"model": "cyberblock:block/sliding_gate_s3"
+		},
+		"facing=north,quest_locked=false,step=4": {
+			"model": "cyberblock:block/sliding_gate_s4"
+		},
+		"facing=north,quest_locked=true,step=0": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s0"
+		},
+		"facing=north,quest_locked=true,step=1": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s1"
+		},
+		"facing=north,quest_locked=true,step=2": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s2"
+		},
+		"facing=north,quest_locked=true,step=3": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s3"
+		},
+		"facing=north,quest_locked=true,step=4": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s4"
+		},
+		"facing=south,quest_locked=false,step=0": {
+			"model": "cyberblock:block/sliding_gate_s0",
+			"y": 180
+		},
+		"facing=south,quest_locked=false,step=1": {
+			"model": "cyberblock:block/sliding_gate_s1",
+			"y": 180
+		},
+		"facing=south,quest_locked=false,step=2": {
+			"model": "cyberblock:block/sliding_gate_s2",
+			"y": 180
+		},
+		"facing=south,quest_locked=false,step=3": {
+			"model": "cyberblock:block/sliding_gate_s3",
+			"y": 180
+		},
+		"facing=south,quest_locked=false,step=4": {
+			"model": "cyberblock:block/sliding_gate_s4",
+			"y": 180
+		},
+		"facing=south,quest_locked=true,step=0": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s0",
+			"y": 180
+		},
+		"facing=south,quest_locked=true,step=1": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s1",
+			"y": 180
+		},
+		"facing=south,quest_locked=true,step=2": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s2",
+			"y": 180
+		},
+		"facing=south,quest_locked=true,step=3": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s3",
+			"y": 180
+		},
+		"facing=south,quest_locked=true,step=4": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s4",
+			"y": 180
+		},
+		"facing=west,quest_locked=false,step=0": {
+			"model": "cyberblock:block/sliding_gate_s0",
+			"y": 270
+		},
+		"facing=west,quest_locked=false,step=1": {
+			"model": "cyberblock:block/sliding_gate_s1",
+			"y": 270
+		},
+		"facing=west,quest_locked=false,step=2": {
+			"model": "cyberblock:block/sliding_gate_s2",
+			"y": 270
+		},
+		"facing=west,quest_locked=false,step=3": {
+			"model": "cyberblock:block/sliding_gate_s3",
+			"y": 270
+		},
+		"facing=west,quest_locked=false,step=4": {
+			"model": "cyberblock:block/sliding_gate_s4",
+			"y": 270
+		},
+		"facing=west,quest_locked=true,step=0": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s0",
+			"y": 270
+		},
+		"facing=west,quest_locked=true,step=1": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s1",
+			"y": 270
+		},
+		"facing=west,quest_locked=true,step=2": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s2",
+			"y": 270
+		},
+		"facing=west,quest_locked=true,step=3": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s3",
+			"y": 270
+		},
+		"facing=west,quest_locked=true,step=4": {
+			"model": "cyberblock:block/sliding_gate_quest_locked_s4",
+			"y": 270
+		}
+	}
+}

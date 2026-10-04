@@ -1,0 +1,16 @@
+{
+	"variants": {
+		"lit=false,quest_locked=false": {
+			"model": "cyberblock:block/lamp_light_gray_off"
+		},
+		"lit=false,quest_locked=true": {
+			"model": "cyberblock:block/lamp_quest_locked"
+		},
+		"lit=true,quest_locked=false": {
+			"model": "cyberblock:block/lamp_light_gray_lit"
+		},
+		"lit=true,quest_locked=true": {
+			"model": "cyberblock:block/lamp_quest_locked"
+		}
+	}
+}

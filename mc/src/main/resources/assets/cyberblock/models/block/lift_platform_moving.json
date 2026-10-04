@@ -1,0 +1,67 @@
+{
+	"textures": {
+		"top": "cyberblock:block/lift_platform_top_moving",
+		"edge": "cyberblock:block/lift_platform_edge",
+		"particle": "#top"
+	},
+	"elements": [
+		{
+			"from": [
+				0,
+				0,
+				0
+			],
+			"to": [
+				16,
+				4,
+				16
+			],
+			"faces": {
+				"down": {
+					"texture": "#edge",
+					"cullface": "down"
+				},
+				"up": {
+					"texture": "#top"
+				},
+				"north": {
+					"texture": "#edge",
+					"uv": [
+						0,
+						0,
+						16,
+						4
+					]
+				},
+				"south": {
+					"texture": "#edge",
+					"uv": [
+						0,
+						0,
+						16,
+						4
+					]
+				},
+				"west": {
+					"texture": "#edge",
+					"uv": [
+						0,
+						0,
+						16,
+						4
+					]
+				},
+				"east": {
+					"texture": "#edge",
+					"uv": [
+						0,
+						0,
+						16,
+						4
+					]
+				}
+			},
+			"light_emission": 6
+		}
+	]
+}

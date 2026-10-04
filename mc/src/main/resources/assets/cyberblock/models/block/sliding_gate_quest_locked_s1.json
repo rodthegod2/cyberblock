@@ -1,0 +1,89 @@
+{
+	"textures": {
+		"panel": "cyberblock:block/sliding_gate_quest_locked",
+		"rail": "cyberblock:block/sliding_gate_quest_locked",
+		"end": "cyberblock:block/sliding_gate_quest_locked",
+		"particle": "#end"
+	},
+	"elements": [
+		{
+			"from": [
+				0,
+				0,
+				5
+			],
+			"to": [
+				16,
+				1,
+				11
+			],
+			"faces": {
+				"down": {
+					"texture": "#rail"
+				},
+				"up": {
+					"texture": "#rail"
+				},
+				"north": {
+					"texture": "#rail"
+				},
+				"south": {
+					"texture": "#rail"
+				},
+				"west": {
+					"texture": "#end"
+				},
+				"east": {
+					"texture": "#end"
+				}
+			}
+		},
+		{
+			"from": [
+				0,
+				1,
+				6
+			],
+			"to": [
+				12,
+				16,
+				10
+			],
+			"faces": {
+				"north": {
+					"texture": "#panel"
+				},
+				"south": {
+					"texture": "#panel"
+				},
+				"up": {
+					"texture": "#end",
+					"uv": [
+						0,
+						0,
+						12,
+						4
+					]
+				},
+				"down": {
+					"texture": "#end",
+					"uv": [
+						0,
+						0,
+						12,
+						4
+					]
+				},
+				"east": {
+					"texture": "#end",
+					"uv": [
+						0,
+						0,
+						4,
+						16
+					]
+				}
+			}
+		}
+	]
+}

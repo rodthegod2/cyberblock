@@ -1,0 +1,64 @@
+{
+	"variants": {
+		"broken=false,facing=east,quest_locked=false": {
+			"model": "cyberblock:block/vending_machine",
+			"y": 90
+		},
+		"broken=false,facing=east,quest_locked=true": {
+			"model": "cyberblock:block/vending_machine_quest_locked",
+			"y": 90
+		},
+		"broken=false,facing=north,quest_locked=false": {
+			"model": "cyberblock:block/vending_machine"
+		},
+		"broken=false,facing=north,quest_locked=true": {
+			"model": "cyberblock:block/vending_machine_quest_locked"
+		},
+		"broken=false,facing=south,quest_locked=false": {
+			"model": "cyberblock:block/vending_machine",
+			"y": 180
+		},
+		"broken=false,facing=south,quest_locked=true": {
+			"model": "cyberblock:block/vending_machine_quest_locked",
+			"y": 180
+		},
+		"broken=false,facing=west,quest_locked=false": {
+			"model": "cyberblock:block/vending_machine",
+			"y": 270
+		},
+		"broken=false,facing=west,quest_locked=true": {
+			"model": "cyberblock:block/vending_machine_quest_locked",
+			"y": 270
+		},
+		"broken=true,facing=east,quest_locked=false": {
+			"model": "cyberblock:block/vending_machine_broken",
+			"y": 90
+		},
+		"broken=true,facing=east,quest_locked=true": {
+			"model": "cyberblock:block/vending_machine_quest_locked",
+			"y": 90
+		},
+		"broken=true,facing=north,quest_locked=false": {
+			"model": "cyberblock:block/vending_machine_broken"
+		},
+		"broken=true,facing=north,quest_locked=true": {
+			"model": "cyberblock:block/vending_machine_quest_locked"
+		},
+		"broken=true,facing=south,quest_locked=false": {
+			"model": "cyberblock:block/vending_machine_broken",
+			"y": 180
+		},
+		"broken=true,facing=south,quest_locked=true": {
+			"model": "cyberblock:block/vending_machine_quest_locked",
+			"y": 180
+		},
+		"broken=true,facing=west,quest_locked=false": {
+			"model": "cyberblock:block/vending_machine_broken",
+			"y": 270
+		},
+		"broken=true,facing=west,quest_locked=true": {
+			"model": "cyberblock:block/vending_machine_quest_locked",
+			"y": 270
+		}
+	}
+}

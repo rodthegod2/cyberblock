@@ -1,0 +1,64 @@
+{
+	"variants": {
+		"breached=false,facing=east,quest_locked=false": {
+			"model": "cyberblock:block/net_port_locked",
+			"y": 90
+		},
+		"breached=false,facing=east,quest_locked=true": {
+			"model": "cyberblock:block/net_port_quest_locked",
+			"y": 90
+		},
+		"breached=false,facing=north,quest_locked=false": {
+			"model": "cyberblock:block/net_port_locked"
+		},
+		"breached=false,facing=north,quest_locked=true": {
+			"model": "cyberblock:block/net_port_quest_locked"
+		},
+		"breached=false,facing=south,quest_locked=false": {
+			"model": "cyberblock:block/net_port_locked",
+			"y": 180
+		},
+		"breached=false,facing=south,quest_locked=true": {
+			"model": "cyberblock:block/net_port_quest_locked",
+			"y": 180
+		},
+		"breached=false,facing=west,quest_locked=false": {
+			"model": "cyberblock:block/net_port_locked",
+			"y": 270
+		},
+		"breached=false,facing=west,quest_locked=true": {
+			"model": "cyberblock:block/net_port_quest_locked",
+			"y": 270
+		},
+		"breached=true,facing=east,quest_locked=false": {
+			"model": "cyberblock:block/net_port_breached",
+			"y": 90
+		},
+		"breached=true,facing=east,quest_locked=true": {
+			"model": "cyberblock:block/net_port_quest_locked",
+			"y": 90
+		},
+		"breached=true,facing=north,quest_locked=false": {
+			"model": "cyberblock:block/net_port_breached"
+		},
+		"breached=true,facing=north,quest_locked=true": {
+			"model": "cyberblock:block/net_port_quest_locked"
+		},
+		"breached=true,facing=south,quest_locked=false": {
+			"model": "cyberblock:block/net_port_breached",
+			"y": 180
+		},
+		"breached=true,facing=south,quest_locked=true": {
+			"model": "cyberblock:block/net_port_quest_locked",
+			"y": 180
+		},
+		"breached=true,facing=west,quest_locked=false": {
+			"model": "cyberblock:block/net_port_breached",
+			"y": 270
+		},
+		"breached=true,facing=west,quest_locked=true": {
+			"model": "cyberblock:block/net_port_quest_locked",
+			"y": 270
+		}
+	}
+}
