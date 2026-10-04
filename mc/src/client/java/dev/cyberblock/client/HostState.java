@@ -7,6 +7,9 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
+import java.util.function.Predicate;
+import net.minecraft.core.BlockPos;
+import org.jspecify.annotations.Nullable;
 
 /** The host's latest camera and player pose, already in Minecraft coordinates (the host converts). */
 public final class HostState {
@@ -158,6 +161,7 @@ public final class HostState {
 	/** The host went away: no key stays held, and V is neither crouching, held, standing nor in the air (nothing is known of V). Client thread. */
 	static void resetKeys() {
 		jumpDown = sprintDown = jumpPressed = false;
+		resetAim();
 		Bridge.hostCrouching = false;
 		Bridge.hostHeld = false;
 		Bridge.hostStands = false;
@@ -189,22 +193,136 @@ public final class HostState {
 		return (float) number(e, what, -Float.MAX_VALUE, Float.MAX_VALUE);
 	}
 
-	/** Metres from the host camera to the Night City surface under the crosshair; negative: none in range. */
-	private static volatile double aim = -1.0;
+	/**
+	 * How far past the Night City surface under the crosshair Minecraft may still target (plan Q-B1). The host's ray stops on a
+	 * face that is the very face of the block being looked at (a placed block's collision box, a street whose floor the ground
+	 * alignment puts exactly on a cell boundary), and its distance comes rounded to the millimetre: a pick ending exactly there
+	 * misses that face about half the time, so cracks never grew and outline blocks could not be broken.
+	 */
+	static final double AIM_MARGIN = 0.35;
+	/** A shorter aim distance is believed after this many lower samples in a row... */
+	static final int AIM_FALL_SAMPLES = 3;
+	/** ...or once the first of them is this old (the host sends aim on change only, so a steady lower value sends no more). */
+	static final long AIM_FALL_NANOS = 300_000_000L;
+	/** While attack is held, the block being broken stays targeted this long after the limit last reached it. */
+	static final long STICKY_NANOS = 500_000_000L;
+
+	private static final Object AIM_LOCK = new Object();
+	/** The host's latest aim distance; +infinity: no Night City surface within its ray. Guarded by AIM_LOCK. */
+	private static double aimRaw = Double.POSITIVE_INFINITY;
+	/** The distance the limit uses: it rises at once and falls only once a shorter one has held (see AIM_FALL_*). */
+	private static double aimSmoothed = Double.POSITIVE_INFINITY;
+	/** The latest of the shorter samples in a row, how many there were, and when the first came. */
+	private static double aimLow;
+	private static int aimLowCount;
+	private static long aimLowSince;
+	/** The limit the last pick used (the aim log reports it). */
+	private static volatile double lastLimit = Double.NaN;
 
 	/** {"t":"aim","d":metres} — d &lt; 0 means no Night City surface within the host's ray. */
 	static void updateAim(final JsonObject m) {
+		updateAim(m, System.nanoTime());
+	}
+
+	static void updateAim(final JsonObject m, final long now) {
 		double d = number(m.get("d"), "aim", -1.0, 64.0);
-		aim = d < 0.0 ? -1.0 : d;
+		double v = d < 0.0 ? Double.POSITIVE_INFINITY : d;
+		synchronized (AIM_LOCK) {
+			aimRaw = v;
+			if (v >= aimSmoothed) {
+				aimSmoothed = v;
+				aimLowCount = 0;
+				return;
+			}
+
+			if (aimLowCount == 0) {
+				aimLowSince = now;
+			}
+
+			aimLow = v;
+			if (++aimLowCount >= AIM_FALL_SAMPLES || now - aimLowSince >= AIM_FALL_NANOS) {
+				aimSmoothed = v;
+				aimLowCount = 0;
+			}
+		}
+	}
+
+	/** The host went away or a new world starts: no limit until the host says again. */
+	static void resetAim() {
+		synchronized (AIM_LOCK) {
+			aimRaw = aimSmoothed = Double.POSITIVE_INFINITY;
+			aimLowCount = 0;
+		}
+
+		stickyPos = null;
 	}
 
 	/**
-	 * Reach limited to the Night City surface under the crosshair, so blocks behind a Cyberpunk wall are never targeted
-	 * (no outline through walls, no building or breaking through them).
+	 * Reach limited to the Night City surface under the crosshair plus AIM_MARGIN, so blocks behind a Cyberpunk wall are never
+	 * targeted (no outline through walls, no building or breaking through them) while the block in front of it always is.
 	 */
 	public static double aimLimit(final double reach) {
-		double d = aim;
-		return d < 0.0 ? reach : Math.min(reach, d);
+		return aimLimit(reach, System.nanoTime());
+	}
+
+	static double aimLimit(final double reach, final long now) {
+		double limit;
+		synchronized (AIM_LOCK) {
+			if (aimLowCount > 0 && now - aimLowSince >= AIM_FALL_NANOS) {
+				aimSmoothed = aimLow;
+				aimLowCount = 0;
+			}
+
+			limit = Math.min(reach, aimSmoothed + AIM_MARGIN);
+		}
+
+		lastLimit = limit;
+		return limit;
+	}
+
+	/** The host's latest aim distance in metres, -1 when it has none (the aim log). */
+	public static double aimRaw() {
+		synchronized (AIM_LOCK) {
+			return Double.isInfinite(aimRaw) ? -1.0 : aimRaw;
+		}
+	}
+
+	/** The limit the last pick used, NaN before the first (the aim log). */
+	public static double lastLimit() {
+		return lastLimit;
+	}
+
+	/** The block the pick last found within the limit while attack was held, and when (client thread). */
+	private static BlockPos stickyPos;
+	private static long stickySeen;
+
+	/** Client thread, after each pick within the limit: pos is the block it found (null: none, or not a block). */
+	public static void picked(final @Nullable BlockPos pos, final boolean attackDown, final long now) {
+		if (!attackDown) {
+			stickyPos = null;
+		} else if (pos != null) {
+			stickyPos = pos;
+			stickySeen = now;
+		}
+	}
+
+	/**
+	 * Client thread: the block to keep targeting although the limit no longer reaches it (plan Q-B1): the one being broken, while
+	 * attack is still held, the block is still there and the limit reached it less than STICKY_NANOS ago. Null otherwise (and the
+	 * stickiness ends).
+	 */
+	public static @Nullable BlockPos stickyTarget(final boolean attackDown, final Predicate<BlockPos> exists, final long now) {
+		BlockPos pos = stickyPos;
+		if (pos == null) {
+			return null;
+		}
+
+		if (!attackDown || now - stickySeen > STICKY_NANOS || !exists.test(pos)) {
+			stickyPos = null;
+			return null;
+		}
+
+		return pos;
 	}
 
 	public static boolean vehicle() {

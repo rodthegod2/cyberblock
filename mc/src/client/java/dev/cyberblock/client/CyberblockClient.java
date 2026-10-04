@@ -4,6 +4,7 @@ package dev.cyberblock.client;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.ProxyEntities;
 import dev.cyberblock.WorldBridge;
+import dev.cyberblock.client.settings.AimDebug;
 import dev.cyberblock.client.settings.SettingsClient;
 import dev.cyberblock.client.view.ViewClient;
 import java.util.List;
@@ -100,6 +101,7 @@ public class CyberblockClient implements ClientModInitializer {
 
 		AutoWorld.tick(minecraft);
 		StatusReporter.tick(minecraft);
+		AimDebug.tick(minecraft);
 	}
 
 	/** Settings for sitting behind another game: keep running unfocused, and no sky/cloud/bobbing effects in the picture. */
