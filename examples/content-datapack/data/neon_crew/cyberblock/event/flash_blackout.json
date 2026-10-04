@@ -1,0 +1,15 @@
+{
+	"schema": 1,
+	"name": "Flash Blackout",
+	"description": "Every light in the area snaps off for a few seconds. Short, cheap and rude.",
+	"cost": 12,
+	"warning_s": 4,
+	"cooldown_s": 45,
+	"radius": 14,
+	"scales_with_intensity": false,
+	"night_city": true,
+	"effect": {
+		"type": "blackout",
+		"seconds": 10
+	}
+}

@@ -18,6 +18,14 @@ def put(root: Path, namespace: str, kind: str, name: str, content, raw: bytes | 
     return path
 
 
+def put_pack(root: Path, pack: object = None) -> Path:
+    """A datapack root's pack.mcmeta (the format of Minecraft 26.3 unless given)."""
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / "pack.mcmeta"
+    path.write_text(json.dumps({"pack": {"description": "x", "min_format": cc.DATA_PACK_FORMAT, "max_format": cc.DATA_PACK_FORMAT}} if pack is None else pack), encoding="utf-8")
+    return path
+
+
 def run(root: Path, **kw) -> cc.Result:
     return cc.check([cc.data_root(root)], **kw)
 
@@ -229,6 +237,7 @@ def test_an_unusable_schema_is_reported_per_file(tmp_path):
 
 # ---- the command line --------------------------------------------------------------------------------------------------------
 def test_main_exit_codes_and_report(tmp_path, capsys):
+    put_pack(tmp_path)
     put(tmp_path, "cyberblock", "test", "ok", GOOD)
     assert cc.main(["--dir", str(tmp_path), "--no-defaults"]) == 0
     assert "1 file(s) ok" in capsys.readouterr().out
@@ -251,7 +260,50 @@ def test_main_usage_errors_exit_2(argv):
 
 def test_two_pack_folders_can_be_checked_at_once(tmp_path, capsys):
     a, b = tmp_path / "a", tmp_path / "b"
+    put_pack(a)
+    put_pack(b)
     put(a, "one", "test", "x", GOOD)
     put(b, "two", "test", "y", {**GOOD, "parent": "one:x"})
     assert cc.main(["--dir", str(a), "--dir", str(b)]) == 0
     assert "2 file(s) ok" in capsys.readouterr().out
+
+
+# ---- pack.mcmeta: Minecraft ignores a datapack folder without a usable one ------------------------------------------------
+def test_a_datapack_root_without_pack_mcmeta_fails_and_says_why(tmp_path, capsys):
+    put(tmp_path, "friend", "test", "mine", GOOD)
+    assert cc.main(["--dir", str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert "/pack.mcmeta: missing" in out and "ignores" in out
+
+
+@pytest.mark.parametrize("pack, expected", [
+    ("{nope", "not valid JSON"),
+    ({"pack": {"min_format": 121}}, "description"),
+    ({"pack": {"description": "x"}}, "min_format"),
+    ({"pack": {"description": "x", "min_format": "121"}}, "min_format"),
+    ({"pack": {"description": "x", "min_format": 100, "max_format": 110}}, "do not cover"),
+    ({"pack": {"description": "x", "min_format": 130}}, "do not cover"),
+    ({"pack": {"description": "x", "min_format": 121, "max_format": "x"}}, "max_format"),
+])
+def test_a_bad_pack_mcmeta_is_a_problem(tmp_path, capsys, pack, expected):
+    put(tmp_path, "friend", "test", "mine", GOOD)
+    path = put_pack(tmp_path, {})
+    path.write_text(pack if isinstance(pack, str) else json.dumps(pack), encoding="utf-8")
+    assert cc.main(["--dir", str(tmp_path)]) == 1
+    assert expected in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("pack", [
+    {"pack": {"description": "x", "min_format": 121}},
+    {"pack": {"description": {"text": "x"}, "min_format": [121, 0], "max_format": [121, 4]}},
+    {"pack": {"description": "x", "min_format": 100, "max_format": 130}},
+])
+def test_pack_mcmeta_forms_that_cover_the_game_pass(tmp_path, capsys, pack):
+    put(tmp_path, "friend", "test", "mine", GOOD)
+    put_pack(tmp_path, pack)
+    assert cc.main(["--dir", str(tmp_path)]) == 0, capsys.readouterr().out
+
+
+def test_a_bare_data_folder_needs_no_pack_mcmeta(tmp_path):
+    put(tmp_path, "friend", "test", "mine", GOOD)
+    assert cc.main(["--dir", str(tmp_path / "data")]) == 0
