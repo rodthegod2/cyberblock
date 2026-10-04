@@ -92,7 +92,8 @@ public final class ProxyDamage {
 
 	/**
 	 * The extra knockback strength of a blow as vanilla's Player.attack works it out: (the weapon's ATTACK_KNOCKBACK after its
-	 * Knockback enchantment, plus 1 while sprinting) x 0.5. Mobs never get the sprint part.
+	 * Knockback enchantment, plus 1 for a sprint attack) x 0.5. Vanilla's sprint attack is sprinting AND the strong (charged) blow,
+	 * so the caller passes sprinting only for a charged swing; mobs never get the sprint part.
 	 */
 	public static double knockbackLevel(final double modifiedKnockback, final boolean sprinting) {
 		return (modifiedKnockback + (sprinting ? 1.0 : 0.0)) * 0.5;

@@ -93,7 +93,7 @@ class ProxyDamageTest {
 	/** Every result of plan retest3 section 1.9 (Gorilla Arms halved after the 2026-10-03 re-test), as ProxyEntity works them out (attribute + enchantment, sprint, Gorilla Arms). */
 	@Test
 	void theKnockbackTiersOfThePlan() {
-		// (ATTACK_KNOCKBACK after Knockback, sprinting, Gorilla Arms) -> m/s on a person
+		// (ATTACK_KNOCKBACK after Knockback, sprinting on a charged blow, Gorilla Arms) -> m/s on a person
 		assertEquals(2.0, person(0.0, false, false), 1e-9, "plain hit");
 		assertEquals(4.5, person(0.0, true, false), 1e-9, "sprint");
 		assertEquals(4.5, person(1.0, false, false), 1e-9, "Knockback I");
@@ -111,10 +111,19 @@ class ProxyDamageTest {
 		return ProxyDamage.meleeOn(0.0, 1.0, ProxyDamage.knockbackLevel(modifiedKnockback, sprint), gorilla, false).length();
 	}
 
-	/** An empty-hand punch with the implant, as ProxyEntity works it out: its ATTACK_KNOCKBACK +2 is in the attribute. */
+	/**
+	 * An empty-hand punch with the implant, as ProxyEntity works it out: its ATTACK_KNOCKBACK +2 is in the attribute, and sprint
+	 * counts only on a charged blow (vanilla's sprint attack).
+	 */
 	private static double implantPunch(final boolean sprint, final boolean charged, final boolean perk) {
-		double level = ProxyDamage.knockbackLevel(2.0, sprint);
+		double level = ProxyDamage.knockbackLevel(2.0, sprint && charged);
 		return ProxyDamage.melee(0.0, 1.0, ProxyDamage.personLevel(level, 2.0, charged, perk)).length();
+	}
+
+	/** A player's punch on a person without the implant, as ProxyEntity works it out (sprint only on a charged blow). */
+	private static double perkPunch(final boolean sprint, final boolean charged, final boolean perk) {
+		double level = ProxyDamage.knockbackLevel(0.0, sprint && charged);
+		return ProxyDamage.melee(0.0, 1.0, ProxyDamage.personLevel(level, 0.0, charged, perk)).length();
 	}
 
 	/** Leftover bug QG: with the implant every quick jab was 7 m/s, a knockdown on every hit. Only the charged punch knocks down. */
@@ -126,9 +135,14 @@ class ProxyDamageTest {
 		// perk and implant are one shove, never two
 		assertEquals(4.5, implantPunch(false, false, true), 1e-9, "quick jab, perk and implant");
 		assertEquals(7.0, implantPunch(false, true, true), 1e-9, "charged punch, perk and implant");
-		// sprint keeps its table row: Gorilla Arms + sprint 7, and the charged punch adds the implant's full strength
-		assertEquals(7.0, implantPunch(true, false, false), 1e-9, "sprinting quick jab = Gorilla Arms + sprint");
+		// vanilla's sprint bonus needs the strong blow: a sprinting quick jab is still a stagger, the charged punch adds the sprint
+		assertEquals(4.5, implantPunch(true, false, false), 1e-9, "sprinting quick jab: no sprint bonus, a stagger");
 		assertEquals(9.5, implantPunch(true, true, false), 1e-9, "sprinting charged punch");
+		assertEquals(4.5, implantPunch(true, false, true), 1e-9, "sprinting quick jab, perk and implant");
+		// the perk alone: a sprinting quick jab is the perk's stagger, the sprinting charged blow is the retest3 row (7)
+		assertEquals(4.5, perkPunch(true, false, true), 1e-9, "perk, sprinting quick jab: a stagger");
+		assertEquals(7.0, perkPunch(true, true, true), 1e-9, "perk, sprinting charged blow = Gorilla Arms + sprint");
+		assertEquals(2.0, perkPunch(true, false, false), 1e-9, "sprinting quick jab, no Gorilla Arms: a plain hit");
 	}
 
 	/** Without the implant on the blow, personLevel is the perk's +0.5 or nothing, whether charged or not (the retest3 table). */

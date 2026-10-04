@@ -343,11 +343,12 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 
 	/**
 	 * What vanilla's LivingEntity.getKnockback (protected) works out for the attacker's weapon, with a player's sprint bonus (plan
-	 * retest3 section 1.9: mobs get none).
+	 * retest3 section 1.9: mobs get none). As in vanilla's Player.attack the sprint bonus needs the strong (charged) blow: a quick
+	 * jab while sprinting gets none.
 	 */
 	private double knockbackLevel(final ServerLevel level, final DamageSource source, final LivingEntity attacker) {
 		float base = (float) attacker.getAttributeValue(Attributes.ATTACK_KNOCKBACK);
 		return ProxyDamage.knockbackLevel(EnchantmentHelper.modifyKnockback(level, attacker.getWeaponItem(), this, source, base),
-			attacker instanceof Player && attacker.isSprinting());
+			attacker instanceof Player player && player.isSprinting() && ProxyDamage.charged(player));
 	}
 }
