@@ -820,6 +820,11 @@ def scenario_joinpassword(env: Env, rep: Report) -> None:
     env.client("CbGuest1", join=server.port)
     rep.step("a new player is locked", lambda: server.log.wait(r"login: CbGuest1 is locked until /login", T_JOIN), must=True)
     mark = server.log.mark()
+    server.test("breach practice 1", as_player="CbGuest1")  # Phase 6: Breach.open, the path a Net Port right-click takes
+    rep.step("a locked player cannot open a Breach (no interaction before /login)",
+             lambda: server.log.wait(r"breach: CbGuest1 (refused \(locked by the join password\)|opened)", T_EFFECT, mark).group(1) != "opened"
+             and not server.log.find(r"breach: CbGuest1 opened", mark))
+    mark = server.log.mark()
     for _ in range(5):
         server.rcon("execute as CbGuest1 run login not-the-password")
         time.sleep(LOGIN_GAP_S)

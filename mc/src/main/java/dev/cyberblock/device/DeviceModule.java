@@ -146,6 +146,11 @@ public final class DeviceModule {
 		return registry;
 	}
 
+	/** The device whose block stands at pos, with its owner, or null (Phase 6: Breach on a Net Port). Server thread. */
+	public static DeviceRegistry.@Nullable Tracked at(final BlockPos pos) {
+		return registry.at(pos.asLong());
+	}
+
 	// ---- UP ----------------------------------------------------------------------------------------------------------------
 
 	/** devices: every entry is the device's current data; a session that is not active builds nothing (protocol.md, Phase 4). */

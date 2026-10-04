@@ -538,6 +538,12 @@ class SimServer(mpcheck.Server):
                     if other != owner and h["linked"]:
                         append(h["log"], f'[{other}] hit: {{"t": "hit", "target": "{target}", "dmg": 5.0}}')
             return "ok"
+        if command.startswith("cyberblock test breach practice"):  # Breach.open: a player locked by the join password is refused
+            if actor in self.locked and "breach-ignores-lock" not in self.bugs:
+                append(self.log, f"[Server thread/INFO]: breach: {actor} refused (locked by the join password)")
+            else:
+                append(self.log, f"[Server thread/INFO]: breach: {actor} opened 4x4 on terminal 0 (security 1, firewall 0, buffer 4, 30 s, daemons [], seed 1)")
+            return "ok"
         if command.startswith("cyberblock test explode"):
             for name, host in sim.hosts.items():
                 if host["linked"] and self.allows(name, actor, "explosions"):
@@ -774,11 +780,12 @@ def test_joinpassword_scenario_passes_against_an_ideal_server(tmp_path):
     sim = SimEnv(tmp_path)
     rep = run_scenario(sim, "joinpassword")
     assert rep.ok, failed(rep)
-    assert len(rep.checks) == 12 and sim.server_obj.verified == {"CbHost1"} and sim.server_obj.wrong == {"CbGuest1": 5}
+    assert len(rep.checks) == 13 and sim.server_obj.verified == {"CbHost1"} and sim.server_obj.wrong == {"CbGuest1": 5}
 
 
 @pytest.mark.parametrize("bug, expected", [("no-rehandshake", {"the waiting link becomes a host at once", "its session starts"}),
-                                           ("log-password", {"the password is in no log"})])
+                                           ("log-password", {"the password is in no log"}),
+                                           ("breach-ignores-lock", {"a locked player cannot open a Breach (no interaction before /login)"})])
 def test_joinpassword_scenario_notices_a_link_that_keeps_waiting_or_a_logged_password(tmp_path, bug, expected):
     rep = run_scenario(SimEnv(tmp_path, bugs=[bug]), "joinpassword")
     assert expected <= set(failed(rep)) and not rep.ok

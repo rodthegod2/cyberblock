@@ -106,6 +106,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.device.block.DeviceBlocks.register();
 		// Phase 5K: the body attachment, /cyberblock body male|female and the [V] team prefix for linked players
 		dev.cyberblock.skin.CyberSkins.init();
+		// Phase 6B: Breach Protocol (Net Port right-click, the daemon and breach_tier content, the daemon DOWN)
+		dev.cyberblock.hack.breach.Breach.init();
 		LOG.info("cyberblock loaded");
 	}
 
