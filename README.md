@@ -93,6 +93,9 @@ Everything works on Night City's real NPCs, vehicles and devices.
   art), with every map pin; `/cyberblock survey` maps the whole city once (15 minutes at most), for every world and save
   ([details](docs/HOW-TO-PLAY.md#the-atlas-map)).
 - A 20-perk skill tree, a starter kit, free perks in creative (or `/cyberblock perks free on`) and `/cyberblock level`.
+- **Playing together (LAN):** open your world to LAN and a friend with only Minecraft (and the Cyberblock mod) joins as a
+  guest: their TNT, hits and blocks reach your Cyberpunk game, and you decide what they may do with
+  `/cyberblock guests` ([details](docs/HOW-TO-PLAY.md#playing-together-lan)). Online servers are the next goal.
 
 ## Build from source
 ```

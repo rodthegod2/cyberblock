@@ -22,7 +22,8 @@ Cyberblock is on.
 > **Quick links:** [release install](#1-setup), [the key table](#3-controls), [the Minecraft interface](#the-minecraft-interface),
 > [netrunning, step by step](#netrunning-step-by-step), [what each chip does](#what-each-chip-does),
 > [cyberware](#cyberware-u-y-l-and-o), [vehicles](#vehicles-and-third-person) and
-> [free perks and `/cyberblock level`](#6-game-modes-and-the-starter-kit).
+> [free perks and `/cyberblock level`](#6-game-modes-and-the-starter-kit) and
+> [playing together over LAN](#playing-together-lan).
 
 ---
 
@@ -880,6 +881,50 @@ border) around them, and Minecraft's own world is not drawn over them. When the 
   Menu...**. It opens the real Cyberpunk menu once. If Minecraft is not running or not linked, every Cyberpunk menu works
   as in vanilla.
 
+### Playing together (LAN)
+Since Phase 1 every world, including your singleplayer one, runs through a small server, so a friend can join it. You play
+exactly as before: you are the **host** (your Minecraft is linked to your Cyberpunk). Your friend is a **guest**: a second
+Minecraft player in your Night City, with **Minecraft only** (no Cyberpunk needed). Both of you need the Cyberblock mod,
+from the same release (the version must match in major and minor, for example 1.0.x with 1.0.y).
+
+**Start.** In your Minecraft press Esc, **Open to LAN**, **Start LAN World**. Minecraft prints the port in chat ("Local game
+hosted on port ..."). Your friend adds your address and that port under Multiplayer, Direct Connection (same network or a
+VPN; nothing is opened to the internet by Cyberblock). Only one Cyberpunk host per server for now: a second linked player
+joins as a guest.
+
+**What reaches your Cyberpunk game** (a guest's actions are real Minecraft actions that Cyberblock turns into Night City
+effects, exactly like yours):
+- TNT, creepers, fireworks and wind charges near V become Cyberpunk explosions.
+- Hits, arrows, fire, leads and fishing rods on an NPC or car hurt it (they hit the same invisible proxies as yours).
+- Blocks the guest places become collision in your Night City; a scan or quickhack of the guest on one of your NPCs runs
+  in your game.
+- Not yet: the guest does not see Night City's people and cars as figures (that comes in a later phase); they see the
+  Minecraft world and what their actions do.
+
+**Your guests' permissions.** You decide what guests may do to *your* game: `/cyberblock guests <explosions | damage | hacks |
+devices | spawns> on|off`. Explosions, damage, hacks and devices are on, spawns are off. A switched-off action still
+happens in the Minecraft world (a guest's TNT still breaks Minecraft blocks); it just does not reach your Cyberpunk
+game, and the guest sees "blocked" on the action bar. Your own actions are never limited. Server operators list sessions,
+roles, versions and message rates with `/cyberblock hosts`.
+
+**Messages you may see.**
+| Message | Meaning and what to do |
+|---|---|
+| "Cyberblock version mismatch: server X, your mod Y. Update from the modpack." | the two mods differ in major.minor: install the same release |
+| "Cyberblock: your Cyberpunk plugin is X but your mod is Y; you can play as a guest. Reinstall both from the same release." | your Cyberpunk plugin and your Minecraft mod are from different releases: you play as a guest until you reinstall both |
+| "Cyberblock: another Cyberpunk host is already active (max N)" | the server allows N hosts and they are taken: you play as a guest |
+| "This server needs the Cyberblock modpack: ..." | the player has no Cyberblock mod: install it first |
+| "Reconnecting to ... in N s" (with **Cancel**) | the connection dropped; it retries after 5, 10, 20, 40 and then every 60 s for 10 minutes. Meanwhile Night City is cleaned up as if the link had dropped, and when you are back the whole ground returns |
+| "Cyberblock: too many messages from your Cyberpunk link" | the server's rate limit kicked a link that flooded it: restart Cyberpunk and Minecraft, and report it if it was not a test |
+
+**Leaving.** When a host quits or loses the link, the server removes that host's collision, proxies and tethers at once;
+nothing of it stays in the world file. Reopen the world and the ground comes back.
+
+**Testing it yourself (developers).** From a git worktree (never the folder you play from), `uv run python -m tools.mpcheck
+--guest <your LAN port>` starts one offline test guest (name `CbGuest1`); `uv run python -m tools.mpcheck --all` runs the
+automatic checks (a test server, offline clients and fake hosts; it needs about 3 GB of free commit per client and stops
+everything it started).
+
 ---
 
 ## 6. Game modes and the starter kit
@@ -942,7 +987,8 @@ time.)
 Useful commands: `/cyberblock kit`, `/cyberblock level` (re-align the ground to where V stands), `/cyberblock survey`
 (map all of Night City once for the [Atlas](#the-atlas-map); `stop`, `status`, `redo`),
 `/cyberblock perks free on|off` (free skill points), `/gamemode creative`, `/gamemode survival`,
-`/xp add @s 30 levels`, `/effect clear @s`.
+`/xp add @s 30 levels`, `/effect clear @s`. Playing with friends: `/cyberblock guests <toggle> on|off` and, for server
+operators, `/cyberblock hosts` (see [Playing together (LAN)](#playing-together-lan)).
 
 ---
 
