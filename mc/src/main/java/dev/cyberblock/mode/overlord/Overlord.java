@@ -3,6 +3,7 @@ package dev.cyberblock.mode.overlord;
 import com.google.gson.JsonObject;
 import com.mojang.brigadier.CommandDispatcher;
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.ExplosionEvents;
 import dev.cyberblock.holo.HoloHooks;
 import dev.cyberblock.holo.HoloRules;
 import dev.cyberblock.net.HostSession;
@@ -27,15 +28,22 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.level.Explosion;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
@@ -45,9 +53,10 @@ import org.jspecify.annotations.Nullable;
  * {@code spawn_palette} entries and {@code event}s at points of the match area. With no human Overlord online, the Auto-Director
  * spends them. Every request passes {@link Fairness} (only players in the running match who opted in with
  * {@code /cyberblock overlord optin on}, a minimum distance, a cap, the match area) and lands after its warning (3 s at least: a sound
- * and a particle marker at the spot, and an action-bar line for the players it is aimed at). Night City enemies near a host whose
- * {@code spawns} toggle allows it go to that host's game as {@code spawn} DOWN, checked at runtime per host ({@link NcSpawns});
- * otherwise, and near Minecraft-only players, they are Minecraft squads. Server thread only.
+ * and a particle marker at the spot, and an action-bar line for the players it is aimed at). Night City enemies aimed at an opted-in
+ * host whose {@code spawns} toggle allows it go to that host's game as {@code spawn} DOWN, checked at runtime per host ({@link NcSpawns});
+ * otherwise, and near Minecraft-only players, they are Minecraft squads. No host game gets anything from the Overlord without that
+ * consent ({@link HostRules}); its mobs and blasts hurt only the match's opted-in players and break no blocks. Server thread only.
  *
  * <p>Log lines: {@code overlord: ready (...)}, {@code overlord: <name> opened the console (<where>, match <id>)},
  * {@code overlord: <who> queued <spawn|event> <id> at <x> <z> (match <id>)}, {@code overlord: <spawn|event> <id> landed (<how>)},
@@ -55,10 +64,12 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Overlord {
 	/** Every Minecraft mob the Overlord spawned carries this entity tag (a leftover after a restart is removed when it loads). */
-	static final String TAG = "cyberblock_overlord";
+	public static final String TAG = "cyberblock_overlord";
 	static final double WHO_RADIUS = 160.0;
 	static final int START_POINTS = 20;
 	static final long CONSOLE_MS = 3_000L, PACE_MS = 15_000L, ACT_MS = 400L, IDLE_MS = 30_000L;
+	/** {@code ovlpoll}: an Overlord's console polls at most this often; anyone else gets the "not an Overlord" answer at most this often. */
+	static final long POLL_MS = 250L, NOT_OVERLORD_POLL_MS = 5_000L;
 	static final int DIRECTOR_TICKS = 100;
 	static final int TIMELINE = 24;
 
@@ -76,6 +87,9 @@ public final class Overlord {
 		final Map<String, long[]> nightCity = new HashMap<>();
 		/** Entry cooldowns: "s:<id>" or "e:<id>" to the ms it is ready again. */
 		final Map<String, Long> cooldowns = new HashMap<>();
+		/** Supply-drop eddies paid this match, in all and per player (capped by {@link Fairness#eddieShares}). */
+		int eddiesPaid;
+		final Map<UUID, Integer> eddiesTo = new HashMap<>();
 		long seen = System.currentTimeMillis();
 		long lastDirector = System.currentTimeMillis();
 		boolean director;
@@ -119,6 +133,7 @@ public final class Overlord {
 	private static final Map<UUID, String> optIn = new HashMap<>();
 	private static final Map<UUID, Long> hurt = new HashMap<>();
 	private static final Map<UUID, Long> lastAct = new HashMap<>();
+	private static final Map<UUID, Long> lastPoll = new HashMap<>();
 	private static final Set<String> told = new HashSet<>();
 	static final NcSpawns nightCity = new NcSpawns(Cyberblock.LOG::info);
 	private static final Random random = new Random();
@@ -131,17 +146,40 @@ public final class Overlord {
 	public static void init() {
 		OverlordContent.register();
 		OverlordBlocks.register();
-		ServerNet.onAct(OverlordWire.T_POLL, (player, m) -> poll(player, false, ""));
+		ServerNet.onAct(OverlordWire.T_POLL, (player, m) -> {
+			if (due(lastPoll, player.getUUID(), System.currentTimeMillis(), isOverlord(player) ? POLL_MS : NOT_OVERLORD_POLL_MS)) {
+				poll(player, false, "");
+			}
+		});
 		ServerNet.onAct(OverlordWire.T_SPAWN, (player, m) -> onAsk(player, m, false));
 		ServerNet.onAct(OverlordWire.T_EVENT, (player, m) -> onAsk(player, m, true));
 		HostSessions.listen("spawnresult", OverlordWorld::onSpawnResult);
 		HostSessions.onStart(s -> nightCity.reset(s.uuid()));
 		HostSessions.onEnd(s -> nightCity.reset(s.uuid()));
+		ServerPlayConnectionEvents.DISCONNECT.register((handler, s) -> {
+			UUID id = handler.getPlayer().getUUID();
+			lastAct.remove(id);
+			lastPoll.remove(id);
+			hurt.remove(id);
+		});
+		ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> allowDamage(entity, source.getEntity(), source.getDirectEntity()));
 		ServerLivingEntityEvents.AFTER_DAMAGE.register((entity, source, base, taken, blocked) -> {
 			if (entity instanceof ServerPlayer p && taken > 0.0F) {
 				hurt.put(p.getUUID(), System.currentTimeMillis());
 			}
 		});
+		// the Overlord's airstrikes (an OverlordWorld.Blast) and its mobs' blasts: no broken blocks, no bystanders, consenting hosts only
+		ExplosionEvents.owner = (source, damage) -> {
+			OverlordWorld.Blast blast = damage instanceof OverlordWorld.Blast b ? b : null;
+			Entity mob = source == null ? null : tagged(source) ? source : Explosion.getIndirectSourceEntity(source);
+			if (blast == null && mob != null && tagged(mob)) {
+				String match = matchOfMob(mob.getUUID());
+				blast = new OverlordWorld.Blast(match == null ? "" : match, null, true);
+			}
+
+			OverlordWorld.Blast owned = blast;
+			return owned == null ? null : new ExplosionEvents.Owned(Level.ExplosionInteraction.NONE, owned, owned::hears);
+		};
 		// a mob of an earlier run (saved with its chunk) belongs to no match any more
 		ServerEntityEvents.ENTITY_LOAD.register((entity, level) -> {
 			if (entity.entityTags().contains(TAG) && matches.values().stream().noneMatch(m -> m.mobs.contains(entity.getUUID()))) {
@@ -149,13 +187,20 @@ public final class Overlord {
 			}
 		});
 		ServerTickEvents.END_SERVER_TICK.register(Overlord::tick);
-		ServerLifecycleEvents.SERVER_STARTED.register(s -> server = s);
+		ServerLifecycleEvents.SERVER_STARTED.register(s -> {
+			server = s;
+			Cyberblock.LOG.info(OverlordHooks.running == OverlordHooks.NOT_SET
+				? "overlord: no match hook is set (OverlordHooks.running, 8M): no match counts as running, the Overlord stays off"
+				: "overlord: match hooks: running set, area " + (OverlordHooks.area == OverlordHooks.NO_AREA ? "the box around the players" : "set")
+					+ ", heat " + (OverlordHooks.heat == OverlordHooks.NO_HEAT ? "0 (not set)" : "set"));
+		});
 		ServerLifecycleEvents.SERVER_STOPPING.register(s -> {
 			matches.values().forEach(m -> OverlordWorld.removeMobs(s, m));
 			matches.clear();
 			optIn.clear();
 			hurt.clear();
 			lastAct.clear();
+			lastPoll.clear();
 			told.clear();
 			server = null;
 		});
@@ -184,6 +229,59 @@ public final class Overlord {
 	/** A player of the match who opted in: the only players the Overlord may touch. */
 	static boolean eligible(final ServerPlayer p, final String match) {
 		return participant(p, match) && match.equals(optIn.get(p.getUUID()));
+	}
+
+	static boolean tagged(final @Nullable Entity e) {
+		return e != null && e.entityTags().contains(TAG);
+	}
+
+	/** The match whose Overlord spawned this mob, or null. */
+	static @Nullable String matchOfMob(final UUID mob) {
+		for (MatchState m : matches.values()) {
+			if (m.mobs.contains(mob)) {
+				return m.id;
+			}
+		}
+
+		return null;
+	}
+
+	/** May an Overlord blast of this match hurt or push the entity? Its opted-in players, Overlord mobs and monsters only. */
+	static boolean mayHit(final Entity entity, final String match) {
+		if (entity instanceof ServerPlayer p) {
+			return eligible(p, match);
+		}
+
+		return tagged(entity) || entity instanceof Enemy;
+	}
+
+	/**
+	 * ALLOW_DAMAGE: an Overlord mob (the attacker or its projectile carries the tag) hurts only the opted-in players of its match, and no
+	 * armour stand; everything else is not the Overlord's business.
+	 */
+	static boolean allowDamage(final LivingEntity victim, final @Nullable Entity attacker, final @Nullable Entity direct) {
+		Entity mob = tagged(attacker) ? attacker : tagged(direct) ? direct : null;
+		if (mob == null) {
+			return true;
+		}
+
+		if (victim instanceof ServerPlayer p) {
+			String match = matchOfMob(mob.getUUID());
+			return match != null && eligible(p, match);
+		}
+
+		return !(victim instanceof ArmorStand);
+	}
+
+	/** A rate limit: true (and now noted) when the player's last noted time is at least {@code minMs} ago or there is none. */
+	static boolean due(final Map<UUID, Long> last, final UUID player, final long now, final long minMs) {
+		Long t = last.get(player);
+		if (t != null && now - t < minMs) {
+			return false;
+		}
+
+		last.put(player, now);
+		return true;
 	}
 
 	/** The match's players as fairness sees them. */
@@ -363,9 +461,13 @@ public final class Overlord {
 		}
 
 		ServerLevel level = anchor.level();
+		if (!level.isLoaded(BlockPos.containing(x, 0, z))) {
+			return new Fairness.Refusal("not_loaded", "That spot is not loaded");
+		}
+
 		Vec3 at = OverlordWorld.ground(level, x, z);
 		if (at == null) {
-			return new Fairness.Refusal("not_loaded", "That spot is not loaded");
+			return new Fairness.Refusal("no_ground", "No ground there: pick a spot on a street or a building");
 		}
 
 		int units = event ? OverlordWorld.eventUnits(ev, m.intensity) : Math.max(spawn.count(), spawn.squadCount());

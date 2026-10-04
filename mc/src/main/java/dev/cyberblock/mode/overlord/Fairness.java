@@ -66,7 +66,28 @@ public final class Fairness {
 		}
 	}
 
+	/** Supply-drop eddies (section 1.16 lists no Overlord income): at most this many per drop, per match in all, and to one player per match. */
+	public static final int DROP_EDDIES = 100, MATCH_EDDIES = 300, PLAYER_EDDIES = 100;
+
 	private Fairness() {
+	}
+
+	/**
+	 * Each receiver's share of a drop's eddies: the drop's eddies (at most DROP_EDDIES and what the match may still pay) split evenly
+	 * (the rest is not paid), each share at most what that player may still get. {@code paidTo}: what each receiver got this match.
+	 */
+	public static int[] eddieShares(final int eddies, final int matchPaid, final int[] paidTo) {
+		int[] out = new int[paidTo.length];
+		if (out.length == 0) {
+			return out;
+		}
+
+		int pot = Math.max(0, Math.min(Math.min(eddies, DROP_EDDIES), MATCH_EDDIES - matchPaid));
+		for (int i = 0; i < out.length; i++) {
+			out[i] = Math.max(0, Math.min(pot / out.length, PLAYER_EDDIES - paidTo[i]));
+		}
+
+		return out;
 	}
 
 	/** Null when the request is fair, else the first rule it breaks. */

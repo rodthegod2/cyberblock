@@ -145,7 +145,7 @@
 		{"from": [14, 7, 31], "to": [28, 7, 31], "block": "cyberblock:nc_neon_cyan"},
 		{"from": [21, 6, 31], "to": [21, 6, 31], "block": "minecraft:light[level=15]"}
 	],
-	"stations": {"match_terminal": [21, 2, 14], "holo_table": [4, 1, 14], "exit_portal": [21, 2, 33]},
+	"stations": {"match_terminal": [21, 2, 14], "holo_table": [4, 1, 14], "exit_portal": [21, 2, 33], "overlord_console": [23, 2, 14]},
 	"boards": [
 		{"pos": [33, 3, 10], "facing": "west", "objective": "cb_wins", "title_key": "cyberblock.afterlife.board.wins"},
 		{"pos": [33, 3, 13], "facing": "west", "objective": "cb_gigs", "title_key": "cyberblock.afterlife.board.gigs"},

@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.hack.actions.ActWire;
 import dev.cyberblock.hack.actions.RemoteHack;
+import dev.cyberblock.mixin.MobAccessor;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.Permissions;
@@ -32,9 +33,15 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.goal.GoalSelector;
+import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.zombie.Zombie;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Explosion;
+import net.minecraft.world.level.ExplosionDamageCalculator;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
@@ -47,20 +54,22 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Events in Minecraft: blackout = Darkness; EMP = Slowness and Mining Fatigue (with {@code cyberware_off} also Weakness: Minecraft
  * has no way to switch implants off for a while) plus {@code glitch} DOWN to a linked player's own game (at most 10 s); airstrike =
- * explosions that break no blocks; traffic jam = Slowness III; supply drop = items falling at the spot; weather = the server's
- * weather (Phase 3's time-and-weather sync from the primary host may change it again); outbreak = squads of a palette entry.
- * With {@code night_city}, a blackout and a traffic jam also reach the host games in the radius as the real {@code blackout} and
- * {@code gridlock} remote hacks, where the host's guest toggles allow those hacks. Only the match's opted-in players get the effects.
+ * explosions that break no blocks; traffic jam = Slowness III; supply drop = items falling at the spot (its eddies only for the
+ * match's opted-in players, capped); weather = the server's weather (Phase 3's time-and-weather sync from the primary host may change
+ * it again); outbreak = squads of a palette entry. With {@code night_city}, a blackout and a traffic jam also reach the host games in
+ * the radius as the real {@code blackout} and {@code gridlock} remote hacks, and an airstrike as real explosions. Only the match's
+ * opted-in players get the effects, and a host's game gets nothing from the Overlord (spawn, hack, glitch or explosion) unless that
+ * host is one of them and its {@code spawns} toggle is on ({@link HostRules}).
  */
 final class OverlordWorld {
-	/** A Night City spawn goes to the nearest active host within this many blocks of the spot. */
+	/** A Night City spawn goes to an opted-in host within this many blocks of the spot (see {@link HostRules#spawnHost}). */
 	static final double NC_RADIUS = 64.0;
 	/** A Night City spawn counts toward the cap this long (the server cannot see those NPCs die). */
 	static final long NC_LIVE_MS = 60_000L;
 	static final int MARKER = 0xFF2040;
 	private static final Set<String> warnedMobs = new HashSet<>();
 
-	private record Strike(ServerLevel level, Vec3 at, float power, long tick) {
+	private record Strike(ServerLevel level, Vec3 at, float power, long tick, Blast blast) {
 	}
 
 	private static final List<Strike> strikes = new ArrayList<>();
@@ -68,14 +77,58 @@ final class OverlordWorld {
 	private OverlordWorld() {
 	}
 
-	/** The ground at (x, z): the top of the highest motion-blocking block, or null when the chunk is not loaded. */
+	/**
+	 * The ground at (x, z): the top of the highest motion-blocking block, or null when the chunk is not loaded or the column has no block
+	 * (on the void world: no replica under the spot).
+	 */
 	static @Nullable Vec3 ground(final ServerLevel level, final double x, final double z) {
 		BlockPos column = BlockPos.containing(x, 0, z);
 		if (!level.isLoaded(column)) {
 			return null;
 		}
 
-		return new Vec3(x, level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, column.getX(), column.getZ()), z);
+		int top = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, column.getX(), column.getZ());
+		return hasGround(top, level.getMinY()) ? new Vec3(x, top, z) : null;
+	}
+
+	/** A column's heightmap top is above the world's bottom only when the column holds a block. */
+	static boolean hasGround(final int top, final int minY) {
+		return top > minY;
+	}
+
+	/**
+	 * The damage of the Overlord's blasts (airstrikes and its mobs' explosions, which break no blocks): only the match's opted-in players,
+	 * the Overlord's own mobs and monsters are hurt or pushed; item frames, paintings, armour stands, dropped items, pets and every other
+	 * player are left alone. {@code nightCity}: the blast also goes to the host games that consent ({@link HostRules#explosion}).
+	 */
+	static final class Blast extends ExplosionDamageCalculator {
+		final String match;
+		final @Nullable UUID by;
+		final boolean nightCity;
+
+		Blast(final String match, final @Nullable UUID by, final boolean nightCity) {
+			this.match = match;
+			this.by = by;
+			this.nightCity = nightCity;
+		}
+
+		@Override
+		public boolean shouldDamageEntity(final Explosion explosion, final Entity entity) {
+			return Overlord.mayHit(entity, this.match);
+		}
+
+		@Override
+		public float getKnockbackMultiplier(final Entity entity) {
+			return Overlord.mayHit(entity, this.match) ? super.getKnockbackMultiplier(entity) : 0.0F;
+		}
+
+		/** Does this host's game get the blast as a real explosion? */
+		boolean hears(final HostSession host) {
+			ServerPlayer p = host.player();
+			boolean own = host.uuid().equals(this.by);
+			return this.nightCity && p != null && HostRules.explosion(Overlord.eligible(p, this.match), own, host.perms().has(Permissions.Toggle.SPAWNS),
+				host.perms().has(Permissions.Toggle.EXPLOSIONS));
+		}
 	}
 
 	/** The intensity's scale for an event that scales with it (counts, power and seconds). */
@@ -181,16 +234,19 @@ final class OverlordWorld {
 		spawn(m, p.level(), p.at(), p.id(), e, p.by());
 	}
 
-	/** One palette entry at the spot: in the nearby host's game when it may be, else as its Minecraft squad. */
+	/**
+	 * One palette entry at the spot: in the game of the opted-in host the spot is aimed at ({@link HostRules#spawnHost}) when its toggle
+	 * allows it, else as its Minecraft squad.
+	 */
 	static void spawn(final Overlord.MatchState m, final ServerLevel level, final Vec3 at, final Identifier id, final OverlordContent.SpawnEntry e,
 		final @Nullable UUID by) {
-		HostSession host = e.nightCity() ? HostSessions.nearestActive(level, at, NC_RADIUS) : null;
+		HostSession host = e.nightCity() ? spawnHost(m, level, at) : null;
 		String why;
 		if (!e.nightCity()) {
 			why = "Minecraft squad";
 		} else if (host == null) {
-			why = "Minecraft squad: no Cyberpunk host within " + (int) NC_RADIUS + " blocks";
-		} else if (!(host.uuid().equals(by) || host.perms().has(Permissions.Toggle.SPAWNS))) {
+			why = "Minecraft squad: the spot is not aimed at an opted-in Cyberpunk player of the match within " + (int) NC_RADIUS + " blocks";
+		} else if (!HostRules.consents(true, host.uuid().equals(by), host.perms().has(Permissions.Toggle.SPAWNS))) {
 			why = "Minecraft squad: " + host.name() + "'s spawns toggle is off";
 		} else if (!Overlord.nightCity.usable(host.uuid())) {
 			why = "Minecraft squad: Night City spawns fall back for " + host.name();
@@ -202,6 +258,20 @@ final class OverlordWorld {
 		int n = squad(m, level, at, e.squadMob(), e.squadCount(), e.hostile());
 		m.line(String.format(Locale.ROOT, "%s x%d landed (%s)", e.name(), n, why));
 		Cyberblock.LOG.info("overlord: spawn {} landed ({}, {} mobs)", id, why, n);
+	}
+
+	/** The host a Night City spawn at the spot goes to: among the match's opted-in hosts in this level only. */
+	private static @Nullable HostSession spawnHost(final Overlord.MatchState m, final ServerLevel level, final Vec3 at) {
+		List<HostRules.Host> hosts = new ArrayList<>();
+		for (HostSession h : HostSessions.active()) {
+			ServerPlayer p = h.player();
+			if (p != null && p.level() == level) {
+				hosts.add(new HostRules.Host(h.uuid(), p.getX(), p.getZ(), Overlord.eligible(p, m.id)));
+			}
+		}
+
+		HostRules.Host pick = HostRules.spawnHost(hosts, Overlord.whoNear(level, m.id, at.x, at.z), at.x, at.z, NC_RADIUS);
+		return pick == null ? null : HostSessions.of(pick.id());
 	}
 
 	private static void nightCitySpawn(final Overlord.MatchState m, final ServerLevel level, final Vec3 at, final Identifier id,
@@ -288,6 +358,7 @@ final class OverlordWorld {
 			mobEntity.finalizeSpawn(level, level.getCurrentDifficultyAt(BlockPos.containing(p)), EntitySpawnReason.EVENT, null);
 			mobEntity.setPersistenceRequired();
 			mobEntity.addTag(Overlord.TAG);
+			aimAtMatch(mobEntity, m.id, hostile);
 			if (hostile) {
 				ServerPlayer target = nearestEligible(level, m.id, p, 48.0);
 				if (target != null) {
@@ -305,6 +376,24 @@ final class OverlordWorld {
 		}
 
 		return placed;
+	}
+
+	/**
+	 * An Overlord mob looks for the match's opted-in players only (its vanilla "attack the nearest player, villager, golem" goals go; a
+	 * hostile one gets one for opted-in players) and breaks no doors. Mobs that pick targets with a brain instead of goals keep theirs:
+	 * {@link #keep} turns them back and {@link Overlord#allowDamage} keeps them from hurting anyone else.
+	 */
+	private static void aimAtMatch(final Mob mob, final String match, final boolean hostile) {
+		GoalSelector targets = ((MobAccessor) mob).cyberblock$targetSelector();
+		targets.removeAllGoals(g -> g instanceof NearestAttackableTargetGoal<?>);
+		if (hostile) {
+			targets.addGoal(2, new NearestAttackableTargetGoal<>(mob, Player.class, true, (target, level) -> target instanceof ServerPlayer p
+				&& Overlord.eligible(p, match)));
+		}
+
+		if (mob instanceof Zombie zombie) {
+			zombie.setCanBreakDoors(false);
+		}
 	}
 
 	private static void once(final String why) {
@@ -344,9 +433,10 @@ final class OverlordWorld {
 		String detail = switch (fx.type()) {
 			case "blackout" -> {
 				hit.forEach(player -> player.addEffect(new MobEffectInstance(MobEffects.DARKNESS, ticks, 0)));
-				yield hit.size() + " players in the dark" + nightCityHack(e, p, RemoteHack.BLACKOUT, ticks / 20);
+				yield hit.size() + " players in the dark" + nightCityHack(m, e, p, RemoteHack.BLACKOUT, ticks / 20);
 			}
 			case "emp" -> {
+				int glitched = 0;
 				for (ServerPlayer player : hit) {
 					player.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, ticks, 0));
 					player.addEffect(new MobEffectInstance(MobEffects.MINING_FATIGUE, ticks, 0));
@@ -354,33 +444,43 @@ final class OverlordWorld {
 						player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, ticks, 0));
 					}
 
+					// the glitch reaches a linked player's own game only with that host's spawns toggle (contract 1.6)
 					HostSession session = HostSessions.of(player);
-					if (session != null) {
+					if (session != null && session.active() && HostRules.consents(true, session.uuid().equals(p.by()),
+						session.perms().has(Permissions.Toggle.SPAWNS))) {
 						session.send("{\"t\":\"glitch\",\"seconds\":" + Math.min(10, ticks / 20) + "}");
+						glitched++;
 					}
 				}
 
-				yield hit.size() + " players hit";
+				yield hit.size() + " players hit" + (glitched == 0 ? "" : ", glitch in " + glitched + " host game(s)");
 			}
 			case "traffic_jam" -> {
 				hit.forEach(player -> player.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, ticks, 2)));
-				yield hit.size() + " players stuck" + nightCityHack(e, p, RemoteHack.GRIDLOCK, ticks / 20);
+				yield hit.size() + " players stuck" + nightCityHack(m, e, p, RemoteHack.GRIDLOCK, ticks / 20);
 			}
 			case "airstrike" -> {
 				int n = scaled(fx.strikes(), k, 1, 20);
 				float power = (float) Math.min(4.0, fx.power() * k);
 				long tick = s.getTickCount();
+				Blast blast = new Blast(m.id, p.by(), e.nightCity());
 				for (int i = 0; i < n; i++) {
 					double a = Math.random() * Math.PI * 2.0, r = Math.random() * fx.spread();
 					Vec3 at = ground(level, p.at().x + Math.cos(a) * r, p.at().z + Math.sin(a) * r);
-					strikes.add(new Strike(level, at == null ? p.at() : at, power, tick + (long) i * fx.intervalTicks()));
+					strikes.add(new Strike(level, at == null ? p.at() : at, power, tick + (long) i * fx.intervalTicks(), blast));
 				}
 
 				yield n + " strikes";
 			}
 			case "supply_drop" -> {
-				int n = drop(level, p.at(), fx);
-				yield n + " stacks dropped";
+				List<ServerPlayer> near = new ArrayList<>();
+				for (ServerPlayer player : level.players()) {
+					if (Overlord.eligible(player, m.id) && Math.hypot(player.getX() - p.at().x, player.getZ() - p.at().z) <= Fairness.REACH + e.radius()) {
+						near.add(player);
+					}
+				}
+
+				yield drop(m, level, p.at(), fx, near);
 			}
 			case "weather" -> {
 				boolean rain = !fx.weather().equals("clear"), thunder = fx.weather().equals("thunder");
@@ -393,8 +493,12 @@ final class OverlordWorld {
 		Cyberblock.LOG.info("overlord: event {} landed ({})", p.id(), detail);
 	}
 
-	/** A night_city blackout or traffic jam: the real remote hack in each host game in the radius whose toggles allow it. */
-	private static String nightCityHack(final OverlordContent.EventEntry e, final Overlord.Pending p, final RemoteHack hack, final int seconds) {
+	/**
+	 * A night_city blackout or traffic jam: the real remote hack in the game of each host in the radius that is an opted-in player of
+	 * the match and whose spawns and hack toggles allow it ({@link HostRules#rhack}).
+	 */
+	private static String nightCityHack(final Overlord.MatchState m, final OverlordContent.EventEntry e, final Overlord.Pending p, final RemoteHack hack,
+		final int seconds) {
 		if (!e.nightCity()) {
 			return "";
 		}
@@ -402,44 +506,69 @@ final class OverlordWorld {
 		int sent = 0;
 		for (HostSession host : HostSessions.active()) {
 			ServerPlayer player = host.player();
+			boolean own = host.uuid().equals(p.by());
 			if (player == null || player.level() != p.level() || Math.hypot(player.getX() - p.at().x, player.getZ() - p.at().z) > e.radius()
-				|| !hack.allowed(host.perms(), host.uuid().equals(p.by()))) {
+				|| !HostRules.rhack(Overlord.eligible(player, m.id), own, host.perms().has(Permissions.Toggle.SPAWNS), hack.allowed(host.perms(), own))) {
 				continue;
 			}
 
 			int id = host.newRequest(p.by() != null ? p.by() : host.uuid());
-			int secs = hack == RemoteHack.BLACKOUT ? Math.max(RemoteHack.MIN_BLACKOUT, Math.min(RemoteHack.MAX_BLACKOUT, seconds)) : seconds;
-			host.send(hack == RemoteHack.BLACKOUT ? ActWire.rhack(id, 0L, hack, host.district(), null, secs) : ActWire.rhack(id, 0L, hack, null, p.at(), secs));
+			// the merged rhack shape (protocol.md "Area hacks"): a district blackout is centred on V, a gridlock on the event's spot
+			int secs = hack.downSeconds(Math.max(RemoteHack.MIN_BLACKOUT, Math.min(RemoteHack.MAX_BLACKOUT, seconds)));
+			host.send(ActWire.rhack(id, 0L, hack, hack == RemoteHack.BLACKOUT ? player.position() : p.at(), secs));
 			sent++;
 		}
 
 		return sent == 0 ? "" : ", " + hack.wire() + " in " + sent + " host game(s)";
 	}
 
-	private static int drop(final ServerLevel level, final Vec3 at, final OverlordContent.Effect fx) {
-		List<ItemStack> stacks = new ArrayList<>();
-		Identifier eddies = Identifier.fromNamespaceAndPath(Cyberblock.ID, "eddies");
-		for (int left = fx.eddies(); left > 0 && BuiltInRegistries.ITEM.containsKey(eddies); left -= 64) {
-			stacks.add(new ItemStack(BuiltInRegistries.ITEM.getValue(eddies), Math.min(64, left)));
-		}
-
+	/**
+	 * A supply drop: its items fall at the spot for anyone; its eddies are shared among the match's opted-in players near it
+	 * ({@link Fairness#eddieShares}: capped per drop, per match and per player), each share a stack only that player can pick up, so a
+	 * drop never pays the Overlord or a bystander and never becomes an eddie farm (section 1.16).
+	 */
+	private static String drop(final Overlord.MatchState m, final ServerLevel level, final Vec3 at, final OverlordContent.Effect fx,
+		final List<ServerPlayer> near) {
+		int stacks = 0;
 		for (OverlordContent.Stack st : fx.items()) {
 			if (BuiltInRegistries.ITEM.containsKey(st.item())) {
 				Item item = BuiltInRegistries.ITEM.getValue(st.item());
-				stacks.add(new ItemStack(item, Math.min(st.count(), item.getDefaultMaxStackSize())));
+				fall(level, at, new ItemStack(item, Math.min(st.count(), item.getDefaultMaxStackSize())), null);
+				stacks++;
 			} else {
 				once(st.item() + " is not an item");
 			}
 		}
 
-		for (ItemStack stack : stacks) {
-			ItemEntity drop = new ItemEntity(level, at.x, at.y + 12.0, at.z, stack, 0.0, -0.2, 0.0);
-			drop.setGlowingTag(true);
-			level.addFreshEntity(drop);
+		Identifier eddies = Identifier.fromNamespaceAndPath(Cyberblock.ID, "eddies");
+		int paid = 0;
+		if (fx.eddies() > 0 && !near.isEmpty() && BuiltInRegistries.ITEM.containsKey(eddies)) {
+			int[] before = near.stream().mapToInt(p -> m.eddiesTo.getOrDefault(p.getUUID(), 0)).toArray();
+			int[] shares = Fairness.eddieShares(fx.eddies(), m.eddiesPaid, before);
+			for (int i = 0; i < shares.length; i++) {
+				if (shares[i] > 0) {
+					fall(level, at, new ItemStack(BuiltInRegistries.ITEM.getValue(eddies), shares[i]), near.get(i).getUUID());
+					m.eddiesTo.merge(near.get(i).getUUID(), shares[i], Integer::sum);
+					paid += shares[i];
+				}
+			}
+
+			m.eddiesPaid += paid;
 		}
 
 		level.sendParticles(new DustParticleOptions(0x40FF80, 2.0F), true, true, at.x, at.y + 1.0, at.z, 30, 0.6, 2.0, 0.6, 0.0);
-		return stacks.size();
+		return stacks + " stacks dropped" + (paid == 0 ? "" : ", " + paid + " eddies for " + near.size() + " opted-in player(s)");
+	}
+
+	/** A glowing stack falling onto the spot; with {@code owner} only that player can pick it up. */
+	private static void fall(final ServerLevel level, final Vec3 at, final ItemStack stack, final @Nullable UUID owner) {
+		ItemEntity drop = new ItemEntity(level, at.x, at.y + 12.0, at.z, stack, 0.0, -0.2, 0.0);
+		drop.setGlowingTag(true);
+		if (owner != null) {
+			drop.setTarget(owner);
+		}
+
+		level.addFreshEntity(drop);
 	}
 
 	private static String outbreak(final Overlord.MatchState m, final ServerLevel level, final Overlord.Pending p, final OverlordContent.EventEntry e,
@@ -465,13 +594,16 @@ final class OverlordWorld {
 		return placed + " of " + squads + " squads of " + entry.name();
 	}
 
-	/** Airstrike explosions whose time has come (they break no blocks). */
+	/**
+	 * Airstrike explosions whose time has come: they break no blocks, hurt only what {@link Blast} allows and reach only the host games
+	 * that consent (ExplosionEvents.owner hands them to {@link Blast#hears}, not the generic relay).
+	 */
 	static void tickStrikes(final long tick) {
 		for (Iterator<Strike> it = strikes.iterator(); it.hasNext();) {
 			Strike st = it.next();
 			if (tick >= st.tick()) {
 				it.remove();
-				st.level().explode(null, st.at().x, st.at().y, st.at().z, st.power(), Level.ExplosionInteraction.NONE);
+				st.level().explode(null, null, st.blast(), st.at().x, st.at().y, st.at().z, st.power(), false, Level.ExplosionInteraction.NONE);
 			}
 		}
 	}

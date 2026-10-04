@@ -5,12 +5,15 @@ import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.Permissions;
 import java.util.Map;
 import java.util.WeakHashMap;
+import java.util.function.BiFunction;
+import java.util.function.Predicate;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Explosion;
+import net.minecraft.world.level.ExplosionDamageCalculator;
 import net.minecraft.world.level.Level;
 import org.jspecify.annotations.Nullable;
 
@@ -19,7 +22,8 @@ import org.jspecify.annotations.Nullable;
  * bursts (wind charges, breeze charges, the mace: ExplosionInteraction.TRIGGER) as {"t":"knock"}, a push. The vanilla explosion runs
  * unchanged (hooks: ServerLevelMixin for every explosion, FireworkRocketEntityMixin for the burst of a rocket, which is not a vanilla
  * explosion), except that with the demolitions perk Steve's own are half as big again. Every active host whose Steve is within
- * REACH hears of it; one a guest caused only with that host's explosions toggle (plan 2026-10-04 sections 1.2 and 1.6).
+ * REACH hears of it; one a guest caused only with that host's explosions toggle (plan 2026-10-04 sections 1.2 and 1.6). An explosion
+ * a package owns ({@link #owner}: the Overlord's) runs with that package's interaction and damage, and only the hosts it names hear of it.
  */
 public final class ExplosionEvents {
 	/** Minecraft radius of a firework burst; the rocket hurts entities by itself, without a vanilla explosion. */
@@ -34,6 +38,16 @@ public final class ExplosionEvents {
 	static final double REACH = 128.0;
 	/** Creepers a player lit with flint and steel or a fire charge, and who (server thread only; they are gone after their blast). */
 	private static final Map<Entity, Player> litBy = new WeakHashMap<>();
+
+	/**
+	 * An explosion another package owns (the Overlord's airstrikes and its mobs' blasts, megaplan 8-O1): it runs with the owner's
+	 * interaction and damage calculator, and only the hosts in reach that {@code hears} accepts are told, instead of the generic toggle rule.
+	 */
+	public record Owned(Level.ExplosionInteraction interaction, ExplosionDamageCalculator damage, Predicate<HostSession> hears) {
+	}
+
+	/** Server thread: the owner of an explosion, from its source entity and damage calculator; null for an ordinary one. The Overlord sets it. */
+	public static volatile BiFunction<@Nullable Entity, @Nullable ExplosionDamageCalculator, @Nullable Owned> owner = (source, damage) -> null;
 
 	private ExplosionEvents() {
 	}
@@ -93,28 +107,34 @@ public final class ExplosionEvents {
 	/** Server thread, from ServerLevel.explode: cause is the player (or other entity) behind it, null when none. */
 	public static void report(final ServerLevel level, final Level.ExplosionInteraction interaction, final double x, final double y, final double z,
 		final double power, final boolean fire, final @Nullable Entity cause) {
+		if (send(level, interaction, x, y, z, power, fire, s -> WorldModule.allows(s.uuid(), cause, Permissions.Toggle.EXPLOSIONS))) {
+			WorldModule.blocked(cause);
+		}
+	}
+
+	/** Sends the explosion to every active host in reach that {@code hears} it; true when one in reach did not. Server thread. */
+	public static boolean send(final ServerLevel level, final Level.ExplosionInteraction interaction, final double x, final double y, final double z,
+		final double power, final boolean fire, final Predicate<HostSession> hears) {
 		String message = message(interaction, x, y, z, power, fire);
 		if (message == null || level != level.getServer().overworld()) {
-			return;
+			return false;
 		}
 
-		boolean blocked = false;
+		boolean left = false;
 		for (HostSession s : HostSessions.active()) {
 			ServerPlayer steve = s.player();
 			if (steve == null || steve.level() != level || !reaches(steve.getX() - x, steve.getY() - y, steve.getZ() - z)) {
 				continue;
 			}
 
-			if (WorldModule.allows(s.uuid(), cause, Permissions.Toggle.EXPLOSIONS)) {
+			if (hears.test(s)) {
 				s.send(message);
 			} else {
-				blocked = true;
+				left = true;
 			}
 		}
 
-		if (blocked) {
-			WorldModule.blocked(cause);
-		}
+		return left;
 	}
 
 	/** Server thread, from a firework rocket that bursts with at least one star (a plain flight rocket does nothing); owner: who shot it. */

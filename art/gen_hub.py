@@ -307,7 +307,9 @@ AREAS: dict[str, tuple[Cell, Cell]] = {
     "garage": ((35, 1, 17), (41, 7, 27)),
 }
 SPAWN = ((21.5, 1.0, 31.5), 180.0)
-STATIONS = {"match_terminal": (21, 2, 14), "holo_table": (4, 1, 14), "exit_portal": (21, 2, 33)}
+# the Overlord Console (8-O1) stands on the dais beside the Match Terminal; it is 8O's block (8A's art), so no step places it: the cell
+# stays air and the hub builder puts the console there (also into a hub built before the station existed)
+STATIONS = {"match_terminal": (21, 2, 14), "holo_table": (4, 1, 14), "exit_portal": (21, 2, 33), "overlord_console": (23, 2, 14)}
 
 
 def figures() -> list[dict]:
@@ -518,6 +520,9 @@ def layout_problems(doc: dict) -> list[str]:
     for key, block in (("match_terminal", "cyberblock:match_terminal"), ("holo_table", "cyberblock:holo_table"), ("exit_portal", "cyberblock:hub_portal")):
         if not L.block(tuple(doc["stations"][key])).startswith(block):
             problems.append(f"station {key} is {L.block(tuple(doc['stations'][key]))}, not {block}")
+    console = doc["stations"].get("overlord_console")
+    if console is not None and (not passable(L.block(tuple(console))) or passable(L.block((console[0], console[1] - 1, console[2])))):
+        problems.append(f"station overlord_console at {console} is not an empty cell on a floor")
     for board in doc["boards"]:
         if not L.block(tuple(board["pos"])).startswith("cyberblock:leaderboard_board"):
             problems.append(f"board at {board['pos']} is not a leaderboard board")

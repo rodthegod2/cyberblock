@@ -52,6 +52,29 @@ class HubLayoutTest {
 	}
 
 	@Test
+	void theOverlordConsoleStationIsOptional() {
+		assertNull(HubLayout.parse(sample()).overlordConsole(), "a layout without it builds as before");
+		HubLayout l = HubLayout.parse(with(j -> j.getAsJsonObject("stations").add("overlord_console", JsonParser.parseString("[18, 1, 3]"))));
+		assertEquals(new HubLayout.Cell(18, 1, 3), l.overlordConsole());
+		assertThrows(IllegalArgumentException.class, () -> HubLayout.parse(with(j -> j.getAsJsonObject("stations")
+			.add("overlord_console", JsonParser.parseString("[18, 1]")))));
+	}
+
+	@Test
+	void theShippedHubHasTheOverlordConsoleBesideTheMatchTerminal() throws java.io.IOException {
+		try (var reader = new java.io.InputStreamReader(HubLayoutTest.class.getResourceAsStream("/data/cyberblock/cyberblock/hub/afterlife.json"),
+			java.nio.charset.StandardCharsets.UTF_8)) {
+			HubLayout l = HubLayout.parse(JsonParser.parseReader(reader).getAsJsonObject());
+			HubLayout.Cell console = l.overlordConsole(), terminal = l.matchTerminal();
+			assertNotNull(console, "8-O1: the console is a block in the hub");
+			assertEquals(terminal.y(), console.y());
+			assertTrue(Math.abs(console.x() - terminal.x()) + Math.abs(console.z() - terminal.z()) <= 3, "on the Match Terminal's dais");
+		}
+
+		assertNotNull(HubLayout.fallback().overlordConsole(), "the built-in platform has one too");
+	}
+
+	@Test
 	void layoutCellsBecomeWorldCellsThroughTheOrigin() {
 		HubLayout l = HubLayout.parse(sample());
 		assertEquals(new HubLayout.Cell(16, 65, 3), l.world(l.matchTerminal()));

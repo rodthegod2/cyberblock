@@ -33,8 +33,9 @@ import net.minecraft.world.phys.BlockHitResult;
 /**
  * The Overlord Console (megaplan 8-O1: "a block in the hub and a craftable item"): {@code cyberblock:overlord_console}, registered on
  * both sides with its item. Right-clicking the block opens the console; so does using the item in the air, so a crafted console
- * works from the hand as well as placed (recipe/overlord_console.json; the hub copy is placed by the hub layout, where nobody but
- * creative players breaks blocks). Its art (blockstate, model, texture, item definition) and its English name are 8A's, under this
+ * works from the hand as well as placed (recipe/overlord_console.json; the hub copy stands at the layout's
+ * {@code stations.overlord_console} beside the Match Terminal, placed by HubBuilder at the build and, on a hub built before it existed,
+ * at the next server start; there nobody but creative players breaks blocks). Its art (blockstate, model, texture, item definition) and its English name are 8A's, under this
  * id. In the Cyberblock creative tab.
  */
 public final class OverlordBlocks {

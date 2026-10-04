@@ -32,6 +32,8 @@ import org.jspecify.annotations.Nullable;
 final class HubBuilder {
 	/** The Holo-Table's block (package 7T); the station stays empty until it exists. */
 	static final Identifier HOLO_TABLE = Identifier.fromNamespaceAndPath(Cyberblock.ID, "holo_table");
+	/** The Overlord Console's block (package 8O). */
+	static final Identifier OVERLORD_CONSOLE = Identifier.fromNamespaceAndPath(Cyberblock.ID, "overlord_console");
 
 	/** A layout and where it came from (the file's id, or "built-in" for the fallback platform). */
 	record Source(String from, HubLayout layout) {
@@ -92,6 +94,8 @@ final class HubBuilder {
 			unknown.add(HOLO_TABLE.toString());
 		}
 
+		placed += console(level, layout, false);
+
 		for (HubLayout.Board b : layout.boards()) {
 			BlockPos pos = pos(layout.world(b.pos()));
 			placed += set(level, layout.world(b.pos()), HubBlocks.LEADERBOARD.defaultBlockState().setValue(HubBlocks.FACING, Direction.byName(b.facing())));
@@ -103,6 +107,26 @@ final class HubBuilder {
 		data.built(source.from(), layout);
 		Cyberblock.LOG.info("hub: built the Afterlife from {}: {} cells, {} boards, {} hub figures for 7N{}", source.from(), placed, layout.boards().size(),
 			layout.figures(), unknown.isEmpty() ? "" : "; unknown blocks skipped: " + String.join(", ", unknown));
+		return placed;
+	}
+
+	/**
+	 * The Overlord Console's station (8-O1, optional in the layout; the block is 8O's): placed facing the arrival point. On a hub built
+	 * before the station existed ({@code onlyIntoAir}: at a later server start) it goes in only where the cell is still air, so it never
+	 * replaces anything. Returns 1 when it placed the block.
+	 */
+	static int console(final ServerLevel level, final HubLayout layout, final boolean onlyIntoAir) {
+		Block console = BuiltInRegistries.BLOCK.getOptional(OVERLORD_CONSOLE).orElse(null);
+		HubLayout.Cell cell = layout.overlordConsole();
+		if (console == null || cell == null || onlyIntoAir && !level.getBlockState(pos(layout.world(cell))).isAir()) {
+			return 0;
+		}
+
+		int placed = station(level, layout, cell, console, layout.spawn());
+		if (placed > 0 && onlyIntoAir) {
+			Cyberblock.LOG.info("hub: placed the Overlord Console at its station (the hub was built before it had one)");
+		}
+
 		return placed;
 	}
 

@@ -16,13 +16,14 @@ import org.jspecify.annotations.Nullable;
  * The Afterlife's layout (megaplan 7-H1), the {@code hub} content file that 7A's art/gen_hub.py writes
  * ({@code shared/content-schemas/hub.schema.json}): {@code origin} is the world cell of the layout cell (0, 0, 0) (x east, z south, y
  * up; the floor is layout y 0), {@code steps} fill boxes in order ({@code mode} {@code hollow}: only the shell), {@code spawn} is a feet
- * position and yaw, {@code stations} are the Match Terminal, Holo-Table and exit portal cells, {@code boards} the leaderboard boards
+ * position and yaw, {@code stations} are the Match Terminal, Holo-Table and exit portal cells (and, optional, the Overlord Console's,
+ * 8-O1), {@code boards} the leaderboard boards
  * (facing, scoreboard objective, title key), {@code areas} named boxes and {@code figures} the hub NPCs (7N places them; only counted
  * here). Every position is a layout cell; {@link #world} turns one into a world cell. Pure: a bad file throws
  * IllegalArgumentException with the reason, and the builder falls back to {@link #fallback}.
  */
 public record HubLayout(String titleKey, Cell origin, Cell size, double[] spawn, float spawnYaw, Map<String, Box> areas, List<Step> steps,
-	Cell matchTerminal, Cell holoTable, Cell exitPortal, List<Board> boards, int figures) {
+	Cell matchTerminal, Cell holoTable, Cell exitPortal, @Nullable Cell overlordConsole, List<Board> boards, int figures) {
 
 	/** A layout cell (or, after {@link #world}, a world cell). */
 	public record Cell(int x, int y, int z) {
@@ -127,12 +128,13 @@ public record HubLayout(String titleKey, Cell origin, Cell size, double[] spawn,
 		Cell terminal = cell(stations.get("match_terminal"), MAX_COORD, "stations.match_terminal");
 		Cell holo = cell(stations.get("holo_table"), MAX_COORD, "stations.holo_table");
 		Cell portal = cell(stations.get("exit_portal"), MAX_COORD, "stations.exit_portal");
+		Cell console = stations.has("overlord_console") ? cell(stations.get("overlord_console"), MAX_COORD, "stations.overlord_console") : null;
 		List<Board> boards = boards(json.get("boards"));
 		if (!(json.get("figures") instanceof JsonArray figures) || figures.size() > MAX_FIGURES) {
 			throw new IllegalArgumentException("figures must be an array of at most " + MAX_FIGURES);
 		}
 
-		return new HubLayout(title, origin, size, spawn, yaw, Map.copyOf(areas), steps, terminal, holo, portal, boards, figures.size());
+		return new HubLayout(title, origin, size, spawn, yaw, Map.copyOf(areas), steps, terminal, holo, portal, console, boards, figures.size());
 	}
 
 	private static List<Step> steps(final @Nullable JsonElement e) {
@@ -189,7 +191,7 @@ public record HubLayout(String titleKey, Cell origin, Cell size, double[] spawn,
 			new Step(new Box(new Cell(-7, 0, -7), new Cell(7, 0, -7)), "minecraft:sea_lantern", false),
 			new Step(new Box(new Cell(-7, 0, 7), new Cell(7, 0, 7)), "minecraft:sea_lantern", false));
 		return new HubLayout("cyberblock.afterlife.title", new Cell(0, 64, 0), new Cell(15, 6, 15), new double[] {0.5, 1.0, 0.5}, 180.0F,
-			Map.of("hall", floor), steps, new Cell(-3, 1, -5), new Cell(3, 1, -5), new Cell(0, 1, 5),
+			Map.of("hall", floor), steps, new Cell(-3, 1, -5), new Cell(3, 1, -5), new Cell(0, 1, 5), new Cell(-1, 1, -5),
 			List.of(new Board(new Cell(0, 2, -6), "south", Leaderboards.MATCH_WINS, "cyberblock.afterlife.board.wins")), 0);
 	}
 
