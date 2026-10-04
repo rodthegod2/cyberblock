@@ -69,7 +69,7 @@ TEST(the_four_corner_rays_go_from_the_eye_to_the_corners_of_the_box_around_the_c
 	CHECK(close(tilted.y * std::cos(p) - tilted.z * std::sin(p), 0.0));
 }
 
-TEST(the_nearest_corner_hit_minus_0_25_m_sets_the_boom_within_0_4_m_and_the_reach)
+TEST(the_nearest_corner_hit_minus_0_25_m_sets_the_boom_within_0_and_the_reach)
 {
 	using cb::view::collide_distance;
 	const double lengths[] = {3.2, 3.2, 3.2, 3.2};
@@ -79,8 +79,11 @@ TEST(the_nearest_corner_hit_minus_0_25_m_sets_the_boom_within_0_4_m_and_the_reac
 	CHECK(close(*collide_distance(3.2, lengths, one), 2.0)); // a corner hit at 2.25 m: the camera 0.25 m short of it
 	const std::optional<double> two[] = {3.0, 1.25, 2.0, std::nullopt};
 	CHECK(close(*collide_distance(3.2, lengths, two), 1.0)); // the nearest wins
+	// V's back to a wall: a hit 0.3 m from the eye keeps the camera on the clear part of the segment, never past the hit
 	const std::optional<double> nose[] = {0.3, std::nullopt, std::nullopt, std::nullopt};
-	CHECK(close(*collide_distance(3.2, lengths, nose), 0.4)); // never under 0.4 m
+	CHECK(close(*collide_distance(3.2, lengths, nose), 0.05) && *collide_distance(3.2, lengths, nose) < 0.3);
+	const std::optional<double> touching[] = {0.1, std::nullopt, std::nullopt, std::nullopt};
+	CHECK(close(*collide_distance(3.2, lengths, touching), 0.0)); // closer than the margin: the camera at the eye
 	const std::optional<double> beyond[] = {3.2, 3.2, 3.2, 3.2};
 	CHECK(close(*collide_distance(3.2, lengths, beyond), 3.2 - 0.25)); // the margin applies at the far end too
 	// a longer corner ray: the hit counts as a fraction of its own length

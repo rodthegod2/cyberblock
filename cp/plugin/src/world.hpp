@@ -225,17 +225,23 @@ namespace cb::world
 		bool recenter = true;   // swing the shoulder offset to the centre while a wall is on that side
 		double vdist = 0.0;     // 0 = the game's own, else 3..14 m (2.31 has no settable vehicle camera distance: unused)
 		bool stepup = true;     // the step-up assist (scripts, through the event `prefs`)
-		bool debug = false;     // contract deviation: `/cyberblock debug view` is on, so `cam` carries `vdbg`
+		// CONTRACT DEVIATION, pending the integrator (megaplan section 1.9 defines prefs as the six fields above and gives
+		// Minecraft no way to tell the DLL that `/cyberblock debug view` is on, yet `cam.vdbg` is sent only while it is):
+		// an optional `debug` bool, Minecraft's view debug flag, so `cam` carries `vdbg`. A six-field `prefs` keeps it.
+		bool debug = false;
 		bool operator==(const ViewPrefs &) const = default;
 	};
 
 	/// `prefs` applied on top of `current`: every number is clamped into its range (`fov` and `vdist`: below 0 is 0, above
 	/// 0 but under the lower bound is raised to it); a field that is missing keeps its current value; a field that is not
 	/// finite or of the wrong type keeps its current value and is counted in `bad` (its name in `why`, the first one only);
-	/// any other field is ignored. Never throws.
+	/// `debug` (the deviation above) is optional like every field; any other field is ignored. Never throws.
 	ViewPrefs parse_prefs(const nlohmann::json &message, const ViewPrefs &current, size_t &bad, std::string &why);
 	/// The prefs in effect (on_minecraft_message keeps them). Any thread.
 	ViewPrefs view_prefs();
+	/// The `vdbg` the next `cam` carries: `values` while Minecraft's view debug flag is on (today the `debug` deviation
+	/// above, the one place to change when the integrator picks the channel), else none. Any thread.
+	std::optional<std::array<double, 3>> vdbg_to_send(const std::array<double, 3> &values);
 
 	// ---- Cyberpunk -> Minecraft -------------------------------------------------------------------------------------
 

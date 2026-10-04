@@ -723,6 +723,25 @@ TEST(prefs_reach_the_scripts_as_the_event_prefs_with_stepup_and_reset_on_hello_a
 	q.clear();
 }
 
+TEST(a_contract_exact_six_field_prefs_leaves_the_debug_flag_and_only_the_debug_signal_turns_vdbg_on)
+{
+	constexpr std::array<double, 3> kValues{3.2, 2.85, 14.0};
+	const json six = json::parse(R"({"t":"prefs","dist":3.2,"shoulder":0.45,"fov":0,"recenter":true,"vdist":0,"stepup":true})");
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1})"));
+	cb::world::on_minecraft_message(six);
+	CHECK(!cb::world::view_prefs().debug && !cb::world::vdbg_to_send(kValues)); // default: off
+	cb::world::on_minecraft_message(json::parse(R"({"t":"prefs","debug":true})")); // the (pending) debug signal
+	CHECK(cb::world::view_prefs().debug && cb::world::vdbg_to_send(kValues) == kValues);
+	cb::world::on_minecraft_message(six); // a six-field prefs after it keeps the flag
+	CHECK(cb::world::view_prefs().debug && cb::world::vdbg_to_send(kValues));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"prefs","debug":false})"));
+	CHECK(!cb::world::vdbg_to_send(kValues));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"prefs","debug":true})"));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1})")); // a new session starts with it off
+	CHECK(!cb::world::vdbg_to_send(kValues));
+	cb::world::events().clear();
+}
+
 TEST(cam_carries_vdbg_only_when_given_and_clamped_to_its_ranges)
 {
 	const json plain = cb::world::make_cam(1, {}, {}, 70.0, {}, 0.0, {}, false, false, 0);

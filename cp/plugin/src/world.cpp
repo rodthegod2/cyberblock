@@ -691,6 +691,11 @@ namespace cb::world
 		return g_prefs;
 	}
 
+	std::optional<std::array<double, 3>> vdbg_to_send(const std::array<double, 3> &values)
+	{
+		return view_prefs().debug ? std::optional(values) : std::nullopt;
+	}
+
 	void note_invalid(size_t count, const std::string &reason)
 	{
 		events().note_rejected(count);

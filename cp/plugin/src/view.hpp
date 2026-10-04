@@ -46,9 +46,10 @@ namespace cb::view
 	// The camera sits on the segment from V's eye to where the orbit wants it, scaled by boom / R (R the length the rays
 	// were cast for): the segment up to the nearest hit minus the margin is clear, so the camera never goes into a wall.
 
-	/// Metres the camera stops short of a surface a ray hit, and the shortest boom.
+	/// Metres the camera stops short of a surface a ray hit. There is no shortest boom: with V's back to a wall the camera
+	/// comes all the way in to the eye rather than past the hit (a 0.4 m floor put it inside the wall; the margin keeps the
+	/// 2 cm near plane clear of it).
 	inline constexpr double kWallMargin = 0.25;
-	inline constexpr double kMinDistance = 0.4;
 	/// Half the width and height of the small box around the camera whose corners the four rays aim at (m): wider than
 	/// the near plane (2 cm away, about 3 cm across) so the picture's edges never reach into a wall either.
 	inline constexpr double kCornerHalfWidth = 0.2;
@@ -108,8 +109,8 @@ namespace cb::view
 	}
 
 	/// How long the boom may be when it was cast `reach` metres long and corner ray i (length lengths[i]) hit something
-	/// hits[i] metres from the eye: reach x the smallest (hit - 0.25 m) / length, within 0.4 m..reach. nullopt when no ray
-	/// hit anything (or none of them is usable): the boom is free.
+	/// hits[i] metres from the eye: reach x the smallest (hit - 0.25 m) / length, within 0..reach (0: the camera at the eye,
+	/// a hit closer than the margin). nullopt when no ray hit anything (or none of them is usable): the boom is free.
 	inline std::optional<double> collide_distance(double reach, std::span<const double> lengths,
 												  std::span<const std::optional<double>> hits)
 	{
@@ -124,7 +125,7 @@ namespace cb::view
 		}
 		if (!fraction || !(reach > 0.0))
 			return std::nullopt;
-		return std::clamp(reach * *fraction, std::min(kMinDistance, reach), reach);
+		return std::clamp(reach * *fraction, 0.0, reach);
 	}
 
 	/// The boom's length over time, critically damped: in fast (kInTime), out slower (kOutTime), and never past `limit`
