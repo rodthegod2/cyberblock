@@ -98,6 +98,12 @@ final class NpcScreens {
 
 	/** {@code cyberblock:act t:"npc"}: a tab, a press, a surgery cut or abort. */
 	static void act(final ServerPlayer player, final JsonObject json) {
+		if (!player.isAlive() || player.isSpectator()) {
+			// a press racing death, or from a spectator: no service for either (a heal would undo the death screen's respawn)
+			visits.remove(player.getUUID());
+			return;
+		}
+
 		long now = System.currentTimeMillis();
 		Long last = lastAct.put(player.getUUID(), now);
 		if (last != null && now - last < MIN_ACT_MS) {
