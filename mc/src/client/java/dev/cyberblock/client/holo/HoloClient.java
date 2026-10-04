@@ -53,6 +53,7 @@ public final class HoloClient {
 		UiRoutes.listen(HoloWire.T_TRAVEL, HoloClient::onTravel);
 		ClientTickEvents.END_CLIENT_TICK.register(HoloClient::tick);
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, minecraft) -> minecraft.execute(HoloClient::clear));
+		HoloFastTravel.install();
 	}
 
 	/** The newest table state (null before the first). */

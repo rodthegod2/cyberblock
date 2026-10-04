@@ -7,9 +7,10 @@
 // 'daemon ...: <reason>' (followed by '(<what each did>; skipped <ids>)' when some ran).
 //
 // Daemon ids: a namespace ("cyberblock:") is dropped, case and '-' are ignored, and these names (with their aliases)
-// run, each around the breached device at its strength 1-3. Radius and duration per strength are the defaults of the
-// shipped daemon content (data/cyberblock/cyberblock/daemon/<action>.json `tiers`; the `daemon` message carries only
-// the strength), listed as radius / seconds for strength 1, 2, 3:
+// run, each around the breached device at its strength 1-3. Radius and duration per strength are fixed here and mirrored
+// by the shipped daemon content (data/cyberblock/cyberblock/daemon/<action>.json `tiers`, seconds 0 when untimed;
+// tests/test_gen_hack_art.py keeps Radius() and Seconds() equal to them; the `daemon` message carries only the
+// strength, so a datapack cannot change them), listed as radius / seconds for strength 1, 2, 3:
 //   open_door (door, open, unlock, unlock_door)        doors unlocked and opened: the device itself when it is a door,
 //                                                     else the nearest one (strength 1); every door in the radius (2-3).
 //                                                     8 / 14 / 24 m.
@@ -39,7 +40,10 @@
 //                                                     V's wanted level +1 (Phase 0 e: PreventionSystem SetWantedLevel,
 //                                                     checked 2 s later; when it did not rise the written fallback
 //                                                     "Minecraft Heat only" takes over for good: logged by
-//                                                     RemoteHacks.reds as 'rhack: heat path: ...').
+//                                                     RemoteHacks.reds as 'rhack: heat path: ...'). Nothing is
+//                                                     sent while the police are off (a quest or a police-free
+//                                                     area: "Minecraft Heat only (police off here)") or V is in a
+//                                                     scene; that is no fallback switch.
 // Other ids are skipped: the known ones of the list still run, and the answer is ok:false "unsupported daemon" (6P
 // protocol: ok only when every id ran); the log line names what ran and what was skipped. A daemon that finds nothing
 // in its radius still counts as run. The same leave-alone rules as RemoteHacks.reds: quest-marked and quest-locked

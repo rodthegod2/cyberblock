@@ -13,24 +13,21 @@ from tools.mpcheck import LogFile
 
 KIND6 = {key: kind for key, _, _, kind, *_ in fakehost.HACKS2_SCENE}
 SOLVED = ["open_door", "disable_cameras"]
-SIM_COOLDOWN_S = 0.3  # the simulated server's failure cooldown (10 s on the real one), shrunk like every other wait
-
-
-@pytest.fixture(autouse=True)
-def breach_cooldown(quick, monkeypatch):
-    """The scenario waits a little longer than the simulated cooldown (`quick` set it to 0)."""
-    monkeypatch.setattr(mpcheck, "BREACH_COOLDOWN_S", SIM_COOLDOWN_S + 0.05)
+CAR_EID = 212  # the car figure's Minecraft entity id on the simulated server
+POINT_SECS, POINT_R = {"gridlock": 60, "outline": 20, "ping_area": 0}, {"gridlock": 24, "outline": 24, "ping_area": 32}  # RemoteHack
 
 
 class Sim6Server(Sim4Server):
-    """Phase 6 as the plan describes it, on top of the device layer: the Net Port is a device block; `cyberblock test breach <x> <y> <z> solve|fail` run as a
-    guest sends the owner's DLL the `daemon` of a solved Breach (the owner's `hacks` toggle allowing) or the alarm of a failed one; the fake host's own logic
-    answers it. `bugs` switch parts off."""
+    """Phase 6 as the merged server does it, on top of the device layer: the Net Port is a device block; `cyberblock test breach <x> <y> <z> solve|fail` run
+    as a guest (its lockouts cleared first, as the devtools command does) sends the owner's DLL the `daemon` of a solved Breach (the owner's `hacks` toggle
+    allowing) or the alarm of a failed one, at most one alarm a minute per owner; `cyberblock test eid` names the car figure and `cyberblock test act rhack`
+    routes a Vehicle Panel or Net Map act as RemoteActions does (ActWire.rhack's shape); the fake host's own logic answers. `bugs` switch parts off."""
 
     def __init__(self, tmp, port, env_sim, bugs, join_password=""):
         super().__init__(tmp, port, env_sim, bugs, join_password)
         self.breaches = []
-        self.failed_at = {}  # (player, cell) -> monotonic time of that player's last failed Breach on that device
+        self.rhacks = []
+        self.alarm_at = {}  # owner -> monotonic time of the last alarm sent (BreachLimits: one a minute)
 
     def place_devices(self, owner, msg):
         ids = {i: k for k, i in fakehost.device_ids(fakehost.HACKS2_SCENE).items()}
@@ -52,21 +49,48 @@ class Sim6Server(Sim4Server):
         if match := re.fullmatch(r"cyberblock test breach (-?\d+) (-?\d+) (-?\d+) (solve|fail)", inner):
             self.advance()
             return self.breach(actor, tuple(int(v) for v in match.groups()[:3]), match.group(4))
+        if inner == "cyberblock test eid @e[type=cyberblock:proxy_vehicle]":
+            self.advance()
+            return "" if "no-car" in self.bugs else f"test: eid {CAR_EID} cyberblock:proxy_vehicle 00000000-0000-0000-0000-0000000000d4"
+        if match := re.fullmatch(r"cyberblock test act (\w+) (.*)", inner):
+            self.advance()
+            return self.act(actor, match.group(1), json.loads(match.group(2)))
         return super().rcon(command)
+
+    def act(self, actor, t, m):
+        """RemoteActions.onRhack for the two acts the scenario sends: the owner from the car figure or the nearest host, the `hacks` toggle, ActWire.rhack."""
+        if t != "rhack" or actor is None:
+            return f"test: act {t} by {actor} -> dropped"
+        owner = next(iter(self.sim.hosts))
+        if not self.allows(owner, actor, "hacks"):
+            return f"test: act {t} by {actor} -> handled"
+        self.request += 1
+        if m.get("eid") == CAR_EID:
+            down = {"t": "rhack", "id": self.request, "target": fakehost.NPC_IDS[2], "hack": m["hack"], "secs": 30}
+            if "rhack-old-shape" in self.bugs:
+                del down["secs"]  # the shape the server sent before the 6I review fix
+        else:
+            down = {"t": "rhack", "id": self.request, "target": None, "hack": m["hack"], "p": [float(c) for c in m["p"]], "r": POINT_R[m["hack"]],
+                    "secs": POINT_SECS[m["hack"]]}
+        host = self.sim.hosts[owner]
+        append(host["log"], f"[{owner}] rhack: {json.dumps(down)}")
+        self.rhacks.append((actor, down))
+        for answer in ([] if "dll-silent" in self.bugs else host["cp"].reply(down)):
+            if answer["t"] == "hackresult":
+                append(host["log"], f"[{owner}] hackresult: {json.dumps(answer)}")
+        return f"test: act {t} by {actor} -> handled"
 
     def breach(self, actor, cell, how):
         block = self.dev_blocks.get(cell)
         if not block or block["key"] != "netport":
             return ""
         owner = block["owner"]
-        if time.monotonic() - self.failed_at.get((actor, cell), -SIM_COOLDOWN_S) < SIM_COOLDOWN_S:
-            return ""  # the failure cooldown: `cyberblock.breach.cooldown` on the action bar, nothing reaches the DLL
         if not self.allows(owner, actor, "hacks") and "ignore-hacks-toggle" not in self.bugs:
             return ""
         if how == "fail":
-            self.failed_at[(actor, cell)] = time.monotonic()
-            if "no-alarm" in self.bugs:
-                return ""
+            if "no-alarm" in self.bugs or time.monotonic() - self.alarm_at.get(owner, -60.0) < 60.0:
+                return ""  # one alarm per owner a minute: a later failure is merged (`alarm merged`), nothing reaches the DLL
+            self.alarm_at[owner] = time.monotonic()
             listing, strength = (["open_door"] if "solved-on-fail" in self.bugs else ["alarm"]), 1
         else:
             listing, strength = (["alarm"] if "alarm-on-solve" in self.bugs else list(SOLVED)), (4 if "bad-strength" in self.bugs else 2)
@@ -116,13 +140,15 @@ def test_breach_scenario_passes_against_an_ideal_server(tmp_path):
     rep = run_scenario(sim, "breach")
     assert rep.ok, failed(rep)
     labels = [label for label, _, _ in rep.checks]
-    assert len(labels) == 16 and sim.max_hosts == 1 and any("guests hacks off" in x for x in labels) and any("`[\"alarm\"]`" in x for x in labels)
+    assert len(labels) == 20 and sim.max_hosts == 1 and any("guests hacks off" in x for x in labels) and any("`[\"alarm\"]`" in x for x in labels)
     host_log = sim.hosts["CbHost1"]["log"].text()
     daemons = [json.loads(line.split("daemon: ", 1)[1]) for line in host_log.splitlines() if "] daemon: " in line]
     assert [m["list"] for m in daemons] == [SOLVED, ["alarm"], SOLVED]  # the solved one, the failure, and (toggle off: nothing) the solved one again
     assert all(m["dev"] == fakehost.device_ids(fakehost.HACKS2_SCENE)["netport"] for m in daemons) and len({m["id"] for m in daemons}) == 3
     results = [json.loads(line.split("hackresult: ", 1)[1]) for line in host_log.splitlines() if "] hackresult: " in line]
-    assert [m["ok"] for m in results] == [True, True, True] and [m["id"] for m in results] == [m["id"] for m in daemons]
+    rhacks = [json.loads(line.split("rhack: ", 1)[1]) for line in host_log.splitlines() if "] rhack: " in line]
+    assert [m["hack"] for m in rhacks] == ["veh_brake", "ping_area"] and [m["target"] for m in rhacks] == [fakehost.NPC_IDS[2], None]
+    assert [m["ok"] for m in results] == [True] * 5 and [m["id"] for m in results] == [m["id"] for m in daemons] + [m["id"] for m in rhacks]
 
 
 @pytest.mark.parametrize("bug, expected", [
@@ -132,16 +158,18 @@ def test_breach_scenario_passes_against_an_ideal_server(tmp_path):
     ("alarm-on-solve", {"a solved Breach sends the owner's DLL a `daemon` for the Net Port: 1 to 3 known daemon ids, strength 1..3"}),
     ("bad-strength", {"a solved Breach sends the owner's DLL a `daemon` for the Net Port: 1 to 3 known daemon ids, strength 1..3"}),
     ("devices-stay", {"the Net Port goes with the session"}),
+    ("rhack-old-shape", {"a guest's Vehicle Panel act sends the owner's DLL one `rhack` with the car's Night City id and `secs` 30 (no `p`)"}),
+    ("dll-silent", {"... answered with exactly one `hackresult ok:true` of the same id"}),
 ])
 def test_breach_scenario_notices_each_breach_bug(tmp_path, bug, expected):
     rep = run6(tmp_path, [bug])
     assert expected <= set(failed(rep)) and not rep.ok
 
 
-def test_breach_scenario_waits_out_the_failure_cooldown_before_it_checks_the_toggle(tmp_path, monkeypatch):
-    monkeypatch.setattr(mpcheck, "BREACH_COOLDOWN_S", 0.0)  # a scenario that does not wait would see the cooldown, not the toggle, block the Breach
-    rep = run6(tmp_path)
-    assert "with `guests hacks on` the Breach works again" in failed(rep) and not rep.ok
+def test_breach_scenario_fails_once_so_the_owners_alarm_window_never_hides_the_alarm(tmp_path):
+    sim = Sim6Env(tmp_path)
+    assert run_scenario(sim, "breach").ok
+    assert [how for _, how, _ in sim.server_obj.breaches] == ["solve", "fail", "solve"] and not hasattr(mpcheck, "BREACH_COOLDOWN_S")
 
 
 def test_breach_scenario_runs_the_breaches_as_the_guest_and_the_toggle_as_the_host(tmp_path, monkeypatch):
@@ -152,6 +180,10 @@ def test_breach_scenario_runs_the_breaches_as_the_guest_and_the_toggle_as_the_ho
     x, y, z = fakehost.device_cell("netport", 0, fakehost.HACKS2_SCENE)
     breaches = [c for c in sent if "test breach" in c]
     assert breaches == [f"execute as CbGuest1 run cyberblock test breach {x} {y} {z} {how}" for how in ("solve", "fail", "solve", "solve")]
+    acts = [c for c in sent if "test act" in c]
+    assert acts == ['execute as CbGuest1 run cyberblock test act rhack {"hack":"veh_brake","eid":212}',
+                    'execute as CbGuest1 run cyberblock test act rhack {"hack":"ping_area","p":[4.5,64.0,3.5]}']
+    assert "cyberblock test eid @e[type=cyberblock:proxy_vehicle]" in sent
     assert [c for c in sent if "guests hacks" in c] == [f"execute as CbHost1 run cyberblock guests hacks {w}" for w in ("off", "on")]
     assert any(c.startswith("tp CbGuest1 ") for c in sent)
 

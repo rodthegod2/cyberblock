@@ -276,4 +276,12 @@ namespace cb::ui
 		bool m_paused = false;
 		uint64_t m_dropped = 0;
 	};
+
+	// ---- finding a script function (ui_game.cpp's pump lookup) -------------------------------------------------------
+
+	/// Whether an RTTI function with these names is the script function `wanted` (e.g. "Pump"). redscript, like the game's
+	/// own scripts, names a script function by its mangled full name, the name plus ';' plus its parameter types ("Pump;"
+	/// for `Pump()`, "Act;GameInstanceCNameBool"); natives keep the plain name. RED4ext's CClass::GetFunction compares
+	/// only shortName, so this accepts a plain shortName or fullName as well as a fullName that is `wanted` + ";...".
+	bool script_function_matches(std::string_view fullName, std::string_view shortName, std::string_view wanted);
 }

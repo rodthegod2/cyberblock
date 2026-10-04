@@ -1,0 +1,37 @@
+{
+ "about": "Phase 6 wire messages exactly as the merged code sends them (shared/protocol.md 'Phase 6'). Java (ActWireTest) checks that ActWire's builders produce every `json` string from its `args`; C++ (cb_tests, test_rhack.cpp) parses every DOWN rhack as the DLL does (the same lines as shared/rhack-vectors.json); Python (tests/test_phase6_protocol.py, tests/test_fakehost_hacks2.py) checks them against the documented validators and the fake host's answers. Change a builder, the DLL, the document and this file together.",
+ "down_rhack": [
+  {"args": {"id": 21, "target": "4503599627370497", "hack": "veh_lock", "p": null, "secs": 30}, "json": "{\"t\":\"rhack\",\"id\":21,\"target\":\"4503599627370497\",\"hack\":\"veh_lock\",\"secs\":30}"},
+  {"args": {"id": 22, "target": "4503599627370497", "hack": "veh_engine_off", "p": null, "secs": 30}, "json": "{\"t\":\"rhack\",\"id\":22,\"target\":\"4503599627370497\",\"hack\":\"veh_engine_off\",\"secs\":30}"},
+  {"args": {"id": 23, "target": "4503599627370497", "hack": "veh_brake", "p": null, "secs": 30}, "json": "{\"t\":\"rhack\",\"id\":23,\"target\":\"4503599627370497\",\"hack\":\"veh_brake\",\"secs\":30}"},
+  {"args": {"id": 24, "target": "4503599627370497", "hack": "veh_start", "p": null, "secs": 30}, "json": "{\"t\":\"rhack\",\"id\":24,\"target\":\"4503599627370497\",\"hack\":\"veh_start\",\"secs\":30}"},
+  {"args": {"id": 25, "target": "4503599627370497", "hack": "veh_jam", "p": null, "secs": 30}, "json": "{\"t\":\"rhack\",\"id\":25,\"target\":\"4503599627370497\",\"hack\":\"veh_jam\",\"secs\":30}"},
+  {"args": {"id": 26, "target": "11529215046068469765", "hack": "cam_feed", "p": null, "secs": 0}, "json": "{\"t\":\"rhack\",\"id\":26,\"target\":\"11529215046068469765\",\"hack\":\"cam_feed\"}"},
+  {"args": {"id": 27, "target": null, "hack": "traffic_switch", "p": [-6.5, 64.0, 0.5], "secs": 60}, "json": "{\"t\":\"rhack\",\"id\":27,\"target\":null,\"hack\":\"traffic_switch\",\"p\":[-6.5,64.0,0.5],\"r\":150,\"secs\":60}"},
+  {"args": {"id": 28, "target": null, "hack": "gridlock", "p": [-6.5, 64.0, 20.5], "secs": 60}, "json": "{\"t\":\"rhack\",\"id\":28,\"target\":null,\"hack\":\"gridlock\",\"p\":[-6.5,64.0,20.5],\"r\":24,\"secs\":60}"},
+  {"args": {"id": 29, "target": null, "hack": "blackout", "p": [-6.5, 64.0, 0.5], "secs": 180}, "json": "{\"t\":\"rhack\",\"id\":29,\"target\":null,\"hack\":\"blackout\",\"p\":[-6.5,64.0,0.5],\"r\":150,\"secs\":180}"},
+  {"args": {"id": 30, "target": null, "hack": "outline", "p": [0.5, 64.0, 0.5], "secs": 20}, "json": "{\"t\":\"rhack\",\"id\":30,\"target\":null,\"hack\":\"outline\",\"p\":[0.5,64.0,0.5],\"r\":24,\"secs\":20}"},
+  {"args": {"id": 31, "target": null, "hack": "ping_area", "p": [-6.5, 64.0, 10.5], "secs": 0}, "json": "{\"t\":\"rhack\",\"id\":31,\"target\":null,\"hack\":\"ping_area\",\"p\":[-6.5,64.0,10.5],\"r\":32,\"secs\":0}"}
+ ],
+ "act_rhack": [
+  "{\"hack\":\"veh_engine_off\",\"eid\":212}",
+  "{\"hack\":\"cam_feed\",\"host\":\"3f2a8d1c-5b7e-4c1a-9d3e-0a1b2c3d4e5f\",\"dev\":\"11529215046068469765\"}",
+  "{\"hack\":\"traffic_switch\",\"host\":\"3f2a8d1c-5b7e-4c1a-9d3e-0a1b2c3d4e5f\"}",
+  "{\"hack\":\"blackout\",\"host\":\"3f2a8d1c-5b7e-4c1a-9d3e-0a1b2c3d4e5f\",\"secs\":120}",
+  "{\"hack\":\"gridlock\",\"p\":[-4.5,64.0,-4.5]}",
+  "{\"hack\":\"outline\",\"p\":[2.5,64.0,2.5]}",
+  "{\"hack\":\"ping_area\",\"p\":[-1236.5,64.0,810.5]}"
+ ],
+ "act_comms": ["{\"to\":\"3f2a8d1c-5b7e-4c1a-9d3e-0a1b2c3d4e5f\",\"text\":\"Meet me at the Afterlife\",\"p\":[-1240,64,806]}"],
+ "act_feed": ["{\"host\":\"3f2a8d1c-5b7e-4c1a-9d3e-0a1b2c3d4e5f\",\"on\":true}"],
+ "act_feedmap": ["{\"host\":\"3f2a8d1c-5b7e-4c1a-9d3e-0a1b2c3d4e5f\"}"],
+ "down_feedreq": [
+  "{\"t\":\"feedreq\",\"on\":true}",
+  "{\"t\":\"feedreq\",\"on\":false}"
+ ],
+ "up_hackresult": [
+  {"args": {"id": 23, "ok": true, "reason": "", "kind": ""}, "json": "{\"id\":23,\"ok\":true,\"reason\":\"\",\"t\":\"hackresult\",\"upload\":0.0}"},
+  {"args": {"id": 27, "ok": true, "reason": "", "kind": "traffic"}, "json": "{\"id\":27,\"kind\":\"traffic\",\"ok\":true,\"reason\":\"\",\"t\":\"hackresult\",\"upload\":0.0}"},
+  {"args": {"id": 31, "ok": false, "reason": "target gone", "kind": ""}, "json": "{\"id\":31,\"ok\":false,\"reason\":\"target gone\",\"t\":\"hackresult\"}"}
+ ]
+}

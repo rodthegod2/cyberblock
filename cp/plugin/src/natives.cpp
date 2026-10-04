@@ -209,7 +209,7 @@ namespace
 			cb::view::set_allowed(false); // the view comes off on the next frame
 			cb::natives::phonePrompt = false;
 		}
-		cb::world::events().set_active(active);
+		cb::world::on_scripts_active(active); // the event queue's state, and the hub told again on activation
 		compositor::set_active(active);
 		if (changed)
 		{

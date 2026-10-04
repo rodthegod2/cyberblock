@@ -217,7 +217,11 @@ Applied now: turrets are Minecraft-side only (`spawn.rec` loses `turret`).
   `PreventionSystem.QueueRequest(game, request)` (3522). `OnSetWantedLevel` (3259) turns the system on, changes the heat
   stage, and for `Heat_0` while chasing queues the forced de-escalation. The quest-managed flag it sets
   (`prevention_state_managed_by_quest_generic`) is removed again when heat drops to 0 (2222), so 2 then 0 leaves no
-  trace.
+  trace of that flag. Two other effects do last: `OnSetWantedLevel` first calls `TogglePreventionSystem(true)` (3830),
+  which turns the police back on where a quest or a police-free area had turned them off, and it overwrites the
+  persistent `m_ignoreSecurityAreasByQuest` with the request's `m_forceIgnoreSecurityAreas` (default false), which no
+  heat change restores. So Cyberblock (6S `RaiseHeat`) sends nothing while `IsSystemEnabled()` (331) is false or V is
+  in a scene, and passes the flag's current value (read with Codeware reflection; no reflection = the written fallback).
 - **Attitude:** `AttitudeSystem.SetAttitudeRelation(firstGroup, secondGroup, EAIAttitude)` and `GetAttitudeRelation`
   (`orphans.swift` 26911-26925). The `...Persistent` variants exist and are **not** used (they would be saved). Group
   names (TweakDB `Attitudes.Group_*.name`): `tygerClaws`, `maelstrom`, `valentinos`, `6thStreet`, `animals`,

@@ -26,7 +26,7 @@ def quick(monkeypatch):
     """Every wait of the scenarios shrinks to a fraction of a second (the real values are minutes)."""
     for name, value in (("T_QUIET", 0.05), ("T_EFFECT", 0.6), ("T_JOIN", 0.6), ("T_SERVER", 0.6), ("T_CLIENT", 0.6), ("FLOOD_S", 0.1), ("T_STOP", 0.05),
                         ("LOGIN_GAP_S", 0.0), ("T_ENV", 1.0), ("T_POLL", 0.01), ("COOLDOWN_S", 0.7),
-                        ("T_WRECK", 0.6), ("WRECK_MIN_S", 0.04), ("DEVICE_PLACE_TIMEOUT", 1.0), ("GUEST_GAP_S", 0.0), ("BREACH_COOLDOWN_S", 0.0)):
+                        ("T_WRECK", 0.6), ("WRECK_MIN_S", 0.04), ("DEVICE_PLACE_TIMEOUT", 1.0), ("GUEST_GAP_S", 0.0)):
         monkeypatch.setattr(mpcheck, name, value)
 
 
@@ -1641,7 +1641,12 @@ class Sim7Server(SimServer):
         if "relay-drops-parked" in self.bugs:
             append(self.log, f"[Server thread/WARN]: relay: {name} dropped parked x 1 (no rate row)")
             return
-        if self.sim.refuse.get(name):
+        if self.sim.off.get(name):  # Cyberblock Off: no cover drawn, the player stays
+            append(self.log, f"[Server thread/INFO]: hub: {name} V not parked yet (blocked (Cyberblock is not active)): no cover is shown, kept in the Afterlife "
+                             "(V is parked at On)")
+            if "leaves-when-off" in self.bugs:
+                self.leave(name)
+        elif self.sim.refuse.get(name):
             append(self.log, f"[Server thread/INFO]: hub: {name} V not parked (blocked (in a vehicle))")
             if "keeps-refused-park" not in self.bugs:
                 self.leave(name)
@@ -1701,7 +1706,7 @@ class Sim7Server(SimServer):
 class Sim7Env(SimEnv):
     def __init__(self, tmp, bugs=()):
         super().__init__(tmp, bugs)
-        self.refuse, self.started = {}, []
+        self.refuse, self.off, self.started = {}, {}, []
 
     def server(self, scenario, max_hosts=1, join_password=False):
         self.max_hosts, self.join_password = max_hosts, join_password
@@ -1715,9 +1720,9 @@ class Sim7Env(SimEnv):
         self.server_obj.dim.setdefault(name, SIM_HOME)
         return c
 
-    def fakehost(self, client, *, park_refuse=False, **kw):
-        self.refuse[client.name] = park_refuse
-        self.started.append((client.name, kw.get("layers"), kw.get("modes"), park_refuse))
+    def fakehost(self, client, *, park_refuse=False, park_off=False, **kw):
+        self.refuse[client.name], self.off[client.name] = park_refuse, park_off
+        self.started.append((client.name, kw.get("layers"), kw.get("modes"), "refuse" if park_refuse else "off" if park_off else None))
         return super().fakehost(client, **kw)
 
     def grant(self, name, host, layers, modes, ids_from):
@@ -1733,10 +1738,11 @@ def test_hub_scenario_passes_against_an_ideal_server(tmp_path):
     sim = Sim7Env(tmp_path)
     rep = run_scenario(sim, "hub")
     assert rep.ok, failed(rep)
-    assert len(rep.checks) == 25 and sim.max_hosts == 1 and sim.join_password  # the live server's join password is on
+    assert len(rep.checks) == 29 and sim.max_hosts == 1 and sim.join_password  # the live server's join password is on
     host = mpcheck.FakeHost("CbHost1", SimProc(), sim.hosts["CbHost1"]["log"], None)
     assert mpcheck.hub_events(host) == mpcheck.HUB_ENTER + mpcheck.HUB_LEAVE  # the last link: the entering pair again, refused, taken out
-    assert sim.started == [("CbHost1", (), ("vendor",), False), ("CbHost1", (), ("vendor",), False), ("CbHost1", (), ("vendor",), True)]
+    assert sim.started == [("CbHost1", (), ("vendor",), None), ("CbHost1", (), ("vendor",), None), ("CbHost1", (), ("vendor",), "off"),
+                           ("CbHost1", (), ("vendor",), "refuse")]
 
 
 def test_hub_scenario_accepts_a_server_that_leaves_with_its_own_command(tmp_path):
@@ -1756,6 +1762,7 @@ def test_hub_scenario_accepts_a_server_that_leaves_with_its_own_command(tmp_path
     ("no-session-end", "the session ends when the link drops"),
     ("no-resync", "the new session of a player still in the hub hears `hub in:true` and `park on:true` again"),
     ("keeps-refused-park", "`parked ok:false` takes the host out of the hub at once"),
+    ("leaves-when-off", "`parked ok:false` (Cyberblock is not active) keeps the host in the hub"),
 ])
 def test_hub_scenario_notices_each_hub_bug(tmp_path, bug, expected):
     rep = run7(tmp_path, [bug])
@@ -1786,14 +1793,15 @@ def test_the_hub_argv_parses_with_the_real_fakehost(monkeypatch):
         return 1
 
     monkeypatch.setattr(fakehost, "run", fake_run)
-    for refuse in (False, True):
+    for refuse, off in ((False, False), (True, False), (False, True)):
         argv = mpcheck.fakehost_argv(port=25814, name="CbHost1", ver="1.0.0", frame="Local\\CyberblockFrame7PMH", out_dir=Path("frames"), layers=(), modes=("vendor",),
-                                     wait_host=60.0, park_refuse=refuse)
-        assert ("--park-refuse" in argv) is refuse
+                                     wait_host=60.0, park_refuse=refuse, park_off=off)
+        assert ("--park-refuse" in argv) is refuse and ("--park-off" in argv) is off
         monkeypatch.setattr("sys.argv", ["fakehost", *argv[4:]])  # after `python -u -m tools.fakehost`
         assert fakehost.main() == 0
-    (args, kwargs), (_, refused) = seen
+    (args, kwargs), (_, refused), (_, off_kw) = seen
     assert args[8] == frozenset() and args[9] == frozenset({"vendor"}) and kwargs == {"wait_host": 60.0} and refused == {"wait_host": 60.0, "park_refuse": True}
+    assert off_kw == {"wait_host": 60.0, "park_off": True}
 
 
 def test_the_hub_helpers_read_what_the_fake_host_prints_and_what_rcon_answers(tmp_path):

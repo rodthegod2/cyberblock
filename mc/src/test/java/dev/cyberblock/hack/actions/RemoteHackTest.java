@@ -41,10 +41,21 @@ class RemoteHackTest {
 		assertSame(RemoteHack.Target.DISTRICT, RemoteHack.BLACKOUT.target());
 		assertSame(RemoteHack.Target.CAMERA, RemoteHack.CAM_FEED.target());
 		assertSame(RemoteHack.Target.POINT, RemoteHack.GRIDLOCK.target());
-		// the gridlock stops a road for a minute; only the point hacks have a radius
+		// the gridlock stops a road for a minute; only the area hacks have a radius (whole metres, 1..150 on the wire)
 		assertEquals(60, RemoteHack.GRIDLOCK.seconds());
-		assertEquals(24.0, RemoteHack.GRIDLOCK.radius());
-		assertEquals(0.0, RemoteHack.VEH_JAM.radius());
+		assertEquals(24, RemoteHack.GRIDLOCK.radius());
+		assertEquals(150, RemoteHack.BLACKOUT.radius());
+		assertEquals(0, RemoteHack.VEH_JAM.radius());
+		for (RemoteHack h : RemoteHack.values()) {
+			assertEquals(h.target() == RemoteHack.Target.DISTRICT || h.target() == RemoteHack.Target.POINT, h.area(), h.wire());
+			assertTrue(h.area() ? h.radius() >= 1 && h.radius() <= 150 : h.radius() == 0, h.wire());
+		}
+
+		// shared/protocol.md: vehicle hacks 30 s, traffic_switch and gridlock 60 s, a blackout the player's length, a ping a one-shot
+		assertEquals(30, RemoteHack.VEH_BRAKE.downSeconds(0));
+		assertEquals(60, RemoteHack.TRAFFIC_SWITCH.downSeconds(300));
+		assertEquals(240, RemoteHack.BLACKOUT.downSeconds(240));
+		assertEquals(0, RemoteHack.PING_AREA.downSeconds(0));
 	}
 
 	@Test

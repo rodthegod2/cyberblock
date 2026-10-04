@@ -22,10 +22,13 @@ final class GigRules {
 		return c.type() == Contract.Type.BREACH_DEVICE && NpcJson.key(c.kind()).equals(NpcJson.key(deviceKind));
 	}
 
-	/** Within the gig's reach of its landmark (horizontally, and within 16 blocks up or down). */
-	static boolean reached(final Contract c, final @Nullable Vec3 target, final Vec3 at) {
+	/**
+	 * Within the gig's reach of its landmark: horizontally, and within 16 blocks up or down unless the landmark is {@code approx} (its
+	 * height is a guess the Holo-Table's ground snap may land far from, so only x and z count).
+	 */
+	static boolean reached(final Contract c, final @Nullable Vec3 target, final boolean approx, final Vec3 at) {
 		double r = Contract.REACH;
-		return c.type() == Contract.Type.REACH_LANDMARK && target != null && Math.abs(at.y - target.y) <= 16.0
+		return c.type() == Contract.Type.REACH_LANDMARK && target != null && (approx || Math.abs(at.y - target.y) <= 16.0)
 			&& (at.x - target.x) * (at.x - target.x) + (at.z - target.z) * (at.z - target.z) <= r * r;
 	}
 

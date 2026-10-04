@@ -1,0 +1,16 @@
+{
+	"schema": 1,
+	"title": "Feeding the Strays",
+	"text": "A woman under the overpass feeds half the strays in the district. Thirty-two pieces of rotten flesh keep them off her stall.",
+	"done_text": "The dogs are fat and the stall is safe. She thanks you, from a distance.",
+	"type": "deliver_item",
+	"target": {
+		"item": "minecraft:rotten_flesh",
+		"count": 32
+	},
+	"reward": {
+		"eddies": 140
+	},
+	"difficulty": 1,
+	"repeatable": true
+}

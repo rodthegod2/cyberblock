@@ -1,0 +1,16 @@
+{
+	"schema": 1,
+	"title": "An Eye for Detail",
+	"text": "A street chemist needs spider eyes for a brew I do not want to know about. Twelve of them, as fresh as you can manage.",
+	"done_text": "They are staring at me from the jar. Take your money and go.",
+	"type": "deliver_item",
+	"target": {
+		"item": "minecraft:spider_eye",
+		"count": 12
+	},
+	"reward": {
+		"eddies": 190
+	},
+	"difficulty": 2,
+	"repeatable": true
+}

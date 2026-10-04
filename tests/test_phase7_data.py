@@ -147,6 +147,40 @@ def test_contracts_cover_every_type_and_refer_to_what_exists(lang):
     assert len(titles) == len(set(titles))
 
 
+# what the live world can supply for a delivery: the server's world (cyberblock:nightcity) is a void world with no ores and no reachable
+# Nether, so a deliver_item gig asks for a drop of the hostile mobs that spawn on the replica's dark floors, never an ore, a Nether item
+# or something only a shop sells
+MOB_DROPS = {"minecraft:" + i for i in ("bone", "string", "gunpowder", "spider_eye", "rotten_flesh")}
+
+
+def test_deliveries_are_mob_drops_no_shop_stocks_and_pay_more_than_selling_them():
+    shops = entries("shop").values()
+    stocked = {row["item"] for shop in shops for row in shop["stock"]}
+    sell = {}
+    for shop in shops:
+        for row in shop.get("sell", []):
+            sell[row["item"]] = max(sell.get(row["item"], 0), row["price"] / row["count"])
+    deliveries = {n: c for n, c in entries("contract").items() if c["type"] == "deliver_item"}
+    assert deliveries
+    for name, c in deliveries.items():
+        item, count = c["target"]["item"], c["target"]["count"]
+        assert item in MOB_DROPS, f"{name}: {item} is not a mob drop the void world supplies"
+        assert item not in stocked, f"{name}: {item} can be bought, so the gig is a buy-and-deliver eddie loop"
+        assert c["reward"]["eddies"] > 2 * sell.get(item, 0) * count, f"{name}: selling the {count} {item} pays nearly as much"
+
+
+def test_a_solved_device_breach_steps_the_players_breach_gig():
+    source = (ROOT / "mc" / "src" / "main" / "java" / "dev" / "cyberblock" / "hack" / "breach" / "Breach.java").read_text("utf-8")
+    solved = source[source.index("private static void deviceOutcome("):source.index("private static void onHackResult(")]
+    solved = solved[solved.rindex("} else {"):]
+    assert "Gigs.breached(player, device.type().id())" in solved, "the solved branch of a device breach must advance breach_device gigs"
+    kinds = {c["target"]["kind"] for c in entries("contract").values() if c["type"] == "breach_device"}
+    permissions = (ROOT / "mc" / "src" / "main" / "java" / "dev" / "cyberblock" / "net" / "Permissions.java").read_text("utf-8")
+    types = re.search(r"enum DeviceType \{\s*([^;]+);", permissions).group(1)
+    ids = {m.lower() for m in re.findall(r"([A-Z_]+)\(\d+\)", types)}
+    assert kinds and kinds <= ids, f"breach gigs name kinds no device type has: {kinds - ids}"
+
+
 def test_the_catalogue_lists_every_cyberware_id_once_with_riskier_surgery_for_dearer_implants():
     source = (ROOT / "mc" / "src" / "main" / "java" / "dev" / "cyberblock" / "cyber" / "Cyberware.java").read_text("utf-8")
     ids = [m.lower() for m in re.findall(r"^\t([A-Z_]+)\(CyberSlot\.", source, re.M)]

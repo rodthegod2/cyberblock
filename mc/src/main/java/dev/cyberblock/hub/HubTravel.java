@@ -34,7 +34,8 @@ import net.minecraft.world.level.storage.LevelData;
  * <p>Log lines: {@code hub: <name> entered (from <level> <x> <y> <z>)}, {@code hub: <name> left (to <level> <x> <y> <z>)},
  * {@code hub: <name> <- hub in:<b>, park on:<b>}, {@code hub: park path: <which>} (once a run, Phase 0 g), {@code hub: <name> V not
  * parked (<reason>): taken out of the Afterlife} (a refused park: the cover only stays up over a parked V), {@code hub: <name> V not
- * released (<reason>)}. Outside creative nobody builds in the hub (see grounding).
+ * parked yet (<reason>): no cover is shown, kept in the Afterlife (V is parked at On)} (Cyberblock Off or no V: nothing to hide),
+ * {@code hub: <name> V not released (<reason>)}. Outside creative nobody builds in the hub (see grounding).
  */
 public final class HubTravel {
 	/** A park on waits this long for its parked answer before the path line says it is unconfirmed. */
@@ -229,8 +230,14 @@ public final class HubTravel {
 			return; // the answer to a release
 		}
 
-		if (!HubRules.exitsHub(a)) {
+		if (a.ok()) {
 			logPath(true);
+			return;
+		}
+
+		if (!HubRules.exitsHub(a)) {
+			// no cover is drawn (Cyberblock Off, no V yet): the player stays, the DLL keeps its hub, the scripts park V at On
+			Cyberblock.LOG.info("hub: {} V not parked yet ({}): no cover is shown, kept in the Afterlife (V is parked at On)", s.name(), a.reason());
 			return;
 		}
 

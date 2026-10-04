@@ -59,13 +59,6 @@ final class DeviceTable {
 		return s != null && now - s.tick() < GONE_TICKS ? s.device() : null;
 	}
 
-	/** Did a list of the owner name this device within the last {@code ticks}? */
-	boolean listedWithin(final UUID owner, final long id, final long now, final long ticks) {
-		Map<Long, Seen> table = this.owners.get(owner);
-		Seen s = table == null ? null : table.get(id);
-		return s != null && now - s.tick() <= ticks;
-	}
-
 	/** Drops devices gone for 10 s. */
 	void expire(final long now) {
 		for (Map<Long, Seen> table : this.owners.values()) {
