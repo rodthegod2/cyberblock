@@ -82,6 +82,31 @@ public class CyberblockCollisionService extends ScriptableService {
     this.dirty = true;
   }
 
+  // Read only (megaplan Q-S2): a registered box contains `point`. A box spans [min z, min z + 1) with min z = block y +
+  // k/64 and is keyed by the block y, so the boxes keyed FloorF(z) and FloorF(z) - 1 are the only candidates.
+  public func Has(point: Vector4) -> Bool {
+    let aabbMin: Vector4;
+    return this.Find(point, aabbMin);
+  }
+
+  // The registered box that contains `point`, as its AABB min corner.
+  public func Find(point: Vector4, out aabbMin: Vector4) -> Bool {
+    let below = 0;
+    while below <= 1 {
+      let key: Uint64;
+      let corner = new Vector4(Cast<Float>(FloorF(point.X)), Cast<Float>(FloorF(point.Y)), Cast<Float>(FloorF(point.Z) - below), 1.0);
+      if CyberblockCollisionService.Key(corner, key) && this.Slots().KeyExist(key) {
+        let m = this.mins[this.slots.Get(key)];
+        if m.Z <= point.Z && point.Z < m.Z + 1.0 {
+          aabbMin = m;
+          return true;
+        }
+      }
+      below += 1;
+    }
+    return false;
+  }
+
   public func Remove(aabbMin: Vector4) -> Void {
     let key: Uint64;
     if !CyberblockCollisionService.Key(aabbMin, key) || !this.Slots().KeyExist(key) {
