@@ -7,6 +7,7 @@ import io.netty.buffer.ByteBuf;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import net.fabricmc.fabric.api.attachment.v1.AttachmentRegistry;
 import net.fabricmc.fabric.api.attachment.v1.AttachmentSyncPredicate;
 import net.fabricmc.fabric.api.attachment.v1.AttachmentType;
@@ -139,6 +140,14 @@ public final class CyberData {
 
 	public static Set<Cyberware> installed(final Player player) {
 		return CyberwareRules.installed(slots(player));
+	}
+
+	/**
+	 * Ids (plan retest2 section 1.7) of the implants this player has installed (either side: the client holds its own player's
+	 * synced copy). Megaplan task 1-C1: this per-player set replaces the JVM-wide Bridge.installedCyberware.
+	 */
+	public static Set<String> installedIds(final Player player) {
+		return installed(player).stream().map(Cyberware::id).collect(Collectors.toUnmodifiableSet());
 	}
 
 	public static boolean has(final Player player, final Cyberware cyberware) {

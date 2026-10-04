@@ -3,35 +3,31 @@ package dev.cyberblock.client.cyber;
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.cyber.CyberData;
-import dev.cyberblock.cyber.CyberMod;
+import dev.cyberblock.cyber.CyberActs;
 import dev.cyberblock.cyber.CyberSlot;
 import dev.cyberblock.cyber.Cyberware;
 import dev.cyberblock.cyber.CyberwareItem;
 import dev.cyberblock.cyber.CyberwareRules;
-import dev.cyberblock.cyber.Ripperdoc;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Consumer;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.RenderPipelines;
-import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 
 /**
  * The ripperdoc (plan retest2 section 1.7, key U): on art/gui/cyberware_bg.png, the eight body slots on the left (a frame
  * per place) and the implants he could install on the right (the ones in his inventory; every one in creative). A
  * left-click installs an available implant or takes out an installed one. Each installed ACTIVE implant shows the key that
- * fires it (Y Operating System, L Arms, O camo: plan retest3 section 1.7) in yellow on its slot. Driven by the host's cursor and clicks like every screen; the game keeps running behind it. The integrated server does the work (singleplayer only, as the skill tree).
+ * fires it (Y Operating System, L Arms, O camo: plan retest3 section 1.7) in yellow on its slot. Driven by the host's cursor and clicks like every screen; the game keeps running behind it. The server does the work (`act t:"ware"`, megaplan task 1-C1).
  */
 public final class CyberwareScreen extends Screen {
 	private static final Identifier BACKGROUND = Identifier.fromNamespaceAndPath(Cyberblock.ID, "textures/gui/cyberware_bg.png");
@@ -226,7 +222,7 @@ public final class CyberwareScreen extends Screen {
 				Cyberware in = Cyberware.byId(slots.get(key));
 				if (in != null && inside(event.x(), event.y(), this.frameX(slot, n), this.frameY(slot), FRAME)) {
 					if (left) {
-						this.onServer(p -> Ripperdoc.remove(p, key));
+						CyberLink.act(CyberActs.WARE, CyberActs.remove(key));
 					}
 
 					return true;
@@ -238,25 +234,12 @@ public final class CyberwareScreen extends Screen {
 		for (int i = 0; i < available.size(); i++) {
 			Cyberware c = available.get(i);
 			if (left && inside(event.x(), event.y(), this.cellX(i), this.cellY(i), FRAME)) {
-				this.onServer(p -> Ripperdoc.install(p, c));
+				CyberLink.act(CyberActs.WARE, CyberActs.install(c));
 				return true;
 			}
 		}
 
 		return super.mouseClicked(event, doubleClick);
-	}
-
-	/** Singleplayer only (spec): the integrated server applies the ripperdoc's rules. */
-	private void onServer(final Consumer<ServerPlayer> task) {
-		IntegratedServer server = this.minecraft.getSingleplayerServer();
-		if (server != null) {
-			server.execute(() -> {
-				ServerPlayer player = CyberMod.localPlayer();
-				if (player != null) {
-					task.accept(player);
-				}
-			});
-		}
 	}
 
 	@Override

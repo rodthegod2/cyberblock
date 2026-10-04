@@ -21,6 +21,8 @@ public record ScanInfo(int id, boolean ok, long target, String name, String fact
 	private static final double MAX_COORD = 3.0E7;
 	/** Nothing Cyberpunk scans is bigger than a building's sign or a truck. */
 	private static final double MAX_SIZE = 64.0;
+	/** Nothing found (or nothing the player may scan). */
+	public static final ScanInfo NOTHING = new ScanInfo(0, false, 0L, "", "", "none", 0.0F, false, 0.0, 0.0, 0.0, 0.0F, 0.0F);
 
 	/** The reply, or null when anything in it breaks the protocol's limits (the caller drops and counts it). */
 	public static @Nullable ScanInfo parse(final JsonObject m) {
@@ -59,6 +61,37 @@ public record ScanInfo(int id, boolean ok, long target, String name, String fact
 			// missing field, wrong type, unparsable id: all the same bad message
 			return null;
 		}
+	}
+
+	/**
+	 * The answer as the server hands it to the asker's client (`cyberblock:ui t:"scaninfo"`, megaplan task 1-C1): the same
+	 * fields, rebuilt from the checked values, plus `eid`, the Minecraft entity id of the proxy the scan picked (-1: none).
+	 */
+	public String toJson(final int eid) {
+		JsonObject m = new JsonObject();
+		m.addProperty("t", "scaninfo");
+		m.addProperty("id", this.id);
+		m.addProperty("ok", this.ok);
+		if (this.ok) {
+			m.addProperty("target", Long.toUnsignedString(this.target));
+			m.addProperty("name", this.name);
+			m.addProperty("faction", this.faction);
+			m.addProperty("threat", this.threat);
+			m.addProperty("hp", this.hp);
+			m.addProperty("device", this.device);
+			JsonArray p = new JsonArray();
+			p.add(this.x);
+			p.add(this.y);
+			p.add(this.z);
+			m.add("p", p);
+			JsonArray size = new JsonArray();
+			size.add(this.w);
+			size.add(this.h);
+			m.add("size", size);
+		}
+
+		m.addProperty("eid", eid);
+		return m.toString();
 	}
 
 	/** A Cyberpunk entity id: the EntityID hash as an unsigned 64-bit decimal string. */

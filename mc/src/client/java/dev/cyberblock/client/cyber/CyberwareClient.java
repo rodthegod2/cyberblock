@@ -1,11 +1,11 @@
 package dev.cyberblock.client.cyber;
 
 import dev.cyberblock.Bridge;
-import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.HostState;
 import dev.cyberblock.cyber.CyberData;
 import dev.cyberblock.cyber.Cyberware;
 import dev.cyberblock.cyber.CyberwareRules;
+import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
@@ -34,8 +34,10 @@ final class CyberwareClient {
 	private static final double PING_RANGE = 96.0;
 	private static final int PING_STROKE = 0xF0FFD34A;
 	private static final int PING_FILL = 0x18FFD34A;
-	/** Bridge.hostJumpPresses as last seen (it only ever counts up; nobody consumes it). */
-	private static int lastJumps = Bridge.hostJumpPresses.get();
+	/** The host's jump key presses (CyberLink, link thread; megaplan task 1-C1 replaces Bridge.hostJumpPresses), and as last seen. */
+	private static final AtomicInteger jumpPresses = new AtomicInteger();
+	private static volatile boolean jumpHeld;
+	private static int lastJumps;
 	private static boolean wasAirborne;
 	/** Ticks the host's jump key has been held with V on the ground; at the release, how long it was. */
 	private static int heldTicks;
@@ -46,8 +48,17 @@ final class CyberwareClient {
 	private CyberwareClient() {
 	}
 
+	/** {"t":"key","k":"jump"} from the host (link thread): a press counts once, however often its key-down repeats. */
+	static void hostJump(final boolean down) {
+		if (down && !jumpHeld) {
+			jumpPresses.incrementAndGet();
+		}
+
+		jumpHeld = down;
+	}
+
 	static void tick(final Minecraft minecraft) {
-		int jumps = Bridge.hostJumpPresses.get();
+		int jumps = jumpPresses.get();
 		boolean pressed = jumps != lastJumps;
 		lastJumps = jumps;
 		LocalPlayer player = minecraft.player;
@@ -56,8 +67,9 @@ final class CyberwareClient {
 			return;
 		}
 
-		if (Cyberblock.active) {
-			legs(level, player, pressed);
+		HostState.Pose pose = HostState.frame();
+		if (pose != null) {
+			legs(level, player, pressed, pose.air());
 		}
 
 		for (Entity e : level.getEntities(player, player.getBoundingBox().inflate(PING_RANGE), e -> !e.isRemoved() && Bridge.pingedProxy.test(e))) {
@@ -72,8 +84,7 @@ final class CyberwareClient {
 		}
 	}
 
-	private static void legs(final ClientLevel level, final LocalPlayer player, final boolean pressed) {
-		boolean airborne = Bridge.hostAirborne;
+	private static void legs(final ClientLevel level, final LocalPlayer player, final boolean pressed, final boolean airborne) {
 		if (pressed && wasAirborne && CyberData.has(player, Cyberware.REINFORCED_TENDONS)) {
 			burst(level, player, ParticleTypes.CLOUD, 8, ParticleTypes.SMALL_GUST, SoundEvents.BREEZE_JUMP);
 		}

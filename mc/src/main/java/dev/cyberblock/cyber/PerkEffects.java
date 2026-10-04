@@ -1,6 +1,5 @@
 package dev.cyberblock.cyber;
 
-import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.ProxyEntity;
 import java.util.HashMap;
@@ -80,7 +79,7 @@ public final class PerkEffects {
 			return;
 		}
 
-		boolean crouched = Bridge.hostCrouching || player.isShiftKeyDown();
+		boolean crouched = CyberNet.crouching(player) || player.isShiftKeyDown();
 		if (camo.computeIfAbsent(player.getUUID(), id -> new PerkRules.Camo()).update(crouched, player.getX(), player.getY(), player.getZ(), now)) {
 			player.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY, PerkRules.CAMO_TICKS, 0, false, false, true));
 		}
@@ -120,8 +119,13 @@ public final class PerkEffects {
 		return proxy.position().add(0.0, proxy.getBbHeight() / 2.0, 0.0);
 	}
 
-	/** The player left or the server stops: forget per-player state. */
+	/** The server stops: forget per-player state. */
 	static void reset() {
 		camo.clear();
+	}
+
+	/** The player left: forget his state. */
+	static void forget(final UUID player) {
+		camo.remove(player);
 	}
 }

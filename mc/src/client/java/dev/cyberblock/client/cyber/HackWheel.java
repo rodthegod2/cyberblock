@@ -1,7 +1,7 @@
 package dev.cyberblock.client.cyber;
 
 import dev.cyberblock.cyber.CyberData;
-import dev.cyberblock.cyber.CyberMod;
+import dev.cyberblock.cyber.CyberActs;
 import dev.cyberblock.cyber.Hack;
 import dev.cyberblock.cyber.Hacking;
 import dev.cyberblock.cyber.Perk;
@@ -12,15 +12,13 @@ import java.util.List;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Quickhack chips without the hotbar: while the hack key is held, the mouse wheel picks one of the chips anywhere in the
- * inventory and right-click fires it at the locked target, on the integrated server (Hacking.useChip, the same rules as a
+ * inventory and right-click fires it at the locked target, on the server (`act t:"hack"`, Hacking.useChip, the same rules as a
  * chip used from the hand). A chip in the main hand always wins over the pick (plan retest3 section 1.6: the old order fired
  * the remembered pick, usually the first chip, whatever he held). Without the hack key both do what they always do. Client
  * thread.
@@ -137,8 +135,7 @@ public final class HackWheel {
 
 	private static boolean fire(final Minecraft minecraft) {
 		LocalPlayer player = minecraft.player;
-		IntegratedServer server = minecraft.getSingleplayerServer();
-		if (player == null || server == null || player.isSpectator() || !CyberKeys.hack.isDown()) {
+		if (player == null || player.isSpectator() || !CyberKeys.hack.isDown()) {
 			return false;
 		}
 
@@ -148,14 +145,8 @@ public final class HackWheel {
 		}
 
 		selected = hack;
-		// singleplayer only (spec), as the skill tree's purchases: the server holds the lock, RAM and cooldowns
-		server.execute(() -> {
-			ServerPlayer serverPlayer = CyberMod.localPlayer();
-			if (serverPlayer != null) {
-				Hacking.useChip(serverPlayer, hack);
-			}
-		});
-		return true;
+		// the server holds the lock, RAM and cooldowns (megaplan task 1-C1: `act t:"hack"`, a guest's too)
+		return CyberLink.act(CyberActs.HACK, CyberActs.hack(hack));
 	}
 
 	/** The scan tooltip's lines while the hack key is held: the chip right-click fires and what it costs now; none without chips. */

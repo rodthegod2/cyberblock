@@ -1,6 +1,7 @@
 package dev.cyberblock.client.cyber;
 
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.client.HostState;
 import dev.cyberblock.cyber.CyberData;
 import dev.cyberblock.cyber.Cyberware;
 import dev.cyberblock.cyber.CyberwareRules;
@@ -48,7 +49,7 @@ public final class SandevistanFx {
 	/** GameRendererCyberMixin: request the post effect this frame (standalone only). Logged when it starts and stops. */
 	public static boolean wantsPostEffect() {
 		LocalPlayer player = Minecraft.getInstance().player;
-		boolean wants = !Cyberblock.active && player != null && running(player);
+		boolean wants = HostState.frame() == null && player != null && running(player);
 		if (wants != postOn) {
 			postOn = wants;
 			Cyberblock.LOG.info("sandevistan: post effect {}", wants ? "on" : "off");

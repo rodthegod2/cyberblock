@@ -88,6 +88,18 @@ class ScanTest {
 		assertEquals(1.8F, s.h());
 	}
 
+	/** Megaplan task 1-C1: the server hands the checked answer to the asker's client (`cyberblock:ui`) with the proxy's entity id. */
+	@Test
+	void uiAnswerRoundTrips() {
+		ScanInfo s = ScanInfo.parse(good());
+		JsonObject ui = json(s.toJson(321));
+		assertEquals(s, ScanInfo.parse(ui));
+		assertEquals(321, ui.get("eid").getAsInt());
+		JsonObject nothing = json(ScanInfo.NOTHING.toJson(-1));
+		assertFalse(ScanInfo.parse(nothing).ok());
+		assertEquals(-1, nothing.get("eid").getAsInt());
+	}
+
 	@Test
 	void parsesNothingThere() {
 		ScanInfo s = ScanInfo.parse(json("{\"t\":\"scaninfo\",\"id\":8,\"ok\":false,\"target\":\"0\",\"name\":\"\",\"faction\":\"\",\"threat\":\"none\","
