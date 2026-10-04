@@ -5,8 +5,9 @@ import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 
 /**
  * The Minecraft frame around a Cyberpunk menu that is passed through (F12, section 1.11: shops, ripperdoc, stash, breach,
@@ -18,6 +19,9 @@ import net.minecraft.network.chat.Component;
 final class MenuFrameHud {
 	private static final int BAR = 16;
 	private static final int BORDER = 3;
+	/** The classic loading-screen look: vanilla's dirt texture (the player's own resource pack, tiled at runtime) darkened. */
+	private static final Identifier DIRT = Identifier.withDefaultNamespace("textures/block/dirt.png");
+	private static final int DIRT_TINT = 0xFF404040;
 
 	private MenuFrameHud() {
 	}
@@ -43,7 +47,7 @@ final class MenuFrameHud {
 	}
 
 	/**
-	 * The loading cover as a Minecraft loading screen: vanilla's own menu background (the player's resource pack sprite, tiled at
+	 * The loading cover as a Minecraft loading screen: vanilla's dirt texture (the player's resource pack, tiled at
 	 * runtime) darkened, "Loading Night City" with animated dots, a strip that only says "working" (Cyberpunk does not report how far
 	 * it is), and one tip line from the lang list.
 	 */
@@ -52,8 +56,7 @@ final class MenuFrameHud {
 		int dots = LoadingCover.dots(now);
 		// opaque: vanilla's menu background is see-through over a world
 		graphics.fill(0, 0, w, h, 0xFF000000);
-		Screen.extractMenuBackgroundTexture(graphics, Screen.MENU_BACKGROUND, 0, 0, 0.0F, 0.0F, w, h);
-		graphics.fill(0, 0, w, h, 0x80000000);
+		graphics.blit(RenderPipelines.GUI_TEXTURED, DIRT, 0, 0, 0.0F, 0.0F, w, h, 32, 32, DIRT_TINT);
 		// the title stays put while the dots come and go: it is placed as if all three dots were there
 		Component title = Component.translatableWithFallback("cyberblock.ui.loading", "Loading Night City");
 		int x = (w - font.width(title) - font.width("...")) / 2;
