@@ -48,15 +48,35 @@ public final class Ripperdoc {
 			return;
 		}
 
+		install(player, cyberware, stack, !free);
+	}
+
+	/** Whether the player carries the implant's item (a ripperdoc then installs that one instead of selling one). */
+	public static boolean owns(final ServerPlayer player, final Cyberware cyberware) {
+		return !find(player, cyberware).isEmpty();
+	}
+
+	/**
+	 * A ripperdoc NPC's install (megaplan task 7-N1, the role screen): the player's own implant item when he carries one, else the one
+	 * he has just paid the ripperdoc for (no item taken). The replaced implant comes back as an item outside creative, as with an own
+	 * install. True when the implant is in now.
+	 */
+	public static boolean installAtRipperdoc(final ServerPlayer player, final Cyberware cyberware) {
+		ItemStack stack = player.isCreative() ? ItemStack.EMPTY : find(player, cyberware);
+		return install(player, cyberware, stack, !player.isCreative());
+	}
+
+	/** Installs; stack (EMPTY: none) is used up and the replaced implant given back when giveBack. False when it was in already. */
+	private static boolean install(final ServerPlayer player, final Cyberware cyberware, final ItemStack stack, final boolean giveBack) {
 		CyberwareRules.Installed result = CyberwareRules.install(CyberData.slots(player), cyberware);
 		if (result.outcome() == CyberwareRules.Install.ALREADY) {
 			player.sendOverlayMessage(Component.translatable("cyberblock.cyberware.installed", name(cyberware)));
-			return;
+			return false;
 		}
 
 		CyberData.setSlots(player, result.slots());
 		Cyberware replaced = result.replaced();
-		if (!free) {
+		if (giveBack) {
 			// the replaced implant goes back first: once the used stack is empty its slot counts as free, and when the item was
 			// used from the hand, vanilla then empties that hand slot (ServerPlayerGameMode.useItem), with whatever went into it
 			if (replaced != null) {
@@ -71,6 +91,7 @@ public final class Ripperdoc {
 		player.sendOverlayMessage(replaced == null ? Component.translatable("cyberblock.cyberware.installed", name(cyberware))
 			: Component.translatable("cyberblock.cyberware.replaced", name(cyberware), name(replaced)));
 		changed(player);
+		return true;
 	}
 
 	/**
