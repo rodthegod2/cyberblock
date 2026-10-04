@@ -291,8 +291,9 @@ Open `red4ext\logs\Cyberblock.log` and the server log and copy these lines to Cl
 1. Start the test server as in Wave A, then `uv run python -m tools.mpcheck hub` (it starts a throw-away server with a join password, two clients and a fake host)
    or, for a client you started yourself, `uv run python -m tools.fakehost --vendor --no-setup --hold 120`.
 2. **Expect:** the harness reports each check of the hub: a locked player's `/cyberblock hub` doing nothing, hub then park on entering and the DLL's `parked`
-   reaching the server, park then hub on leaving, a guest sending the DLL nothing, the entering pair again for a returning link, a refused park
-   (`--park-refuse`) taking the host out, and the relay dropping nothing. With `--vendor` alone the fake host opens a shop screen from 2 s to 8 s (its stock
+   reaching the server, park then hub on leaving, a guest sending the DLL nothing, the entering pair again for a returning link, a park refused while
+   Cyberblock is Off (`--park-off`, no cover drawn) keeping the host in the hub, a park refused while live (`--park-refuse`) taking the host out, and the
+   relay dropping nothing. With `--vendor` alone the fake host opens a shop screen from 2 s to 8 s (its stock
    arrives unrequested: a stack of two pistols and a revolver to buy, a broken radio to sell) and prints the `uiact` lines Minecraft sends.
 
 ### Phase 7 descopes and risks (short)

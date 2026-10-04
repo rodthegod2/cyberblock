@@ -32,6 +32,20 @@ public final class HostCursor {
 		return !Double.isNaN(x) && Minecraft.getInstance().gui.screen() != null && (HostState.live() != null || HostState.hostInput());
 	}
 
+	/** The hub's input ended (client thread): unless Cyberpunk drives Steve again, the DLL forwards no mouse, so its last position goes. */
+	public static void hubInputEnded() {
+		if (HostState.live() == null) {
+			reset();
+		}
+	}
+
+	/** The host stopped forwarding its mouse: its last position is no one's cursor now. */
+	static void reset() {
+		x = Double.NaN;
+		y = Double.NaN;
+		held = null;
+	}
+
 	public static double x() {
 		return x;
 	}

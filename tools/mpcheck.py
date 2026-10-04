@@ -44,8 +44,9 @@ Scenarios (megaplan task 1-T2). Each one starts what it needs on its own test po
   hub           Phase 7, on a server with the join password: a locked host's and a locked guest's `/cyberblock hub` change nothing; after /login, one fake
                 host `--vendor` and a guest: `/cyberblock hub` sends the host's DLL `hub in:true` and then `park on:true` (once each), puts Steve in
                 `cyberblock:afterlife` and the DLL's `parked` reaches the hub, a guest's trip sends the DLL nothing, leaving sends `park on:false` and then
-                `hub in:false` and puts Steve back; in the hub a dropped link ends the session, a returning link hears the entering pair again, and a
-                Cyberpunk that refuses the park (`--park-refuse`) has the host taken out of the hub; the relay drops nothing. RCON's `execute as` carries
+                `hub in:false` and puts Steve back; in the hub a dropped link ends the session, a returning link hears the entering pair again, a
+                Cyberpunk with Cyberblock Off (`--park-off`: no cover drawn) leaves the host in the hub, and one that refuses the park while live
+                (`--park-refuse`) has the host taken out of the hub; the relay drops nothing. RCON's `execute as` carries
                 operator permission, and the pause-screen button and the portal are not driven: Re-test P7-5 checks those with a non-operator guest
   joinpassword  a server with a join password: a host waits as a guest until `/login`, then hosts at once; after a reconnect it
                 is remembered; five wrong passwords kick; the password is in no log (it is random per run, like the RCON one)
@@ -240,7 +241,7 @@ def server_argv(repo: Path, *, port: int, run_dir: Path) -> list[str]:
 
 def fakehost_argv(*, port: int, name: str, ver: str | None, frame: str, out_dir: Path, ids_from: int | None = None, hold: float = HOLD_S,
                   layers: Iterable[int] = (2,), modes: Iterable[str] = (), cmds: Iterable[str] = (), no_setup: bool = True, frames: int = 60,
-                  wait_host: float | None = None, shift: int = 0, env_hours: int = 0, park_refuse: bool = False) -> list[str]:
+                  wait_host: float | None = None, shift: int = 0, env_hours: int = 0, park_refuse: bool = False, park_off: bool = False) -> list[str]:
     """tools.fakehost as one fake host: its own link port, log prefix, frame name and DLL version. `-u`: its output goes to a
     log file that the scenarios read while it runs, so it must not sit in a buffer until the process ends."""
     argv = [sys.executable, "-u", "-m", "tools.fakehost", "--port", str(port), "--name", name, "--shm", frame, "--out", str(out_dir),
@@ -252,6 +253,7 @@ def fakehost_argv(*, port: int, name: str, ver: str | None, frame: str, out_dir:
     argv += ["--shift", str(shift)] if shift else []
     argv += ["--env-hours", str(env_hours)] if env_hours else []
     argv += ["--park-refuse"] if park_refuse else []
+    argv += ["--park-off"] if park_off else []
     for command in cmds:
         argv += ["--cmd", command]
     return argv
@@ -557,12 +559,12 @@ class Env:
 
     def fakehost(self, client: Client, *, ver: str | None, ids_from: int | None = None, layers: Iterable[int] = (2,), modes: Iterable[str] = (),
                  cmds: Iterable[str] = (), hold: float = HOLD_S, no_setup: bool = True, wait_host: float | None = None, shift: int = 0,
-                 env_hours: int = 0, park_refuse: bool = False) -> FakeHost:
+                 env_hours: int = 0, park_refuse: bool = False, park_off: bool = False) -> FakeHost:
         """A fake Cyberpunk host connected to `client`'s link (waits until the client listens)."""
         client.wait_listening()
         argv = fakehost_argv(port=client.port, name=client.name, ver=ver, frame=client.frame, out_dir=self.run / f"frames-{client.name}", ids_from=ids_from,
                              hold=hold, layers=layers, modes=modes, cmds=cmds, no_setup=no_setup, wait_host=wait_host, shift=shift, env_hours=env_hours,
-                             park_refuse=park_refuse)
+                             park_refuse=park_refuse, park_off=park_off)
         proc = Proc(f"fakehost-{client.name}", argv, self.repo, self._child_env(), self.run / "logs" / f"fakehost-{client.name}-{len(self.started)}.log")
         self.started.append(proc)
         self.logs[f"fake host {client.name}"] = proc.log
@@ -1413,9 +1415,10 @@ def scenario_breach(env: Env, rep: Report) -> None:
 # ---- Phase 7: the Afterlife hub (megaplan 7-P1) ------------------------------------------------------------------------------------
 # These checks need the Phase 7 server (7H: `/cyberblock hub`, the hub dimension, `hub` and `park` DOWN, the `parked` relay) merged. The fake host
 # `--vendor` (tools/fakehost.py) plays Cyberpunk: it prints every `hub` and `park` its DLL gets (and answers `park` with `parked`, or refuses it with
-# `--park-refuse`), RCON looks at the players' dimensions. The contract is shared/protocol.md "Phase 7": on entering the server sends `hub in:true` and then
-# `park on:true`, on leaving `park on:false` and then `hub in:false`, only to linked players; every new host session of a player still in the hub hears the
-# entering pair again; a refused park takes the player out. The server has the join password on, like the live one: a locked player never gets in.
+# `--park-refuse`, or as Cyberblock Off does with `--park-off`), RCON looks at the players' dimensions. The contract is shared/protocol.md "Phase 7": on
+# entering the server sends `hub in:true` and then `park on:true`, on leaving `park on:false` and then `hub in:false`, only to linked players; every new host
+# session of a player still in the hub hears the entering pair again; a park refused while the cover is drawn takes the player out, one refused with no cover
+# (Cyberblock Off) keeps them in. The server has the join password on, like the live one: a locked player never gets in.
 # Limits: RCON's `execute as` carries the console's operator permission, so a hub command wrongly kept to operators would still pass here, and the
 # pause screen's button and the hub portal (a client payload, a right-click) are not driven: Re-test P7-5 covers both with a non-operator guest.
 HUB_DIMENSION = "cyberblock:afterlife"
@@ -1424,7 +1427,8 @@ DIMENSION = re.compile(r'entity data: "([a-z0-9_.:/-]+)"')
 HUB_ENTER = [("hub", True), ("park", True)]
 HUB_LEAVE = [("park", False), ("hub", False)]
 PARK_CONFIRMED = r"hub: park path: confirmed"  # 7H's once-a-run line when the first `parked` answer reached the server's hub
-PARK_REFUSED = r"hub: CbHost1 V not parked \(blocked"  # 7H's line for a `parked ok:false`
+PARK_REFUSED = r"hub: CbHost1 V not parked \(blocked"  # 7H's line for a `parked ok:false` that takes the player out
+PARK_NO_COVER = r"hub: CbHost1 V not parked yet \(blocked \(Cyberblock is not active\)\)"  # 7H's line for one that keeps them in (no cover drawn)
 
 
 def hub_events(host: FakeHost, since: int = 0) -> list[tuple[str, bool]]:
@@ -1538,6 +1542,17 @@ def scenario_hub(env: Env, rep: Report) -> None:
     mark = server.log.mark()
     host.stop()
     rep.step("that session ends too", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, mark), must=True)
+
+    mark = server.log.mark()
+    host = env.fakehost(client, ver=env.mod_version, layers=(), modes=("vendor",), park_off=True)  # Cyberblock Off: no cover, the park refused as not active
+    rep.step("a link whose Cyberblock is Off starts a session", lambda: server.log.wait(r"session: CbHost1 started", T_JOIN, mark), must=True)
+    rep.step("`parked ok:false` (Cyberblock is not active) keeps the host in the hub: the entering pair and nothing after it",
+             lambda: hub_story(host, 0, HUB_ENTER))
+    rep.step("the no-cover refusal is logged and the host's Steve stays in the hub",
+             lambda: server.log.wait(PARK_NO_COVER, T_EFFECT, mark) and dimension_of(server, "CbHost1") == HUB_DIMENSION)
+    mark = server.log.mark()
+    host.stop()
+    rep.step("that session ends as well", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, mark), must=True)
 
     mark = server.log.mark()
     host = env.fakehost(client, ver=env.mod_version, layers=(), modes=("vendor",), park_refuse=True)  # this time V cannot be parked

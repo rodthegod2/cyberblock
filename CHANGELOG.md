@@ -67,8 +67,13 @@ side; the mod, plugin and scripts of Phase 7 have their own entries. The in-game
 - **Harness.** `tools.mpcheck hub`, on a server with the join password like the live one: a locked player's `/cyberblock hub` does nothing; `/cyberblock hub`
   sends the host's DLL `hub in:true` then `park on:true`, once each, puts Steve in `cyberblock:afterlife` and the DLL's `parked` reaches the server; a guest's
   trip tells no DLL; leaving sends `park on:false` then `hub in:false` and puts Steve back; a link dropped inside the hub ends the session and a returning one
-  hears the entering pair again; a refused park takes the host out; the relay drops nothing. It needs 7H's `/cyberblock hub` (and the refused-park exit,
-  which 7H still has to add).
+  hears the entering pair again; a park refused while Cyberblock is Off (`--park-off`) keeps the host in, one refused while live takes the host out; the
+  relay drops nothing. It needs 7H's `/cyberblock hub`.
+- **Hub fixes (7H review).** A park refused with no cover drawn (`blocked (Cyberblock is not active)`, `blocked (no player)`) no longer takes the player out
+  of the hub: a host with Cyberblock Off may use it and V is parked at On (`hub: <name> V not parked yet (...)`). The client stops placing Steve from `cam`
+  as its level becomes the hub (before his first tick there); the DLL counts as showing the hub only while its cams come (5 s), so with Cyberblock Off
+  Minecraft's own window is the input and the DLL's last cursor is forgotten. Holding a block or food item no longer stops a survival guest's right-click on
+  the Holo-Table (placing stays refused by `mayBuild`).
 - **Docs.** HOW-TO-PLAY "Talking to Night City (Phase 7)", "The Afterlife hub (Phase 7)" and "The Holo-Table (Phase 7)", "Re-test: Wave C, Phase 7" in
   `docs/TESTING-PLAN.md` (the host shop, the hub with V parked and its safety checks, the Holo-Table spawns, fast travel), and the descopes of Phase 0
   checks (f) and (g): hosts' shop stock, the 2D fallback of the table, V unseen while parked, the repair of a Cyberpunk car and fast travel only when the
