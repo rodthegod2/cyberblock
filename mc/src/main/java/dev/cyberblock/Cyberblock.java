@@ -124,6 +124,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.mode.overlord.Overlord.init();
 		// Phase 8V: the Hacker in the Van (the Van and its drones, the netrunner's screen state, the Van's hacks; megaplan 8-V1)
 		dev.cyberblock.mode.van.VanModule.init();
+		// Phase 8 integration: the packages' hooks (matches into the Overlord, player hacks, Downed and spectate; Heat into the Auto-Director)
+		dev.cyberblock.mode.ModeWiring.init();
 		LOG.info("cyberblock loaded");
 	}
 
