@@ -27,7 +27,7 @@ Scenarios (megaplan task 1-T2). Each one starts what it needs on its own test po
   meetup        Phase 3: Meet Up both ways with a fake host answering `vteleport` (the cooldown too)
   figures       Phase 5: one fake host `--figures` (the tagged `npcs` list: a person per skin group, every animation bit, coloured cars, a police
                 chase): every person and car stands as a proxy, the dead victim's body goes and does not come back, a hit on a tagged figure
-                reaches the host, the figures go with the session and the relay drops nothing
+                reaches the host (a guest's attack), the figures go with the session and the relay drops nothing
   joinpassword  a server with a join password: a host waits as a guest until `/login`, then hosts at once; after a reconnect it
                 is remembered; five wrong passwords kick; the password is in no log (it is random per run, like the RCON one)
 
@@ -1066,9 +1066,11 @@ def scenario_figures(env: Env, rep: Report) -> None:
     time.sleep(T_QUIET)
     rep.step("the dead victim does not come back and no figure is added or lost",
              lambda: proxy_count(server) == FIGURE_PEOPLE and proxy_count(server, "vehicle") == FIGURE_CARS)
+    env.client("CbGuest1", join=server.port)
+    rep.step("a guest joined", lambda: server.log.wait(r"handshake: CbGuest1 .*-> guest", T_JOIN), must=True)
     mark = host.log.mark()
-    server.test(f"hit CbHost1 {FIGURE_HIT} 5.0")  # from the console: no player behind it, always allowed
-    rep.step("a hit on a tagged figure reaches the fake host by its id", lambda: host.log.wait(hit_pattern("CbHost1", FIGURE_HIT), T_EFFECT, mark))
+    server.test(f"hit CbHost1 {FIGURE_HIT} 5.0", as_player="CbGuest1")  # a player's attack: a hit from the console is no `hit` for Cyberpunk
+    rep.step("a guest's hit on a tagged figure reaches the fake host by its id", lambda: host.log.wait(hit_pattern("CbHost1", FIGURE_HIT), T_EFFECT, mark))
     mark = server.log.mark()
     host.stop()  # Cyberpunk is closed: the DLL link drops
     rep.step("the session ends when the link drops", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, mark), must=True)

@@ -1321,7 +1321,7 @@ def test_figures_scenario_passes_against_an_ideal_server(tmp_path):
     sim = Sim5Env(tmp_path)
     rep = run_scenario(sim, "figures")
     assert rep.ok, failed(rep)
-    assert len(rep.checks) == 8 and sim.max_hosts == 1
+    assert len(rep.checks) == 9 and sim.max_hosts == 1
     assert mpcheck.FIGURE_PEOPLE == 39 and mpcheck.FIGURE_CARS == 6 and mpcheck.FIGURE_PEOPLE + mpcheck.FIGURE_CARS + 1 == fakehost.FIGURE_COUNT  # + the victim
     assert mpcheck.FIGURE_HIT in sim.hosts["CbHost1"]["ids"] and f'"target": "{mpcheck.FIGURE_HIT}"' in sim.hosts["CbHost1"]["log"].text()
 
@@ -1330,7 +1330,7 @@ def test_figures_scenario_passes_against_an_ideal_server(tmp_path):
     ("tags-dropped", {"every tagged person and car stands as a proxy (39 people once the victim's body has gone, 6 cars)"}),
     ("figure-lost", {"every tagged person and car stands as a proxy (39 people once the victim's body has gone, 6 cars)"}),
     ("victim-stays", {"every tagged person and car stands as a proxy (39 people once the victim's body has gone, 6 cars)"}),
-    ("drop-hits", {"a hit on a tagged figure reaches the fake host by its id"}),
+    ("drop-hits", {"a guest's hit on a tagged figure reaches the fake host by its id"}),
     ("figures-stay", {"the figures go with the session"}),
     ("no-session-end", {"the session ends when the link drops"}),
 ])
@@ -1348,7 +1348,7 @@ def test_figures_scenario_asks_a_fake_host_for_the_figures_mode_with_no_layer_an
             return super().fakehost(client, **kw)
 
     run_scenario(Spy(tmp_path), "figures")
-    assert seen == [("CbHost1", (), ("figures",), mpcheck.T_JOIN)]
+    assert seen == [("CbHost1", (), ("figures",), mpcheck.T_JOIN)]  # the guest is a plain client: no fake host
     assert mpcheck.Ports().server("figures") == mpcheck.SERVER_BASE + 3 and "figures" in mpcheck.SCENARIOS
     assert mpcheck.main(["figures", "--dry-run", "--client-port-base", "25824", "--server-port-base", "25985", "--frame-prefix", "Local\\CyberblockFrame5PM"]) == 0
     out = capsys.readouterr().out
