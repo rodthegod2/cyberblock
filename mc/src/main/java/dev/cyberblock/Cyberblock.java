@@ -116,6 +116,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.npc.NpcModule.init();
 		// Phase 7T: the Holo-Table and Spawn Beacon blocks, the table's pins, layers and spawns, the landmark content kind (7-T1)
 		dev.cyberblock.holo.HoloModule.init();
+		// Phase 8O: the Overlord Console, Threat Points, fair spawns and events, the Auto-Director (megaplan 8-O1)
+		dev.cyberblock.mode.overlord.Overlord.init();
 		LOG.info("cyberblock loaded");
 	}
 

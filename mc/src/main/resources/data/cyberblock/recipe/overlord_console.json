@@ -1,0 +1,19 @@
+{
+	"type": "minecraft:crafting_shaped",
+	"category": "misc",
+	"key": {
+		"E": "minecraft:ender_eye",
+		"C": "minecraft:comparator",
+		"R": "minecraft:redstone",
+		"I": "minecraft:iron_ingot"
+	},
+	"pattern": [
+		"RER",
+		"ICI",
+		"III"
+	],
+	"result": {
+		"id": "cyberblock:overlord_console",
+		"count": 1
+	}
+}
