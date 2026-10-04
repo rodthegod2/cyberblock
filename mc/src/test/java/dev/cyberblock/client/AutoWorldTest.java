@@ -2,9 +2,13 @@ package dev.cyberblock.client;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Plan retest3 M5: the title screen's "Play Cyberblock" button never covers a vanilla widget, the logo or the splash. */
 class AutoWorldTest {
@@ -67,5 +71,40 @@ class AutoWorldTest {
 	@Test
 	void aTitleScreenWithoutWidgetsGetsTheCorner() {
 		assertArrayEquals(new int[] {4, 4, 100}, AutoWorld.place(480, 270, List.of()));
+	}
+
+	@Test
+	void theJoinButtonGetsItsOwnSpaceNextToPlay() {
+		for (int[] size : new int[][] {{480, 270}, {640, 240}, {427, 240}, {960, 540}}) {
+			List<int[]> widgets = vanilla(size[0], size[1]);
+			int[] play = AutoWorld.place(size[0], size[1], widgets);
+			widgets.add(new int[] {play[0], play[1], play[2], AutoWorld.BUTTON_HEIGHT});
+			int[] join = AutoWorld.place(size[0], size[1], widgets);
+			assertClear(join, size[0], size[1], widgets);
+		}
+	}
+
+	@Test
+	void joinFileGivesNameAndAddress(@TempDir final Path dir) throws IOException {
+		Path file = dir.resolve("join.json");
+		Files.writeString(file, "{\"schema\": 1, \"name\": \" Friends \", \"address\": \" play.example.org:25570 \"}");
+		assertEquals(new AutoWorld.JoinTarget("Friends", "play.example.org:25570"), AutoWorld.readJoin(file));
+	}
+
+	@Test
+	void joinFileNameDefaults(@TempDir final Path dir) throws IOException {
+		Path file = dir.resolve("join.json");
+		Files.writeString(file, "{\"address\": \"example.org\"}");
+		assertEquals(new AutoWorld.JoinTarget("Cyberblock", "example.org"), AutoWorld.readJoin(file));
+	}
+
+	@Test
+	void noJoinButtonWithoutAUsableFile(@TempDir final Path dir) throws IOException {
+		assertNull(AutoWorld.readJoin(dir.resolve("missing.json")));
+		Path file = dir.resolve("join.json");
+		for (String bad : List.of("", "{", "[]", "{}", "{\"address\": 5}", "{\"address\": \"\"}", "{\"address\": \"bad host name\"}", "{\"address\": \"host:99999\"}")) {
+			Files.writeString(file, bad);
+			assertNull(AutoWorld.readJoin(file), bad);
+		}
 	}
 }
