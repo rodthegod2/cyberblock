@@ -77,6 +77,14 @@ def test_overrides(inputs):
         assert z.testzip() is None
 
 
+def test_options_txt_is_current_and_names_only_real_packs(inputs):
+    # 5023 = 26.3's world_version (version.json): a current `version:` line means Options.load runs no datafixer, and
+    # "fabric" is not a pack id in 26.3 with Fabric API (the client logs and drops it).
+    with zipfile.ZipFile(inputs.build()) as z:
+        lines = z.read("overrides/options.txt").decode().splitlines()
+    assert lines == ["version:5023", 'resourcePacks:["vanilla","file/cyberblock-pack-9.8.7.zip"]', "incompatibleResourcePacks:[]"]
+
+
 def parse_servers_dat(data: bytes):
     """A tiny reader for exactly the NBT shape servers_dat writes, so the test does not trust the writer's own layout."""
     assert data[0] == 10 and data[1:3] == b"\x00\x00"  # unnamed root compound

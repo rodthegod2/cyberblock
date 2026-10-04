@@ -76,9 +76,17 @@ def servers_dat(name: str, address: str) -> bytes:
     return b"\x0a" + nbt_string("") + b"\x09" + nbt_string("servers") + b"\x0a" + struct.pack(">i", 1) + entry + b"\x00"
 
 
+# Data version of Minecraft 26.3 (version.json world_version). Options.load runs the options datafixer from the file's
+# `version:` line, so stamping the current one means no fixer runs.
+OPTIONS_DATA_VERSION = 5023
+
+
 def options_txt(pack_name: str) -> bytes:
-    """Only what enables the pack: every other option keeps its default (the launcher imports into a new instance)."""
-    return f'resourcePacks:["vanilla","fabric","file/{pack_name}"]\nincompatibleResourcePacks:[]\n'.encode()
+    """Only what enables the pack: every other option keeps its default (the launcher imports into a new instance).
+
+    Pack ids are only ones that exist in 26.3 with Fabric API ("fabric" does not; the client drops unknown ids)."""
+    return (f'version:{OPTIONS_DATA_VERSION}\nresourcePacks:["vanilla","file/{pack_name}"]\n'
+            'incompatibleResourcePacks:[]\n').encode()
 
 
 def mod_entries(mods_from: Path, urls: dict) -> list[dict]:
