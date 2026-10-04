@@ -1,6 +1,7 @@
 package dev.cyberblock.cyber;
 
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.holo.HoloHooks;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -482,10 +483,13 @@ public final class CyberwareEffects {
 		Cyberblock.LOG.info("cyberware: activate kerenzikov");
 	}
 
-	/** Biomonitor, every tick: at 30 % health or less it heals 8 and gives Regeneration I (then 90 s to recharge). */
+	/**
+	 * Biomonitor, every tick: at 30 % health or less it heals 8 and gives Regeneration I (then 90 s to recharge). Not while the player
+	 * is down (8T holds a downed player at half a heart: the heal would be lost and the implant spent).
+	 */
 	private static void biomonitor(final ServerPlayer player, final long now) {
 		if (!CyberData.has(player, Cyberware.BIOMONITOR) || !CyberwareRules.biomonitor(player.getHealth(), player.getMaxHealth())
-			|| !CyberData.ready(player, Cyberware.BIOMONITOR)) {
+			|| !CyberData.ready(player, Cyberware.BIOMONITOR) || HoloHooks.downed.test(player)) {
 			return;
 		}
 
