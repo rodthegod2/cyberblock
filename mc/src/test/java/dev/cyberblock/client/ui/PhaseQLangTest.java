@@ -20,7 +20,9 @@ class PhaseQLangTest {
 		"cyberblock.outline.erase", "cyberblock.outline.erase.on", "cyberblock.outline.erase.off", "cyberblock.outline.rescued",
 		"cyberblock.settings.title", "cyberblock.settings.button", "cyberblock.settings.locked",
 		"cyberblock.view.distance", "cyberblock.view.shoulder", "cyberblock.view.fov", "cyberblock.view.recenter",
-		"cyberblock.view.vehicle_distance", "cyberblock.stepup", "cyberblock.ui.loading");
+		"cyberblock.view.vehicle_distance", "cyberblock.stepup", "cyberblock.ui.loading",
+		"cyberblock.debug.aim.on", "cyberblock.debug.aim.off", "cyberblock.debug.view.on", "cyberblock.debug.view.off",
+		"cyberblock.debug.client_only");
 
 	private static JsonObject lang() throws IOException {
 		return JsonParser.parseString(Files.readString(LANG)).getAsJsonObject();
