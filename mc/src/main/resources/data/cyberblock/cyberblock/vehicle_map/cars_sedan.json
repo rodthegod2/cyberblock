@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"model": "sedan",
+	"colour": "#8a8f99",
+	"vc": [
+		"Car/Cortes",
+		"Car/Emperor",
+		"Car/Galena",
+		"Car/GalenaNomad",
+		"Car/Hozuki",
+		"Car/Maimai",
+		"Car/Merrimac",
+		"Car/Octant",
+		"Car/Thrax"
+	],
+	"priority": 10
+}

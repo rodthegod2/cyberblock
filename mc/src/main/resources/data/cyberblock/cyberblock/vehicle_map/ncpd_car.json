@@ -1,0 +1,9 @@
+{
+	"schema": 1,
+	"model": "police_cruiser",
+	"colour": "#1f2c4a",
+	"type": "Car",
+	"faction": "NCPD",
+	"keepColour": true,
+	"priority": 20
+}

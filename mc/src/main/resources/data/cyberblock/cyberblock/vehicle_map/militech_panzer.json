@@ -1,0 +1,9 @@
+{
+	"schema": 1,
+	"model": "armoured_van",
+	"colour": "#3b4136",
+	"type": "Panzer",
+	"faction": "Militech",
+	"keepColour": true,
+	"priority": 20
+}
