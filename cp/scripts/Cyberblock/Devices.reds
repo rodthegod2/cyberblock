@@ -14,11 +14,12 @@
 //   pos, yaw   world position (Cyberpunk space) and the yaw convention of Npcs.reds (degrees from +Y about +Z).
 //   size   always zero (Minecraft takes the size from device_map; no 2.31 bounding-box API, Phase 0 c).
 //   state  EDeviceStatus (DISABLED -2, UNPOWERED -1, OFF 0, ON 1), or EDoorStatus (SEALED -2, LOCKED -1, CLOSED 0,
-//          OPENED 1) for doors. A device whose status is INVALID (logic not ready) is left out until it has one.
+//          OPENED 1) for doors, and CLOSED 0 / OPENED 1 for road barriers (RoadBlockControllerPS.IsBlocking: raised is
+//          closed; contract deviation, 1.9 item 4 names doors only). A device whose status is INVALID (logic not
+//          ready) is left out until it has one.
 //   flags  1 locked (door), 2 secure (IsDeviceSecured), 4 quest-locked (door SEALED or device DISABLED), 8 broken,
-//          16 powered (not UNPOWERED). Traffic lights add their colour (an @addMethod(TrafficLight) getter of the
-//          protected m_lightState) as bits 32 and 64: 0 green, 32 red, 64 yellow, 96 invalid (contract deviation: 1.9
-//          has no colour field, see the 4-S1 report).
+//          16 powered (not UNPOWERED); bits 1-16 only. Traffic-light colour is not sent: 1.9 has no field for it
+//          (contract deviation for the integrator, see the 4-S1 report).
 //
 // Which devices exist: no 2.31 script query lists them, so a registry is kept from Codeware's Entity/AfterAttach and
 // Entity/Detach callbacks filtered with EntityTarget.Type(n"Device") (it matches subclasses), the Tether.reds pattern:
@@ -36,11 +37,16 @@
 // Actions: Minecraft's n"devact" events (EventId = request id, EventTarget = device id, EventName = act) run through the
 // device's own persistent-state actions with V as executor (DeviceAction.SetExecutor + ScriptableDeviceComponentPS.
 // ExecutePSAction, the vanilla path): doors ActionSetOpened / ActionSetClosed / ActionToggleOpen / ActionToggleLock;
-// other devices ActionSetDeviceON / ActionSetDeviceOFF / ActionToggleON (on, off, enable, disable, toggle), the
-// quickhack distraction (through an @addMethod, the action builder is protected) and ActionSetDeviceAttitude
-// (friendly). Never on a quest-locked device; a locked door does not open. call, buy, breach and anything else answer
-// Cyberblock_DeviceResult(id, false, "unsupported") (section 1.8 amendment item 6). Every request is answered; while not
-// live with "Cyberblock is not active". Each one is logged: 'devices: devact <req> <act> <class> <id>: ok|refused (<why>)'.
+// road barriers their ToggleBlockade (open, close, toggle; through an @addMethod, the builder is protected; only while
+// the barrier is ON, as vanilla); other devices ActionSetDeviceON / ActionSetDeviceOFF / ActionToggleON (on, off,
+// enable, disable, toggle), the quickhack distraction (through an @addMethod) and ActionSetDeviceAttitude (friendly,
+// sensor devices only: cameras and turrets). Refused up front, since Minecraft changes the block on devresult ok and
+// the handlers refuse silently: anything on a quest-locked device; close, lock, off and disable (a toggle counts as
+// what it amounts to) on a quest-marked device (IsMarkedAsQuest: the change would stay in the host's save); on, off,
+// toggle, enable, disable and door toggle, lock, unlock on an unpowered device; opening a locked door. call, buy,
+// breach and anything else answer Cyberblock_DeviceResult(id, false, "unsupported") (section 1.8 amendment item 6).
+// Every request is answered; while not live with "Cyberblock is not active". Each one is logged:
+// 'devices: devact <req> <act> <class> <id>: ok|refused (<why>)'.
 //
 // Wiring: CyberblockSystem.Tick calls Update every 100 ms, and Events.reds hands every n"devact" to OnEvent whatever the
 // state (redscript cannot @wrapMethod a class of the same mod: UNRESOLVED_METHOD, so these are two plain calls).
@@ -51,8 +57,10 @@
 // ScriptableDeviceComponentPS.ExecutePSAction / IsBroken / ActionSetDeviceON / ActionSetDeviceOFF / ActionToggleON /
 // ActionSetDeviceAttitude / ActionQuickHackDistraction (scriptableDeviceBasePS.swift 5427, 5770, 3833, 3853, 3800, 5087,
 // 2524), DoorControllerPS.GetDoorState / IsLocked / IsSealed / ActionSetOpened / ActionSetClosed / ActionToggleOpen /
-// ActionToggleLock (doorController.swift 198, 110, 118, 745, 765, 675, 831), TrafficLight.m_lightState
-// (trafficLight.swift 4), TDBID.Create / TDBID.ToNumber. Codeware 1.20.3: CallbackSystem.RegisterCallback,
+// ActionToggleLock (doorController.swift 198, 110, 118, 745, 765, 675, 831), ScriptableDeviceComponentPS.IsUnpowered
+// (scriptableDeviceBasePS.swift 1405), SharedGameplayPS.IsMarkedAsQuest (deviceComponentBase.swift 646),
+// RoadBlockControllerPS.IsBlocking / ActionToggleBlockade (roadBlockController.swift 21, 89), SensorDevice
+// (sensorDevice.swift 23), TDBID.Create / TDBID.ToNumber. Codeware 1.20.3: CallbackSystem.RegisterCallback,
 // CallbackSystemHandler.AddTarget / SetLifetime / IsRegistered, EntityTarget.Type, EntityLifecycleEvent.GetEntity.
 
 // Declared here (rule 0.14, section 1.8), implemented by Cyberblock.dll (devices.cpp, natives.cpp; package 4D).
@@ -209,24 +217,72 @@ public class CyberblockDeviceService extends ScriptableService {
       return "quest locked";
     }
     let door = ps as DoorControllerPS;
+    let gate = ps as RoadBlockControllerPS;
+    // What a toggle amounts to, for the checks below.
+    let effect = act;
+    if Equals(act, n"toggle") {
+      if IsDefined(door) {
+        effect = door.IsOpen() ? n"close" : n"open";
+      } else if IsDefined(gate) {
+        effect = gate.IsBlocking() ? n"open" : n"close";
+      } else {
+        effect = Equals(device.GetDeviceState(), EDeviceStatus.ON) ? n"off" : n"on";
+      }
+    }
+    // A quest-marked device is not shut, locked or switched off: the change goes into the host's save and a quest that
+    // already ran may never undo it. Opening and unlocking stay allowed, so nothing gets stuck.
+    if ps.IsMarkedAsQuest() && (Equals(effect, n"close") || Equals(effect, n"lock") || Equals(effect, n"off")
+      || Equals(effect, n"disable")) {
+      return "quest locked";
+    }
+    // Refused up front what the handlers would refuse later without telling (Minecraft acts on devresult ok):
+    // OnSetDeviceON/OFF, door OnToggleOpen/OnToggleLock answer 'Unpowered or Disabled'.
+    let unpowered = ps.IsUnpowered();
     let action: ref<ScriptableDeviceAction>;
     if IsDefined(door) {
+      // SetOpened / SetClosed work without power; the toggles do not.
       if Equals(act, n"open") || (Equals(act, n"toggle") && !door.IsOpen()) {
         if door.IsLocked() {
           return "locked";
         }
+        if unpowered && Equals(act, n"toggle") {
+          return "unpowered";
+        }
         action = Equals(act, n"open") ? door.ActionSetOpened() : door.ActionToggleOpen();
       } else if Equals(act, n"close") || Equals(act, n"toggle") {
+        if unpowered && Equals(act, n"toggle") {
+          return "unpowered";
+        }
         action = Equals(act, n"close") ? door.ActionSetClosed() : door.ActionToggleOpen();
       } else if Equals(act, n"lock") || Equals(act, n"unlock") {
         if Equals(door.IsLocked(), Equals(act, n"lock")) {
           return ""; // already as asked
         }
+        if unpowered {
+          return "unpowered";
+        }
         action = door.ActionToggleLock();
       } else {
         return "unsupported";
       }
+    } else if IsDefined(gate) {
+      // Road barriers: open = lowered (not blocking), close = raised. Vanilla offers the toggle only while it is ON
+      // (ToggleBlockade.IsAvailable).
+      if !Equals(effect, n"open") && !Equals(effect, n"close") {
+        return "unsupported";
+      }
+      if Equals(gate.IsBlocking(), Equals(effect, n"close")) {
+        return ""; // already as asked
+      }
+      if !gate.IsON() {
+        return unpowered ? "unpowered" : "switched off";
+      }
+      action = gate.CyberblockToggleBlockade();
     } else {
+      if unpowered && (Equals(act, n"on") || Equals(act, n"off") || Equals(act, n"toggle") || Equals(act, n"enable")
+        || Equals(act, n"disable")) {
+        return "unpowered";
+      }
       if Equals(act, n"on") || Equals(act, n"enable") {
         action = ps.ActionSetDeviceON();
       } else if Equals(act, n"off") || Equals(act, n"disable") {
@@ -236,6 +292,10 @@ public class CyberblockDeviceService extends ScriptableService {
       } else if Equals(act, n"distract") {
         action = ps.CyberblockDistraction();
       } else if Equals(act, n"friendly") {
+        // Only sensor devices (cameras, turrets) handle SetDeviceAttitude; elsewhere it would do nothing.
+        if !IsDefined(device as SensorDevice) {
+          return "unsupported";
+        }
         action = ps.ActionSetDeviceAttitude();
       } else {
         return "unsupported";
@@ -507,16 +567,21 @@ public class CyberblockDeviceService extends ScriptableService {
     return n"";
   }
 
-  // EDoorStatus for doors, else EDeviceStatus.
+  // EDoorStatus for doors, the same CLOSED 0 / OPENED 1 for road barriers (raised = closed), else EDeviceStatus.
   public static func State(device: ref<Device>) -> Int32 {
-    let door = device.GetDevicePS() as DoorControllerPS;
+    let ps = device.GetDevicePS();
+    let door = ps as DoorControllerPS;
     if IsDefined(door) {
       return EnumInt(door.GetDoorState());
+    }
+    let gate = ps as RoadBlockControllerPS;
+    if IsDefined(gate) {
+      return gate.IsBlocking() ? 0 : 1;
     }
     return EnumInt(device.GetDeviceState());
   }
 
-  // 1 locked, 2 secure, 4 quest-locked, 8 broken, 16 powered; traffic lights add their colour in bits 32 and 64.
+  // 1 locked, 2 secure, 4 quest-locked, 8 broken, 16 powered (section 1.9: bits 1-16 only).
   public static func Flags(device: ref<Device>) -> Int32 {
     let ps = device.GetDevicePS();
     if !IsDefined(ps) {
@@ -539,10 +604,6 @@ public class CyberblockDeviceService extends ScriptableService {
     }
     if NotEquals(status, EDeviceStatus.UNPOWERED) {
       flags += 16;
-    }
-    let traffic = device as TrafficLight;
-    if IsDefined(traffic) {
-      flags += 32 * EnumInt(traffic.CyberblockLightColor());
     }
     return flags;
   }
@@ -639,10 +700,10 @@ public class CyberblockDeviceService extends ScriptableService {
   }
 }
 
-// The traffic light's colour (protected m_lightState, trafficLight.swift 4).
-@addMethod(TrafficLight)
-public func CyberblockLightColor() -> worldTrafficLightColor {
-  return this.m_lightState;
+// The road barrier's toggle (the builder is protected; OnToggleBlockade flips m_isBlocking).
+@addMethod(RoadBlockControllerPS)
+public func CyberblockToggleBlockade() -> ref<ScriptableDeviceAction> {
+  return this.ActionToggleBlockade();
 }
 
 // The distraction quickhack's action (the builder is protected; subclasses' overrides apply).
