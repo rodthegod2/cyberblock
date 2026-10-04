@@ -20,7 +20,8 @@ import java.util.zip.ZipOutputStream;
 
 /**
  * One backup, with no Minecraft types in it: zip the world folder into {@code <dir>/cyberblock-<date>.zip} (written as
- * {@code .zip.part}, then renamed, so a half file never looks like a backup), then keep only the newest {@code keep}. The caller has
+ * {@code .zip.part}, then renamed, so a half file never looks like a backup; any exit but DONE deletes it), then prune as
+ * {@link BackupRules#toPrune} says (the newest {@code keep} daily zips, plus a few timed manual ones). The caller has
  * already saved the world and holds saving off while this runs.
  */
 final class BackupJob {
@@ -30,10 +31,12 @@ final class BackupJob {
 	record Result(Outcome outcome, String file, long bytes, String detail) {}
 
 	private static final String PART = ".part";
+	private static final int COPY_CHUNK = 1 << 20;
 
 	private BackupJob() {}
 
 	static Result run(final Path world, final Path dir, final int keep, final LocalDateTime now, final LongSupplier freeBytes, final BooleanSupplier cancelled) {
+		Path part = null; // set while a half file may exist; deleted on every exit but DONE (a disk-full failure must not keep the disk full)
 		try {
 			Files.createDirectories(dir);
 			deleteStaleParts(dir);
@@ -45,14 +48,14 @@ final class BackupJob {
 			}
 
 			String name = BackupRules.fileName(now, names(dir));
-			Path part = dir.resolve(name + PART);
+			part = dir.resolve(name + PART);
 			Path target = dir.resolve(name);
 			if (!zip(world, dir, part, cancelled)) {
-				Files.deleteIfExists(part);
 				return new Result(Outcome.CANCELLED, null, 0, "the server is stopping");
 			}
 
 			Files.move(part, target, StandardCopyOption.ATOMIC_MOVE);
+			part = null; // it is the backup now
 			for (String old : BackupRules.toPrune(names(dir), keep)) {
 				if (!old.equals(name)) { // never the one just made, whatever the clock did
 					Files.deleteIfExists(dir.resolve(old));
@@ -62,6 +65,14 @@ final class BackupJob {
 			return new Result(Outcome.DONE, name, Files.size(target), "");
 		} catch (IOException | RuntimeException e) {
 			return new Result(Outcome.FAILED, null, 0, e.toString());
+		} finally {
+			if (part != null) {
+				try {
+					Files.deleteIfExists(part);
+				} catch (IOException e) {
+					// left for deleteStaleParts at the next backup
+				}
+			}
 		}
 	}
 
@@ -91,6 +102,7 @@ final class BackupJob {
 		String root = world.getFileName().toString();
 		try (OutputStream out = Files.newOutputStream(part); ZipOutputStream zip = new ZipOutputStream(out)) {
 			boolean[] stopped = {false};
+			byte[] buffer = new byte[COPY_CHUNK];
 			walk(world, skipDir, (file, attrs) -> {
 				if (stopped[0] || cancelled.getAsBoolean()) {
 					stopped[0] = true;
@@ -102,7 +114,16 @@ final class BackupJob {
 					ZipEntry entry = new ZipEntry(root + "/" + world.relativize(file).toString().replace('\\', '/'));
 					entry.setTime(attrs.lastModifiedTime().toMillis());
 					zip.putNextEntry(entry);
-					in.transferTo(zip);
+					// chunk by chunk, so a stopping server is heard inside one big file too (it waits only briefly for this thread)
+					for (int n; (n = in.read(buffer)) > 0; ) {
+						if (cancelled.getAsBoolean()) {
+							stopped[0] = true;
+							return;
+						}
+
+						zip.write(buffer, 0, n);
+					}
+
 					zip.closeEntry();
 				} catch (NoSuchFileException e) {
 					// gone: nothing to back up

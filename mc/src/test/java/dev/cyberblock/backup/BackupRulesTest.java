@@ -30,13 +30,21 @@ class BackupRulesTest {
 	}
 
 	@Test
-	void pruningKeepsTheNewestAndNeverTouchesOtherFiles() {
+	void pruningKeepsTheNewestDailyZipsAndNeverTouchesOtherFiles() {
 		List<String> names = List.of("cyberblock-2026-10-02.zip", "cyberblock-2026-10-04-050107.zip", "cyberblock-2026-10-04.zip",
 			"cyberblock-2026-10-01.zip", "cyberblock-2026-10-03.zip", "world.zip", "cyberblock-2026-10-05.zip.part");
-		assertEquals(List.of("cyberblock-2026-10-01.zip", "cyberblock-2026-10-02.zip", "cyberblock-2026-10-03.zip"), BackupRules.toPrune(names, 2));
-		assertEquals(List.of(), BackupRules.toPrune(names, 5));
+		assertEquals(List.of("cyberblock-2026-10-01.zip", "cyberblock-2026-10-02.zip"), BackupRules.toPrune(names, 2), "the timed zip is not counted in keep");
+		assertEquals(List.of(), BackupRules.toPrune(names, 4));
 		assertEquals(List.of(), BackupRules.toPrune(names, 99));
-		assertEquals(5, BackupRules.toPrune(names, 0).size());
+		assertEquals(4, BackupRules.toPrune(names, 0).size());
+	}
+
+	@Test
+	void timedManualZipsHaveTheirOwnCapAndNeverEvictADailyOne() {
+		List<String> names = List.of("cyberblock-2026-10-03.zip", "cyberblock-2026-10-04.zip", "cyberblock-2026-10-04-060000.zip",
+			"cyberblock-2026-10-04-070000.zip", "cyberblock-2026-10-04-080000.zip", "cyberblock-2026-10-04-090000.zip", "cyberblock-2026-10-03-230000.zip");
+		assertEquals(BackupRules.MANUAL_KEEP, 3);
+		assertEquals(List.of("cyberblock-2026-10-03-230000.zip", "cyberblock-2026-10-04-060000.zip"), BackupRules.toPrune(names, 7));
 	}
 
 	@Test

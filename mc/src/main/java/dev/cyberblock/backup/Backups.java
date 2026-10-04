@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -30,7 +31,7 @@ import net.minecraft.world.level.storage.LevelResource;
  * Daily server backups (megaplan 9-B1). At {@code backups.hour} (server local time) a dedicated server saves the world, holds saving off
  * (like {@code /save-off}) while a background thread zips it into {@code backups/cyberblock-<date>.zip}, restores saving, keeps the
  * newest {@code backups.keep} and logs {@code backup: <file> <size>}. {@code /cyberblock backup now} (ops) does the same on demand, also
- * on a world that is not a dedicated server. {@code tools.server_sync pull-backups} downloads the zips.
+ * on a world that is not a dedicated server; its extra zips of a day carry the time and have their own cap, so they never evict a daily one. {@code tools.server_sync pull-backups} downloads the zips.
  */
 public final class Backups {
 	private static final AtomicBoolean RUNNING = new AtomicBoolean();
@@ -41,6 +42,10 @@ public final class Backups {
 	private static volatile ScheduledExecutorService timer;
 	/** The day a daily backup was last tried (done, skipped or failed): one try, and one warning, per day. */
 	private static volatile LocalDate triedOn;
+	/** The running zip thread, if any; {@link #stopped} waits for it. */
+	private static volatile Thread zipThread;
+	/** How long a stopping server waits for the zip to notice: it checks between 1 MB chunks, so this is ample. */
+	private static final Duration STOP_WAIT = Duration.ofSeconds(10);
 
 	private Backups() {}
 
@@ -106,6 +111,18 @@ public final class Backups {
 	private static void stopped(final MinecraftServer server) {
 		stopping = true; // a zip in progress stops and drops its half file
 		stopTimer();
+		// the zip thread is a daemon: without this wait the JVM can exit before it hears the flag, leaving the .part and no log line
+		Thread zipping = zipThread;
+		if (zipping != null) {
+			try {
+				if (!zipping.join(STOP_WAIT)) {
+					Cyberblock.LOG.warn("backup: still zipping at shutdown; the next backup deletes its half file");
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		}
+
 		restoreSaving(); // the shutdown save must not be skipped
 	}
 
@@ -150,7 +167,7 @@ public final class Backups {
 			Path world = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
 			Path dir = backupsDir(server);
 			int keep = ServerConfig.get().backups().keep();
-			Thread.ofPlatform().daemon().name("cyberblock-backup").start(() -> {
+			zipThread = Thread.ofPlatform().daemon().name("cyberblock-backup").start(() -> {
 				BackupJob.Result result;
 				try {
 					result = BackupJob.run(world, dir, keep, LocalDateTime.now(), () -> usable(dir), () -> stopping);

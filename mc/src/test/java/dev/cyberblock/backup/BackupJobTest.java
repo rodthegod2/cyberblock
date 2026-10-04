@@ -3,10 +3,13 @@ package dev.cyberblock.backup;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -96,7 +99,7 @@ class BackupJobTest {
 	}
 
 	@Test
-	void manyBackupsOneDayWithKeepTwoAlwaysLeaveTheNewestTwo() throws IOException {
+	void manyBackupsOneDayKeepTheDailyOneAndTheNewestTimedOnes() throws IOException {
 		// found on a real server: after the plain name was pruned, the next backup reused it and pruned itself
 		LocalDateTime t = DAY;
 		for (int i = 0; i < 5; i++) {
@@ -106,8 +109,58 @@ class BackupJobTest {
 			t = t.plusSeconds(7);
 		}
 
-		assertEquals(List.of("cyberblock-2026-10-04-050021.zip", "cyberblock-2026-10-04-050028.zip"),
-			BackupJob.names(this.backups).stream().sorted().toList());
+		assertEquals(List.of("cyberblock-2026-10-04-050014.zip", "cyberblock-2026-10-04-050021.zip", "cyberblock-2026-10-04-050028.zip",
+			"cyberblock-2026-10-04.zip"), BackupJob.names(this.backups).stream().sorted().toList());
+	}
+
+	@Test
+	void sevenManualBackupsInOneDayLeaveEveryEarlierDailyZip() throws IOException {
+		Files.createDirectories(this.backups);
+		List<String> dailies = new ArrayList<>();
+		for (int day = 28; day <= 34; day++) { // 2026-09-28 .. 2026-10-04: keep=7 daily zips, today's included
+			String name = "cyberblock-" + LocalDate.of(2026, 9, 1).plusDays(day - 1) + ".zip";
+			Files.writeString(this.backups.resolve(name), "daily");
+			dailies.add(name);
+		}
+
+		LocalDateTime t = DAY.plusHours(9);
+		for (int i = 0; i < 7; i++) {
+			assertEquals(BackupJob.Outcome.DONE, run(7, t, PLENTY).outcome());
+			t = t.plusMinutes(1);
+		}
+
+		List<String> left = BackupJob.names(this.backups);
+		assertTrue(left.containsAll(dailies), left::toString);
+		assertEquals(dailies.size() + BackupRules.MANUAL_KEEP, left.size(), left::toString);
+	}
+
+	@Test
+	void aFailureWhileZippingLeavesNoHalfFile() throws IOException {
+		Files.createDirectories(this.backups);
+		Files.writeString(this.backups.resolve("cyberblock-2026-10-03.zip"), "old");
+		int[] calls = {0};
+		BackupJob.Result r = BackupJob.run(this.world, this.backups, 7, DAY, () -> PLENTY, () -> {
+			if (++calls[0] == 3) { // after something has been written
+				throw new UncheckedIOException(new IOException("There is not enough space on the disk"));
+			}
+
+			return false;
+		});
+		assertEquals(BackupJob.Outcome.FAILED, r.outcome());
+		assertTrue(r.detail().contains("not enough space"), r.detail());
+		assertEquals(List.of("cyberblock-2026-10-03.zip"), BackupJob.names(this.backups), "the .part is deleted, the older backup stays");
+	}
+
+	@Test
+	void aStopIsHeardInsideOneBigFile() throws IOException {
+		Path big = this.root.resolve("big").toAbsolutePath().normalize();
+		Files.createDirectories(big);
+		Files.write(big.resolve("r.0.0.mca"), new byte[3 << 20]);
+		int[] calls = {0};
+		BackupJob.Result r = BackupJob.run(big, this.backups, 7, DAY, () -> PLENTY, () -> ++calls[0] >= 3); // 1: before the file, 2+: per chunk
+		assertEquals(BackupJob.Outcome.CANCELLED, r.outcome());
+		assertEquals(3, calls[0], "stopped at the second chunk, not after the whole file");
+		assertEquals(List.of(), BackupJob.names(this.backups));
 	}
 
 	@Test
