@@ -14,6 +14,7 @@ import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.JoinLock;
 import dev.cyberblock.net.Permissions;
 import dev.cyberblock.net.ServerNet;
+import dev.cyberblock.npc.Gigs;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -288,6 +289,9 @@ public final class Breach {
 				ComponentUtils.formatList(o.ids().stream().map(BreachWire::daemonName).toList(), Component.literal(", "))));
 			Cyberblock.LOG.info("breach: {} solved {} (strength {}) on {} {} of {} -> daemon {}", who, o.ids(), o.strength(), device.type().id(),
 				device.idText(), session.name(), request);
+			if (player != null) {
+				Gigs.breached(player, device.type().id()); // the section 1.11 kind a breach_device gig names
+			}
 		}
 	}
 

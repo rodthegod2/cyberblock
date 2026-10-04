@@ -1,0 +1,15 @@
+{
+	"schema": 1,
+	"title": "Powder Run",
+	"text": "A fireworks crew lost its supplier. Sixteen measures of gunpowder, taken off the creepers that wander the alleys.",
+	"done_text": "Dry and loud. The crew says the show is back on.",
+	"type": "deliver_item",
+	"target": {
+		"item": "minecraft:gunpowder",
+		"count": 16
+	},
+	"reward": {
+		"eddies": 210
+	},
+	"difficulty": 2
+}
