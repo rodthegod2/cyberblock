@@ -16,6 +16,7 @@ class HoloMeshTest {
 	void topDownWithoutTurnIsTheAtlas() {
 		HoloCamera cam = new HoloCamera(100, 200, 64);
 		cam.setTilt(Math.toRadians(90));
+		cam.setYaw(0);
 		cam.setBase(60);
 		// north up, east right, heights do not move a point
 		assertEquals(110, cam.sx(110, 200, 100, 1.0), EPS);
@@ -118,6 +119,7 @@ class HoloMeshTest {
 		HoloMesh.Grid g = HoloMesh.build(16, 0, 0, 64, city(), List.of());
 		HoloCamera cam = new HoloCamera(0, 0, 64);
 		cam.setTilt(Math.toRadians(45));
+		cam.setYaw(0);
 		cam.setBase(g.base());
 		HoloMesh.Quads q = HoloMesh.quads(g, cam, 200, 150, 2.0, new HoloMesh.Quads());
 		assertTrue(q.count() > 16 * 12, "the plate, the tops and the tower's sides");
@@ -160,6 +162,7 @@ class HoloMeshTest {
 		HoloMesh.Grid g = HoloMesh.build(16, 0, 0, 16, tower, List.of());
 		HoloCamera cam = new HoloCamera(0, 0, 16);
 		cam.setTilt(Math.toRadians(60));
+		cam.setYaw(0);
 		cam.setBase(g.base());
 		HoloMesh.Quads q = HoloMesh.quads(g, cam, 0, 0, 4.0, new HoloMesh.Quads());
 		// plate + 256 tops + the tower cell's south face (its west/east/north are hidden or edge-on) + the window's southern rim

@@ -2,8 +2,8 @@ package dev.cyberblock.client.holo;
 
 /**
  * The Holo-Table's view of the miniature (pure, tested): an orthographic camera around a centre point, turned by {@code yaw}
- * (0 = north up, like the Atlas), tilted from straight down ({@code tilt} = 90 degrees, the Atlas view) to an oblique look
- * ({@link #MIN_TILT}), showing {@code radius} blocks from the centre to the edge of the view.
+ * (0 = north up, like the Atlas; it opens turned by 30 degrees so the city reads as 3D), tilted from straight down
+ * ({@code tilt} = 90 degrees, the Atlas view) to an oblique look ({@link #MIN_TILT}), showing {@code radius} blocks from the centre to the edge of the view.
  *
  * <p>A world point (x, y, z) becomes, around the screen point (sx0, sy0) at {@code scale} GUI px per block:
  * {@code rx = dx cos(yaw) - dz sin(yaw)} (right), {@code rz = dx sin(yaw) + dz cos(yaw)} (toward the viewer on the ground),
@@ -25,7 +25,7 @@ public final class HoloCamera {
 	public HoloCamera(final double cx, final double cz, final double radius) {
 		this.cx = cx;
 		this.cz = cz;
-		this.yaw = 0.0;
+		this.yaw = Math.PI / 6;
 		this.tilt = Math.toRadians(55.0);
 		this.radius = Math.clamp(radius, MIN_RADIUS, MAX_RADIUS);
 	}

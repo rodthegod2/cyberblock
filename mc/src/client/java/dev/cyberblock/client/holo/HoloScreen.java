@@ -60,8 +60,11 @@ public final class HoloScreen extends Screen {
 	private static final Identifier TRAVEL = Identifier.withDefaultNamespace("target_x");
 	/** The layers shown, kept for the session. */
 	static final Set<String> shownLayers = new HashSet<>();
-	/** The 3D table was too slow on this PC: the table opens in 2D for the rest of the session. */
-	static boolean forced2D;
+	/**
+	 * The table opens in 2D: the 3D table was too slow on this PC (for the rest of the session), or the player asked for it with
+	 * {@code -Dcyberblock.holo2d=true}.
+	 */
+	static boolean forced2D = Boolean.getBoolean("cyberblock.holo2d");
 	/** The 2D Atlas this table opened (HoloClient polls while it shows). */
 	static @Nullable AtlasScreen flat;
 	/** The selected spawn entry's key (kind:id, or travel:name), kept between openings. */
@@ -91,14 +94,15 @@ public final class HoloScreen extends Screen {
 	HoloScreen() {
 		super(Component.translatableWithFallback("cyberblock.holo.title", "Holo-Table"));
 		double[] c = startCentre();
-		this.cam = new HoloCamera(c[0], c[1], 256.0);
+		this.cam = new HoloCamera(c[0], c[1], 128.0);
 	}
 
 	/** Opens the table: 3D, or 2D when this PC fell back to it. */
 	static void open(final Minecraft minecraft) {
 		if (forced2D) {
 			double[] c = startCentre();
-			minecraft.gui.setScreen(flatScreen(null, c[0], c[1], 0.5));
+			minecraft.gui.setScreen(flatScreen(null, c[0], c[1], 1.0));
+			Cyberblock.LOG.info("holo: table view opened (2D on the Atlas)");
 		} else {
 			minecraft.gui.setScreen(new HoloScreen());
 			Cyberblock.LOG.info("holo: table view opened (3D miniature)");
@@ -632,7 +636,8 @@ public final class HoloScreen extends Screen {
 	private void drawPanel(final GuiGraphicsExtractor graphics, final List<Entry> entries, final int mouseX, final int mouseY) {
 		int px = this.panelX(), top = this.top(), bottom = this.listBottom();
 		McTheme.panel(graphics, px - 4, top - 4, PANEL + 8, this.bottom() - top + 8);
-		graphics.fill(px, top, px + PANEL, bottom, 0xFF101820);
+		graphics.fill(px, top, px + PANEL, this.bottom() - 24, 0xFF101820);
+		graphics.fill(px, bottom, px + PANEL, bottom + 1, 0xFF2A4A5A);
 		List<Object> rows = rows(entries);
 		int visible = (bottom - top) / ROW;
 		this.scroll = Math.clamp(this.scroll, 0, Math.max(0, rows.size() - visible));
