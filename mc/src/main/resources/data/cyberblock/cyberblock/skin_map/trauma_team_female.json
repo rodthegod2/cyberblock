@@ -1,0 +1,7 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/trauma_team_f.png",
+	"model": "slim",
+	"faction": "TraumaTeam",
+	"gender": "female"
+}

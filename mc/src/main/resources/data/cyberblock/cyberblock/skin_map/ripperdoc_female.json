@@ -1,0 +1,13 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/ripperdoc_f.png",
+	"model": "slim",
+	"role": [
+		"RipperDoc",
+		"Cyberware",
+		"Medical",
+		"medic"
+	],
+	"gender": "female",
+	"priority": 20
+}

@@ -1,0 +1,10 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/militech_m.png",
+	"model": "classic",
+	"faction": [
+		"Militech",
+		"Barghest",
+		"NUSA"
+	]
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "skin_map",
+  "description": "The `skin_map` content kind (megaplan 1.7, 1.12, tasks 5-A2 and 5-F1): which skin and player model a Night City NPC figure wears, plus the two cyber skins of linked players. One row per file. An NPC matches a row when every match key the row has holds for the NPC's tags from the `npcs` message: `role` (the vendor type name of 2.31 `gamedataVendorType`, e.g. RipperDoc, Clothes, Drinks, or a content role: fixer, bartender, medic, mechanic, cyberpsycho), `faction` (Affiliation().EnumName(), 2.31 `gamedataAffiliation`, e.g. TygerClaws, NCPD), `gender` (male or female: `g` 1 or 2; an NPC whose `g` is 0 matches no row with `gender`) and `archetype` (`gamedataArchetypeType`, e.g. HeavyRangedT2). A key's value is one name or a list of names (any of them). Of the matching rows the highest `priority` (default 0) wins, then the row with more match keys, then, among rows still tied, one chosen by the NPC id (stable per NPC, so a crowd mixes the tied skins). A row with no match keys matches every NPC (the shipped `default` row). Rows with `cyber` are the skins of linked players (male: classic, female: slim) and never match an NPC. `texture` is the full resource id of a 64x64 skin PNG (`<namespace>:textures/entity/...png`, shipped in the mod or added by a resource pack); `model` is the player model to draw it on: `classic` (4 px arms) or `slim` (3 px arms). A row without `gender` should use the classic model (unknown gender is drawn classic). A file with the same id as a default replaces it, so a datapack can restyle one faction or add a row with a higher priority.",
+  "$defs": {
+    "name": {"type": "string", "pattern": "^[A-Za-z0-9_]+$", "minLength": 1, "maxBytes": 48},
+    "names": {
+      "anyOf": [
+        {"$ref": "#/$defs/name"},
+        {"type": "array", "items": {"$ref": "#/$defs/name"}, "minItems": 1, "maxItems": 32, "uniqueItems": true}
+      ]
+    }
+  },
+  "type": "object",
+  "required": ["schema", "texture", "model"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": 1},
+    "id": {"type": "string", "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$", "maxBytes": 128},
+    "texture": {"type": "string", "pattern": "^[a-z0-9_.-]+:textures/entity/[a-z0-9_./-]+\\.png$", "maxBytes": 160},
+    "model": {"enum": ["classic", "slim"]},
+    "role": {"$ref": "#/$defs/names"},
+    "faction": {"$ref": "#/$defs/names"},
+    "gender": {"enum": ["male", "female"]},
+    "archetype": {"$ref": "#/$defs/names"},
+    "priority": {"type": "integer", "minimum": -1000, "maximum": 1000},
+    "cyber": {"enum": ["male", "female"]}
+  },
+  "anyOf": [
+    {"properties": {"cyber": false}},
+    {"properties": {"role": false, "faction": false, "gender": false, "archetype": false, "priority": false}}
+  ]
+}

@@ -1,0 +1,8 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/civ_worker_f.png",
+	"model": "slim",
+	"role": "mechanic",
+	"gender": "female",
+	"priority": 20
+}

@@ -1,0 +1,16 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/civ_corpo_f.png",
+	"model": "slim",
+	"faction": [
+		"Civilian",
+		"UnaffiliatedCorpo",
+		"Biotechnica",
+		"CityCouncil",
+		"News54",
+		"OA",
+		"RecordingAgency",
+		"Zetatech"
+	],
+	"gender": "female"
+}

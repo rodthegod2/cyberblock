@@ -1,0 +1,7 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/voodoo_boys_f.png",
+	"model": "slim",
+	"faction": "VoodooBoys",
+	"gender": "female"
+}

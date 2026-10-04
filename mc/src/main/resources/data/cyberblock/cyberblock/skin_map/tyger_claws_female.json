@@ -1,0 +1,7 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/tyger_claws_f.png",
+	"model": "slim",
+	"faction": "TygerClaws",
+	"gender": "female"
+}

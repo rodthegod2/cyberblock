@@ -1,0 +1,22 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/vendor_f.png",
+	"model": "slim",
+	"role": [
+		"Armorsmith",
+		"Clothes",
+		"Clothing",
+		"Food",
+		"GrilledFood",
+		"PackedFood",
+		"Gunsmith",
+		"Junk",
+		"Kiosk",
+		"Market",
+		"Tech",
+		"TechJunk",
+		"SkillTrainer"
+	],
+	"gender": "female",
+	"priority": 20
+}

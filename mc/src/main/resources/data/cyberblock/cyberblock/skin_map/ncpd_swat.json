@@ -1,0 +1,13 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/ncpd_swat_m.png",
+	"model": "classic",
+	"faction": "NCPD",
+	"archetype": [
+		"HeavyRangedT2",
+		"HeavyMeleeT2",
+		"ShotgunnerT2",
+		"SniperT2"
+	],
+	"priority": 10
+}

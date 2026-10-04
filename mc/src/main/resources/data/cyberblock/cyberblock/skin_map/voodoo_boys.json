@@ -1,0 +1,6 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/voodoo_boys_m.png",
+	"model": "classic",
+	"faction": "VoodooBoys"
+}

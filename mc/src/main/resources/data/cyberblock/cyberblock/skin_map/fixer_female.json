@@ -1,0 +1,8 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/fixer_f.png",
+	"model": "slim",
+	"role": "fixer",
+	"gender": "female",
+	"priority": 20
+}

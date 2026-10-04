@@ -1,0 +1,7 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/fixer_m.png",
+	"model": "classic",
+	"role": "fixer",
+	"priority": 20
+}

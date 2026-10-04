@@ -1,0 +1,6 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/tyger_claws_m.png",
+	"model": "classic",
+	"faction": "TygerClaws"
+}

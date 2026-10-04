@@ -1,0 +1,11 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/bartender_f.png",
+	"model": "slim",
+	"role": [
+		"Drinks",
+		"bartender"
+	],
+	"gender": "female",
+	"priority": 20
+}

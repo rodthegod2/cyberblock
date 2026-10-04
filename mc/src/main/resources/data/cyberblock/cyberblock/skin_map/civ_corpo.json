@@ -1,0 +1,15 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/civ_corpo_m.png",
+	"model": "classic",
+	"faction": [
+		"Civilian",
+		"UnaffiliatedCorpo",
+		"Biotechnica",
+		"CityCouncil",
+		"News54",
+		"OA",
+		"RecordingAgency",
+		"Zetatech"
+	]
+}

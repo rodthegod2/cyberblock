@@ -1,0 +1,20 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/maxtac_f.png",
+	"model": "slim",
+	"faction": "NCPD",
+	"archetype": [
+		"HeavyRangedT3",
+		"HeavyMeleeT3",
+		"FastRangedT3",
+		"FastMeleeT3",
+		"FastShotgunnerT3",
+		"FastSniperT3",
+		"ShotgunnerT3",
+		"NetrunnerT3",
+		"TechieT3",
+		"GenericRangedT3"
+	],
+	"gender": "female",
+	"priority": 10
+}

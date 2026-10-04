@@ -1,0 +1,7 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/valentinos_f.png",
+	"model": "slim",
+	"faction": "Valentinos",
+	"gender": "female"
+}

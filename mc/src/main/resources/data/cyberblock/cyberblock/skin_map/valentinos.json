@@ -1,0 +1,6 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/valentinos_m.png",
+	"model": "classic",
+	"faction": "Valentinos"
+}

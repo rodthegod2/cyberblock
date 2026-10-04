@@ -1,0 +1,9 @@
+{
+	"schema": 1,
+	"texture": "cyberblock:textures/entity/npc/sixth_street_m.png",
+	"model": "classic",
+	"faction": [
+		"SixthStreet",
+		"SixthStreetAndroid"
+	]
+}
