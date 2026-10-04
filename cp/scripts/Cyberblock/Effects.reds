@@ -17,6 +17,7 @@
 //     w_explosives_001__frag_grenade_01.effect is the frag grenade explosion.
 //   Hit: a gameHitEvent queued to DamageSystem as VehicleComponent.CreateHitEventOnSelf does for car collisions
 //     (AttackData SetAttackDefinition, PreAttack, SetAttackPosition, SetAttackTime, SetInstigator/SetSource/AddFlag),
+//     with a chest hit shape on people (AddHitShape: without one HitReactionComponent.EvaluateHit plays no reaction),
 //     attack record Attacks.Impact (attackType AttackType.Melee, hit-reaction severity min 1, read from tweakdb.bin);
 //     the exact amount is set in DamageSystem.DealDamages, the last stage before StatPoolsManager.ApplyDamage, with
 //     MultAttackValue(0) + SetAttackValue as ProcessVehicleTarget does. Knockback (re-test 3 F7, plan
@@ -256,9 +257,33 @@ public abstract class CyberblockEffects {
     }
     hit.hitPosition = hitPosition;
     hit.hitDirection = direction;
+    if IsDefined(object as ScriptedPuppet) {
+      CyberblockEffects.AddHitShape(hit, hitPosition, direction);
+    }
     // The push follows the damage (CyberblockEffectsService.Apply), so a hit the pipeline refuses pushes nothing.
     CyberblockEffectsService.Get().Expect(hit, amount, impulse);
     GameInstance.GetDamageSystem(game).QueueHitEvent(hit, object);
+  }
+
+  // The body part the blow lands on. HitReactionComponent.EvaluateHit returns at once for a hit without a hit shape
+  // (GetBodyPart: hitRepresentationResult.hitShapes empty), so before this no flinch, stagger or knockdown ever played
+  // (the tiers' severities and ForceKnockdown were never read) and a defeated NPC was never finished off
+  // (ProcessDefeated runs there too): Minecraft's blows looked like they did nothing (in-game 2026-10-03, after F7 took
+  // the ragdoll off every hit). Built as vanilla's TriggerAttackOnNearbyEnemiesEffector.SendHitEvent builds one
+  // (HitShapeData.result.hitPositionEnter/Exit), plus the user data the hit reaction reads (HitShapeUserDataBase, its
+  // public edit fields): flesh on the left chest, no dismemberment part, not a protection layer, no damage mod (the
+  // damage is set exactly in DealDamages anyway).
+  public static func AddHitShape(hit: ref<gameHitEvent>, hitPosition: Vector4, direction: Vector4) -> Void {
+    let zone = new HitShapeUserDataBase();
+    zone.m_hitShapeTag = n"Chest";
+    zone.m_hitShapeType = EHitShapeType.Flesh;
+    zone.m_hitReactionZone = EHitReactionZone.ChestLeft;
+    zone.m_dismembermentPart = EAIDismembermentBodyPart.NONE;
+    let shape: HitShapeData;
+    shape.result.hitPositionEnter = hitPosition;
+    shape.result.hitPositionExit = hitPosition + direction * 0.3;
+    shape.userData = zone;
+    ArrayPush(hit.hitRepresentationResult.hitShapes, shape);
   }
 
   // F7 knockback tiers by the blow's speed s (m/s) on a person (plan 2026-10-03-retest3-polish section 1.9).
@@ -315,8 +340,9 @@ public abstract class CyberblockEffects {
 
   // After a blow landed (amount: the damage it dealt, 0 for a push without damage): a car is pushed, a person is
   // ragdolled only in the top tier and only when the blow does not kill (the game's own death reaction ragdolls then).
-  // Logs 'knock: <id> s=<s> tier=<tier> impulse=<i>', and where the target is thrown, the speed it moved at over the
-  // next 0.3 s (CyberblockKnockProbe).
+  // Logs 'knock: <id> s=<s> tier=<tier> impulse=<i>' (i: the ragdoll or vehicle impulse applied; 0 for the impact,
+  // stagger and knockdown tiers, whose push is the hit reaction's own animation), and where the target is thrown or
+  // knocked down, the speed it moved at over the next 0.3 s (CyberblockKnockProbe).
   public static func AfterHit(object: ref<GameObject>, hitPosition: Vector4, impulse: Vector4, amount: Float) -> Void {
     if !IsDefined(object) {
       return;

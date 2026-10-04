@@ -71,9 +71,9 @@ class InteractiveItemsTest {
 
 	@Test
 	void gorillaArmsStrengthensTheMeleeImpulse() {
-		// plan retest3 section 1.9: +1.0 strength on a person, x3 on a vehicle
+		// plan retest3 section 1.9, halved after the 2026-10-03 re-test: +0.5 strength on a person (a stagger), x3 on a vehicle
 		assertEquals(2.0, ProxyDamage.melee(1.0, 0.0, 0.0).x, 1e-9);
-		assertEquals(7.0, ProxyDamage.meleeOn(1.0, 0.0, 0.0, true, false).x, 1e-9);
+		assertEquals(4.5, ProxyDamage.meleeOn(1.0, 0.0, 0.0, true, false).x, 1e-9);
 		assertEquals(6.0, ProxyDamage.meleeOn(1.0, 0.0, 0.0, true, true).x, 1e-9);
 		Vec3 strong = ProxyDamage.meleeOn(0.0, 1.0, 10.0, true, true); // 52 m/s x 3
 		assertEquals(ProxyDamage.MAX_IMPULSE, strong.length(), 1e-9);

@@ -90,7 +90,7 @@ class ProxyDamageTest {
 		assertEquals(5.0, ProxyDamage.PUSH_PER_STRENGTH);
 	}
 
-	/** Every result of plan retest3 section 1.9, as ProxyEntity works them out (attribute + enchantment, sprint, Gorilla Arms). */
+	/** Every result of plan retest3 section 1.9 (Gorilla Arms halved after the 2026-10-03 re-test), as ProxyEntity works them out (attribute + enchantment, sprint, Gorilla Arms). */
 	@Test
 	void theKnockbackTiersOfThePlan() {
 		// (ATTACK_KNOCKBACK after Knockback, sprinting, Gorilla Arms) -> m/s on a person
@@ -99,9 +99,10 @@ class ProxyDamageTest {
 		assertEquals(4.5, person(1.0, false, false), 1e-9, "Knockback I");
 		assertEquals(7.0, person(2.0, false, false), 1e-9, "Knockback II");
 		assertEquals(7.0, person(2.0, false, false), 1e-9, "the gorilla gauntlet (ATTACK_KNOCKBACK +2)");
-		assertEquals(7.0, person(0.0, false, true), 1e-9, "Gorilla Arms");
-		assertEquals(9.5, person(0.0, true, true), 1e-9, "Gorilla Arms + sprint");
-		assertEquals(12.0, person(2.0, false, true), 1e-9, "gauntlet + Gorilla Arms");
+		assertEquals(4.5, person(0.0, false, true), 1e-9, "Gorilla Arms: a stagger, not a knockdown on every swing");
+		assertEquals(7.0, person(0.0, true, true), 1e-9, "Gorilla Arms + sprint");
+		assertEquals(9.5, person(2.0, false, true), 1e-9, "gauntlet + Gorilla Arms");
+		assertEquals(12.0, person(2.0, true, true), 1e-9, "gauntlet + Gorilla Arms + sprint: the only melee ragdoll");
 		// the Gorilla Arms implant's own ATTACK_KNOCKBACK +2 (empty hand) is its strength: ProxyEntity adds no second one
 		assertEquals(7.0, person(2.0, false, false), 1e-9, "the Gorilla Arms implant through its attribute");
 	}

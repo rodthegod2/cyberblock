@@ -116,3 +116,19 @@ def test_the_guard_catches_call_results():
     assert bad_calls("let h = EntityID.ToHash(object.GetEntityID());") == [(1, "object.GetEntityID(")]
     assert bad_calls("// EntityID.ToHash(a.GetEntityID())\nlet h = EntityID.ToHash( id );") == []
     assert bad_calls('Log("x // y"); let h = EntityID.ToHash(o.GetEntityID());') == [(1, "o.GetEntityID(")]
+
+
+# In-game 2026-10-03 (after F7): Minecraft's blows dealt their damage but no flinch, stagger or knockdown ever played, and a
+# defeated NPC was never finished off. HitReactionComponent.EvaluateHit returns at once for a hit without a hit shape
+# (GetBodyPart reads hitRepresentationResult.hitShapes[0]), so every hit Effects.reds queues on a person carries one.
+def test_strikes_on_people_carry_a_hit_shape():
+    code = strip_comments((SCRIPTS / "Effects.reds").read_text(encoding="utf-8"))
+    strike = code[code.index("public static func StrikeBy("):]
+    strike = strike[:strike.index("QueueHitEvent(hit, object)")]
+    assert re.search(r"if IsDefined\(object as ScriptedPuppet\) \{\s*CyberblockEffects\.AddHitShape\(hit, hitPosition, direction\);", strike)
+    shape = code[code.index("public static func AddHitShape("):]
+    shape = shape[:shape.index("\n  }\n")]
+    for needed in ("new HitShapeUserDataBase()", "EHitShapeType.Flesh", "m_hitReactionZone = EHitReactionZone.ChestLeft",
+                   "shape.result.hitPositionEnter = hitPosition", "shape.userData = zone",
+                   "ArrayPush(hit.hitRepresentationResult.hitShapes, shape)"):
+        assert needed in shape, needed
