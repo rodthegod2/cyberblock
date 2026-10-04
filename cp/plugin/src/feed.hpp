@@ -8,11 +8,16 @@
 //   feedreq DOWN {"t":"feedreq","on":bool}
 //   feed    UP   {"t":"feed","w":128,"h":128,"px":"<base64 of 16384 map-colour bytes>"}: bytes row by row from the top
 //                left, each a packed Minecraft map colour (MapColor id * 4 + brightness id), never 0..3 (NONE).
+//   feed    UP   {"t":"feed","w":0,"h":0,"px":"","fallback":"<why>"}: the fallback notice (proposed for a dated 1.9
+//                amendment; integrator): there will be no picture this Minecraft session; `fallback` (at most 128 bytes)
+//                says why. Sent once when the capture gives up while a feed is requested, and again on a later
+//                `feedreq on:true` while fallen back (at most once a second).
 //
 // Fallback (6-D1): when the read-back costs the game more than 0.5 ms of frame time (CostMonitor), or the capture cannot
-// run (an old Cyberblock.fx without the Feed pass, a device without texture-to-buffer copies), the DLL stops sending
-// `feed`, logs one line saying so, and Minecraft's top-down replica render stands in (a feed that stays silent after
-// `feedreq on` is the Minecraft side's signal).
+// run (an old Cyberblock.fx without the Feed pass, a device without texture-to-buffer copies, a failed read-back), the
+// DLL stops sending pictures, logs one line saying so, and tells Minecraft with the fallback notice, so its top-down
+// replica render can stand in. A receiver that does not know the notice drops it as a bad `feed` (w, h not 128), which is
+// the same as silence: Minecraft should also treat no picture within 3 s of `feedreq on` as the fallback.
 #pragma once
 #include <array>
 #include <atomic>
@@ -86,6 +91,10 @@ namespace cb::feed
 	/// {"t":"feed","w":128,"h":128,"px"}. nullopt unless `colours` holds exactly kPixels packed colours, each
 	/// kFirstPacked..kLastPacked.
 	std::optional<nlohmann::json> make_feed(std::span<const uint8_t> colours);
+	/// Longest fallback reason, in bytes.
+	inline constexpr size_t kMaxFallbackBytes = 128;
+	/// {"t":"feed","w":0,"h":0,"px":"","fallback":<why cut to kMaxFallbackBytes>}: the fallback notice.
+	nlohmann::json make_feed_fallback(std::string_view why);
 
 	struct FeedReq
 	{
@@ -127,9 +136,12 @@ namespace cb::feed
 		/// Whether a capture should start now: requested, no fallback, the palette ready and kIntervalSeconds since the
 		/// last capture began (which `now` then becomes).
 		bool due(double now);
-		/// Gives the back-buffer feed up until reset(); returns true the first time (so the caller logs it once).
-		bool fall_back();
+		/// Gives the back-buffer feed up until reset(), for reason `why`; returns true the first time (so the caller logs it
+		/// once; the first reason is kept).
+		bool fall_back(std::string_view why);
 		bool fallen_back() const { return m_fallback; }
+		/// The fallback notice to send now: only while requested and fallen back, at most once per kIntervalSeconds.
+		std::optional<nlohmann::json> fallback_notice(double now);
 		/// A new Minecraft session (`hello`) or none (a link drop): not requested, no fallback, no capture yet.
 		void reset();
 
@@ -138,7 +150,12 @@ namespace cb::feed
 		std::atomic<bool> m_fallback{false};
 		std::mutex m_lock;
 		std::optional<double> m_last;
+		std::optional<double> m_lastNotice;
+		std::string m_reason;
 	};
+
+	/// Seconds on the steady clock (the clock due() and fallback_notice() are given by the plugin).
+	double now_seconds();
 
 	/// The plugin's gate. Never destroyed: the link thread may still use it while the process exits.
 	inline Gate &gate()

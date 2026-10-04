@@ -193,8 +193,8 @@ TEST(feed_gate_is_at_most_one_capture_a_second_and_only_while_requested)
 	gate.set_requested(true);
 	CHECK(gate.due(105.0));
 	// the fallback stops it until a new Minecraft session
-	CHECK(gate.fall_back());
-	CHECK(!gate.fall_back()); // logged once
+	CHECK(gate.fall_back("slow"));
+	CHECK(!gate.fall_back("again")); // logged once
 	CHECK(!gate.due(200.0) && gate.fallen_back());
 	gate.reset();
 	CHECK(!gate.requested() && !gate.fallen_back());
@@ -235,10 +235,49 @@ TEST(feed_observer_follows_feedreq_hello_session_and_drops)
 	cb::feed::on_minecraft_message(json::parse(R"({"t":"session","state":"guest","reason":"","perms":{}})"));
 	CHECK(!gate.requested()); // no longer the host: no feed
 	cb::feed::on_minecraft_message(json::parse(R"({"t":"feedreq","on":true})"));
-	gate.fall_back();
+	gate.fall_back("test");
+	// a later feedreq on while fallen back keeps the request (and sends the notice; dropped here: no link)
+	cb::feed::on_minecraft_message(json::parse(R"({"t":"feedreq","on":true})"));
+	CHECK(gate.requested() && gate.fallen_back());
 	cb::feed::on_minecraft_message(json::parse(R"({"t":"hello","proto":1})"));
 	CHECK(!gate.requested() && !gate.fallen_back());
 	cb::feed::on_minecraft_message(json::parse(R"({"t":"feedreq","on":true})"));
 	cb::feed::on_link_dropped();
 	CHECK(!gate.requested());
+}
+
+TEST(feed_fallback_notice_shape)
+{
+	const json notice = cb::feed::make_feed_fallback("the read-back costs 0.90 ms of frame time");
+	CHECK(notice["t"] == "feed" && notice["w"] == 0 && notice["h"] == 0 && notice["px"] == "");
+	CHECK(notice["fallback"] == "the read-back costs 0.90 ms of frame time");
+	// a long reason is cut to 128 bytes, never inside a UTF-8 character
+	const json longNotice = cb::feed::make_feed_fallback(std::string(127, 'x') + "\xC3\xA9");
+	CHECK(longNotice["fallback"].get<std::string>() == std::string(127, 'x'));
+	// a real picture never looks like the notice: make_feed always says 128 x 128
+	std::vector<uint8_t> colours(cb::feed::kPixels, cb::feed::kFirstPacked);
+	const auto picture = cb::feed::make_feed(colours);
+	CHECK(picture && (*picture)["w"] == 128 && !picture->contains("fallback"));
+}
+
+TEST(feed_fallback_notice_only_while_requested_and_fallen_back_at_most_once_a_second)
+{
+	cb::feed::Gate gate;
+	CHECK(!gate.fallback_notice(10.0)); // neither requested nor fallen back
+	gate.set_requested(true);
+	CHECK(!gate.fallback_notice(10.0)); // requested, the feed still works
+	CHECK(gate.fall_back("CbFeedTex is not 128 x 128 RGBA8"));
+	const auto first = gate.fallback_notice(10.0);
+	CHECK(first && (*first)["fallback"] == "CbFeedTex is not 128 x 128 RGBA8");
+	CHECK(!gate.fallback_notice(10.5)); // at most once a second
+	gate.fall_back("a second reason");  // the first reason is kept
+	const auto again = gate.fallback_notice(11.0);
+	CHECK(again && (*again)["fallback"] == "CbFeedTex is not 128 x 128 RGBA8");
+	gate.set_requested(false);
+	CHECK(!gate.fallback_notice(20.0)); // nobody asks: nothing to say
+	gate.reset();                       // a new Minecraft session tries the capture again
+	gate.set_requested(true);
+	CHECK(!gate.fallback_notice(30.0) && !gate.fallen_back());
+	CHECK(gate.fall_back("new"));
+	CHECK(gate.fallback_notice(30.0)); // the throttle started over too
 }

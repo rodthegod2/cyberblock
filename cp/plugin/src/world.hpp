@@ -83,7 +83,8 @@ namespace cb::world
 							 // vteleport why | devact act
 		double extra = 0;    // knock strength | effect amplifier | session perms bitmask
 		int32_t id = 0;      // hit: the mob that dealt it (-1 none) | hack, scan, vteleport, devact: the request id
-		std::string text;    // session: the reason (Cyberblock_EventText) | daemon: the daemon ids joined by ','
+		std::string text;    // session: the reason (Cyberblock_EventText) | daemon: the daemon ids joined by ',' |
+							 // rhack: the district (pos the area's centre, amount its seconds, extra its radius)
 	};
 
 	/// The ten hack names of plan section 1.5 (`hack.hack`) and the twenty perk ids (`perks[].id`, `perkfx.id`).

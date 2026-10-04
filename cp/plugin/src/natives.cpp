@@ -672,7 +672,9 @@ namespace
 	// feet, EventAmount the yaw, EventId the request id, EventName why; kept while not Active: Cyberblock_TeleportDone
 	// answers it), n"park" (Phase 3: EventFlag on; kept while not Active), n"devact" (Phase 4: EventId the request id,
 	// EventTarget the device id, EventName the act; kept while not Active: Cyberblock_DeviceResult answers it), n"rhack"
-	// (Phase 6: EventId the request id, EventTarget the target or 0 for an area hack, EventName the hack) and n"daemon"
+	// (Phase 6: EventId the request id, EventTarget the target or 0 for an area hack, EventName the hack, EventPos the
+	// area's centre (zero when Minecraft sent none: around V), EventExtra its radius in metres, EventAmount the effect's
+	// length IN SECONDS (0 = the scripts' own), EventText a district name or "") and n"daemon"
 	// (Phase 6: EventId the request id, EventTarget the device id, EventAmount the strength 1..3, EventName the first
 	// daemon id, EventText every daemon id joined by ','), both kept while not Active and answered with
 	// Cyberblock_HackResult; n"" (the empty CName, hash 0) when there is none.
@@ -764,7 +766,7 @@ namespace
 	}
 
 	// Cyberblock_EventText() -> String (megaplan 2026-10-04 section 1.8): the string payload of the current event: a
-	// session's reason | a daemon event's ids joined by ',' (Phase 6); "" for the other kinds.
+	// session's reason | a daemon event's ids joined by ',' | an rhack's district (Phase 6); "" for the other kinds.
 	void EventText(IScriptable *, CStackFrame *frame, RED4ext::CString *out, int64_t)
 	{
 		++frame->code;

@@ -4,10 +4,16 @@
 // hands the events out through the existing Cyberblock_Event* getters.
 //
 // Wire (section 1.9):
-//   rhack  DOWN {"t":"rhack","id":<request>,"target":"<dec>"|null,"hack"}; `hack` is one of the ten hack names of
-//               world::kHackNames or one of kRemoteHacks. Event n"rhack": EventId the request, EventTarget the target
-//               (0 for an area hack without one: the scripts act around V), EventName the hack. A valid request whose
-//               hack is not known is answered at once with {"t":"hackresult","id","ok":false,"reason":"unsupported"}.
+//   rhack  DOWN {"t":"rhack","id":<request>,"target":"<dec>"|null|"","hack", optional "p":[x,y,z], "r", "secs",
+//               "district"}; `hack` is one of the ten hack names of world::kHackNames or one of kRemoteHacks. `target`
+//               absent, null, "" or "0" is no target (the server's builder sends "" for an area hack, the protocol null).
+//               The optional extras (6I ActWire.rhack, 6P protocol.md "Phase 6"): `p` the area's centre in Minecraft
+//               space, `r` its radius in metres (0..150), `secs` the effect's length in seconds (0..600, 0 = the scripts'
+//               own), `district` a district name. Event n"rhack": EventId the request, EventTarget the target (0 = none),
+//               EventName the hack, EventPos `p` in Cyberpunk space with the ground alignment (zero when absent: the
+//               scripts act around V), EventExtra `r` (0 when absent), EventAmount `secs` IN SECONDS (0 when absent),
+//               EventText the district (cut to 64 bytes, control characters dropped; "" when absent). A valid request
+//               whose hack is not known is answered at once with {"t":"hackresult","id","ok":false,"reason":"unsupported"}.
 //   daemon DOWN {"t":"daemon","id":<request>,"dev":"<dec>","list":["<daemon id>", ...],"strength":1..3}: the daemons a
 //               solved Breach uploads to device `dev`. Event n"daemon": EventId the request, EventTarget the device,
 //               EventAmount the strength, EventText the daemon ids joined by ',' (in the order sent), EventName the
@@ -33,6 +39,10 @@ namespace cb::rhack
 	inline constexpr size_t kMaxDaemonIdBytes = 64;
 	inline constexpr int kMinStrength = 1;
 	inline constexpr int kMaxStrength = 3;
+	/// Largest `rhack.r` (metres) and `rhack.secs` (seconds), as the protocol bounds them; longest district, in bytes.
+	inline constexpr double kMaxRadius = 150.0;
+	inline constexpr double kMaxSeconds = 600.0;
+	inline constexpr size_t kMaxDistrictBytes = 64;
 
 	/// Whether `hack` is a quickhack name (world::kHackNames) or a remote hack (kRemoteHacks).
 	bool known_hack(std::string_view hack);
@@ -55,10 +65,12 @@ namespace cb::rhack
 		std::string reason;
 	};
 
-	/// Validates {"t":"rhack","id","target","hack"}: `id` a whole number 0..2^31-1, `target` a decimal uint64 string, or
-	/// absent / null (0) for an area hack, `hack` a string. A targeted hack (needs_target) with no or a zero target is
-	/// rejected. Never throws.
-	Request parse_rhack(const nlohmann::json &message);
+	/// Validates {"t":"rhack","id","target","hack"} and the optional extras: `id` a whole number 0..2^31-1, `target` a
+	/// decimal uint64 string, or absent / null / "" / "0" (0) for an area hack, `hack` a string; `p` [x, y, z] with
+	/// |c| < 3e7 (converted to Cyberpunk space with the ground alignment `off`), `r` a number 0..kMaxRadius, `secs` a
+	/// whole number 0..kMaxSeconds, `district` a string (cut, never rejected for its length). A targeted hack
+	/// (needs_target) with no target, or a present extra that breaks its rule, is rejected. Never throws.
+	Request parse_rhack(const nlohmann::json &message, double off);
 	/// Validates {"t":"daemon","id","dev","list","strength"}: `id` as above, `dev` a non-zero decimal uint64 string, `list`
 	/// 1..kMaxDaemons ids of 1..kMaxDaemonIdBytes characters from [a-z0-9_.:/-], `strength` a whole number 1..3. Never
 	/// throws.

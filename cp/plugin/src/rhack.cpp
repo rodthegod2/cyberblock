@@ -39,6 +39,36 @@ namespace
 		out.reason = std::string(type) + ": " + bad.why;
 		return out;
 	}
+
+	/// `target`: absent, null, "" or "0" all mean no target (0); anything else must be a decimal uint64. The server's
+	/// builder (6I ActWire.rhack) sends "" for an area hack, the protocol (6P) null: both are the same request.
+	uint64_t optional_target(const json &message)
+	{
+		const auto it = message.find("target");
+		if (it == message.end() || it->is_null() || (it->is_string() && (it->get_ref<const std::string &>().empty() ||
+																		  it->get_ref<const std::string &>() == "0")))
+			return 0;
+		return cb::wire::entity_id(message, "target");
+	}
+
+	bool has(const json &message, const char *key)
+	{
+		return message.find(key) != message.end();
+	}
+
+	/// The district a district hack names: a string cut to kMaxDistrictBytes (never inside a UTF-8 character) with its
+	/// control characters dropped; "" when absent.
+	std::string district(const json &message)
+	{
+		const auto it = message.find("district");
+		if (it == message.end())
+			return {};
+		if (!it->is_string())
+			throw cb::wire::Bad{"district is not a string"};
+		std::string text = cb::wire::truncate_utf8(it->get_ref<const std::string &>(), cb::rhack::kMaxDistrictBytes);
+		std::erase_if(text, [](char c) { return static_cast<unsigned char>(c) < 0x20 || c == 0x7F; });
+		return text;
+	}
 }
 
 namespace cb::rhack
@@ -53,7 +83,7 @@ namespace cb::rhack
 		return hack != "traffic_switch" && hack != "gridlock" && hack != "blackout" && hack != "outline" && hack != "ping_area";
 	}
 
-	Request parse_rhack(const json &message)
+	Request parse_rhack(const json &message, double off)
 	{
 		Request out;
 		if (!is_type(message, "rhack"))
@@ -61,7 +91,7 @@ namespace cb::rhack
 		try
 		{
 			const int32_t id = wire::integer(message, "id", 0.0, kMaxRequestId);
-			const uint64_t target = wire::optional_entity_id(message, "target");
+			const uint64_t target = optional_target(message);
 			const auto hack = message.find("hack");
 			if (hack == message.end() || !hack->is_string())
 				throw wire::Bad{"hack is missing or not a string"};
@@ -75,6 +105,13 @@ namespace cb::rhack
 			}
 			if (target == 0 && needs_target(name))
 				throw wire::Bad{"hack " + name + " needs a target"};
+			if (has(message, "p"))
+				out.event.pos = wire::cp_triple(message, "p", off);
+			if (has(message, "r"))
+				out.event.extra = wire::number(message, "r", 0.0, kMaxRadius);
+			if (has(message, "secs"))
+				out.event.amount = wire::integer(message, "secs", 0.0, kMaxSeconds);
+			out.event.text = district(message);
 			out.status = Request::Status::Event;
 			out.event.kind = world::EventKind::RHack;
 			out.event.id = id;
@@ -137,7 +174,7 @@ namespace cb::rhack
 			return;
 		Request request;
 		if (*type == "rhack")
-			request = parse_rhack(message);
+			request = parse_rhack(message, world::level_offset(world::level_k()));
 		else if (*type == "daemon")
 			request = parse_daemon(message);
 		else
@@ -163,8 +200,10 @@ namespace cb::rhack
 			if (logged++ >= kMaxLogged)
 				return;
 			if (request.event.kind == world::EventKind::RHack)
-				log::info("rhack: %d %s on %llu handed to the scripts", request.event.id, request.event.name.c_str(),
-						  static_cast<unsigned long long>(request.event.target));
+				log::info("rhack: %d %s on %llu (cp (%.1f, %.1f, %.1f), r %.0f m, %.0f s, district '%s') handed to the scripts",
+						  request.event.id, request.event.name.c_str(), static_cast<unsigned long long>(request.event.target),
+						  request.event.pos.x, request.event.pos.y, request.event.pos.z, request.event.extra,
+						  request.event.amount, request.event.text.c_str());
 			else
 				log::info("daemon: %d [%s] strength %.0f on device %llu handed to the scripts", request.event.id,
 						  request.event.text.c_str(), request.event.amount,

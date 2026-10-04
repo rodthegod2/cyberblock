@@ -12,7 +12,7 @@ namespace
 
 	Request rhack(const char *text)
 	{
-		return cb::rhack::parse_rhack(json::parse(text));
+		return cb::rhack::parse_rhack(json::parse(text), 0.0);
 	}
 
 	Request daemon(const char *text)
@@ -40,12 +40,12 @@ TEST(rhack_takes_every_remote_hack_and_every_quickhack)
 	for (const char *hack : cb::rhack::kRemoteHacks)
 	{
 		json m = {{"t", "rhack"}, {"id", 1}, {"target", "7"}, {"hack", hack}};
-		CHECK(cb::rhack::parse_rhack(m).status == Request::Status::Event);
+		CHECK(cb::rhack::parse_rhack(m, 0.0).status == Request::Status::Event);
 	}
 	for (const char *hack : cb::world::kHackNames)
 	{
 		json m = {{"t", "rhack"}, {"id", 1}, {"target", "7"}, {"hack", hack}};
-		CHECK(cb::rhack::parse_rhack(m).status == Request::Status::Event);
+		CHECK(cb::rhack::parse_rhack(m, 0.0).status == Request::Status::Event);
 	}
 	CHECK(cb::rhack::known_hack("blackout") && cb::rhack::known_hack("ping") && !cb::rhack::known_hack("nuke"));
 }
@@ -57,7 +57,7 @@ TEST(rhack_area_hacks_may_come_without_a_target)
 		CHECK(!cb::rhack::needs_target(hack));
 		json absent = {{"t", "rhack"}, {"id", 2}, {"hack", hack}};
 		json null = {{"t", "rhack"}, {"id", 2}, {"target", nullptr}, {"hack", hack}};
-		const Request a = cb::rhack::parse_rhack(absent), b = cb::rhack::parse_rhack(null);
+		const Request a = cb::rhack::parse_rhack(absent, 0.0), b = cb::rhack::parse_rhack(null, 0.0);
 		CHECK(a.status == Request::Status::Event && a.event.target == 0);
 		CHECK(b.status == Request::Status::Event && b.event.target == 0);
 	}
@@ -67,9 +67,83 @@ TEST(rhack_area_hacks_may_come_without_a_target)
 		CHECK(cb::rhack::needs_target(hack));
 		json absent = {{"t", "rhack"}, {"id", 2}, {"hack", hack}};
 		json zero = {{"t", "rhack"}, {"id", 2}, {"target", "0"}, {"hack", hack}};
-		CHECK(cb::rhack::parse_rhack(absent).status == Request::Status::Rejected);
-		CHECK(cb::rhack::parse_rhack(zero).status == Request::Status::Rejected);
+		CHECK(cb::rhack::parse_rhack(absent, 0.0).status == Request::Status::Rejected);
+		CHECK(cb::rhack::parse_rhack(zero, 0.0).status == Request::Status::Rejected);
 	}
+}
+
+TEST(rhack_empty_or_zero_target_is_no_target)
+{
+	// the server's builder (6I ActWire.rhack) sends "" for every area hack
+	const Request empty = rhack(R"({"t":"rhack","id":5,"target":"","hack":"blackout"})");
+	CHECK(empty.status == Request::Status::Event && empty.event.target == 0 && empty.event.name == "blackout");
+	const Request zero = rhack(R"({"t":"rhack","id":5,"target":"0","hack":"gridlock"})");
+	CHECK(zero.status == Request::Status::Event && zero.event.target == 0);
+	// "" is still no target for a hack that needs one, and other non-decimal text stays bad
+	CHECK(rhack(R"({"t":"rhack","id":5,"target":"","hack":"veh_lock"})").status == Request::Status::Rejected);
+	CHECK(rhack(R"({"t":"rhack","id":5,"target":" ","hack":"blackout"})").status == Request::Status::Rejected);
+	CHECK(rhack(R"({"t":"rhack","id":5,"target":"-1","hack":"blackout"})").status == Request::Status::Rejected);
+	CHECK(rhack(R"({"t":"rhack","id":5,"target":"00","hack":"veh_lock"})").status == Request::Status::Rejected);
+}
+
+TEST(rhack_area_extras_fill_pos_amount_extra_and_text)
+{
+	// the 6I builder's point form: p (Minecraft space) and r, secs; converted as vteleport's p (x, -z, y + off)
+	const json point = json::parse(R"({"t":"rhack","id":6,"target":"","hack":"gridlock","p":[-1236.5,64.0,810.5],"r":24.0,"secs":60})");
+	const Request g = cb::rhack::parse_rhack(point, 0.25);
+	CHECK(g.status == Request::Status::Event);
+	CHECK(g.event.pos.x == -1236.5 && g.event.pos.y == -810.5 && g.event.pos.z == 64.25);
+	CHECK(g.event.extra == 24.0 && g.event.amount == 60.0 && g.event.text.empty());
+	// the district form: district and secs (seconds, never minutes), no p
+	const Request b = rhack(R"({"t":"rhack","id":7,"target":"","hack":"blackout","district":"Watson","secs":180})");
+	CHECK(b.status == Request::Status::Event && b.event.text == "Watson" && b.event.amount == 180.0);
+	CHECK(b.event.pos.x == 0.0 && b.event.pos.y == 0.0 && b.event.pos.z == 0.0 && b.event.extra == 0.0);
+	// the protocol's form: target null with p, r, secs
+	const Request p = rhack(R"({"t":"rhack","id":8,"target":null,"hack":"ping_area","p":[1,2,3],"r":32,"secs":0})");
+	CHECK(p.status == Request::Status::Event && p.event.extra == 32.0 && p.event.amount == 0.0);
+	// none of them: zeros and "" (the scripts act around V with their own length)
+	const Request none = rhack(R"({"t":"rhack","id":9,"hack":"outline"})");
+	CHECK(none.status == Request::Status::Event && none.event.amount == 0.0 && none.event.extra == 0.0 && none.event.text.empty());
+}
+
+TEST(rhack_extras_limits)
+{
+	const auto rejected = [](const char *text) { return rhack(text).status == Request::Status::Rejected; };
+	CHECK(rejected(R"({"t":"rhack","id":1,"hack":"gridlock","p":[1,2]})"));                 // p not a triple
+	CHECK(rejected(R"({"t":"rhack","id":1,"hack":"gridlock","p":[1,2,"3"]})"));             // a non-number
+	CHECK(rejected(R"({"t":"rhack","id":1,"hack":"gridlock","p":[30000000,2,3]})"));        // |c| >= 3e7
+	CHECK(rejected(R"({"t":"rhack","id":1,"hack":"gridlock","p":null})"));                  // present but not a triple
+	CHECK(rejected(R"({"t":"rhack","id":1,"hack":"gridlock","r":-1})"));                    // negative radius
+	CHECK(rejected(R"({"t":"rhack","id":1,"hack":"gridlock","r":150.5})"));                 // past 150 m
+	CHECK(rejected(R"({"t":"rhack","id":1,"hack":"gridlock","r":"24"})"));                  // not a number
+	CHECK(rejected(R"({"t":"rhack","id":1,"hack":"blackout","secs":601})"));                // past 600 s
+	CHECK(rejected(R"({"t":"rhack","id":1,"hack":"blackout","secs":-1})"));                 // negative
+	CHECK(rejected(R"({"t":"rhack","id":1,"hack":"blackout","secs":1.5})"));                // not whole
+	CHECK(rejected(R"({"t":"rhack","id":1,"hack":"blackout","district":7})"));              // not a string
+	// the bounds themselves are fine
+	CHECK(!rejected(R"({"t":"rhack","id":1,"hack":"blackout","r":150,"secs":600,"p":[29999999,-64,-29999999]})"));
+	// a long district is cut on a character boundary, and control characters are dropped
+	json longDistrict = {{"t", "rhack"}, {"id", 1}, {"hack", "blackout"}, {"district", std::string(63, 'a') + "\xC3\xA9" + "zz"}};
+	const Request cut = cb::rhack::parse_rhack(longDistrict, 0.0);
+	CHECK(cut.status == Request::Status::Event && cut.event.text == std::string(63, 'a'));
+	json control = {{"t", "rhack"}, {"id", 1}, {"hack", "blackout"}, {"district", "Wat\nson\x01\x7F"}};
+	CHECK(cb::rhack::parse_rhack(control, 0.0).event.text == "Watson");
+	json unicode = {{"t", "rhack"}, {"id", 1}, {"hack", "blackout"}, {"district", "Japantown \xE6\x97\xA5"}};
+	CHECK(cb::rhack::parse_rhack(unicode, 0.0).event.text == "Japantown \xE6\x97\xA5");
+}
+
+TEST(rhack_observer_turns_a_6I_area_hack_into_an_event)
+{
+	// the exact shape the 6I server builder sends must reach the scripts (not be dropped as invalid)
+	cb::world::EventQueue &q = cb::world::events();
+	q.clear();
+	const auto rejectedBefore = q.stats().rejected;
+	cb::rhack::on_minecraft_message(json::parse(R"({"t":"rhack","id":12,"target":"","hack":"blackout","district":"Watson","secs":120})"));
+	CHECK(q.stats().rejected == rejectedBefore);
+	CHECK(q.next() == EventKind::RHack && q.current().id == 12 && q.current().target == 0);
+	CHECK(q.current().name == "blackout" && q.current().text == "Watson" && q.current().amount == 120.0);
+	CHECK(q.next() == EventKind::None);
+	q.clear();
 }
 
 TEST(rhack_with_an_unknown_hack_is_answered_unsupported)
