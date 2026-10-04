@@ -27,7 +27,7 @@ class NpcScreenTest {
 		}
 
 		for (String code : List.of("ok", "sold", "poor", "stock", "gone", "noitem", "busy", "taken", "done", "abandoned", "none", "installed", "recovering",
-			"surgery_ok", "surgery_fail", "cancelled", "healed", "repaired", "repair_sent", "no_vehicle", "not_active", "not_host", "drank")) {
+			"surgery_ok", "surgery_fail", "cancelled", "healed", "repaired", "unavailable", "kept", "drank")) {
 			assertNotEquals(code, NpcScreen.result(code).getString(), code);
 		}
 

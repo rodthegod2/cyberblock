@@ -14,13 +14,15 @@ import net.minecraft.world.item.ItemStack;
 
 /**
  * The mechanic's screen (megaplan task 7-N1). {@code repair_gear}: worn armour and elytra repaired to full for {@code
- * prices.repair_gear} each. {@code repair_vehicle}, for a host: the host's current Cyberpunk car repaired for {@code
- * prices.repair_vehicle} through {@code {"t":"repair","id":N}} DOWN (7S's verified repair call, with its own runtime check and
- * fallback in the scripts). The server's runtime check is the session: a host whose Cyberpunk is On; otherwise the row says why and
- * the log names the fallback (gear repair only). Server thread.
+ * prices.repair_gear} each. {@code repair_vehicle}, for a host: shown greyed as not available yet. Cyberpunk does not answer a car
+ * repair on the wire (the DLL has no repair parser yet, and 7S's script can refuse one: no car of V's near, a destroyed car, a repair
+ * already running), so nothing is sent and nothing is charged until a repair DOWN and its answer UP have section 1.9 rows; the server
+ * logs that at start, and the gear repair is the fallback. Server thread.
  */
 final class Garage implements Visit.Service {
 	static final EquipmentSlot[] WORN = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
+	/** The car row's second line while Cyberpunk cannot confirm a repair. */
+	static final String CAR_UNAVAILABLE = "Not available yet: your Cyberpunk game cannot confirm a car repair. Armour and elytra repairs work.";
 
 	@Override
 	public List<String> tabs(final Visit v) {
@@ -38,9 +40,7 @@ final class Garage implements Visit.Service {
 		boolean creative = v.player.isCreative();
 		List<NpcWire.Row> rows = new ArrayList<>();
 		if (v.role.offers("repair_vehicle") && host(v.player)) {
-			HostSession s = HostSessions.of(v.player);
-			rows.add(new NpcWire.Row("vehicle", "minecraft:minecart", 1, "", "", "", v.role.repairVehicle(), "repair_vehicle",
-				s != null && s.active() && (v.role.repairVehicle() <= eddies || creative)));
+			rows.add(new NpcWire.Row("vehicle", "minecraft:minecart", 1, "", "", CAR_UNAVAILABLE, -1, "repair_vehicle", false));
 		}
 
 		if (v.role.offers("repair_gear")) {
@@ -59,7 +59,8 @@ final class Garage implements Visit.Service {
 	@Override
 	public String press(final Visit v, final String row) {
 		if (row.equals("vehicle") && v.role.offers("repair_vehicle")) {
-			return vehicle(v);
+			// not available yet: nothing sent to Cyberpunk, nothing charged (said once in the log at server start)
+			return "unavailable";
 		}
 
 		for (EquipmentSlot slot : WORN) {
@@ -84,32 +85,5 @@ final class Garage implements Visit.Service {
 		}
 
 		return "gone";
-	}
-
-	/** The host's Cyberpunk car: the session check, then the DOWN request (each path logged). */
-	private static String vehicle(final Visit v) {
-		HostSession s = HostSessions.of(v.player);
-		String check = vehicleCheck(s != null && s.state() != HostSession.State.NONE, s != null && s.active());
-		if (!check.isEmpty()) {
-			Cyberblock.LOG.info("npc: mechanic: {} cannot have a Cyberpunk car repaired ({}; fallback: armour and elytra only)", v.player.getPlainTextName(), check);
-			return check;
-		}
-
-		if (!Eddies.pay(v.player, v.role.repairVehicle())) {
-			v.say("no_funds", "price", Integer.toString(v.role.repairVehicle()));
-			return "poor";
-		}
-
-		int id = s.newRequest(v.player.getUUID());
-		s.send(Services.repair(id));
-		Cyberblock.LOG.info("npc: mechanic: {} car repair {} sent to Cyberpunk (repair DOWN, {} eddies; the scripts check it and log their path)",
-			v.player.getPlainTextName(), id, v.role.repairVehicle());
-		v.say("repaired", "price", Integer.toString(v.role.repairVehicle()));
-		return "repair_sent";
-	}
-
-	/** Why a host's car cannot be repaired now ("" when it can): not a host, Cyberpunk not On. Pure. */
-	static String vehicleCheck(final boolean host, final boolean active) {
-		return !host ? "not_host" : !active ? "not_active" : "";
 	}
 }

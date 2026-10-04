@@ -27,8 +27,9 @@ import org.jspecify.annotations.Nullable;
 /**
  * Fixer gigs (megaplan task 7-N1): the fixer's screen ({@code gigs}: take one of the {@code contract}s still offered to the player, hand
  * a delivery in, drop the gig; {@code rumours} as at the bar) and the objective tracking. One gig at a time per player (GigData,
- * saved). {@code deliver_item}: handed in at any fixer. {@code defeat_hostiles}: a Night City person the player struck in melee dies
- * within 60 s (its figure lies down: the host's {@code npcs} dead flag or {@code killed}) and its faction matches. {@code
+ * saved). {@code deliver_item}: handed in at any fixer (plain copies from the hotbar and
+ * backpack only, as a vendor buys them). {@code defeat_hostiles}: a Night City person the player struck (in melee or
+ * with a projectile) dies within 60 s (its figure lies down: the host's {@code npcs} dead flag or {@code killed}) and its faction matches. {@code
  * reach_landmark}: checked once a second against the landmark's position (7T's {@code landmark} content). {@code breach_device}:
  * {@link #breached}, which Phase 6's Breach calls on a solved breach. A gig past its {@code time_limit} fails. On completion the
  * reward is paid at once in Minecraft eddies (section 1.16) and items, and the gigs-done count and the {@code cb_gigs} scoreboard
@@ -108,10 +109,11 @@ public final class Gigs implements Visit.Service {
 		if (active != null) {
 			boolean deliver = active.type() == Contract.Type.DELIVER_ITEM;
 			Item item = deliver ? Shopkeeper.item(active.item().toString()) : null;
-			int have = item == null ? 0 : Eddies.count(v.player.getInventory(), item);
-			rows.add(new NpcWire.Row("active", icon(active), deliver ? active.count() : 0, "", active.title(),
-				sub(active, deliver ? Math.min(have, active.count()) : gig.progress()), active.eddies(), deliver ? "turn_in" : "abandon",
-				!deliver || have >= active.count()));
+			int have = item == null ? 0 : Eddies.goods(v.player.getInventory(), item, false);
+			String note = item == null ? "" : Eddies.kept(v.player.getInventory(), item, active.count());
+			String sub = sub(active, deliver ? Math.min(have, active.count()) : gig.progress());
+			rows.add(new NpcWire.Row("active", icon(active), deliver ? active.count() : 0, "", active.title(), note.isEmpty() ? sub : note + "  " + sub,
+				active.eddies(), deliver ? "turn_in" : "abandon", !deliver || have >= active.count()));
 			if (deliver) {
 				rows.add(new NpcWire.Row("abandon", "minecraft:barrier", 0, "", active.title(), "", -1, "abandon", true));
 			}
@@ -157,11 +159,11 @@ public final class Gigs implements Visit.Service {
 			}
 
 			Item item = Shopkeeper.item(active.item().toString());
-			if (item == null || Eddies.count(v.player.getInventory(), item) < active.count()) {
-				return "noitem";
+			if (item == null || Eddies.goods(v.player.getInventory(), item, false) < active.count()) {
+				return item == null || Eddies.kept(v.player.getInventory(), item, active.count()).isEmpty() ? "noitem" : "kept";
 			}
 
-			Eddies.take(v.player.getInventory(), item, active.count());
+			Eddies.takeGoods(v.player.getInventory(), item, active.count());
 			complete(v.player, gig, active);
 			v.line = active.doneText();
 			v.say("gig_done", "title", active.title(), "reward", Integer.toString(active.eddies()));
@@ -239,8 +241,11 @@ public final class Gigs implements Visit.Service {
 		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.npc.gig.progress", "%s: %s / %s", c.title(), progress, c.count()));
 	}
 
-	/** A player's melee blow (AttackEntityCallback): remembered when it is on a Night City person and the player has a defeat gig. */
-	static void struck(final ServerPlayer player, final Entity entity) {
+	/**
+	 * A player's blow, arrow, trident or other projectile on a Night City figure (ProxyEntity's damage path, so ranged kills count too):
+	 * remembered when it is a living person and the player has a defeat gig.
+	 */
+	public static void struck(final ServerPlayer player, final Entity entity) {
 		Contract c = contract(gig(player));
 		if (c != null && c.type() == Contract.Type.DEFEAT_HOSTILES && entity instanceof ProxyEntity proxy && proxy.getType() == ProxyEntities.HUMAN
 			&& !proxy.dead()) {

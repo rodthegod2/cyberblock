@@ -7,7 +7,6 @@ import dev.cyberblock.net.ServerNet;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.commands.CommandSourceStack;
@@ -20,7 +19,7 @@ import net.minecraft.world.InteractionResult;
 
 /**
  * Phase 7's NPC interaction layer (megaplan task 7-N1), server half: the content kinds, the hub NPC entity, the role screens opened by
- * a right-click on a figure or hub NPC (sneak to use an item on it instead), fixer gig tracking, {@code /cyberblock gig} (your gig)
+ * a right-click on a figure (sneak to use an item on it instead) or hub NPC (nothing is ever used on one), fixer gig tracking, {@code /cyberblock gig} (your gig)
  * and {@code /cyberblock npc spawn <role>} (operators: a role NPC where you stand, for tests and builds outside the hub).
  */
 public final class NpcModule {
@@ -38,16 +37,10 @@ public final class NpcModule {
 				return InteractionResult.PASS;
 			}
 
-			// the client asks again with the off hand after a main hand it saw pass: one screen, and no item used on a role NPC either way
+			// the client consumes the click on a role figure (NpcClient) or hub NPC (HubNpc.interact); a client that still asks
+			// again with the off hand gets no second screen, and no item is used on a role NPC either way
 			boolean role = hand == InteractionHand.OFF_HAND ? NpcScreens.visit(p, entity) != null : NpcScreens.open(p, entity);
 			return role ? InteractionResult.SUCCESS : InteractionResult.PASS;
-		});
-		AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
-			if (player instanceof ServerPlayer p && !level.isClientSide()) {
-				Gigs.struck(p, entity);
-			}
-
-			return InteractionResult.PASS;
 		});
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
 			Gigs.tick(server);
@@ -55,8 +48,10 @@ public final class NpcModule {
 		});
 		ServerLifecycleEvents.SERVER_STARTED.register(server -> {
 			Cyberblock.LOG.info("npc: {} roles, {} dialogue files, {} contracts, {} ripperdoc catalogues; breach gigs advance through Gigs.breached "
-				+ "(Phase 6 Breach), defeat gigs on melee strikes", NpcContent.roles().size(), NpcContent.dialogue().size(), NpcContent.contracts().size(),
-				NpcContent.catalogues().size());
+				+ "(Phase 6 Breach), defeat gigs on any player hit (melee or projectile)", NpcContent.roles().size(), NpcContent.dialogue().size(),
+				NpcContent.contracts().size(), NpcContent.catalogues().size());
+			Cyberblock.LOG.info("npc: mechanic: Cyberpunk car repair not available yet (no confirmed repair answer from the host's game); "
+				+ "fallback active: armour and elytra repair only");
 			HubNpcs.load(server);
 		});
 		ServerLifecycleEvents.END_DATA_PACK_RELOAD.register((server, resources, success) -> HubNpcs.load(server));

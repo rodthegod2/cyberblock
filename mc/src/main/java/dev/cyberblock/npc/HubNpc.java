@@ -16,6 +16,7 @@ import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -95,10 +96,18 @@ public final class HubNpc extends PathfinderMob {
 		return false;
 	}
 
-	/** A right-click is the role screen (the server opens it from UseEntityCallback first); the held item is never used on it. */
+	/**
+	 * A right-click is the role screen (the server opens it from UseEntityCallback first), sneaking or not: nothing held is ever used on
+	 * it, so no name tag renames it and no lead ties it (Mob.interact would apply both before mobInteract).
+	 */
 	@Override
-	protected InteractionResult mobInteract(final Player player, final InteractionHand hand) {
+	public InteractionResult interact(final Player player, final InteractionHand hand, final Vec3 location) {
 		return InteractionResult.SUCCESS;
+	}
+
+	@Override
+	public boolean canBeLeashed() {
+		return false;
 	}
 
 	@Override

@@ -16,7 +16,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * A vendor's screen (megaplan task 7-N1, section 1.16): the NPC's {@code shop} content (a hub figure's own shop, else the role's
  * {@code shop_by_tag} entry for the figure's vendor tag, else the role's {@code shop}): its stock rows to buy ({@code b<row>}) and its
- * sell rows to sell ({@code s<row>}), all for Minecraft eddies, as the role's {@code buy} and {@code sell} services allow. Each vendor
+ * sell rows to sell ({@code s<row>}: plain copies from the hotbar and backpack only, never worn armour, the off hand or an enchanted,
+ * named or worn copy), all for Minecraft eddies, as the role's {@code buy} and {@code sell} services allow. Each vendor
  * counts its own sales per stock row against the row's limit until the shop's restock time is up. Server thread.
  */
 final class Shopkeeper implements Visit.Service {
@@ -61,8 +62,9 @@ final class Shopkeeper implements Visit.Service {
 					left != 0 && (r.price() <= eddies || v.player.isCreative())));
 			} else {
 				Item item = item(r.item());
-				boolean has = item != null && Eddies.count(v.player.getInventory(), item) >= r.count();
-				rows.add(new NpcWire.Row("s" + j, r.item(), r.count(), "", "", "", r.price(), "sell", has));
+				boolean has = item != null && Eddies.goods(v.player.getInventory(), item, false) >= r.count();
+				String note = item == null ? "" : Eddies.kept(v.player.getInventory(), item, r.count());
+				rows.add(new NpcWire.Row("s" + j, r.item(), r.count(), "", "", note, r.price(), "sell", has));
 			}
 		}
 
@@ -117,11 +119,11 @@ final class Shopkeeper implements Visit.Service {
 
 		String name = new ItemStack(item).getHoverName().getString();
 		if (!buy) {
-			if (Eddies.count(v.player.getInventory(), item) < r.count()) {
-				return "noitem";
+			if (Eddies.goods(v.player.getInventory(), item, false) < r.count()) {
+				return Eddies.kept(v.player.getInventory(), item, r.count()).isEmpty() ? "noitem" : "kept";
 			}
 
-			Eddies.take(v.player.getInventory(), item, r.count());
+			Eddies.takeGoods(v.player.getInventory(), item, r.count());
 			Eddies.earn(v.player, r.price());
 			Cyberblock.LOG.info("npc: {} sold {} x{} for {} eddies to {}", v.player.getPlainTextName(), r.item(), r.count(), r.price(), v.shop);
 			v.say("sale", "item", name, "price", Integer.toString(r.price()));

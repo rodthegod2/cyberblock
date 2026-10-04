@@ -15,6 +15,9 @@ import org.jspecify.annotations.Nullable;
  * server counts; a client never states a balance. Server thread.
  */
 final class Eddies {
+	/** A sell or hand-in row's second line when only copies the player would lose something on are there. */
+	static final String KEPT = "Only enchanted, named or worn copies: those are kept";
+
 	private Eddies() {
 	}
 
@@ -73,6 +76,49 @@ final class Eddies {
 		}
 
 		return (int) Math.min(n, Integer.MAX_VALUE);
+	}
+
+	/** A copy a player can sell or hand in without losing anything: no enchantment, no name of its own, no wear. */
+	static boolean plain(final ItemStack s) {
+		return !s.isEnchanted() && s.getCustomName() == null && !s.isDamaged();
+	}
+
+	/**
+	 * Copies of an item to sell or hand in: only in the hotbar and backpack (never worn armour or the off hand), and only plain ones
+	 * unless {@code all}.
+	 */
+	static int goods(final Inventory inv, final Item item, final boolean all) {
+		long n = 0;
+		for (ItemStack s : inv.getNonEquipmentItems()) {
+			if (s.getItem() == item && (all || plain(s))) {
+				n += s.getCount();
+			}
+		}
+
+		return (int) Math.min(n, Integer.MAX_VALUE);
+	}
+
+	/** Takes n plain copies from the hotbar and backpack (the caller checked {@link #goods} first). */
+	static void takeGoods(final Inventory inv, final Item item, final int n) {
+		int left = n;
+		for (ItemStack s : inv.getNonEquipmentItems()) {
+			if (left <= 0) {
+				break;
+			}
+
+			if (s.getItem() == item && plain(s)) {
+				int k = Math.min(left, s.getCount());
+				s.shrink(k);
+				left -= k;
+			}
+		}
+
+		inv.setChanged();
+	}
+
+	/** The row's note when only enchanted, named or worn copies would make up the count ("" otherwise): those are kept. */
+	static String kept(final Inventory inv, final Item item, final int need) {
+		return goods(inv, item, false) < need && goods(inv, item, true) >= need ? KEPT : "";
 	}
 
 	static void take(final Inventory inv, final @Nullable Item item, final int n) {

@@ -25,8 +25,10 @@ final class NpcScreens {
 	static final double REACH = 8.0;
 	/** Acts closer together than this from one player are dropped. */
 	static final long MIN_ACT_MS = 40;
+	/** Screens opened closer together than this for one player are not sent (each is a full screen and may be a log line). */
+	static final long MIN_OPEN_MS = 250, QUIET_LOG_MS = 10_000;
 	private static final Map<UUID, Visit> visits = new HashMap<>();
-	private static final Map<UUID, Long> lastAct = new HashMap<>();
+	private static final Map<UUID, Long> lastAct = new HashMap<>(), lastOpen = new HashMap<>();
 	static final Shopkeeper shopkeeper = new Shopkeeper();
 	static final Clinic clinic = new Clinic();
 	private static final Map<String, Visit.Service> services = Map.of("shop", shopkeeper, "ripperdoc", clinic.ripperdoc, "medic", clinic.medic,
@@ -56,17 +58,34 @@ final class NpcScreens {
 		return tabs.isEmpty() ? List.of("none") : tabs;
 	}
 
-	/** A right-click (UseEntityCallback): true when the NPC has a role screen and it opened. */
+	/**
+	 * A right-click (UseEntityCallback): true when the NPC has a role screen (the click is consumed). The screen opens at most once per
+	 * {@link #MIN_OPEN_MS} per player; an open within {@link #QUIET_LOG_MS} of the player's last one is logged at debug only.
+	 */
 	static boolean open(final ServerPlayer player, final Entity npc) {
 		Visit v = visit(player, npc);
 		if (v == null) {
 			return false;
 		}
 
+		long now = System.currentTimeMillis();
+		Long last = lastOpen.get(player.getUUID());
+		if (last != null && now - last < MIN_OPEN_MS) {
+			// interact packets faster than a person clicks: no screen sent and nothing logged
+			return true;
+		}
+
+		lastOpen.put(player.getUUID(), now);
 		v.tab = tabs(v).getFirst();
 		v.say("greeting");
 		visits.put(player.getUUID(), v);
-		Cyberblock.LOG.info("npc: {} opened {} ({}) at {}", player.getPlainTextName(), v.roleId, v.role.screen(), npc instanceof HubNpc ? "a hub NPC" : "a figure");
+		String at = npc instanceof HubNpc ? "a hub NPC" : "a figure";
+		if (last == null || now - last >= QUIET_LOG_MS) {
+			Cyberblock.LOG.info("npc: {} opened {} ({}) at {}", player.getPlainTextName(), v.roleId, v.role.screen(), at);
+		} else {
+			Cyberblock.LOG.debug("npc: {} opened {} ({}) at {}", player.getPlainTextName(), v.roleId, v.role.screen(), at);
+		}
+
 		send(v);
 		return true;
 	}
@@ -146,12 +165,14 @@ final class NpcScreens {
 	static void forget(final UUID player) {
 		visits.remove(player);
 		lastAct.remove(player);
+		lastOpen.remove(player);
 		clinic.forget(player);
 	}
 
 	static void clear() {
 		visits.clear();
 		lastAct.clear();
+		lastOpen.clear();
 		shopkeeper.clear();
 		clinic.clear();
 		Gigs.clear();

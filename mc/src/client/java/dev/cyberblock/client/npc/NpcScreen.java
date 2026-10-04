@@ -49,10 +49,9 @@ public final class NpcScreen extends Screen {
 		Map.entry("done", "Gig done"), Map.entry("abandoned", "Gig dropped"), Map.entry("none", "Nothing to do"),
 		Map.entry("installed", "Already installed"), Map.entry("recovering", "Still recovering from surgery"),
 		Map.entry("surgery_ok", "The surgery went well"), Map.entry("surgery_fail", "The surgery failed"), Map.entry("cancelled", "Surgery called off"),
-		Map.entry("healed", "Patched up"), Map.entry("repaired", "Repaired"), Map.entry("repair_sent", "Repair sent to your Cyberpunk car"),
-		Map.entry("no_vehicle", "Get in your car in Cyberpunk first"), Map.entry("not_active", "Turn Cyberpunk on first"),
-		Map.entry("not_host", "Only a Cyberpunk host has a car to repair"), Map.entry("drank", "Cheers"));
-	private static final Set<String> GOOD = Set.of("ok", "sold", "taken", "done", "surgery_ok", "healed", "repaired", "repair_sent", "drank");
+		Map.entry("healed", "Patched up"), Map.entry("repaired", "Repaired"), Map.entry("unavailable", "Not available yet"),
+		Map.entry("kept", "Only enchanted, named or worn copies: kept"), Map.entry("drank", "Cheers"));
+	private static final Set<String> GOOD = Set.of("ok", "sold", "taken", "done", "surgery_ok", "healed", "repaired", "drank");
 	/** The English of each screen's role, when the role's title_key has no translation. */
 	private static final Map<String, String> ROLES = Map.of("ripperdoc", "Ripperdoc", "shop", "Vendor", "contracts", "Fixer", "bartender", "Bartender",
 		"medic", "Medic", "mechanic", "Mechanic");

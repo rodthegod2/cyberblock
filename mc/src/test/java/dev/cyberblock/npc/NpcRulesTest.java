@@ -123,11 +123,9 @@ class NpcRulesTest {
 		assertEquals(-1, Shopkeeper.cell("s12", 'b'));
 		assertEquals(-1, Shopkeeper.cell("b", 'b'));
 		assertEquals(-1, Shopkeeper.cell("b123", 'b'));
-		assertEquals("not_host", Garage.vehicleCheck(false, false));
-		assertEquals("not_active", Garage.vehicleCheck(true, false));
-		assertEquals("", Garage.vehicleCheck(true, true));
-		assertEquals("{\"t\":\"repair\",\"id\":7}", Services.repair(7));
 		assertEquals("{\"t\":\"heal\",\"id\":8}", Services.heal(8));
+		assertTrue(Garage.CAR_UNAVAILABLE.length() <= NpcWire.SUB_CAP);
+		assertTrue(Eddies.KEPT.length() <= NpcWire.SUB_CAP);
 		assertEquals("Neon Sour", Bar.words("neon_sour"));
 	}
 }

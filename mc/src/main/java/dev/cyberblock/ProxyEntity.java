@@ -2,11 +2,13 @@ package dev.cyberblock;
 
 import dev.cyberblock.cyber.CyberwareEffects;
 import dev.cyberblock.figure.FigureLook;
+import dev.cyberblock.npc.Gigs;
 import java.util.UUID;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.DamageTypeTags;
@@ -366,6 +368,11 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 		Entity attacker = source.getEntity();
 		this.lastActor = attacker;
 		this.lastActorTick = this.tickCount;
+		if (attacker instanceof ServerPlayer player) {
+			// a blow, arrow, trident or fire charge of a player: a defeat gig counts the person if it dies soon after
+			Gigs.struck(player, this);
+		}
+
 		ProxyDamage.Actor actor = attacker instanceof Player ? ProxyDamage.Actor.PLAYER : attacker instanceof Mob ? ProxyDamage.Actor.MOB : ProxyDamage.Actor.OTHER;
 		Entity direct = source.getDirectEntity();
 		ProxyDamage.Medium medium = direct instanceof ThrownTrident ? ProxyDamage.Medium.TRIDENT
