@@ -477,6 +477,7 @@ class SimServer(mpcheck.Server):
         super().__init__(port, 0, "pw", None, LogFile(tmp / f"server-{port}.log"), tmp, join_password)
         self.sim, self.bugs, self.toggles = env_sim, bugs, {}
         self.locked, self.verified, self.wrong, self.pending = set(), set(), {}, {}
+        self.grounded = False  # a host's ground stands as replica blocks (from Phase 3 it stays when the host leaves)
 
     def login(self, actor, typed):
         """As JoinLock.login: the right password verifies (and the waiting host link is granted), five wrong ones kick."""
@@ -506,8 +507,12 @@ class SimServer(mpcheck.Server):
         sim = self.sim
         if command == "list":
             return "There are 0 of a max of 4 players online:"
-        if command.startswith("execute if block"):
-            return "Test passed" if any(h["linked"] and h["ground"] for h in sim.hosts.values()) else "Test failed"
+        # Phase 3: host ground is replica blocks, kept after the link drops; the bug is the old rule (barriers that go with the link)
+        barriers = "barrier-ground" in self.bugs and any(h["linked"] and h["ground"] for h in sim.hosts.values())
+        if command.startswith("execute unless block") and command.endswith(" minecraft:air"):
+            return "Test passed" if barriers or (self.grounded and "barrier-ground" not in self.bugs) else "Test failed"
+        if command.startswith("execute if block") and command.endswith(" minecraft:barrier"):
+            return "Test passed" if barriers else "Test failed"
         if command.startswith("execute if entity"):
             return "Test passed. Count: 3" if any(h["linked"] for h in sim.hosts.values()) else "Test failed"
         actor = None
@@ -633,6 +638,7 @@ class SimEnv:
         # answer to `session state:host` reaches the server, as with the real client
         answer = fakehost.Cyberpunk(frozenset(layers), frozenset(modes), ids_from, name).reply(SESSION_HOST)
         host["ground"] = any(m["t"] == "ground" and m["c"] for m in answer)
+        srv.grounded = srv.grounded or host["ground"]
 
     def stop_all(self):
         self.stopped.append(True)
@@ -718,10 +724,10 @@ def test_a_guest_command_for_a_player_who_is_not_online_is_a_clear_error(tmp_pat
 
 def test_the_ground_shows_only_because_the_fake_host_re_sends_it_when_it_becomes_the_host(tmp_path, monkeypatch):
     """The client drops what the DLL sends before it is the host; a fake host that does not answer `session host` with the
-    ground leaves the guest and reconnect scenarios without barriers."""
+    ground leaves the guest and reconnect scenarios without ground."""
     monkeypatch.setattr(fakehost.Cyberpunk, "reply", lambda self, m: [])
     guest, reconnect = run_scenario(SimEnv(fresh(tmp_path / "a")), "guest"), run_scenario(SimEnv(fresh(tmp_path / "b")), "reconnect")
-    assert "the ground is there as barrier blocks" in failed(guest) and "the ground and the proxies are there" in failed(reconnect)
+    assert "the ground is there (replica blocks)" in failed(guest) and "the ground and the proxies are there" in failed(reconnect)
 
 
 def test_guest_scenario_stops_when_the_host_never_becomes_a_host(tmp_path):
@@ -746,6 +752,12 @@ def test_reconnect_scenario_passes_and_fails_when_the_session_never_ends(tmp_pat
     assert rep.ok, failed(rep)
     bad = run_scenario(SimEnv(tmp_path, bugs=["no-session-end"]), "reconnect")
     assert "the session ended when the link dropped" in failed(bad)
+
+
+def test_reconnect_scenario_fails_when_host_ground_is_still_barriers(tmp_path):
+    """Phase 3: host ground is replica blocks that stay while the host is away; a barrier left there is the pre-replica rule."""
+    bad = run_scenario(SimEnv(tmp_path, bugs=["barrier-ground"]), "reconnect")
+    assert "the ground stays as replica blocks, no barrier left" in failed(bad)
 
 
 def test_twohosts_scenario_passes_and_notices_a_hit_that_leaks_to_the_other_host(tmp_path):
@@ -1004,7 +1016,7 @@ class Sim3Server(SimServer):
             return "Test passed. Count: 1" if any(math.dist(spot, cell) <= 0.6 for cell in self.wrecks) else "Test failed"
         if command == "time query time":  # 26.3: commands.time.query.absolute (there is no `time query daytime`)
             return f"Clock minecraft:overworld is at {self.days * 24000 + self.ticks} tick(s)"
-        if match := re.match(r'execute if predicate \{condition:"minecraft:weather_check",(raining|thundering):true\}', command):
+        if match := re.match(r'execute if predicate \{type:"minecraft:weather_check",(raining|thundering):true\}', command):
             on = self.weather in ("rain", "storm") if match.group(1) == "raining" else self.weather == "storm"
             return "Test passed" if on else "Test failed"
         if match := re.fullmatch(r"data get entity (\S+) Pos", command):
@@ -1013,8 +1025,8 @@ class Sim3Server(SimServer):
         actor, inner = None, command
         if match := re.fullmatch(r"execute as (\S+) run (.*)", command):
             actor, inner = match.groups()
-        if inner.startswith("setblock "):
-            _, x, y, z, block = inner.split()
+        if inner.startswith("cyberblock test place "):  # 3R's ChangeLog records it as the player's own placement
+            _, _, _, x, y, z, block = inner.split()
             cell = (int(x), int(y), int(z))
             self.world[cell] = block
             self.player_blocks.append(cell)
@@ -1129,7 +1141,7 @@ def test_replica_scenario_runs_the_guest_actions_as_the_guest(tmp_path, monkeypa
     real = Sim3Server.rcon
     monkeypatch.setattr(Sim3Server, "rcon", lambda self, c: sent.append(c) or real(self, c))
     assert run3(tmp_path, "replica").ok
-    assert [c for c in sent if "setblock" in c] == [f"execute as CbGuest1 run setblock {x} {y} {z} minecraft:stone" for x, y, z in mpcheck.REPLICA_WALL]
+    assert [c for c in sent if "test place" in c] == [f"execute as CbGuest1 run cyberblock test place {x} {y} {z} minecraft:stone" for x, y, z in mpcheck.REPLICA_WALL]
     assert "execute as CbHost1 run cyberblock changes" in sent
 
 
@@ -1248,6 +1260,6 @@ def test_the_replica_helpers_read_the_answers_rcon_gives():
     assert mpcheck.proxy_count(S({"execute if entity @e[type=cyberblock:proxy_human]": "Test passed. Count: 4"})) == 4  # 26.3's pass_count
     assert mpcheck.proxy_count(S({"execute if entity @e[type=cyberblock:proxy_human]": "Test passed, count: 4"})) == 4
     assert mpcheck.proxy_count(S({"execute if entity @e[type=cyberblock:proxy_human]": "Test passed"})) == 1 and mpcheck.proxy_count(S({})) == 0
-    weather = S({'execute if predicate {condition:"minecraft:weather_check",raining:true}': "Test passed"})
+    weather = S({'execute if predicate {type:"minecraft:weather_check",raining:true}': "Test passed"})
     assert mpcheck.weather_is(weather, rain=True, thunder=False) and not mpcheck.weather_is(weather, rain=False, thunder=False)
     assert [s[:3] for s in mpcheck.ENV_STATES] == [(16500, False, False), (17000, True, False), (17500, True, True), (23750, False, False)]

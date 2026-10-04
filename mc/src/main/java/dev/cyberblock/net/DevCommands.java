@@ -3,19 +3,25 @@ package dev.cyberblock.net;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.FloatArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.replica.ChangeLog;
 import java.util.Arrays;
 import java.util.Locale;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 
 /**
  * Dev-only test commands (megaplan 1-N4), registered only with {@code -Dcyberblock.devtools=true} (never on by default) and only for
@@ -25,6 +31,8 @@ import net.minecraft.world.level.Level;
  * <li>{@code /cyberblock test hit <host> <id> <dmg>}: damages the proxy of that host's Night City id</li>
  * <li>{@code /cyberblock test explode <x> <y> <z> <power>}: a TNT-style explosion in the source's level</li>
  * <li>{@code /cyberblock test session <host>}: dumps the host's session</li>
+ * <li>{@code /cyberblock test place <x> <y> <z> <block>}: sets a block as the source player's own placement (the Offline Builds log
+ * records it by that player's name, as a block placed by hand)</li>
  * </ul>
  */
 public final class DevCommands {
@@ -48,7 +56,12 @@ public final class DevCommands {
 						.executes(c -> explode(c.getSource(), DoubleArgumentType.getDouble(c, "x"), DoubleArgumentType.getDouble(c, "y"),
 							DoubleArgumentType.getDouble(c, "z"), FloatArgumentType.getFloat(c, "power"))))))))
 			.then(Commands.literal("session").then(Commands.argument("host", StringArgumentType.word())
-				.executes(c -> session(c.getSource(), StringArgumentType.getString(c, "host")))))));
+				.executes(c -> session(c.getSource(), StringArgumentType.getString(c, "host")))))
+			.then(Commands.literal("place").then(Commands.argument("x", IntegerArgumentType.integer())
+				.then(Commands.argument("y", IntegerArgumentType.integer()).then(Commands.argument("z", IntegerArgumentType.integer())
+					.then(Commands.argument("block", StringArgumentType.greedyString())
+						.executes(c -> place(c.getSource(), new BlockPos(IntegerArgumentType.getInteger(c, "x"), IntegerArgumentType.getInteger(c, "y"),
+							IntegerArgumentType.getInteger(c, "z")), StringArgumentType.getString(c, "block")))))))));
 	}
 
 	private static HostSession sessionOf(final CommandSourceStack source, final String host) {
@@ -90,6 +103,25 @@ public final class DevCommands {
 		Cyberblock.LOG.info(line);
 		source.sendSuccess(() -> Component.literal(line), false);
 		return 1;
+	}
+
+	private static int place(final CommandSourceStack source, final BlockPos pos, final String id) {
+		ServerPlayer actor = source.getPlayer();
+		Identifier key = Identifier.tryParse(id.trim());
+		Block block = key == null ? null : BuiltInRegistries.BLOCK.getOptional(key).orElse(null);
+		if (actor == null || block == null) {
+			source.sendFailure(Component.literal(actor == null ? "test: place needs a player (execute as <player> run ...)" : "test: no block " + id));
+			return 0;
+		}
+
+		ServerLevel level = source.getLevel();
+		ChangeLog.acting(actor.getPlainTextName(), pos.asLong(), pos.asLong(), level.getServer().getTickCount());
+		boolean set = level.setBlockAndUpdate(pos, block.defaultBlockState());
+		String line = String.format(Locale.ROOT, "test: place %s at %d %d %d by %s -> %s", key, pos.getX(), pos.getY(), pos.getZ(), actor.getPlainTextName(),
+			set ? "placed" : "unchanged");
+		Cyberblock.LOG.info(line);
+		source.sendSuccess(() -> Component.literal(line), false);
+		return set ? 1 : 0;
 	}
 
 	private static int session(final CommandSourceStack source, final String host) {

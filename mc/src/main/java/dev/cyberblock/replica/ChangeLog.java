@@ -144,8 +144,11 @@ public final class ChangeLog extends SavedData {
 		return l == null ? List.of() : l.after(epochMs);
 	}
 
-	/** A player is about to change these cells in this server tick (a block use: hit and hit + face; a break: the cell twice). */
-	static void acting(final String name, final long a, final long b, final int tick) {
+	/**
+	 * A player is about to change these cells in this server tick (a block use: hit and hit + face; a break: the cell twice; the
+	 * devtools {@code /cyberblock test place}: the cell twice).
+	 */
+	public static void acting(final String name, final long a, final long b, final int tick) {
 		pending = new Pending(name, a, b, tick);
 	}
 

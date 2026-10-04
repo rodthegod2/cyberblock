@@ -11,11 +11,12 @@ throw-away run folder under %TEMP% and is stopped when it ends (only processes i
 
 Scenarios (megaplan task 1-T2). Each one starts what it needs on its own test port; the defaults are package 1T's:
   singleplayer  one client, its integrated server, the existing fake host modes through the relay
-  guest         a host (client + fake host) and a guest: barriers, proxies, a guest hit and explosion reach the fake host,
+  guest         a host (client + fake host) and a guest: the ground (replica blocks), proxies, a guest hit and explosion reach the fake host,
                 the guest toggles block them
   versions      the DLL version mismatch (guest, `session refused`) and the mod version mismatch (disconnect message)
   flood         a DLL link that floods `ground`: rate limits, the overflow kick, the server survives
-  reconnect     the host's DLL link drops (barriers and proxies gone) and returns (`blocks reset:true`, the whole ground again)
+  reconnect     the host's DLL link drops (proxies gone, the ground stays as replica blocks with no barrier) and returns
+                (`blocks reset:true`, the whole ground again)
   twohosts      `maxHosts` 2, two fake hosts with colliding ids: each one gets only its own hits
   replica       Phase 3: one fake host `--replica` and a guest: the street stands as replica blocks of the right materials, a `seen`
                 removal takes one scaffold away and a plain one keeps the other, `clear` removes nothing, the car V destroyed (`killed`)
@@ -31,7 +32,8 @@ Safety: the commit charge must be under 60 GB before anything starts (it waits 6
 mode on 127.0.0.1; its RCON password is random per run, held in memory and written only to server.properties in the run
 folder (it is never printed, logged or put on a command line); APEX_FTP_PASS is removed from the environment of every child;
 port 25600 and `Local\\CyberblockFrame` are never used. The scenarios assume the plan's devtools commands (task 1-N4,
-`-Dcyberblock.devtools=true`): `/cyberblock test hit <host> <id> <dmg>` and `/cyberblock test explode <x> <y> <z> <power>`
+`-Dcyberblock.devtools=true`): `/cyberblock test hit <host> <id> <dmg>`, `/cyberblock test explode <x> <y> <z> <power>` and
+`/cyberblock test place <x> <y> <z> <block>`
 run as the guest with `/execute as CbGuest1 run ...` (from the RCON console alone there is no player behind them, and an action
 with no player behind it is always allowed), and `/execute as <host> run cyberblock guests <toggle> on|off` flips that host's
 toggle. They also assume that `runServer` and `runClient` honour `-Pcyberblock.runDir` (task 1-L1) and that the dedicated
@@ -626,7 +628,13 @@ def start_host(env: Env, rep: Report, server: Server, name: str, *, ver: str | N
 
 
 def ground_stands(server: Server, cells: Iterable[tuple[int, int, int]] = (SLAB,)) -> bool:
-    return all(server.passes(f"execute if block {x} {y} {z} minecraft:barrier") for x, y, z in cells)
+    """The fake host's ground fills these cells. From Phase 3 (3-R1) host ground is replica blocks whose material the palette
+    picks, so any block counts: the test world is empty there otherwise."""
+    return all(server.passes(f"execute unless block {x} {y} {z} minecraft:air") for x, y, z in cells)
+
+
+def barrier_left(server: Server, cells: Iterable[tuple[int, int, int]]) -> bool:
+    return any(server.passes(f"execute if block {x} {y} {z} minecraft:barrier") for x, y, z in cells)
 
 
 def proxies_stand(server: Server) -> bool:
@@ -657,7 +665,7 @@ def scenario_singleplayer(env: Env, rep: Report) -> None:
 def scenario_guest(env: Env, rep: Report) -> None:
     server = env.server("guest")
     _, host = start_host(env, rep, server, "CbHost1", ver=env.mod_version)
-    rep.step("the ground is there as barrier blocks", lambda: poll(lambda: ground_stands(server, SLAB_CORNERS + (SLAB,)), T_EFFECT, 1.0, "barriers"))
+    rep.step("the ground is there (replica blocks)", lambda: poll(lambda: ground_stands(server, SLAB_CORNERS + (SLAB,)), T_EFFECT, 1.0, "the ground"))
     rep.step("the NPCs are there as proxies", lambda: poll(lambda: proxies_stand(server), T_EFFECT, 1.0, "proxies"))
     env.client("CbGuest1", join=server.port)
     rep.step("the second client joined as a guest", lambda: server.log.wait(r"handshake: CbGuest1 .*-> guest", T_JOIN), must=True)
@@ -737,8 +745,9 @@ def scenario_reconnect(env: Env, rep: Report) -> None:
     mark = server.log.mark()
     host.stop()  # the DLL link drops: the client tells the server (`hs` with no DLL)
     rep.step("the session ended when the link dropped", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, mark), must=True)
-    rep.step("the barriers are gone", lambda: poll(lambda: not any(server.passes(f"execute if block {x} {y} {z} minecraft:barrier") for x, y, z in SLAB_CORNERS + (SLAB,)),
-                                                    T_EFFECT, 1.0, "the barriers to go"))
+    # Phase 3 (3-R1): the replica is the growing map and stays while the host is away; only barriers would go
+    rep.step("the ground stays as replica blocks, no barrier left", lambda: poll(lambda: ground_stands(server, SLAB_CORNERS + (SLAB,))
+                                                                                  and not barrier_left(server, SLAB_CORNERS + (SLAB,)), T_EFFECT, 1.0, "the replica"))
     rep.step("the proxies are gone", lambda: poll(lambda: not proxies_stand(server), T_EFFECT, 1.0, "the proxies to go"))
     mark = server.log.mark()
     returned = env.fakehost(client, ver=env.mod_version)
@@ -842,9 +851,10 @@ def time_is(server: Server, ticks: int, tol: int = 40) -> bool:
 
 
 def weather_is(server: Server, *, rain: bool, thunder: bool) -> bool:
-    """The world's weather by two inline `weather_check` predicates (a storm is rain and thunder)."""
-    raining = server.passes('execute if predicate {condition:"minecraft:weather_check",raining:true}')
-    thundering = server.passes('execute if predicate {condition:"minecraft:weather_check",thundering:true}')
+    """The world's weather by two inline `weather_check` predicates (a storm is rain and thunder). 26.3 dispatches loot
+    conditions on `type` (a `Codec.dispatch` without a key name, javap on LootItemCondition), not the older `condition`."""
+    raining = server.passes('execute if predicate {type:"minecraft:weather_check",raining:true}')
+    thundering = server.passes('execute if predicate {type:"minecraft:weather_check",thundering:true}')
     return raining == rain and thundering == thunder
 
 
@@ -951,8 +961,8 @@ def scenario_replica(env: Env, rep: Report) -> None:
     rep.step("the session ends when the link drops", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, mark), must=True)
     rep.step("the figures go with the session", lambda: poll(lambda: not proxies_stand(server), T_EFFECT, T_POLL, "the figures to go"))
     rep.step("the replica stays while the host is away", lambda: landmarks_stand(server))
-    for x, y, z in REPLICA_WALL:  # the guest builds a wall on the road
-        server.rcon(f"execute as CbGuest1 run setblock {x} {y} {z} minecraft:stone")
+    for x, y, z in REPLICA_WALL:  # the guest builds a wall on the road, as its own placement (a plain /setblock is no player's change)
+        server.test(f"place {x} {y} {z} minecraft:stone", as_player="CbGuest1")
     rep.step("the guest's wall stands on the street", lambda: all(block_stands(server, cell, "minecraft:stone") for cell in REPLICA_WALL))
     mark = server.log.mark()
     returned = env.fakehost(client, ver=env.mod_version, layers=(), modes=("replica",), wait_host=T_JOIN)
