@@ -72,6 +72,8 @@ final class RelayGuard {
 		Map.entry("devices", new Rule(10, 40, Sanity.Kind.LIST, false)),
 		Map.entry("devstate", new Rule(10, 40, Sanity.Kind.NONE, false)),
 		Map.entry("devresult", new Rule(10, 40, Sanity.Kind.NONE, true)),
+		// Phase 7 (task 7-H1, the hub): parked answers each park on/off, a few per hub visit (Phase 3's descopes note: Phase 7 adds it)
+		Map.entry("parked", new Rule(2, 4, Sanity.Kind.NONE, false)),
 		// LOCAL until Phase 3 (the shared Night City map); its row is ready: 30/s, the survey's burst of 200
 		Map.entry("terrain", new Rule(30, 200, Sanity.Kind.TERRAIN, false))));
 

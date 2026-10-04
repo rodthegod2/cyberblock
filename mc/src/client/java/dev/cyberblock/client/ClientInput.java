@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.cyber.HackWheel;
+import dev.cyberblock.client.hub.HubClient;
 import dev.cyberblock.client.mixin.KeyMappingAccessor;
 import dev.cyberblock.client.settings.DebugFlags;
 import net.minecraft.client.KeyMapping;
@@ -127,7 +128,7 @@ public final class ClientInput {
 	static void tickEnd(final Minecraft minecraft) {
 		tickOver();
 		boolean screen = minecraft.gui.screen() != null;
-		if (hadScreen && !screen && HostState.live() != null) {
+		if (hadScreen && !screen && hostDrives()) {
 			held.screenClosed("attack", key(minecraft.options.keyAttack));
 			held.screenClosed("use", key(minecraft.options.keyUse));
 			if (DebugFlags.aim()) {
@@ -147,7 +148,12 @@ public final class ClientInput {
 	 * Window.onResize, which would move the real cursor) run outside it and keep the truth.
 	 */
 	public static boolean grabsMouse() {
-		return inTick && HostState.live() != null;
+		return inTick && hostDrives();
+	}
+
+	/** The host's keys and mouse are this client's input: Cyberpunk drives Steve, or the DLL shows the hub (HostState.hostInput). */
+	private static boolean hostDrives() {
+		return HostState.live() != null || HostState.hostInput();
 	}
 
 	private static Key key(final KeyMapping mapping) {
@@ -234,9 +240,14 @@ public final class ClientInput {
 				}
 
 				// Space and Left Shift: Cyberpunk keeps them (V jumps and sprints) and the host moves Steve, so vanilla jump and sprint
-				// are never pressed; they are stored for the glide start and the cyber track (which hears "key" through the Bridge)
-				if (k.equals("jump") || k.equals("sprint")) {
+				// are never pressed; they are stored for the glide start and the cyber track (which hears "key" through the Bridge).
+				// In the hub the DLL's W A S D, Ctrl, Space and Shift walk Steve instead (HubClient, 7D's "Input in the hub")
+				boolean hostKey = k.equals("jump") || k.equals("sprint");
+				if (hostKey) {
 					HostState.setKey(k, down);
+				}
+
+				if (HubClient.key(minecraft, k, down) || hostKey) {
 					return;
 				}
 
@@ -309,7 +320,11 @@ public final class ClientInput {
 					player.getInventory().setSelectedSlot(n);
 				}
 			}
-			case "look" -> Flight.look(m);
+			case "look" -> {
+				if (!HubClient.look(minecraft, m)) {
+					Flight.look(m);
+				}
+			}
 			case "cursor" -> HostCursor.move(minecraft, m.get("x").getAsDouble(), m.get("y").getAsDouble());
 			case "click" -> HostCursor.click(minecraft, m.get("b").getAsInt(), !m.has("down") || m.get("down").getAsBoolean(), mods(m));
 			case "char" -> {

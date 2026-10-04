@@ -27,9 +27,9 @@ public final class HostCursor {
 	private HostCursor() {
 	}
 
-	/** True when Minecraft should use the host's cursor instead of the OS one. */
+	/** True when Minecraft should use the host's cursor instead of the OS one (the host drives, or the hub is shown by the DLL). */
 	public static boolean active() {
-		return !Double.isNaN(x) && Minecraft.getInstance().gui.screen() != null && HostState.live() != null;
+		return !Double.isNaN(x) && Minecraft.getInstance().gui.screen() != null && (HostState.live() != null || HostState.hostInput());
 	}
 
 	public static double x() {
