@@ -217,9 +217,14 @@ public final class ServerNet {
 	private static void onUp(final ServerPlayer player, final Payloads.Up up) {
 		UUID uuid = player.getUUID();
 		Conn conn = conns.computeIfAbsent(uuid, u -> new Conn(u, player.getPlainTextName(), player.level().getServer().getTickCount()));
+		if (conn.kicked) {
+			return; // the ups already queued behind the kick: one disconnect, with its reason, is enough
+		}
+
 		HostSession session = HostSessions.of(uuid);
 		RelayGuard.Verdict verdict = conn.guard.check(session != null, up.t(), up.json(), player.getX(), player.getZ(), issued(session));
 		if (verdict.kick() != null) {
+			conn.kicked = true;
 			Cyberblock.LOG.info("relay: {} kicked ({})", conn.name, session == null ? "guest up flood" : "overflow");
 			HostSessions.end(uuid, "overflow");
 			player.connection.disconnect(Component.translatableWithFallback("cyberblock.relay.kicked", verdict.kick()));

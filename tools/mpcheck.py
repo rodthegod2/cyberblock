@@ -603,7 +603,7 @@ def ground_stands(server: Server, cells: Iterable[tuple[int, int, int]] = (SLAB,
 
 
 def proxies_stand(server: Server) -> bool:
-    return server.passes("execute if entity @e[type=cyberblock:human]")
+    return server.passes("execute if entity @e[type=cyberblock:proxy_human]")  # ProxyEntities.HUMAN
 
 
 def scenario_singleplayer(env: Env, rep: Report) -> None:
@@ -729,7 +729,9 @@ def scenario_twohosts(env: Env, rep: Report) -> None:
 
     def reaches_only(owner: FakeHost, other: FakeHost) -> bool:
         marks = owner.log.mark(), other.log.mark()
-        server.test(f"hit {owner.name} {target} 5.0")
+        # as the owner's own player: a hit with no player behind it (the bare RCON source) is "other" damage, which never reaches
+        # a host (ProxyDamage.kind), so it would prove nothing
+        server.test(f"hit {owner.name} {target} 5.0", as_player=owner.name)
         return bool(owner.log.wait(hit_pattern(owner.name, target), T_EFFECT, marks[0])) and other.log.quiet(hit_pattern(other.name, target), T_QUIET, marks[1])
 
     rep.step("two hosts at once with maxHosts 2", lambda: server.log.find(host_pattern("CbHost1")) and server.log.find(host_pattern("CbHost2")))
