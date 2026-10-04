@@ -31,10 +31,10 @@ toggle. They also assume that `runServer` and `runClient` honour `-Pcyberblock.r
 server's world is `<run dir>/world`. The harness writes the whole server.properties (RCON included) and eula.txt itself, so it
 skips 1L's `cyberblockServerFiles` task (`-x`), which would rewrite server.properties from the template and drop the RCON lines.
 
-Limit (megaplan section 5 in-game check 2, escalated to the integrator): `--guest` starts an OFFLINE client, and a world opened to
-LAN in 26.3 authenticates every remote login (IntegratedServer.initServer calls setUsesAuthentication(true) and publishServer
-keeps it), so it refuses this guest ("Invalid session") unless the mod adds a devtools way to open a LAN world without
-authentication. Until then the guest checks run in the automatic `guest` scenario on the offline test server.
+`--guest` starts an OFFLINE client, and a world opened to LAN in 26.3 authenticates every remote login
+(IntegratedServer.initServer calls setUsesAuthentication(true) and publishServer keeps it), so it refuses this guest
+("Invalid session") until the world's owner types `/cyberblock lan offline on` (LanAccess). The automatic guest checks run in
+the `guest` scenario on the offline test server.
 """
 import argparse
 import asyncio
@@ -851,8 +851,8 @@ def run_guest_client(env: Env, lan_port: int) -> int:
     """Re-test 1: one offline guest client for the world the user opened to LAN; nothing else is started."""
     client = env.client("CbGuest1", join=lan_port)
     env.say(f"started the offline guest CbGuest1 for 127.0.0.1:{lan_port}; close its window or press Ctrl+C here to stop it")
-    env.say("note: a LAN world authenticates every login, so it refuses this offline guest (\"Invalid session\") unless the mod lets "
-            "you open it without authentication (see docs/TESTING-PLAN.md, Re-test 1)")
+    env.say("note: a LAN world authenticates every login, so it refuses this offline guest (\"Invalid session\") until you type "
+            "/cyberblock lan offline on in that world (see docs/TESTING-PLAN.md, W-A9)")
     try:
         while client.proc.alive():
             time.sleep(0.5)

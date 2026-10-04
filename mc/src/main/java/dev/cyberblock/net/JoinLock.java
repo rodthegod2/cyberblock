@@ -6,6 +6,7 @@ import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import dev.cyberblock.Cyberblock;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
@@ -35,7 +36,8 @@ import net.minecraft.world.phys.Vec3;
  * (mixins), no damage, not a mob target, no chat and no command but /login, and no Cyberpunk host session (the handshake answers
  * guest with {@link Handshake.HostRefusal#LOCKED}; the right password re-runs it). {@code /login <password>} (also
  * {@code /cyberblock login}) unlocks: one try per second, five wrong ones kick, and a locked player is kicked after 120 s.
- * Verified players are remembered by UUID in LoginsData until the password changes. The password is never logged, sent to a
+ * Verified players are remembered by UUID in LoginsData until the password changes, except offline names on a LAN world without
+ * authentication: their /login holds for that connection only (LanAccess.storedLoginTrusted). The password is never logged, sent to a
  * client or shown; vanilla 26.3 logs a player's command text only when the command throws (Commands.performCommand, javap), so
  * the login handler never throws. Server thread unless a method says otherwise.
  */
@@ -51,6 +53,8 @@ public final class JoinLock {
 	/** Where each locked player is held. */
 	private static final Map<UUID, Vec3> holds = new ConcurrentHashMap<>();
 	private static volatile LoginsData data = new LoginsData();
+	/** Players whose /login holds for this connection only (an offline name on a LAN world without authentication, LanAccess). */
+	private static final Set<UUID> sessionOnly = ConcurrentHashMap.newKeySet();
 
 	private JoinLock() {
 	}
@@ -95,8 +99,13 @@ public final class JoinLock {
 	}
 
 	/** A join password is set and this player passed it on this world (it then counts like the whitelist for hosting). */
-	static boolean verified(final UUID player) {
-		return ServerConfig.get().joinPasswordOn() && data.verified(player);
+	static boolean verified(final MinecraftServer server, final ServerPlayer player) {
+		return ServerConfig.get().joinPasswordOn() && passed(server, player);
+	}
+
+	/** Passed on this connection, or remembered in LoginsData when that record can be trusted (LanAccess.storedLoginTrusted). */
+	private static boolean passed(final MinecraftServer server, final ServerPlayer player) {
+		return sessionOnly.contains(player.getUUID()) || LanAccess.storedLoginTrusted(server, player) && data.verified(player.getUUID());
 	}
 
 	/** {@code /login}, {@code /cyberblock login} (everyone) and {@code /cyberblock password [reset]} (operators). */
@@ -122,6 +131,7 @@ public final class JoinLock {
 	static void stopping() {
 		gate.clear();
 		holds.clear();
+		sessionOnly.clear();
 		data = new LoginsData();
 	}
 
@@ -152,7 +162,7 @@ public final class JoinLock {
 	}
 
 	private static boolean required(final MinecraftServer server, final ServerPlayer player) {
-		return ServerConfig.get().joinPasswordOn() && !ServerNet.isOwner(server, player) && !data.verified(player.getUUID());
+		return ServerConfig.get().joinPasswordOn() && !ServerNet.isOwner(server, player) && !passed(server, player);
 	}
 
 	/**
@@ -179,6 +189,7 @@ public final class JoinLock {
 	static void onLeave(final UUID player) {
 		gate.unlock(player);
 		holds.remove(player);
+		sessionOnly.remove(player);
 	}
 
 	private static void lock(final ServerPlayer p) {
@@ -284,11 +295,20 @@ public final class JoinLock {
 					p.connection.disconnect(Component.literal(KICK_WRONG));
 				}
 				case OK -> {
-					data.add(p.getUUID());
+					boolean remember = LanAccess.storedLoginTrusted(source.getServer(), p);
+					if (remember) {
+						data.add(p.getUUID());
+					} else {
+						sessionOnly.add(p.getUUID()); // an offline name is only a name: anyone could claim a stored record for it
+					}
+
 					release(p);
-					Cyberblock.LOG.info("login: {} verified", p.getPlainTextName());
-					p.sendSystemMessage(Component.translatableWithFallback("cyberblock.login.welcome", "Welcome to Cyberblock, %s! You will not need the password again on this world.",
-						p.getPlainTextName()));
+					Cyberblock.LOG.info("login: {} verified{}", p.getPlainTextName(), remember ? "" : " for this connection only (offline name, not remembered)");
+					p.sendSystemMessage(remember
+						? Component.translatableWithFallback("cyberblock.login.welcome", "Welcome to Cyberblock, %s! You will not need the password again on this world.",
+							p.getPlainTextName())
+						: Component.translatableWithFallback("cyberblock.login.welcome_offline",
+							"Welcome to Cyberblock, %s! You joined without a Minecraft account, so you will need the password again next time.", p.getPlainTextName()));
 					// a Cyberpunk host's link waited for this: the handshake is decided again now (hs_ack host, then its hello)
 					ServerNet.rehandshake(p);
 					return 1;

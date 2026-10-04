@@ -20,7 +20,7 @@ Version 1.0.0 is set in the files on 2026-10-03; it is tagged and published only
 - **Wave A leftovers.** Dedicated servers check the world type (`/cyberblock worldcheck on|off`; hosts refused on a world
   that is not `cyberblock:nightcity`) and give guests a spawn platform over the void with the void rescue; `/cyberblock lan
   offline on` (owner only, off at every world start) lets offline guests join a LAN world, the join password still applies
-  and the owner's name is refused; wrong `/login` tries survive a reconnect for 10 minutes; server.json
+  (an offline name's `/login` lasts for that connection only, never remembered) and the owner's name is refused; wrong `/login` tries survive a reconnect for 10 minutes; server.json
   `creativeErasesReplica: true` forces permanent erase on (`/cyberblock status` shows the source); the DLL hands
   `prefs.vdist` to the scripts, which pick the nearest vehicle camera preset; the collision boxes log `collision: wrap path`
   or use a fallback filter; `shared/vectors.json` gains `prefs_apply` (with `prefs.debug`, which drives `cam.vdbg`).

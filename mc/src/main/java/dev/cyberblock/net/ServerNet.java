@@ -161,7 +161,7 @@ public final class ServerNet {
 		NameAndId id = player.nameAndId();
 		PlayerList list = s.getPlayerList();
 		return Handshake.hostRefusal(isOwner(s, player), JoinLock.locked(player.getUUID()), config.allowHosts(),
-			list.isUsingWhitelist() && list.isWhiteListed(id), JoinLock.verified(player.getUUID()),
+			list.isUsingWhitelist() && list.isWhiteListed(id), JoinLock.verified(s, player),
 			config.hosts().isEmpty() || config.listsHost(player.getPlainTextName(), player.getUUID()));
 	}
 

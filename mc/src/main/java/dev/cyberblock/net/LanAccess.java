@@ -2,11 +2,13 @@ package dev.cyberblock.net;
 
 import com.mojang.authlib.GameProfile;
 import dev.cyberblock.Cyberblock;
+import java.util.UUID;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerConfigurationConnectionEvents;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -18,7 +20,9 @@ import org.jspecify.annotations.Nullable;
  * Minecraft account is refused with "Failed to log in: Invalid session". {@code /cyberblock lan offline on} (the world's owner only;
  * off at every world start) turns authentication off for new logins, {@code ... off} turns it back on. While it is off:
  * <ul>
- * <li>the join password (JoinLock) applies to offline names exactly as to anyone else;</li>
+ * <li>the join password (JoinLock) applies to offline names as to anyone else, but an offline name's /login is not remembered: an
+ * offline identity is only a name, so a stored verification for it would let anyone who types that name in (see
+ * {@link #storedLoginTrusted(boolean, UUID, String)});</li>
  * <li>nobody else may use the owner's name: IntegratedServer.isSingleplayerOwner compares names only (javap), so a remote login with
  * the owner's name would be treated as the owner (operator rights, no /login); it is refused while the owner plays.</li>
  * </ul>
@@ -68,6 +72,24 @@ public final class LanAccess {
 	 */
 	static boolean impostor(final boolean authenticated, final String ownerName, final String name) {
 		return !authenticated && name.equalsIgnoreCase(ownerName);
+	}
+
+	/**
+	 * Does a stored join-password verification (LoginsData) count for this player? Not while this LAN world takes offline names
+	 * (see {@link #storedLoginTrusted(boolean, UUID, String)}). Dedicated servers keep their stored verifications: their operator
+	 * chose online-mode in server.properties, and an offline-mode one trusts names for its whitelist the same way.
+	 */
+	static boolean storedLoginTrusted(final MinecraftServer server, final ServerPlayer player) {
+		return storedLoginTrusted(server.isDedicatedServer() || server.usesAuthentication(), player.getUUID(), player.getPlainTextName());
+	}
+
+	/**
+	 * Pure: without authentication an offline UUID is worked out from the name alone (UUIDUtil.createOfflinePlayerUUID), so anyone
+	 * may claim it by typing that name. Such a player is never verified from LoginsData; its /login holds for the current connection
+	 * only. A real account's UUID (it joined while authentication was on) still counts.
+	 */
+	static boolean storedLoginTrusted(final boolean authenticated, final UUID id, final String name) {
+		return authenticated || !id.equals(UUIDUtil.createOfflinePlayerUUID(name));
 	}
 
 	/**

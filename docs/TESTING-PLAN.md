@@ -155,6 +155,8 @@ also in `<Cyberpunk 2077>\bin\x64\plugins\cyber_engine_tweaks\scripting.log`).
    after walking off (`outline: rescued <name> to ...`).
 4. A world opened to LAN: `/cyberblock lan offline on`, then `uv run python -m tools.mpcheck --guest <LAN port>`: CbGuest1 joins
    (with a join password set it is locked until `/login`). Wrong `/login` tries count across a reconnect for 10 minutes.
+   An offline name's `/login` is not remembered (the log says `verified for this connection only`): after a reconnect it is
+   locked again, because anyone could join under that name.
 5. `/cyberblock status` ends with `creative erases replica: on|off (server.json|world setting)`.
 ### W-B. Two local clients through a local test server (Phase 1)
 Ask Claude: "start the local test server". Claude starts a dedicated Fabric 26.3 test server from a temporary worktree
