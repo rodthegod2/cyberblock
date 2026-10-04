@@ -13,7 +13,7 @@ import net.minecraft.network.chat.Component;
  * settings and the rest Minecraft does not replace). While the host camera says a menu is open, the compositor skips Minecraft's
  * world and keeps only this overlay: a container-grey title bar naming the menu and a raised bevel border round the screen;
  * every other Night City element and the vanilla HUD return early. {@code screen.pass:"loading"} draws a whole cover instead,
- * vanilla's menu background with "Loading Night City...".
+ * a Minecraft loading screen ({@link #drawLoading}).
  */
 final class MenuFrameHud {
 	private static final int BAR = 16;
@@ -27,17 +27,7 @@ final class MenuFrameHud {
 		Font font = Minecraft.getInstance().font;
 		int w = graphics.guiWidth(), h = graphics.guiHeight();
 		if (UiLink.loading()) {
-			// opaque: vanilla's menu background is see-through over a world
-			graphics.fill(0, 0, w, h, 0xFF000000);
-			Screen.extractMenuBackgroundTexture(graphics, Screen.MENU_BACKGROUND, 0, 0, 0.0F, 0.0F, w, h);
-			Component label = label("loading");
-			int dots = (int) (System.nanoTime() / 400_000_000L % 4);
-			graphics.centeredText(font, label, w / 2, h / 2 - 4, McTheme.WHITE);
-			// a vanilla-like progress strip that only says "working": Cyberpunk does not report how far it is
-			int bw = Math.min(160, w - 40), bx = (w - bw) / 2, by = h / 2 + 10;
-			McTheme.slot(graphics, bx, by, bw, 6);
-			int seg = bw / 4;
-			graphics.fill(bx + 1 + dots * (bw - 2 - seg) / 3, by + 1, bx + 1 + dots * (bw - 2 - seg) / 3 + seg, by + 5, McTheme.GREEN);
+			drawLoading(graphics, font, w, h);
 			return;
 		}
 
@@ -50,6 +40,37 @@ final class MenuFrameHud {
 		McTheme.panel(graphics, w / 2 - 90, 0, 180, BAR + 2);
 		Component label = label(pass.isEmpty() ? "other" : pass);
 		graphics.text(font, label, (w - font.width(label)) / 2, 5, McTheme.PANEL_TEXT, false);
+	}
+
+	/**
+	 * The loading cover as a Minecraft loading screen: vanilla's own menu background (the player's resource pack sprite, tiled at
+	 * runtime) darkened, "Loading Night City" with animated dots, a strip that only says "working" (Cyberpunk does not report how far
+	 * it is), and one tip line from the lang list.
+	 */
+	private static void drawLoading(final GuiGraphicsExtractor graphics, final Font font, final int w, final int h) {
+		long now = System.nanoTime();
+		int dots = LoadingCover.dots(now);
+		// opaque: vanilla's menu background is see-through over a world
+		graphics.fill(0, 0, w, h, 0xFF000000);
+		Screen.extractMenuBackgroundTexture(graphics, Screen.MENU_BACKGROUND, 0, 0, 0.0F, 0.0F, w, h);
+		graphics.fill(0, 0, w, h, 0x80000000);
+		// the title stays put while the dots come and go: it is placed as if all three dots were there
+		Component title = Component.translatableWithFallback("cyberblock.ui.loading", "Loading Night City");
+		int x = (w - font.width(title) - font.width("...")) / 2;
+		graphics.text(font, title, x, h / 2 - 4, McTheme.WHITE);
+		graphics.text(font, ".".repeat(dots), x + font.width(title), h / 2 - 4, McTheme.WHITE);
+		int bw = Math.min(160, w - 40), bx = (w - bw) / 2, by = h / 2 + 10;
+		McTheme.slot(graphics, bx, by, bw, 6);
+		int seg = bw / 4;
+		graphics.fill(bx + 1 + dots * (bw - 2 - seg) / 3, by + 1, bx + 1 + dots * (bw - 2 - seg) / 3 + seg, by + 5, McTheme.GREEN);
+		Component tip = LoadingCover.tip(LoadingCover.since(now), now);
+		if (tip != null) {
+			int ty = by + 24;
+			for (var line : font.split(tip, Math.min(260, w - 40))) {
+				graphics.centeredText(font, line, w / 2, ty, McTheme.GRAY);
+				ty += font.lineHeight + 2;
+			}
+		}
 	}
 
 	/** Section 1.12 pass-through labels. */
