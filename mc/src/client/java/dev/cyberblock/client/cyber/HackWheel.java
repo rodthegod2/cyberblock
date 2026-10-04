@@ -13,6 +13,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Util;
 import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
 
@@ -20,8 +21,9 @@ import org.jspecify.annotations.Nullable;
  * Quickhack chips without the hotbar: while the hack key is held, the mouse wheel picks one of the chips anywhere in the
  * inventory and right-click fires it at the locked target, on the server (`act t:"hack"`, Hacking.useChip, the same rules as a
  * chip used from the hand). A chip in the main hand always wins over the pick (plan retest3 section 1.6: the old order fired
- * the remembered pick, usually the first chip, whatever he held). Without the hack key both do what they always do. Client
- * thread.
+ * the remembered pick, usually the first chip, whatever he held). Without the hack key both do what they always do. A guest's
+ * wheel works the same on any figure he can see (megaplan task 6-I1): the server routes the hack to the figure's owner under that
+ * owner's `hacks` toggle and the Phase 0 (h) range rule, and the tooltip names whose Night City the target is in. Client thread.
  */
 public final class HackWheel {
 	/** The chip picked last; kept between holds while he still has one. */
@@ -30,8 +32,26 @@ public final class HackWheel {
 	private static boolean usePressTaken;
 	/** The hotbar slot selected last tick (-1: no player). */
 	private static int lastSlot = -1;
+	/**
+	 * Megaplan task 6-I1: for a guest, whose Night City the scanned target is in ("" none) and until when it counts (ms): the wheel
+	 * fires there, and the owner's `hacks` toggle decides.
+	 */
+	private static String owner = "";
+	private static long ownerUntilMs;
 
 	private HackWheel() {
+	}
+
+	/** The server's `scanowner` for a guest's scan (client thread): the target's host, or "" when the scan found nothing. */
+	public static void scanOwner(final String name) {
+		owner = name;
+		ownerUntilMs = Util.getMillis() + Hacking.LOCK_NANOS / 1_000_000L;
+	}
+
+	/** The owner line while a guest's lock lasts, else null. Pure. */
+	public static @Nullable Component ownerLine(final String name, final long untilMs, final long nowMs) {
+		return name.isEmpty() || nowMs > untilMs ? null
+			: Component.translatableWithFallback("cyberblock.wheel.owner", "In %s's Night City", name).withStyle(ChatFormatting.DARK_AQUA);
 	}
 
 	/** The kinds of chip in the inventory, in Hack order. */
@@ -161,6 +181,8 @@ public final class HackWheel {
 		Component chip = player.getCooldowns().isOnCooldown(stack)
 			? Component.translatable("cyberblock.wheel.recharging", name).withStyle(ChatFormatting.GRAY)
 			: Component.translatable("cyberblock.wheel.chip", name, Ram.cost(hack, CyberData.has(player, Perk.CHEAP_HACKS))).withStyle(ChatFormatting.AQUA);
-		return List.of(chip, Component.translatable("cyberblock.wheel.hint").withStyle(ChatFormatting.DARK_GRAY));
+		Component hint = Component.translatable("cyberblock.wheel.hint").withStyle(ChatFormatting.DARK_GRAY);
+		Component where = ownerLine(owner, ownerUntilMs, Util.getMillis());
+		return where == null ? List.of(chip, hint) : List.of(chip, where, hint);
 	}
 }

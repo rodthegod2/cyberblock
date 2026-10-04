@@ -16,12 +16,15 @@ class CyberWireTest {
 	}
 
 	@Test
-	void cyberwareListsAllSeventeenInOrder() {
+	void cyberwareListsEveryImplantInOrder() {
 		JsonObject m = json(CyberWire.cyberware(Set.of("mantis_blades", "kiroshi_optics", "nonsense")));
 		assertEquals("cyberware", m.get("t").getAsString());
 		assertEquals(2, m.size());
 		JsonArray list = m.getAsJsonArray("list");
-		assertEquals(17, list.size());
+		// the 17 of plan retest2 plus megaplan section 1.17's firewall (Phase 6), within the wire's 32
+		assertEquals(18, list.size());
+		assertTrue(list.size() <= CyberwareRules.MAX_IDS);
+		assertEquals("firewall", list.get(17).getAsJsonObject().get("id").getAsString());
 		for (int i = 0; i < list.size(); i++) {
 			JsonObject e = list.get(i).getAsJsonObject();
 			Cyberware c = Cyberware.values()[i];

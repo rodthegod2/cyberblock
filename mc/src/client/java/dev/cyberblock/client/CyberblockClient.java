@@ -68,6 +68,8 @@ public class CyberblockClient implements ClientModInitializer {
 		dev.cyberblock.client.skin.SkinClient.init();
 		// Phase 6B: the Breach Protocol screen
 		dev.cyberblock.client.hack.breach.BreachClient.init();
+		// Phase 6I: the interaction map screens (Vehicle Panel, Traffic Tool, Net Map, Comms Panel), outlines, pings, Comms waypoints
+		dev.cyberblock.client.hack.screen.ActionsClient.init();
 		ClientTickEvents.START_CLIENT_TICK.register(minecraft -> ClientInput.tickStart());
 		ClientTickEvents.END_CLIENT_TICK.register(CyberblockClient::tick);
 		// launcher players (plan retest3 M5): a "Play Cyberblock" button on the title screen

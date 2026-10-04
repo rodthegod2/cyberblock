@@ -62,6 +62,8 @@ final class RelayGuard {
 		Map.entry("hackresult", new Rule(40, 80, Sanity.Kind.NONE, true)),
 		Map.entry("hackspread", new Rule(40, 80, Sanity.Kind.NONE, true)),
 		Map.entry("stats", new Rule(2, 4, Sanity.Kind.NONE, false)),
+		// Phase 6 (package 6I, section 1.9 row 6): the photo feed, at most one a second while a feedreq is on
+		Map.entry("feed", new Rule(2, 4, Sanity.Kind.NONE, false)),
 		// Phase 3 (package 3E): env at the DLL's 1 Hz like stats; vteleported answers a vteleport request id (its p is checked by
 		// MeetUp against the requested spot: V's new place is far from Steve by design)
 		Map.entry("env", new Rule(2, 4, Sanity.Kind.NONE, false)),

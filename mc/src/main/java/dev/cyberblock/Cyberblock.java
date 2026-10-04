@@ -110,6 +110,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.skin.CyberSkins.init();
 		// Phase 6B: Breach Protocol (Net Port right-click, the daemon and breach_tier content, the daemon DOWN)
 		dev.cyberblock.hack.breach.Breach.init();
+		// Phase 6I: the interaction map (Vehicle Panel, Traffic Tool, Net Map, Comms Panel) and its rhack routing (megaplan 6-I1)
+		dev.cyberblock.hack.actions.RemoteActions.init();
 		LOG.info("cyberblock loaded");
 	}
 

@@ -324,6 +324,17 @@ public final class CyberwareRules {
 		return items;
 	}
 
+	/** The wire's cyberware list holds at most this many ids (shared/protocol.md; megaplan section 1.17 appends within it). */
+	public static final int MAX_IDS = 32;
+
+	/**
+	 * Megaplan section 1.17: the defender's Firewall rank, 0 without the implant and 1 with it. Breach Protocol (6-B1) raises the
+	 * tier of a breach against its owner by it; Phase 8 blocks player hacks with it.
+	 */
+	public static int firewallRank(final Collection<Cyberware> installed) {
+		return installed.contains(Cyberware.FIREWALL) ? 1 : 0;
+	}
+
 	/** Biomonitor: alive and at or below 30 % of max health. */
 	public static boolean biomonitor(final float health, final float maxHealth) {
 		return health > 0.0F && health <= maxHealth * BIOMONITOR_THRESHOLD + 1.0E-4F;
