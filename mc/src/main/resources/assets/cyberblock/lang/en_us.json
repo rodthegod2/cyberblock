@@ -448,6 +448,7 @@
 	"cyberblock.meetup.held": "Meet Up refused: the game holds V right now (a scene or a ride)",
 	"cyberblock.meetup.vehicle": "Meet Up refused: V is in a vehicle",
 	"cyberblock.meetup.locked": "%s has not logged in yet",
+	"cyberblock.meetup.match_zone": "Meet Up refused: %s is inside a running match you are not in",
 	"cyberblock.meetup.none": "No Meet Up request to accept",
 	"cyberblock.meetup.expired": "The Meet Up request from %s has expired",
 	"cyberblock.meetup.gone": "%s is not online any more",

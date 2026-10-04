@@ -15,6 +15,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -108,9 +109,15 @@ public final class MeetUp {
 		return vehicle ? "cyberblock.meetup.vehicle" : zone;
 	}
 
-	/** Phase 8 (match zones) fills this: a lang key when the requester may not meet the target there; no zones before Phase 8. */
+	/**
+	 * The match-zone rule (Phase 8, package 8M installs it at init): a lang key when the requester may not meet the target there
+	 * ({@code cyberblock.meetup.match_zone}: the target stands in the zone of a running match the requester is not in), else null.
+	 * Without Phase 8 there are no zones.
+	 */
+	public static volatile BiFunction<ServerPlayer, ServerPlayer, @Nullable String> matchZone = (requester, target) -> null;
+
 	static @Nullable String matchZoneRefusal(final @Nullable ServerPlayer requester, final @Nullable ServerPlayer target) {
-		return null;
+		return requester == null || target == null ? null : matchZone.apply(requester, target);
 	}
 
 	/** Whole seconds until this requester may ask again (0 = now). */
@@ -243,6 +250,8 @@ public final class MeetUp {
 			case "cyberblock.meetup.held" -> Component.translatableWithFallback(key, "Meet Up refused: the game holds V right now (a scene or a ride)");
 			case "cyberblock.meetup.vehicle" -> Component.translatableWithFallback(key, "Meet Up refused: V is in a vehicle");
 			case "cyberblock.meetup.locked" -> Component.translatableWithFallback(key, "%s has not logged in yet", target.getPlainTextName());
+			case "cyberblock.meetup.match_zone" -> Component.translatableWithFallback(key, "Meet Up refused: %s is inside a running match you are not in",
+				target.getPlainTextName());
 			default -> Component.translatableWithFallback(key, "Meet Up is not allowed there");
 		};
 	}

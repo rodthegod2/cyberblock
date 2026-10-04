@@ -13,8 +13,9 @@ import net.minecraft.world.phys.BlockHitResult;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The Match Terminal (megaplan 7-H1): a right-click opens Phase 8's match screen through {@link #opener}, which Phase 8 (package 8M)
- * sets; until then it says that matches are coming in Phase 8.
+ * The Match Terminal (megaplan 7-H1): a right-click opens the match screen through {@link #opener}, which package 8M sets
+ * ({@code dev.cyberblock.mode.match.Matches}: the screen, and creating a match needs a terminal within 8 blocks); without it the
+ * terminal says that matches are coming.
  */
 public final class MatchTerminalBlock extends HubBlocks.Facing {
 	/** Phase 8M: opens the match screen for the player at this terminal. Null until Phase 8. Server thread. */
