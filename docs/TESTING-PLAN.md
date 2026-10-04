@@ -89,8 +89,10 @@ and the debug overlay", "Creative mode and the outline blocks", "The Cyberblock 
 
 ### Q6. Gorilla Arms charged punch (package QG)
 1. Install **Gorilla Arms** (U), empty hand. Hit a pedestrian with a **fully charged** swing (wait for the attack indicator),
-   then with quick, **uncharged** clicks. Expected: the charged swing is the strong blow (a knockdown, `knock: ... tier=knockdown`
-   in latest.log); uncharged clicks stay plain hits. **L** still does the slam.
+   then with quick, **uncharged** clicks. Expected: the fully charged swing knocks the pedestrian down (they fall); the
+   uncharged clicks only stagger them (they stumble back, never fall). **L** still does the slam.
+   - **Log (Cyberblock.log):** one `knock: <id> s=<speed> tier=<tier> impulse=<i>` line per hit: about `s=7` with
+     `tier=knockdown` for the charged swing, about `s=4.5` with `tier=stagger` for an uncharged click.
    (QG is built in parallel: the integrator corrects this line to the merged behaviour.)
 
 ### Q7. Phase 0 CET checks (about 10 minutes, nothing changes a save)

@@ -1012,8 +1012,8 @@ def test_guide_documents_the_atlas_and_the_one_time_survey():
 # ---- Phase Q (third-person view and step-up assist): `prefs` and `cam.vdbg` (plan 2026-10-04 megaplan section 1.9) ----------
 PQ_CP_TO_MC, PQ_MC_TO_CP = "Phase Q: Cyberpunk → Minecraft", "Phase Q: Minecraft → Cyberpunk"
 PQ_CP_EXAMPLES, PQ_MC_EXAMPLES = "Phase Q examples, Cyberpunk to Minecraft:", "Phase Q examples, Minecraft to Cyberpunk:"
-PREFS_FIELDS = {"dist", "shoulder", "fov", "recenter", "vdist", "stepup"}
-PREFS_DEFAULTS = {"dist": 3.2, "shoulder": 0.45, "fov": 0, "recenter": True, "vdist": 0, "stepup": True}  # section 1.9 / Q-D1
+PREFS_FIELDS = {"dist", "shoulder", "fov", "recenter", "vdist", "stepup", "debug"}
+PREFS_DEFAULTS = {"dist": 3.2, "shoulder": 0.45, "fov": 0, "recenter": True, "vdist": 0, "stepup": True, "debug": False}  # section 1.9 / Q-D1 (+ debug)
 
 
 def zero_or(x, lo, hi) -> bool:
@@ -1021,9 +1021,9 @@ def zero_or(x, lo, hi) -> bool:
 
 
 def prefs_ok(m) -> bool:
-    """What Minecraft may send: all six fields, each inside its range (the DLL clamps instead of dropping)."""
+    """What Minecraft may send: all seven fields, each inside its range (the DLL clamps instead of dropping)."""
     return (set(m) - {"t"} == PREFS_FIELDS and num(m["dist"], 1.5, 8) and num(m["shoulder"], -1, 1) and zero_or(m["fov"], 50, 110)
-            and isinstance(m["recenter"], bool) and zero_or(m["vdist"], 3, 14) and isinstance(m["stepup"], bool))
+            and isinstance(m["recenter"], bool) and zero_or(m["vdist"], 3, 14) and isinstance(m["stepup"], bool) and isinstance(m["debug"], bool))
 
 
 def vdbg_ok(v) -> bool:
@@ -1080,7 +1080,8 @@ PQ_OUT_OF_LIMITS = [
     ("prefs", pq_example("prefs", fov=-1)), ("prefs", pq_example("prefs", vdist=2.9)), ("prefs", pq_example("prefs", vdist=14.1)),
     ("prefs", pq_example("prefs", recenter=1)), ("prefs", pq_example("prefs", stepup="yes")), ("prefs", pq_example("prefs", dist=float("nan"))),
     ("prefs", pq_example("prefs", dist=True)), ("prefs", {k: v for k, v in pq_example("prefs").items() if k != "dist"}),
-    ("prefs", pq_example("prefs", scale=0.8)),  # a seventh field is a later phase's: not part of this contract
+    ("prefs", pq_example("prefs", scale=0.8)),  # an eighth field is a later phase's: not part of this contract
+    ("prefs", pq_example("prefs", debug=1)), ("prefs", {k: v for k, v in pq_example("prefs").items() if k != "debug"}),  # Minecraft sends all seven
     ("cam", pq_example("cam", vdbg=[3.2, 2.8])), ("cam", pq_example("cam", vdbg=[3.2, 2.8, 14, 0])), ("cam", pq_example("cam", vdbg=[-0.1, 2.8, 14])),
     ("cam", pq_example("cam", vdbg=[100.1, 2.8, 14])), ("cam", pq_example("cam", vdbg=[3.2, 100.1, 14])), ("cam", pq_example("cam", vdbg=[3.2, 2.8, 60001])),
     ("cam", pq_example("cam", vdbg=[3.2, 2.8, -1])), ("cam", pq_example("cam", vdbg="3.2")), ("cam", pq_example("cam", vdbg=[3.2, None, 14])),
@@ -1100,16 +1101,18 @@ def test_phase_q_validators_reject_out_of_limit_messages(t, m):
 def test_phase_q_validators_accept_the_limits_themselves():
     for dist, shoulder, fov, vdist in ((1.5, -1, 50, 3), (8, 1, 110, 14), (3.2, 0, 0, 0)):
         assert prefs_ok(pq_example("prefs", dist=dist, shoulder=shoulder, fov=fov, vdist=vdist))
-    assert prefs_ok(pq_example("prefs", recenter=False, stepup=False))
+    assert prefs_ok(pq_example("prefs", recenter=False, stepup=False, debug=True))
     assert cam_vdbg_ok(pq_example("cam", vdbg=[0, 0, 0])) and cam_vdbg_ok(pq_example("cam", vdbg=[100, 100, 60000]))
     assert cam_vdbg_ok({k: v for k, v in pq_example("cam").items() if k != "vdbg"})  # vdbg is optional: absent unless the debug flag is on
 
 
 def test_phase_q_rules_are_stated_in_the_document():
     text = " ".join((section("Phase Q semantics and limits") + section(PQ_CP_TO_MC) + section(PQ_MC_TO_CP)).split())
-    for phrase in ("dist 3.2, shoulder 0.45, fov 0, recenter true, vdist 0, stepup true", "on each `hello`", "all six fields", "clamps", "a negative `fov` or `vdist` becomes 0",
+    for phrase in ("dist 3.2, shoulder 0.45, fov 0, recenter true, vdist 0, stepup true, debug false", "on each `hello`", "all seven fields",
+                   "a `prefs` without it keeps the current flag", "the last `prefs` had `debug:true`", "clamps", "a negative `fov` or `vdist` becomes 0",
                    "1.5..8", "−1..1", "50..110", "3..14", "event pump", "1.05 m", "2 m of free space", "never stepped on", "only the `vdbg` is ignored",
-                   "`/cyberblock debug view`", "only while", "nearest hit minus 0.25 m", "fp:false"):
+                   "`/cyberblock debug view`", "only while", "nearest hit minus 0.25 m", "fp:false",
+                   "how long ago the DLL's view last computed the camera pose, its last tick, when this `cam` is sent"):
         assert phrase in text, f"{phrase!r} is not stated"
 
 
@@ -1165,8 +1168,15 @@ def test_re_test_q_has_the_five_phase_q_checks_the_gorilla_check_and_phase_0_row
                  "F5", "glide", "launch with a wind charge", "shield", "along a wall", "corridor", "crosshair", "frame time and pose age",
                  "comes back in about 10 seconds", "Survival:", "stays broken until you walk away", "docs/notes/ui-coverage.md", "Night City Menu...",
                  "`locomotion: vault refused on Cyberblock box`", "`aim: target block d=... limit=...`", "`outline: restored N`",
-                 "fully charged", "uncharged", "knockdown"):
+                 "fully charged", "uncharged", "knocks the pedestrian down", "only stagger them"):
         assert fact in q, f"Re-test Q does not say {fact!r}"
+    # Q6 cites the scripts' real log line (Effects.reds AfterHit writes `knock: <id> s=<s> tier=<tier> impulse=<i>` to
+    # Cyberblock.log), never Minecraft's latest.log, which has no `knock:` line
+    gorilla = " ".join(section_of(TESTING, "### Q6. Gorilla Arms charged punch (package QG)").split())
+    for fact in ("**Log (Cyberblock.log):**", "`knock: <id> s=<speed> tier=<tier> impulse=<i>`", "`tier=knockdown`", "`tier=stagger`"):
+        assert fact in gorilla, f"Re-test Q6 does not say {fact!r}"
+    assert "latest.log" not in gorilla
+    assert 'Cyberblock_Log(s"knock: \\(target) s=\\(s) tier=\\(tierName)' in Path("cp/scripts/Cyberblock/Effects.reds").read_text(encoding="utf-8")
     for check in ("(b)", "(c)", "(d)", "(e)", "(f)", "(g)", "(h)"):  # Phase 0's CET checks, placeholders until 0R's notes land
         assert f"| {check} |" in q, check
     assert q.count("| to be filled | to be filled |") == 7

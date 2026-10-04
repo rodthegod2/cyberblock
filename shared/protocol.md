@@ -585,16 +585,16 @@ over-the-shoulder offset, distance, FOV) and tells Minecraft what it did through
 ### Phase Q: Cyberpunk → Minecraft
 | `t` | fields | when |
 |---|---|---|
-| `cam` | **extends layer 1, layers 3–6 and re-test 3:** adds `vdbg:[collide, smooth, age]`, the camera's own numbers: `collide` m (the distance after camera collision: nearest hit minus 0.25 m, capped at the wanted distance), `smooth` m (the distance actually used after smoothing), `age` ms (how old the pose is when it is sent); Minecraft's view debug overlay shows them | every Cyberpunk frame, only while `/cyberblock debug view` is on; absent otherwise |
+| `cam` | **extends layer 1, layers 3–6 and re-test 3:** adds `vdbg:[collide, smooth, age]`, the camera's own numbers: `collide` m (the distance after camera collision: nearest hit minus 0.25 m, capped at the wanted distance), `smooth` m (the distance actually used after smoothing), `age` ms (how long ago the DLL's view last computed the camera pose, its last tick, when this `cam` is sent); Minecraft's view debug overlay shows them | every Cyberpunk frame, only while `/cyberblock debug view` is on (the last `prefs` had `debug:true`); absent otherwise |
 
 ### Phase Q: Minecraft → Cyberpunk
 | `t` | fields | when |
 |---|---|---|
-| `prefs` | `dist` m (third-person camera distance, 1.5..8, default 3.2), `shoulder` m (over-the-shoulder offset to the right, −1..1, default 0.45), `fov` (0 = the game's own, or 50..110 degrees), `recenter:bool` (swing the shoulder offset to the centre near a wall, default true), `vdist` m (vehicle camera distance: 0 = the game's own, or 3..14; only used when the game's vehicle camera allows it), `stepup:bool` (step-up assist for stairs of placed blocks, default true) | after each host `hello`, and whenever one of the six values changes in the settings screen |
+| `prefs` | `dist` m (third-person camera distance, 1.5..8, default 3.2), `shoulder` m (over-the-shoulder offset to the right, −1..1, default 0.45), `fov` (0 = the game's own, or 50..110 degrees), `recenter:bool` (swing the shoulder offset to the centre near a wall, default true), `vdist` m (vehicle camera distance: 0 = the game's own, or 3..14; only used when the game's vehicle camera allows it), `stepup:bool` (step-up assist for stairs of placed blocks, default true), `debug:bool` (`/cyberblock debug view` is on: the DLL adds `vdbg` to every `cam` while it is true; default false) | after each host `hello`, whenever one of the six settings changes in the settings screen, and whenever `/cyberblock debug view` is switched on or off |
 
 ### Phase Q semantics and limits
-- **Defaults:** the DLL starts every link with `dist 3.2, shoulder 0.45, fov 0, recenter true, vdist 0, stepup true` and
-  goes back to them on each `hello`, until a `prefs` arrives. Minecraft always sends all six fields.
+- **Defaults:** the DLL starts every link with `dist 3.2, shoulder 0.45, fov 0, recenter true, vdist 0, stepup true, debug false`
+  and goes back to them on each `hello`, until a `prefs` arrives. Minecraft always sends all seven fields.
 - **Validation (receiver):** the DLL clamps every number into its range (`dist` 1.5..8, `shoulder` −1..1, `fov` 0 or
   50..110, `vdist` 0 or 3..14; a value above 0 and below the lower bound is raised to it, a negative `fov` or `vdist`
   becomes 0), keeps the current value of a field that is missing, not finite or of the wrong type, and ignores any other
@@ -602,6 +602,8 @@ over-the-shoulder offset, distance, FOV) and tells Minecraft what it did through
 - **`stepup`:** the DLL passes it to the scripts through the event pump as the event `prefs`; with it on, V is lifted onto a
   single Cyberblock box in the way (at most 1.05 m above V's feet, 2 m of free space above it). Night City geometry is
   never stepped on.
+- **`debug`:** Minecraft's `/cyberblock debug view` flag, so the DLL knows when to add `vdbg`; Minecraft sends a whole `prefs`
+  each time the flag is switched. Like every field it is optional to the receiver: a `prefs` without it keeps the current flag.
 - **`vdbg`:** three finite numbers, `collide` and `smooth` 0..100 m, `age` 0..60000 ms. A `cam` whose `vdbg` is bad is
   still a valid `cam`: only the `vdbg` is ignored (like a bad `flight.ts`), so a debug aid never drops camera frames.
 - **Camera `fp`:** in third person the DLL sends `fp:false` and `p` is the camera position, `pl` stays V's feet.
@@ -616,7 +618,7 @@ Phase Q examples, Cyberpunk to Minecraft:
 
 Phase Q examples, Minecraft to Cyberpunk:
 ```jsonl
-{"t":"prefs","dist":3.2,"shoulder":0.45,"fov":0,"recenter":true,"vdist":0,"stepup":true}
+{"t":"prefs","dist":3.2,"shoulder":0.45,"fov":0,"recenter":true,"vdist":0,"stepup":true,"debug":false}
 ```
 
 ## Shared memory `Local\CyberblockFrame`

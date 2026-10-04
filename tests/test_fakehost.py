@@ -724,11 +724,11 @@ def test_clamp_prefs_clamps_keeps_the_current_value_of_a_bad_field_and_allows_ze
     assert fakehost.clamp_prefs({k: v for k, v in prefs_message().items() if k != "t"}, cur) == cur
     low = fakehost.clamp_prefs({"dist": 0.1, "shoulder": -9, "fov": 10, "vdist": 1}, cur)
     assert low == {**cur, "dist": 1.5, "shoulder": -1.0, "fov": 50.0, "vdist": 3.0}  # above 0 and below the lower bound: raised to it
-    high = fakehost.clamp_prefs({"dist": 99, "shoulder": 99, "fov": 500, "vdist": 99, "recenter": False, "stepup": False}, cur)
-    assert high == {"dist": 8.0, "shoulder": 1.0, "fov": 110.0, "vdist": 14.0, "recenter": False, "stepup": False}
+    high = fakehost.clamp_prefs({"dist": 99, "shoulder": 99, "fov": 500, "vdist": 99, "recenter": False, "stepup": False, "debug": True}, cur)
+    assert high == {"dist": 8.0, "shoulder": 1.0, "fov": 110.0, "vdist": 14.0, "recenter": False, "stepup": False, "debug": True}
     assert fakehost.clamp_prefs({"fov": 0, "vdist": 0}, {**cur, "fov": 80, "vdist": 9}) == {**cur, "fov": 0, "vdist": 0}
     assert fakehost.clamp_prefs({"fov": -5}, {**cur, "fov": 80})["fov"] == 0
-    bad = {"dist": "far", "shoulder": float("nan"), "fov": None, "vdist": True, "recenter": 1, "stepup": "yes"}
+    bad = {"dist": "far", "shoulder": float("nan"), "fov": None, "vdist": True, "recenter": 1, "stepup": "yes", "debug": "on"}
     assert fakehost.clamp_prefs(bad, cur) == cur and fakehost.clamp_prefs({}, cur) == cur
 
 
@@ -748,7 +748,7 @@ def test_view_vdbg_pulls_the_camera_in_at_the_wall_and_smooth_follows_late():
 def test_view_mode_plays_walk_sprint_and_glide_in_third_person_with_vdbg_on_every_cam(tmp_path, exporting, quick, capsys):
     flight = {"t": "flight", "active": True, "kind": "glide", "ts": 5.0, "p": [4.0, 100.0, 5.0], "v": [3.0, -1.0, 3.0], "yaw": 40.0, "pitch": 25.0}
     react = lambda m: [flight] if m["t"] == "key" and m["k"] == "jump" and m["down"] else []
-    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[prefs_message()], react=react, hold=0.6, modes=mode_set("view"))
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[prefs_message(debug=True)], react=react, hold=0.6, modes=mode_set("view"))
     cams = hold_cams(got)
     assert len(cams) >= 400 and all(validq(m) for m in got) and all(m["fp"] is False and "vdbg" in m and m["cr"] is False for m in cams)
     walking = [m for m in cams if m["pl"][1] == fakehost.FLOOR_Y and not m["fly"]]
@@ -759,7 +759,7 @@ def test_view_mode_plays_walk_sprint_and_glide_in_third_person_with_vdbg_on_ever
     assert math.dist(glide[0]["p"], eye_of(glide[0])) == pytest.approx(math.hypot(3.2, 0.45)) and glide[0]["p"][1] > 100.0  # camera behind and above V's head
     assert [(m["k"], m["down"]) for m in got if m["t"] == "key"] == [("sprint", True), ("sprint", False), ("jump", True), ("jump", False)]
     assert all(m["vdbg"][2] >= 12 for m in cams) and any(m["vdbg"][0] < 3.2 for m in cams)  # the wall window shows
-    assert printed(capsys)["prefs"] == [prefs_message()]
+    assert printed(capsys)["prefs"] == [prefs_message(debug=True)]
 
 
 def test_view_mode_places_the_camera_by_minecraft_prefs(tmp_path, exporting, quick):
@@ -769,10 +769,16 @@ def test_view_mode_places_the_camera_by_minecraft_prefs(tmp_path, exporting, qui
     assert all(math.dist(m["p"], eye_of(m)) == pytest.approx(6.0) for m in cams[10:])
 
 
+def test_view_mode_sends_vdbg_only_while_prefs_debug_is_true(tmp_path, exporting, quick):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[prefs_message(debug=False)], hold=0.2, modes=mode_set("view"))
+    cams = hold_cams(got)
+    assert cams and all(validq(m) and m["fp"] is False and "vdbg" not in m for m in cams)
+
+
 def test_view_mode_without_prefs_uses_the_dll_defaults(tmp_path, exporting, quick):
     _, got = run_against_fake_minecraft(tmp_path, 30, exporting, hold=0.1, modes=mode_set("view"))
     cams = hold_cams(got)
-    assert all(m["fov"] == fakehost.FOV for m in cams)
+    assert all(m["fov"] == fakehost.FOV and "vdbg" not in m for m in cams)  # debug defaults to false
     assert math.dist(cams[0]["p"], eye_of(cams[0])) == pytest.approx(math.hypot(3.2, 0.45))
 
 

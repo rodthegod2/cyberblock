@@ -55,10 +55,11 @@ Re-test 3 modes (shared/protocol.md "Re-test 3"; combinable with each other and 
 Phase Q modes (shared/protocol.md "Phase Q"; combinable with the layer flags except --layer4, but each of --view, --stairs and
 --seat drives the camera, so use only one of them; same --hold, --cmd, --port and NPC resend; they print what Minecraft reports,
 `prefs` included):
-  --view   third-person view (`fp:false`, `vdbg` on every `cam`): V walks (4.3 m/s) for 3 s and sprints (5.6 m/s, `key sprint`) for 3 s
+  --view   third-person view (`fp:false`): V walks (4.3 m/s) for 3 s and sprints (5.6 m/s, `key sprint`) for 3 s
            round a circle on the slab, with the camera 3.2 m behind and 0.45 m to the right (it follows Minecraft's `prefs`: dist,
            shoulder, fov), then falls and glides: a `key jump` tap 0.5 s into the fall, after which the `cam` follows Minecraft's
-           `flight` like --layer4 (`fly:true`, `air:true`). `vdbg` shows the camera pulled in by a wall between 4 s and 5 s. Use
+           `flight` like --layer4 (`fly:true`, `air:true`). Every `cam` carries `vdbg` while Minecraft's last `prefs` had
+           `debug:true` (`/cyberblock debug view on`); it shows the camera pulled in by a wall between 4 s and 5 s. Use
            --hold 20 to see all three poses.
   --stairs a staircase of five placed blocks (cobblestone columns 1..5 high, `cmd fill` at the start) with ground under it (the slab);
            V walks up it at 1.5 m/s in first person, each step lifting V by 1 m in 0.15 s as the step-up assist does, then stands on top.
@@ -108,7 +109,7 @@ CAMERA_OWNERS = ("view", "stairs", "seat")  # the modes that drive the camera by
 UI_MENU = (6.0, 7.0)  # --ui: seconds in which `cam.menu` is true (a pass-through menu is open)
 PERSPECTIVE_KEY = (8.0, 8.1)  # --ui: the F5 tap that makes Minecraft answer `persp`
 HACKS_KEYS = {"hack": (1.0, 2.0), "arms": (2.5, 2.6), "camo": (3.0, 3.1)}  # --hacks: (down, up) in seconds
-PREFS_DEFAULT = {"dist": 3.2, "shoulder": 0.45, "fov": 0, "recenter": True, "vdist": 0, "stepup": True}  # Phase Q: the DLL's defaults
+PREFS_DEFAULT = {"dist": 3.2, "shoulder": 0.45, "fov": 0, "recenter": True, "vdist": 0, "stepup": True, "debug": False}  # Phase Q: the DLL's defaults
 PREFS_RANGES = {"dist": (1.5, 8.0), "shoulder": (-1.0, 1.0), "fov": (50.0, 110.0), "vdist": (3.0, 14.0)}  # `fov` and `vdist` also take 0
 WALK_SPEED, SPRINT_SPEED, WALK_FOR, SPRINT_FOR, VIEW_RADIUS = 4.3, 5.6, 3.0, 3.0, 5.0  # --view: m/s, seconds each, circle radius (m)
 VIEW_PITCH, GLIDE_FROM = 10.0, SLAB_Y + 1.0 + 40.0  # --view: camera pitch (degrees, down) on the ground; the glide starts 40 m up
@@ -313,7 +314,7 @@ def clamp_prefs(m: dict, current: dict) -> dict:
         v = m.get(key)
         if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
             out[key] = 0 if key in ("fov", "vdist") and v <= 0 else min(max(v, lo), hi)
-    for key in ("recenter", "stepup"):
+    for key in ("recenter", "stepup", "debug"):
         if isinstance(m.get(key), bool):
             out[key] = m[key]
     return out
@@ -462,7 +463,7 @@ class Cyberpunk:
 
     def view_cam(self, f: int, t: float) -> dict:
         """--view: V walks, sprints, then falls and glides (the body follows Minecraft's `flight`), seen from the third-person
-        camera of Minecraft's `prefs`; `vdbg` rides on every `cam`."""
+        camera of Minecraft's `prefs`; `vdbg` rides on every `cam` while `prefs.debug` is true."""
         p, glide = self.prefs, (WALK_FOR + SPRINT_FOR) * SCRIPT_SCALE
         if t < glide:
             feet, yaw = walk_pose(t / SCRIPT_SCALE)
@@ -471,8 +472,11 @@ class Cyberpunk:
             body = self.body.cam(f, t - glide)
             feet, (yaw, pitch), fly = body["pl"], body["r"][:2], body["fly"]
         eye = third_person_eye(feet, yaw, pitch, p["dist"], p["shoulder"])
-        return {"t": "cam", "f": f, "p": eye, "r": [yaw, pitch, 0.0], "fov": p["fov"] or FOV, "fp": False, "pl": feet, "h": yaw,
-                "cr": False, "air": feet[1] > FLOOR_Y + 1e-6, "fly": fly, "vdbg": view_vdbg(f, t / SCRIPT_SCALE, p["dist"])}
+        cam = {"t": "cam", "f": f, "p": eye, "r": [yaw, pitch, 0.0], "fov": p["fov"] or FOV, "fp": False, "pl": feet, "h": yaw,
+               "cr": False, "air": feet[1] > FLOOR_Y + 1e-6, "fly": fly}
+        if p["debug"]:  # only while Minecraft's `/cyberblock debug view` is on (protocol.md "Phase Q": `prefs.debug`)
+            cam["vdbg"] = view_vdbg(f, t / SCRIPT_SCALE, p["dist"])
+        return cam
 
     def stairs_cam(self, f: int, t: float) -> dict:
         """--stairs: V walks up the staircase in first person looking STAIRS_PITCH degrees down (`persp back` makes `fp` false)."""
@@ -668,7 +672,7 @@ def main() -> int:
     ap.add_argument("--ui", action="store_true", help="after the orbit: play the Minecraft-drawn UI stream (stats, quest, pins, prompt, choices, subtitle, call, toasts, pause and pass-through screens), answer uiact requests; print uiact/persp/binds/status")
     ap.add_argument("--hacks", action="store_true", help="after the orbit: answer every hack with hackresult (upload, kind) and hackspread, tap the Arms and Camo keys; print hack/uiact/persp/binds")
     ap.add_argument("--seat", action="store_true", help="after the orbit: V rides in a vehicle (cam seat:true, pl at the hips, fp flipping every 2 s); print persp/binds")
-    ap.add_argument("--view", action="store_true", help="after the orbit: third-person view (cam fp:false with vdbg): V walks, sprints, then falls and glides; the camera follows Minecraft's prefs; print prefs")
+    ap.add_argument("--view", action="store_true", help="after the orbit: third-person view (cam fp:false, with vdbg while prefs.debug is true): V walks, sprints, then falls and glides; the camera follows Minecraft's prefs; print prefs")
     ap.add_argument("--stairs", action="store_true", help="after the orbit: place a staircase of five blocks, walk V up it (step-up assist lifts), send aim at the block faces (box 2 mm in front); print prefs")
     ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs: seconds to keep the link up and listen (default 10)")
     ap.add_argument("--cmd", action="append", default=[], metavar="COMMAND", help='--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs: a server command to send after the npcs, e.g. "summon tnt 0 64 0" (repeatable)')
