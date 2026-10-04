@@ -11,7 +11,8 @@ from tools import content_check
 
 ROOT = Path(__file__).resolve().parents[1]
 ART = ROOT / "art"
-DATA = ROOT / "mc" / "src" / "main" / "resources" / "data" / "cyberblock" / "cyberblock"
+RES_DATA = ROOT / "mc" / "src" / "main" / "resources" / "data" / "cyberblock"
+DATA = RES_DATA / "cyberblock"
 SCHEMAS = ROOT / "shared" / "content-schemas"
 KINDS = ["event", "spawn_palette", "heat_tier", "match_mode"]
 EVENT_TYPES = {"blackout", "emp", "airstrike", "traffic_jam", "supply_drop", "weather", "outbreak"}
@@ -19,8 +20,17 @@ EVENT_TYPES = {"blackout", "emp", "airstrike", "traffic_jam", "supply_drop", "we
 FACTIONS = {"tygerClaws", "maelstrom", "valentinos", "6thStreet", "animals", "voodooBoys", "scavenger", "wraiths", "aldecaldos", "kangtao", "kurtz_army",
             "arasaka", "militech", "police", "traumateam"}
 # vanilla entity ids and items the defaults use (all long-standing ids)
-MOBS = {"zombie", "skeleton", "creeper", "spider", "pillager", "vindicator", "ravager", "enderman", "shulker", "witch", "piglin_brute", "vex"}
-ITEMS = {"golden_apple", "arrow"}
+MOBS = {"husk", "magma_cube", "endermite", "pillager", "vindicator", "ravager", "zoglin", "shulker", "witch", "vex", "wither_skeleton"}
+ITEMS = {"arrow", "bread"}
+# Mobs that fail in the replica. The server's overworld (dimension type cyberblock:nightcity, no `minecraft:gameplay/piglins_zombify` false,
+# open sky, time of day from the host) zombifies these into neutral zombified piglins and zoglins...
+ZOMBIFY = {"piglin", "piglin_brute", "hoglin"}
+# ...burns these by day (the 26.3 minecraft:burn_in_daylight tag; the wither skeleton is in it but fire immune, so it is allowed)...
+BURN_IN_DAYLIGHT = {"skeleton", "stray", "bogged", "zombie", "zombie_villager", "drowned", "phantom", "zombie_horse", "zombie_nautilus"}
+# ...leaves these neutral until provoked or in bright light...
+NEUTRAL = {"enderman", "spider", "cave_spider", "zombified_piglin", "wolf", "bee", "iron_golem", "polar_bear", "llama", "goat", "panda"}
+# ...and these explode, set fires or break blocks: an Overlord's spawn would grief bases and send blasts to hosts
+BLASTS = {"creeper", "ghast", "breeze", "blaze", "wither", "ender_dragon"}
 GAME_SLANG = ("choom", "preem", "gonk", "nova", "wakako", "silverhand", "samurai", "braindance")  # words of the game's own text: ours is original
 
 
@@ -46,9 +56,9 @@ def test_the_generator_matches_the_committed_files_and_is_deterministic(gen):
     first = gen.files()
     assert first == gen.files()
     for rel, data in first.items():
-        assert (DATA / rel).read_bytes() == data, f"{rel} differs from the committed file: run art/gen_mode_data.py and commit"
-    on_disk = {f"{kind}/{p.name}" for kind in KINDS for p in (DATA / kind).glob("*.json")}
-    assert on_disk == set(first), "a stray file is in a Phase 8 content folder"
+        assert (RES_DATA / rel).read_bytes() == data, f"{rel} differs from the committed file: run art/gen_mode_data.py and commit"
+    on_disk = {f"cyberblock/{kind}/{p.name}" for kind in KINDS for p in (DATA / kind).glob("*.json")}
+    assert on_disk == {rel for rel in first if not rel.startswith("recipe/")}, "a stray file is in a Phase 8 content folder"
 
 
 def test_content_check_passes_on_the_shipped_defaults():
@@ -96,6 +106,17 @@ def test_every_entry_names_a_known_mob_or_faction_and_a_squad_stand_in():
             assert d["rec"] != "turret"
 
 
+def test_every_mob_works_in_the_replica_at_any_hour_and_never_blows_up():
+    for name, d in entries("spawn_palette").items():
+        mob = (d["mob"] if d["kind"] == "minecraft" else d["squad"]["mob"]).removeprefix("minecraft:")
+        assert mob not in ZOMBIFY, f"{name}: {mob} turns into a neutral zombie in the overworld"
+        assert mob not in BURN_IN_DAYLIGHT, f"{name}: {mob} burns in daylight"
+        assert mob not in BLASTS, f"{name}: {mob} explodes or breaks blocks"
+        assert d["hostile"] and mob not in NEUTRAL, f"{name}: {mob} does not attack players unprovoked"
+    # Max-Tac (heat tiers 4 and 5, and the (d) fallback) and the Barghest were piglin brutes: they zombified within seconds
+    assert entries("spawn_palette")["maxtac_squad"]["squad"]["mob"] == "minecraft:wither_skeleton"
+
+
 def test_dearer_spawns_cost_more_per_figure_up_the_ladder():
     palette = entries("spawn_palette")
     per = {n: d["cost"] / d["count"] for n, d in palette.items()}
@@ -125,7 +146,34 @@ def test_events_refer_to_things_that_exist():
         if fx["type"] == "supply_drop":
             assert {i["item"].removeprefix("minecraft:") for i in fx["items"]} <= ITEMS, name
         if e["night_city"]:
-            assert fx["type"] in ("blackout", "emp", "traffic_jam", "outbreak"), name  # the ones a host's game can really play
+            assert fx["type"] in ("blackout", "emp", "airstrike", "traffic_jam", "outbreak"), name  # the ones a host's game can really play
+    # an airstrike near a host is real Cyberpunk explosions (ExplosionEvents), so it must say so: the host's explosions toggle gates it
+    assert entries("event")["airstrike"]["night_city"]
+
+
+def shop_unit_prices() -> dict[str, float]:
+    """The cheapest price per item any hub shop or vending machine charges."""
+    best: dict[str, float] = {}
+    for path in (DATA / "shop").glob("*.json"):
+        for row in read(path)["stock"]:
+            best[row["item"]] = min(best.get(row["item"], float("inf")), row["price"] / row["count"])
+    return best
+
+
+def test_a_supply_drop_is_worth_less_than_the_cheapest_gig():
+    cheapest_gig = min(read(p)["reward"]["eddies"] for p in (DATA / "contract").glob("*.json"))
+    prices = shop_unit_prices()
+    for name, e in entries("event").items():
+        fx = e["effect"]
+        if fx["type"] != "supply_drop":
+            continue
+        assert all(i["item"] in prices for i in fx["items"]), (name, "every dropped item has a shop price")
+        value = fx["eddies"] + sum(prices[i["item"]] * i["count"] for i in fx["items"])
+        assert fx["eddies"] <= 25 and value < cheapest_gig / 2, (name, value, cheapest_gig)
+    event_schema = read(SCHEMAS / "event.schema.json")
+    drop = next(s for s in event_schema["properties"]["effect"]["oneOf"] if s["properties"]["type"]["const"] == "supply_drop")
+    assert drop["properties"]["eddies"]["maximum"] <= 100
+    assert "cannot open it" in event_schema["description"] and "active match" in event_schema["description"]
 
 
 def test_the_airstrike_is_the_dearest_event_and_the_weather_the_cheapest():
@@ -173,6 +221,7 @@ def test_four_modes_with_consistent_bounds():
         assert m["zone"]["min_radius"] <= m["zone"]["max_radius"], name
         assert len({p["colour"].lower() for p in m["team_palette"]}) == len(m["team_palette"]), name
         assert "spectator" in m["roles"] and m["pvp"], name
+        assert "teammate" in m["roles"], name  # megaplan 8-M1: a Minecraft-only player can always fight in a match
         assert m["time_limit_s"] >= 60 and m["score_limit"] >= 1, name
 
 
@@ -210,6 +259,7 @@ def test_the_schemas_refuse_malformed_files(tmp_path):
         "event/weather": {**event["weather"], "effect": {"type": "weather", "weather": "snow", "seconds": 60}},
         "event/unknown_spawn": {**outbreak, "effect": {"type": "outbreak", "spawn": "cyberblock:nobody", "count": 2}},
         "event/extra": {**event["emp"], "colour": "red"},
+        "event/rich_drop": {**event["supply_drop"], "effect": {**event["supply_drop"]["effect"], "eddies": 101}},
         "heat_tier/tier": {**tier, "tier": 6},
         "heat_tier/wanted": {**tier, "host_wanted": 6},
         "heat_tier/no_waves": {**tier, "response": {**tier["response"], "waves": []}},
@@ -237,3 +287,12 @@ def test_the_ripperdoc_schema_accepts_the_netrunner_implant_megaplan_1_17_append
     schema = read(SCHEMAS / "ripperdoc.schema.json")
     allowed = schema["properties"]["implants"]["items"]["properties"]["implant"]["enum"]
     assert allowed[-2:] == ["firewall", "netrunner"]
+
+
+def test_the_netrunner_implant_has_a_cyberware_recipe(gen):
+    recipe = read(RES_DATA / "recipe" / "netrunner.json")
+    assert recipe["type"] == "minecraft:crafting_shapeless" and recipe["category"] == "equipment"
+    assert recipe["result"] == {"id": "cyberblock:netrunner", "count": 1}
+    assert {"minecraft:redstone", "minecraft:copper_ingot"} <= set(recipe["ingredients"]) and len(recipe["ingredients"]) <= 9
+    assert all(i.startswith("minecraft:") for i in recipe["ingredients"])
+    assert set(gen.RECIPES) == {"netrunner"}  # the console's recipe is 8O's, the Van is 8V's item, the beacon 8T's to place

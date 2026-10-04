@@ -1,0 +1,12 @@
+{
+	"schema": 1,
+	"name": "Molten Blobs",
+	"description": "Two molten blobs that bounce in and split in two when you hit them.",
+	"group": "monster",
+	"kind": "minecraft",
+	"cost": 7,
+	"count": 2,
+	"hostile": true,
+	"mob": "minecraft:magma_cube",
+	"cooldown_s": 15
+}

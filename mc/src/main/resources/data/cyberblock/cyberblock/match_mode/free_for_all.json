@@ -27,6 +27,8 @@
 	"reputation": false,
 	"heat_scale": 0.5,
 	"roles": [
+		"teammate",
+		"hacker",
 		"spectator",
 		"overlord"
 	],

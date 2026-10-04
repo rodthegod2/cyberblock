@@ -11,7 +11,7 @@
 	"faction": "scavenger",
 	"cooldown_s": 15,
 	"squad": {
-		"mob": "minecraft:zombie",
+		"mob": "minecraft:husk",
 		"count": 3
 	}
 }

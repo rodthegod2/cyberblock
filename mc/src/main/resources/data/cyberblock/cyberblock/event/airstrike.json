@@ -7,7 +7,7 @@
 	"cooldown_s": 150,
 	"radius": 20,
 	"scales_with_intensity": true,
-	"night_city": false,
+	"night_city": true,
 	"effect": {
 		"type": "airstrike",
 		"strikes": 8,

@@ -11,7 +11,7 @@
 	"faction": "kurtz_army",
 	"cooldown_s": 25,
 	"squad": {
-		"mob": "minecraft:piglin_brute",
+		"mob": "minecraft:vindicator",
 		"count": 2
 	}
 }

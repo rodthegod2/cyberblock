@@ -11,7 +11,7 @@
 	"faction": "police",
 	"cooldown_s": 60,
 	"squad": {
-		"mob": "minecraft:piglin_brute",
+		"mob": "minecraft:wither_skeleton",
 		"count": 2
 	}
 }
