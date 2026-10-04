@@ -727,8 +727,18 @@ def scenario_versions(env: Env, rep: Report) -> None:
     host.stop()
     client.proc.stop()
     env.client("CbGuest1", join=server.port, version=newer)
+    message = rf"Cyberblock version mismatch: server {re.escape(version)}, your mod {re.escape(newer)}\. Update from the modpack\."
     rep.step("a mod of another major.minor version is refused with the modpack message",
-             lambda: server.log.wait(rf"CbGuest1 lost connection: Cyberblock version mismatch: server {re.escape(version)}, your mod {re.escape(newer)}\. Update from the modpack\.", T_JOIN))
+             lambda: poll(lambda: refused(server.log, "CbGuest1", newer, message), T_JOIN, T_POLL, "the version refusal"))
+
+
+def refused(log: LogFile, name: str, mod: str, message: str) -> bool:
+    """The server refused `name` with `message`: its kick reason in the `lost connection` line, or, when the client closed first (the
+    server then logs only `Disconnected`), the handshake line that carries the message followed by the lost connection."""
+    if log.find(rf"{name} lost connection: {message}"):
+        return True
+    shaken = log.find(rf"handshake: {name} mod {re.escape(mod)} .*\({message}\)")
+    return bool(shaken and re.search(rf"{name} lost connection", log.text()[shaken.end():]))
 
 
 def scenario_flood(env: Env, rep: Report) -> None:

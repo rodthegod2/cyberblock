@@ -1591,3 +1591,14 @@ def test_figures_scenario_asks_a_fake_host_for_the_figures_mode_with_no_layer_an
 def test_figures_hit_is_the_first_pose_a_hostile_figure_of_the_fake_hosts_list():
     first = next(e for e in fakehost.figures_npcs(0.0)["list"] if e["id"] == mpcheck.FIGURE_HIT)
     assert first["hostile"] and first["anim"] & fakehost.FIGURE_ANIM_BITS["aim"] and first["kind"] == "human"
+
+
+def test_a_version_refusal_counts_from_the_kick_reason_or_from_the_handshake_line_when_the_client_closed_first(tmp_path):
+    message = r"Cyberblock version mismatch: server 1\.0\.0, your mod 1\.1\.0\. Update from the modpack\."
+    kicked, closed, early = (LogFile(tmp_path / f"{n}.log") for n in ("kicked", "closed", "early"))
+    kicked.path.write_text("CbGuest1 lost connection: Cyberblock version mismatch: server 1.0.0, your mod 1.1.0. Update from the modpack.\n", encoding="utf-8")
+    shake = "handshake: CbGuest1 mod 1.1.0 dll none -> guest (Cyberblock version mismatch: server 1.0.0, your mod 1.1.0. Update from the modpack.)\n"
+    closed.path.write_text(shake + "CbGuest1 lost connection: Disconnected\n", encoding="utf-8")
+    early.path.write_text("CbGuest1 lost connection: Disconnected\n" + shake, encoding="utf-8")  # the connection loss must come after the refusal
+    assert mpcheck.refused(kicked, "CbGuest1", "1.1.0", message) and mpcheck.refused(closed, "CbGuest1", "1.1.0", message)
+    assert not mpcheck.refused(early, "CbGuest1", "1.1.0", message) and not mpcheck.refused(closed, "CbGuest2", "1.1.0", message)
