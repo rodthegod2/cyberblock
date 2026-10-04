@@ -323,14 +323,16 @@ the Minecraft log how many proxies exist ("proxies: H people, C cars").
   | Hit | Push | What Cyberpunk does |
   |---|---|---|
   | plain hit | 2 m/s | the person flinches (impact reaction) |
-  | sprint hit, Knockback I | 4.5 m/s | a stagger |
-  | Knockback II, gauntlet, Gorilla Arms | 7 m/s | a knockdown (they fall) |
-  | Gorilla Arms plus sprint | 9.5 m/s | a knockdown |
-  | gauntlet plus Gorilla Arms | 12 m/s | a knockdown plus a short ragdoll |
+  | sprint hit, Knockback I, the Gorilla Arms perk | 4.5 m/s | a stagger (they stumble back) |
+  | Knockback II, gauntlet, Gorilla Arms implant (empty hand), Gorilla Arms perk plus sprint | 7 m/s | a knockdown (they fall) |
+  | gauntlet plus the Gorilla Arms perk | 9.5 m/s | a knockdown |
+  | gauntlet, Gorilla Arms perk and sprint | 12 m/s | a knockdown plus a short ragdoll |
 
-  Arrows push by the Punch enchantment instead of by their speed. Cars are shoved ×3 by Gorilla Arms as before.
+  Every hit also deals its share of the person's health (a sword hit about 30 %); a person at zero health is
+  defeated (down), and the next hit finishes them. The reaction's own animation is the push: nobody is thrown across the
+  street. Arrows push by the Punch enchantment instead of by their speed. Cars are shoved ×3 by Gorilla Arms as before.
   Cyberblock.log has a `knock: <id> s=<speed> tier=<tier> impulse=<...>` line per hit, which says which tier a hit
-  became.
+  became (`impulse` is the ragdoll's or the car's push, 0 for the tiers that only play a reaction).
 - **Fire:** flint and steel, fire charges, lava, Fire Aspect and flaming arrows set people alight. Flint and steel or
   a fire charge on a car does nothing and is not used up. A person standing in lava is set alight once every 15 s.
 
@@ -387,8 +389,14 @@ the Minecraft log how many proxies exist ("proxies: H people, C cars").
     `drive: disabled: <what> missing` line, and every flight is called off after 0.5 s.
 - **Menus mid-flight:** opening the map or pause menu pauses the flight; Steve waits in the air and it carries on when
   the menu closes (the DLL freezes its timers meanwhile).
-- **Walls:** V never passes through Night City. If Minecraft flies through a building it has not mapped yet, V stops
-  at the wall ("flight: V stopped short of Night City geometry") and Steve comes back to V after landing.
+- **Walls end the flight:** V never passes through Night City. Flying into a wall, a ceiling, a kerb or anything solid
+  Minecraft has not mapped yet ends the glide or launch right there: V is stopped half a metre short of it, put on the
+  ground below that spot, and gets full control back at once; Steve's glide is called off in Minecraft and he is back with
+  V within a moment (Cyberblock.log: "flight: V hit Night City geometry, the glide ends here"; Minecraft log: "glide
+  called off (the host stopped following)"). Open the elytra again from a ledge to fly on. No fall damage either way.
+  - A safety net releases V too if V and Steve ever drift apart for a second (Cyberblock.log "flight: watchdog: V could
+    not follow ...", Minecraft log "the host's V stayed N blocks from Steve for a second"): V is put on the ground where
+    it was and the glide is called off, so a flight never leaves you stuck.
 - **Landing:** touch down on a roof or a street and V is put on the real floor there, within a frame of Steve's
   touchdown and never in mid-air; Cyberpunk movement takes over again. A very short flight, or one that ends within
   1.5 m of V, leaves V where it is ("flight: over, V stays where it is"). If Minecraft stops sending positions
@@ -454,7 +462,9 @@ the Minecraft log how many proxies exist ("proxies: H people, C cars").
 **Third person on foot (F5).** Press **F5** to see Steve from behind: the camera moves back (about 3 m), is shortened by
 walls and blocks so it never ends up inside them, and F5 again returns to the first-person view. The DLL moves
 Cyberpunk's own first-person camera component, so V still moves and turns normally and the crosshair is drawn at the
-screen centre. It switches itself off (back to first person) in vehicles, scenes, workspots, menus, braindances and
+screen centre. Steve stays locked in the frame while you walk, run or glide: the compositor moves him with V and the
+camera instead of where V was when Minecraft drew the picture, and in a third-person glide Minecraft draws him where V
+is (Steve's own physics may be a block or two ahead), so the camera no longer seems to trail him. It switches itself off (back to first person) in vehicles, scenes, workspots, menus, braindances and
 photo mode, and whenever Cyberblock goes off. A "Third person" or "First person" message confirms it. Cyberblock.log says
 `view: third person on (distance D m)` or `view: first person (<reason>)`.
 

@@ -1,10 +1,37 @@
 # Cyberblock — in-game test session (2026-10-03)
 
 Everything below is built, unit-tested, compile-checked against the real 2.31 game scripts and reviewed. Work top to
-bottom (**Re-test 3 first**); each step says what should happen. Tell Claude "F4: what you saw" or "R5 L-1: what you saw" (or "step N: ...") and it reads
+bottom (**In-game fixes 3 first**, then Re-test 3); each step says what should happen. Tell Claude "F4: what you saw" or "R5 L-1: what you saw" (or "step N: ...") and it reads
 `red4ext\logs\Cyberblock.log`, Minecraft's `mc\run\logs\latest.log` and captures the game window to diagnose.
 
-## Re-test 3 (do this first)
+## In-game fixes 3 (2026-10-03 evening; do these first)
+
+Three things from the 20:05-20:16 session (`fix/ingame3`):
+
+| Item | What was wrong, and what changed |
+|---|---|
+| **G1** flying into something gets you stuck | The drive stopped V 0.3 m from the wall and kept it there every frame, because Minecraft (which does not have the building) glided on and the DLL kept following: V frozen, mouse turn stripped, until a save was loaded (log 20:15:37 "V stopped short", Steve glided on to 20:15:49). Now a collision ends the flight: V is put on the ground below the stop, cam.fly goes false, Minecraft calls the glide off, and the DLL does not take the same glide up again. A watchdog on both sides releases V if V and Steve drift apart for 1 s. Clip rays at shins, middle and head, 0.5 m margin. |
+| **G2** hits do no damage and no knockback | The damage landed (NPCs went "defeated"), but no hit reaction ever played: `HitReactionComponent.EvaluateHit` returns at once for a hit without a hit shape, and ours had none, so no flinch, stagger or knockdown, and a defeated NPC was never finished off. Every hit on a person now carries a chest hit shape. `impulse=0` in `knock:` lines was never a lost push: it is the ragdoll impulse, 0 below the ragdoll tier. The Gorilla Arms perk made every plain swing 7 m/s (a knockdown each time); it now adds half as much (4.5, a stagger). |
+| **G3** third person lags behind | The compositor re-projects Minecraft's older frame as if everything in it stood still, so Steve (drawn at V's feet of that frame) slid back by V's motion since; gliding, Minecraft also drew him at his own physics position, ahead of V and the camera. Now the effect moves Steve's pixels (his capsule) with V, Minecraft draws a third-person glider at V's feet, and the game's mouse turn is stripped during a glide in third person too (it fought the drive's owned yaw). |
+
+1. **G1, wall:** glide (elytra, Space from a roof) straight into a building side. Expected: V stops at the wall, drops to
+   the ground below at once with no damage, mouse and WASD work immediately, Steve is with V again within half a second.
+   Cyberblock.log: `flight: V hit Night City geometry, the glide ends here (V put on the ground below)` and the flight
+   summary with `clipped yes`; latest.log: `glide called off (the host stopped following)`. No `flight: start` follows
+   until you open the elytra again. Repeat in third person (F5) and into a ceiling/overhang while climbing.
+2. **G1, low pass:** glide low over a street into a kerb or a car roof: the same clean end, V on the street.
+3. **G1, normal glides:** a long glide over open streets ending on a roof still lands normally (`flight: landed (glide)`),
+   and no `flight: watchdog` line appears in a normal session.
+4. **G2, plain hits:** punch and sword a pedestrian (no sprint). Each hit: a visible flinch, health drops (a sword about a
+   third), after ~4 sword hits they go down (defeated), the next hit kills (`killed human <id>`). `knock: ... tier=impact`.
+5. **G2, stronger hits:** sprint hits stagger (`tier=stagger`, they stumble back); with the Gorilla Arms perk plain hits
+   stagger and sprint hits knock down (`tier=knockdown`, they fall); only gauntlet + Gorilla Arms perk + sprint ragdolls,
+   short, nobody flies across the street.
+6. **G3, third person:** F5, walk, sprint, then glide and turn hard with the mouse. Steve stays fixed in the frame (no
+   sliding back when you start moving, no jitter while turning); blocks and the street stay registered with Night City.
+   Look for a faint ghost of Steve or a hole behind him during fast moves (report it if you see one).
+
+## Re-test 3
 
 The third session (`out/user-issues.md`, section "Re-test 3 feedback") raised thirteen items, **F1 to F13**. They are all
 built on this version; this list is one check per item, in the user's order. (The R1-R6 below, under "Re-test 2", are an
