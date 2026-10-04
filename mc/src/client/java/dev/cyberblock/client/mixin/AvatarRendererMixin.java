@@ -3,6 +3,7 @@ package dev.cyberblock.client.mixin;
 
 import dev.cyberblock.client.HostState;
 import dev.cyberblock.client.PlayerSync;
+import dev.cyberblock.client.view.ViewPoses;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.renderer.entity.player.AvatarRenderer;
@@ -17,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /**
  * Holding one of the host's guns (drawn by the host): Steve aims with both arms forward, and holds nothing of his own. In a vehicle he
  * takes vanilla's riding pose (HumanoidRenderState.isPassenger: legs forward), sitting where V sits (plan retest3 M2, F3). In third
- * person he is drawn at the feet of this frame's pose (Q-V1).
+ * person he is drawn at the feet of this frame's pose (Q-V1) and without pose flicker (Q-V2, ViewPoses).
  */
 @Mixin(AvatarRenderer.class)
 abstract class AvatarRendererMixin {
@@ -29,6 +30,7 @@ abstract class AvatarRendererMixin {
 
 		HostState.Pose p = HostState.frame();
 		if (p == null) {
+			ViewPoses.reset(state);
 			return;
 		}
 
@@ -47,6 +49,7 @@ abstract class AvatarRendererMixin {
 			state.z = feet[2];
 		}
 
+		ViewPoses.apply(entity, state);
 		if (!p.gun()) {
 			return;
 		}
