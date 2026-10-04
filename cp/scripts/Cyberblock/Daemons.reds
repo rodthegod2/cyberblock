@@ -39,7 +39,10 @@
 //                                                     V's wanted level +1 (Phase 0 e: PreventionSystem SetWantedLevel,
 //                                                     checked 2 s later; when it did not rise the written fallback
 //                                                     "Minecraft Heat only" takes over for good: logged by
-//                                                     RemoteHacks.reds as 'rhack: heat path: ...').
+//                                                     RemoteHacks.reds as 'rhack: heat path: ...'). Nothing is
+//                                                     sent while the police are off (a quest or a police-free
+//                                                     area: "Minecraft Heat only (police off here)") or V is in a
+//                                                     scene; that is no fallback switch.
 // Other ids are skipped: the known ones of the list still run, and the answer is ok:false "unsupported daemon" (6P
 // protocol: ok only when every id ran); the log line names what ran and what was skipped. A daemon that finds nothing
 // in its radius still counts as run. The same leave-alone rules as RemoteHacks.reds: quest-marked and quest-locked
