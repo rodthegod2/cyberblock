@@ -5,12 +5,17 @@ All notable changes to Cyberblock are listed here. The format follows
 [Semantic Versioning](https://semver.org/). One version number covers the DLL, the scripts, the shader, the Minecraft mod
 and the tools.
 
-## [Unreleased]
-Phase Q of the multiplayer plan (`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md`): quick wins before the server
-work. Built and unit-tested; the in-game list is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test Q". The later Wave A
-phases (the Phase 0 feasibility notes, the server/client split and the Apex tools) add their lines below.
+## [1.0.0] - unreleased
+Version 1.0.0 is set in the files on 2026-10-03; it is tagged and published only after the in-game re-test
+([docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test 3") has passed.
 
-### Added
+### Unreleased additions: Phase Q (multiplayer plan)
+Phase Q of the multiplayer plan (`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md`): quick wins before the server
+work, on top of the 1.0.0 work below. Built and unit-tested; the in-game list is
+[docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test Q". The later Wave A phases (the Phase 0 feasibility notes, the
+server/client split and the Apex tools) add their lines below.
+
+#### Added
 - **Survival mining.** Placed blocks crack and break at the normal Minecraft speed with a pickaxe, at eye height and at the
   feet: the aim limit has a margin, smoothing and a sticky target, and V on the ground no longer counts as mid-air.
 - **Stairs.** Cyberpunk's vault and climb prompts are refused on your placed blocks (real ledges and ladders still work), and
@@ -32,12 +37,8 @@ phases (the Phase 0 feasibility notes, the server/client split and the Apex tool
 - **Repository hygiene.** `tests/test_hygiene.py` fails the suite when a tracked file carries the account name of whoever runs
   it, a server password, the hosting provider's FTP host names or a drive-letter path in the plan's new files.
 
-### Changed
+#### Changed
 - Creative can break the invisible outline blocks of Night City (and they come back) instead of them being untouchable.
-
-## [1.0.0] - unreleased
-Version 1.0.0 is set in the files on 2026-10-03; it is tagged and published only after the in-game re-test
-([docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test 3") has passed.
 
 ### Added
 - **Layer 1, the passthrough.** Real Minecraft Java 26.3 (Fabric mod) is drawn into Cyberpunk 2077 2.31 every frame through a
