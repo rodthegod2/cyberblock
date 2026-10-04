@@ -20,7 +20,7 @@ class RelayTest {
 		"dmg, UP", "npcs, BOTH", "mobdmg, UP", "pcells, UP", "unlead, UP", "killed, UP", "scaninfo, UP", "hackresult, UP",
 		"hackspread, UP", "look, LOCAL", "stats, BOTH", "quest, LOCAL", "pins, LOCAL", "prompt, LOCAL", "choices, LOCAL",
 		"sub, LOCAL", "call, LOCAL", "notify, LOCAL", "screen, LOCAL", "reply, LOCAL", "terrain, BOTH", "surveystate, LOCAL",
-		"cmd, DEV",
+		"cmd, DEV", "spawnresult, UP",
 		// not a DLL message: never relayed (the server's whitelist would drop it anyway)
 		"hstate, LOCAL", "session, LOCAL", "nonsense, LOCAL"
 	})
