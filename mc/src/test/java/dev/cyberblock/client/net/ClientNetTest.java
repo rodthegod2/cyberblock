@@ -16,6 +16,37 @@ class ClientNetTest {
 		assertFalse(ClientNet.forwardsDown(ClientNet.Role.NONE, true));
 	}
 
+	/** Section 1.2: the client's own LOCAL messages never come from the server; a guest (or unlinked host) gets no survey_cmd either. */
+	@Test
+	void clientOnlyTypesAreNotAcceptedFromTheServer() {
+		ClientNet.Role host = ClientNet.Role.HOST;
+		for (String t : new String[] {"hello", "status", "binds", "uiact", "persp", "flight", "survey", "session", "prefs"}) {
+			assertEquals(ClientNet.DownAction.DROP, ClientNet.downAction(host, true, t), t);
+		}
+
+		assertEquals(ClientNet.DownAction.DROP, ClientNet.downAction(host, true, null));
+		assertEquals(ClientNet.DownAction.FORWARD, ClientNet.downAction(host, true, "blocks"));
+		assertEquals(ClientNet.DownAction.FORWARD, ClientNet.downAction(host, true, "align"));
+		assertEquals(ClientNet.DownAction.FORWARD, ClientNet.downAction(host, true, "some_later_phase_type"), "a denylist: later DOWN types pass");
+
+		assertEquals(ClientNet.DownAction.SURVEY, ClientNet.downAction(host, true, "survey_cmd"));
+		assertEquals(ClientNet.DownAction.IGNORE, ClientNet.downAction(ClientNet.Role.GUEST, true, "survey_cmd"), "a refused or guest DLL");
+		assertEquals(ClientNet.DownAction.IGNORE, ClientNet.downAction(ClientNet.Role.NONE, true, "survey_cmd"));
+		assertEquals(ClientNet.DownAction.IGNORE, ClientNet.downAction(host, false, "survey_cmd"), "no DLL linked");
+		assertEquals(ClientNet.DownAction.IGNORE, ClientNet.downAction(ClientNet.Role.GUEST, true, "uiact"));
+	}
+
+	/** Section 1.4: the DLL's hello goes UP once per host grant and once per changed hello, not on a perms hs_ack. */
+	@Test
+	void theHelloIsRelayedOncePerGrant() {
+		assertTrue(ClientNet.helloPending(false, ClientNet.Role.NONE, ClientNet.Role.HOST), "first grant");
+		assertTrue(ClientNet.helloPending(false, ClientNet.Role.GUEST, ClientNet.Role.HOST), "guest promoted");
+		assertFalse(ClientNet.helloPending(false, ClientNet.Role.HOST, ClientNet.Role.HOST), "perms toggle: no second hello");
+		assertTrue(ClientNet.helloPending(true, ClientNet.Role.HOST, ClientNet.Role.HOST), "the DLL's ver changed while host");
+		assertFalse(ClientNet.helloPending(true, ClientNet.Role.HOST, ClientNet.Role.GUEST), "left the host role: cleared");
+		assertFalse(ClientNet.helloPending(true, ClientNet.Role.NONE, ClientNet.Role.NONE), "refused: cleared");
+	}
+
 	@Test
 	void theDownTypeIsReadFromTheFront() {
 		assertEquals("blocks", ClientNet.type("{\"t\":\"blocks\",\"reset\":true,\"c\":[" + "1,".repeat(1000) + "1]}"));

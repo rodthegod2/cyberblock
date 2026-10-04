@@ -11,6 +11,7 @@ import dev.cyberblock.client.ui.UiLink;
 import dev.cyberblock.net.Payloads;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -44,7 +45,11 @@ public final class ClientNet {
 	/** Vanilla's disconnect reasons that are a refusal: the whitelist, a ban, an operator's kick, the same name logging in again. */
 	private static final List<String> VANILLA_REFUSALS = List.of("multiplayer.disconnect.not_whitelisted", "multiplayer.disconnect.banned",
 		"multiplayer.disconnect.kicked", "multiplayer.disconnect.duplicate_login");
+	/** Messages this client builds for its own DLL (section 1.2, LOCAL): never accepted from the server over {@code cyberblock:down}. */
+	private static final Set<String> CLIENT_ONLY = Set.of("hello", "status", "binds", "uiact", "persp", "flight", "survey", "session", "prefs");
 	private static volatile Role role = Role.NONE;
+	/** The DLL's hello still has to go UP for the current host grant (client thread). */
+	private static boolean helloPending;
 	private static volatile boolean connected;
 	private static int seq;
 	private static final HState hstate = new HState();
@@ -107,6 +112,8 @@ public final class ClientNet {
 	/** Any thread: the DLL link came up, dropped or reported another ver. On a server that is a new {@code hs}; off one, {@code session none}. */
 	public static void linkChanged() {
 		Minecraft.getInstance().execute(() -> {
+			// a new or changed hello waits for the hs_ack (HostLink does not relay it); a dropped link leaves no hello to send
+			helloPending = true;
 			if (connected) {
 				sendHs();
 			} else if (HostLink.linked()) {
@@ -144,11 +151,15 @@ public final class ClientNet {
 
 		if (HostLink.linked()) {
 			HostLink.send(sessionMessage(sessionState(ack.ok(), ack.role(), ack.reason()), ack.reason(), ack.perms()));
-			// the server starts a host session on the DLL's hello (section 1.4): the one it has seen so far was not relayed yet
-			String hello = HostLink.lastHello();
-			if (now == Role.HOST && hello != null) {
-				Relay.upBuilt("hello", hello);
-			}
+		}
+
+		// the server starts a host session on the DLL's hello (section 1.4): relay it once per grant and once per changed hello, not on
+		// every hs_ack (a perms change also sends one, and a second hello would restart the session and resync every block)
+		helloPending = helloPending(helloPending, before, now);
+		String hello = HostLink.lastHello();
+		if (helloPending && HostLink.linked() && hello != null) {
+			Relay.upBuilt("hello", hello);
+			helloPending = false;
 		}
 
 		if (now != Role.HOST && before == Role.HOST) {
@@ -156,21 +167,36 @@ public final class ClientNet {
 		}
 	}
 
+	/** Whether the DLL's hello still has to go UP after an hs_ack: on a new host grant, or while a changed hello waits; never when not host. */
+	static boolean helloPending(final boolean pending, final Role before, final Role now) {
+		return now == Role.HOST && (pending || before != Role.HOST);
+	}
+
 	/** {@code cyberblock:down}: the server's message for this client's DLL, forwarded verbatim; {@code survey_cmd} is this client's own. */
 	static void onDown(final String json) {
 		downs.incrementAndGet();
 		String t = type(json);
-		if ("survey_cmd".equals(t)) {
-			SurveyClient.onCommand(json);
-			return;
-		}
+		switch (downAction(role, HostLink.linked(), t)) {
+			case IGNORE -> {
+				if (ignored.incrementAndGet() % 100 == 1) {
+					Cyberblock.LOG.info("relay: ignored a down message while not the linked host ({} so far)", ignored.get());
+				}
 
-		if (!forwardsDown(role, HostLink.linked())) {
-			if (ignored.incrementAndGet() % 100 == 1) {
-				Cyberblock.LOG.info("relay: ignored a down message while not the linked host ({} so far)", ignored.get());
+				return;
 			}
+			case DROP -> {
+				if (ignored.incrementAndGet() % 100 == 1) {
+					Cyberblock.LOG.warn("relay: dropped a down message of a client-only type {} ({} ignored so far)", t, ignored.get());
+				}
 
-			return;
+				return;
+			}
+			case SURVEY -> {
+				SurveyClient.onCommand(json);
+				return;
+			}
+			case FORWARD -> {
+			}
 		}
 
 		if ("align".equals(t)) {
@@ -187,6 +213,29 @@ public final class ClientNet {
 	/** DOWN reaches the DLL only for the host role with the DLL linked (section 1.3: a client that is not the host ignores it). */
 	public static boolean forwardsDown(final Role role, final boolean linked) {
 		return role == Role.HOST && linked;
+	}
+
+	enum DownAction {
+		/** Not the linked host (section 1.3). */
+		IGNORE,
+		/** A client-only LOCAL type, or no {@code t}: never forwarded to the DLL (section 1.2). */
+		DROP,
+		/** {@code survey_cmd}: this client's own, run by SurveyClient, never forwarded. */
+		SURVEY,
+		FORWARD
+	}
+
+	/** What a DOWN message does: the role check comes first, so a guest whose DLL is linked never runs a survey either. */
+	static DownAction downAction(final Role role, final boolean linked, final @Nullable String t) {
+		if (!forwardsDown(role, linked)) {
+			return DownAction.IGNORE;
+		}
+
+		if ("survey_cmd".equals(t)) {
+			return DownAction.SURVEY;
+		}
+
+		return t == null || CLIENT_ONLY.contains(t) ? DownAction.DROP : DownAction.FORWARD;
 	}
 
 	/** The message's {@code t} without parsing a megabyte of blocks: the server writes {@code t} first; otherwise a full parse. */
