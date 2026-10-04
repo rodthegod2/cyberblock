@@ -7,6 +7,7 @@ import dev.cyberblock.client.ui.screen.AtlasScreen;
 import dev.cyberblock.client.ui.screen.JournalScreen;
 import dev.cyberblock.client.ui.screen.NightCityPauseScreen;
 import dev.cyberblock.client.ui.screen.PhoneScreen;
+import dev.cyberblock.client.ui.screen.VendorScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
@@ -76,5 +77,6 @@ final class UiEvents {
 		Minecraft minecraft = Minecraft.getInstance();
 		Waypoints.clear(minecraft);
 		CyberToast.hideCall(minecraft.gui.toastManager());
+		VendorScreen.closeIfOpen();
 	}
 }

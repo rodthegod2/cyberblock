@@ -3,6 +3,7 @@ package dev.cyberblock.client.ui;
 import com.google.gson.JsonObject;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.HostLink;
+import dev.cyberblock.client.ui.screen.VendorScreen;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -125,7 +126,11 @@ public final class UiLink {
 		});
 		HostLink.listen("reply", m -> {
 			UiModel.Reply v = valid(UiModel.parseReply(m), "reply");
-			if (v != null) {
+			VendorModel.Vendor vendor = v != null ? VendorModel.of(v) : null;
+			if (vendor != null) {
+				// unrequested: the host opened a Night City vendor (Vendors.reds), or a purchase refreshed it
+				onClient(() -> VendorScreen.show(vendor));
+			} else if (v != null) {
 				Consumer<UiModel.Reply> to = waiting.remove(v.id());
 				if (to != null) {
 					onClient(() -> to.accept(v));
@@ -184,9 +189,14 @@ public final class UiLink {
 	 * thread. Returns the request id, or -1 when no host is linked.
 	 */
 	public static int request(final String kind, final Consumer<UiModel.Reply> to) {
+		return request(kind, "", to);
+	}
+
+	/** As {@link #request(String, Consumer)}, with an {@code arg} (atlas {@code "fasttravel"}: only the fast-travel points). */
+	public static int request(final String kind, final String arg, final Consumer<UiModel.Reply> to) {
 		int id = nextRequest.getAndIncrement();
 		waiting.put(id, to);
-		if (!act(kind + "req", "", 0L, id)) {
+		if (!act(kind + "req", arg, 0L, id)) {
 			waiting.remove(id);
 			return -1;
 		}

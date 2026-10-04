@@ -34,6 +34,10 @@
 public abstract class CyberblockRestyle {
   // From CyberblockUi.Pump (up to 30 Hz, also while the game is paused). on: Cyberblock is On.
   public static func Update(game: GameInstance, on: Bool) -> Void {
+    // A host's vendor taken over by Minecraft (Vendors.reds) closes Cyberpunk's hub once Minecraft's screen is up.
+    CyberblockVendors.Update(game, on);
+    // A Holo-Table fast travel picked while V was parked runs after the hub exit (Menus.reds).
+    CyberblockMenus.UpdateFastTravel(game, on);
     let s = CyberblockUiService.Get();
     if !IsDefined(s) {
       return;

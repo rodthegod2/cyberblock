@@ -33,8 +33,11 @@ public final class UiModel {
 	/** Section 1.11 pass-through names, in the order the plan lists them. */
 	public static final List<String> PASS_NAMES = List.of("vendor", "ripperdoc", "stash", "wardrobe", "crafting", "breach", "arcade", "braindance", "tutorial",
 		"settings", "saves", "death", "loading", "other");
-	public static final Set<String> REPLY_KINDS = Set.of("journal", "phone", "atlas");
-	public static final Set<String> UIACT_NAMES = Set.of("save", "loadlast", "mainmenu", "cpmenu", "track", "smsreply", "fasttravel", "journalreq", "phonereq", "atlasreq");
+	/** Phase 7 (megaplan 1.9) adds {@code vendor}: a host's Cyberpunk vendor or ripperdoc, see VendorModel. */
+	public static final Set<String> REPLY_KINDS = Set.of("journal", "phone", "atlas", "vendor");
+	/** Phase 7 (megaplan 7-V1) adds {@code buy} and {@code sell}: hash = the item hash, id = its index, arg = the quantity. */
+	public static final Set<String> UIACT_NAMES = Set.of("save", "loadlast", "mainmenu", "cpmenu", "track", "smsreply", "fasttravel", "journalreq", "phonereq", "atlasreq",
+		"buy", "sell");
 	private static final long UINT32_MAX = 0xFFFF_FFFFL;
 	/** Positions beyond these are not a place in the world (HostState uses the same limits for the camera). */
 	private static final double XZ_LIMIT = 2.9E7;
@@ -171,7 +174,10 @@ public final class UiModel {
 	public record ScreenMsg(@Nullable String open, @Nullable String pass) {
 	}
 
-	/** @param state journal: 0 active, 1 done, 2 failed; phone: 0 from the contact, 1 from V, 2 a reply V can choose */
+	/**
+	 * @param state journal: 0 active, 1 done, 2 failed; phone: 0 from the contact, 1 from V, 2 a reply V can choose; vendor: the
+	 *     price in eddies
+	 */
 	public record Line(long hash, String text, int state) {
 	}
 
@@ -415,6 +421,8 @@ public final class UiModel {
 			}
 
 			int id = (int) integer(m.get("id"), Integer.MIN_VALUE, Integer.MAX_VALUE);
+			// a vendor line's state is the item's price in eddies (megaplan 1.9), every other kind's a 0..2 state
+			long maxState = kind.equals("vendor") ? Integer.MAX_VALUE : 2;
 			List<Group> groups = new ArrayList<>();
 			int lines = 0;
 			if (m.has("groups")) {
@@ -441,7 +449,7 @@ public final class UiModel {
 
 								try {
 									JsonObject lo = object(l);
-									list.add(new Line(integer(lo.get("hash"), 0, UINT32_MAX), string(lo, "text", 256, false), (int) integer(lo.get("state"), 0, 2)));
+									list.add(new Line(integer(lo.get("hash"), 0, UINT32_MAX), string(lo, "text", 256, false), (int) integer(lo.get("state"), 0, maxState)));
 									lines++;
 								} catch (Invalid | IllegalStateException x) {
 									bad.incrementAndGet();

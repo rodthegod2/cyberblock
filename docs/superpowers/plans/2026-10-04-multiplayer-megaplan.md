@@ -1997,6 +1997,17 @@ Lang owner: **7A**. Merge order: 7D, 7S, 7V, 7A, 7N, 7H, 7T, 7P.
 - **What to try:** a night in the Afterlife; gigs; the Holo-Table spawn and "join a friend".
 - **Descopes and risks:** vendor stock for hosts depends on (f); the 3D table may fall back to 2D; parked V's "unseen"
   depends on (g); mechanic repair of Cyberpunk cars depends on a verified call.
+- **7V review amendment (2026-10-04):** (1) **Descope:** installing cyberware stays Cyberpunk's own ripperdoc screen
+  (the Minecraft ripperdoc screen is a shop: buy and sell only; "Night City vendor..." opens Cyberpunk's for installing).
+  (2) A vendor or ripperdoc whose hub seats V (the ripperdoc chair, a workspot) or runs inside its dialogue scene is
+  still taken over; only quest locks (`LockInHubMenu`), the prologue ripperdoc and the ripperdoc tutorials stay
+  pass-through. (3) Fast travel picked at the Holo-Table while V is parked in the hub runs 1 s after the hub exit
+  (never while parked: vanilla fast travel strips the park's restrictions); the Holo-Table lists the host's points
+  through 7T's `HoloFastTravel.points` hook, fed by 7V's `FastTravelPoints.known()` / `travel()` (installed at the
+  Phase 7 merge). Re-test 7 adds: open a gun shop and a ripperdoc as the host and grep `Cyberblock.log` for
+  `vendors: <name> pass-through`: there is none, and `vendors: <name> -> minecraft screen open` is there for both; at the
+  Holo-Table pick a fast-travel point (toast "when you leave the hub"), leave the hub: V fast travels there, Steve
+  follows, and V stays at the destination (`fast travel: to <name> (Holo-Table)` after `park: off (hub exit)`).
 
 ---
 
