@@ -284,8 +284,8 @@ public final class Downed {
 				case BLED_OUT -> finish(p, "bled out");
 				case TRAUMA_ARRIVED -> revive(p, null, true);
 				case NONE -> {
-					if (p.getHealth() < 1.0F) {
-						p.setHealth(1.0F);
+					if (p.getHealth() != 1.0F) {
+						p.setHealth(1.0F); // half a heart until revived: no natural regeneration while bleeding out
 					}
 
 					if (st.traumaCalled()) {
@@ -300,19 +300,20 @@ public final class Downed {
 		}
 	}
 
-	/** The Trauma Team flyer's approach: a light column coming down for the last 3 s, an engine sound, then the landing. */
+	/** The Trauma Team flyer's approach: its lights coming down over the last 5 s with an engine sound, then the landing. */
 	private static void flyer(final ServerPlayer p, final long left) {
-		if (!(p.level() instanceof ServerLevel level) || left > 60) {
+		if (!(p.level() instanceof ServerLevel level) || left > 100) {
 			return;
 		}
 
-		if (left == 60) {
-			level.playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.ELYTRA_FLYING, SoundSource.NEUTRAL, 1.5F, 1.4F);
+		if (left == 100) {
+			level.playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.ELYTRA_FLYING, SoundSource.NEUTRAL, 2.0F, 1.4F);
 		}
 
 		if (left % 2 == 0) {
-			double h = 2.0 + left * 0.5;
-			level.sendParticles(ParticleTypes.END_ROD, p.getX(), p.getY() + h, p.getZ(), 8, 0.6, 0.4, 0.6, 0.02);
+			double h = 2.5 + left * 0.25;
+			level.sendParticles(ParticleTypes.END_ROD, p.getX(), p.getY() + h, p.getZ(), 24, 1.2, 0.3, 1.2, 0.01);
+			level.sendParticles(ParticleTypes.CLOUD, p.getX(), p.getY() + h - 0.5, p.getZ(), 6, 1.0, 0.2, 1.0, 0.02);
 		}
 	}
 

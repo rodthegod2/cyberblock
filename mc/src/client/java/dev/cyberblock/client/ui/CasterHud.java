@@ -20,6 +20,8 @@ public final class CasterHud {
 	/** The overlay as the server last sent it (client thread). */
 	public static volatile CasterWire.View view = CasterWire.View.OFF;
 	static final int MARGIN = 4, LINE = 10, FEED_FADE_S = 20;
+	/** Below vanilla's two rows of status effect icons (y 1 and 27, 24 px each) at the top right. */
+	static final int FEED_TOP = 54;
 
 	private CasterHud() {
 	}
@@ -83,8 +85,8 @@ public final class CasterHud {
 			y += 3;
 		}
 
-		// right: the kill feed, newest on top
-		int fy = MARGIN;
+		// right: the kill feed, newest on top, under the status effect icons
+		int fy = FEED_TOP;
 		for (CasterWire.Feed f : v.feed()) {
 			float alpha = Math.clamp(1.0F - (f.age() - (FEED_FADE_S - 5)) / 5.0F, 0.0F, 1.0F);
 			if (alpha <= 0.05F) {
