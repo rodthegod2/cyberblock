@@ -87,7 +87,7 @@ def scenario_van(env: mp.Env, rep: mp.Report) -> None:
     rep.step("a Ping from the Van screen reaches the owner's DLL as a `hack` on that person",
              lambda: "sent to" in server.test("van hack ping screen", as_player="CbGuest1")
              and mp.poll(lambda: hack_reaches(host, mark, "ping"), mp.T_EFFECT, mp.T_POLL, "the hack"))
-    rep.step("the server logged the Van's chip", lambda: bool(server.log.find(r"van: CbGuest1 -> ping on .* of CbHost1 \(from the screen\)")))
+    rep.step("the server logged the Van's chip", lambda: bool(server.log.wait(r"van: CbGuest1 -> ping on .* of CbHost1 \(from the screen\)", mp.T_EFFECT)))
 
     mark = host.log.mark()
     rep.step("a device action from the Van screen reaches the owner's DLL as a `devact` (open)",
@@ -96,7 +96,7 @@ def scenario_van(env: mp.Env, rep: mp.Report) -> None:
     rep.step("... and the DLL's `devresult` reaches the Van", lambda: bool(server.log.wait(r"van: CbHost1 devresult \d+ open ok", mp.T_EFFECT)))
 
     rep.step("a drone takes off from the Van", lambda: "-> flying" in server.test("van launch", as_player="CbGuest1")
-             and bool(server.log.find(r"van: CbGuest1 launched a drone")))
+             and bool(server.log.wait(r"van: CbGuest1 launched a drone", mp.T_EFFECT)))
     server.test("van fly 0 4 -6", as_player="CbGuest1")
     rep.step("the drone sees targets with a clear line", lambda: mp.poll(lambda: (s := state(server)) and s["drone"] > 0, mp.T_EFFECT, 1.0, "drone targets"))
     time.sleep(CHIP_GAP_S)
