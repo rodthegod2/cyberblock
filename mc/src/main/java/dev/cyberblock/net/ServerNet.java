@@ -390,17 +390,19 @@ public final class ServerNet {
 		return !s.isDedicatedServer() && s.isSingleplayerOwner(player.nameAndId());
 	}
 
-	/** Every online player (at most 200): linked = a LINKED or ACTIVE session, body from the player (5K); the rest are Phase 1 defaults. */
+	/**
+	 * Every online player (at most 200): linked = a LINKED or ACTIVE session, body from the player (5K), team (its match team, -1 none)
+	 * and pvp (its toggle) from 8M; the rest are Phase 1 defaults.
+	 */
 	static Payloads.Roster roster(final MinecraftServer s) {
 		List<Payloads.RosterEntry> list = new ArrayList<>();
-		boolean pvp = ServerConfig.get().pvpDefault();
 		for (ServerPlayer p : s.getPlayerList().getPlayers()) {
 			if (list.size() == Payloads.ROSTER_CAP) {
 				break;
 			}
 
-			list.add(new Payloads.RosterEntry(p.getUUID(), cap(p.getPlainTextName(), Payloads.NAME_CAP), CyberSkins.linked(p), CyberSkins.body(p), -1,
-				pvp, false, false));
+			list.add(new Payloads.RosterEntry(p.getUUID(), cap(p.getPlainTextName(), Payloads.NAME_CAP), CyberSkins.linked(p), CyberSkins.body(p),
+				dev.cyberblock.mode.match.Matches.team(p), dev.cyberblock.mode.match.Pvp.on(p), false, false));
 		}
 
 		return new Payloads.Roster(List.copyOf(list));
