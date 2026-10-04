@@ -47,6 +47,13 @@ uniform bool cb_menu < hidden = true; > = false;
 // The Sandevistan / Kerenzikov screen effect (re-test 3, F10): x intensity 0..1 (0.15 s ease-in, hold, 0.4 s ease-out;
 // 0 while a Cyberpunk menu is open), y kind (0 Sandevistan, 1 Kerenzikov), z seconds since it started, w 0.
 uniform float4 cb_slowmo < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+// Steve's body in the uploaded frame (third person; in-game 2026-10-03 "third person lags behind"): the capsule he was
+// drawn in, Minecraft coordinates (a = xyz of one end and w its radius, 0 when there is no body; b = xyz of the other end),
+// and how far V (and the camera with it) has moved since that frame (cb_body_move). Everything else in the frame stands
+// still while re-projected; what lies in the capsule is moved with V instead, so Steve stays where the camera frames him.
+uniform float4 cb_body_a < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float4 cb_body_b < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float3 cb_body_move < hidden = true; > = float3(0.0, 0.0, 0.0);
 
 uniform float DepthBias < ui_type = "drag"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.005; ui_label = "Depth bias (m)";
 	ui_tooltip = "How far behind Night City's surface Minecraft may still show (blocks resting on the ground)."; > = 0.04;
@@ -190,6 +197,74 @@ float host_tan()
 	return tan(radians(cb_host_pose[3]) * 0.5);
 }
 
+/// The point is inside Steve's capsule of the uploaded frame (cb_body_a/b, Minecraft coordinates).
+bool in_body(float3 p)
+{
+	const float3 ab = cb_body_b.xyz - cb_body_a.xyz;
+	const float t = saturate(dot(p - cb_body_a.xyz, ab) / max(dot(ab, ab), 1e-6));
+	return length(p - (cb_body_a.xyz + ab * t)) <= cb_body_a.w;
+}
+
+/// March a Night City pixel's view ray (Cyberpunk camera space, `ray` at depth 1) from near to far, moving each point into
+/// the camera Minecraft rendered with: W rotates, T is Cyberpunk's camera relative to Minecraft's in Minecraft's camera
+/// space. The first point behind Minecraft's surface there is where Minecraft is seen: refine it (fixed point on the
+/// surface point's Night City depth) and give its Minecraft screen point (ndc) and its Night City depth (zg). `body`: 0 any
+/// surface; -1 any but Steve's (the capsule); 1 only Steve's (T then already holds V's motion). Thin, close things are
+/// found even when the camera has swung sideways.
+bool march(float3 ray, float3x3 W, float3 T, float2 mcScale, float zFar, int body, out float2 ndc, out float zg)
+{
+	const float zNear = 0.2;
+	const float3x3 rm = camera_rotation(cb_mc_pose[0], cb_mc_pose[1], cb_mc_pose[2]);
+	const float3 mcPos = float3(cb_mc_pose[4], cb_mc_pose[5], cb_mc_pose[6]);
+	ndc = 0.0;
+	zg = 1e9;
+	bool found = false;
+	[loop] for (int i = 0; i < 24 && !found; ++i)
+	{
+		const float z = zNear * pow(zFar / zNear, i / 23.0);
+		const float3 pm = mul(W, ray * z) + T;
+		if (pm.z > -1e-3)
+			continue;
+		const float2 n = pm.xy / -pm.z / mcScale;
+		if (any(abs(n) > 1.0))
+			continue;
+		const float zmv = mc_linear(tex2Dlod(sDepth, float4(mc_uv(n), 0, 0)).r);
+		if (zmv > -pm.z + 0.03)
+			continue; // still in front of whatever Minecraft drew there
+		// crossed Minecraft's surface: settle on it
+		float zt = z;
+		float2 nt = n;
+		float zs = zmv;
+		[loop] for (int k = 0; k < 3; ++k)
+		{
+			const float3 mk = mul(W, ray * zt) + T;
+			if (mk.z > -1e-3)
+				break;
+			const float2 nk = mk.xy / -mk.z / mcScale;
+			if (any(abs(nk) > 1.0))
+				break;
+			const float zk = mc_linear(tex2Dlod(sDepth, float4(mc_uv(nk), 0, 0)).r);
+			if (zk > 1e8)
+				break;
+			nt = nk;
+			zs = zk;
+			// the surface point back in Cyberpunk's camera space; its depth there is -z (W is a rotation: W^-1 = W^T)
+			zt = -mul(float3(nk * mcScale, -1.0) * zk - T, W).z;
+		}
+		if (body != 0)
+		{
+			// the surface point in Minecraft's world, as the uploaded frame has it: Steve's pixels are the ones in his capsule
+			const bool steve = zs < 1e8 && in_body(mul(rm, float3(nt * mcScale, -1.0) * zs) + mcPos);
+			if (steve != (body > 0))
+				continue;
+		}
+		ndc = nt;
+		zg = zt;
+		found = true;
+	}
+	return found;
+}
+
 float3 bands(float z)
 {
 	const float t = frac(z);
@@ -216,53 +291,41 @@ void PS_Composite(float4 pos : SV_Position, float2 uv : TEXCOORD, out float4 out
 		// Rows of R_mc^T R_host turn a ray in Cyberpunk's camera space into Minecraft's camera space; T is Cyberpunk's
 		// camera position relative to Minecraft's, in Minecraft's camera space.
 		const float3x3 rm = camera_rotation(cb_mc_pose[0], cb_mc_pose[1], cb_mc_pose[2]);
-		const float3x3 W = mul(transpose(rm), camera_rotation(cb_host_pose[0], cb_host_pose[1], cb_host_pose[2]));
-		const float3 T = mul(float3(cb_host_pose[4] - cb_mc_pose[4], cb_host_pose[5] - cb_mc_pose[5], cb_host_pose[6] - cb_mc_pose[6]), rm);
+		const float3x3 rh = camera_rotation(cb_host_pose[0], cb_host_pose[1], cb_host_pose[2]);
+		const float3x3 W = mul(transpose(rm), rh);
+		const float3 hostPos = float3(cb_host_pose[4], cb_host_pose[5], cb_host_pose[6]);
+		const float3 T = mul(hostPos - float3(cb_mc_pose[4], cb_mc_pose[5], cb_mc_pose[6]), rm);
 		const int2 mcSize = tex2Dsize(sWorld);
 		const float hostTan = host_tan();
-		// March this Night City pixel's ray (in Cyberpunk's current camera) from near to far, moving each point into
-		// the camera Minecraft rendered with (rotation + how far the camera moved since). The first point that is
-		// behind Minecraft's surface there is where Minecraft is seen: refine it and sample. Thin, close things are
-		// found even when the camera has swung sideways.
 		const float3 ray = float3((uv.x * 2.0 - 1.0) * hostTan * BUFFER_WIDTH * BUFFER_RCP_HEIGHT, (1.0 - uv.y * 2.0) * hostTan, -1.0);
 		const float2 mcScale = float2(tan(radians(cb_mc_pose[3]) * 0.5) * float(mcSize.x) / float(max(mcSize.y, 1)), tan(radians(cb_mc_pose[3]) * 0.5));
-		const float zNear = 0.2, zFar = max(min(zh + allow, 400.0), 0.5);
-		float2 ndc = 0.0;
-		inside = false;
-		[loop] for (int i = 0; i < 24; ++i)
+		const float zFar = max(min(zh + allow, 400.0), 0.5);
+		// Steve moves with V: only rays that pass near where he is now look for him (moved by cb_body_move), the rest of
+		// the frame skips his old place (no ghost of him left behind)
+		const bool body = cb_body_a.w > 0.0;
+		bool nearBody = false;
+		if (body)
 		{
-			const float z = zNear * pow(zFar / zNear, i / 23.0);
-			const float3 pm = mul(W, ray * z) + T;
-			if (pm.z > -1e-3)
-				continue;
-			const float2 n = pm.xy / -pm.z / mcScale;
-			if (any(abs(n) > 1.0))
-				continue;
-			const float zmv = mc_linear(tex2Dlod(sDepth, float4(mc_uv(n), 0, 0)).r);
-			if (zmv > -pm.z + 0.03)
-				continue; // still in front of whatever Minecraft drew there
-			// crossed Minecraft's surface: settle on it (fixed-point on the surface point's Night City depth)
-			float zg = z;
-			ndc = n;
-			[loop] for (int k = 0; k < 3; ++k)
-			{
-				const float3 mk = mul(W, ray * zg) + T;
-				if (mk.z > -1e-3)
-					break;
-				const float2 nk = mk.xy / -mk.z / mcScale;
-				if (any(abs(nk) > 1.0))
-					break;
-				const float zk = mc_linear(tex2Dlod(sDepth, float4(mc_uv(nk), 0, 0)).r);
-				if (zk > 1e8)
-					break;
-				ndc = nk;
-				// the surface point back in Cyberpunk's camera space; its depth there is -z (W is a rotation: W^-1 = W^T)
-				zg = -mul(float3(nk * mcScale, -1.0) * zk - T, W).z;
-			}
+			const float3 dir = normalize(mul(rh, ray));
+			const float3 centre = (cb_body_a.xyz + cb_body_b.xyz) * 0.5 + cb_body_move - hostPos;
+			const float along = max(dot(centre, dir), 0.0);
+			nearBody = length(centre - dir * along) <= cb_body_a.w + length(cb_body_b.xyz - cb_body_a.xyz) * 0.5 + 0.2;
+		}
+		float2 ndc = 0.0;
+		float zg = 1e9;
+		inside = march(ray, W, T, mcScale, zFar, body ? -1 : 0, ndc, zg);
+		float2 ndcBody = 0.0;
+		float zgBody = 1e9;
+		if (nearBody && march(ray, W, T - mul(cb_body_move, rm), mcScale, zFar, 1, ndcBody, zgBody) && zgBody < zg)
+		{
+			ndc = ndcBody;
+			zg = zgBody;
+			inside = true;
+		}
+		if (inside)
+		{
 			muv = mc_uv(ndc);
 			zm = zg;
-			inside = true;
-			break;
 		}
 	}
 	const float4 world = inside ? tex2D(sWorld, muv) : 0.0;

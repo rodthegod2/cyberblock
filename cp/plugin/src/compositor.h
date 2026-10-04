@@ -2,6 +2,7 @@
 // ReShade add-on half of Cyberblock.dll: uploads Minecraft's latest frame (shared memory "Local\CyberblockFrame") into
 // textures that Cyberblock.fx composites into Cyberpunk's picture against Cyberpunk's depth buffer.
 #pragma once
+#include "view.hpp"
 
 namespace compositor
 {
@@ -14,8 +15,10 @@ namespace compositor
 	void set_host_planes(float near_clip, float far_clip);
 	/// Cyberpunk's current camera in Minecraft's convention (rotation in degrees, vertical fov, position in Minecraft
 	/// coordinates): Minecraft's frame is re-projected (with its depth) from the pose it was rendered with to this
-	/// one, hiding the link's latency on camera turns and moves.
-	void set_host_pose(float yaw, float pitch, float roll, float fov, double x, double y, double z);
+	/// one, hiding the link's latency on camera turns and moves. `body`: Steve's body for this camera (the cam's frame
+	/// number, V's feet and the capsule Steve is drawn in; no capsule in first person): what lies in the capsule of the
+	/// uploaded frame's own camera (found by the frame number Minecraft echoes) is moved with V, not left behind.
+	void set_host_pose(float yaw, float pitch, float roll, float fov, double x, double y, double z, const cb::view::Body &body = {});
 	/// How many poses back the presented picture is (1: the caller reads the camera of the frame being prepared).
 	void set_pose_lag(int frames);
 	/// Minecraft's picture moves with the camera (a chase cam framing Steve): composite it as rendered, without
