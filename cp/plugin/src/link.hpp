@@ -17,7 +17,7 @@
 namespace cb
 {
 	/// The link's outgoing messages, bounded so that a Minecraft that stops reading cannot grow it without limit:
-	/// - a state stream (`cam`, `npcs`, `aim`, `cursor`, `pcells`) keeps only its newest message, which replaces the
+	/// - a state stream (`cam`, `npcs`, `aim`, `cursor`, `pcells`, `feed`) keeps only its newest message, which replaces the
 	///   queued one of its type at the back of the queue;
 	/// - a `look` adds its deltas into the queued `look`;
 	/// - a `clear` replaces every queued `ground`, `unground` and `clear` (Minecraft forgets that ground anyway);

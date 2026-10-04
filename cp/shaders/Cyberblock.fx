@@ -110,6 +110,12 @@ texture GhostHistTex { Width = BUFFER_WIDTH / 2; Height = BUFFER_HEIGHT / 2; For
 sampler sGhostHist { Texture = GhostHistTex; AddressU = CLAMP; AddressV = CLAMP; };
 texture GhostTmpTex { Width = BUFFER_WIDTH / 2; Height = BUFFER_HEIGHT / 2; Format = RGBA8; };
 sampler sGhostTmp { Texture = GhostTmpTex; AddressU = CLAMP; AddressV = CLAMP; };
+// The host's photo feed (Phase 6, megaplan task 6-D1): once a second the add-on sets cb_feed for one frame, the Feed pass
+// shrinks the composited picture (Night City with Minecraft's world, without Minecraft's HUD; the centre square of the
+// screen) into CbFeedTex, and the add-on reads those 128 x 128 pixels back and maps them to Minecraft's map colours. The
+// add-on finds the texture by this name. While cb_feed is false the pass costs one branch per pixel of 128 x 128.
+uniform bool cb_feed < hidden = true; > = false;
+texture CbFeedTex { Width = 128; Height = 128; Format = RGBA8; };
 
 float luma(float3 c)
 {
@@ -512,6 +518,22 @@ float3 PS_Final(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
 	return overlay.rgb + saturate(color) * (1.0 - overlay.a);
 }
 
+/// The photo feed: one 128 x 128 cell per pixel over the centre square of the composited picture, each the average of a
+/// 4 x 4 grid of bilinear samples (so about 8 x 8 screen pixels at 1080p count).
+float4 PS_Feed(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
+{
+	if (!cb_feed)
+		return float4(0.0, 0.0, 0.0, 1.0);
+	const float span = BUFFER_HEIGHT * BUFFER_RCP_WIDTH; // the square's width as a fraction of the screen's
+	const float2 cell = float2(span, 1.0) / 128.0;
+	const float2 corner = float2(0.5 - span * 0.5, 0.0) + floor(pos.xy) * cell;
+	float3 sum = 0.0;
+	[unroll] for (int y = 0; y < 4; ++y)
+		[unroll] for (int x = 0; x < 4; ++x)
+			sum += tex2Dlod(sComposite, float4(corner + (float2(x, y) + 0.5) * 0.25 * cell, 0, 0)).rgb;
+	return float4(saturate(sum / 16.0), 1.0);
+}
+
 /// Night City's depth in metres: black at 0 m to white at 50 m, with a red line every 5 m (task F1/F2: the ramp must
 /// follow the scene, and CB_HOST_DEPTH_MODE / "Night City depth scale" are right when the lines sit at true distances).
 float3 PS_DepthDebug(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
@@ -537,6 +559,12 @@ technique Cyberblock < ui_tooltip = "Minecraft in Night City: composites Minecra
 		PixelShader = PS_Composite;
 		RenderTarget0 = CompositeTex;
 		RenderTarget1 = McInfoTex;
+	}
+	pass Feed
+	{
+		VertexShader = PostProcessVS;
+		PixelShader = PS_Feed;
+		RenderTarget = CbFeedTex;
 	}
 	pass Bright
 	{
