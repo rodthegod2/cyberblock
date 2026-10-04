@@ -25,6 +25,11 @@ Scenarios (megaplan task 1-T2). Each one starts what it needs on its own test po
   twohosts2     Phase 3: two replica hosts that overlap, with colliding ids: both streets and both figure sets stand, a hit reaches only
                 its owner, and only the first host's clock drives the world
   meetup        Phase 3: Meet Up both ways with a fake host answering `vteleport` (the cooldown too)
+  devices       Phase 4: one fake host `--devices` (a door, a light, a camera, a vending machine, an elevator, a sealed quest door and a door
+                a Night City person opens every 4 s) and a guest: the devices stand as blocks (the ground through the door does not become a
+                replica block), the guest's `devact` reaches the owner's DLL and its answer opens, closes and switches in Minecraft, the NPC's
+                changes show, a quest door and an elevator call change nothing, `guests devices door off` blocks only the doors, the whole
+                `guests devices` toggle blocks all, and the devices go with the session
   joinpassword  a server with a join password: a host waits as a guest until `/login`, then hosts at once; after a reconnect it
                 is remembered; five wrong passwords kick; the password is in no log (it is random per run, like the RCON one)
 
@@ -33,7 +38,8 @@ mode on 127.0.0.1; its RCON password is random per run, held in memory and writt
 folder (it is never printed, logged or put on a command line); APEX_FTP_PASS is removed from the environment of every child;
 port 25600 and `Local\\CyberblockFrame` are never used. The scenarios assume the plan's devtools commands (task 1-N4,
 `-Dcyberblock.devtools=true`): `/cyberblock test hit <host> <id> <dmg>`, `/cyberblock test explode <x> <y> <z> <power>` and
-`/cyberblock test place <x> <y> <z> <block>`
+`/cyberblock test place <x> <y> <z> <block>` (Phase 4's `devices` scenario adds `/cyberblock test devact <x> <y> <z> <act>`: the same
+`cyberblock:act` `devact` a right-click on that block sends)
 run as the guest with `/execute as CbGuest1 run ...` (from the RCON console alone there is no player behind them, and an action
 with no player behind it is always allowed), and `/execute as <host> run cyberblock guests <toggle> on|off` flips that host's
 toggle. They also assume that `runServer` and `runClient` honour `-Pcyberblock.runDir` (task 1-L1) and that the dedicated
@@ -75,10 +81,10 @@ COMMIT_LIMIT_GB, COMMIT_RECHECK_S, COMMIT_MAX_WAIT_S = 60.0, 60.0, 1800.0  # meg
 CLIENT_BASE, SERVER_BASE = 25754, 25914  # package 1T (megaplan section 1.15): client 25754.., harness servers 25914-25918
 FRAME_PREFIX = "Local\\CyberblockFrame1T"  # + H (host client) or G (guest client), + the client number from 2 on
 OFFLINE_NAMES = ("CbHost1", "CbHost2", "CbGuest1", "CbGuest2")
-SCENARIOS = ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup")
+SCENARIOS = ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup", "devices")
 # + SERVER_BASE; scenarios run one after another, so two may share a port
 SERVER_SLOT = {"singleplayer": 0, "guest": 0, "versions": 1, "flood": 2, "reconnect": 3, "twohosts": 4, "joinpassword": 1, "replica": 0, "twohosts2": 2,
-               "meetup": 1}
+               "meetup": 1, "devices": 3}
 FORBIDDEN_PORTS = {25600}  # the user's own Minecraft <-> Cyberpunk link
 GRADLE_HEAP = "-Dorg.gradle.jvmargs=-Xmx1536m"
 # seconds: a server starting, a client opening its link port, a join, an effect to show up, "this must not happen"
@@ -1046,10 +1052,142 @@ def scenario_meetup(env: Env, rep: Report) -> None:
     rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))
 
 
+
+# ---- Phase 4: the device layer (megaplan 4-P1) ------------------------------------------------------------------------------
+# These scenarios need packages 4M (devices on the server) and 4B (device blocks) merged: the fake host `--devices` (tools/fakehost.py)
+# plays Cyberpunk, RCON looks at the world, and the guest acts through the devtools command `/cyberblock test devact <x> <y> <z> <act>` (run
+# as the guest it sends the same `cyberblock:act` `devact` a right-click on that block does; 4M adds it next to `test hit`, `test explode` and
+# `test place`). The doors are the vanilla ones (the `#minecraft:doors` tag, driven by the server); every other device only has to stand as a
+# block (not air): which block it is belongs to 4A's `device_map` and 4B.
+DEVICE_ACT = r"\[CbHost1\] devact: (\{.*\})"
+DEVICE_RESULT = r"\[CbHost1\] devresult: (\{.*\})"
+DEVICE_IDS = fakehost.device_ids()
+DOOR_KEYS = ("door", "npcdoor")  # the devices that must be vanilla doors; the sealed quest door shows greyed (any block)
+DEVICE_PLACE_TIMEOUT = 60.0  # the devices of a fresh host may need a full 5 s list and a chunk or two
+GUEST_AT = (-1.5, 64.0, 6.5)  # the guest stands on the street, in front of the doors
+
+
+def logged_events(log: LogFile, pattern: str, since: int = 0) -> list[dict]:
+    """The JSON of every line of a fake host's output that matches `pattern` (a prefix and `(\\{.*\\})`), in order; a log written on
+    Windows ends its lines with CRLF."""
+    events = []
+    for match in re.finditer(pattern + r"\s*$", log.text(since), re.M):
+        with contextlib.suppress(ValueError):
+            events.append(json.loads(match.group(1)))
+    return events
+
+
+def devact_seen(host: FakeHost, key: str, act: str, since: int) -> bool:
+    """The fake host got a `devact` for device `key` with act `act` after `since`."""
+    return any(m.get("dev") == DEVICE_IDS[key] and m.get("act") == act for m in logged_events(host.log, DEVICE_ACT, since))
+
+
+def result_ok_since(host: FakeHost, since: int) -> bool:
+    """The fake host answered some `devact` with `ok:true` after `since`."""
+    return any(m.get("ok") is True for m in logged_events(host.log, DEVICE_RESULT, since))
+
+
+def device_stands(server: Server, key: str, shift: int = 0) -> bool:
+    """The device is a block at its cell: a door of the `#minecraft:doors` tag for the two doors, anything but air for the others."""
+    x, y, z = fakehost.device_cell(key, shift)
+    return server.passes(f"execute if block {x} {y} {z} #minecraft:doors") if key in DOOR_KEYS else server.passes(f"execute unless block {x} {y} {z} minecraft:air")
+
+
+def door_is_open(server: Server, key: str, shift: int = 0) -> bool:
+    x, y, z = fakehost.device_cell(key, shift)
+    return server.passes(f"execute if block {x} {y} {z} #minecraft:doors[open=true]")
+
+
+def guest_act(server: Server, key: str, act: str) -> None:
+    """As the guest: use the block of device `key` the way a right-click does (the devtools command sends the `cyberblock:act` `devact`)."""
+    x, y, z = fakehost.device_cell(key)
+    server.test(f"devact {x} {y} {z} {act}", as_player="CbGuest1")
+
+
+def devact_quiet(host: FakeHost, key: str, act: str, since: int) -> bool:
+    """No `devact` of that kind reaches the fake host in the next T_QUIET seconds (and none came since `since`)."""
+    time.sleep(T_QUIET)
+    return not devact_seen(host, key, act, since)
+
+
+def guests_devices(server: Server, kind: str | None, on: bool) -> None:
+    """As the host: `/cyberblock guests devices [<type>] on|off` (the whole layer, or one device type's bit)."""
+    server.rcon(f"execute as CbHost1 run cyberblock guests devices {kind + ' ' if kind else ''}{'on' if on else 'off'}")
+
+
+def scenario_devices(env: Env, rep: Report) -> None:
+    server = env.server("devices", max_hosts=1)
+    _, host = start_host(env, rep, server, "CbHost1", ver=env.mod_version, layers=(), modes=("devices",), wait_host=T_JOIN)
+    rep.step("the street's ground stands under the devices", lambda: poll(lambda: landmarks_stand(server), T_EFFECT, T_POLL, "the street"), must=True)
+    rep.step("every device stands as a block at its position (the two doors are doors, the lift, light, camera, vending machine and quest door are not air)",
+             lambda: poll(lambda: all(device_stands(server, k) for k in DEVICE_IDS), DEVICE_PLACE_TIMEOUT, T_POLL, "the devices"), must=True)
+    door_cell = fakehost.device_cell("door")
+    above, replica = (door_cell[0], door_cell[1] + 1, door_cell[2]), cbmath.material_block(1)
+    time.sleep(T_QUIET)  # the ground column through the guest door came with the first message: give the server time to get it wrong
+    rep.step("the ground the DLL sent through the guest door is no replica block: the door stays a door (doors are not walls)",
+             lambda: device_stands(server, "door") and not block_stands(server, door_cell, replica) and not block_stands(server, above, replica))
+    env.client("CbGuest1", join=server.port)
+    rep.step("a guest joins", lambda: server.log.wait(r"handshake: CbGuest1 .*-> guest", T_JOIN), must=True)
+    server.rcon(f"tp CbGuest1 {GUEST_AT[0]} {GUEST_AT[1]} {GUEST_AT[2]}")  # in front of the doors
+    mark = host.log.mark()
+    guest_act(server, "door", "open")
+    rep.step("a guest opening a door sends `devact open` for that device to its owner's DLL",
+             lambda: poll(lambda: devact_seen(host, "door", "open", mark), T_EFFECT, T_POLL, "devact open"))
+    rep.step("the door opens in Minecraft once Night City said ok (`devresult`, then `devstate by:guest`)",
+             lambda: poll(lambda: door_is_open(server, "door"), T_EFFECT, T_POLL, "the door to open"))
+    mark = host.log.mark()
+    guest_act(server, "door", "close")
+    rep.step("closing it sends `devact close` and the door closes",
+             lambda: poll(lambda: devact_seen(host, "door", "close", mark), T_EFFECT, T_POLL, "devact close")
+             and poll(lambda: not door_is_open(server, "door"), T_EFFECT, T_POLL, "the door to close"))
+    mark = host.log.mark()
+    guest_act(server, "light", "off")
+    rep.step("lights off from Minecraft: `devact off` reaches the light in Night City",
+             lambda: poll(lambda: devact_seen(host, "light", "off", mark), T_EFFECT, T_POLL, "devact off"))
+    rep.step("a Night City person opens the NPC door (`devstate by:npc`) and it opens in Minecraft",
+             lambda: poll(lambda: door_is_open(server, "npcdoor"), T_EFFECT, T_POLL, "the NPC door to open"))
+    rep.step("... and closes it again a few seconds later", lambda: poll(lambda: not door_is_open(server, "npcdoor"), T_EFFECT, T_POLL, "the NPC door to close"))
+    mark = host.log.mark()
+    guest_act(server, "sealed", "open")
+    time.sleep(T_QUIET)
+    rep.step("a quest-locked (sealed) door never opens for a guest: Night City is never asked to, or refuses",
+             lambda: not door_is_open(server, "sealed") and not result_ok_since(host, mark))
+    guest_act(server, "elevator", "call")
+    time.sleep(T_QUIET)
+    rep.step("an elevator call is unsupported: it changes nothing (greyed on the server, or answered `unsupported`)", lambda: not result_ok_since(host, mark))
+    rep.step("every refusal that reaches the fake host says `quest locked` or `unsupported`, nothing else",
+             lambda: all(m.get("ok") is True or m.get("reason") in ("quest locked", "unsupported") for m in logged_events(host.log, DEVICE_RESULT, mark)))
+    guests_devices(server, "door", False)
+    mark = host.log.mark()
+    guest_act(server, "door", "open")
+    rep.step("with `/cyberblock guests devices door off` a guest's door request never reaches the DLL and the door stays shut",
+             lambda: devact_quiet(host, "door", "open", mark) and not door_is_open(server, "door"))
+    mark = host.log.mark()
+    guest_act(server, "light", "on")
+    rep.step("... but the other device types still work (the light's `devact on` reaches the DLL)",
+             lambda: poll(lambda: devact_seen(host, "light", "on", mark), T_EFFECT, T_POLL, "devact on"))
+    guests_devices(server, "door", True)
+    mark = host.log.mark()
+    guest_act(server, "door", "open")
+    rep.step("with `guests devices door on` the door works again", lambda: poll(lambda: devact_seen(host, "door", "open", mark), T_EFFECT, T_POLL, "devact open"))
+    guests_devices(server, None, False)
+    mark = host.log.mark()
+    guest_act(server, "light", "off")
+    rep.step("with the whole `guests devices` toggle off no device request reaches the DLL", lambda: devact_quiet(host, "light", "off", mark))
+    guests_devices(server, None, True)
+    rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))
+    mark = server.log.mark()
+    host.stop()  # Cyberpunk is closed: the session ends and its devices go
+    rep.step("the session ends when the link drops", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, mark), must=True)
+    rep.step("the devices go with the session (no door stands any more)",
+             lambda: poll(lambda: not any(device_stands(server, k) for k in DOOR_KEYS), DEVICE_PLACE_TIMEOUT, T_POLL, "the devices to go"))
+
+
 SCENARIO_FUNCS = {"singleplayer": scenario_singleplayer, "guest": scenario_guest, "versions": scenario_versions, "flood": scenario_flood,
                   "reconnect": scenario_reconnect, "twohosts": scenario_twohosts, "joinpassword": scenario_joinpassword,
-                  "replica": scenario_replica, "twohosts2": scenario_twohosts2, "meetup": scenario_meetup}
+                  "replica": scenario_replica, "twohosts2": scenario_twohosts2, "meetup": scenario_meetup, "devices": scenario_devices}
 PHASE3 = ("replica", "twohosts2", "meetup")  # the scenarios whose fake host runs `--replica`
+PHASE4 = ("devices",)  # the scenarios whose fake host runs `--devices`
 
 
 class Flooder(threading.Thread):
@@ -1147,7 +1285,8 @@ def dry_run(repo: Path, ports: Ports, names: list[str], lan_port: int | None, sa
                                                          join=None if name == "singleplayer" else ports.server(name),
                                                          world="<world>" if name == "singleplayer" else None)))
         say("fake host: " + " ".join(fakehost_argv(port=ports.client("CbHost1"), name="CbHost1", ver="<mod version>", frame=ports.frame("CbHost1"), out_dir=d / "frames",
-                                                    layers=() if name in PHASE3 else (2,), modes=("replica",) if name in PHASE3 else ())))
+                                                    layers=() if name in PHASE3 + PHASE4 else (2,),
+                                                    modes=("replica",) if name in PHASE3 else ("devices",) if name in PHASE4 else ())))
 
 
 def main(argv: list[str] | None = None, repo: Path = ROOT) -> int:
