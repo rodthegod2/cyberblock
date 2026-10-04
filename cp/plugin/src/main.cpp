@@ -2,6 +2,7 @@
 // add-on (compositor.h). It links to the Minecraft mod (link.hpp), gives redscript its natives (natives.hpp),
 // moves V after Steve's flights every frame (drive.hpp), applies the third-person view (view.hpp), publishes Cyberpunk's
 // camera every frame (camera.hpp), casts the Atlas survey's rays every frame (survey_game.hpp), forwards input from Cyberpunk's window (input.hpp) and pumps the UI bridge (ui.hpp).
+// Phase 8's modes messages (spawns, Heat, attitude, the Reboot Optics glitch) are modes.hpp.
 #include <RED4ext/RED4ext.hpp>
 
 #include "camera.hpp"
@@ -12,6 +13,7 @@
 #include "input.hpp"
 #include "link.hpp"
 #include "log.hpp"
+#include "modes.hpp"
 #include "natives.hpp"
 #include "rhack.hpp"
 #include "snapshots.hpp"
@@ -108,6 +110,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 				cb::devices::on_minecraft_message(message); // Phase 4: `devact`
 				cb::rhack::on_minecraft_message(message);   // Phase 6: `rhack`, `daemon`
 				cb::feed::on_minecraft_message(message);    // Phase 6: `feedreq` (and `hello`, `session`)
+				cb::modes::on_minecraft_message(message);   // Phase 8: `spawn`, `heat`, `attitude`, `glitch`
 				if (message.value("t", "") == "session")
 				{
 					// megaplan 1-H1: a new server session gets the whole ground again; leaving the host role cleans the DLL
@@ -130,6 +133,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 				cb::survey_game::on_link_dropped();
 				cb::devices::on_link_dropped();
 				cb::feed::on_link_dropped();
+				cb::modes::on_link_dropped();
 			});
 		break;
 	}

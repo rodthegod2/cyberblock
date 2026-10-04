@@ -428,6 +428,9 @@ namespace
 		case EventKind::DevAct:    // Phase 4: likewise `devresult`
 		case EventKind::RHack:     // Phase 6: likewise `hackresult`
 		case EventKind::Daemon:    // Phase 6: likewise `hackresult`
+		case EventKind::Spawn:     // Phase 8: likewise `spawnresult`
+		case EventKind::Heat:      // Phase 8: state (the wanted level the scripts keep)
+		case EventKind::Attitude:  // Phase 8: state (a faction relation)
 			return true;
 		default:
 			return false;
@@ -472,6 +475,10 @@ namespace cb::world
 		case EventKind::DevAct: return "devact";
 		case EventKind::RHack: return "rhack";
 		case EventKind::Daemon: return "daemon";
+		case EventKind::Spawn: return "spawn";
+		case EventKind::Heat: return "heat";
+		case EventKind::Attitude: return "attitude";
+		case EventKind::Glitch: return "glitch";
 		case EventKind::None: break;
 		}
 		return "";
@@ -571,9 +578,10 @@ namespace cb::world
 			m_blocks[cell] = event.kind;
 			return;
 		}
-		if (event.kind == EventKind::Prefs) // a setting: one queued is enough, the newest wins (a slider sends many)
+		// a setting: one queued is enough, the newest wins (a slider sends many; the Heat tier moves every few seconds)
+		if (event.kind == EventKind::Prefs || event.kind == EventKind::Heat)
 		{
-			const auto queued = std::ranges::find_if(m_queue, [](const Event &e) { return e.kind == EventKind::Prefs; });
+			const auto queued = std::ranges::find_if(m_queue, [&](const Event &e) { return e.kind == event.kind; });
 			if (queued != m_queue.end())
 			{
 				*queued = event;
