@@ -59,6 +59,7 @@ public class CyberblockClient implements ClientModInitializer {
 		Cyberblock.clientHostActive = player -> player instanceof LocalPlayer && HostState.active();
 		SettingsClient.init();
 		ViewClient.init();
+		dev.cyberblock.client.replica.ReplicaRender.init();
 		// proxies are never drawn: Cyberpunk shows the NPC or vehicle they stand for
 		EntityRendererRegistry.register(ProxyEntities.HUMAN, NoopRenderer::new);
 		EntityRendererRegistry.register(ProxyEntities.VEHICLE, NoopRenderer::new);
