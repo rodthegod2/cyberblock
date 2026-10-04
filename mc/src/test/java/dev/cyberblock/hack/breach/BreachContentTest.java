@@ -20,8 +20,8 @@ class BreachContentTest {
 	private static final Identifier ID = Identifier.fromNamespaceAndPath("cyberblock", "x");
 	/** 6A's open_door.json. */
 	static final String OPEN_DOOR = "{\"schema\":1,\"title_key\":\"cyberblock.daemon.open_door\",\"text_key\":\"cyberblock.daemon.open_door.text\","
-		+ "\"sequence\":[\"BD\",\"1C\"],\"kinds\":[\"door\",\"gate\",\"terminal\",\"container\"],\"action\":\"open_door\",\"tiers\":[{\"seconds\":15,\"radius\":8},"
-		+ "{\"seconds\":30,\"radius\":14},{\"seconds\":60,\"radius\":24}],\"weight\":6,\"min_security\":1}";
+		+ "\"sequence\":[\"BD\",\"1C\"],\"kinds\":[\"door\",\"gate\",\"terminal\",\"container\"],\"action\":\"open_door\",\"tiers\":[{\"seconds\":0,\"radius\":8},"
+		+ "{\"seconds\":0,\"radius\":14},{\"seconds\":0,\"radius\":24}],\"weight\":6,\"min_security\":1}";
 	/** 6A's security_1.json. */
 	static final String SECURITY_1 = "{\"schema\":1,\"security\":1,\"grid\":5,\"buffer\":7,\"seconds\":60,\"daemons_min\":1,\"daemons_max\":2,\"firewall\":["
 		+ "{\"grid_add\":1,\"buffer_add\":0,\"seconds_add\":-5,\"daemons_add\":0},{\"grid_add\":1,\"buffer_add\":0,\"seconds_add\":-10,\"daemons_add\":0},"
@@ -50,7 +50,7 @@ class BreachContentTest {
 	void badDaemonsAreSkipped() {
 		String[] bad = {OPEN_DOOR.replace("\"BD\",\"1C\"", "\"BD\""), OPEN_DOOR.replace("\"BD\",\"1C\"", "\"BD\",\"1C\",\"55\",\"7A\",\"E9\""),
 			OPEN_DOOR.replace("\"BD\",\"1C\"", "\"BD\",\"1D\""), OPEN_DOOR.replace("\"door\",", "\"doors\","), OPEN_DOOR.replace("\"action\":\"open_door\"", "\"action\":\"Open\""),
-			OPEN_DOOR.replace(",{\"seconds\":60,\"radius\":24}", ""), OPEN_DOOR.replace("\"radius\":8", "\"radius\":0"), OPEN_DOOR.replace("\"weight\":6", "\"weight\":11"),
+			OPEN_DOOR.replace(",{\"seconds\":0,\"radius\":24}", ""), OPEN_DOOR.replace("\"radius\":8", "\"radius\":0"), OPEN_DOOR.replace("\"weight\":6", "\"weight\":11"),
 			OPEN_DOOR.replace("\"min_security\":1", "\"min_security\":4"), OPEN_DOOR.replace("cyberblock.daemon.open_door.text", "Bad Key"),
 			OPEN_DOOR.replace("\"kinds\":[\"door\",\"gate\",\"terminal\",\"container\"]", "\"kinds\":[]")};
 		for (String s : bad) {

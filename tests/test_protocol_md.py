@@ -1,4 +1,4 @@
-import copy, json, math, re
+import base64, binascii, copy, json, math, re
 from pathlib import Path
 
 import pytest
@@ -2253,8 +2253,21 @@ def test_p7_rules_are_stated_in_the_document():
 def test_p7_section_1_differences_are_declared_for_the_integrator():
     text = " ".join(section(P7_DIFFERENCES).split())
     for phrase in ("The vendor `reply` is LOCAL, not UP", "Section 1.9 row 7", "section 1.2", "7-V1", "`groups[].kind` `buy` and `sell`", "files them as `other`",
-                   "The hub sends `park` too", "\"the scripts park V\"", "New hub rules", "7H", "7T", "7S", "not in 7H's branch yet"):
+                   "The hub sends `park` too", "\"the scripts park V\"", "New hub rules", "7H", "7T", "7S", "`HubTravel.onParked` takes the player out"):
         assert phrase in text, f"{phrase!r} is not declared"
+    assert "not in 7H's branch yet" not in text  # HubTravel.onParked ships the refused-park exit
+
+
+def test_p7_a_hub_before_the_host_grant_is_remembered_as_section_1_9_amendment_3_says():
+    """Megaplan 1.9, the Phase 7 amendment, item 3 (7D's world.cpp g_hubWord): never "ignored", remembered until the grant."""
+    text = " ".join(section(P7_SECTION).split())
+    for phrase in ("A `hub` before the host grant is remembered", "the Phase 7 amendment, item 3", "The DLL shows the hub only while its session is `host`",
+                   "(no session yet, a guest locked until `/login`, a refusal, a reconnect) is remembered and applied at the grant",
+                   "with its `hub` event queued after the `session` event",
+                   "The remembered word is forgotten on a `hello`, a link drop, `session none` and `hub in:false`",
+                   "a `guest` or `refused` session keeps it", "after every host grant", "repeats are harmless"):
+        assert phrase in text, f"{phrase!r} is not stated"
+    assert "without a host session is ignored" not in TEXT
 
 
 def test_p7_class_rate_and_feature_rows():
@@ -2320,3 +2333,251 @@ def test_p7_validators_accept_the_limits_themselves():
     assert all(hub_msg_ok({"t": "hub", "in": v}) for v in (True, False))
     assert p7_uiact_ok(p7_uiact("buy", hash=1)) and p7_uiact_ok(p7_uiact("sell", hash=2**32 - 1)) and p7_uiact_ok(p7_uiact("buy", arg="")) and p7_uiact_ok(p7_uiact("buy", arg="abc"))
     assert all(p7_uiact_ok({"t": "uiact", "a": a, "arg": "", "hash": 0, "id": 0}) for a in UI_ACTIONS)  # the ten of Re-test 3 stay valid
+
+
+# ---- Phase 7 payloads (client <-> server): the Holo-Table (7T HoloWire) and the role screens (7N NpcWire) ------------------------------------------
+# Megaplan 1.3 (each phase lists its `cyberblock:act` `t` values) and 1.9 (every new message gets rows, examples and validators). The validators mirror
+# HoloWire.parseSpawn / parseTravel / parseHide / parseState and NpcWire.parseAct / parseScreen / parseSurgery.
+P7_PAYLOADS = "Phase 7: payloads (client ↔ server)"
+P7_ACTS = ("holo", "holospawn", "holohide", "holotravel", "npc")
+P7_UIS = ("holo", "holotravel", "npc", "surgery")
+P7_ACT_EXAMPLES = {t: examples(f"Phase 7 examples, client to server (`cyberblock:act`, `t:\"{t}\"`):") for t in P7_ACTS}
+P7_UI_EXAMPLES = {t: examples(f"Phase 7 examples, server to client (`cyberblock:ui`, `t:\"{t}\"`):") for t in P7_UIS}
+JAVA = Path("mc/src/main/java/dev/cyberblock")
+HOLO_KINDS = [k.lower() for k in re.search(r"enum Kind \{\s*([A-Z, ]+);", (JAVA / "holo/HoloRules.java").read_text(encoding="utf-8")).group(1).split(", ")]
+NPC_ACTS = re.findall(r'"(\w+)"', re.search(r"ACTS = List\.of\(([^)]*)\)", (JAVA / "npc/NpcWire.java").read_text(encoding="utf-8")).group(1))
+NPC_SCREENS = re.findall(r'"(\w+)"', re.search(r"SCREENS = List\.of\(([^)]*)\)", (JAVA / "npc/NpcRole.java").read_text(encoding="utf-8")).group(1))
+HOLO_ROLES = ("player", "spectator", "overlord")
+NPC_ARG, NPC_CODE, NPC_RESULT = re.compile(r"[A-Za-z0-9_.:-]{0,32}"), re.compile(r"[a-z_]{1,16}"), re.compile(r"[a-z_]{0,16}")
+NPC_KEY, NPC_ITEM = re.compile(r"[a-z0-9_.]{0,96}"), re.compile(r"([a-z0-9_.-]{1,64}:[a-z0-9_./-]{1,128})?")
+UUID_RE, COLOUR_RE, LAYER_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"), re.compile(r"#[0-9A-Fa-f]{6}"), re.compile(r"[a-z0-9_]{1,24}")
+
+
+def wire_str(s, lo, hi) -> bool:
+    """A string of lo..hi UTF-8 bytes (HoloWire.string)."""
+    return isinstance(s, str) and lo <= len(s.encode("utf-8")) <= hi
+
+
+def coords(p, n) -> bool:
+    """n finite numbers with |c| < 30000000 (HoloWire.position)."""
+    return isinstance(p, list) and len(p) == n and all(num(c, -3e7, 3e7) and abs(c) < 3e7 for c in p)
+
+
+def holo_poll_ok(m) -> bool:
+    return fields_are(m, {"detail"}) and isinstance(m["detail"], bool)
+
+
+def holospawn_ok(m) -> bool:
+    return fields_are(m, {"kind", "id"}) and m["kind"] in HOLO_KINDS and wire_str(m["id"], 1, 64)
+
+
+def holohide_ok(m) -> bool:
+    return fields_are(m, {"on"}) and isinstance(m["on"], bool)
+
+
+def holotravel_ok(m) -> bool:
+    return fields_are(m, {"name", "p"}) and wire_str(m["name"], 1, 64) and m["name"].strip() != "" and coords(m["p"], 2)
+
+
+def npc_act_ok(m) -> bool:
+    return (isinstance(m, dict) and set(m) <= {"e", "a", "arg"} and {"e", "a"} <= set(m) and whole(m["e"], -(2**31 - 1)) and m["a"] in NPC_ACTS
+            and isinstance(m.get("arg", ""), str) and NPC_ARG.fullmatch(m.get("arg", "")) is not None)
+
+
+def holo_pin_ok(e) -> bool:
+    keys = {"id", "name", "p", "yaw", "linked", "team", "car", "combat", "downed", "you"}
+    return (isinstance(e, dict) and set(e) in (keys, keys | {"col"}) and isinstance(e["id"], str) and UUID_RE.fullmatch(e["id"]) is not None
+            and wire_str(e["name"], 0, 64) and coords(e["p"], 3) and num(e["yaw"], -720, 720) and whole(e["team"], -1, 1 << 20)
+            and ("col" not in e or isinstance(e["col"], str) and COLOUR_RE.fullmatch(e["col"]) is not None)
+            and all(isinstance(e[k], bool) for k in ("linked", "car", "combat", "downed", "you")))
+
+
+def holo_spawn_ok(e) -> bool:
+    return (fields_are(e, {"kind", "id", "name", "p", "district", "owner", "ok", "why"}) and e["kind"] in HOLO_KINDS and wire_str(e["id"], 0, 64)
+            and wire_str(e["name"], 0, 64) and coords(e["p"], 3) and wire_str(e["district"], 0, 64) and wire_str(e["owner"], 0, 64)
+            and isinstance(e["ok"], bool) and wire_str(e["why"], 0, 64))
+
+
+def holo_item_ok(e) -> bool:
+    return (isinstance(e, dict) and {"p", "v"} <= set(e) <= {"p", "v", "col", "label"} and coords(e["p"], 2) and num(e["v"], 0, 1)
+            and ("col" not in e or isinstance(e["col"], str) and COLOUR_RE.fullmatch(e["col"]) is not None) and ("label" not in e or wire_str(e["label"], 0, 64)))
+
+
+def holo_layer_ok(e) -> bool:
+    return fields_are(e, {"id", "items"}) and isinstance(e["id"], str) and LAYER_RE.fullmatch(e["id"]) is not None and list_ok(e, "items", 512, holo_item_ok)
+
+
+def holo_detail_ok(e) -> bool:
+    if not (fields_are(e, {"x0", "z0", "n", "h", "c"}) and whole(e["x0"], -30_000_000, 30_000_000) and whole(e["z0"], -30_000_000, 30_000_000) and whole(e["n"], 1, 65)):
+        return False
+    try:
+        h, c = base64.b64decode(e["h"], validate=True), base64.b64decode(e["c"], validate=True)
+    except (binascii.Error, TypeError, ValueError):
+        return False
+    return len(h) == e["n"] ** 2 * 2 and len(c) == e["n"] ** 2
+
+
+def holo_state_ok(m) -> bool:
+    keys = {"open", "match", "role", "hidden", "cooldown", "pins", "spawns", "layers"}
+    return (isinstance(m, dict) and set(m) in (keys, keys | {"detail"}) and all(isinstance(m[k], bool) for k in ("open", "match", "hidden"))
+            and m["role"] in HOLO_ROLES and whole(m["cooldown"], 0, 3600) and list_ok(m, "pins", 200, holo_pin_ok) and list_ok(m, "spawns", 160, holo_spawn_ok)
+            and list_ok(m, "layers", 16, holo_layer_ok) and ("detail" not in m or list_ok(m, "detail", 16, holo_detail_ok)))
+
+
+def npc_row_ok(r) -> bool:
+    return (fields_are(r, {"id", "item", "n", "key", "text", "sub", "price", "btn", "on"}) and isinstance(r["id"], str) and 1 <= len(r["id"]) <= 32
+            and isinstance(r["item"], str) and NPC_ITEM.fullmatch(r["item"]) is not None and whole(r["n"], 0, 512) and isinstance(r["key"], str)
+            and NPC_KEY.fullmatch(r["key"]) is not None and wire_str(r["text"], 0, 96) and wire_str(r["sub"], 0, 300) and whole(r["price"], -1, 1_000_000)
+            and isinstance(r["btn"], str) and NPC_CODE.fullmatch(r["btn"]) is not None and isinstance(r["on"], bool))
+
+
+def npc_screen_ok(m) -> bool:
+    return (fields_are(m, {"e", "role", "name", "title", "line", "eddies", "tab", "tabs", "result", "rows"}) and whole(m["e"], -(2**31 - 1))
+            and m["role"] in NPC_SCREENS and wire_str(m["name"], 0, 64) and isinstance(m["title"], str) and NPC_KEY.fullmatch(m["title"]) is not None
+            and wire_str(m["line"], 0, 256) and whole(m["eddies"]) and isinstance(m["tab"], str) and NPC_CODE.fullmatch(m["tab"]) is not None
+            and isinstance(m["result"], str) and NPC_RESULT.fullmatch(m["result"]) is not None
+            and list_ok(m, "tabs", 4, lambda t: isinstance(t, str) and NPC_CODE.fullmatch(t) is not None) and list_ok(m, "rows", 32, npc_row_ok))
+
+
+def surgery_ok(m) -> bool:
+    return (fields_are(m, {"e", "implant", "lo", "hi", "period", "timeout"}) and whole(m["e"], -(2**31 - 1)) and isinstance(m["implant"], str)
+            and re.fullmatch(r"[a-z_]{1,32}", m["implant"]) is not None and num(m["lo"], 0, 1) and num(m["hi"], 0, 1) and m["lo"] < m["hi"]
+            and whole(m["period"], 200, 10_000) and whole(m["timeout"], 1000, 60_000))
+
+
+P7_ACT_VALIDATORS = {"holo": holo_poll_ok, "holospawn": holospawn_ok, "holohide": holohide_ok, "holotravel": holotravel_ok, "npc": npc_act_ok}
+P7_UI_VALIDATORS = {"holo": holo_state_ok, "holotravel": holotravel_ok, "npc": npc_screen_ok, "surgery": surgery_ok}
+P7_PAYLOAD_CASES = ([("act", t, m) for t in P7_ACTS for m in P7_ACT_EXAMPLES[t]] + [("ui", t, m) for t in P7_UIS for m in P7_UI_EXAMPLES[t]])
+
+
+def p7_payload_rows() -> dict[tuple[str, str], str]:
+    return {(m.group(1), m.group(2)): m.group(0) for m in re.finditer(r'^\| `cyberblock:(act|ui)` `t:"(\w+)"` \|.*$', section(P7_PAYLOADS), re.M)}
+
+
+def test_p7_payloads_every_act_and_ui_type_has_one_row_an_example_and_a_validator():
+    rows = p7_payload_rows()
+    assert set(rows) == {("act", t) for t in P7_ACTS} | {("ui", t) for t in P7_UIS}
+    assert all(f"| {'C2S' if d == 'act' else 'S2C'} |" in row for (d, _), row in rows.items())
+    assert all(P7_ACT_EXAMPLES[t] for t in P7_ACTS) and all(P7_UI_EXAMPLES[t] for t in P7_UIS)
+    assert set(P7_ACT_VALIDATORS) == set(P7_ACTS) and set(P7_UI_VALIDATORS) == set(P7_UIS)
+    assert "their packages define" not in TEXT and "(#phase-7-payloads-client--server)" in TEXT  # the intro points at the table now
+
+
+def test_p7_payloads_lists_match_the_shipped_java():
+    assert HOLO_KINDS == ["landmark", "beacon", "base", "friend"] and NPC_ACTS == ["tab", "do", "cut", "abort"]
+    assert NPC_SCREENS == ["ripperdoc", "shop", "contracts", "bartender", "medic", "mechanic"]
+    rows = p7_payload_rows()
+    assert all(f"`{k}`" in rows[("act", "holospawn")] for k in HOLO_KINDS) and all(f"`{a}`" in rows[("act", "npc")] for a in NPC_ACTS)
+    assert all(f"`{s}`" in rows[("ui", "npc")] for s in NPC_SCREENS) and all(f"`{r}`" in rows[("ui", "holo")] for r in HOLO_ROLES)
+    holo = (JAVA / "holo/HoloWire.java").read_text(encoding="utf-8")
+    assert "MAX_PINS = 200, MAX_SPAWNS = 160, MAX_LAYERS = 16, MAX_ITEMS = 512, MAX_DETAIL = 16, MAX_DETAIL_N = 65" in holo and "NAME_MAX = 64, ID_MAX = 64" in holo
+    npc = (JAVA / "npc/NpcWire.java").read_text(encoding="utf-8")
+    assert "MAX_TABS = 4, MAX_ROWS = 32, NAME_CAP = 64, LINE_CAP = 256, TEXT_CAP = 96, SUB_CAP = 300, ID_CAP = 32, KEY_CAP = 96" in npc
+    rules = (JAVA / "holo/HoloRules.java").read_text(encoding="utf-8")
+    assert "REQUESTS_PER_SECOND = 2.0, REQUEST_BURST = 4.0" in rules and "COOLDOWN_MS = 60_000L" in rules and "PROTECT_MS = 5_000L" in rules
+    assert "MIN_ACT_MS = 40" in (JAVA / "npc/NpcScreens.java").read_text(encoding="utf-8") and "REACH = 8.0" in (JAVA / "npc/NpcScreens.java").read_text(encoding="utf-8")
+
+
+def test_p7_payloads_every_example_field_is_named_in_its_row():
+    rows = p7_payload_rows()
+    for d, t, m in P7_PAYLOAD_CASES:
+        keys = set(m)
+        for nested in ("pins", "spawns", "layers", "detail", "rows"):
+            for e in m.get(nested, []) if isinstance(m.get(nested), list) else []:
+                keys |= set(e)
+        for key in keys:
+            assert re.search(rf"`{key}\b|\b{key}\b", rows[(d, t)]), f"{d} {t}.{key} is not described in its row"
+
+
+@pytest.mark.parametrize("d, t, m", P7_PAYLOAD_CASES, ids=[f"{d}-{t}-{i}" for i, (d, t, _) in enumerate(P7_PAYLOAD_CASES)])
+def test_p7_payload_example_obeys_the_documented_limits(d, t, m):
+    assert (P7_ACT_VALIDATORS if d == "act" else P7_UI_VALIDATORS)[t](m)
+
+
+def test_p7_payload_examples_tell_one_story():
+    state = P7_UI_EXAMPLES["holo"][0]
+    offered = {(s["kind"], s["id"]) for s in state["spawns"] if s["ok"]}
+    assert all((a["kind"], a["id"]) in offered for a in P7_ACT_EXAMPLES["holospawn"])  # the spawns asked for are the ones the table offered
+    me = [p for p in state["pins"] if p["you"]]
+    friend = next(a for a in P7_ACT_EXAMPLES["holospawn"] if a["kind"] == "friend")
+    assert len(me) == 1 and friend["id"] in {p["id"] for p in state["pins"] if not p["you"]}  # never yourself
+    assert P7_ACT_EXAMPLES["holotravel"] == P7_UI_EXAMPLES["holotravel"]  # the go-ahead repeats the ask
+    screen, surgery = P7_UI_EXAMPLES["npc"][0], P7_UI_EXAMPLES["surgery"][0]
+    tab, do, cut = P7_ACT_EXAMPLES["npc"]
+    assert tab["a"] == "tab" and tab["arg"] in screen["tabs"] and screen["tab"] == tab["arg"]
+    bought = next(r for r in screen["rows"] if r["id"] == do["arg"])
+    assert do["e"] == tab["e"] == screen["e"] and bought["on"] and screen["result"] == "ok"
+    assert cut["a"] == "cut" and cut["e"] == surgery["e"] and cut["arg"] == ""
+
+
+def test_p7_payload_rules_are_stated_in_the_document():
+    text = " ".join(section(P7_PAYLOADS).split())
+    for phrase in ("The server decides everything", "never trusts the client's coordinates", "`cyberblock.holo.gone`", "`vteleport why:\"holo\"`",
+                   "within **8 blocks**", "re-reads the row's price", "**Minecraft eddies**", "never Cyberpunk money", "timed by the server",
+                   "share one bucket per player: **2 per second, burst 4**", "dropped quietly", "closer than 0.4 s", "closer than 40 ms", "every 250 ms",
+                   "at most 8000 bytes", "`cyberblock.holo.pending`", "`cyberblock.holo.cooldown`", "**60 s**", "5 s of spawn protection",
+                   "`cyberblock.holo.team_only`", "`cyberblock.holo.locked_zone`", "`cyberblock.holo.held`", "`cyberblock.holo.vehicle`",
+                   "`cyberblock.holo.travel_unlinked`", "A travel is never a team spawn", "locked by `JoinLock`", "dropped before its handler",
+                   "never gets a table grant", "its pin is on nobody's table", "dropped whole, never fatal", "without a table grant",
+                   "older than a minute, is ignored"):
+        assert phrase in text, f"{phrase!r} is not stated"
+    for key in ("pending", "cooldown", "team_only", "locked_zone", "self", "friend_hidden", "friend_away", "held", "vehicle", "no_ground", "travel_unlinked", "gone"):
+        assert f"cyberblock.holo.{key}" in (JAVA / "holo/HoloText.java").read_text(encoding="utf-8") and f"`cyberblock.holo.{key}`" in text, key
+
+
+def test_p7_payloads_sit_inside_the_phase_7_section():
+    assert TEXT.index(P7_HEADING) < TEXT.index(f"### {P7_PAYLOADS}") < TEXT.index(f"### {P7_DIFFERENCES}") < TEXT.index("## Shared memory")
+
+
+def _p7_payload_out_of_limits():
+    spawn, travel, act = P7_ACT_EXAMPLES["holospawn"][0], P7_ACT_EXAMPLES["holotravel"][0], P7_ACT_EXAMPLES["npc"][1]
+    state, screen, surgery = P7_UI_EXAMPLES["holo"][0], P7_UI_EXAMPLES["npc"][0], P7_UI_EXAMPLES["surgery"][0]
+    pin, spot, layer, detail, row = state["pins"][0], state["spawns"][0], state["layers"][0], state["detail"][0], screen["rows"][0]
+    return [
+        ("act", "holo", {"detail": 1}), ("act", "holo", {}), ("act", "holo", {"detail": True, "x": 1}),
+        ("act", "holospawn", {**spawn, "kind": "home"}), ("act", "holospawn", {**spawn, "id": ""}), ("act", "holospawn", {**spawn, "id": "é" * 33}),
+        ("act", "holospawn", {"kind": "landmark"}), ("act", "holospawn", {**spawn, "id": 7}),
+        ("act", "holohide", {"on": "yes"}), ("act", "holohide", {}),
+        ("act", "holotravel", {**travel, "name": ""}), ("act", "holotravel", {**travel, "name": "   "}), ("act", "holotravel", {**travel, "name": "x" * 65}),
+        ("act", "holotravel", {**travel, "p": [1, 2, 3]}), ("act", "holotravel", {**travel, "p": [3e7, 0]}), ("act", "holotravel", {**travel, "p": ["1", 2]}),
+        ("act", "npc", {**act, "a": "buy"}), ("act", "npc", {**act, "e": 1.5}), ("act", "npc", {**act, "e": 2**31}), ("act", "npc", {**act, "arg": "a b"}),
+        ("act", "npc", {**act, "arg": "x" * 33}), ("act", "npc", {"a": "do"}), ("act", "npc", {**act, "extra": 1}),
+        ("ui", "holo", {**state, "role": "admin"}), ("ui", "holo", {**state, "cooldown": 3601}), ("ui", "holo", {**state, "pins": [pin] * 201}),
+        ("ui", "holo", {**state, "spawns": [spot] * 161}), ("ui", "holo", {**state, "layers": [layer] * 17}), ("ui", "holo", {**state, "detail": [detail] * 17}),
+        ("ui", "holo", {**state, "pins": [{**pin, "id": "nope"}]}), ("ui", "holo", {**state, "pins": [{**pin, "col": "red"}]}),
+        ("ui", "holo", {**state, "pins": [{**pin, "yaw": 721}]}), ("ui", "holo", {**state, "pins": [{**pin, "team": -2}]}),
+        ("ui", "holo", {**state, "spawns": [{**spot, "kind": "home"}]}), ("ui", "holo", {**state, "spawns": [{**spot, "name": "x" * 65}]}),
+        ("ui", "holo", {**state, "layers": [{**layer, "id": "Heat"}]}), ("ui", "holo", {**state, "layers": [{**layer, "items": [{"p": [0, 0], "v": 1.5}]}]}),
+        ("ui", "holo", {**state, "detail": [{**detail, "n": 66}]}), ("ui", "holo", {**state, "detail": [{**detail, "c": "AAA="}]}),
+        ("ui", "holo", {k: v for k, v in state.items() if k != "pins"}),
+        ("ui", "holotravel", {**travel, "p": [0]}),
+        ("ui", "npc", {**screen, "role": "vendor"}), ("ui", "npc", {**screen, "eddies": -1}), ("ui", "npc", {**screen, "tabs": ["a", "b", "c", "d", "e"]}),
+        ("ui", "npc", {**screen, "rows": [row] * 33}), ("ui", "npc", {**screen, "title": "Vendor"}), ("ui", "npc", {**screen, "line": "x" * 257}),
+        ("ui", "npc", {**screen, "result": "Bought!"}), ("ui", "npc", {**screen, "rows": [{**row, "price": 1_000_001}]}),
+        ("ui", "npc", {**screen, "rows": [{**row, "id": ""}]}), ("ui", "npc", {**screen, "rows": [{**row, "item": "bread"}]}),
+        ("ui", "npc", {**screen, "rows": [{**row, "n": 513}]}), ("ui", "npc", {**screen, "rows": [{**row, "btn": "Buy"}]}),
+        ("ui", "surgery", {**surgery, "lo": 0.6}), ("ui", "surgery", {**surgery, "hi": 1.1}), ("ui", "surgery", {**surgery, "period": 199}),
+        ("ui", "surgery", {**surgery, "timeout": 60_001}), ("ui", "surgery", {**surgery, "implant": "Sandevistan"}),
+    ]
+
+
+P7_PAYLOAD_OUT_OF_LIMITS = _p7_payload_out_of_limits()
+
+
+@pytest.mark.parametrize("d, t, m", P7_PAYLOAD_OUT_OF_LIMITS, ids=[f"{d}-{t}-{i}" for i, (d, t, _) in enumerate(P7_PAYLOAD_OUT_OF_LIMITS)])
+def test_p7_payload_validators_reject_out_of_limit_messages(d, t, m):
+    try:
+        ok = (P7_ACT_VALIDATORS if d == "act" else P7_UI_VALIDATORS)[t](m)
+    except (KeyError, TypeError):
+        ok = False
+    assert not ok
+
+
+def test_p7_payload_validators_accept_the_limits_themselves():
+    state, screen, surgery = P7_UI_EXAMPLES["holo"][0], P7_UI_EXAMPLES["npc"][0], P7_UI_EXAMPLES["surgery"][0]
+    assert holospawn_ok({"kind": "beacon", "id": "é" * 32}) and holotravel_ok({"name": "é" * 32, "p": [-29_999_999, 29_999_999]})
+    assert npc_act_ok({"e": 1, "a": "abort"}) and npc_act_ok({"e": 1, "a": "tab", "arg": "x" * 32}) and npc_act_ok({"e": -5, "a": "do", "arg": "s1"})
+    assert holo_state_ok({k: v for k, v in state.items() if k != "detail"}) and holo_state_ok({**state, "pins": [], "spawns": [], "layers": [], "detail": []})
+    assert holo_state_ok({**state, "cooldown": 3600, "role": "overlord"}) and holo_state_ok({**state, "pins": state["pins"][:1] * 200})
+    assert npc_screen_ok({**screen, "rows": [], "tabs": [], "result": "", "name": ""}) and npc_screen_ok({**screen, "rows": [{**screen["rows"][0], "price": -1, "item": ""}]})
+    assert surgery_ok({**surgery, "lo": 0, "hi": 1, "period": 200, "timeout": 1000}) and surgery_ok({**surgery, "period": 10_000, "timeout": 60_000})

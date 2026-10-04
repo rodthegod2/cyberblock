@@ -85,10 +85,13 @@ class NpcRulesTest {
 		assertFalse(GigRules.defeatCounts(breach, "faction:x"));
 		Contract reach = NpcContentTest.contract("reach_landmark", "{\"landmark\":\"cyberblock:corpo_plaza\"}");
 		Vec3 plaza = new Vec3(100, 64, 100);
-		assertTrue(GigRules.reached(reach, plaza, new Vec3(104, 70, 104)));
-		assertFalse(GigRules.reached(reach, plaza, new Vec3(105, 64, 105)), "more than 6 blocks");
-		assertFalse(GigRules.reached(reach, plaza, new Vec3(100, 90, 100)), "not from the sky");
-		assertFalse(GigRules.reached(reach, null, plaza), "no landmark, no arrival");
+		assertTrue(GigRules.reached(reach, plaza, false, new Vec3(104, 70, 104)));
+		assertFalse(GigRules.reached(reach, plaza, false, new Vec3(105, 64, 105)), "more than 6 blocks");
+		assertFalse(GigRules.reached(reach, plaza, false, new Vec3(100, 90, 100)), "not from the sky");
+		assertTrue(GigRules.reached(reach, plaza, true, new Vec3(100, 90, 100)), "an approximate height is not held against the player");
+		assertTrue(GigRules.reached(reach, plaza, true, new Vec3(104, 20, 104)));
+		assertFalse(GigRules.reached(reach, plaza, true, new Vec3(105, 64, 105)), "approximate or not, x and z still count");
+		assertFalse(GigRules.reached(reach, null, true, plaza), "no landmark, no arrival");
 		assertEquals(3, GigRules.next(3, 3));
 		assertEquals("2 / 3", GigRules.progress(claws, 2));
 		assertEquals("", GigRules.progress(reach, 0));
@@ -123,7 +126,6 @@ class NpcRulesTest {
 		assertEquals(-1, Shopkeeper.cell("s12", 'b'));
 		assertEquals(-1, Shopkeeper.cell("b", 'b'));
 		assertEquals(-1, Shopkeeper.cell("b123", 'b'));
-		assertEquals("{\"t\":\"heal\",\"id\":8}", Services.heal(8));
 		assertTrue(Garage.CAR_UNAVAILABLE.length() <= NpcWire.SUB_CAP);
 		assertTrue(Eddies.KEPT.length() <= NpcWire.SUB_CAP);
 		assertEquals("Neon Sour", Bar.words("neon_sour"));

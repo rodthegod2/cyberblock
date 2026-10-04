@@ -6,31 +6,29 @@ import java.util.List;
 
 /**
  * One breach being played (megaplan 6-B1), pure: the server validates every pick here (no client trust). A pick must follow
- * {@link BreachRules#allowed} on a free cell; the timer starts at the first pick; a daemon is uploaded once the buffer holds its
- * sequence as a contiguous run. It ends when every daemon is uploaded, the buffer is full, the timer runs out, the player quits, or
- * nothing was picked for {@link #IDLE_MS}. Quitting (or idling) before the first pick cancels: no result, no alarm. Times are
- * milliseconds from any one clock.
+ * {@link BreachRules#allowed} on a free cell; the timer starts when the breach opens (protocol.md "Phase 6"); a daemon is uploaded once
+ * the buffer holds its sequence as a contiguous run. It ends when every daemon is uploaded, the buffer is full, the timer runs out or the
+ * player quits. Quitting before the first pick cancels (no result, no alarm); quitting after it is a failure, whatever was uploaded.
+ * A device breach is not quit before its first pick: {@link Breach} keeps it running instead (an abort is not a free re-roll). Times
+ * are milliseconds from any one clock.
  */
 public final class BreachGame {
 	public enum End {
-		NONE, ALL_UPLOADED, BUFFER_FULL, TIMEOUT, QUIT, IDLE
+		NONE, ALL_UPLOADED, BUFFER_FULL, TIMEOUT, QUIT
 	}
 
-	/** An opened breach with no pick for this long closes (cancelled). */
-	public static final long IDLE_MS = 60_000;
 	private final BreachPuzzle puzzle;
-	private final long openedMs;
+	private final long deadlineMs;
 	private final int[] picks;
 	private final int[] codes;
 	private final boolean[] used;
 	private final boolean[] uploaded;
 	private int count;
-	private long deadlineMs = -1;
 	private End end = End.NONE;
 
 	public BreachGame(final BreachPuzzle puzzle, final long openedMs) {
 		this.puzzle = puzzle;
-		this.openedMs = openedMs;
+		this.deadlineMs = openedMs + puzzle.seconds() * 1000L;
 		this.picks = new int[puzzle.buffer()];
 		this.codes = new int[puzzle.buffer()];
 		this.used = new boolean[puzzle.size() * puzzle.size()];
@@ -45,10 +43,6 @@ public final class BreachGame {
 	public boolean pick(final int cell, final long nowMs) {
 		if (this.end != End.NONE || this.expire(nowMs) || !BreachRules.allowed(this.puzzle.size(), this.picks, this.count, cell) || this.used[cell]) {
 			return false;
-		}
-
-		if (this.count == 0) {
-			this.deadlineMs = nowMs + this.puzzle.seconds() * 1000L;
 		}
 
 		this.picks[this.count] = cell;
@@ -70,21 +64,17 @@ public final class BreachGame {
 		return true;
 	}
 
-	/** Ends the breach when its timer ran out (or it idled before the first pick); true when it ended just now. */
+	/** Ends the breach when its timer ran out; true when it ended just now. */
 	public boolean expire(final long nowMs) {
-		if (this.end != End.NONE) {
-			return false;
-		}
-
-		if (this.deadlineMs >= 0 ? nowMs >= this.deadlineMs : nowMs - this.openedMs >= IDLE_MS) {
-			this.end = this.deadlineMs >= 0 ? End.TIMEOUT : End.IDLE;
+		if (this.end == End.NONE && nowMs >= this.deadlineMs) {
+			this.end = End.TIMEOUT;
 			return true;
 		}
 
 		return false;
 	}
 
-	/** The player stops (Disconnect button, closing the screen, walking away, leaving the server). */
+	/** The player stops (Disconnect button, closing the screen, walking away, leaving the server, the opener closing it). */
 	public void quit() {
 		if (this.end == End.NONE) {
 			this.end = End.QUIT;
@@ -99,14 +89,22 @@ public final class BreachGame {
 		return this.end != End.NONE;
 	}
 
-	/** Ended before the first pick: nothing happens, in either game. */
-	public boolean cancelled() {
-		return this.ended() && this.count == 0;
+	/** Has the player picked anything yet? */
+	public boolean started() {
+		return this.count > 0;
 	}
 
-	/** Ended after at least one pick with no daemon uploaded: the alarm and Heat. */
+	/** Quit before the first pick: nothing happens, in either game. */
+	public boolean cancelled() {
+		return this.end == End.QUIT && this.count == 0;
+	}
+
+	/**
+	 * The alarm and Heat: quit after the first pick (even with a daemon uploaded), or ended with no daemon uploaded (the buffer full,
+	 * the timer, a kept device breach whose timer ran out before a pick).
+	 */
 	public boolean failed() {
-		return this.ended() && !this.cancelled() && this.uploadedDaemons().isEmpty();
+		return this.ended() && !this.cancelled() && (this.end == End.QUIT || this.uploadedDaemons().isEmpty());
 	}
 
 	/** The uploaded daemons, in the puzzle's order. */
@@ -126,9 +124,9 @@ public final class BreachGame {
 		return BreachRules.strength(this.uploadedDaemons().stream().map(d -> d.seq().length).toList());
 	}
 
-	/** Milliseconds left on the timer, or -1 before the first pick. */
+	/** Milliseconds left on the timer (it runs from the opening). */
 	public long leftMs(final long nowMs) {
-		return this.deadlineMs < 0 ? -1 : Math.max(0, this.deadlineMs - nowMs);
+		return Math.max(0, this.deadlineMs - nowMs);
 	}
 
 	public int[] picks() {

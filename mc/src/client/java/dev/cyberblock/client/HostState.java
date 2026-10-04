@@ -402,7 +402,8 @@ public final class HostState {
 
 	/**
 	 * Cyberpunk does not drive Steve while this is set: the player is in the Afterlife hub (megaplan 7-H1, client/hub/HubClient), where
-	 * Minecraft is the whole picture and V is parked in Night City. Any thread reads it.
+	 * Minecraft is the whole picture and V is parked in Night City. Set as the client's level changes (before the first tick or frame in
+	 * the hub, so no cam ever places Steve there). Any thread reads it.
 	 */
 	public static volatile boolean released;
 
@@ -410,11 +411,25 @@ public final class HostState {
 	static volatile BooleanSupplier hostLinked = () -> HostLink.linked() && ClientNet.role() == ClientNet.Role.HOST;
 
 	/**
-	 * In the hub with the DLL showing it (linked, session host): the DLL's keys and mouse are this client's input (megaplan 1.9, 7D's
-	 * "Input in the hub"), its cursor is the one screens use, and frames keep going to it.
+	 * How long after its last {@code cam} the DLL still counts as showing the hub. The DLL sends a cam every Cyberpunk frame while
+	 * Cyberblock is Active, parked V included (camera.cpp publish), and none while Off, when it draws no cover and forwards nothing.
+	 * Longer than {@link #TIMEOUT_NANOS} so a load (the park's fast-travel fallback) does not flip the input back and forth.
+	 */
+	private static final long HUB_TIMEOUT_NANOS = 5_000_000_000L;
+
+	/**
+	 * In the hub with the DLL showing it (linked, session host, its cams still coming): the DLL's keys and mouse are this client's input
+	 * (megaplan 1.9, 7D's "Input in the hub"), its cursor is the one screens use, and frames keep going to it. False while Cyberblock is
+	 * Off: Minecraft's own window is the input then.
 	 */
 	public static boolean hostInput() {
-		return released && hostLinked.getAsBoolean();
+		return hostInput(System.nanoTime());
+	}
+
+	/** {@link #hostInput()} at {@code now} (System.nanoTime; tests age the last cam with it). */
+	static boolean hostInput(final long now) {
+		Pose p = latest;
+		return released && hostLinked.getAsBoolean() && p != null && now - p.receivedNanos() < HUB_TIMEOUT_NANOS;
 	}
 
 	/** The latest pose if the host is still sending (and drives Steve), else null. */
@@ -430,9 +445,9 @@ public final class HostState {
 
 	/**
 	 * The pose a frame is exported with: this frame's; in the hub ({@link #released}) while the DLL shows it ({@link #hostInput}) the
-	 * latest one received, however old (parked V may send cam rarely), so Minecraft's own picture keeps reaching the DLL, whose
-	 * full-screen hub mode (megaplan 7-D1) shows it as rendered. Null before any pose, and in the hub without a linked host DLL (no
-	 * export: Minecraft's window keeps its own picture).
+	 * latest one received (Steve is Minecraft's there, so this frame has none), so Minecraft's own picture keeps reaching the DLL, whose
+	 * full-screen hub mode (megaplan 7-D1) shows it as rendered. Null before any pose, and in the hub without a linked host DLL showing
+	 * it (no export: Minecraft's window keeps its own picture).
 	 */
 	public static Pose exportPose() {
 		if (!released) {

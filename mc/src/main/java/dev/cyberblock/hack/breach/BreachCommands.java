@@ -22,8 +22,8 @@ import org.jspecify.annotations.Nullable;
  * <ul>
  * <li>{@code /cyberblock test breach <x> <y> <z> solve|fail}: opens the Breach of the Net Port at that position (as a right-click) and
  * plays it: {@code solve} picks the server's planted path (every daemon uploaded), {@code fail} fills the buffer with picks that upload
- * nothing. As a test bypass (logged) it first clears the lockouts of that device and of the player ({@link BreachLimits}), so a
- * scenario may breach one Net Port several times in a row; the owner's one-alarm-a-minute window stays</li>
+ * nothing. As a test bypass (logged) it first drops the player's cooldown on that device ({@link BreachLimits}) and a puzzle kept
+ * there, so a scenario may breach one Net Port several times in a row with fresh puzzles; the owner's one-alarm-a-minute window stays</li>
  * <li>{@code /cyberblock test breach practice <security 1-3>} and {@code ... breach short}: a practice breach to look at (no device);
  * {@code ... breach step}: the next pick of the planted path; {@code ... breach abort}</li>
  * </ul>

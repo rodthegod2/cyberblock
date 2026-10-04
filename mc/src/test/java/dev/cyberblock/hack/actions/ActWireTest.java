@@ -5,12 +5,21 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
@@ -26,13 +35,13 @@ class ActWireTest {
 	@Test
 	void requestsRoundTrip() {
 		ActWire.Request car = ActWire.parse(json(ActWire.vehicle(RemoteHack.VEH_BRAKE, 42)));
-		assertEquals(new ActWire.Request(RemoteHack.VEH_BRAKE, 42, null, 0L, null, 0), car);
+		assertEquals(new ActWire.Request(RemoteHack.VEH_BRAKE, 42, null, 0L, null, RemoteHack.VEHICLE_SECONDS), car);
 		ActWire.Request cam = ActWire.parse(json(ActWire.camera(HOST, -2L)));
 		assertEquals(HOST, cam.host());
 		assertEquals(-2L, cam.dev(), "an unsigned 64-bit id survives");
 		ActWire.Request blackout = ActWire.parse(json(ActWire.district(RemoteHack.BLACKOUT, HOST, 300)));
 		assertEquals(300, blackout.secs());
-		assertEquals(0, ActWire.parse(json(ActWire.district(RemoteHack.TRAFFIC_SWITCH, HOST, 300))).secs());
+		assertEquals(60, ActWire.parse(json(ActWire.district(RemoteHack.TRAFFIC_SWITCH, HOST, 300))).secs(), "only a blackout's length is the player's");
 		ActWire.Request ping = ActWire.parse(json(ActWire.point(RemoteHack.PING_AREA, new Vec3(-1240.5, 64.0, 810.25))));
 		assertEquals(new Vec3(-1240.5, 64.0, 810.25), ping.p());
 		assertEquals(RemoteHack.PING_AREA.seconds(), ping.secs());
@@ -55,22 +64,96 @@ class ActWireTest {
 
 	@Test
 	void rhackKeepsTheContractShape() {
-		JsonObject car = json(ActWire.rhack(7, 9007199254740993L, RemoteHack.VEH_LOCK, null, null, 0));
-		assertEquals(4, car.size());
-		assertEquals("rhack", car.get("t").getAsString());
-		assertEquals(7, car.get("id").getAsInt());
+		JsonObject car = json(ActWire.rhack(7, 9007199254740993L, RemoteHack.VEH_LOCK, null, RemoteHack.VEH_LOCK.downSeconds(0)));
+		assertEquals(Set.of("t", "id", "target", "hack", "secs"), car.keySet());
 		assertEquals("9007199254740993", car.get("target").getAsString());
-		assertEquals("veh_lock", car.get("hack").getAsString());
-		JsonObject district = json(ActWire.rhack(8, 0L, RemoteHack.BLACKOUT, "Watson", null, 120));
-		assertEquals("", district.get("target").getAsString());
-		assertEquals("Watson", district.get("district").getAsString());
-		assertEquals(120, district.get("secs").getAsInt());
-		assertFalse(district.has("p"));
-		JsonObject point = json(ActWire.rhack(9, 0L, RemoteHack.GRIDLOCK, null, new Vec3(1.5, 64.0, -2.0), 60));
-		assertEquals(3, point.getAsJsonArray("p").size());
-		assertEquals(24.0, point.get("r").getAsDouble());
-		assertEquals(60, point.get("secs").getAsInt());
+		assertEquals(30, car.get("secs").getAsInt(), "every vehicle effect is timed: the server sends 30");
+		JsonObject cam = json(ActWire.rhack(8, -2L, RemoteHack.CAM_FEED, null, 0));
+		assertEquals(Set.of("t", "id", "target", "hack"), cam.keySet());
+		assertEquals("18446744073709551614", cam.get("target").getAsString());
+		JsonObject blackout = json(ActWire.rhack(9, 0L, RemoteHack.BLACKOUT, new Vec3(1.5, 64.0, -2.0), RemoteHack.BLACKOUT.downSeconds(240)));
+		assertTrue(blackout.get("target").isJsonNull(), "an area hack's target is JSON null, not an empty string");
+		assertEquals(Set.of("t", "id", "target", "hack", "p", "r", "secs"), blackout.keySet());
+		assertEquals("150", blackout.get("r").toString(), "r is a whole number");
+		assertEquals(240, blackout.get("secs").getAsInt());
+		JsonObject ping = json(ActWire.rhack(10, 0L, RemoteHack.PING_AREA, new Vec3(0, 64, 0), RemoteHack.PING_AREA.downSeconds(0)));
+		assertEquals(0, ping.get("secs").getAsInt(), "a ping is a one-shot");
+		assertThrows(IllegalArgumentException.class, () -> ActWire.rhack(11, 0L, RemoteHack.GRIDLOCK, null, 60));
 		assertEquals("{\"t\":\"feedreq\",\"on\":true}", ActWire.feedReq(true));
+	}
+
+	/**
+	 * shared/rhack-vectors.json: the server's DOWN `rhack` for all eleven hacks, built here from each case's inputs, must equal the
+	 * vector and obey shared/protocol.md's rules (the port of tests/test_phase6_protocol.py rhack_ok); pytest checks the same vectors
+	 * against rhack_ok and the fake DLL (tests/test_rhack_vectors.py).
+	 */
+	@Test
+	void everyHackMatchesTheSharedVectorsAndTheProtocolRules() throws IOException {
+		JsonObject vectors = json(Files.readString(Path.of("..", "shared", "rhack-vectors.json"), StandardCharsets.UTF_8));
+		Set<RemoteHack> seen = new HashSet<>();
+		for (JsonElement e : vectors.getAsJsonArray("cases")) {
+			JsonObject c = e.getAsJsonObject();
+			RemoteHack hack = RemoteHack.byWire(c.get("hack").getAsString());
+			assertNotNull(hack, c.toString());
+			seen.add(hack);
+			long target = c.get("target").isJsonNull() ? 0L : Long.parseUnsignedLong(c.get("target").getAsString());
+			Vec3 p = c.has("p") ? ActWire.position(c.get("p")) : null;
+			int asked = c.has("asked") ? c.get("asked").getAsInt() : hack.seconds();
+			String built = ActWire.rhack(c.get("id").getAsInt(), target, hack, p, hack.downSeconds(asked));
+			assertEquals(c.getAsJsonObject("down"), json(built), hack.wire());
+			assertTrue(rhackOk(json(built)), built);
+		}
+
+		assertEquals(Set.of(RemoteHack.values()), seen, "every hack has a vector");
+	}
+
+	@Test
+	void theProtocolRulesRejectTheOldShapes() {
+		// the shapes before the fix: "" for an area target, a district and no p or r, a double r, a vehicle hack without secs, a timed hack at 0 s
+		for (String old : List.of("{\"t\":\"rhack\",\"id\":1,\"target\":\"\",\"hack\":\"blackout\",\"district\":\"Watson\",\"secs\":120}",
+			"{\"t\":\"rhack\",\"id\":1,\"target\":null,\"hack\":\"gridlock\",\"p\":[0,64,0],\"r\":24.0,\"secs\":60}",
+			"{\"t\":\"rhack\",\"id\":1,\"target\":\"5\",\"hack\":\"veh_lock\"}",
+			"{\"t\":\"rhack\",\"id\":1,\"target\":null,\"hack\":\"traffic_switch\",\"p\":[0,64,0],\"r\":150,\"secs\":0}")) {
+			assertFalse(rhackOk(json(old)), old);
+		}
+	}
+
+	/** tests/test_phase6_protocol.py rhack_ok, in Java: exact key sets, ids, whole `r` 1..150 and `secs` per hack. */
+	private static boolean rhackOk(final JsonObject m) {
+		Set<String> base = Set.of("t", "id", "target", "hack");
+		if (!m.keySet().containsAll(base) || !whole(m.get("id"), 0, Integer.MAX_VALUE) || !m.get("hack").isJsonPrimitive()) {
+			return false;
+		}
+
+		RemoteHack hack = RemoteHack.byWire(m.get("hack").getAsString());
+		if (hack == null) {
+			return false;
+		}
+
+		if (hack.area()) {
+			boolean timed = hack == RemoteHack.TRAFFIC_SWITCH || hack == RemoteHack.GRIDLOCK || hack == RemoteHack.BLACKOUT;
+			return m.keySet().equals(Set.of("t", "id", "target", "hack", "p", "r", "secs")) && m.get("target").isJsonNull()
+				&& ActWire.position(m.get("p")) != null && whole(m.get("r"), 1, 150) && whole(m.get("secs"), timed ? 1 : 0, 600);
+		}
+
+		if (hack.target() == RemoteHack.Target.VEHICLE) {
+			return m.keySet().equals(Set.of("t", "id", "target", "hack", "secs")) && devId(m.get("target")) && whole(m.get("secs"), 1, 600);
+		}
+
+		return m.keySet().equals(base) && devId(m.get("target"));
+	}
+
+	private static boolean whole(final JsonElement e, final long low, final long high) {
+		if (!(e instanceof JsonPrimitive p) || !p.isNumber() || !p.getAsString().matches("-?\\d+")) {
+			return false;
+		}
+
+		long v = p.getAsLong();
+		return v >= low && v <= high;
+	}
+
+	private static boolean devId(final JsonElement e) {
+		return e instanceof JsonPrimitive p && p.isString() && p.getAsString().matches("\\d+") && ActWire.id(e) != 0L;
 	}
 
 	@Test
@@ -119,5 +202,62 @@ class ActWireTest {
 		assertEquals(HOST, ActWire.parseHost(json(ActWire.host(HOST))));
 		assertEquals(new ActWire.FeedWatch(HOST, false), ActWire.parseFeedWatch(json(ActWire.feedWatch(HOST, false))));
 		assertNull(ActWire.parseFeedWatch(json("{\"host\":\"" + HOST + "\",\"on\":1}")));
+	}
+
+	/**
+	 * shared/phase6-messages.json: the DOWN `rhack` strings are exactly what {@link ActWire#rhack} builds from the arguments
+	 * RemoteActions passes for each hack (a target only for a car or camera, `p` for every area hack, `secs` the blackout's request or
+	 * the hack's own), and every act string parses and builds back to itself. The DLL's cb_tests and the Python suites read the same
+	 * file, so the four sides cannot drift apart.
+	 */
+	@Test
+	void sharedPhase6MessagesAreWhatTheServerBuilds() throws java.io.IOException {
+		JsonObject all = json(java.nio.file.Files.readString(java.nio.file.Path.of("..", "shared", "phase6-messages.json")));
+		java.util.Set<RemoteHack> seen = java.util.EnumSet.noneOf(RemoteHack.class);
+		for (var e : all.getAsJsonArray("down_rhack")) {
+			JsonObject a = e.getAsJsonObject().getAsJsonObject("args");
+			RemoteHack hack = RemoteHack.byWire(a.get("hack").getAsString());
+			assertNotNull(hack, a.toString());
+			seen.add(hack);
+			long target = a.get("target").isJsonNull() ? 0L : Long.parseUnsignedLong(a.get("target").getAsString());
+			Vec3 p = a.get("p").isJsonNull() ? null : ActWire.position(a.get("p"));
+			int secs = a.get("secs").getAsInt();
+			assertEquals(!hack.area(), target != 0L, hack + ": a target only for a car or camera");
+			assertEquals(hack.area(), p != null, hack + ": p on every area hack");
+			assertEquals(hack.downSeconds(secs), secs, hack + ": secs as RemoteActions sends it");
+			assertEquals(e.getAsJsonObject().get("json").getAsString(), ActWire.rhack(a.get("id").getAsInt(), target, hack, p, secs), hack.wire());
+		}
+
+		assertEquals(java.util.EnumSet.allOf(RemoteHack.class), seen, "every remote hack has a DOWN line");
+		for (var e : all.getAsJsonArray("act_rhack")) {
+			String text = e.getAsString();
+			ActWire.Request r = ActWire.parse(json(text));
+			assertNotNull(r, text);
+			String built = switch (r.hack().target()) {
+				case VEHICLE -> ActWire.vehicle(r.hack(), r.eid());
+				case CAMERA -> ActWire.camera(r.host(), r.dev());
+				case DISTRICT -> ActWire.district(r.hack(), r.host(), r.secs());
+				case POINT -> ActWire.point(r.hack(), r.p());
+			};
+			assertEquals(text, built);
+		}
+
+		for (var e : all.getAsJsonArray("act_comms")) {
+			ActWire.Comms c = ActWire.parseComms(json(e.getAsString()));
+			assertNotNull(c);
+			assertEquals(e.getAsString(), ActWire.comms(c.to(), c.text(), c.p()));
+		}
+
+		for (var e : all.getAsJsonArray("act_feed")) {
+			ActWire.FeedWatch w = ActWire.parseFeedWatch(json(e.getAsString()));
+			assertEquals(e.getAsString(), ActWire.feedWatch(w.host(), w.on()));
+		}
+
+		for (var e : all.getAsJsonArray("act_feedmap")) {
+			assertEquals(e.getAsString(), ActWire.host(ActWire.parseHost(json(e.getAsString()))));
+		}
+
+		assertEquals(List.of(ActWire.feedReq(true), ActWire.feedReq(false)),
+			all.getAsJsonArray("down_feedreq").asList().stream().map(com.google.gson.JsonElement::getAsString).toList());
 	}
 }

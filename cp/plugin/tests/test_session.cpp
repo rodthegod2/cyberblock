@@ -292,6 +292,32 @@ TEST(hub_state_follows_the_message_even_while_cyberblock_is_off)
 	fresh();
 }
 
+TEST(the_hub_is_told_again_when_cyberblock_turns_active_again)
+{
+	// the scripts drop their hub copy on Lost (a Minecraft stall over 2 s with the link up), a load or a session end,
+	// and the DLL hears none of it: each activation while the hub is shown queues a hub-in again so V is parked again
+	fresh();
+	cb::world::EventQueue &q = cb::world::events();
+	deliver(R"({"t":"session","state":"host"})");
+	cb::world::on_scripts_active(true); // not in the hub: nothing more
+	CHECK(q.next() == EventKind::Session && q.next() == EventKind::None);
+	deliver(R"({"t":"hub","in":true})");
+	CHECK(q.next() == EventKind::Hub && q.current().flag && q.next() == EventKind::None);
+	cb::world::on_scripts_active(false); // Lost: the DLL keeps its hub, nothing is queued
+	CHECK(cb::world::hub_in() && q.next() == EventKind::None);
+	cb::world::on_scripts_active(true); // Active again
+	CHECK(cb::world::hub_in());
+	CHECK(q.next() == EventKind::Hub && q.current().flag && q.next() == EventKind::None);
+	cb::world::on_scripts_active(true); // no change of state: nothing more
+	CHECK(q.next() == EventKind::None);
+	deliver(R"({"t":"hub","in":false})");
+	CHECK(q.next() == EventKind::Hub && !q.current().flag);
+	cb::world::on_scripts_active(false);
+	cb::world::on_scripts_active(true); // out of the hub: nothing
+	CHECK(q.next() == EventKind::None);
+	fresh();
+}
+
 TEST(the_hub_ends_with_a_hello_a_link_drop_or_leaving_the_host_role)
 {
 	fresh();

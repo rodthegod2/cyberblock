@@ -13,7 +13,7 @@ import java.util.Locale;
  * when the host leaves it).
  *
  * <p>The Holo-Table (package 7T) lists {@link #known()} through its {@code HoloFastTravel.points} hook and runs {@link #travel} for
- * a picked point; the hook is installed where both packages meet (the Phase 7 merge, see {@link #known()}).
+ * a picked point; {@code HoloClient.init} installs the hook ({@code HoloFastTravel.install}).
  */
 public final class FastTravelPoints {
 	/** The list is asked for again when it is older than this while somebody reads it. */
@@ -40,9 +40,7 @@ public final class FastTravelPoints {
 
 	/**
 	 * Client thread, cheap enough to call every frame: the host's last known points (empty while no host is linked, so guests see
-	 * none), asking Cyberpunk again when the list is older than 5 s. The Holo-Table hook, installed in the Phase 7 merge:
-	 * {@code HoloFastTravel.points = () -> FastTravelPoints.known().stream().map(p -> new HoloFastTravel.Point(p.name(), p.p().x(),
-	 * p.p().z(), p.district(), () -> FastTravelPoints.travel(p))).toList();}
+	 * none), asking Cyberpunk again when the list is older than 5 s. The Holo-Table's hook asks it each time the table lists them.
 	 */
 	public static List<UiModel.ReplyPin> known() {
 		if (!UiLink.linked()) {

@@ -170,7 +170,8 @@ namespace cb::world
 		/// always kept: redscript's block registry, perk ranks and installed cyberware need every one of them, a scan, a
 		/// hack, a vteleport, a park or a devact must be answered, and a session change must clean Night City whatever the
 		/// state.
-		void set_active(bool active);
+		/// Returns whether the state changed.
+		bool set_active(bool active);
 		void push(const Event &event);
 		/// Counts a message parse_event rejected.
 		void note_rejected(size_t count = 1);
@@ -242,6 +243,11 @@ namespace cb::world
 	/// refusal keeps it). Every change, and every `hub` shown, queues a `hub` event (flag = in) for the scripts, kept while
 	/// Cyberblock is not Active. Any thread.
 	bool hub_in();
+	/// Cyberblock_SetActive (the game thread): events().set_active(active), and when that turns the mashup Active while
+	/// the hub is shown, a `hub` event (flag true) again. The scripts drop their copy of the hub on their own (Lost while
+	/// the link stays up, a load, a session end) and neither a link drop nor a `hello` follows, so without it V would
+	/// stay unparked behind the full-screen hub. Logs 'hub: in (Cyberblock active again); the scripts are told again'.
+	void on_scripts_active(bool active);
 	/// A linked Minecraft went away (main.cpp's drop handler, link thread): forgets `persp`, the pause, the `prefs` and the
 	/// hub (queuing a `hub` event with flag false when it was shown).
 	void on_link_dropped();

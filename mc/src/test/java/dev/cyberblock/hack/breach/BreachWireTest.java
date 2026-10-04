@@ -38,7 +38,7 @@ class BreachWireTest {
 		BreachGame g = new BreachGame(BreachPuzzle.generate(7L, new BreachPuzzle.Tier(7, 8, 3, 3, 25), BreachPuzzleTest.POOL), 0);
 		JsonObject m = json(BreachWire.screen(5, "77", g, 0));
 		assertEquals(Set.of("id", "dev", "size", "grid", "buffer", "picks", "seqs", "total", "left", "state", "strength"), m.keySet(), "no solution, nothing else");
-		assertEquals(25.0, m.get("left").getAsDouble(), "the whole timer before the first pick");
+		assertEquals(25.0, m.get("left").getAsDouble(), "the whole timer at the opening");
 		assertEquals("run", m.get("state").getAsString());
 		assertEquals(Set.of("id", "codes", "ok"), m.getAsJsonArray("seqs").get(0).getAsJsonObject().keySet());
 		BreachWire.Screen s = BreachWire.parse(m);
@@ -57,15 +57,35 @@ class BreachWireTest {
 		assertArrayEquals(new int[] {1, 21}, s.picks());
 		assertTrue(s.seqs().get(0).ok());
 		assertFalse(s.seqs().get(1).ok());
-		assertEquals(19.0, s.left(), 0.051);
+		assertEquals(18.9, s.left(), 0.051, "20 s from the opening at 0");
 		assertEquals(0, s.strength(), "0 until the end");
 
 		g.quit();
 		BreachWire.Screen end = BreachWire.parse(json(BreachWire.screen(5, "77", g, 1_150)));
 		assertNotNull(end);
 		assertTrue(end.done());
-		assertEquals("solved", end.state());
-		assertEquals(1, end.strength());
+		assertEquals("aborted", end.state(), "an abort after a pick is a failure");
+		assertEquals(0, end.strength());
+		assertTrue(end.seqs().get(0).ok(), "the screen still shows what the buffer held");
+	}
+
+	@Test
+	void aKeptPuzzleShowsAbortedWhileItsTimerRuns() {
+		BreachGame g = new BreachGame(BreachGameTest.puzzle(), 0);
+		BreachWire.Screen s = BreachWire.parse(json(BreachWire.screen(5, "77", g, 4_000, true)));
+		assertNotNull(s);
+		assertEquals("aborted", s.state());
+		assertTrue(s.done());
+		assertEquals(16.0, s.left(), 0.051);
+		assertFalse(g.ended(), "the game itself goes on, for the next right-click");
+	}
+
+	@Test
+	void theShortBreachIsFourByFour() {
+		BreachGame g = new BreachGame(BreachPuzzle.generate(3L, BreachContent.SHORT, BreachPuzzleTest.POOL), 0);
+		BreachWire.Screen s = BreachWire.parse(json(BreachWire.screen(1, "0", g, 0)));
+		assertNotNull(s);
+		assertEquals(4, s.size(), "protocol.md: size 4 is Phase 8's short breach");
 	}
 
 	@Test

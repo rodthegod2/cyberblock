@@ -3,8 +3,6 @@ package dev.cyberblock.npc;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.cyber.CyberData;
 import dev.cyberblock.cyber.Ripperdoc;
-import dev.cyberblock.net.HostSession;
-import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.ServerNet;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -24,8 +22,8 @@ import org.jspecify.annotations.Nullable;
  * eddie prices ({@code install_implant}: the plain implants; {@code surgery}: the ones with a surgery), installed through the existing
  * install (cyber/Ripperdoc; a player who carries the implant pays nothing). A surgery is the timing bar (Surgery), paid only when it
  * works; a miss costs the catalogue's damage (never a life) and its debuff, and the ripperdoc will not operate again until the debuff
- * is over. Medic: Steve healed to full for {@code heal_per_heart} per missing heart; a host whose Cyberpunk is On also gets
- * {@code {"t":"heal","id":N}} DOWN, for 7S's heal hook (V's burning, bleeding and poison removed). Server thread.
+ * is over. Medic: Steve healed to full for {@code heal_per_heart} per missing heart (Steve's health is the only health, so nothing
+ * goes DOWN: section 1.9 has no heal message). Server thread.
  */
 final class Clinic {
 	/** A surgery whose bar is running on the player's screen. */
@@ -201,7 +199,7 @@ final class Clinic {
 		@Override
 		public String press(final Visit v, final String row) {
 			int hearts = hearts(v.player.getMaxHealth() - v.player.getHealth());
-			if (!row.equals("heal") || hearts == 0) {
+			if (!row.equals("heal") || hearts == 0 || v.player.isDeadOrDying()) {
 				return "none";
 			}
 
@@ -213,13 +211,7 @@ final class Clinic {
 
 			v.player.setHealth(v.player.getMaxHealth());
 			v.player.level().playSound(null, v.player.getX(), v.player.getY(), v.player.getZ(), SoundEvents.PLAYER_LEVELUP, SoundSource.PLAYERS, 0.6F, 1.6F);
-			HostSession s = HostSessions.of(v.player);
-			boolean host = s != null && s.active();
-			if (host) {
-				s.send(Services.heal(s.newRequest(v.player.getUUID())));
-			}
-
-			Cyberblock.LOG.info("npc: {} healed {} hearts for {} eddies{}", v.player.getPlainTextName(), hearts, price, host ? " (heal DOWN to Cyberpunk)" : "");
+			Cyberblock.LOG.info("npc: {} healed {} hearts for {} eddies", v.player.getPlainTextName(), hearts, price);
 			v.say("healed", "price", Integer.toString(price));
 			return "healed";
 		}

@@ -50,18 +50,16 @@ namespace
 		return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
 	}
 
-	/// The back-buffer feed cannot run, or costs too much: off until Minecraft's next session, logged once, and Minecraft
-	/// told with the fallback notice (feed.hpp) so its top-down replica render stands in.
+	/// The back-buffer feed cannot run, or costs too much: off until Minecraft's next session and logged once. Nothing is
+	/// sent: with no `feed`, the server's top-down replica render stands in (feed.hpp).
 	void give_up(const char *why)
 	{
 		g_stage = Stage::Idle;
 		if (!cb::feed::gate().fall_back(why))
 			return;
-		const auto notice = cb::feed::gate().fallback_notice(now_seconds());
-		if (notice)
-			cb::link().send(*notice);
-		cb::log::warn("feed: %s; the back-buffer feed is off, Minecraft's top-down replica render is the fallback (%s)", why,
-					  notice ? "Minecraft told with feed fallback" : "Minecraft is told on its next feedreq on");
+		cb::log::warn("feed: %s; the back-buffer feed is off for this Minecraft session, no picture is sent and the server's "
+					  "top-down replica render is the fallback",
+					  why);
 	}
 
 	void release(device *dev)
