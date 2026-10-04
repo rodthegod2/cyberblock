@@ -95,6 +95,37 @@ TEST(an_open_minecraft_screen_keeps_every_key_from_cyberpunk)
 	CHECK(is_swallowed('E', Binds{}, Context{.screenOpen = true, .choices = true}));
 }
 
+TEST(the_hub_gives_minecraft_the_movement_keys)
+{
+	// megaplan 1.9 amendment 2026-10-04: V is parked in the hub and Minecraft walks Steve
+	const Context hub{.hub = true};
+	CHECK(std::string(hub_move_name('W')) == "forward" && std::string(hub_move_name('A')) == "left");
+	CHECK(std::string(hub_move_name('S')) == "back" && std::string(hub_move_name('D')) == "right");
+	for (uint32_t vk : {kControl, kLeftControl, kRightControl})
+		CHECK(std::string(hub_move_name(vk)) == "sneak");
+	for (uint32_t vk : {kSpace, kShift, kLeftShift, kRightShift, uint32_t('E'), uint32_t('C'), kG, kEscape, kF9})
+		CHECK(hub_move_name(vk) == nullptr); // Space and Shift keep "jump" and "sprint"
+	for (uint32_t vk : {uint32_t('W'), uint32_t('A'), uint32_t('S'), uint32_t('D'), kSpace, kShift, kLeftShift, kRightShift, kControl,
+						kLeftControl, kRightControl})
+	{
+		CHECK(is_swallowed(vk, Binds{}, hub));
+		CHECK(!is_swallowed(vk, Binds{})); // outside the hub they stay Cyberpunk's
+	}
+	// the usual set stays, and the rest of Cyberpunk's keys are still its own (Tab, C, F, Alt)
+	CHECK(is_swallowed('E', Binds{}, hub) && is_swallowed(kG, Binds{}, hub) && is_swallowed(kF9, Binds{}, hub));
+	for (uint32_t vk : {uint32_t(0x09), uint32_t('C'), uint32_t('F'), uint32_t(0x12)})
+		CHECK(!is_swallowed(vk, Binds{}, hub));
+	// none of them can be bound, so a bind never clashes with the hub's keys
+	for (uint32_t vk : {uint32_t('W'), uint32_t('A'), uint32_t('S'), uint32_t('D'), kSpace, kShift, kControl, kLeftControl})
+		CHECK(!bindable(vk));
+	// a key held when the hub starts keeps the verdict of its first down, so Cyberpunk still gets its up
+	KeyGate gate;
+	CHECK(gate.down('W', is_swallowed('W', Binds{})) == Verdict::Pass);
+	CHECK(gate.down('W', is_swallowed('W', Binds{}, hub)) == Verdict::Pass);
+	CHECK(gate.up('W') == Verdict::Pass);
+	CHECK(gate.down('W', is_swallowed('W', Binds{}, hub)) == Verdict::Swallow && gate.up('W') == Verdict::Swallow);
+}
+
 TEST(a_key_held_from_before_a_screen_opened_still_gets_its_up)
 {
 	KeyGate gate;

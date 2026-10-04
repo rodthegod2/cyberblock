@@ -120,7 +120,15 @@ namespace
 	{
 		return {.screenOpen = screen_open(),
 				.choices = choices_shown(),
-				.phone = cb::natives::phonePrompt && !cb::link().screen_open()};
+				.phone = cb::natives::phonePrompt && !cb::link().screen_open(),
+				.hub = cb::world::hub_in()};
+	}
+
+	/// The Afterlife hub while forwarding (megaplan 1.9 amendment 2026-10-04): V is parked and Minecraft walks Steve, so the
+	/// movement keys and the mouse look go to Minecraft.
+	bool hub_input()
+	{
+		return forwarding() && cb::world::hub_in();
 	}
 
 	/// Shift and Ctrl as the key state of the message being handled has them, in SDL bits.
@@ -167,6 +175,13 @@ namespace
 			send_with_mods(std::move(it->second));
 			it = g_held.erase(it);
 		}
+	}
+
+	/// Releases the hub's own keys (W A S D and Ctrl) once the hub is over while forwarding goes on.
+	void release_hub_keys()
+	{
+		for (const char *name : {"forward", "left", "back", "right", "sneak"})
+			release(std::string("key:") + name);
 	}
 
 	/// A `key` message; press() and release() add its `mods`.
@@ -229,7 +244,7 @@ namespace
 			g_cursor.dirty = true;
 			flush_cursor(g_cursor);
 		}
-		else if (cb::natives::lookCapture && forwarding())
+		else if ((cb::natives::lookCapture || cb::world::hub_in()) && forwarding())
 		{
 			std::lock_guard<std::mutex> lock(g_lookLock);
 			g_look.add(mouse.lLastX, mouse.lLastY);
@@ -329,12 +344,14 @@ namespace
 		// and a ringing call or an actionable notification keeps T (answer, reply)
 		const bool forward = forwarding() && !(now.choices && cb::keys::is_choice_key(code)) &&
 							 !(now.phone && cb::keys::is_phone_key(code));
-		if (const char *name = key_name(vk))
+		// W A S D and Ctrl are Minecraft's only in the hub; their release goes out whenever a press did
+		const char *hubName = key_name(vk) == nullptr ? cb::keys::hub_move_name(code) : nullptr;
+		if (const char *name = hubName != nullptr ? hubName : key_name(vk))
 		{
 			const std::string id = std::string("key:") + name;
 			if (!down)
 				release(id);
-			else if (forward)
+			else if (forward && (hubName == nullptr || now.hub))
 				press(id, key(name, true), key(name, false));
 		}
 		else if (vk >= '1' && vk <= '9' && down && !repeat && forward)
@@ -382,6 +399,8 @@ namespace
 	{
 		if (!g_held.empty() && !forwarding())
 			release_all_but_escape();
+		else if (!g_held.empty() && !cb::world::hub_in())
+			release_hub_keys();
 
 		switch (msg)
 		{
@@ -463,6 +482,9 @@ namespace
 				if (cb::drive::driving() && !cb::link().screen_open() &&
 					(mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0)
 					mouse.lLastX = 0;
+				// in the hub the mouse turns Steve (`look`): parked V's camera stays still, even when the park fell back
+				if (cb::world::hub_in() && (mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0)
+					mouse.lLastX = mouse.lLastY = 0;
 				if (choices_shown())
 					mouse.usButtonFlags = cb::keys::strip_down(mouse.usButtonFlags); // the wheel scrolls Cyberpunk's choices
 				else
@@ -586,9 +608,17 @@ namespace cb::input
 			log_keyboard_path();
 		}
 
+		// megaplan 1.9 amendment 2026-10-04: in the hub Minecraft gets W A S D, Space, Shift, Ctrl and the mouse look
+		static bool hubWas = false;
+		if (const bool hub = hub_input(); hub != hubWas)
+		{
+			hubWas = hub;
+			cb::log::info("hub: input to Minecraft %s (W A S D, Space, Shift, Ctrl and the mouse look)", hub ? "on" : "off");
+		}
+
 		{
 			std::lock_guard<std::mutex> lock(g_lookLock);
-			if (cb::natives::lookCapture && forwarding())
+			if ((cb::natives::lookCapture || cb::world::hub_in()) && forwarding())
 				flush_look();
 			else
 				g_look.clear();

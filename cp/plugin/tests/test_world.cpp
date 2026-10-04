@@ -901,6 +901,43 @@ TEST(park_becomes_an_event_with_its_flag)
 	CHECK(std::string(cb::world::event_name(EventKind::Park)) == "park");
 }
 
+// ---- Phase 7 (megaplan 2026-10-04 sections 1.8 and 1.9, task 7-D1) ---------------------------------------------------------
+
+TEST(hub_becomes_an_event_with_its_flag)
+{
+	const cb::world::Parsed in = parse(R"({"t":"hub","in":true})");
+	CHECK(in.status == Status::Event && in.events.size() == 1);
+	CHECK(in.events.at(0).kind == EventKind::Hub && in.events.at(0).flag);
+	const cb::world::Parsed out = parse(R"({"t":"hub","in":false})");
+	CHECK(out.status == Status::Event && out.events.at(0).kind == EventKind::Hub && !out.events.at(0).flag);
+	CHECK(std::string(cb::world::event_name(EventKind::Hub)) == "hub");
+}
+
+TEST(a_bad_hub_is_rejected)
+{
+	CHECK(rejected(R"({"t":"hub"})"));
+	CHECK(rejected(R"({"t":"hub","in":1})"));
+	CHECK(rejected(R"({"t":"hub","in":"true"})"));
+	CHECK(rejected(R"({"t":"hub","in":null})"));
+	CHECK(rejected(R"({"t":"hub","on":true})")); // the field is `in`, not `on`
+}
+
+TEST(hub_is_kept_while_not_active)
+{
+	// the hub is state, like a park: Hub.reds re-parks V while its copy says in, so an `out` must reach it whatever the state
+	cb::world::EventQueue q; // not Active
+	Event h;
+	h.kind = EventKind::Hub;
+	h.flag = false;
+	q.push(h);
+	q.set_active(true); // switching keeps it too
+	CHECK(q.next() == EventKind::Hub && !q.current().flag);
+	q.set_active(false);
+	h.flag = true;
+	q.push(h);
+	CHECK(q.next() == EventKind::Hub && q.current().flag);
+}
+
 TEST(vteleport_and_park_are_kept_while_not_active)
 {
 	// the server waits for `vteleported` / `parked`: the scripts must see the request (and refuse it) whatever the state

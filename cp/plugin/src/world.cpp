@@ -58,6 +58,12 @@ namespace
 	std::atomic<bool> g_thirdPerson{false};
 	/// Re-test 3: the last `status.pause`.
 	std::atomic<bool> g_pause{false};
+	/// Phase 7: the hub is shown (the compositor shows Minecraft full-screen); the game thread reads it.
+	std::atomic<bool> g_hub{false};
+	/// Phase 7: the server's last word on the hub (`hub in`). It is kept while this host is not Host (a guest until /login,
+	/// a refusal, before the first `session`) and applied at the next host grant; forgotten on `hello`, a link drop and
+	/// `session none`. Link thread only.
+	bool g_hubWord = false;
 	/// Phase 1: the last valid `session` (link thread writes, the natives read), the ground epoch and the cleanup flag.
 	std::mutex g_sessionLock;
 	cb::world::Session g_session;
@@ -75,6 +81,23 @@ namespace
 	{
 		if (g_pause.exchange(pause) != pause)
 			cb::log::info("pause: Minecraft's Night City pause screen %s", pause ? "opened" : "closed");
+	}
+
+	/// Shows or ends the hub. The scripts keep their own copy (Hub.reds parks V while it is in), so they hear every change
+	/// as a `hub` event, and every `in` the server says too (`tell`): the event is kept while Cyberblock is not Active.
+	void set_hub(bool in, const char *why, bool tell)
+	{
+		const bool changed = g_hub.exchange(in) != in;
+		if (changed)
+			cb::log::info("hub: %s (%s); the compositor shows %s", in ? "in" : "out", why,
+						  in ? "Minecraft full-screen, no depth blending" : "Night City with Minecraft blended in");
+		if (changed || tell)
+		{
+			cb::world::Event e;
+			e.kind = cb::world::EventKind::Hub;
+			e.flag = in;
+			cb::world::events().push(e);
+		}
 	}
 
 	/// Phase Q: the `prefs` in effect (link thread writes, the game's threads read).
@@ -369,6 +392,18 @@ namespace
 		return e;
 	}
 
+	/// Phase 7: {"t":"hub","in":bool}: the event's flag.
+	Event parse_hub(const json &m)
+	{
+		const auto in = m.find("in");
+		if (in == m.end() || !in->is_boolean())
+			throw Bad{"in is missing or not a bool"};
+		Event e;
+		e.kind = EventKind::Hub;
+		e.flag = in->get<bool>();
+		return e;
+	}
+
 	/// The kinds that are kept while the mashup is not Active (see EventQueue::set_active); every other kind is transient.
 	bool kept_while_inactive(EventKind kind)
 	{
@@ -385,6 +420,7 @@ namespace
 		case EventKind::Session: // the cleanup must happen whatever the state
 		case EventKind::VTeleport: // the server waits for `vteleported`: the scripts answer (or refuse) whatever the state
 		case EventKind::Park:      // likewise `parked`
+		case EventKind::Hub:       // Phase 7: state, like a park (Hub.reds re-parks V while it thinks Steve is in the hub)
 		case EventKind::DevAct:    // Phase 4: likewise `devresult`
 		case EventKind::RHack:     // Phase 6: likewise `hackresult`
 		case EventKind::Daemon:    // Phase 6: likewise `hackresult`
@@ -428,6 +464,7 @@ namespace cb::world
 		case EventKind::Session: return "session";
 		case EventKind::VTeleport: return "vteleport";
 		case EventKind::Park: return "park";
+		case EventKind::Hub: return "hub";
 		case EventKind::DevAct: return "devact";
 		case EventKind::RHack: return "rhack";
 		case EventKind::Daemon: return "daemon";
@@ -483,6 +520,8 @@ namespace cb::world
 				out.events.push_back(parse_vteleport(message, off));
 			else if (t == "park")
 				out.events.push_back(parse_park(message));
+			else if (t == "hub")
+				out.events.push_back(parse_hub(message));
 			else
 				return out; // another layer's message
 			out.status = Parsed::Status::Event;
@@ -623,6 +662,8 @@ namespace cb::world
 			set_level_k(0);
 			g_thirdPerson = false; // the new session sends `persp` again after its hello
 			set_pause(false);
+			g_hubWord = false;
+			set_hub(false, "a new Minecraft", false); // queued after the clear: the scripts' copy ends too
 			set_prefs({}); // and its `prefs`
 			forget_session(); // and its `session` after its handshake with the server
 			return;
@@ -683,7 +724,21 @@ namespace cb::world
 		}
 		const Parsed parsed = parse_event(message, level_offset(level_k()));
 		for (const Event &event : parsed.events)
-			events().push(event);
+		{
+			if (event.kind != EventKind::Hub)
+			{
+				events().push(event);
+				continue;
+			}
+			// the hub is shown only while this host is Host; a word that comes before the host grant (a guest locked until
+			// /login, a reconnect) waits for it (on_session)
+			g_hubWord = event.flag;
+			if (session().state == SessionState::Host)
+				set_hub(event.flag, event.flag ? "the player entered the Afterlife hub" : "the player left the Afterlife hub", true);
+			else
+				log::info("hub: %s noted while this host is %s; shown at the next host grant", event.flag ? "in" : "out",
+						  session_state_name(session().state));
+		}
 		const size_t bad = parsed.status == Parsed::Status::Rejected ? 1 : parsed.droppedEntries;
 		if (bad > 0)
 			note_invalid(bad, parsed.reason);
@@ -715,8 +770,15 @@ namespace cb::world
 	{
 		g_thirdPerson = false;
 		set_pause(false);
+		g_hubWord = false;
+		set_hub(false, "the link dropped", false);
 		set_prefs({});
 		forget_session();
+	}
+
+	bool hub_in()
+	{
+		return g_hub;
 	}
 
 	ViewPrefs parse_prefs(const json &message, const ViewPrefs &current, size_t &bad, std::string &why)
@@ -1210,10 +1272,19 @@ namespace cb::world
 		// next() hands out the FIFO (where this event goes) before the block changes, and Session.reds resets the collision
 		// registry on every non-host state: block events queued before it would come out after it and bring boxes back
 		if (session.state != SessionState::Host)
+		{
 			events().clear_blocks();
+			// cleaned like a link drop (section 1.2); the server's word survives a guest or a refusal (a guest locked until
+			// /login is host next), only `none` ends that server session
+			if (session.state == SessionState::None)
+				g_hubWord = false;
+			set_hub(false, "this host is no longer the server's host", false);
+		}
 		events().push(e);
 
 		const bool wasHost = previous.state == SessionState::Host;
+		if (session.state == SessionState::Host && !wasHost && g_hubWord)
+			set_hub(true, "the host grant, the player is still in the Afterlife hub", true); // after the session event
 		if (session.state == SessionState::Host && !wasHost)
 			++g_groundEpoch; // a new server session: it has none of the ground sent before
 		if (session.state != SessionState::Host && (wasHost || previous.state == SessionState::Unknown))

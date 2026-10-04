@@ -35,6 +35,12 @@ namespace compositor
 	/// effect's `cb_menu` makes the Composite pass skip Minecraft's world, and the Final pass still adds the overlay (now
 	/// only Minecraft's frame around the menu). Every frame from the game thread; a change is logged.
 	void set_menu_mode(bool menu);
+	/// The player is in the Afterlife hub (megaplan 7-D1, `hub in:true`): the effect's `cb_full` makes the Composite pass
+	/// show Minecraft's own picture on every pixel (as rendered, no re-projection and no depth blending against Night
+	/// City), the Final pass adds only the overlay, and a stalled Minecraft's last frame stays up for a couple of seconds
+	/// instead of flashing Night City (the way a loading cover does). A Cyberpunk menu passed through still shows. Every
+	/// frame from the game thread; a change is logged.
+	void set_full_screen(bool full);
 	/// The Sandevistan (kind 0) or Kerenzikov (kind 1) screen effect starts now for `seconds` (re-test 3 plan section
 	/// 1.10); seconds <= 0 ends it (it eases out over 0.4 s). set_active(false) clears it at once. Any thread.
 	void set_slowmo(int kind, float seconds);

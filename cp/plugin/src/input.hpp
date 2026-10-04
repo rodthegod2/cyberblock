@@ -7,6 +7,10 @@
 // Cyberpunk dialogue offers two or more choices, E, Q, 1-4 and the wheel stay Cyberpunk's. While a Minecraft screen is
 // open every key but F9 is kept from Cyberpunk (V stands still), typed text and the editing keys go to the screen, the raw
 // mouse drives Minecraft's cursor and Esc goes to Minecraft instead of opening Cyberpunk's pause menu.
+// In the Afterlife hub (world::hub_in, megaplan 1.9 amendment 2026-10-04; V parked, Minecraft full-screen) W, A, S, D
+// and Ctrl also go to Minecraft as `key` forward, left, back, right and sneak, Space and the Shifts (jump, sprint) and
+// these five are kept from Cyberpunk, and the raw mouse motion goes as `look` deltas instead of turning Cyberpunk's
+// camera. Logged as 'hub: input to Minecraft on|off'.
 // Audit: docs/notes/cp-mechanics-audit.md A.3.
 #pragma once
 #include <cstdint>

@@ -566,6 +566,44 @@ VALIDATORS and a fake host mode, in the phase that adds it.
 > plus content; walk/run from position deltas; class default colour. (g) the hold-high-until-a-down-ray-hits method is
 > the method. (h) only streamed targets; others answer `cyberblock.hack.out_of_range`.
 
+> **Amendment 2026-10-04 (Phase 7 contract; package 7D review).** Names are unchanged; this fixes where the Phase 7 rows
+> of 1.8 and 1.9 meet, so 7S, 7V, 7H and 7P build to one shape. The integrator aligns the other packages to it.
+>
+> **Section 1.8, Phase 7 row:**
+> 1. **`buy` and `sell` are UI actions, not events.** They reach the scripts through `Cyberblock_NextUiAction` (the
+>    LOCAL `uiact` class, like `track` or `fasttravel`), never through `Cyberblock_NextEvent`: `Cyberblock_UiActionHash` =
+>    the item's line `hash`, `Cyberblock_UiActionId` = the line's index within its side (the `buy` groups, or the `sell`
+>    groups, in reply order), `Cyberblock_UiActionArg` = the quantity as a decimal string. One vendor implementation
+>    stays: 7V's `Vendors.reds` (dispatched from `Menus.reds`). 7S's `n"buy"`/`n"sell"` branch of `Events.reds` and its
+>    `VendorStock.reds` trade path are dropped, or routed to 7V's handler, before merging. The stock `reply` is sent
+>    unrequested when the vendor opens (7V). The DLL has no `vendorreq` action.
+> 2. **`hub` (flag) stays an event** and is kept while Cyberblock is not Active, like `park`: Hub.reds keeps its own copy
+>    and re-parks V while it says in, so the scripts must hear every out. The DLL queues a `hub` event (flag false) whenever
+>    it ends the hub itself (a `hello`, a link drop, a non-host `session`), and one with flag true whenever it shows it.
+>
+> **Section 1.9, Phase 7 rows:**
+> 3. **`hub` and the session.** The DLL shows the hub (full-screen Minecraft) only while its session is `host`. A `hub`
+>    that arrives before the host grant (no session yet, a guest locked until `/login`, a refusal) is remembered and
+>    shown at the grant, with its `hub` event queued after the `session` event. On every non-host `session`, a `hello`
+>    and a link drop the DLL ends the hub (cleaned like a link drop, section 1.2). The remembered word is forgotten on a
+>    `hello`, a link drop, `session none` and `hub in:false`. The server (7H) still sends `hub {in}` after every host grant
+>    (`hs_ack role host`, including after `/login` and a reconnect) while the player is in `cyberblock:afterlife`. Repeats
+>    are harmless. The mpcheck `hub` scenario (7P) covers guest, then `hub`, then host.
+> 4. **Input in the hub.** While the hub is shown and the DLL forwards input (Cyberblock On, on foot, no Cyberpunk menu,
+>    linked, window in front), W, A, S, D and Ctrl go DOWN as `key` `forward`, `left`, `back`, `right`, `sneak` (down and
+>    up, with `mods`). Space and both Shifts go as `jump` and `sprint`, as before. All seven are kept from Cyberpunk, and
+>    the raw mouse motion goes as `look {d:[dyaw, dpitch]}` (0.15 degrees per count, at most 120 per second) while
+>    Cyberpunk's own camera motion is zeroed. Mouse buttons, the wheel, E, Q, T, X, 1-9, `/`, F5 and the binds work as
+>    before. While in the hub the client (7H) stops `PlayerSync` from placing Steve on V and drives Steve from these keys
+>    and look deltas. Today `Flight.look` applies `look` only while gliding, and `ClientInput` ignores key names it does
+>    not know, so older clients are unaffected. DLL log line: `hub: input to Minecraft on|off`.
+> 5. **`reply` (ext) `kind:"vendor"`:** each group's `kind` ∈ `buy` (the vendor's stock), `sell` (what V can sell to it).
+>    The DLL keeps them for vendor replies and maps any other value to `buy`. The other reply kinds keep their own group
+>    kinds, so `buy` or `sell` there becomes `other`. The client's `UiModel` validator accepts both (7V, 7P); 7V's `done:true`
+>    on sell groups stays allowed but is no longer the marker.
+> 6. **`uiact` `buy` / `sell`:** `hash` 1..2^32-1 (required), `id` = the line index of item 1, `arg` = the quantity. 7P's
+>    protocol rows (`vendorreq`, "one unit per action", `id` = the reply's id) are aligned to this by the integrator.
+
 ### 1.10 Keys (unchanged; keep the table clash-free)
 | Key | Action | Rebindable |
 |---|---|---|

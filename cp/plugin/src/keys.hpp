@@ -71,7 +71,14 @@ namespace cb::keys
 		/// A Cyberpunk call rings or an actionable notification shows (Cyberblock_SetPhonePrompt) and no Minecraft screen
 		/// covers it: T answers or replies in Cyberpunk instead of opening Minecraft's chat (re-test 3 task D6).
 		bool phone = false;
+		/// The Afterlife hub is shown (world::hub_in, megaplan 1.9 amendment 2026-10-04): V is parked and Minecraft walks
+		/// Steve, so W A S D, Space, both Shifts and both Ctrls are Minecraft's too.
+		bool hub = false;
 	};
+
+	/// In the hub: the `key` name Minecraft walks Steve by for W, A, S, D and Ctrl ("forward", "left", "back", "right",
+	/// "sneak"); nullptr for any other key (Space and Shift keep their "jump" and "sprint").
+	const char *hub_move_name(uint32_t vk);
 
 	/// T while Context::phone: Cyberpunk's (answer / reject a call, reply to a message).
 	bool is_phone_key(uint32_t vk);
@@ -80,7 +87,8 @@ namespace cb::keys
 	bool is_choice_key(uint32_t vk);
 
 	/// Keys Cyberpunk never sees while forwarding: E, Q, T, X, 1-9, "/", F5 and the six bound keys (but not E, Q and 1-4
-	/// while `context.choices`, nor T while `context.phone`), every key while `context.screenOpen`, and F9 (Cyberblock's toggle, which input.cpp keeps
+	/// while `context.choices`, nor T while `context.phone`), W A S D, Space, Shift and Ctrl while `context.hub`, every key
+	/// while `context.screenOpen`, and F9 (Cyberblock's toggle, which input.cpp keeps
 	/// from Cyberpunk in every state, so its QuickLoad never fires). Esc is decided by input.cpp.
 	bool is_swallowed(uint32_t vk, const Binds &binds, Context context = {});
 

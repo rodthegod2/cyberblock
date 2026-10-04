@@ -278,7 +278,7 @@ namespace cb::ui
 		}
 		json g = {{"hash", hash},
 				  {"title", clean_text(title, kTitleBytes)},
-				  {"kind", known_or(kind, kGroupKinds, "other")},
+				  {"kind", m_kind == "vendor" ? known_or(kind, kVendorGroupKinds, "buy") : known_or(kind, kGroupKinds, "other")},
 				  {"tracked", tracked},
 				  {"done", done},
 				  {"lines", json::array()}};
@@ -302,7 +302,8 @@ namespace cb::ui
 			++m_dropped;
 			return;
 		}
-		json l = {{"hash", hash}, {"text", clean_text(text, kTextBytes)}, {"state", std::clamp(state, 0, 2)}};
+		const int32_t top = m_kind == "vendor" ? std::numeric_limits<int32_t>::max() : 2;
+		json l = {{"hash", hash}, {"text", clean_text(text, kTextBytes)}, {"state", std::clamp(state, 0, top)}};
 		const size_t bytes = l.dump().size() + 1;
 		if (!fits(bytes))
 		{
@@ -412,6 +413,8 @@ namespace cb::ui
 				action.hash = uint32_t(wire::number(m, "hash", 0.0, 4294967295.0));
 			if (m.contains("hash") && double(action.hash) != m["hash"].get<double>())
 				throw wire::Bad{"hash is not a whole number"};
+			if ((action.a == "buy" || action.a == "sell") && action.hash == 0)
+				throw wire::Bad{"hash (the item) is missing or 0"};
 			if (m.contains("id"))
 				action.id = wire::integer(m, "id", double(std::numeric_limits<int32_t>::min()), double(std::numeric_limits<int32_t>::max()));
 			return action;

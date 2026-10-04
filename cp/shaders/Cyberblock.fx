@@ -44,6 +44,10 @@ uniform float cb_portal_warp < hidden = true; > = 0.0;
 // A Cyberpunk menu is open and passed through (no Minecraft screen replaced it): Minecraft's world is not drawn over it;
 // the overlay (Minecraft's frame around the menu) still is.
 uniform bool cb_menu < hidden = true; > = false;
+// The Afterlife hub (megaplan 7-D1): the player is in a Minecraft-only place, so Minecraft's frame is shown full-screen as
+// rendered (the loading cover's way): no re-projection, no depth test against Night City, no relighting. Pixels Minecraft
+// left empty (alpha 0: the sky) get a dark fill instead of Night City. The overlay (hand, HUD, screens) is added on top.
+uniform bool cb_full < hidden = true; > = false;
 // The Sandevistan / Kerenzikov screen effect (re-test 3, F10): x intensity 0..1 (0.15 s ease-in, hold, 0.4 s ease-out;
 // 0 while a Cyberpunk menu is open), y kind (0 Sandevistan, 1 Kerenzikov), z seconds since it started, w 0.
 uniform float4 cb_slowmo < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
@@ -284,6 +288,13 @@ void PS_Composite(float4 pos : SV_Position, float2 uv : TEXCOORD, out float4 out
 	outColor = float4(host, 1.0);
 	if (!cb_active || cb_menu)
 		return;
+	if (cb_full)
+	{
+		// premultiplied world over the fill; McInfo stays 0 (no Minecraft cover, so no glow, contact shadow or edge softening)
+		const float4 w = tex2D(sWorld, mc_uv(float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0)));
+		outColor = float4(w.rgb + float3(0.03, 0.035, 0.05) * (1.0 - w.a), 1.0);
+		return;
+	}
 
 	// Where this Night City pixel's view ray lands in Minecraft's frame (screen-locked unless re-projected).
 	float2 muv = mc_uv(float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0));
@@ -441,6 +452,12 @@ float3 PS_Final(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
 {
 	if (!cb_active)
 		return tex2D(ReShade::BackBuffer, uv).rgb;
+	if (cb_full)
+	{
+		// the hub: the composited Minecraft picture and its overlay, nothing of Night City and none of the world effects
+		const float4 hubOverlay = tex2D(sOverlay, mc_uv(float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0)));
+		return hubOverlay.rgb + saturate(tex2D(sComposite, uv).rgb) * (1.0 - hubOverlay.a);
+	}
 	const float aspect = BUFFER_WIDTH * BUFFER_RCP_HEIGHT;
 	const float t = Timer * 0.001;
 	// shake: rotate and move the picture a little, zoomed in just enough that no edge shows
