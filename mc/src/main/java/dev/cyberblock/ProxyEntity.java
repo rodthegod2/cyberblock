@@ -1,5 +1,6 @@
 package dev.cyberblock;
 
+import dev.cyberblock.cyber.CyberwareEffects;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -236,20 +237,25 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 		Vec3 look = attacker.getLookAngle();
 		Vec3 along = Math.hypot(look.x, look.z) > 1.0E-3 ? look : this.position().subtract(attacker.position());
 		double strength = attacker instanceof LivingEntity living ? this.knockbackLevel(level, source, living) : 0.0;
-		boolean vehicle = this.getType() == ProxyEntities.VEHICLE;
-		return ProxyDamage.meleeOn(along.x, along.z, strength, attacker instanceof Player player && gorillaArms(player, vehicle), vehicle);
+		if (!(attacker instanceof Player player)) {
+			return ProxyDamage.melee(along.x, along.z, strength);
+		}
+
+		if (this.getType() == ProxyEntities.VEHICLE) {
+			return ProxyDamage.meleeOn(along.x, along.z, strength, gorillaArms(player), true);
+		}
+
+		// on a person the implant's own ATTACK_KNOCKBACK modifier is its strength, all of it only on a charged swing (leftover bug QG)
+		return ProxyDamage.melee(along.x, along.z, ProxyDamage.personLevel(strength, CyberwareEffects.gorillaKnockback(player),
+			ProxyDamage.charged(player), perk("gorilla_arms")));
 	}
 
 	/**
-	 * Whether Gorilla Arms adds to this blow (plan retest3 section 1.9): the gorilla_arms perk, or the gorilla_arms implant swung with
-	 * an empty main hand (plan retest2 section 1.7), one shove, never two. On a person the implant's own ATTACK_KNOCKBACK modifier
-	 * (CyberwareEffects, empty hand) already is its extra strength, so only the perk without it adds; a vehicle's push is tripled by
-	 * either.
+	 * Whether Gorilla Arms triples a vehicle's push (plan retest3 section 1.9): the gorilla_arms perk, or the gorilla_arms implant
+	 * swung with an empty main hand (plan retest2 section 1.7), one shove, never two. People: ProxyDamage.personLevel.
 	 */
-	private static boolean gorillaArms(final Player attacker, final boolean vehicle) {
-		boolean implant = Bridge.installedCyberware.contains("gorilla_arms") && attacker.getMainHandItem().isEmpty();
-		boolean perk = perk("gorilla_arms");
-		return vehicle ? perk || implant : perk && !implant;
+	private static boolean gorillaArms(final Player attacker) {
+		return perk("gorilla_arms") || Bridge.installedCyberware.contains("gorilla_arms") && attacker.getMainHandItem().isEmpty();
 	}
 
 	/** The Punch level of the bow an arrow came from (vanilla AbstractArrow.doKnockback asks the same), 0 for anything else. */
@@ -337,11 +343,12 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 
 	/**
 	 * What vanilla's LivingEntity.getKnockback (protected) works out for the attacker's weapon, with a player's sprint bonus (plan
-	 * retest3 section 1.9: mobs get none).
+	 * retest3 section 1.9: mobs get none). As in vanilla's Player.attack the sprint bonus needs the strong (charged) blow: a quick
+	 * jab while sprinting gets none.
 	 */
 	private double knockbackLevel(final ServerLevel level, final DamageSource source, final LivingEntity attacker) {
 		float base = (float) attacker.getAttributeValue(Attributes.ATTACK_KNOCKBACK);
 		return ProxyDamage.knockbackLevel(EnchantmentHelper.modifyKnockback(level, attacker.getWeaponItem(), this, source, base),
-			attacker instanceof Player && attacker.isSprinting());
+			attacker instanceof Player player && player.isSprinting() && ProxyDamage.charged(player));
 	}
 }
