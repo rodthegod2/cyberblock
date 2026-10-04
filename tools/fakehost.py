@@ -77,6 +77,17 @@ Phase 3 mode (shared/protocol.md "Phase 3"; combinable with the layer flags exce
              answered 2 s later with `vteleported ok:true` (V is there from then on) and every `park` with `parked`.
              --shift DX moves the street, the figures and V DX blocks east; --env-hours H adds H hours to the clock and makes the weather
              fog (a second fake host that overlaps the first and whose sky must never reach the server).
+Phase 4 mode (shared/protocol.md "Phase 4"; combinable with the layer flags except --layer4, --view, --stairs and --seat (V stands on the
+street like --replica, which it may be combined with); same --hold, --cmd, --port, --name and NPC resend; prints `devact` (what Minecraft
+asks the devices to do) and `devresult` (what this fake DLL answered)):
+  --devices  Night City's devices on the replica street's ground (south of the road, `shift` moves them): a door (id ...763, the guest door),
+             a light (...764), a camera (...765), a vending machine (...766), an elevator (...767), a sealed quest door (...768: st -2, fl 20, it
+             shows greyed) and a door a Night City person opens and closes every 4 s (...769: `devstate by:npc`). The full `devices` list is
+             sent when the client makes the DLL the host and every 5 s after; one `ground` column goes through the guest door (a DLL whose probe
+             hit the door: the server must keep the door). Every valid `devact` is answered with a `devresult` and, when the device changed, its
+             `devstate by:guest`: `open`, `close`, `lock`, `unlock`, `on`, `off`, `toggle`, `disable`, `enable`, `distract` and `friendly` are
+             ok on the kinds they make sense for (a refusal says why: `locked`, `not a door`, `not applicable`), `call`, `buy` and `breach` are
+             `unsupported`, a quest-locked device answers `quest locked` and an unknown device id `device gone`. A bad `devact` is dropped.
 Multiplayer (shared/protocol.md "Multiplayer (Phase 1)"; tools/mpcheck.py starts one fake host per host client):
   --name NAME      prefixes every line this tool prints with `[NAME] `, so the output of two fake hosts can be told apart.
   --ver VERSION    the DLL version in the `hello` (`ver`, at most 32 characters). The default is this checkout's version, the
@@ -127,9 +138,9 @@ JUMP_AT, JUMP_FOR = 0.5, 0.1  # layer 4: seconds after the scenario starts, and 
 HACK_KEY, SKILLS_KEY, KILLED_AT = (1.0, 2.0), (2.5, 2.6), 3.0  # layer 6: (down, up) and the kill, in seconds
 CYBERWARE_KEYS, ACTIVATE_KEY = ((3.5, 3.6), (4.0, 4.1)), (4.5, 4.6)  # layer 6: U opens the Cyberware screen then closes it; Y is a tap
 PCELLS_AHEAD, MAX_PCELLS = 0.5, 64  # layer 4: seconds ahead of a projectile for its wall, and the `pcells` cap
-MODES = ("ui", "hacks", "seat", "view", "stairs", "replica")  # re-test 3: --ui, --hacks, --seat; Phase Q: --view, --stairs; Phase 3: --replica
+MODES = ("ui", "hacks", "seat", "view", "stairs", "replica", "devices")  # re-test 3: --ui, --hacks, --seat; Phase Q: --view, --stairs; Phase 3: --replica; Phase 4: --devices
 MODE_EVENTS = {"ui": {"uiact", "persp", "binds"}, "hacks": {"hack", "uiact", "persp", "binds"}, "seat": {"persp", "binds"},
-               "view": {"prefs"}, "stairs": {"prefs"}, "replica": {"vteleport", "park"}}
+               "view": {"prefs"}, "stairs": {"prefs"}, "replica": {"vteleport", "park"}, "devices": {"devact"}}
 CAMERA_OWNERS = ("view", "stairs", "seat", "replica")  # the modes that drive the camera by themselves
 UI_MENU = (6.0, 7.0)  # --ui: seconds in which `cam.menu` is true (a pass-through menu is open)
 PERSPECTIVE_KEY = (8.0, 8.1)  # --ui: the F5 tap that makes Minecraft answer `persp`
@@ -593,6 +604,115 @@ def teleport_answer(m: dict) -> dict | None:
     return {"t": "vteleported", "id": rid, "ok": True, "reason": "", "p": [float(c) for c in p]}
 
 
+# ---- Phase 4: --devices (shared/protocol.md "Phase 4"): a handful of Night City devices on the street, the way the scripts and the DLL send them ----
+# The scene stands on the --replica street's ground (the slab's area), south of the road, so a dedicated server has ground under the devices. All
+# of it is deterministic. `DEVICE_BLOCKS` is the protocol's `devices` list; positions are Minecraft cells with the device at the cell's centre.
+DEVICE_ID_BASE = 11529215046068469760  # the protocol.md example ids are BASE + 3 .. BASE + 8
+DEVICE_ACTS = ("open", "close", "lock", "unlock", "on", "off", "toggle", "call", "buy", "disable", "enable", "friendly", "breach", "distract")
+UNSUPPORTED_ACTS = ("call", "buy", "breach")  # not Cyberpunk actions (megaplan amendment 1.9 item 6): the DLL answers `unsupported`
+DEVICE_LIST_EVERY = 5.0  # seconds between two full `devices` lists
+NPC_DOOR_EVERY = 4.0  # seconds between two changes a Night City person makes to the NPC door (`devstate by:npc`)
+DEVICE_FEET = SLAB_Y + 1  # the cell row the devices stand in (on top of the street's floor)
+FL_LOCKED, FL_SECURE, FL_QUEST, FL_BROKEN, FL_POWERED = 1, 2, 4, 8, 16
+DEVICE_SCENE = (  # key, id offset, class, kind, cell (x, y, z) relative to the street's centre, yaw, st, fl
+    ("door", 3, "Door", "door", (-2, DEVICE_FEET, 3), 0.0, 0, FL_POWERED),  # the door a guest opens and closes
+    ("light", 4, "ElectricLight", "light", (0, DEVICE_FEET, 4), 0.0, 1, FL_POWERED),
+    ("camera", 5, "SurveillanceCamera", "camera", (6, DEVICE_FEET + 2, 3), -135.0, 1, FL_POWERED),
+    ("vending", 6, "VendingMachine", "vending", (7, DEVICE_FEET, 3), 180.0, 1, FL_POWERED),
+    ("elevator", 7, "LiftDevice", "elevator", (-7, DEVICE_FEET, 4), 0.0, 0, FL_POWERED),
+    ("sealed", 8, "Door", "door", (-5, DEVICE_FEET, 3), 0.0, -2, FL_QUEST | FL_POWERED),  # a quest door: sealed, shows greyed
+    ("npcdoor", 9, "Door", "door", (2, DEVICE_FEET, 3), 0.0, 0, FL_POWERED),  # a Night City person opens and closes it every NPC_DOOR_EVERY seconds
+)
+DOOR_GROUND_KEY = "door"  # --devices also sends one `ground` column through this door: a DLL that did not filter its hit (the server must keep the door)
+
+
+def device_ids() -> dict[str, str]:
+    """key -> the device's id as a decimal string."""
+    return {key: str(DEVICE_ID_BASE + offset) for key, offset, *_ in DEVICE_SCENE}
+
+
+def device_cell(key: str, shift: int = 0) -> tuple[int, int, int]:
+    """The Minecraft cell the device `key` stands in (x shifted by --shift)."""
+    x, y, z = next(cell for k, _, _, _, cell, *_ in DEVICE_SCENE if k == key)
+    return x + shift, y, z
+
+
+def device_table(shift: int = 0) -> dict[str, dict]:
+    """id -> the device's current data (what a `devices` entry says, plus `key`), at its start state."""
+    table = {}
+    for key, offset, cls, kind, (x, y, z), yaw, st, fl in DEVICE_SCENE:
+        table[str(DEVICE_ID_BASE + offset)] = {"key": key, "cls": cls, "kind": kind, "p": [x + shift + 0.5, float(y), z + 0.5], "yaw": yaw, "st": st, "fl": fl}
+    return table
+
+
+def devices_message(table: dict[str, dict]) -> dict:
+    """The full `devices` list of `table` (nearest first is not modelled: the scene is small)."""
+    return {"t": "devices", "list": [{"id": i, **{k: d[k] for k in ("cls", "kind", "p", "yaw", "st", "fl")}} for i, d in table.items()]}
+
+
+def device_ground(shift: int = 0) -> dict:
+    """One `ground` column through the guest door (a DLL whose probe hit the door): the server must not make a replica block there."""
+    x, y, z = device_cell(DOOR_GROUND_KEY, shift)
+    return {"t": "ground", "c": [x, z, y, y + 1], "m": [1]}
+
+
+def devstate_message(dev_id: str, dev: dict, by: str) -> dict:
+    return {"t": "devstate", "id": dev_id, "st": dev["st"], "fl": dev["fl"], "by": by}
+
+
+def apply_act(dev: dict | None, act: str) -> tuple[bool, str]:
+    """Run `act` on `dev` (changed in place) the way the DLL does through the device's own actions: (ok, reason). `call`, `buy` and
+    `breach` are `unsupported`, a quest-locked device is never touched, a device that is not in the table is `device gone`."""
+    if act in UNSUPPORTED_ACTS:
+        return False, "unsupported"
+    if dev is None:
+        return False, "device gone"
+    if dev["fl"] & FL_QUEST and not dev.get("disabled"):  # a quest door or a device the game disabled; one that `disable` switched off may be enabled again
+        return False, "quest locked"
+    door = dev["kind"] == "door"
+    if act in ("open", "close", "lock", "unlock") and not door:
+        return False, "not a door"
+    if act in ("on", "off", "disable", "enable") and door:
+        return False, "not applicable"
+    if act in ("open", "close", "toggle") and door and dev["st"] == -1:
+        return False, "locked"
+    if door and act in ("open", "close", "toggle"):
+        dev["st"] = {"open": 1, "close": 0, "toggle": 1 - dev["st"]}[act]
+    elif door and act == "lock":
+        dev["st"], dev["fl"] = -1, dev["fl"] | FL_LOCKED
+    elif door and act == "unlock":
+        dev["st"], dev["fl"] = 0, dev["fl"] & ~FL_LOCKED
+    elif act in ("on", "off", "toggle", "disable", "enable"):
+        if act == "disable":
+            dev["st"], dev["fl"], dev["disabled"] = -2, dev["fl"] | FL_QUEST, True  # the amendment: a DISABLED device is quest-locked (bit 4)
+        elif act == "enable":
+            dev["st"], dev["fl"], dev["disabled"] = 1, dev["fl"] & ~FL_QUEST, False
+        else:
+            dev["st"] = {"on": 1, "off": 0, "toggle": 1 - max(dev["st"], 0)}[act]
+    return True, ""  # `friendly` and `distract` change no state of their own
+
+
+def devact_answers(table: dict[str, dict], m: dict) -> list[dict] | None:
+    """The DLL's answer to a DOWN `devact` (None for a message with bad fields, which the real DLL drops): `devresult` first, then, when
+    the device changed, its `devstate` (`by:"guest"`: every `devact` comes from the server's routing of a player, see protocol.md)."""
+    rid, dev_id, act = m.get("id"), m.get("dev"), m.get("act")
+    if not (isinstance(rid, int) and not isinstance(rid, bool) and rid >= 0 and isinstance(dev_id, str) and dev_id.isascii() and dev_id.isdigit()
+            and act in DEVICE_ACTS):
+        return None
+    dev = table.get(dev_id)
+    before = (dev["st"], dev["fl"]) if dev else None
+    ok, reason = apply_act(dev, act)
+    answers = [{"t": "devresult", "id": rid, "ok": ok, "reason": reason}]
+    if ok and dev and (dev["st"], dev["fl"]) != before:
+        answers.append(devstate_message(dev_id, dev, "guest"))
+    return answers
+
+
+def npc_door_step(u: float) -> int:
+    """How many NPC door changes have happened `u` seconds (unscaled) into the scenario (the first one at NPC_DOOR_EVERY)."""
+    return int(u / NPC_DOOR_EVERY)
+
+
 class Body:
     """Where V is in layer 4: falls from FALL_FROM at FALL_SPEED until Minecraft reports `flight`, then follows it (and
     says `fly:true`, as the real host's drive does); a touchdown (`flight` inactive) or an ender pearl's `teleport` puts V
@@ -637,6 +757,10 @@ class Cyberpunk:
         self.view_back = False  # --ui: Minecraft asked for the third-person view (`persp back`), so `cam.fp` is false
         self.delayed: list[tuple[float, dict]] = []  # (perf_counter due time, message): the `ping` and `frenzy` spreads of --hacks
         self.session: str | None = None  # the last `session` state Minecraft sent (a change to host re-sends the ground)
+        self.devices = "devices" in modes  # --devices (Phase 4): the device scene on the street's ground
+        self.street = self.replica or self.devices  # the street's ground and camera: --replica and --devices both stand on it
+        self.dev_table = device_table(shift)  # id -> the device's current data (actions and the NPC door change it)
+        self.dev_list_step, self.dev_npc_step = -1, 0  # --devices: the last full list (every DEVICE_LIST_EVERY s) and the last NPC door change
 
     def script(self) -> list[tuple[float, dict]]:
         """(seconds after the scenario starts, message), in time order: the layer 4 jump tap, the layer 6 keys and kill."""
@@ -711,23 +835,43 @@ class Cyberpunk:
                 "fp": not self.view_back, "pl": feet, "h": yaw, "cr": False, "air": False, "fly": False}
 
     def frame_messages(self, t: float) -> list[dict]:
-        """Messages sent alongside a frame's `cam`: --replica sends `env` when the clock or the weather steps; --stairs looks at the aim
-        every AIM_EVERY s and sends `aim` when it changed by AIM_STEP."""
+        """Messages sent alongside a frame's `cam`: --replica sends `env` when the clock or the weather steps; --devices sends the full
+        `devices` list every DEVICE_LIST_EVERY s and a Night City person's change to the NPC door every NPC_DOOR_EVERY s (`devstate
+        by:npc`); --stairs looks at the aim every AIM_EVERY s and sends `aim` when it changed by AIM_STEP."""
+        out = []
+        if self.devices:
+            out += self.device_messages(t / SCRIPT_SCALE)
         if self.replica:
             step = env_index(t / SCRIPT_SCALE)
-            if step == self.env_step:
-                return []
-            self.env_step = step
-            return [replica_env(t / SCRIPT_SCALE, self.env_hours)]
+            if step != self.env_step:
+                self.env_step = step
+                out.append(replica_env(t / SCRIPT_SCALE, self.env_hours))
+            return out
         if "stairs" not in self.modes or (self.aim_at is not None and t - self.aim_at < AIM_EVERY * SCRIPT_SCALE - 1e-9):
-            return []
+            return out
         self.aim_at = t
         cam = self.stairs_cam(0, t)
         d = stairs_aim(cam["p"], cam["r"][0], cam["r"][1])
         if self.aim_d is not None and abs(d - self.aim_d) < AIM_STEP and (d < 0) == (self.aim_d < 0):
-            return []
+            return out
         self.aim_d = d
-        return [{"t": "aim", "d": d}]
+        return [*out, {"t": "aim", "d": d}]
+
+    def device_messages(self, u: float) -> list[dict]:
+        """--devices, `u` unscaled seconds into the scenario: the full list when its 5 s step came round, and the NPC door's changes (it
+        opens at the first one, closes at the next, and so on) as `devstate by:npc`; the table follows, so the next list agrees."""
+        out = []
+        for step in range(self.dev_npc_step + 1, npc_door_step(u) + 1):
+            door_id = device_ids()["npcdoor"]
+            door = self.dev_table[door_id]
+            door["st"] = 1 if step % 2 else 0
+            out.append(devstate_message(door_id, door, "npc"))
+            self.dev_npc_step = step
+        step = int(u / DEVICE_LIST_EVERY)
+        if step != self.dev_list_step or out:  # a change the list does not know yet would make the next list say it anyway; send it now too
+            self.dev_list_step = step
+            out.append(devices_message(self.dev_table))
+        return out
 
     def due(self, now: float) -> list[dict]:
         """The delayed messages (--hacks) whose time has come, oldest first; they are removed."""
@@ -743,7 +887,7 @@ class Cyberpunk:
         orbit pose held (`fp:false` once Minecraft asked for the third-person view, `menu:true` while --ui shows a pass-through menu)."""
         if "seat" in self.modes:
             return seat_cam(f, t)
-        if self.replica:
+        if self.street:
             return replica_cam(f, self.arrived or (REPLICA_FEET[0] + self.shift, REPLICA_FEET[1], REPLICA_FEET[2]))
         if "view" in self.modes:
             return self.view_cam(f, t)
@@ -763,14 +907,18 @@ class Cyberpunk:
             was, self.session = self.session, m.get("state")
             self.env_step = -1  # a new server session needs the clock again
             if self.session == "host" and was != "host":  # a new server session: it needs the whole ground and the NPCs again
-                ground = replica_ground(self.shift) if self.replica else [{"t": "ground", "c": ground_slab()}]
-                return [{"t": "clear"}, *ground, *([self.npcs(0.0)] if self.layers or self.modes else [])]
+                ground = replica_ground(self.shift) if self.street else [{"t": "ground", "c": ground_slab()}]
+                ground += [device_ground(self.shift)] if self.devices else []  # a hit on a door the DLL did not filter out
+                devices = [devices_message(self.dev_table)] if self.devices else []  # the DLL starts over: the whole list again
+                return [{"t": "clear"}, *ground, *devices, *([self.npcs(0.0)] if self.layers or self.modes else [])]
             return []
         if self.replica and t == "vteleport" and (answer := teleport_answer(m)):
             self.delayed.append((time.perf_counter() + TELEPORT_DELAY * SCRIPT_SCALE, answer))  # `vteleported` after 2 s (due() lets V arrive)
             return []
         if self.replica and t == "park" and isinstance(m.get("on"), bool):
             return [{"t": "parked", "on": m["on"], "ok": True, "reason": ""}]
+        if self.devices and t == "devact":
+            return devact_answers(self.dev_table, m) or []
         if t == "persp" and m.get("mode") in ("first", "back"):
             self.view_back = m["mode"] == "back"
         if t == "prefs":
@@ -836,6 +984,8 @@ async def listen(ws, host: Cyberpunk) -> None:
             print(f"{host.tag}{m['t']}: {json.dumps(m)}")
         for reply in host.reply(m):
             await ws.send(json.dumps(reply))
+            if host.devices and reply.get("t") == "devresult":  # --devices: what this DLL answered, so a harness can see the refusals too
+                print(f"{host.tag}devresult: {json.dumps(reply)}")
 
 
 async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, commands: Sequence[str], host: Cyberpunk) -> None:
@@ -934,9 +1084,10 @@ def main() -> int:
     ap.add_argument("--view", action="store_true", help="after the orbit: third-person view (cam fp:false, with vdbg while prefs.debug is true): V walks, sprints, then falls and glides; the camera follows Minecraft's prefs; print prefs")
     ap.add_argument("--stairs", action="store_true", help="after the orbit: place a staircase of five blocks, walk V up it (step-up assist lifts), send aim at the block faces (box 2 mm in front); print prefs")
     ap.add_argument("--replica", action="store_true", help="after the orbit: the Phase 3 replica script: a street of ground with materials (`ground.m`), `unground seen`, walking and driving figures, `env` changes, `vteleport` answered after 2 s; print vteleport/park")
-    ap.add_argument("--shift", type=int, default=None, metavar="DX", help="--replica: move the street, the figures and V DX blocks east (a second fake host that overlaps the first)")
+    ap.add_argument("--devices", action="store_true", help="after the orbit: the Phase 4 device scene on the --replica street's ground (a door, a light, a camera, a vending machine, an elevator, a sealed quest door and a door a Night City person opens and closes every 4 s): `devices` lists, `devstate`, every `devact` answered with `devresult` (ok for the supported acts, unsupported for call/buy/breach); print devact/devresult")
+    ap.add_argument("--shift", type=int, default=None, metavar="DX", help="--replica or --devices: move the street, the figures, the devices and V DX blocks east (a second fake host that overlaps the first)")
     ap.add_argument("--env-hours", type=int, default=None, metavar="H", help="--replica: add H hours to the `env` clock and make the weather fog (a second host whose sky must never reach the server)")
-    ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica: seconds to keep the link up and listen (default 10)")
+    ap.add_argument("--hold", type=float, default=10.0, help="--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica, --devices: seconds to keep the link up and listen (default 10)")
     ap.add_argument("--cmd", action="append", default=[], metavar="COMMAND", help='--layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs: a server command to send after the npcs, e.g. "summon tnt 0 64 0" (repeatable)')
     ap.add_argument("--name", default=None, help="a log prefix: every printed line starts with [NAME] (letters, digits, _ . -, at most 32), for two fake hosts at once")
     ap.add_argument("--ver", default=None, help=f"the DLL version in the hello (at most {MAX_VER} characters; default: this checkout's version; an empty value sends no ver, like a DLL from before Phase 1)")
@@ -961,11 +1112,15 @@ def main() -> int:
     if args.hold < 0:
         ap.error("--hold must not be negative")
     if args.cmd and not (layers or modes):
-        ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs or --replica")
+        ap.error("--cmd needs one of --layer2 .. --layer6, --ui, --hacks, --seat, --view, --stairs, --replica or --devices")
     if len(modes & set(CAMERA_OWNERS)) > 1 or (modes & {"view", "stairs", "replica"} and 4 in layers):
         ap.error("--view, --stairs, --seat, --replica and --layer4 each drive the camera: use only one of them")
-    if (args.shift is not None or args.env_hours is not None) and "replica" not in modes:
-        ap.error("--shift and --env-hours belong to --replica")
+    if "devices" in modes and (modes & {"view", "stairs", "seat"} or 4 in layers):
+        ap.error("--devices stands on the street like --replica (V is fixed there): do not combine it with --view, --stairs, --seat or --layer4")
+    if args.env_hours is not None and "replica" not in modes:
+        ap.error("--env-hours belongs to --replica")
+    if args.shift is not None and not modes & {"replica", "devices"}:
+        ap.error("--shift belongs to --replica and --devices")
     if args.shift is not None and abs(args.shift) > 1000:
         ap.error("--shift must be between -1000 and 1000 blocks")
     if args.env_hours is not None and not -23 <= args.env_hours <= 23:
