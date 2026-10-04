@@ -106,6 +106,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.device.block.DeviceBlocks.register();
 		// Phase 5K: the body attachment, /cyberblock body male|female and the [V] team prefix for linked players
 		dev.cyberblock.skin.CyberSkins.init();
+		// Phase 6I: the interaction map (Vehicle Panel, Traffic Tool, Net Map, Comms Panel) and its rhack routing (megaplan 6-I1)
+		dev.cyberblock.hack.actions.RemoteActions.init();
 		LOG.info("cyberblock loaded");
 	}
 

@@ -1,13 +1,20 @@
 package dev.cyberblock.cyber;
 
+import com.google.gson.JsonObject;
 import dev.cyberblock.Bridge;
+import dev.cyberblock.Cyberblock;
+import dev.cyberblock.hack.actions.RangeRule;
+import dev.cyberblock.net.HostSession;
+import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.ServerNet;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -27,7 +34,7 @@ import org.jspecify.annotations.Nullable;
 public final class Hacking {
 	/** A scanned target stays locked this long (the scan tooltip shows it as long). */
 	public static final long LOCK_NANOS = 5_000_000_000L;
-	/** A hack Cyberpunk never answered counts as failed (and is refunded) after this long once the owner's Cyberpunk is not On. */
+	/** A hack Cyberpunk never answered counts as failed (and is refunded) after this long once the owner's Cyberpunk is not On (nanoseconds). */
 	static final long ANSWER_NANOS = 10_000_000_000L;
 	/**
 	 * The same while the owner's Cyberpunk is On: it keeps a `hack` while it is paused and answers it later, so a refund after
@@ -65,11 +72,30 @@ public final class Hacking {
 	public record Locked(UUID owner, long target, boolean device, long untilNanos, double x, double y, double z, double height, String name) {
 	}
 
-	/** A sent hack waiting for its `hackresult`: who paid how much, and what went where (the lock it went to). */
-	private record Pending(UUID player, int cost, long sentNanos, Hack hack, Locked lock) {
+	/**
+	 * A sent hack waiting for its `hackresult`: who paid how much, and what went where (the lock it went to); `distance` is the
+	 * target's distance from the owner's V when it was sent (-1: unknown), for the Phase 0 (h) range check.
+	 */
+	private record Pending(UUID player, int cost, long sentNanos, Hack hack, Locked lock, double distance) {
 	}
 
+	/**
+	 * A `hackresult` whose request id is not a quickhack's: the interaction map's remote hacks (megaplan task 6-I1, `rhack`), Breach
+	 * daemons (6-B1). True when the id was the listener's own request.
+	 */
+	@FunctionalInterface
+	public interface ResultListener {
+		boolean onResult(MinecraftServer server, UUID owner, HackResult result);
+	}
+
+	private static final List<ResultListener> otherResults = new CopyOnWriteArrayList<>();
+
 	private Hacking() {
+	}
+
+	/** Adds a listener for the `hackresult` answers to requests other than quickhacks (server thread, registration order). */
+	public static void otherResults(final ResultListener listener) {
+		otherResults.add(listener);
 	}
 
 	/** How far the hack key's scan ray reaches (plan retest2 section 1.7): 80 blocks with Kiroshi optics installed, else 48. */
@@ -195,6 +221,30 @@ public final class Hacking {
 		}
 
 		ServerNet.ui(player, "scaninfo", info.toJson(entity == null ? -1 : entity));
+		if (!asker.equals(owner.uuid())) {
+			// megaplan task 6-I1: a guest's hack wheel names whose Night City the target is in (the owner routing)
+			HostSession session = HostSessions.of(owner.uuid());
+			ServerNet.ui(player, SCAN_OWNER, scanOwner(info.ok() && session != null ? session.name() : ""));
+		}
+	}
+
+	/** cyberblock:ui type for a guest: whose Night City his scanned target is in. */
+	public static final String SCAN_OWNER = "scanowner";
+
+	/** {"name":"host"} ("" when the scan found nothing). */
+	static String scanOwner(final String name) {
+		JsonObject m = new JsonObject();
+		m.addProperty("name", name);
+		return m.toString();
+	}
+
+	/**
+	 * Phase 0 check (h) for a guest's quickhack (megaplan section 4.1 h, RangeRule): metres from the owner's V to the locked target,
+	 * -1 when either place is unknown (a lock without a place, the owner offline); the check passes then.
+	 */
+	static double distanceFromV(final @Nullable ServerPlayer v, final Locked lock) {
+		boolean placed = lock.x() != 0.0 || lock.y() != 0.0 || lock.z() != 0.0;
+		return v == null || !placed ? -1.0 : v.position().distanceTo(new Vec3(lock.x(), lock.y(), lock.z()));
 	}
 
 	/** The first stack of hack's chip anywhere in the player's inventory (hotbar, main inventory, offhand), else EMPTY. Either side. */
@@ -265,10 +315,22 @@ public final class Hacking {
 			return false;
 		}
 
+		// a guest hacks from afar (Phase 0 h): every streamed target, or only within 50 m of V once the fallback is on
+		boolean remote = !owner.uuid().equals(player.getUUID());
+		HostSession session = remote ? HostSessions.of(owner.uuid()) : null;
+		double distance = remote ? distanceFromV(session == null ? null : session.player(), lock) : -1.0;
+		if (remote) {
+			announceRange();
+			if (distance >= 0.0 && !RangeRule.SERVER.allows(distance, true)) {
+				player.sendOverlayMessage(outOfRange());
+				return false;
+			}
+		}
+
 		CyberData.setRam(player, ram - cost);
 		player.getCooldowns().addCooldown(stack, hack.cooldownTicks());
 		CyberRoute.Key key = CyberRoute.hack(player.getUUID(), owner, lock.target(), hack, CyberData.has(player, Perk.CHAIN_HACK)).key();
-		pending.put(key, new Pending(player.getUUID(), cost, System.nanoTime(), hack, lock));
+		pending.put(key, new Pending(player.getUUID(), cost, System.nanoTime(), hack, lock, distance));
 		HackFx.start(key, player, hack, lock);
 		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.hack.fired", "Hack: %s", stack.getHoverName())
 			.withColor(HackFxRules.colour(hack)));
@@ -287,7 +349,21 @@ public final class Hacking {
 	public static void onResult(final MinecraftServer server, final UUID owner, final HackResult result) {
 		CyberRoute.Key key = new CyberRoute.Key(owner, result.id());
 		Pending p = pending.remove(key);
-		ServerPlayer player = p == null ? null : server.getPlayerList().getPlayer(p.player());
+		if (p == null) {
+			for (ResultListener l : otherResults) {
+				if (l.onResult(server, owner, result)) {
+					return;
+				}
+			}
+
+			return;
+		}
+
+		if (RangeRule.SERVER.observe(result.ok(), result.reason(), p.distance(), p.hack().wire())) {
+			announceRange();
+		}
+
+		ServerPlayer player = server.getPlayerList().getPlayer(p.player());
 		if (player == null) {
 			return;
 		}
@@ -306,8 +382,21 @@ public final class Hacking {
 		CyberData.setRam(player, Math.min(CyberData.maxRam(player), CyberData.ram(player) + cost));
 	}
 
+	/** The one log line saying which Phase 0 (h) path is active, at the first remote hack and when the fallback switches on. */
+	public static void announceRange() {
+		String line = RangeRule.SERVER.takeLine();
+		if (line != null) {
+			Cyberblock.LOG.info(line);
+		}
+	}
+
+	/** A remote target past the Phase 0 (h) fallback range. */
+	public static Component outOfRange() {
+		return Component.translatableWithFallback("cyberblock.hack.out_of_range", "Out of range: from here only targets within 50 m of the host's V can be hacked");
+	}
+
 	/** How long an unanswered hack waits for its `hackresult`: 10 s while the owner's Cyberpunk is not On, 60 s while it is. */
-	static long answerTimeout(final boolean ownerActive) {
+	public static long answerTimeout(final boolean ownerActive) {
 		return ownerActive ? CONNECTED_ANSWER_NANOS : ANSWER_NANOS;
 	}
 
@@ -351,5 +440,6 @@ public final class Hacking {
 		lastScanMs.clear();
 		scanned.clear();
 		HackFx.clear();
+		RangeRule.SERVER.reset();
 	}
 }
