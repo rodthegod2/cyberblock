@@ -158,6 +158,20 @@ public class CyberblockDeviceService extends ScriptableService {
     return this.live ? this.nearest : 999.0;
   }
 
+  // The listed device with this id (the id the last list sent), null when none (RemoteHacks.reds, Daemons.reds).
+  public func Find(id: Uint64) -> ref<Device> {
+    let i = ArrayFindFirst(this.ids, id);
+    if i < 0 {
+      return null;
+    }
+    return this.objects[i];
+  }
+
+  // Every device of the registry, attached or not (RemoteHacks.reds, Daemons.reds).
+  public func Known() -> array<wref<Device>> {
+    return this.known;
+  }
+
   // From the Device wraps: a listed device's persistent state changed or one of its actions ran.
   public func OnChanged(device: wref<Device>, by: CName) -> Void {
     if !this.live {

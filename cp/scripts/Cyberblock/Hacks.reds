@@ -219,7 +219,7 @@ public abstract class CyberblockHacks {
 
   // Audit B.1: the game's own quickhack path, without RAM cost and without the vanilla spread; the action's upload
   // time (seconds, 0 = instant) is returned.
-  private static func Upload(player: ref<PlayerPuppet>, target: ref<ScriptedPuppet>, action: TweakDBID) -> Float {
+  public static func Upload(player: ref<PlayerPuppet>, target: ref<ScriptedPuppet>, action: TweakDBID) -> Float {
     let record = TweakDBInterface.GetObjectActionRecord(action);
     let hack: ref<PuppetAction>;
     if IsDefined(record) && Equals(record.ActionName(), n"Ping") {
@@ -365,7 +365,7 @@ public abstract class CyberblockHacks {
   }
 
   // Audit B.4: the intersection manager flips every light of the intersection.
-  private static func FlipIntersection(light: ref<Device>) -> Bool {
+  public static func FlipIntersection(light: ref<Device>) -> Bool {
     let parents: array<ref<DeviceComponentPS>>;
     light.GetDevicePS().GetParents(parents);
     for parent in parents {

@@ -42,6 +42,18 @@ public native func Cyberblock_EventText() -> String;    // the current event's s
 //              n"enable" | n"distract" | n"friendly"; anything else is answered "unsupported"); answered by
 //              Cyberblock_DeviceResult whatever the state.
 // Natives declared in Devices.reds (section 1.8): Cyberblock_SubmitDevices, Cyberblock_DeviceState, Cyberblock_DeviceResult.
+// ---- Phase 6 (megaplan 2026-10-04 section 1.8 row 6, section 1.9 rows `rhack` / `daemon`, task 6-S1) ----
+// Events, filled by the DLL (package 6D), read with the getters above; no new native: both are answered with
+// Cyberblock_HackResult whatever the state (the reply travels as `hackresult`), reveals with Cyberblock_HackSpread `ping`:
+//   n"rhack":  EventId = request id, EventName = hack (n"veh_lock" | n"veh_engine_off" | n"veh_brake" | n"veh_start" |
+//              n"veh_jam" | n"traffic_switch" | n"gridlock" | n"blackout" | n"cam_feed" | n"outline" | n"ping_area";
+//              anything else is answered "no such hack"), EventTarget = target id (a car, person or device id as the npcs
+//              / devices streams sent it; 0 = none: area hacks centre on EventPos when it is not zero, else on V),
+//              EventText = a district name (blackout; logged only), EventAmount = minutes (blackout; 0 = 2 minutes).
+//   n"daemon": EventId = request id, EventTarget = the breached device id, EventAmount = strength 1..3, EventText = the
+//              daemon ids joined with "," (when EventText is empty, EventName is read as the only one); the daemon id
+//              n"alarm" is a failed Breach (alarm and heat).
+// Handled in RemoteHacks.reds and Daemons.reds.
 // Stance, menus, game mode
 public native func Cyberblock_SetStance(crouched: Bool, inAir: Bool, held: Bool) -> Void; // carried as cam.cr / cam.air / cam.held until changed
 public native func Cyberblock_SetMenu(open: Bool) -> Void;           // a Cyberpunk menu is open: input forwarding pauses; cam.menu
