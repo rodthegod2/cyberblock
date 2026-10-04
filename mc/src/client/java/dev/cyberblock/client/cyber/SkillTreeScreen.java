@@ -2,7 +2,7 @@ package dev.cyberblock.client.cyber;
 
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.cyber.CyberData;
-import dev.cyberblock.cyber.CyberMod;
+import dev.cyberblock.cyber.CyberActs;
 import dev.cyberblock.cyber.Perk;
 import dev.cyberblock.cyber.PerkShop;
 import java.util.ArrayList;
@@ -15,10 +15,8 @@ import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.RenderPipelines;
-import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.minecraft.server.level.ServerPlayer;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -193,18 +191,11 @@ public final class SkillTreeScreen extends Screen {
 	@Override
 	public boolean mouseClicked(final MouseButtonEvent event, final boolean doubleClick) {
 		Perk perk = this.perkAt(event.x(), event.y());
-		IntegratedServer server = this.minecraft.getSingleplayerServer();
-		if (perk == null || server == null) {
+		// the server applies the purchase rules and takes the levels (megaplan task 1-C1: `act t:"perk"`)
+		if (perk == null || !CyberLink.act(CyberActs.PERK, CyberActs.perk(perk))) {
 			return super.mouseClicked(event, doubleClick);
 		}
 
-		// singleplayer only (spec): the integrated server applies the purchase rules and takes the levels
-		server.execute(() -> {
-			ServerPlayer player = CyberMod.localPlayer();
-			if (player != null) {
-				PerkShop.buy(player, perk);
-			}
-		});
 		return true;
 	}
 

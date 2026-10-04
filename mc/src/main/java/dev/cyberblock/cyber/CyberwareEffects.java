@@ -1,6 +1,5 @@
 package dev.cyberblock.cyber;
 
-import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -249,7 +248,7 @@ public final class CyberwareEffects {
 		sound(player, SoundEvents.PLAYER_ATTACK_SWEEP, 0.7F);
 		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.cyberware.lunge", "Mantis lunge").withColor(BLADE_RED));
 		CyberData.setTimer(player, Cyberware.MANTIS_BLADES, CyberwareRules.Timer.fire(now, 0, Cyberware.MANTIS_BLADES.cooldownTicks()));
-		if (CyberwareRules.lungeLands(Cyberblock.active, player.distanceTo(target))) {
+		if (CyberwareRules.lungeLands(CyberNet.hostActive(player), player.distanceTo(target))) {
 			Vec3 from = player.position().add(0.0, 1.0, 0.0);
 			Vec3 to = target.position().add(0.0, target.getBbHeight() / 2.0, 0.0);
 			Vec3 step = to.subtract(from);
@@ -394,7 +393,7 @@ public final class CyberwareEffects {
 		player.addEffect(new MobEffectInstance(MobEffects.SPEED, gameTicks, 1));
 		slow(player.level().getServer(), duration * 50L);
 		sound(player, SoundEvents.BEACON_ACTIVATE, 1.8F);
-		Cyberblock.events.accept(CyberWire.cyberfx("sandevistan", duration / 20.0));
+		CyberNet.toOwn(player, CyberWire.cyberfx("sandevistan", duration / 20.0));
 		CyberData.setTimer(player, Cyberware.SANDEVISTAN, CyberwareRules.Timer.fire(now, gameTicks, CyberwareRules.cooldownTicks(Cyberware.SANDEVISTAN, perk)));
 		return true;
 	}
@@ -428,7 +427,7 @@ public final class CyberwareEffects {
 			mob.knockback(1.5, player.getX() - mob.getX(), player.getZ() - mob.getZ(), source, 0.0F);
 		}
 
-		Cyberblock.events.accept(CyberWire.cyberfx("berserk", duration / 20.0));
+		CyberNet.toOwn(player, CyberWire.cyberfx("berserk", duration / 20.0));
 		CyberData.setTimer(player, Cyberware.BERSERK, CyberwareRules.Timer.fire(now, duration, Cyberware.BERSERK.cooldownTicks()));
 		return true;
 	}
@@ -468,7 +467,7 @@ public final class CyberwareEffects {
 	 */
 	public static void kerenzikov(final ServerPlayer player) {
 		long now = player.level().getGameTime();
-		boolean airborne = Cyberblock.active ? Bridge.hostAirborne : !player.onGround();
+		boolean airborne = CyberNet.airborne(player);
 		if (!airborne || !CyberData.has(player, Cyberware.KERENZIKOV) || !CyberData.ready(player, Cyberware.KERENZIKOV)) {
 			return;
 		}
@@ -477,7 +476,7 @@ public final class CyberwareEffects {
 		slow(player.level().getServer(), duration * 50L);
 		ring(player.level(), ParticleTypes.END_ROD, player.position().add(0.0, 1.0, 0.0), 1.2, 16);
 		sound(player, SoundEvents.BEACON_POWER_SELECT, 0.6F);
-		Cyberblock.events.accept(CyberWire.cyberfx("kerenzikov", duration / 20.0));
+		CyberNet.toOwn(player, CyberWire.cyberfx("kerenzikov", duration / 20.0));
 		CyberData.setTimer(player, Cyberware.KERENZIKOV,
 			CyberwareRules.Timer.fire(now, CyberwareRules.gameTicks(duration, true), Cyberware.KERENZIKOV.cooldownTicks()));
 		Cyberblock.LOG.info("cyberware: activate kerenzikov");
@@ -552,7 +551,14 @@ public final class CyberwareEffects {
 		}
 	}
 
-	/** The player left or the server stops: per-player state goes and time runs normally again. */
+	/** The player left: his per-player state goes (the shared slow-mo runs out by itself). */
+	static void forget(final UUID player) {
+		camoUntil.remove(player);
+		sandevistanRunning.remove(player);
+		lunges.remove(player);
+	}
+
+	/** The server stops: per-player state goes and time runs normally again. */
 	static void reset(final @Nullable MinecraftServer server) {
 		camoUntil.clear();
 		sandevistanRunning.clear();

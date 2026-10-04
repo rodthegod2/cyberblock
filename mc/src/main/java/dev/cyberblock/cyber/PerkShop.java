@@ -1,6 +1,5 @@
 package dev.cyberblock.cyber;
 
-import dev.cyberblock.Cyberblock;
 import java.util.Map;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -62,8 +61,11 @@ public final class PerkShop {
 		}
 	}
 
-	/** {"t":"perks"} with all 20 ranks: on every host hello, when the player joins a world and after every purchase. */
+	/**
+	 * {"t":"perks"} with all 20 ranks, DOWN to the player's own session only (megaplan task 1-C1: a guest keeps his perks
+	 * Minecraft-side): after each host hello and every purchase.
+	 */
 	public static void sendPerks(final ServerPlayer player) {
-		Cyberblock.events.accept(CyberWire.perks(player.getAttachedOrElse(CyberData.PERKS, Map.of())));
+		CyberNet.toOwn(player, CyberWire.perks(player.getAttachedOrElse(CyberData.PERKS, Map.of())));
 	}
 }

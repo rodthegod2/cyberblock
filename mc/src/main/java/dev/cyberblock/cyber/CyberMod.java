@@ -5,7 +5,6 @@ import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.WorldBridge;
 import java.util.List;
-import java.util.Map;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
@@ -33,6 +32,7 @@ public class CyberMod implements ModInitializer {
 	public void onInitialize() {
 		CyberData.register();
 		CyberItems.register();
+		CyberNet.init();
 		ServerTickEvents.END_SERVER_TICK.register(CyberServer::tick);
 		// cobwebs from a Cobweb Daemon the game was closed on go on the next load (and on the way out)
 		ServerLifecycleEvents.SERVER_STARTED.register(HackWebs::cleanAll);
@@ -42,22 +42,19 @@ public class CyberMod implements ModInitializer {
 			PerkEffects.reset();
 			CyberwareEffects.reset(server);
 		});
-		// the host usually says hello at the title screen, before any world: so `perks` and `cyberware` also go out when the
-		// player joins (handler.player: JOIN fires before PlayerList adds him, so localPlayer() is still null), and a closed
-		// world's ranks and implants are dropped on the Cyberpunk side when he leaves. The perk owners' implant hand-out
+		// `perks` and `cyberware` reach a host's Cyberpunk when its session starts (CyberNet: after each host hello, which follows
+		// the join's handshake); the client takes them off V when the world closes (CyberLink). The perk owners' implant hand-out
 		// (Ripperdoc.migrate) runs on his first server tick, once he is in the world.
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-			PerkShop.sendPerks(handler.player);
 			Ripperdoc.normalize(handler.player);
-			Ripperdoc.sendCyberware(handler.player);
 			ServerPlayer joined = handler.player;
 			server.execute(() -> CyberAdvancements.joined(joined));
 		});
+		// only the leaving player's state goes: the others play on
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
-			PerkEffects.reset();
-			CyberwareEffects.reset(server);
-			Cyberblock.events.accept(CyberWire.perks(Map.of()));
-			Ripperdoc.disconnected();
+			PerkEffects.forget(handler.player.getUUID());
+			CyberwareEffects.forget(handler.player.getUUID());
+			Hacking.forget(handler.player.getUUID());
 		});
 		ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> {
 			PerkEffects.apply(newPlayer);

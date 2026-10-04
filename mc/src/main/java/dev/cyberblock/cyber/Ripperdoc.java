@@ -1,12 +1,9 @@
 package dev.cyberblock.cyber;
 
-import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentUtils;
@@ -19,7 +16,8 @@ import net.minecraft.world.item.ItemStack;
 /**
  * Installing and removing cyberware (plan retest2 section 1.7, task C4), on the server thread. In survival an install takes
  * the implant item from the inventory and gives back the one it replaces; in creative both are free. Every change is synced
- * to the client (the attachment), told to Cyberpunk (`cyberware`) and mirrored in Bridge.installedCyberware.
+ * to the client (the attachment) and told to the player's own Cyberpunk, if he is a host (`cyberware`, megaplan task 1-C1;
+ * CyberData.installedIds replaces the JVM-wide Bridge.installedCyberware).
  */
 public final class Ripperdoc {
 	private Ripperdoc() {
@@ -123,19 +121,12 @@ public final class Ripperdoc {
 	}
 
 	/**
-	 * {"t":"cyberware"} with the installed implants, and Bridge.installedCyberware: after each host hello, on join and respawn,
-	 * and after every install or remove.
+	 * {"t":"cyberware"} with the installed implants, DOWN to the player's own session only (a guest's implants stay
+	 * Minecraft-side): after each host hello, on respawn, and after every install or remove. When the world closes the client
+	 * takes them off V itself (CyberLink).
 	 */
 	public static void sendCyberware(final ServerPlayer player) {
-		Set<String> ids = CyberData.installed(player).stream().map(Cyberware::id).collect(Collectors.toUnmodifiableSet());
-		Bridge.installedCyberware = ids;
-		Cyberblock.events.accept(CyberWire.cyberware(ids));
-	}
-
-	/** The player left the world: Cyberpunk takes every implant off V, and nobody counts as having any. */
-	public static void disconnected() {
-		Bridge.installedCyberware = Set.of();
-		Cyberblock.events.accept(CyberWire.cyberware(Set.of()));
+		CyberNet.toOwn(player, CyberWire.cyberware(CyberData.installedIds(player)));
 	}
 
 	/**

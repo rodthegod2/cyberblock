@@ -36,7 +36,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * The quickhacks' Minecraft side (plan retest3 section 1.6), on the server thread. Each sent hack is a run: an upload beam in
  * the chip's colour from Steve's eyes to the target from the send until the `hackresult`, then for its `upload` seconds; then
- * the chip's own impact for its ticks (HackFxRules.impactTicks). Effects follow the live proxy (Bridge.proxyById) or, for a
+ * the chip's own impact for its ticks (HackFxRules.impactTicks). Effects follow the live proxy of the target's owner (Bridge.proxyById,
+ * megaplan task 1-C1: runs are keyed by the owner session and its request id, so two hosts' ids never mix) or, for a
  * device or a proxy that went away, the scan lock's point. A target still uploading refuses a new hack (busy). Spreads
  * (`hackspread`) play on their own targets; ones for a finished hack are taken for the last 32 ids. Everything is visual or
  * vanilla-harmless: the lightning is visual only, the clouds carry no effects and no fire block is placed, so nothing reaches
@@ -49,7 +50,7 @@ public final class HackFx {
 
 	/** One sent hack. Server thread. */
 	private static final class Run {
-		final int id;
+		final CyberRoute.Key key;
 		final UUID player;
 		final Hack hack;
 		final long target;
@@ -65,9 +66,9 @@ public final class HackFx {
 		/** Level game time the impact started, -1 before. */
 		long impactStart = -1L;
 
-		Run(final int id, final UUID player, final Hack hack, final long target, final Vec3 lockFeet, final double lockHeight, final String name,
+		Run(final CyberRoute.Key key, final UUID player, final Hack hack, final long target, final Vec3 lockFeet, final double lockHeight, final String name,
 			final long sentTick) {
-			this.id = id;
+			this.key = key;
 			this.player = player;
 			this.hack = hack;
 			this.target = target;
@@ -89,11 +90,11 @@ public final class HackFx {
 		}
 	}
 
-	private static final Map<Integer, Run> runs = new LinkedHashMap<>();
+	private static final Map<CyberRoute.Key, Run> runs = new LinkedHashMap<>();
 	/** The last MEMORY finished runs, for late spreads (ping, frenzy). */
-	private static final LinkedHashMap<Integer, Run> finished = new LinkedHashMap<>() {
+	private static final LinkedHashMap<CyberRoute.Key, Run> finished = new LinkedHashMap<>() {
 		@Override
-		protected boolean removeEldestEntry(final Map.Entry<Integer, Run> eldest) {
+		protected boolean removeEldestEntry(final Map.Entry<CyberRoute.Key, Run> eldest) {
 			return this.size() > HackFxRules.MEMORY;
 		}
 	};
@@ -101,10 +102,10 @@ public final class HackFx {
 	private HackFx() {
 	}
 
-	/** The target is still uploading a hack (sent, impact not started): a new hack at it is refused. */
-	public static boolean busy(final long target) {
+	/** The target of `owner`'s game is still uploading a hack (sent, impact not started): a new hack at it is refused. */
+	public static boolean busy(final UUID owner, final long target) {
 		for (Run run : runs.values()) {
-			if (run.target == target && run.impactStart < 0L) {
+			if (run.target == target && run.key.owner().equals(owner) && run.impactStart < 0L) {
 				return true;
 			}
 		}
@@ -113,16 +114,16 @@ public final class HackFx {
 	}
 
 	/** A `hack` went out: the beam starts, with the chip's upload sound. */
-	static void start(final int id, final ServerPlayer player, final Hack hack, final Hacking.Locked lock) {
+	static void start(final CyberRoute.Key key, final ServerPlayer player, final Hack hack, final Hacking.Locked lock) {
 		ServerLevel level = player.level();
-		runs.put(id, new Run(id, player.getUUID(), hack, lock.target(), new Vec3(lock.x(), lock.y(), lock.z()), lock.height(), lock.name(),
+		runs.put(key, new Run(key, player.getUUID(), hack, lock.target(), new Vec3(lock.x(), lock.y(), lock.z()), lock.height(), lock.name(),
 			level.getGameTime()));
 		sound(level, player.getEyePosition(), SoundEvents.BEACON_POWER_SELECT, 0.8F, HackFxRules.pitch(hack));
 	}
 
 	/** An ok `hackresult`: the beam runs `upload` seconds more, then the impact. */
-	static void onResult(final MinecraftServer server, final HackResult result) {
-		Run run = runs.get(result.id());
+	static void onResult(final MinecraftServer server, final CyberRoute.Key key, final HackResult result) {
+		Run run = runs.get(key);
 		if (run == null) {
 			return;
 		}
@@ -135,15 +136,18 @@ public final class HackFx {
 	}
 
 	/** A failed or never answered hack: its beam stops, nothing lands. */
-	static void cancel(final int id) {
-		runs.remove(id);
+	static void cancel(final CyberRoute.Key key) {
+		runs.remove(key);
 	}
 
-	/** A `hackspread`: kept for the impact while the hack uploads, played at once when the impact runs or ran (last 32 ids). */
-	public static void onSpread(final MinecraftServer server, final HackSpread spread) {
-		Run run = runs.get(spread.id());
+	/**
+	 * A `hackspread` of the owner session's request `key`: kept for the impact while the hack uploads, played at once when the
+	 * impact runs or ran (last 32 ids).
+	 */
+	public static void onSpread(final MinecraftServer server, final CyberRoute.Key key, final HackSpread spread) {
+		Run run = runs.get(key);
 		if (run == null) {
-			run = finished.get(spread.id());
+			run = finished.get(key);
 		}
 
 		if (run == null) {
@@ -189,7 +193,7 @@ public final class HackFx {
 			long age = now - run.impactStart;
 			if (age >= HackFxRules.impactTicks(run.hack)) {
 				it.remove();
-				finished.put(run.id, run);
+				finished.put(run.key, run);
 				continue;
 			}
 
@@ -210,13 +214,13 @@ public final class HackFx {
 
 	// ---- where -------------------------------------------------------------------------------------------------------
 
-	private static @Nullable Entity proxy(final ServerLevel level, final long target) {
-		Entity e = Bridge.proxyById.apply(target);
+	private static @Nullable Entity proxy(final ServerLevel level, final UUID owner, final long target) {
+		Entity e = Bridge.proxyById.at(owner, target);
 		return e != null && !e.isRemoved() && e.level() == level ? e : null;
 	}
 
 	private static Spot spot(final ServerLevel level, final Run run) {
-		Entity e = proxy(level, run.target);
+		Entity e = proxy(level, run.key.owner(), run.target);
 		return e != null ? new Spot(e.position(), e.getBbHeight(), e) : new Spot(run.lockFeet, Math.max(0.5, run.lockHeight), null);
 	}
 
@@ -403,7 +407,7 @@ public final class HackFx {
 
 	/** One spread target: chain plays the chip's opening at it, spread a cloud and a green arc, ping outlines it, frenzy angers. */
 	private static void spreadTo(final ServerLevel level, final ServerPlayer player, final Run run, final HackSpread spread) {
-		Entity e = proxy(level, spread.target());
+		Entity e = proxy(level, run.key.owner(), spread.target());
 		if (e == null) {
 			return;
 		}

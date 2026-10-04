@@ -1,34 +1,29 @@
 package dev.cyberblock.client.cyber;
 
 import com.google.gson.JsonObject;
-import dev.cyberblock.Bridge;
+import com.google.gson.JsonParser;
 import dev.cyberblock.Cyberblock;
-import dev.cyberblock.WorldBridge;
-import dev.cyberblock.cyber.CyberMod;
-import dev.cyberblock.cyber.CyberwareEffects;
-import dev.cyberblock.cyber.HackFx;
-import dev.cyberblock.cyber.HackResult;
-import dev.cyberblock.cyber.HackSpread;
-import dev.cyberblock.cyber.Hacking;
-import dev.cyberblock.cyber.Kills;
-import dev.cyberblock.cyber.Kit;
+import dev.cyberblock.client.HostLink;
+import dev.cyberblock.cyber.CyberActs;
+import dev.cyberblock.cyber.CyberWire;
 import dev.cyberblock.cyber.PerkRules;
-import dev.cyberblock.cyber.PerkShop;
-import dev.cyberblock.cyber.Ripperdoc;
 import dev.cyberblock.cyber.ScanInfo;
-import java.util.function.Consumer;
+import dev.cyberblock.net.Payloads;
+import java.util.Map;
+import java.util.Set;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Util;
 
 /**
- * Track C's host message listeners (plan section 1.6): HostLink hands them every `hello`, `state`, `key`, `scaninfo`,
- * `hackresult`, `hackspread` and `killed` on the link thread, after its own handling. Each moves its work to the client or the
- * integrated server thread.
+ * Track C's links (megaplan 2026-10-04 task 1-C1): the LOCAL host messages it reads from its own Cyberpunk (`hello`, `key`,
+ * through HostLink.listen, on the link thread), the requests it sends the server (`cyberblock:act`, CyberActs) and the
+ * server's answers (`cyberblock:ui`). The UP messages (`scaninfo`, `hackresult`, `hackspread`, `killed`, `state`) are the
+ * server's now (CyberNet), so a guest's scans come back here the same way as a host's.
  */
-final class CyberLink {
+public final class CyberLink {
 	/** Sprint presses from the host (link thread only). */
 	private static final PerkRules.DoubleTap sprintTaps = new PerkRules.DoubleTap();
 	private static int bad;
@@ -37,80 +32,56 @@ final class CyberLink {
 	}
 
 	static void register() {
-		listen("hello", m -> {
-			// the binds, and a chat note when Cyberpunk uses other keys than Minecraft's controls show
-			onClient(CyberKeys::hostHello);
-			onLocalPlayer(PerkShop::sendPerks);
-			onLocalPlayer(Ripperdoc::sendCyberware);
+		// the binds, and a chat note when Cyberpunk uses other keys than Minecraft's controls show
+		HostLink.listen("hello", m -> onClient(CyberKeys::hostHello));
+		HostLink.listen("key", CyberLink::key);
+		// the world closed: Cyberpunk takes V's perks and implants off (the server that sent them can no longer say so)
+		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+			HostLink.send(CyberWire.perks(Map.of()));
+			HostLink.send(CyberWire.cyberware(Set.of()));
 		});
-		listen("key", CyberLink::key);
-		listen("scaninfo", CyberLink::scanInfo);
-		listen("hackresult", CyberLink::hackResult);
-		listen("hackspread", CyberLink::hackSpread);
-		listen("state", m -> {
-			if (!m.has("active") || m.get("active").getAsBoolean()) {
-				onLocalPlayer(Kit::onActive);
-			}
-		});
-		listen("killed", m -> {
-			Kills.Killed killed = Kills.parse(m);
-			if (killed == null) {
-				warn("bad killed dropped");
+		if (!ClientPlayNetworking.registerGlobalReceiver(Payloads.Ui.TYPE, (payload, context) -> onUi(payload.t(), payload.json()))) {
+			// the client net already receives `cyberblock:ui`: it hands the cyber track's types to onUi
+			Cyberblock.LOG.info("cyber: cyberblock:ui is received by the client net");
+		}
+	}
+
+	/** A request to the server (client thread). False when the server has no Cyberblock channel (nothing is sent). */
+	static boolean act(final String t, final String json) {
+		if (!ClientPlayNetworking.canSend(Payloads.Act.TYPE)) {
+			return false;
+		}
+
+		ClientPlayNetworking.send(new Payloads.Act(t, json));
+		return true;
+	}
+
+	/** One `cyberblock:ui` message for the cyber track (client thread): false when the type is not its own. */
+	public static boolean onUi(final String t, final String json) {
+		if (!t.equals("scaninfo")) {
+			return false;
+		}
+
+		try {
+			JsonObject m = JsonParser.parseString(json).getAsJsonObject();
+			ScanInfo info = ScanInfo.parse(m);
+			if (info == null) {
+				warn("bad scaninfo dropped");
 			} else {
-				onLocalPlayer(player -> Kills.onKilled(player, killed));
+				ScanClient.onInfo(info, m.has("eid") ? m.get("eid").getAsInt() : -1);
 			}
-		});
-	}
-
-	/** Runs on the server thread with the singleplayer world's player, when there is one. */
-	private static void onLocalPlayer(final Consumer<ServerPlayer> task) {
-		onServer(() -> {
-			ServerPlayer player = CyberMod.localPlayer();
-			if (player != null) {
-				task.accept(player);
-			}
-		});
-	}
-
-	/** {"t":"hackresult",...}: refund or sound, on the server. */
-	private static void hackResult(final JsonObject m) {
-		HackResult result = HackResult.parse(m);
-		MinecraftServer server = WorldBridge.server();
-		if (result == null) {
-			warn("bad hackresult dropped");
-		} else if (server != null) {
-			server.execute(() -> Hacking.onResult(server, result));
+		} catch (RuntimeException e) {
+			warn("bad scaninfo dropped");
 		}
-	}
 
-	/** {"t":"hackspread",...}: one more NPC a hack touched; its effect plays on the server (HackFx). */
-	private static void hackSpread(final JsonObject m) {
-		HackSpread spread = HackSpread.parse(m);
-		MinecraftServer server = WorldBridge.server();
-		if (spread == null) {
-			warn("bad hackspread dropped");
-		} else if (server != null) {
-			server.execute(() -> HackFx.onSpread(server, spread));
-		}
-	}
-
-	private static void listen(final String type, final Consumer<JsonObject> listener) {
-		Bridge.listen(type, listener);
+		return true;
 	}
 
 	private static void onClient(final Runnable task) {
 		Minecraft.getInstance().execute(task);
 	}
 
-	/** Runs on the integrated server's thread; dropped when no world is open. */
-	static void onServer(final Runnable task) {
-		MinecraftServer server = WorldBridge.server();
-		if (server != null) {
-			server.execute(task);
-		}
-	}
-
-	/** A hostile host could make this a log flood: say it once, then every 100th time. */
+	/** A bad message could make this a log flood: say it once, then every 100th time. */
 	static void warn(final String what) {
 		if (bad++ % 100 == 0) {
 			Cyberblock.LOG.warn("{} (seen {} times)", what, bad);
@@ -119,16 +90,21 @@ final class CyberLink {
 
 	/**
 	 * {"t":"key","k":...,"down":bool}: track C handles hack, skills, cyberware, activate, arms and camo, and watches sprint (forwarded,
-	 * Cyberpunk keeps it) for the Sandevistan's double tap.
+	 * Cyberpunk keeps it) for the Sandevistan's double tap, and jump for the legs implants' effects (CyberwareClient).
 	 */
 	private static void key(final JsonObject m) {
 		String k = m.get("k").getAsString();
 		boolean down = !m.has("down") || m.get("down").getAsBoolean();
 		if (k.equals("sprint")) {
 			if (down && sprintTaps.press(Util.getMillis())) {
-				onLocalPlayer(CyberwareEffects::sprintSandevistan);
+				onClient(() -> act(CyberActs.SANDEVISTAN, "{}"));
 			}
 
+			return;
+		}
+
+		if (k.equals("jump")) {
+			CyberwareClient.hostJump(down);
 			return;
 		}
 
@@ -145,19 +121,5 @@ final class CyberLink {
 			Minecraft minecraft = Minecraft.getInstance();
 			onClient(() -> CyberKeys.onHostKey(minecraft, mapping, down));
 		}
-	}
-
-	/**
-	 * {"t":"scaninfo",...}: drawn on the client; a target that is there becomes the locked one on the server, and nothing there
-	 * drops the lock (the tooltip goes too), so a quickhack never flies at a target the crosshair has left (ScanClient.onInfo).
-	 */
-	private static void scanInfo(final JsonObject m) {
-		ScanInfo info = ScanInfo.parse(m);
-		if (info == null) {
-			warn("bad scaninfo dropped");
-			return;
-		}
-
-		ScanClient.onInfo(info);
 	}
 }

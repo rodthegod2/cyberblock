@@ -1,18 +1,13 @@
 package dev.cyberblock.client.cyber;
 
-import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.ProxyEntity;
-import dev.cyberblock.client.HostState;
-import dev.cyberblock.cyber.CyberWire;
+import dev.cyberblock.cyber.CyberActs;
 import dev.cyberblock.cyber.Hacking;
 import dev.cyberblock.cyber.ScanInfo;
-import dev.cyberblock.cyber.ScanThrottle;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Camera;
 import net.minecraft.client.DeltaTracker;
@@ -21,7 +16,6 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.tooltip.TooltipRenderUtil;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.gizmos.GizmoStyle;
 import net.minecraft.gizmos.Gizmos;
 import net.minecraft.network.chat.Component;
@@ -33,10 +27,11 @@ import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The hack key held (task C4, plan retest2 C1): every 4 ticks the camera ray (48 blocks, 80 with Kiroshi optics, never past
- * the Night City surface the host aims at) goes to the server, which picks the proxy along it and asks about it with a
- * `scan`; Cyberpunk's `scaninfo` is drawn as a tooltip beside the crosshair and a glowing box around the target in the
- * world. A target found stays locked (Hacking) and shown for 5 s after the last answer that found it, dimmed with a
+ * The hack key held (task C4, plan retest2 C1, megaplan task 1-C1): every 4 ticks the camera ray goes to the server
+ * (`cyberblock:act t:"scan"`), which cuts it at 48 blocks (80 with Kiroshi optics) and at the Night City surface its host
+ * aims at, picks the proxy along it and asks the proxy's owner about it with a `scan` (a guest's scan too); the owner's
+ * `scaninfo` comes back through the server (`cyberblock:ui`) and is drawn as a tooltip beside the crosshair and a glowing
+ * box around the target in the world. A target found stays locked (Hacking) and shown for 5 s after the last answer that found it, dimmed with a
  * countdown once the key is up; an answer that finds nothing clears it.
  */
 final class ScanClient {
@@ -46,15 +41,13 @@ final class ScanClient {
 	private static final long LINGER_MS = 1000L;
 	/** As long as the server keeps the lock. */
 	private static final long LOCK_MS = Hacking.LOCK_NANOS / 1_000_000L;
-	/** Server thread only (send, and the reset on release). */
-	private static final ScanThrottle throttle = new ScanThrottle();
-	/** Which client entity a scanned Cyberpunk id is (filled on the server thread when a scan is sent): its box is the outline. */
-	private static final Map<Long, Integer> entityOf = new ConcurrentHashMap<>();
 	private static int ticks;
 	private static boolean held;
 	private static long answersUntilMs;
 	private static long lockedUntilMs;
 	private static @Nullable ScanInfo shown;
+	/** The proxy entity the shown scan picked (the server says which), -1: none. */
+	private static int shownEntity = -1;
 
 	private ScanClient() {
 	}
@@ -70,17 +63,13 @@ final class ScanClient {
 		}
 
 		boolean down = player != null && (CyberKeys.hack.isDown() || clicked);
-		IntegratedServer server = minecraft.getSingleplayerServer();
 		if (down) {
 			answersUntilMs = now + LINGER_MS;
-			if (ticks++ % PICK_EVERY == 0 && server != null) {
-				send(server, ray(minecraft));
+			if (ticks++ % PICK_EVERY == 0) {
+				send(minecraft);
 			}
 		} else if (held) {
-			if (server != null) {
-				server.execute(throttle::reset);
-			}
-
+			// the server sees the gap in requests and treats the next hold as new (Hacking.HOLD_GAP_MS)
 			ticks = 0;
 		}
 
@@ -92,43 +81,23 @@ final class ScanClient {
 		outline(minecraft);
 	}
 
-	/** The scan ray: the host camera, its forward, and the reach (scanRange: 80 with Kiroshi optics, else 48), cut at the Night City surface. */
-	private record Ray(Vec3 eye, Vec3 dir, double reach) {
-	}
-
-	private static Ray ray(final Minecraft minecraft) {
+	/**
+	 * The scan request: the host camera (or Steve's, without a host) and its forward. The server picks the proxy from its own
+	 * positions (plan retest2 R2: never from the client's copy that trails the NPC); the proxy under the crosshair goes along
+	 * only as a hint.
+	 */
+	private static void send(final Minecraft minecraft) {
 		Camera camera = minecraft.gameRenderer.mainCamera();
-		return new Ray(camera.position(), new Vec3(camera.forwardVector()).normalize(), HostState.aimLimit(Hacking.scanRange(Bridge.installedCyberware)));
+		Integer hint = minecraft.crosshairPickEntity instanceof ProxyEntity proxy ? proxy.getId() : null;
+		CyberLink.act(CyberActs.SCAN, CyberActs.scan(hint, camera.position(), new Vec3(camera.forwardVector()).normalize()));
 	}
 
 	/**
-	 * Server thread (plan retest2 R2): the proxy is picked there, from the server's own proxy positions (Bridge.proxyAimedAt,
-	 * which forgives a ray that passes just beside the target), never from the client's copy that trails the NPC. Then the
-	 * throttle, the proxy's Cyberpunk id (Bridge.proxyIdOf) and the `scan`; nothing under the ray sends a `scan` without a
-	 * target (Cyberpunk then looks at whatever V aims at). Singleplayer: the entity ids are the client's too.
+	 * A valid `scaninfo` from the server (its lock already follows it: Hacking.onScanInfo), with the picked proxy's entity id. A
+	 * target found is shown for 5 s from now; nothing found clears it. An answer more than a second after the key was let go is
+	 * ignored (the server drops those too).
 	 */
-	private static void send(final IntegratedServer server, final Ray ray) {
-		server.execute(() -> {
-			Entity e = Bridge.proxyAimedAt.at(ray.eye(), ray.dir(), ray.reach());
-			long target = e == null ? 0L : Bridge.proxyIdOf.applyAsLong(e);
-			if (!throttle.shouldSend(Util.getMillis(), target == 0L ? -1L : e.getId())) {
-				return;
-			}
-
-			if (target != 0L) {
-				entityOf.put(target, e.getId());
-			}
-
-			Cyberblock.events.accept(CyberWire.scan(Hacking.nextId(), target));
-		});
-	}
-
-	/**
-	 * Link thread: a valid `scaninfo`. A target found is shown and locked on the server (Hacking) for 5 s from now; nothing found
-	 * clears both. An answer more than a second after the key was let go is ignored by both, so the server never locks or drops a
-	 * target the tooltip does not show.
-	 */
-	static void onInfo(final ScanInfo info) {
+	static void onInfo(final ScanInfo info, final int entity) {
 		Minecraft.getInstance().execute(() -> {
 			long now = Util.getMillis();
 			if (now > answersUntilMs) {
@@ -136,8 +105,8 @@ final class ScanClient {
 			}
 
 			shown = info.ok() ? info : null;
+			shownEntity = info.ok() ? entity : -1;
 			lockedUntilMs = info.ok() ? now + LOCK_MS : 0L;
-			CyberLink.onServer(info.ok() ? () -> Hacking.lock(info.target(), info.device(), info.x(), info.y(), info.z(), info.h(), info.name()) : Hacking::unlock);
 		});
 	}
 
@@ -148,8 +117,7 @@ final class ScanClient {
 
 	/** The box drawn around the scanned target: the proxy's own box, or the reported base and size (devices). */
 	private static @Nullable AABB box(final Minecraft minecraft, final ScanInfo info) {
-		Integer id = entityOf.get(info.target());
-		Entity entity = id == null || minecraft.level == null ? null : minecraft.level.getEntity(id);
+		Entity entity = shownEntity < 0 || minecraft.level == null ? null : minecraft.level.getEntity(shownEntity);
 		if (entity instanceof ProxyEntity && !entity.isRemoved()) {
 			return entity.getBoundingBox();
 		}

@@ -3,11 +3,11 @@ package dev.cyberblock.client.cyber;
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.ProxyEntity;
+import dev.cyberblock.client.HostLink;
 import dev.cyberblock.client.HostState;
 import dev.cyberblock.client.cyber.mixin.CyberKeyMappingAccessor;
-import dev.cyberblock.cyber.CyberMod;
+import dev.cyberblock.cyber.CyberActs;
 import dev.cyberblock.cyber.CyberWire;
-import dev.cyberblock.cyber.CyberwareEffects;
 import dev.cyberblock.cyber.CyberwareRules;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -18,7 +18,6 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Consumer;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.ChatFormatting;
@@ -26,12 +25,10 @@ import net.minecraft.client.Camera;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentUtils;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.Identifier;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.AABB;
@@ -111,7 +108,7 @@ public final class CyberKeys {
 	/** {"t":"binds"} with the current bindings (host hello, or a rebinding): a refused key as its default, a clash as all six. */
 	static void sendBinds() {
 		sent = VirtualKeys.binds(vks());
-		Cyberblock.events.accept(CyberWire.binds(sent));
+		HostLink.send(CyberWire.binds(sent));
 	}
 
 	/** A host said hello (client thread): it gets the binds, and the player the note about them as soon as he is in a world. */
@@ -223,7 +220,7 @@ public final class CyberKeys {
 			}
 		}
 
-		if (!Cyberblock.active && !hostHeld.isEmpty()) {
+		if (HostState.frame() == null && !hostHeld.isEmpty()) {
 			hostHeld.forEach(mapping -> mapping.setDown(false));
 			hostHeld.clear();
 		}
@@ -272,8 +269,7 @@ public final class CyberKeys {
 			return;
 		}
 
-		Vec3 aim = aim(minecraft, player);
-		onServer(minecraft, serverPlayer -> CyberwareEffects.fire(serverPlayer, trigger, aim));
+		CyberLink.act(CyberActs.FIRE, CyberActs.fire(trigger, aim(minecraft, player)));
 	}
 
 	/**
@@ -293,19 +289,6 @@ public final class CyberKeys {
 		EntityHitResult entity = ProjectileUtil.getEntityHitResult(player, start, block, new AABB(start, block).inflate(1.0),
 			e -> !e.isSpectator() && (e.isPickable() || e instanceof ProxyEntity) && !e.isRemoved(), start.distanceToSqr(block));
 		return entity == null ? block : entity.getLocation();
-	}
-
-	/** Singleplayer only (spec), as the skill tree's purchases: the integrated server's player does it. */
-	private static void onServer(final Minecraft minecraft, final Consumer<ServerPlayer> task) {
-		IntegratedServer server = minecraft.getSingleplayerServer();
-		if (server != null) {
-			server.execute(() -> {
-				ServerPlayer player = CyberMod.localPlayer();
-				if (player != null) {
-					task.accept(player);
-				}
-			});
-		}
 	}
 
 	/**

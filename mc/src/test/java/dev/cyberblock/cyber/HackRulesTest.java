@@ -68,15 +68,39 @@ class HackRulesTest {
 	/** A scan that finds the target locks it for 5 s; a scan that finds nothing drops the lock at once (netrun-6). */
 	@Test
 	void aScanOfNothingDropsTheLock() {
-		Hacking.lock(42L, false);
-		Hacking.Locked lock = Hacking.locked();
+		java.util.UUID player = java.util.UUID.randomUUID(), owner = java.util.UUID.randomUUID();
+		Hacking.lock(player, owner, 42L, false);
+		Hacking.Locked lock = Hacking.locked(player);
 		assertNotNull(lock);
 		assertEquals(42L, lock.target());
-		Hacking.unlock();
-		assertNull(Hacking.locked());
+		assertEquals(owner, lock.owner());
+		Hacking.unlock(player);
+		assertNull(Hacking.locked(player));
 	}
 
-	/** An unanswered hack is refunded after 10 s only with the host gone; a connected Cyberpunk may answer late (netrun-14). */
+	/** Megaplan task 1-C1: every player has his own lock; a guest's scan never moves the host's lock. */
+	@Test
+	void locksArePerPlayer() {
+		java.util.UUID host = java.util.UUID.randomUUID(), guest = java.util.UUID.randomUUID();
+		Hacking.lock(host, host, 1L, false);
+		Hacking.lock(guest, host, 2L, true);
+		assertEquals(1L, Hacking.locked(host).target());
+		assertEquals(2L, Hacking.locked(guest).target());
+		Hacking.unlock(guest);
+		assertNotNull(Hacking.locked(host));
+		Hacking.ownerEnded(host); // the host's game is gone: nobody stays locked on it
+		assertNull(Hacking.locked(host));
+	}
+
+	/** The server cuts the scan ray at the Night City surface the host aims at, as the client's HostState.aimLimit did. */
+	@Test
+	void scanReachIsCutAtTheHostsAim() {
+		assertEquals(48.0, Hacking.aimLimit(48.0, -1.0));
+		assertEquals(12.5, Hacking.aimLimit(48.0, 12.5));
+		assertEquals(80.0, Hacking.aimLimit(80.0, 90.0));
+	}
+
+	/** An unanswered hack is refunded after 10 s only with the owner's Cyberpunk not On; an active one may answer late (netrun-14). */
 	@Test
 	void unansweredHacksWaitLongerWhileConnected() {
 		assertEquals(10_000_000_000L, Hacking.answerTimeout(false));
