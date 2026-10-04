@@ -366,7 +366,8 @@ the guest-side "blocked" action-bar message can only be seen in game. The harnes
 a LAN world (26.3 authenticates every LAN login); the integrator decides between a devtools way to open a LAN world without
 authentication, the user joining an offline test server, or a second real account (escalated by package 1T).
 
-**needsInGame appendix:** the integrator copies each package's `needsInGame` list here (1N, 1W, 1C, 1L, 1H) before the test.
+**needsInGame appendix:** each package's `needsInGame` checks (1N, 1W, 1C, 1L, 1H, 1T) are in "Re-test: Wave A" (W-A6,
+W-A7 and W-B).
 
 ## In-game fixes 3 (2026-10-03 evening; do these first)
 
