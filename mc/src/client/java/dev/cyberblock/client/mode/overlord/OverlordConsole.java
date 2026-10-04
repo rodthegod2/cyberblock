@@ -189,8 +189,11 @@ final class OverlordConsole implements AtlasScreen.Overlay {
 				break;
 			}
 
+			// a line too long for the panel ends in "..." so it does not read as the whole entry
 			String t = ago(line.ago()) + " " + line.text();
-			graphics.text(font, font.plainSubstrByWidth(t, PANEL_W - 12), x, y, 0xFF303030, false);
+			int w = PANEL_W - 12;
+			String fit = font.width(t) <= w ? t : font.plainSubstrByWidth(t, w - font.width("...")) + "...";
+			graphics.text(font, fit, x, y, 0xFF303030, false);
 			y += 10;
 		}
 	}
