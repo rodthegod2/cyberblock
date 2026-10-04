@@ -335,6 +335,19 @@ public final class CyberwareRules {
 		return installed.contains(Cyberware.FIREWALL) ? 1 : 0;
 	}
 
+	/**
+	 * Megaplan 8-X1: the Firewall stops a player hack when it is installed and charged (its timer ready); it then recharges for its
+	 * cooldown (Cyberware.FIREWALL, 60 s).
+	 */
+	public static boolean firewallBlocks(final Collection<Cyberware> installed, final Timer firewall, final long now) {
+		return installed.contains(Cyberware.FIREWALL) && firewall.ready(now);
+	}
+
+	/** Megaplan 8-X1: the netrunner implant resists player hacks (their effects last half as long). */
+	public static boolean netrunnerResists(final Collection<Cyberware> installed) {
+		return installed.contains(Cyberware.NETRUNNER);
+	}
+
 	/** Biomonitor: alive and at or below 30 % of max health. */
 	public static boolean biomonitor(final float health, final float maxHealth) {
 		return health > 0.0F && health <= maxHealth * BIOMONITOR_THRESHOLD + 1.0E-4F;

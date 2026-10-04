@@ -21,10 +21,11 @@ class CyberWireTest {
 		assertEquals("cyberware", m.get("t").getAsString());
 		assertEquals(2, m.size());
 		JsonArray list = m.getAsJsonArray("list");
-		// the 17 of plan retest2 plus megaplan section 1.17's firewall (Phase 6), within the wire's 32
-		assertEquals(18, list.size());
+		// the 17 of plan retest2 plus megaplan section 1.17's firewall (Phase 6) and netrunner (Phase 8), within the wire's 32
+		assertEquals(19, list.size());
 		assertTrue(list.size() <= CyberwareRules.MAX_IDS);
 		assertEquals("firewall", list.get(17).getAsJsonObject().get("id").getAsString());
+		assertEquals("netrunner", list.get(18).getAsJsonObject().get("id").getAsString());
 		for (int i = 0; i < list.size(); i++) {
 			JsonObject e = list.get(i).getAsJsonObject();
 			Cyberware c = Cyberware.values()[i];
