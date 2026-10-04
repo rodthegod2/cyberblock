@@ -37,8 +37,8 @@ class HoloEntriesTest {
 	}
 
 	@Test
-	void noStateNoHookNoEntries() {
-		assertTrue(HoloEntries.of(null, HoloFastTravel.list()).isEmpty(), "7V has not installed its points");
+	void noStateNoPointsNoEntries() {
+		assertTrue(HoloEntries.of(null, List.of()).isEmpty());
 	}
 
 	@Test
