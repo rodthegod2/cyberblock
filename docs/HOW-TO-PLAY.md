@@ -1361,8 +1361,9 @@ The **Afterlife** is a place of its own on the server, a Minecraft dimension (`c
 day and nothing hostile spawns**, and it is open **even when no host is online**: its people (the bartender, the ripperdoc, the vendors) are the server's, not a host's.
 The build is drawn from a layout file by a script (original, like all the art).
 
-**Getting in and out.** `/cyberblock hub` takes you there, and so does a **hub portal** block (placeable in the replica) or the **Cyberblock...**
-button of the pause screen. You leave **the same way** and are brought **back to where you came from**.
+**Getting in and out.** `/cyberblock hub` takes you there, and so does a **hub portal** block (placeable in the replica) or the **Afterlife hub**
+button at the top right of the pause screen (Minecraft's and the Night City one; **Leave the Afterlife** inside it). You leave **the same way** and are
+brought **back to where you came from**.
 
 **If you are a host (Cyberpunk linked):** the hub is a **full-screen Minecraft** place, so Cyberpunk's picture is hidden while you are in it, the way
 a loading screen covers the game. Meanwhile **V is parked**: invisible, invulnerable, unseen by the people of Night City (an NPC walks past and

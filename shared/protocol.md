@@ -1409,7 +1409,8 @@ rows), section 1.8 (row 7) and section 11, with the dated Phase 0 amendment (fal
 Afterlife hub** (`hub` with the Phase 3 `park`: the server tells a host's DLL to switch to full-screen Minecraft and to put V away safely), **the stock of the
 Night City vendor or ripperdoc the host opened** (so Minecraft can draw its screen) and **the purchases and sales back** (paid with the host's real Cyberpunk
 money, megaplan 1.16), plus the Holo-Table's list of the host's fast-travel points. The role screens of figures, the hub's Minecraft shops and the Holo-Table
-(7N, 7H, 7T) are Minecraft and server only: they use `cyberblock:act` and `cyberblock:ui` payloads that their packages define and never reach a DLL; a
+(7N, 7H, 7T) are Minecraft and server only: they use the `cyberblock:act` and `cyberblock:ui` payloads of
+[Phase 7: payloads](#phase-7-payloads-client--server) and never reach a DLL; a
 Holo-Table spawn of a linked player is the existing [`vteleport` with `why:"holo"`](#phase-3-minecraft--cyberpunk), in the order given below.
 
 ### Phase 7: Cyberpunk → Minecraft
@@ -1441,7 +1442,12 @@ Holo-Table spawn of a linked player is the existing [`vteleport` with `why:"holo
   drop, on every `hello` and when its `session` leaves `host`, with no message needed. So on **every host session start** (the `hello` after a link drop, a
   Cyberpunk restart or a reconnect) the server counts the DLL as out of the hub, and a player who is still in `cyberblock:afterlife` gets the entering pair
   again, once (7H: `HostSessions.onStart`). Cyberblock going Off releases V (the compositor draws nothing while Off) but keeps the DLL's hub, so V is parked
-  again at On. A `hub` or `park` that arrives without a host session is ignored.
+  again at On.
+- **A `hub` before the host grant is remembered** (megaplan section 1.9, the Phase 7 amendment, item 3). The DLL shows the hub only while its session is
+  `host`. A `hub` that arrives before the host grant (no session yet, a guest locked until `/login`, a refusal, a reconnect) is remembered and applied at
+  the grant, with its `hub` event queued after the `session` event (7D: `world.cpp` keeps the word and shows it in its `session` handler). The remembered
+  word is forgotten on a `hello`, a link drop, `session none` and `hub in:false`; a `guest` or `refused` session keeps it. The server still sends `hub` (and
+  `park`) after every host grant while the player is in `cyberblock:afterlife`; repeats are harmless. `park` itself is sent DOWN to a host session only.
 - **Leaving by a Holo-Table spawn.** The Holo-Table stands in the hub, so a linked host's spawn from it is a hub exit first: Steve is moved out to the spot,
   the server sends the leaving pair (`park on:false`, `hub in:false`: V released, the picture back), and **only then** the `vteleport why:"holo"` (7T sends it
   1.5 s after the exit). Never the other way round: the scripts refuse a `vteleport` while V is parked (`blocked (parked)`), and releasing a park may move V
@@ -1478,6 +1484,42 @@ Holo-Table spawn of a linked player is the existing [`vteleport` with `why:"holo
   message is counted and dropped, never fatal.
 - **Features.** `hs_ack.features` bit 16 (hub) is set by a Phase 7 server.
 
+### Phase 7: payloads (client ↔ server)
+The Holo-Table (7T: `HoloWire`, `HoloModule`) and the role screens of figures and hub NPCs (7N: `NpcWire`, `NpcScreens`). Each row is the JSON body of one
+`cyberblock:act` (C2S) or `cyberblock:ui` (S2C) payload of that `t`; sizes are UTF-8 bytes, a position number is finite with `|c| < 30000000`.
+
+| Id | Direction | Fields | When |
+|---|---|---|---|
+| `cyberblock:act` `t:"holo"` | C2S | `detail:bool` (also send the replica detail around the players) | the open table view asks for the table, once a second; dropped without a table grant or less than 0.4 s after the last one |
+| `cyberblock:act` `t:"holospawn"` | C2S | `kind` ∈ `landmark`, `beacon`, `base`, `friend`; `id` 1 to 64 bytes (a spawn's `id` from the table: a landmark's content id, a beacon's id, a base's id, a friend's player UUID) | the player picks a spawn point on the table |
+| `cyberblock:act` `t:"holohide"` | C2S | `on:bool` | the "hide my pin" toggle |
+| `cyberblock:act` `t:"holotravel"` | C2S | `name` (1 to 64 bytes, not blank: the fast-travel point's name), `p:[x, z]` (its Minecraft position) | a host picks one of its own Cyberpunk fast-travel points on the table |
+| `cyberblock:act` `t:"npc"` | C2S | `e` (the NPC's Minecraft entity id, a whole number), `a` ∈ `tab`, `do`, `cut`, `abort`; `arg` 0 to 32 characters of `A-Z a-z 0-9 _ . : -` (absent means `""`): the tab code for `tab`, the row `id` for `do`, `""` for `cut` and `abort` | a press on a role screen (`tab`, `do`) or on the surgery bar (`cut`, `abort`); at most one every 40 ms |
+| `cyberblock:ui` `t:"holo"` | S2C | `open:bool` (the first state after a right-click opens the view), `match:bool`, `role` ∈ `player`, `spectator`, `overlord`, `hidden:bool` (your pin), `cooldown` (whole seconds 0..3600 until your next spawn), `pins` ≤ 200 `{id (a player UUID), name ≤ 64, p:[x, y, z], yaw (-720..720), linked, team (-1 none), col ("#RRGGBB", absent for none), car, combat, downed, you}` (booleans but `team`), `spawns` ≤ 160 `{kind, id ≤ 64, name ≤ 64, p:[x, y, z], district ≤ 64, owner ≤ 64, ok:bool, why}` (`why` the lang key of the refusal, `""` when `ok`), `layers` ≤ 16 `{id (1 to 24 of a-z 0-9 _), items ≤ 512 {p:[x, z], v (0..1), col?, label? ≤ 64}}`, optional `detail` ≤ 16 `{x0, z0, n (1..65), h (base64 of n·n big-endian shorts: surface y, -32768 unknown), c (base64 of n·n map colour ids)}` (absent: the client keeps what it has) | the answer to `holo`, `holohide` and a refused spawn, only while the player has a table grant |
+| `cyberblock:ui` `t:"holotravel"` | S2C | `name`, `p:[x, z]`: the same body as the act | the go-ahead for an accepted `holotravel`, at once or 1.5 s after the server took the host out of the hub: the client runs the point it asked for (`uiact fasttravel` to its DLL); a name that is not the one it asked for, or a go-ahead older than a minute, is ignored |
+| `cyberblock:ui` `t:"npc"` | S2C | `e`, `role` ∈ `ripperdoc`, `shop`, `contracts`, `bartender`, `medic`, `mechanic`, `name` ≤ 64 (`""` for a Night City figure), `title` (a lang key, 0 to 96 of a-z 0-9 _ .), `line` ≤ 256 (the NPC's line), `eddies` ≥ 0 (the player's Minecraft eddies as the server counts them), `tab` (a code of 1 to 16 of a-z _), `tabs` ≤ 4 codes, `result` (0 to 16 of a-z _: `cyberblock.npc.result.<code>`, `""` none), `rows` ≤ 32 `{id (1 to 32 characters), item ("" or a Minecraft item id), n (0..512), key (a lang key or ""), text ≤ 96, sub ≤ 300, price (-1 none, 0..1000000 eddies), btn (a code), on:bool}` | a right-click on a figure or hub NPC with a role, and again after every act |
+| `cyberblock:ui` `t:"surgery"` | S2C | `e`, `implant` (1 to 32 of a-z _), `lo` and `hi` (the safe zone, `0 ≤ lo < hi ≤ 1`), `period` (200..10000 ms: the marker runs 0 to 1 and back once), `timeout` (1000..60000 ms) | a ripperdoc's strong implant starts the timing bar |
+
+- **The server decides everything.** A spawn never trusts the client's coordinates: `holospawn` names a point the server resolves itself (an unknown
+  one is refused `cyberblock.holo.gone`); a linked host's spawn is the Phase 3 `vteleport why:"holo"` and a Minecraft-only player is stood on the replica's
+  floor (no ground there: `cyberblock.holo.no_ground`). `holotravel` carries the point's own `name` and `p`: the server checks the locked-zone rule at that
+  spot and, for a host at the table in the hub, stands Steve there (only in a loaded chunk of Night City, else at the world spawn) before the go-ahead;
+  the travel itself is Cyberpunk's own fast travel, run by the scripts through `uiact fasttravel`. `npc` names only the NPC and a row: the server checks that
+  the NPC still exists, is within **8 blocks**, still has that role, and re-reads the row's price, the stock and the player's **Minecraft eddies** (never
+  Cyberpunk money: that is the DLL's vendor `reply`); a ripperdoc's surgery is timed by the server, `cut` inside `[lo, hi]` succeeds.
+- **Rate limits.** `holospawn`, `holohide` and `holotravel` share one bucket per player: **2 per second, burst 4**, more are dropped quietly (counted at
+  debug level); `holo` polls closer than 0.4 s and `npc` acts closer than 40 ms are dropped; a role screen opens at most every 250 ms. Every `act` is at
+  most 8000 bytes.
+- **Refusals** (a chat message with the lang key, the table sent again): `cyberblock.holo.pending` (a spawn or travel already on its way),
+  `cyberblock.holo.cooldown` (**60 s** between two spawns or travels; 5 s of spawn protection after one), `cyberblock.holo.team_only` (in a match only the
+  team's spawns; a spectator may use any), `cyberblock.holo.locked_zone` (a locked match zone), `cyberblock.holo.self`, `cyberblock.holo.friend_hidden`,
+  `cyberblock.holo.friend_away`, `cyberblock.holo.held` and `cyberblock.holo.vehicle` (V held by a scene or in a vehicle), `cyberblock.holo.travel_unlinked`
+  (fast travel needs an active Cyberpunk). A travel is never a team spawn.
+- **The join password.** Every `act` of a player locked by `JoinLock` (until `/login`) is dropped before its handler; such a player never gets a table
+  grant, its pin is on nobody's table and it cannot be joined as a friend.
+- **Validation.** A malformed act (a missing field, a kind or action outside its list, an `id` or `name` too long, `p` not two numbers) is dropped
+  quietly. On the client a `holo`, `npc` or `surgery` body with one bad entry is dropped whole, never fatal.
+
 ### Phase 7 differences from megaplan section 1 (for the integrator)
 Section 1 is the contract; these readings differ from its text or add to it, and the integrator amends section 1 (or the packages) at the merge.
 - **The vendor `reply` is LOCAL, not UP.** Section 1.9 row 7 classes `reply` (ext) `kind:"vendor"` as UP. It is the host's own Night City screen
@@ -1487,7 +1529,7 @@ Section 1 is the contract; these readings differ from its text or add to it, and
 - **The hub sends `park` too.** Section 1.9 row 7 says that on `hub` "the scripts park V". The server also sends the Phase 3 `park` with every `hub`, in the
   order above, and the scripts park V on either one (7S: `Hub.reds` on `hub`, `Park.reds` on `park`); the DLL's `parked` answers the `park`.
 - **New hub rules.** The refused-park exit, the second entering pair on a session start and the order of a Holo-Table spawn out of the hub are this
-  section's requirements for 7H (`HubTravel`: the exit on `parked ok:false` is not in 7H's branch yet), 7T (the `vteleport` after the leaving pair) and 7S
+  section's requirements for 7H (`HubTravel.onParked` takes the player out on `parked ok:false`), 7T (the `vteleport` after the leaving pair) and 7S
   (`Teleport.reds` refuses while parked; `Park.reds` releases before any teleport).
 
 ### Phase 7 names
@@ -1523,6 +1565,58 @@ Phase 7 examples, Minecraft to Cyberpunk:
 {"t":"uiact","a":"atlasreq","arg":"fasttravel","hash":0,"id":32}
 {"t":"uiact","a":"fasttravel","arg":"Watson Docks","hash":0,"id":4}
 {"t":"uiact","a":"cpmenu","arg":"vendor","hash":0,"id":3}
+```
+
+The payload examples tell one story: the guest CbGuest1 looks at the table (its own pin and the host's, a landmark and "join a friend"), spawns at
+Corpo Plaza, then joins the host; the host picks a fast-travel point; at a vendor figure the guest opens the buy tab and buys the bread, and at a
+ripperdoc cuts the surgery bar.
+
+Phase 7 examples, client to server (`cyberblock:act`, `t:"holo"`):
+```jsonl
+{"detail":true}
+```
+
+Phase 7 examples, client to server (`cyberblock:act`, `t:"holospawn"`):
+```jsonl
+{"kind":"landmark","id":"cyberblock:corpo_plaza"}
+{"kind":"friend","id":"3f2a8d1c-5b7e-4c1a-9d3e-0a1b2c3d4e5f"}
+```
+
+Phase 7 examples, client to server (`cyberblock:act`, `t:"holohide"`):
+```jsonl
+{"on":true}
+```
+
+Phase 7 examples, client to server (`cyberblock:act`, `t:"holotravel"`):
+```jsonl
+{"name":"Watson Docks","p":[-1180.5,912.0]}
+```
+
+Phase 7 examples, client to server (`cyberblock:act`, `t:"npc"`):
+```jsonl
+{"e":812,"a":"tab","arg":"buy"}
+{"e":812,"a":"do","arg":"b0"}
+{"e":815,"a":"cut","arg":""}
+```
+
+Phase 7 examples, server to client (`cyberblock:ui`, `t:"holo"`):
+```jsonl
+{"open":true,"match":false,"role":"player","hidden":false,"cooldown":0,"pins":[{"id":"3f2a8d1c-5b7e-4c1a-9d3e-0a1b2c3d4e5f","name":"CbHost1","p":[-1230.5,64.0,820.5],"yaw":90,"linked":true,"team":-1,"car":false,"combat":false,"downed":false,"you":false},{"id":"9c0b7e2a-1d4f-4e6a-8b2c-5d6e7f8a9b0c","name":"CbGuest1","p":[-1236.5,64.0,810.5],"yaw":-45,"linked":false,"team":-1,"col":"#55FFFF","car":false,"combat":false,"downed":false,"you":true}],"spawns":[{"kind":"landmark","id":"cyberblock:corpo_plaza","name":"Corpo Plaza","p":[-1050.0,30.0,120.0],"district":"City Center","owner":"","ok":true,"why":""},{"kind":"friend","id":"3f2a8d1c-5b7e-4c1a-9d3e-0a1b2c3d4e5f","name":"CbHost1","p":[-1230.5,64.0,820.5],"district":"","owner":"CbHost1","ok":true,"why":""}],"layers":[{"id":"npcs","items":[{"p":[-1232.0,816.0],"v":0.6}]}],"detail":[{"x0":-1232,"z0":816,"n":2,"h":"AEAAQABBgAA=","c":"HBwMAA=="}]}
+```
+
+Phase 7 examples, server to client (`cyberblock:ui`, `t:"holotravel"`):
+```jsonl
+{"name":"Watson Docks","p":[-1180.5,912.0]}
+```
+
+Phase 7 examples, server to client (`cyberblock:ui`, `t:"npc"`):
+```jsonl
+{"e":812,"role":"shop","name":"Dax","title":"cyberblock.role.vendor","line":"Fresh off the boat, choom.","eddies":105,"tab":"buy","tabs":["buy","sell"],"result":"ok","rows":[{"id":"b0","item":"minecraft:bread","n":2,"key":"","text":"","sub":"","price":15,"btn":"buy","on":true},{"id":"b1","item":"minecraft:iron_sword","n":1,"key":"","text":"","sub":"","price":200,"btn":"buy","on":false}]}
+```
+
+Phase 7 examples, server to client (`cyberblock:ui`, `t:"surgery"`):
+```jsonl
+{"e":815,"implant":"sandevistan","lo":0.41,"hi":0.59,"period":1600,"timeout":15000}
 ```
 
 ## Shared memory `Local\CyberblockFrame`

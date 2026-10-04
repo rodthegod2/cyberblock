@@ -206,17 +206,22 @@ the game window.
    **parked**.
 3. **Expect, if (g) works:** a person of Night City walks right past V and **ignores** V (no reaction at all, nobody shoots V). If it does not work, the log says the
    park used its fallback (P7-9): V waits at a fast-travel point instead (still invulnerable and invisible) and is brought back when you leave.
-4. Leave with `/cyberblock hub` again (or the pause screen's **Cyberblock...** button, or the portal block). **Expect:** Night City comes back at once, V is
-   where it was, you can move and save again, and Steve is back where he came from.
+4. Leave with `/cyberblock hub` again (or the **Afterlife hub** button at the top right of the pause screen, **Leave the Afterlife** inside it, or the
+   portal block). **Expect:** Night City comes back at once, V is where it was, you can move and save again, and Steve is back where he came from.
 5. **Never over a free V.** Get into a car (or start a conversation scene) and type `/cyberblock hub`: **expect** a "Not now" message and nobody moves.
    If the game still refuses to park V once you are in, **expect** to be taken straight back out with the reason (server log `V not parked`): the full-screen
    cover never stays up while V is free.
 6. Enter again and **close Cyberpunk** (or press F9 Off): V must be released, nobody stays parked or invisible. **Start Cyberpunk again** (or F9 On) while
    Steve is still in the hub: **expect** full-screen Minecraft and V parked again, once (the server log shows one `hub in:true, park on:true` line).
-7. **Before `/login`** (a guest who just joined, not an operator): `/cyberblock hub`, the pause screen's **Cyberblock...** hub button and a hub portal do
+7. **Drop the link while in the hub.** Enter the hub as the host, then close the Minecraft client (or end its process in Task Manager, like a crash).
+   **Expect** in Night City at once: V visible, moving, the camera free and saving allowed (try a save). `Cyberblock.log` shows `park: off (Minecraft lost)`
+   and `hub: forgotten (Minecraft lost)` (or `hub: forgotten (the link dropped)`). Start Minecraft and rejoin: Steve is still in the hub, so the hub picks
+   up again once (full screen, V parked); leave it and V is free and saving allowed again.
+8. **Before `/login`** (a guest who just joined, not an operator): `/cyberblock hub`, the pause screen's **Afterlife hub** button and a hub portal do
    **nothing**; the guest stays where it joined and still has to type `/login`.
-8. **As the guest** (after `/login`, not an operator): `/cyberblock hub` (or the pause screen) simply walks you in and back; the host sees nothing (no cover, no park).
-9. The Match Terminal says "coming in Phase 8"; the leaderboards show match wins, gigs done and chaos (zero until someone earns some).
+9. **As the guest** (after `/login`, not an operator): `/cyberblock hub` (or the **Afterlife hub** button) simply walks you in and back; the host sees
+   nothing (no cover, no park).
+10. The Match Terminal says "coming in Phase 8"; the leaderboards show match wins, gigs done and chaos (zero until someone earns some).
 
 ### P7-6. The Holo-Table
 1. In the hub's Holo-Table room right-click the table. **Expect:** a shared **3D model** of the replica's map, coloured like the Atlas; drag turns it, the
@@ -239,11 +244,19 @@ the game window.
 3. The screen's **Night City vendor...** button opens Cyberpunk's own screen for the same shop (for installing cyberware at a ripperdoc, or buyback).
 4. Open the **ripperdoc of the prologue** or any shop of a mission: **expect** Cyberpunk's own screen to stay (pass-through).
 5. If a shop's stock cannot be read (fallback of (f)), the same: Cyberpunk's own screen stays and the log says so (P7-9).
+6. **A ripperdoc as the host.** Open an ordinary ripperdoc in Night City (not the prologue one). **Expect:** a Minecraft screen too, with its implants and
+   real prices (installing still goes through **Night City vendor...**). Then grep `Cyberblock.log` for the gun shop and the ripperdoc: `vendors: <name> ->
+   minecraft screen open` is there for **both**, and there is **no** `vendors: <name> pass-through` line for either.
 
 ### P7-8. Fast travel from the Holo-Table (host)
 1. In the Holo-Table open the **fast-travel** list: your game's fast-travel points. Pick one.
 2. **Expect:** the game's own fast travel (a loading, then V stands at that point). When the game does not allow it right now (a job locks fast travel, V is in
-   a vehicle or in combat, a scene holds V) the list says so and a click shows "Not now: ..." instead. Picked in the hub, it runs once you leave the hub.
+   a vehicle or in combat, a scene holds V) the list says so and a click shows "Not now: ..." instead.
+3. **Picked in the hub.** Enter the hub, open the Holo-Table there and pick a fast-travel point. **Expect:** you leave the hub first ("Leaving the Afterlife
+   for ...", Night City comes back, V released), then V fast travels to the point, Steve follows, and V **stays** at the destination (it is not put back
+   where it was parked). The travel never runs while V is parked: if the toast "To ... when you leave the hub" shows, V was still parked when it arrived
+   and it runs 1 s after the release. In `Cyberblock.log`, `fast travel: to <name> (Holo-Table)` comes **after** `park: off (hub exit)` (with the toast,
+   `fast travel: to <name> when V leaves the hub (V is parked)` comes first); the server log has `holo: <you> -> travel <name>: leaving the hub first`.
 
 ### P7-9. Which way is it working? (the runtime paths)
 Open `red4ext\logs\Cyberblock.log` and the server log and copy these lines to Claude. The exact wording is the packages', so search for the word.
