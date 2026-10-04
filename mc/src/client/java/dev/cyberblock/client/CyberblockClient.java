@@ -77,6 +77,8 @@ public class CyberblockClient implements ClientModInitializer {
 		// Phase 8T: the Server Heat meter, the downed screen and HUD (crawling, revive, Trauma Team), the caster overlay
 		dev.cyberblock.client.mode.heat.HeatClient.init(); dev.cyberblock.client.mode.downed.DownedClient.init();
 		dev.cyberblock.client.mode.spectate.CasterClient.init();
+		// Phase 8X: player hacks (the Intrusion warning, the glitch overlay, Ping's outlines for the hacker's team)
+		dev.cyberblock.client.mode.pvphack.PvpHackClient.init();
 		ClientTickEvents.START_CLIENT_TICK.register(minecraft -> ClientInput.tickStart());
 		ClientTickEvents.END_CLIENT_TICK.register(CyberblockClient::tick);
 		// launcher players (plan retest3 M5): a "Play Cyberblock" button on the title screen

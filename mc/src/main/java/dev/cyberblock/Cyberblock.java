@@ -118,6 +118,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.holo.HoloModule.init();
 		// Phase 8T: Server Heat and its squads (heat_tier), Downed and revive with Trauma Team, spectator and caster mode (8-T1..8-T3)
 		dev.cyberblock.mode.heat.ServerHeat.init(); dev.cyberblock.mode.downed.Downed.init(); dev.cyberblock.mode.spectate.Spectate.init();
+		// Phase 8X: hacking players (opt-in and war zones, the Intrusion warning with a short Breach, Firewall and Netrunner) (8-X1)
+		dev.cyberblock.mode.pvphack.PvpHacks.init();
 		LOG.info("cyberblock loaded");
 	}
 

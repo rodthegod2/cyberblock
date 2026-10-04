@@ -15,11 +15,11 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class CyberwareRulesTest {
-	/** Plan retest2 section 1.7, copied by hand: the wire ids in their fixed order, then megaplan section 1.17's firewall (Phase 6). */
+	/** Plan retest2 section 1.7, copied by hand: the wire ids in their fixed order, then megaplan section 1.17's firewall (Phase 6) and netrunner (Phase 8). */
 	private static final List<String> PLAN = List.of(
 		"mantis_blades", "gorilla_arms", "monowire", "projectile_launch_system", "reinforced_tendons", "fortified_ankles",
 		"lynx_paws", "sandevistan", "berserk", "cyberdeck", "kerenzikov", "optical_camo", "subdermal_armor", "kiroshi_optics",
-		"biomonitor", "second_heart", "ram_upgrade", "firewall");
+		"biomonitor", "second_heart", "ram_upgrade", "firewall", "netrunner");
 
 	/** Section 1.7's table (retest3 section 1.8: the three melee arms are ACTIVE on L): id, slot, kind, duration and cooldown in ticks. */
 	private static final List<String> TABLE = List.of(
@@ -40,7 +40,8 @@ class CyberwareRulesTest {
 		"biomonitor circulatory AUTO 0 1800",
 		"second_heart circulatory AUTO 0 6000",
 		"ram_upgrade frontal_cortex PASSIVE 0 0",
-		"firewall frontal_cortex PASSIVE 0 0");
+		"firewall frontal_cortex AUTO 0 1200",
+		"netrunner nervous_system PASSIVE 0 0");
 
 	@Test
 	void idsAreThePlansInItsOrder() {
@@ -182,10 +183,13 @@ class CyberwareRulesTest {
 		assertEquals("arms", CyberwareRules.Trigger.ARMS.id());
 	}
 
-	/** Megaplan section 1.17: the firewall comes after the 17 of retest2, is passive, and takes the frontal cortex from the RAM upgrade. */
+	/**
+	 * Megaplan section 1.17: the firewall comes after the 17 of retest2, has no key (AUTO since Phase 8: it fires by itself on a player
+	 * hack), and takes the frontal cortex from the RAM upgrade.
+	 */
 	@Test
 	void theFirewallIsAppendedAndSharesTheFrontalCortex() {
-		assertEquals(Cyberware.values().length - 1, Cyberware.FIREWALL.ordinal());
+		assertEquals(17, Cyberware.FIREWALL.ordinal());
 		assertTrue(Cyberware.values().length <= CyberwareRules.MAX_IDS);
 		assertSame(Cyberware.FIREWALL, Cyberware.byId("firewall"));
 		assertNull(CyberwareRules.Trigger.of(Cyberware.FIREWALL));
@@ -194,6 +198,36 @@ class CyberwareRulesTest {
 		CyberwareRules.Installed in = CyberwareRules.install(Map.of("frontal_cortex/0", "ram_upgrade"), Cyberware.FIREWALL);
 		assertEquals(CyberwareRules.Install.REPLACED, in.outcome());
 		assertSame(Cyberware.RAM_UPGRADE, in.replaced());
+		assertEquals("firewall", in.slots().get("frontal_cortex/0"));
+	}
+
+	/** Megaplan 8-X1: a charged Firewall blocks one player hack, then recharges 60 s; the HUD shows it (AUTO). */
+	@Test
+	void theFirewallBlocksWhenChargedThenRecharges() {
+		Set<Cyberware> with = EnumSet.of(Cyberware.FIREWALL);
+		assertEquals(1200, Cyberware.FIREWALL.cooldownTicks());
+		assertTrue(CyberwareRules.firewallBlocks(with, CyberwareRules.Timer.NONE, 100L));
+		assertFalse(CyberwareRules.firewallBlocks(EnumSet.of(Cyberware.RAM_UPGRADE), CyberwareRules.Timer.NONE, 100L));
+		CyberwareRules.Timer fired = CyberwareRules.Timer.fire(100L, 0, Cyberware.FIREWALL.cooldownTicks());
+		assertFalse(CyberwareRules.firewallBlocks(with, fired, 101L));
+		assertFalse(CyberwareRules.firewallBlocks(with, fired, 1299L));
+		assertTrue(CyberwareRules.firewallBlocks(with, fired, 1300L));
+		assertEquals(List.of(Cyberware.FIREWALL), CyberwareRules.activeOrder(with));
+	}
+
+	/** Megaplan section 1.17 (Phase 8): the netrunner comes after the firewall, is passive, and takes the nervous system from the Kerenzikov. */
+	@Test
+	void theNetrunnerIsAppendedAndSharesTheNervousSystem() {
+		assertEquals(Cyberware.values().length - 1, Cyberware.NETRUNNER.ordinal());
+		assertTrue(Cyberware.values().length <= CyberwareRules.MAX_IDS);
+		assertSame(Cyberware.NETRUNNER, Cyberware.byId("netrunner"));
+		assertNull(CyberwareRules.Trigger.of(Cyberware.NETRUNNER));
+		assertTrue(CyberwareRules.netrunnerResists(EnumSet.of(Cyberware.NETRUNNER, Cyberware.FIREWALL)));
+		assertFalse(CyberwareRules.netrunnerResists(EnumSet.of(Cyberware.FIREWALL)));
+		CyberwareRules.Installed in = CyberwareRules.install(Map.of("nervous_system/0", "kerenzikov", "frontal_cortex/0", "firewall"), Cyberware.NETRUNNER);
+		assertEquals(CyberwareRules.Install.REPLACED, in.outcome());
+		assertSame(Cyberware.KERENZIKOV, in.replaced());
+		assertEquals("netrunner", in.slots().get("nervous_system/0"));
 		assertEquals("firewall", in.slots().get("frontal_cortex/0"));
 	}
 

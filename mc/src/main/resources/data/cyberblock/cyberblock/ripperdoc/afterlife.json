@@ -35,6 +35,10 @@
 			"price": 1300
 		},
 		{
+			"implant": "netrunner",
+			"price": 1400
+		},
+		{
 			"implant": "cyberdeck",
 			"price": 1500
 		},

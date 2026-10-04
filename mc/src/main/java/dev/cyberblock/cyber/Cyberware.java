@@ -5,7 +5,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The implants in their fixed wire order: the 17 of plan retest2 section 1.7, then the ones megaplan section 1.17 appends (the
- * firewall from Phase 6; at most 32 in all). Mantis Blades, Gorilla Arms and Monowire are ACTIVE
+ * firewall from Phase 6, the netrunner from Phase 8; at most 32 in all). Mantis Blades, Gorilla Arms and Monowire are ACTIVE
  * since plan retest3 section 1.8 (an ability on the Arms key L; their passive modifiers stay). Item id `cyberblock:<id>`, wire id `<id>`. Times are
  * ticks at 20 TPS; the duration is how long an ACTIVE or AUTO implant's effect lasts, the cooldown how long after that it
  * cannot fire again (0: no cooldown).
@@ -29,10 +29,16 @@ public enum Cyberware {
 	SECOND_HEART(CyberSlot.CIRCULATORY, Kind.AUTO, 0, 6000),
 	RAM_UPGRADE(CyberSlot.FRONTAL_CORTEX, Kind.PASSIVE, 0, 0),
 	/**
-	 * Megaplan section 1.17 (Phase 6): appended after the 17 of plan retest2. Passive: it raises the Breach difficulty when its owner
-	 * defends (6-B1) and blocks player hacks (Phase 8). It shares the frontal cortex (one position) with the RAM upgrade.
+	 * Megaplan section 1.17 (Phase 6): appended after the 17 of plan retest2. It raises the Breach difficulty when its owner defends
+	 * (6-B1) and, from Phase 8 (8-X1), fires by itself to block one player hack, then recharges 60 s (AUTO, so the HUD shows the
+	 * recharge). It shares the frontal cortex (one position) with the RAM upgrade.
 	 */
-	FIREWALL(CyberSlot.FRONTAL_CORTEX, Kind.PASSIVE, 0, 0);
+	FIREWALL(CyberSlot.FRONTAL_CORTEX, Kind.AUTO, 0, 1200),
+	/**
+	 * Megaplan section 1.17 (Phase 8, 8-X1): appended after the firewall. Passive: player hacks on its owner last half as long. It
+	 * takes the nervous system's one position from the Kerenzikov (a reflex implant against a netrunner's one).
+	 */
+	NETRUNNER(CyberSlot.NERVOUS_SYSTEM, Kind.PASSIVE, 0, 0);
 
 	/** PASSIVE: always on. ACTIVE: fired with its key (Y, L or O: CyberwareRules.Trigger). AUTO: fires by itself. */
 	public enum Kind {
