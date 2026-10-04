@@ -60,6 +60,8 @@ public class CyberblockClient implements ClientModInitializer {
 		dev.cyberblock.client.replica.ReplicaRender.init();
 		// proxies are figures for guests and nothing for an active host, whose Cyberpunk shows the real NPCs (megaplan 3-F1)
 		FigureRenderer.register();
+		// Phase 3E: the Meet Up request and the Offline Builds summary as toasts
+		dev.cyberblock.client.ui.MeetUpPrompt.init(); dev.cyberblock.client.ui.OfflineBuildsToast.init();
 		ClientTickEvents.START_CLIENT_TICK.register(minecraft -> ClientInput.tickStart());
 		ClientTickEvents.END_CLIENT_TICK.register(CyberblockClient::tick);
 		// launcher players (plan retest3 M5): a "Play Cyberblock" button on the title screen
