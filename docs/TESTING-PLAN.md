@@ -74,7 +74,8 @@ others, on the same test server, with the same host and guest.
    cameras":** **expect** the camera **goes off in Night City** (it stops turning), then Minecraft's eye block follows.
 4. Fail on purpose (let the timer run out or fill the buffer with wrong picks): **expect** an **alarm in the host's game** (the cameras of the
    area alert, V may see people react). A failure also costs Heat; with no Heat meter yet, the host's wanted level may go up by one if the game
-   allows it: tell Claude what happened.
+   allows it: tell Claude what happened. Where the police are off (some quests, police-free areas) or V is in a scene, the wanted level must
+   **not** change (the log says `Minecraft Heat only (police off here)`).
    **No free re-roll:** open a Breach, make one pick and close the screen: **expect** the same alarm. Open another one and close it without a
    pick, then right-click again: **expect** the **same grid** with the timer still running. Right after a failure a new right-click on that
    Net Port says to wait (10 s).
@@ -88,7 +89,9 @@ others, on the same test server, with the same host and guest.
 4. If the guest stops **the host's own car**, the host feels it: say so, that is the headline check of this phase.
 5. **Every effect wears off:** about **30 seconds** after each hack the car is as it was (the doors unlock, the engine and brake come back,
    the jam ends). Lock or jam the host's car, then have the host try to **save**: the save waits until the effect is over. Lock a car and
-   have the host leave the Minecraft server: the car is back to normal at once (the session cleanup).
+   have the host leave the Minecraft server: the car is back to normal at once (the session cleanup). Lock **V's own parked car**, then have
+   the host fast travel away at once: when V comes back to it later (also after a save and load), its doors open normally.
+   A car a quest uses (or whose engine a quest keeps off) answers **not hackable (quest)** or **not hackable (engine locked)** and is left alone.
 6. Open the Vehicle Panel **from the Net Map** while the guest stands far from V (more than 50 blocks away): it still works, because the
    reach is measured from V.
 
