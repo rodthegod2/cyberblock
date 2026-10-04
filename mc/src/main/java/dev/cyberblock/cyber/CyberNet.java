@@ -1,14 +1,14 @@
 package dev.cyberblock.cyber;
 
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
-import dev.cyberblock.net.Payloads;
 import dev.cyberblock.net.Permissions;
+import dev.cyberblock.net.ServerNet;
+import java.util.Map;
 import java.util.UUID;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import java.util.function.BiPredicate;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
@@ -30,131 +30,126 @@ public final class CyberNet {
 
 	/** CyberMod.onInitialize. */
 	static void init() {
-		HostSessions.listen("scaninfo", (session, m) -> {
+		listen("scaninfo", (session, player, m) -> {
 			ScanInfo info = ScanInfo.parse(m);
 			if (info == null) {
 				warn("bad scaninfo dropped");
 			} else {
-				Hacking.onScanInfo(session.player().level().getServer(), owner(session), info);
+				Hacking.onScanInfo(player.level().getServer(), owner(session), info);
 			}
 		});
-		HostSessions.listen("hackresult", (session, m) -> {
+		listen("hackresult", (session, player, m) -> {
 			HackResult result = HackResult.parse(m);
 			if (result == null) {
 				warn("bad hackresult dropped");
 			} else {
-				Hacking.onResult(session.player().level().getServer(), session.uuid(), result);
+				Hacking.onResult(player.level().getServer(), session.uuid(), result);
 			}
 		});
-		HostSessions.listen("hackspread", (session, m) -> {
+		listen("hackspread", (session, player, m) -> {
 			HackSpread spread = HackSpread.parse(m);
 			if (spread == null) {
 				warn("bad hackspread dropped");
 			} else {
-				HackFx.onSpread(session.player().level().getServer(), new CyberRoute.Key(session.uuid(), spread.id()), spread);
+				HackFx.onSpread(player.level().getServer(), new CyberRoute.Key(session.uuid(), spread.id()), spread);
 			}
 		});
-		HostSessions.listen("killed", (session, m) -> {
+		listen("killed", (session, player, m) -> {
 			Kills.Killed killed = Kills.parse(m);
 			if (killed == null) {
 				warn("bad killed dropped");
 			} else {
-				Kills.onKilled(session.player(), killed);
+				Kills.onKilled(player, killed);
 			}
 		});
-		HostSessions.listen("state", (session, m) -> {
+		listen("state", (session, player, m) -> {
 			if (!m.has("active") || m.get("active").getAsBoolean()) {
-				Kit.onActive(session.player());
+				Kit.onActive(player);
 			}
 		});
 		// after each host hello (megaplan section 1.2 "hello"): Cyberpunk gets this player's perks and implants again
 		HostSessions.onStart(session -> {
-			PerkShop.sendPerks(session.player());
-			Ripperdoc.sendCyberware(session.player());
+			ServerPlayer player = session.player();
+			if (player != null) {
+				PerkShop.sendPerks(player);
+				Ripperdoc.sendCyberware(player);
+			}
 		});
 		HostSessions.onEnd(session -> Hacking.ownerEnded(session.uuid()));
-		if (!ServerPlayNetworking.registerGlobalReceiver(Payloads.Act.TYPE, (payload, context) -> onAct(context.player(), payload.t(), payload.json()))) {
-			// the net core already receives `cyberblock:act`: it hands the cyber track's types to onAct
-			Cyberblock.LOG.info("cyber: cyberblock:act is received by the net core");
-		}
+		// the net core receives `cyberblock:act`, parses the json and hands each type to its handler (catching what one throws)
+		ACTS.forEach((t, handler) -> ServerNet.onAct(t, (player, m) -> {
+			if (!handler.test(player, m)) {
+				warn("bad act " + t + " dropped");
+			}
+		}));
+	}
+
+	/** An UP listener for a host that is online (HostSession.player is null for a moment around a disconnect). */
+	private interface Up {
+		void on(HostSession session, ServerPlayer player, JsonObject m);
+	}
+
+	private static void listen(final String t, final Up up) {
+		HostSessions.listen(t, (session, m) -> {
+			ServerPlayer player = session.player();
+			if (player != null) {
+				up.on(session, player, m);
+			}
+		});
 	}
 
 	/**
-	 * One `cyberblock:act` request (CyberActs), server thread. False when the type is not the cyber track's or the request breaks
-	 * its rules (dropped and counted).
+	 * The cyber track's `cyberblock:act` requests (CyberActs) by type, server thread: false when the request breaks its rules
+	 * (dropped and counted). CyberNetTest checks that every CyberActs type is here.
 	 */
-	public static boolean onAct(final ServerPlayer player, final String t, final String json) {
-		JsonObject m;
-		try {
-			m = JsonParser.parseString(json).getAsJsonObject();
-		} catch (RuntimeException e) {
-			warn("bad act " + t + " dropped");
-			return false;
-		}
-
-		boolean ok = switch (t) {
-			case CyberActs.SCAN -> {
-				CyberActs.Scan scan = CyberActs.parseScan(m);
-				if (scan != null) {
-					Hacking.scan(player, scan);
-				}
-
-				yield scan != null;
+	static final Map<String, BiPredicate<ServerPlayer, JsonObject>> ACTS = Map.of(
+		CyberActs.SCAN, (player, m) -> {
+			CyberActs.Scan scan = CyberActs.parseScan(m);
+			if (scan != null) {
+				Hacking.scan(player, scan);
 			}
-			case CyberActs.HACK -> {
-				Hack hack = CyberActs.parseHack(m);
-				if (hack != null) {
-					Hacking.useChip(player, hack);
-				}
 
-				yield hack != null;
+			return scan != null;
+		},
+		CyberActs.HACK, (player, m) -> {
+			Hack hack = CyberActs.parseHack(m);
+			if (hack != null) {
+				Hacking.useChip(player, hack);
 			}
-			case CyberActs.PERK -> {
-				Perk perk = CyberActs.parsePerk(m);
-				if (perk != null) {
-					PerkShop.buy(player, perk);
-				}
 
-				yield perk != null;
+			return hack != null;
+		},
+		CyberActs.PERK, (player, m) -> {
+			Perk perk = CyberActs.parsePerk(m);
+			if (perk != null) {
+				PerkShop.buy(player, perk);
 			}
-			case CyberActs.WARE -> {
-				CyberActs.Ware ware = CyberActs.parseWare(m);
-				if (ware != null && ware.install()) {
-					Ripperdoc.install(player, ware.cyberware());
-				} else if (ware != null) {
-					Ripperdoc.remove(player, ware.slot());
-				}
 
-				yield ware != null;
+			return perk != null;
+		},
+		CyberActs.WARE, (player, m) -> {
+			CyberActs.Ware ware = CyberActs.parseWare(m);
+			if (ware != null && ware.install()) {
+				Ripperdoc.install(player, ware.cyberware());
+			} else if (ware != null) {
+				Ripperdoc.remove(player, ware.slot());
 			}
-			case CyberActs.FIRE -> {
-				CyberActs.Fire fire = CyberActs.parseFire(m);
-				if (fire != null) {
-					Vec3 aim = fire.aim() != null && fire.aim().distanceTo(player.getEyePosition()) <= FIRE_AIM_SLACK ? fire.aim() : null;
-					CyberwareEffects.fire(player, fire.trigger(), aim);
-				}
 
-				yield fire != null;
+			return ware != null;
+		},
+		CyberActs.FIRE, (player, m) -> {
+			CyberActs.Fire fire = CyberActs.parseFire(m);
+			if (fire != null) {
+				Vec3 aim = fire.aim() != null && fire.aim().distanceTo(player.getEyePosition()) <= FIRE_AIM_SLACK ? fire.aim() : null;
+				CyberwareEffects.fire(player, fire.trigger(), aim);
 			}
-			case CyberActs.SANDEVISTAN -> {
-				CyberwareEffects.sprintSandevistan(player);
-				yield true;
-			}
-			default -> false;
-		};
-		if (!ok) {
-			warn("bad act " + t + " dropped");
-		}
 
-		return ok;
-	}
-
-	/** A `cyberblock:ui` answer for one player's screens (a player without the mod's channel gets nothing). */
-	static void ui(final ServerPlayer player, final String t, final String json) {
-		if (ServerPlayNetworking.canSend(player, Payloads.Ui.TYPE)) {
-			ServerPlayNetworking.send(player, new Payloads.Ui(t, json));
-		}
-	}
+			return fire != null;
+		},
+		CyberActs.SANDEVISTAN, (player, m) -> {
+			CyberwareEffects.sprintSandevistan(player);
+			return true;
+		});
 
 	/** `perks`, `cyberware`, `cyberfx`: DOWN to the player's own session only; a guest has none and nothing is sent. */
 	static void toOwn(final ServerPlayer player, final String json) {
@@ -219,7 +214,7 @@ public final class CyberNet {
 
 		@Override
 		public boolean allowsHacks(final UUID guest) {
-			return Permissions.allows(this.session.uuid(), guest, Permissions.HACKS);
+			return Permissions.allows(this.session.uuid(), guest, Permissions.Toggle.HACKS);
 		}
 
 		@Override

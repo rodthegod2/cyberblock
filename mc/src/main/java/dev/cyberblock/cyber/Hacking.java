@@ -1,6 +1,7 @@
 package dev.cyberblock.cyber;
 
 import dev.cyberblock.Bridge;
+import dev.cyberblock.net.ServerNet;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -129,7 +130,7 @@ public final class Hacking {
 			e = hint(player, scan, reach);
 		}
 
-		UUID owner = e == null ? null : Bridge.proxyOwnerOf(e);
+		UUID owner = e == null ? null : Bridge.proxyOwnerOf.apply(e);
 		long target = owner == null ? 0L : Bridge.proxyIdOf.applyAsLong(e);
 		if (target == 0L) {
 			e = null;
@@ -165,7 +166,7 @@ public final class Hacking {
 	/** Nothing to scan (a guest aiming at nothing, or a game he may not hack): his lock and tooltip go. */
 	private static void nothing(final ServerPlayer player) {
 		unlock(player.getUUID());
-		CyberNet.ui(player, "scaninfo", ScanInfo.NOTHING.toJson(-1));
+		ServerNet.ui(player, "scaninfo", ScanInfo.NOTHING.toJson(-1));
 	}
 
 	/** The guest action bar line of megaplan section 1.6. */
@@ -193,7 +194,7 @@ public final class Hacking {
 			unlock(asker);
 		}
 
-		CyberNet.ui(player, "scaninfo", info.toJson(entity == null ? -1 : entity));
+		ServerNet.ui(player, "scaninfo", info.toJson(entity == null ? -1 : entity));
 	}
 
 	/** The first stack of hack's chip anywhere in the player's inventory (hotbar, main inventory, offhand), else EMPTY. Either side. */

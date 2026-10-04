@@ -215,7 +215,7 @@ public final class HackFx {
 	// ---- where -------------------------------------------------------------------------------------------------------
 
 	private static @Nullable Entity proxy(final ServerLevel level, final UUID owner, final long target) {
-		Entity e = Bridge.proxyById(owner, target);
+		Entity e = Bridge.proxyById.at(owner, target);
 		return e != null && !e.isRemoved() && e.level() == level ? e : null;
 	}
 
