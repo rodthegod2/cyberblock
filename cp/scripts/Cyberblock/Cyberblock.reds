@@ -75,6 +75,7 @@ public class CyberblockSystem extends ScriptableSystem {
   private let hud: ref<CyberblockHud>;
   private let surveyTour: ref<CyberblockSurveyTour>;
   private let session: ref<CyberblockSession>;
+  private let env: ref<CyberblockEnv>;
   private let saving: Bool;
   private let savingTicks: Int32;
   private let savingPumps: Int32;
@@ -91,6 +92,7 @@ public class CyberblockSystem extends ScriptableSystem {
     this.hud = new CyberblockHud();
     this.surveyTour = new CyberblockSurveyTour();
     this.session = new CyberblockSession();
+    this.env = new CyberblockEnv();
     Cyberblock_SetActive(false, false);
     // A menu can pause the game (and with it this tick), so its opening is also taken straight from the blackboard.
     let ui = GameInstance.GetBlackboardSystem(this.GetGameInstance()).Get(GetAllBlackboardDefs().UI_System);
@@ -304,6 +306,8 @@ public class CyberblockSystem extends ScriptableSystem {
     // reload in the middle of a session.
     this.hud.Register(game);
     this.hud.Tick(player, live);
+    // Megaplan 3-S1: Cyberpunk's time and weather for Minecraft, 1 Hz (Env.reds).
+    this.env.Tick(game, !this.saving && Cyberblock_IsLinked());
     // Notifications shown while Off are dropped here; while On (saves included) CyberblockUi.Pump reports them at once.
     CyberblockNotifications.Poll(game, on);
     // The DLL pumps the UI bridge at 30 Hz; while it does not (CyberblockUi.Pump not found yet), Minecraft's screen
