@@ -154,6 +154,11 @@ public final class UiLink {
 		return last != 0L && System.nanoTime() - last < nanos;
 	}
 
+	/** Tests only: no host has spoken. */
+	static void forgetHost() {
+		lastHostNanos = 0L;
+	}
+
 	private static void heard() {
 		lastHostNanos = System.nanoTime();
 	}
