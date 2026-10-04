@@ -22,10 +22,51 @@ loom {
 			vmArgs "--enable-native-access=ALL-UNNAMED", "-Xmx2G", "-XX:+UseZGC"
 			// a test client beside the real game: gradlew runClient -Pcyberblock.port=25702 "-Pcyberblock.frame=Local\CyberblockFrameTestM"
 			// (-Pcyberblock.autostart=true opens the Night City world from the title screen, as the launcher profile does)
-			["cyberblock.port", "cyberblock.frame", "cyberblock.autostart"].each { if (project.hasProperty(it)) vmArg "-D${it}=${project.property(it)}" }
+			["cyberblock.port", "cyberblock.frame", "cyberblock.autostart", "cyberblock.devtools"].each { if (project.hasProperty(it)) vmArg "-D${it}=${project.property(it)}" }
+			// several clients side by side (megaplan Phase 1): -Pcyberblock.runDir=run/host1 (inside the git-ignored run folder)
+			// gives each its own options, saves and logs; the offline name goes through --args="--username CbHost1"
+			runDir project.findProperty("cyberblock.runDir") ?: "run"
+		}
+		// dedicated test server: gradlew runServer -Pcyberblock.serverPort=25913 [-Pcyberblock.runDir=run/server] [-Pcyberblock.devtools=true]
+		// offline mode and 127.0.0.1 only, from the template server/test-server.properties (megaplan rule 0.7)
+		server {
+			programArgs "nogui"
+			vmArgs "-Xmx2G"
+			["cyberblock.devtools"].each { if (project.hasProperty(it)) vmArg "-D${it}=${project.property(it)}" }
+			runDir project.findProperty("cyberblock.runDir") ?: "run/server"
 		}
 	}
 }
+
+// writes eula.txt and server.properties into the test server's run folder before runServer
+def serverFiles = tasks.register("cyberblockServerFiles") {
+	def dir = file(project.findProperty("cyberblock.runDir") ?: "run/server")
+	def template = file("../server/test-server.properties")
+	def port = project.findProperty("cyberblock.serverPort")?.toString()
+	outputs.upToDateWhen { false }
+	doLast {
+		if (!template.isFile()) {
+			throw new GradleException("missing ${template}: the dedicated test server's template")
+		}
+
+		if (port != null && !(port ==~ /\d{1,5}/)) {
+			throw new GradleException("cyberblock.serverPort must be a port number, not ${port}")
+		}
+
+		// the forced lines: an offline-mode test server only ever listens on this PC
+		def forced = ["online-mode": "false", "server-ip": "127.0.0.1"]
+		if (port != null) {
+			forced["server-port"] = port
+		}
+
+		def lines = template.readLines("UTF-8").findAll { line -> !forced.keySet().any { line.startsWith(it + "=") } }
+		forced.each { key, value -> lines << "${key}=${value}".toString() }
+		dir.mkdirs()
+		new File(dir, "server.properties").setText(lines.join("\n") + "\n", "UTF-8")
+		new File(dir, "eula.txt").setText("eula=true\n", "UTF-8")
+	}
+}
+tasks.matching { it.name == "runServer" }.configureEach { dependsOn serverFiles }
 
 dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
