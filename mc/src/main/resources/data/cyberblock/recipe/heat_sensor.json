@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "redstone",
+	"ingredients": [
+		"minecraft:comparator",
+		"minecraft:blaze_powder",
+		"minecraft:redstone",
+		"minecraft:copper_ingot"
+	],
+	"result": {
+		"id": "cyberblock:heat_sensor",
+		"count": 1
+	}
+}

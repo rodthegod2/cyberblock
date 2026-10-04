@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "redstone",
+	"ingredients": [
+		"minecraft:tnt",
+		"minecraft:redstone",
+		"minecraft:gunpowder",
+		"minecraft:iron_ingot"
+	],
+	"result": {
+		"id": "cyberblock:charge",
+		"count": 1
+	}
+}

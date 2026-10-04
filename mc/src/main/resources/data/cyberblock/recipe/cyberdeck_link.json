@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "misc",
+	"ingredients": [
+		"minecraft:lead",
+		"minecraft:copper_ingot",
+		"minecraft:redstone",
+		"minecraft:quartz"
+	],
+	"result": {
+		"id": "cyberblock:cyberdeck_link",
+		"count": 1
+	}
+}

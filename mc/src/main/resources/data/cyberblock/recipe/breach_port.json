@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "redstone",
+	"ingredients": [
+		"minecraft:dispenser",
+		"minecraft:redstone",
+		"minecraft:ender_pearl",
+		"minecraft:iron_ingot"
+	],
+	"result": {
+		"id": "cyberblock:breach_port",
+		"count": 1
+	}
+}

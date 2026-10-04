@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "redstone",
+	"ingredients": [
+		"minecraft:iron_ingot",
+		"minecraft:redstone",
+		"minecraft:repeater",
+		"minecraft:copper_ingot"
+	],
+	"result": {
+		"id": "cyberblock:device_relay",
+		"count": 1
+	}
+}
