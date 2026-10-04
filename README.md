@@ -99,6 +99,10 @@ Everything works on Night City's real NPCs, vehicles and devices.
 - **Playing together (LAN):** open your world to LAN and a friend with only Minecraft (and the Cyberblock mod) joins as a
   guest: their TNT, hits and blocks reach your Cyberpunk game, and you decide what they may do with
   `/cyberblock guests` ([details](docs/HOW-TO-PLAY.md#playing-together-lan)). Online servers are the next goal.
+- **Night City as Minecraft (Phase 3, on a server):** guests see the streets the hosts explored as solid, coloured replica
+  blocks (neon glows) that are saved in the world, the people and cars as figures at real speed, Cyberpunk's time of day and
+  weather, can build while the host is away, and `/cyberblock meetup <player>` takes you to a friend
+  ([details](docs/HOW-TO-PLAY.md#night-city-as-minecraft-phase-3); a [web map](docs/WEBMAP.md) is possible with BlueMap).
 
 ## Build from source
 ```

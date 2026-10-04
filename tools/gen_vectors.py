@@ -89,6 +89,29 @@ binds_given = [
 ]
 
 
+# Phase 3 (megaplan 1.8 item 1, 3-P1): the material codes of `ground.m` and the name rules every copy of the table must obey. The
+# names are what Phase 0's CET lines B1-B5 will show: until then the table and these cases are the working contract.
+material_names = [
+    "concrete_light_02", "Concrete_White_Wall", "plaster_dirty", "concrete_dark_01", "Concrete_Wet_Floor", "rubble_pile",
+    "asphalt_road_a", "Road_Marking_Yellow", "sidewalk_slab_a", "pavement_concrete", "curb_stone", "glass_window_01",
+    "shopfront_glass_blue", "metal_solid_01", "scaffold_pipe", "Steel_Plate_Rust", "brick_wall_red", "masonry_old",
+    "tile_bathroom_white", "marble_floor", "dirt_path", "terrain_rock_cliff", "gravel_a", "water_still", "puddle_street",
+    "neon_red_sign", "neon_light_blue_tube", "neon_blue_tube", "emissive_light_gray_panel", "led_pink_strip", "neon_gray_bar",
+    "neon_generic_sign", "hologram_ad_01", "environment_probe", "", "None", "unknown_thing", "billboard_frame",
+]
+materials = {
+    "codes": [{"code": c, "id": cbmath.SURFACE_MATERIALS[c] if c < cbmath.NEON_FIRST else f"neon_{cbmath.DYES[c - cbmath.NEON_FIRST]}",
+               "block": cbmath.material_block(c), "match": list(cbmath.MATERIAL_MATCH.get(c, ()))}
+              for c in range(cbmath.MATERIAL_MAX_CODE + 1)],
+    "order": list(cbmath.MATERIAL_ORDER),
+    "neon_any": list(cbmath.NEON_ANY),
+    "neon_any_code": cbmath.NEON_FIRST,
+    "cases": [{"name": n, "code": cbmath.material_code(n)} for n in material_names],
+}
+# The clock (3-E1) is its own top-level key: `materials` holds only the name table, which 3D's cb_tests reads key by key.
+clock = [{"time": [h, m], "ticks": cbmath.env_ticks(h, m)} for h, m in ((6, 0), (12, 0), (18, 0), (0, 0), (22, 30), (5, 45), (23, 59), (0, 1))]
+
+
 out = {
     "quat": [{"q": list(q), "yaw": y, "pitch": p} for q in qs for y, p in [cbmath.cp_quat_to_mc_yaw_pitch(*q)]],
     "down": [{"hit": list(h), "k": k, "range": list(cbmath.down_hit_to_range(*h, off(k)))} for k in hit_ks for h in hits]
@@ -108,10 +131,14 @@ out = {
     "survey_column": [{"cell": list(c), "cp": list(cbmath.survey_column(*c))} for c in survey_cells],
     "prefs_apply": [{"given": given, "current": current, "expect": expect, "bad": bad}
                     for given, current in prefs_given for expect, bad in [cbmath.apply_prefs(given, current)]],
+    "materials": materials,
+    "clock": clock,
 }
 Path("shared/vectors.json").write_text(json.dumps(out, indent=1), newline="\n")
 print(f"wrote {len(out['quat'])} quat, {len(out['down'])} down, {len(out['wall'])} wall, "
       f"{len(out['mc_pos'])} mc_pos, {len(out['mc_block'])} mc_block, {len(out['align'])} align, "
       f"{len(out['mc_yaw'])} mc_yaw, {len(out['mc_vel'])} mc_vel, {len(out['binds'])} binds, "
       f"{len(out['binds_apply'])} binds_apply, {len(out['survey'])} survey, {len(out['survey_column'])} survey_column, "
-      f"{len(out['prefs_apply'])} prefs_apply cases")
+      f"{len(out['prefs_apply'])} prefs_apply cases, "
+
+      f"{len(materials['codes'])} material codes, {len(materials['cases'])} material cases, {len(clock)} clock")

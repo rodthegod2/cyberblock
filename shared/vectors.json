@@ -3447,5 +3447,544 @@
    },
    "bad": 0
   }
+ ],
+ "materials": {
+  "codes": [
+   {
+    "code": 0,
+    "id": "unknown",
+    "block": null,
+    "match": []
+   },
+   {
+    "code": 1,
+    "id": "concrete_light",
+    "block": "cyberblock:nc_concrete_light",
+    "match": [
+     "concrete_light",
+     "concrete_white",
+     "plaster",
+     "stucco",
+     "limestone"
+    ]
+   },
+   {
+    "code": 2,
+    "id": "concrete_dark",
+    "block": "cyberblock:nc_concrete_dark",
+    "match": [
+     "concrete_dark",
+     "concrete_black",
+     "concrete_wet",
+     "rubble",
+     "stone_dark"
+    ]
+   },
+   {
+    "code": 3,
+    "id": "asphalt",
+    "block": "cyberblock:nc_asphalt",
+    "match": [
+     "asphalt",
+     "road_",
+     "tarmac",
+     "street_surface"
+    ]
+   },
+   {
+    "code": 4,
+    "id": "sidewalk",
+    "block": "cyberblock:nc_sidewalk",
+    "match": [
+     "sidewalk",
+     "pavement",
+     "curb",
+     "kerb",
+     "paving"
+    ]
+   },
+   {
+    "code": 5,
+    "id": "glass",
+    "block": "cyberblock:nc_glass",
+    "match": [
+     "glass",
+     "window",
+     "windshield",
+     "shopfront"
+    ]
+   },
+   {
+    "code": 6,
+    "id": "metal",
+    "block": "cyberblock:nc_metal",
+    "match": [
+     "metal",
+     "steel",
+     "iron_",
+     "aluminium",
+     "aluminum",
+     "chrome",
+     "scaffold",
+     "grate"
+    ]
+   },
+   {
+    "code": 7,
+    "id": "brick",
+    "block": "cyberblock:nc_brick",
+    "match": [
+     "brick",
+     "masonry"
+    ]
+   },
+   {
+    "code": 8,
+    "id": "tile",
+    "block": "cyberblock:nc_tile",
+    "match": [
+     "tile",
+     "ceramic",
+     "marble"
+    ]
+   },
+   {
+    "code": 9,
+    "id": "ground",
+    "block": "cyberblock:nc_ground",
+    "match": [
+     "terrain",
+     "dirt",
+     "sand",
+     "gravel",
+     "grass",
+     "soil",
+     "rock_",
+     "mud",
+     "badlands",
+     "ground"
+    ]
+   },
+   {
+    "code": 10,
+    "id": "water",
+    "block": "cyberblock:nc_water",
+    "match": [
+     "water",
+     "puddle",
+     "pool",
+     "sewage"
+    ]
+   },
+   {
+    "code": 11,
+    "id": "neon_white",
+    "block": "cyberblock:nc_neon_white",
+    "match": [
+     "neon_white",
+     "emissive_white",
+     "led_white"
+    ]
+   },
+   {
+    "code": 12,
+    "id": "neon_orange",
+    "block": "cyberblock:nc_neon_orange",
+    "match": [
+     "neon_orange",
+     "emissive_orange",
+     "led_orange"
+    ]
+   },
+   {
+    "code": 13,
+    "id": "neon_magenta",
+    "block": "cyberblock:nc_neon_magenta",
+    "match": [
+     "neon_magenta",
+     "emissive_magenta",
+     "led_magenta"
+    ]
+   },
+   {
+    "code": 14,
+    "id": "neon_light_blue",
+    "block": "cyberblock:nc_neon_light_blue",
+    "match": [
+     "neon_light_blue",
+     "emissive_light_blue",
+     "led_light_blue"
+    ]
+   },
+   {
+    "code": 15,
+    "id": "neon_yellow",
+    "block": "cyberblock:nc_neon_yellow",
+    "match": [
+     "neon_yellow",
+     "emissive_yellow",
+     "led_yellow"
+    ]
+   },
+   {
+    "code": 16,
+    "id": "neon_lime",
+    "block": "cyberblock:nc_neon_lime",
+    "match": [
+     "neon_lime",
+     "emissive_lime",
+     "led_lime"
+    ]
+   },
+   {
+    "code": 17,
+    "id": "neon_pink",
+    "block": "cyberblock:nc_neon_pink",
+    "match": [
+     "neon_pink",
+     "emissive_pink",
+     "led_pink"
+    ]
+   },
+   {
+    "code": 18,
+    "id": "neon_gray",
+    "block": "cyberblock:nc_neon_gray",
+    "match": [
+     "neon_gray",
+     "emissive_gray",
+     "led_gray"
+    ]
+   },
+   {
+    "code": 19,
+    "id": "neon_light_gray",
+    "block": "cyberblock:nc_neon_light_gray",
+    "match": [
+     "neon_light_gray",
+     "emissive_light_gray",
+     "led_light_gray"
+    ]
+   },
+   {
+    "code": 20,
+    "id": "neon_cyan",
+    "block": "cyberblock:nc_neon_cyan",
+    "match": [
+     "neon_cyan",
+     "emissive_cyan",
+     "led_cyan"
+    ]
+   },
+   {
+    "code": 21,
+    "id": "neon_purple",
+    "block": "cyberblock:nc_neon_purple",
+    "match": [
+     "neon_purple",
+     "emissive_purple",
+     "led_purple"
+    ]
+   },
+   {
+    "code": 22,
+    "id": "neon_blue",
+    "block": "cyberblock:nc_neon_blue",
+    "match": [
+     "neon_blue",
+     "emissive_blue",
+     "led_blue"
+    ]
+   },
+   {
+    "code": 23,
+    "id": "neon_brown",
+    "block": "cyberblock:nc_neon_brown",
+    "match": [
+     "neon_brown",
+     "emissive_brown",
+     "led_brown"
+    ]
+   },
+   {
+    "code": 24,
+    "id": "neon_green",
+    "block": "cyberblock:nc_neon_green",
+    "match": [
+     "neon_green",
+     "emissive_green",
+     "led_green"
+    ]
+   },
+   {
+    "code": 25,
+    "id": "neon_red",
+    "block": "cyberblock:nc_neon_red",
+    "match": [
+     "neon_red",
+     "emissive_red",
+     "led_red"
+    ]
+   },
+   {
+    "code": 26,
+    "id": "neon_black",
+    "block": "cyberblock:nc_neon_black",
+    "match": [
+     "neon_black",
+     "emissive_black",
+     "led_black"
+    ]
+   }
+  ],
+  "order": [
+   11,
+   12,
+   13,
+   14,
+   15,
+   16,
+   17,
+   18,
+   19,
+   20,
+   21,
+   22,
+   23,
+   24,
+   25,
+   26,
+   "neon",
+   5,
+   10,
+   6,
+   7,
+   8,
+   3,
+   4,
+   2,
+   1,
+   9
+  ],
+  "neon_any": [
+   "neon",
+   "emissive",
+   "hologram",
+   "led_",
+   "light_strip"
+  ],
+  "neon_any_code": 11,
+  "cases": [
+   {
+    "name": "concrete_light_02",
+    "code": 1
+   },
+   {
+    "name": "Concrete_White_Wall",
+    "code": 1
+   },
+   {
+    "name": "plaster_dirty",
+    "code": 1
+   },
+   {
+    "name": "concrete_dark_01",
+    "code": 2
+   },
+   {
+    "name": "Concrete_Wet_Floor",
+    "code": 2
+   },
+   {
+    "name": "rubble_pile",
+    "code": 2
+   },
+   {
+    "name": "asphalt_road_a",
+    "code": 3
+   },
+   {
+    "name": "Road_Marking_Yellow",
+    "code": 3
+   },
+   {
+    "name": "sidewalk_slab_a",
+    "code": 4
+   },
+   {
+    "name": "pavement_concrete",
+    "code": 4
+   },
+   {
+    "name": "curb_stone",
+    "code": 4
+   },
+   {
+    "name": "glass_window_01",
+    "code": 5
+   },
+   {
+    "name": "shopfront_glass_blue",
+    "code": 5
+   },
+   {
+    "name": "metal_solid_01",
+    "code": 6
+   },
+   {
+    "name": "scaffold_pipe",
+    "code": 6
+   },
+   {
+    "name": "Steel_Plate_Rust",
+    "code": 6
+   },
+   {
+    "name": "brick_wall_red",
+    "code": 7
+   },
+   {
+    "name": "masonry_old",
+    "code": 7
+   },
+   {
+    "name": "tile_bathroom_white",
+    "code": 8
+   },
+   {
+    "name": "marble_floor",
+    "code": 8
+   },
+   {
+    "name": "dirt_path",
+    "code": 9
+   },
+   {
+    "name": "terrain_rock_cliff",
+    "code": 9
+   },
+   {
+    "name": "gravel_a",
+    "code": 9
+   },
+   {
+    "name": "water_still",
+    "code": 10
+   },
+   {
+    "name": "puddle_street",
+    "code": 10
+   },
+   {
+    "name": "neon_red_sign",
+    "code": 25
+   },
+   {
+    "name": "neon_light_blue_tube",
+    "code": 14
+   },
+   {
+    "name": "neon_blue_tube",
+    "code": 22
+   },
+   {
+    "name": "emissive_light_gray_panel",
+    "code": 19
+   },
+   {
+    "name": "led_pink_strip",
+    "code": 17
+   },
+   {
+    "name": "neon_gray_bar",
+    "code": 18
+   },
+   {
+    "name": "neon_generic_sign",
+    "code": 11
+   },
+   {
+    "name": "hologram_ad_01",
+    "code": 11
+   },
+   {
+    "name": "environment_probe",
+    "code": 0
+   },
+   {
+    "name": "",
+    "code": 0
+   },
+   {
+    "name": "None",
+    "code": 0
+   },
+   {
+    "name": "unknown_thing",
+    "code": 0
+   },
+   {
+    "name": "billboard_frame",
+    "code": 0
+   }
+  ]
+ },
+ "clock": [
+  {
+   "time": [
+    6,
+    0
+   ],
+   "ticks": 0
+  },
+  {
+   "time": [
+    12,
+    0
+   ],
+   "ticks": 6000
+  },
+  {
+   "time": [
+    18,
+    0
+   ],
+   "ticks": 12000
+  },
+  {
+   "time": [
+    0,
+    0
+   ],
+   "ticks": 18000
+  },
+  {
+   "time": [
+    22,
+    30
+   ],
+   "ticks": 16500
+  },
+  {
+   "time": [
+    5,
+    45
+   ],
+   "ticks": 23750
+  },
+  {
+   "time": [
+    23,
+    59
+   ],
+   "ticks": 17983
+  },
+  {
+   "time": [
+    0,
+    1
+   ],
+   "ticks": 18017
+  }
  ]
 }

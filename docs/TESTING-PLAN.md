@@ -1,9 +1,135 @@
 # Cyberblock — in-game test session (2026-10-03)
 
 Everything below is built, unit-tested, compile-checked against the real 2.31 game scripts and reviewed. Work top to
-bottom (**Re-test: Wave A first**; it points into Re-test Q and Re-test 1 for the details; then **In-game fixes 3**, then
-Re-test 3); each step says what should happen. Tell Claude "F4: what you saw" or "R5 L-1: what you saw" (or "step N: ...") and it reads
+bottom (**Re-test: Wave B, Phase 3 first** when you are testing Wave B, with the sections of Phases 4 and 5 beside it; then
+**Re-test: Wave A**, which points into Re-test Q and Re-test 1 for the details; then **In-game fixes 3**, then Re-test 3); each step says what should happen. Tell Claude "F4: what you saw" or "R5 L-1: what you saw" (or "step N: ...") and it reads
 `red4ext\logs\Cyberblock.log`, Minecraft's `mc\run\logs\latest.log` and captures the game window to diagnose.
+
+## Re-test: Wave B, Phase 3 (the Night City replica)
+
+The Phase 3 part of the Wave B session: **Night City as Minecraft**. The server builds Night City from the hosts' probes as
+solid, coloured replica blocks that stay in the world, guests see the people and cars as figures, the Minecraft clock and
+weather follow Cyberpunk, guests can build while the host is away, **Meet Up** takes you to a friend, and a server allows
+four hosts. Phases 4 and 5 of Wave B add their own sections next to this one; you play them in one session. Plan:
+`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 7. The player guide is
+[Night City as Minecraft](HOW-TO-PLAY.md#night-city-as-minecraft-phase-3). Tell Claude "P3-2: what you saw" and it reads
+`Cyberblock.log`, the server log, `latest.log` and the game window.
+
+**Before you start.**
+- Restart Minecraft and the local test server the way you did for Wave A (ask Claude to start it); the guest is the harness
+  client `CbGuest1` or a friend. A guest needs only Minecraft with the mod.
+- Phase 0's CET lines (Wave A, W-A8) decide which way the plugin reads materials, weather and the teleport. If you have not run
+  them yet, run **B1 to B5, ENV, G1 to G3, G5 and G6** first and paste the `CBP0` lines to Claude: it corrects the material
+  names and the weather names once, and the replica looks right at once. Without them everything below still works, with the
+  written fallbacks (the guess by height and district for materials; no weather if it cannot be read).
+- Use **survival** for P3-1 to P3-5 and **creative** for P3-6.
+
+**What to try (one screen):**
+1. **Walk two streets** in Cyberpunk (Cyberblock On, joined to the test server), then fly over them as the guest: replica
+   blocks in roughly the right colours, neon glowing (P3-1).
+2. **Quit Cyberpunk:** the replica stays. The guest builds a wall across the street. Start Cyberpunk again: the wall stops V and
+   a toast lists it; `/cyberblock changes` too (P3-2).
+3. **The guest watches** people walking and cars driving at real speed; V destroys a car (a rocket), it leaves a dark wreck for 5 s (P3-3).
+4. **Wait for Cyberpunk night:** Minecraft is night too; rain in Cyberpunk, rain in Minecraft if the plugin can read it (P3-4).
+5. **`/cyberblock meetup <friend>`** (and the other way round): V appears at the friend's spot (P3-5).
+6. **Creative guest breaks a replica block:** it comes back in about 10 s, nothing changes in Night City (P3-6).
+7. **A second host** (only when you have one, and after `"maxHosts": 4` in the server's `server.json`) plays at the same time (P3-7).
+8. **As a guest, open the Atlas:** it shows what the host explored (P3-8).
+9. **Read the "which way" lines** and paste them to Claude (P3-9).
+10. **The web map** (only if you installed BlueMap; [docs/WEBMAP.md](WEBMAP.md)) (P3-10).
+
+| Item | What changed |
+|---|---|
+| Replica | `ground` ranges with a material code (`ground.m`) become `nc_*` blocks in air cells only, saved in the world; `unground` removes them only when the cell was seen empty (`seen:true`); the host's own client does not draw them |
+| Figures | proxies are visible for guests, moving at real speed; wrecks 5 s, bodies 3 s; none without their owner's session |
+| Environment | clock (`env`) and weather from the first host; Meet Up with `vteleport`/`vteleported`; `park` |
+| Offline Builds | the resync gives a returning host every block placed meanwhile, a toast and `/cyberblock changes` |
+| Hosts | `maxHosts` 4 for a newly written `server.json` (an existing one keeps its value: set it to 4 by hand); the shared Night City map (`terrain` both ways) |
+| Tools | `tools.mpcheck replica twohosts2 meetup` (automatic checks with fake hosts); the docs and the web map page |
+
+### P3-1. The replica from two streets
+1. Join the test server as a host, switch Cyberblock On and walk two streets (a block or two of each is enough; go round a
+   corner).
+2. As the guest, fly (creative, or `/gamemode creative`) over the same streets.
+3. **Expect:** the streets, sidewalks, walls, glass, metal and neon signs are solid blocks in roughly the colours they have in
+   Night City; neon blocks **glow**; doors and gates are not walls; water is a flat blue surface. On your own screen as a host
+   the blocks are **not** drawn (you see real Night City), and switching Cyberblock Off for a moment shows them.
+4. Server log, near the top of what the replica does: lines about the replica blocks placed (grep `replica`); no
+   `relay: ... dropped` for your link.
+
+### P3-2. Offline Builds
+1. Quit Cyberpunk (or press F9 to switch Cyberblock Off and close the game): the replica **stays** in the world, your figures
+   disappear.
+2. As the guest, build a wall of 2 to 3 blocks across a street you explored.
+3. Start Cyberpunk and switch Cyberblock On again: the wall **stops V**, and a toast says "While you were away: N blocks
+   placed, M removed (by <guest>)". `/cyberblock changes` lists them by region with coordinates.
+
+### P3-3. Figures
+1. As the guest, stand where the host walks: people appear as plain human figures walking along the streets, cars as boxes
+   driving past, **at the speed they have in Cyberpunk**, no jumping; a hostile person has a red name tag.
+2. V destroys a car that V damaged (a rocket, or shoot it until it blows up): a dark wreck stays about 5 s, then goes. A car
+   that crashes into a wall on its own leaves no wreck (the plugin reports only deaths of what V hurt), so do not use that one.
+   A dead person lies down about 3 s.
+3. The host quits Cyberpunk: the figures are gone (the replica stays).
+
+### P3-4. Time and weather
+1. Look at the Cyberpunk clock (the HUD) and the Minecraft sky as the guest: night in one is night in the other (06:00 sunrise,
+   12:00 noon, 18:00 sunset, 00:00 midnight). The daylight cycle is off, so the Minecraft sky does not run ahead.
+2. If it rains in Cyberpunk, it rains in Minecraft; a storm is rain with thunder; other weather is clear. If Claude's reading of
+   the "which way" lines (P3-9) says the weather cannot be read, only the clock follows: that is the written fallback.
+3. With a second host (P3-7) the first host's time and weather stay.
+
+### P3-5. Meet Up
+1. Host to guest: `/cyberblock meetup <guest>`; the guest accepts with the clickable chat line (or `/cyberblock meetup accept`)
+   within 60 s. V appears at the guest's coordinates (the streets load first, V lands on the ground) and Steve follows. Do it
+   from about 1 km away.
+2. Guest to host: `/cyberblock meetup <host>`; the host accepts; the guest appears next to the host's Steve.
+3. A second request within 30 s is refused; so is one in a vehicle or while V is held ("blocked" with the reason).
+4. Cyberblock.log has the teleport lines (grep `teleport`): see P3-9.
+
+### P3-6. Breaking a replica block (creative)
+1. As the creative guest, break a replica block: it **comes back in about 10 s**; Night City (the host's game) is unchanged;
+   there is no `block` event for the host.
+2. Survival: it cannot be broken, and TNT never removes it (a guest's TNT still reaches the host's game when the host allows
+   explosions). Setting **Creative can erase the replica permanently** on: the broken block stays broken until a probe
+   reports the spot again.
+
+### P3-7. Two hosts (when available)
+**First** (the server owner, once): the server wrote `config/cyberblock/server.json` on its first start and keeps it, so a server
+that ran before Phase 3 still has `"maxHosts": 1` (the new default 4 is only for a new file). Set `"maxHosts": 4` in that file,
+save and restart the server; its startup line must say `maxHosts 4`. Without this the second player silently joins as a guest.
+
+A second player with Cyberpunk joins as a host while you are one: both see their own Night City, both streets are in the
+replica, a hit on one host's NPC never reaches the other host (even if their ids collide), time and weather stay the first
+host's. `tools.mpcheck twohosts2` already checks this with fake hosts.
+
+### P3-8. The Atlas as a guest
+As a guest open the Atlas (the map key): it draws the streets the hosts explored (the server's shared map), not an empty map.
+A host's own Atlas keeps its own survey and also adds to the shared map.
+
+### P3-9. Which way is it working? (the runtime paths)
+The plugin and the server each write **one line** when a feature has a fallback. Open `red4ext\logs\Cyberblock.log` (and the
+server log, or `latest.log` of the host) and copy these lines to Claude. The exact wording belongs to the packages that print
+them: **search for the word**; the answers in the right column are what each result means.
+
+| Feature | Search for | The line says |
+|---|---|---|
+| Materials of the probe hits | `material` | the names come from the hit's material (best), from the hit mesh's appearance name, or from the guess by height and district (fallback); names the table did not know are logged once each, as `unknown` |
+| Doors and devices | `device` | probe rays that hit a device are cast again past it (doors never become walls); or the device filter of Phase 4 is needed |
+| Weather | `weather` | which reader gives the weather (Codeware's weather state), or that it cannot be read; names that are not mapped count as `other` |
+| Teleport (Meet Up) | `teleport` | the way V is moved (hold high until the streets load, then snap to the ground) and the result of each move: ok, `no ground`, `timeout` or `blocked (reason)` |
+| Park | `park` | `park: on (<reason>)` and `park: off (<reason>)`, and whether V is unseen by NPCs (the invisible way) or held at a fast-travel point (fallback) |
+| Server | `replica`, `meetup`, `env` | replica blocks placed and removed, Meet Up requests and results, and the clock and weather of the first host |
+
+### P3-10. The web map (optional)
+Only if you installed BlueMap ([docs/WEBMAP.md](WEBMAP.md)): open the page in a browser; the replica streets are there from
+above in their colours, neon included; a block a guest places shows up soon after. Tell Claude what looks wrong; the fix is a
+resource pack in `config/bluemap/packs/`.
+
+### Phase 3 descopes and risks (short)
+Material accuracy depends on Phase 0 (b): without the real material names the palette is a guess by height and district;
+the weather depends on the Codeware reader; the replica grows with exploration (disk; Phase 9 measures it); a host's client
+needs a re-mesh when Cyberblock is switched On or Off; the web map is optional. Details: `docs/notes/phase3-descopes.md`.
 
 ## Re-test: Wave A (Phase Q + Phase 1 + Phase 2 tools)
 

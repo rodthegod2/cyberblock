@@ -171,3 +171,58 @@ def apply_prefs(given: dict, current: dict) -> tuple[dict, int]:
             else:
                 bad += 1
     return out, bad
+
+
+# ---- Phase 3 (megaplan sections 1.9 and 7): replica materials and the clock -----------------------------------------------
+# `ground.m` carries one material code per range. The names are `TraceResult.material` or, when that is None, the hit mesh's
+# `meshAppearance` (Phase 0 amendment, section 1.8 item 1). The real names are only known from the CET lines B1-B5, so the
+# substrings below are a WORKING table: 3S's scripts send raw names, 3D's DLL table and 3A's `material_palette` heuristics map
+# them with exactly this rule, and `shared/vectors.json` `materials` pins every copy. A change goes through the integrator.
+DYES = ("white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray", "light_gray", "cyan", "purple", "blue", "brown",
+        "green", "red", "black")
+"""The vanilla dye order; `nc_neon_<dye>` is code 11 + its index."""
+NEON_FIRST = 11
+SURFACE_MATERIALS = ("unknown", "concrete_light", "concrete_dark", "asphalt", "sidewalk", "glass", "metal", "brick", "tile", "ground", "water")
+"""Codes 0..10 in order; codes 11..26 are the sixteen neon blocks."""
+MATERIAL_MAX_CODE = NEON_FIRST + len(DYES) - 1
+MATERIAL_MATCH = {  # code -> lower-case substrings of a material or mesh appearance name that select it
+    1: ("concrete_light", "concrete_white", "plaster", "stucco", "limestone"),
+    2: ("concrete_dark", "concrete_black", "concrete_wet", "rubble", "stone_dark"),
+    3: ("asphalt", "road_", "tarmac", "street_surface"),
+    4: ("sidewalk", "pavement", "curb", "kerb", "paving"),
+    5: ("glass", "window", "windshield", "shopfront"),
+    6: ("metal", "steel", "iron_", "aluminium", "aluminum", "chrome", "scaffold", "grate"),
+    7: ("brick", "masonry"),
+    8: ("tile", "ceramic", "marble"),
+    9: ("terrain", "dirt", "sand", "gravel", "grass", "soil", "rock_", "mud", "badlands", "ground"),
+    10: ("water", "puddle", "pool", "sewage"),
+    **{NEON_FIRST + i: (f"neon_{d}", f"emissive_{d}", f"led_{d}") for i, d in enumerate(DYES)},
+}
+NEON_ANY = ("neon", "emissive", "hologram", "led_", "light_strip")
+"""A neon-like name that names no dye is the white neon block (code 11)."""
+MATERIAL_ORDER = (*range(NEON_FIRST, MATERIAL_MAX_CODE + 1), "neon", 5, 10, 6, 7, 8, 3, 4, 2, 1, 9)
+"""The order the rules are tried in, first match wins: a dye neon, any other neon, glass, water, metal, brick, tile, asphalt,
+sidewalk, dark concrete, light concrete, ground. A name that matches nothing is 0 (the scripts log it once)."""
+
+
+def material_block(code: int) -> str | None:
+    """The block of a code: `cyberblock:nc_<material>` or `cyberblock:nc_neon_<dye>`; None for 0 (unknown: the palette decides)."""
+    if code == 0 or not 0 <= code <= MATERIAL_MAX_CODE:
+        return None
+    return f"cyberblock:nc_{SURFACE_MATERIALS[code]}" if code < NEON_FIRST else f"cyberblock:nc_neon_{DYES[code - NEON_FIRST]}"
+
+
+def material_code(name: str) -> int:
+    """The code of a material or mesh appearance name (case-insensitive substring rules, see MATERIAL_ORDER)."""
+    low = name.lower()
+    for rule in MATERIAL_ORDER:
+        needles = NEON_ANY if rule == "neon" else MATERIAL_MATCH[rule]
+        if any(n in low for n in needles):
+            return NEON_FIRST if rule == "neon" else rule
+    return 0
+
+
+def env_ticks(hour: int, minute: int) -> int:
+    """Minecraft day time of Cyberpunk's clock (megaplan 3-E1): ((h*60 + m) / 1440 * 24000 + 18000) mod 24000, so 06:00 is
+    tick 0 (sunrise), 12:00 tick 6000 (noon), 18:00 tick 12000 (sunset) and 00:00 tick 18000 (midnight)."""
+    return round(((hour * 60 + minute) / 1440 * 24000 + 18000) % 24000) % 24000

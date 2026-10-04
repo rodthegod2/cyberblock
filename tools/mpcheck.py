@@ -17,6 +17,13 @@ Scenarios (megaplan task 1-T2). Each one starts what it needs on its own test po
   flood         a DLL link that floods `ground`: rate limits, the overflow kick, the server survives
   reconnect     the host's DLL link drops (barriers and proxies gone) and returns (`blocks reset:true`, the whole ground again)
   twohosts      `maxHosts` 2, two fake hosts with colliding ids: each one gets only its own hits
+  replica       Phase 3: one fake host `--replica` and a guest: the street stands as replica blocks of the right materials, a `seen`
+                removal takes one scaffold away and a plain one keeps the other, `clear` removes nothing, the car V destroyed (`killed`)
+                stays a wreck about 5 s, the host's clock and weather
+                drive the world, the replica stays when the host's link drops and a guest's wall reaches the returning host
+  twohosts2     Phase 3: two replica hosts that overlap, with colliding ids: both streets and both figure sets stand, a hit reaches only
+                its owner, and only the first host's clock drives the world
+  meetup        Phase 3: Meet Up both ways with a fake host answering `vteleport` (the cooldown too)
   joinpassword  a server with a join password: a host waits as a guest until `/login`, then hosts at once; after a reconnect it
                 is remembered; five wrong passwords kick; the password is in no log (it is random per run, like the RCON one)
 
@@ -42,6 +49,7 @@ import contextlib
 import ctypes
 import hashlib
 import json
+import math
 import os
 import re
 import secrets
@@ -58,22 +66,28 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from tools import play
+from tools import cbmath, fakehost, play
 
 ROOT = Path(__file__).resolve().parents[1]
 COMMIT_LIMIT_GB, COMMIT_RECHECK_S, COMMIT_MAX_WAIT_S = 60.0, 60.0, 1800.0  # megaplan rule 0.7 and the task text
 CLIENT_BASE, SERVER_BASE = 25754, 25914  # package 1T (megaplan section 1.15): client 25754.., harness servers 25914-25918
 FRAME_PREFIX = "Local\\CyberblockFrame1T"  # + H (host client) or G (guest client), + the client number from 2 on
 OFFLINE_NAMES = ("CbHost1", "CbHost2", "CbGuest1", "CbGuest2")
-SCENARIOS = ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword")
+SCENARIOS = ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup")
 # + SERVER_BASE; scenarios run one after another, so two may share a port
-SERVER_SLOT = {"singleplayer": 0, "guest": 0, "versions": 1, "flood": 2, "reconnect": 3, "twohosts": 4, "joinpassword": 1}
+SERVER_SLOT = {"singleplayer": 0, "guest": 0, "versions": 1, "flood": 2, "reconnect": 3, "twohosts": 4, "joinpassword": 1, "replica": 0, "twohosts2": 2,
+               "meetup": 1}
 FORBIDDEN_PORTS = {25600}  # the user's own Minecraft <-> Cyberpunk link
 GRADLE_HEAP = "-Dorg.gradle.jvmargs=-Xmx1536m"
 # seconds: a server starting, a client opening its link port, a join, an effect to show up, "this must not happen"
 T_SERVER, T_CLIENT, T_JOIN, T_EFFECT, T_QUIET = 300.0, 400.0, 150.0, 45.0, 6.0
 T_STOP = 60.0  # a server gets this long to stop after RCON `stop` before its process tree is killed
 HOLD_S = 900 # a fake host keeps its link this long (the scenario stops it earlier)
+T_ENV = 60.0  # `replica`: the env cycle of the fake host takes 40 s, so each of its states shows up within this
+T_POLL = 0.5  # seconds between two looks of a poll
+T_WRECK, WRECK_MIN_S = 10.0, 2.5  # `replica`: a wreck (5 s on the server) goes within T_WRECK of its log line and stands at least WRECK_MIN_S
+DAY_TICKS = 24000
+COOLDOWN_S = 31.0  # `meetup`: the Meet Up cooldown is 30 s (megaplan 3-E2)
 FLOOD_S = 16.0  # how long `flood` keeps flooding (the overflow rule needs more than 10 s)
 LOGIN_GAP_S = 1.2  # `joinpassword`: between two /login attempts (the server takes one per second)
 HOSTILE_ID = "9007199254740993"  # the fake host's hostile human (protocol.md example id)
@@ -198,7 +212,7 @@ def server_argv(repo: Path, *, port: int, run_dir: Path) -> list[str]:
 
 def fakehost_argv(*, port: int, name: str, ver: str | None, frame: str, out_dir: Path, ids_from: int | None = None, hold: float = HOLD_S,
                   layers: Iterable[int] = (2,), modes: Iterable[str] = (), cmds: Iterable[str] = (), no_setup: bool = True, frames: int = 60,
-                  wait_host: float | None = None) -> list[str]:
+                  wait_host: float | None = None, shift: int = 0, env_hours: int = 0) -> list[str]:
     """tools.fakehost as one fake host: its own link port, log prefix, frame name and DLL version. `-u`: its output goes to a
     log file that the scenarios read while it runs, so it must not sit in a buffer until the process ends."""
     argv = [sys.executable, "-u", "-m", "tools.fakehost", "--port", str(port), "--name", name, "--shm", frame, "--out", str(out_dir),
@@ -207,6 +221,8 @@ def fakehost_argv(*, port: int, name: str, ver: str | None, frame: str, out_dir:
     argv += ["--no-setup"] if no_setup else []
     argv += ["--ids-from", str(ids_from)] if ids_from is not None else []
     argv += ["--wait-host", f"{wait_host:g}"] if wait_host is not None else []
+    argv += ["--shift", str(shift)] if shift else []
+    argv += ["--env-hours", str(env_hours)] if env_hours else []
     for command in cmds:
         argv += ["--cmd", command]
     return argv
@@ -511,11 +527,12 @@ class Env:
         return Client(name, port, frame, proc, proc.log)
 
     def fakehost(self, client: Client, *, ver: str | None, ids_from: int | None = None, layers: Iterable[int] = (2,), modes: Iterable[str] = (),
-                 cmds: Iterable[str] = (), hold: float = HOLD_S, no_setup: bool = True, wait_host: float | None = None) -> FakeHost:
+                 cmds: Iterable[str] = (), hold: float = HOLD_S, no_setup: bool = True, wait_host: float | None = None, shift: int = 0,
+                 env_hours: int = 0) -> FakeHost:
         """A fake Cyberpunk host connected to `client`'s link (waits until the client listens)."""
         client.wait_listening()
         argv = fakehost_argv(port=client.port, name=client.name, ver=ver, frame=client.frame, out_dir=self.run / f"frames-{client.name}", ids_from=ids_from,
-                             hold=hold, layers=layers, modes=modes, cmds=cmds, no_setup=no_setup, wait_host=wait_host)
+                             hold=hold, layers=layers, modes=modes, cmds=cmds, no_setup=no_setup, wait_host=wait_host, shift=shift, env_hours=env_hours)
         proc = Proc(f"fakehost-{client.name}", argv, self.repo, self._child_env(), self.run / "logs" / f"fakehost-{client.name}-{len(self.started)}.log")
         self.started.append(proc)
         self.logs[f"fake host {client.name}"] = proc.log
@@ -598,10 +615,11 @@ def explosion_pattern(name: str) -> str:
     return rf"\[{name}\] explosion: "
 
 
-def start_host(env: Env, rep: Report, server: Server, name: str, *, ver: str | None, ids_from: int | None = None) -> tuple[Client, FakeHost]:
-    """Join `server` as `name`, link a fake host and wait until the server made it a host."""
+def start_host(env: Env, rep: Report, server: Server, name: str, *, ver: str | None, ids_from: int | None = None, **fake) -> tuple[Client, FakeHost]:
+    """Join `server` as `name`, link a fake host (`fake`: more arguments of Env.fakehost, such as `modes` and `shift`) and wait until the
+    server made it a host."""
     client = env.client(name, join=server.port)
-    host = env.fakehost(client, ver=ver, ids_from=ids_from)
+    host = env.fakehost(client, ver=ver, ids_from=ids_from, **fake)
     rep.step(f"{name} is a host", lambda: server.log.wait(host_pattern(name), T_JOIN), must=True)
     rep.step(f"{name}: session started", lambda: server.log.wait(rf"session: {name} started", T_EFFECT))
     return client, host
@@ -779,8 +797,245 @@ def scenario_joinpassword(env: Env, rep: Report) -> None:
     rep.step("the password is in no log", lambda: all(server.join_password not in log.text() for log in env.logs.values()))
 
 
+# ---- Phase 3: the replica, two overlapping hosts, Meet Up (megaplan 3-P1) ----------------------------------------------------
+# These scenarios need packages 3R (replica blocks, shared map, offline builds log, multi-host) and 3E (env, Meet Up) merged: the
+# fake host `--replica` (tools/fakehost.py) plays Cyberpunk, RCON looks at the world. The block ids come from
+# `shared/vectors.json` `materials` (tools.cbmath), the clock from the plan's formula (3-E1).
+POS = re.compile(r"\[(-?[\d.eE+-]+)d, (-?[\d.eE+-]+)d, (-?[\d.eE+-]+)d\]")
+REPLICA_WALL = ((2, 64, 0), (2, 65, 0))  # the wall a guest builds on the road (its floor is y 62 and 63)
+TWO_SHIFT, TWO_HOURS = 8, 12  # `twohosts2`: the second street starts 8 blocks east, its clock is 12 hours off
+MEET_TOL = 6.0  # blocks: how close "at the target's position" and "next to the host's Steve" must be
+VTELEPORT = r'\[CbHost1\] vteleport: (\{.*\})'
+ENV_STATES = [(cbmath.env_ticks(*t), w in ("rain", "storm"), w == "storm", f"{t[0]:02d}:{t[1]:02d} {w}") for _, t, w in fakehost.ENV_CYCLE]
+
+
+def block_stands(server: Server, cell: tuple[int, int, int], block: str) -> bool:
+    x, y, z = cell
+    return server.passes(f"execute if block {x} {y} {z} {block}")
+
+
+def landmarks_stand(server: Server, shift: int = 0, only: Callable[[tuple[int, int, int]], bool] = lambda cell: True) -> bool:
+    """One cell of every material of the fake host's street (shifted east by `shift`) holds that material's replica block."""
+    return all(block_stands(server, cell, cbmath.material_block(code)) for cell, code in fakehost.replica_landmarks(shift) if only(cell))
+
+
+def scaffold_cell(which: tuple[int, int], shift: int = 0) -> tuple[int, int, int]:
+    return which[0] + shift, fakehost.SCAFFOLD_RANGE[0] + 1, which[1]
+
+
+def daytime(server: Server) -> int | None:
+    """The day time 0..23999: 26.3's `time query time` gives the default clock's total ticks ("Clock minecraft:overworld is at
+    88500 tick(s)"; 26.3 has no `time query daytime`), and 3E's EnvSync keeps that total going forward, so the day time is it mod 24000."""
+    match = re.search(r"Clock \S+ is at (-?\d+) tick", server.rcon("time query time"))
+    return int(match.group(1)) % DAY_TICKS if match else None
+
+
+def ticks_apart(a: int, b: int) -> int:
+    """How far apart two day times are on the 24000-tick circle (23990 and 10 are 20 apart)."""
+    d = abs(a - b) % DAY_TICKS
+    return min(d, DAY_TICKS - d)
+
+
+def time_is(server: Server, ticks: int, tol: int = 40) -> bool:
+    now = daytime(server)
+    return now is not None and ticks_apart(now, ticks) <= tol
+
+
+def weather_is(server: Server, *, rain: bool, thunder: bool) -> bool:
+    """The world's weather by two inline `weather_check` predicates (a storm is rain and thunder)."""
+    raining = server.passes('execute if predicate {condition:"minecraft:weather_check",raining:true}')
+    thundering = server.passes('execute if predicate {condition:"minecraft:weather_check",thundering:true}')
+    return raining == rain and thundering == thunder
+
+
+def daylight_holds(server: Server) -> bool:
+    """With `doDaylightCycle` off the time stands still between two env messages: two looks a moment apart read the same tick (three
+    tries, because an env step may fall in between)."""
+    for _ in range(3):
+        first = daytime(server)
+        time.sleep(T_QUIET / 4)
+        second = daytime(server)
+        if first is not None and second is not None and ticks_apart(first, second) <= 3:
+            return True
+    return False
+
+
+def player_pos(server: Server, name: str) -> tuple[float, float, float] | None:
+    match = POS.search(server.rcon(f"data get entity {name} Pos"))
+    return tuple(float(v) for v in match.groups()) if match else None
+
+
+def near_player(server: Server, name: str, where: Iterable[float] | None, tol: float = MEET_TOL) -> bool:
+    here, there = player_pos(server, name), tuple(where) if where is not None else None
+    return here is not None and there is not None and math.hypot(here[0] - there[0], here[2] - there[2]) <= tol
+
+
+def reported_cells(text: str, name: str) -> set[tuple[int, int, int]]:
+    """Every cell a fake host's output says Minecraft reported as a player block: the `blocks` resyncs and the `block` events."""
+    cells: set[tuple[int, int, int]] = set()
+    for match in re.finditer(rf"^\[{re.escape(name)}\] (blocks|block): (\{{.*\}})\s*$", text, re.M):  # \s*: a log written on Windows ends its lines with CRLF
+        try:
+            msg = json.loads(match.group(2))
+        except ValueError:
+            continue
+        if match.group(1) == "block" and isinstance(msg.get("pos"), list) and len(msg["pos"]) == 3:
+            cells.add(tuple(msg["pos"]))
+        if match.group(1) == "blocks" and isinstance(msg.get("c"), list):
+            cells |= {tuple(msg["c"][i:i + 3]) for i in range(0, len(msg["c"]) - 2, 3)}
+    return cells
+
+
+def proxy_count(server: Server) -> int:
+    """How many Night City people stand as proxies (26.3: `Test passed. Count: N`; 0 when none)."""
+    answer = server.rcon("execute if entity @e[type=cyberblock:proxy_human]")
+    match = re.search(r"count: (\d+)", answer, re.I)
+    return int(match.group(1)) if match else int(passed(answer))
+
+
+def hit_reaches_only(server: Server, owner: FakeHost, other: FakeHost, target: str) -> bool:
+    """A hit by the owner's own player on `target` reaches the owner's fake host and not the other one (colliding ids)."""
+    marks = owner.log.mark(), other.log.mark()
+    server.test(f"hit {owner.name} {target} 5.0", as_player=owner.name)
+    return bool(owner.log.wait(hit_pattern(owner.name, target), T_EFFECT, marks[0])) and other.log.quiet(hit_pattern(other.name, target), T_QUIET, marks[1])
+
+
+def wreck_stands(server: Server, shift: int = 0) -> bool:
+    """A vehicle proxy stands where the fake host's destroyed car stood (the driving car passes a metre away, at z 0.5)."""
+    x, y, z = -5.5 + shift, fakehost.SLAB_Y + 1.0, -0.5
+    return server.passes(f"execute if entity @e[type=cyberblock:proxy_vehicle,x={x},y={y},z={z},distance=..0.6]")
+
+
+def wreck_stays_then_goes(server: Server) -> bool:
+    """The fake host reports its standing car `killed` (V destroyed it): 3F's ProxyManager logs the wreck, the proxy stays there for
+    about 5 s and then goes. A proxy that only left `npcs` would be removed at once, without the log line."""
+    died = rf"figures: vehicle {fakehost.replica_ids()[3]} died \(wreck"
+    # before the log line the car stood there alive, so both must hold: the proxy at the spot and the line saying it died
+    poll(lambda: wreck_stands(server) and server.log.find(died), T_EFFECT, T_POLL, "the wreck")
+    seen = time.monotonic()
+    poll(lambda: not wreck_stands(server), T_WRECK, T_POLL, "the wreck to go")
+    return time.monotonic() - seen >= WRECK_MIN_S
+
+
+def changes_listed(server: Server) -> bool:
+    """`/cyberblock changes` answers (it is not unknown) and names the guest or a coordinate of the wall."""
+    answer = server.rcon("execute as CbHost1 run cyberblock changes")
+    return not re.search(r"unknown or incomplete|incorrect argument|unknown command", answer, re.I) and bool(re.search(r"CbGuest1|\b64\b", answer))
+
+
+def scenario_replica(env: Env, rep: Report) -> None:
+    server = env.server("replica", max_hosts=1)
+    client, host = start_host(env, rep, server, "CbHost1", ver=env.mod_version, layers=(), modes=("replica",), wait_host=T_JOIN)
+    metal, scaffolds = cbmath.material_block(6), (scaffold_cell(fakehost.SCAFFOLD_SEEN), scaffold_cell(fakehost.SCAFFOLD_LEFT))
+    rep.step("the street stands as replica blocks of the right materials (asphalt, sidewalk, brick, glass, three neon dyes, water, ...)",
+             lambda: poll(lambda: landmarks_stand(server), T_EFFECT, T_POLL, "the street"), must=True)
+    rep.step("both scaffold columns stand before the removals", lambda: all(block_stands(server, cell, metal) for cell in scaffolds))
+    rep.step("the replica is host ground: it never comes back to the host as a player block",
+             lambda: not reported_cells(host.log.text(), "CbHost1") & set(fakehost.replica_cells()))
+    rep.step("the figures are there as proxies", lambda: poll(lambda: proxies_stand(server), T_EFFECT, T_POLL, "proxies"))
+    rep.step("the car V destroyed (`killed`) stays a wreck for about 5 s, then goes", lambda: wreck_stays_then_goes(server))
+    rep.step("an `unground` with `seen:true` takes its scaffold away", lambda: poll(lambda: not block_stands(server, scaffolds[0], metal), T_EFFECT, T_POLL,
+                                                                                    "the seen removal"))
+    time.sleep(T_QUIET)  # the plain `unground` comes half a second after the seen one, `clear` and the whole ground again (without both) two seconds after it
+    rep.step("an `unground` without `seen` keeps its scaffold (it only left the probe radius)", lambda: block_stands(server, scaffolds[1], metal))
+    rep.step("`clear` and the ground sent again change nothing: the street stands, the removed scaffold stays removed, the other stays",
+             lambda: landmarks_stand(server) and not block_stands(server, scaffolds[0], metal) and block_stands(server, scaffolds[1], metal))
+    for ticks, rain, thunder, label in ENV_STATES:
+        rep.step(f"the clock and weather follow Cyberpunk: {label} (tick {ticks})",
+                 lambda ticks=ticks, rain=rain, thunder=thunder, label=label: poll(lambda: time_is(server, ticks) and weather_is(server, rain=rain, thunder=thunder),
+                                                                                    T_ENV, T_POLL, label))
+    rep.step("the daylight cycle is off: the time stands between two env messages", lambda: daylight_holds(server))
+    env.client("CbGuest1", join=server.port)
+    rep.step("a guest joins", lambda: server.log.wait(r"handshake: CbGuest1 .*-> guest", T_JOIN), must=True)
+    mark = server.log.mark()
+    host.stop()  # Cyberpunk is closed: the DLL link drops, Steve stays in the world
+    rep.step("the session ends when the link drops", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT, mark), must=True)
+    rep.step("the figures go with the session", lambda: poll(lambda: not proxies_stand(server), T_EFFECT, T_POLL, "the figures to go"))
+    rep.step("the replica stays while the host is away", lambda: landmarks_stand(server))
+    for x, y, z in REPLICA_WALL:  # the guest builds a wall on the road
+        server.rcon(f"execute as CbGuest1 run setblock {x} {y} {z} minecraft:stone")
+    rep.step("the guest's wall stands on the street", lambda: all(block_stands(server, cell, "minecraft:stone") for cell in REPLICA_WALL))
+    mark = server.log.mark()
+    returned = env.fakehost(client, ver=env.mod_version, layers=(), modes=("replica",), wait_host=T_JOIN)
+    rep.step("the host returns", lambda: server.log.wait(host_pattern("CbHost1"), T_JOIN, mark), must=True)
+    wall = r"\[CbHost1\] blocks: .*(?<![-\d])2, 64, 0(?!\d)"
+    rep.step("the resync tells the returning host about the guest's wall (Offline Builds)", lambda: returned.log.wait(wall, T_EFFECT))
+    rep.step("the resync carries no replica block", lambda: not reported_cells(returned.log.text(), "CbHost1") & set(fakehost.replica_cells()))
+    rep.step("`/cyberblock changes` lists what the guest built", lambda: changes_listed(server))
+    rep.step("the street still stands after the return", lambda: landmarks_stand(server))
+    rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))
+
+
+def scenario_twohosts2(env: Env, rep: Report) -> None:
+    server = env.server("twohosts2", max_hosts=2)
+    _, first = start_host(env, rep, server, "CbHost1", ver=env.mod_version, ids_from=COLLIDING_ID, layers=(), modes=("replica",), wait_host=T_JOIN)
+    _, second = start_host(env, rep, server, "CbHost2", ver=env.mod_version, ids_from=COLLIDING_ID, layers=(), modes=("replica",), wait_host=T_JOIN,
+                           shift=TWO_SHIFT, env_hours=TWO_HOURS)
+    rep.step("two hosts at once with maxHosts 2", lambda: server.log.find(host_pattern("CbHost1")) and server.log.find(host_pattern("CbHost2")))
+    rep.step("host 1's own part of the street stands (x < 0)", lambda: poll(lambda: landmarks_stand(server, 0, lambda c: c[0] < 0), T_EFFECT, T_POLL, "street 1"))
+    rep.step("host 2's own part of the street stands (x > 8)",
+             lambda: poll(lambda: landmarks_stand(server, TWO_SHIFT, lambda c: c[0] > 8), T_EFFECT, T_POLL, "street 2"))
+    asphalt, sidewalk = cbmath.material_block(3), cbmath.material_block(4)
+    rep.step("where the streets overlap (x 0..8) the road and the sidewalk are whole",
+             lambda: all(block_stands(server, (x, fakehost.SLAB_Y, 0), asphalt) and block_stands(server, (x, fakehost.SLAB_Y, 2), sidewalk) for x in range(0, 9)))
+    rep.step("each host has its own figures: four proxies with two colliding id sets", lambda: poll(lambda: proxy_count(server) == 4, T_EFFECT, T_POLL, "4 proxies"))
+    target = str(COLLIDING_ID)  # the hostile runner's id on both hosts
+    rep.step(f"a hit on id {target} of host 1 reaches only host 1", lambda: hit_reaches_only(server, first, second, target))
+    rep.step("a hit on the same id of host 2 reaches only host 2", lambda: hit_reaches_only(server, second, first, target))
+    mine = {cbmath.env_ticks(*t) for _, t, _ in fakehost.ENV_CYCLE}
+    other = {cbmath.env_ticks(*fakehost.replica_env(0.0 + i * 10, TWO_HOURS)["time"]) for i in range(4)}
+
+    def only_the_first_clock() -> bool:
+        samples = []
+        for _ in range(5):
+            samples.append(daytime(server))
+            time.sleep(T_QUIET / 4)
+        return all(s is not None and any(ticks_apart(s, t) <= 40 for t in mine) and not any(ticks_apart(s, t) <= 40 for t in other) for s in samples)
+
+    rep.step("only the first host's clock drives the world (the second host's is 12 hours off and never shows)", only_the_first_clock)
+    rep.step("the server logged no relay drops", lambda: not server.log.find(r"relay: CbHost[12] dropped"))
+
+
+def scenario_meetup(env: Env, rep: Report) -> None:
+    server = env.server("meetup", max_hosts=1)
+    _, host = start_host(env, rep, server, "CbHost1", ver=env.mod_version, layers=(), modes=("replica",), wait_host=T_JOIN)
+    env.client("CbGuest1", join=server.port)
+    rep.step("the guest joined", lambda: server.log.wait(r"handshake: CbGuest1 .*-> guest", T_JOIN), must=True)
+
+    def meet(asker: str, target: str) -> None:
+        server.rcon(f"execute as {asker} run cyberblock meetup {target}")
+        server.rcon(f"execute as {target} run cyberblock meetup accept")
+
+    poll(lambda: player_pos(server, "CbGuest1"), T_JOIN, T_POLL, "the guest's position")
+    guest_at, mark = player_pos(server, "CbGuest1"), host.log.mark()
+    meet("CbHost1", "CbGuest1")
+
+    def teleport_sent() -> bool:
+        msg = json.loads(host.log.wait(VTELEPORT, T_EFFECT, mark).group(1))
+        arrives = isinstance(msg.get("p"), list) and len(msg["p"]) == 3 and math.hypot(msg["p"][0] - guest_at[0], msg["p"][2] - guest_at[2]) <= MEET_TOL
+        teleport_sent.p = msg.get("p")
+        return arrives and msg.get("why") == "meetup" and isinstance(msg.get("id"), int)
+
+    rep.step("a Meet Up from a host to a guest sends `vteleport` (why meetup) to the host's DLL, at the guest's position", teleport_sent, must=True)
+    rep.step("after `vteleported ok` Steve follows V to that spot", lambda: poll(lambda: near_player(server, "CbHost1", teleport_sent.p, 3.0), T_EFFECT, T_POLL, "Steve at the target"))
+    mark = host.log.mark()
+    meet("CbHost1", "CbGuest1")
+    rep.step("a second request inside the 30 s cooldown sends no new `vteleport`", lambda: host.log.quiet(VTELEPORT, T_QUIET, mark))
+    time.sleep(COOLDOWN_S)
+    host_at = player_pos(server, "CbHost1")
+    meet("CbGuest1", "CbHost1")
+    rep.step("a Meet Up from a guest to a host puts the guest next to the host's Steve",
+             lambda: poll(lambda: near_player(server, "CbGuest1", host_at), T_EFFECT, T_POLL, "the guest next to Steve"))
+    mark = host.log.mark()
+    time.sleep(COOLDOWN_S)
+    meet("CbHost1", "CbGuest1")
+    rep.step("after the cooldown a host can ask again", lambda: host.log.wait(VTELEPORT, T_EFFECT, mark))
+    rep.step("the server logged no relay drops for the host", lambda: not server.log.find(r"relay: CbHost1 dropped"))
+
+
 SCENARIO_FUNCS = {"singleplayer": scenario_singleplayer, "guest": scenario_guest, "versions": scenario_versions, "flood": scenario_flood,
-                  "reconnect": scenario_reconnect, "twohosts": scenario_twohosts, "joinpassword": scenario_joinpassword}
+                  "reconnect": scenario_reconnect, "twohosts": scenario_twohosts, "joinpassword": scenario_joinpassword,
+                  "replica": scenario_replica, "twohosts2": scenario_twohosts2, "meetup": scenario_meetup}
+PHASE3 = ("replica", "twohosts2", "meetup")  # the scenarios whose fake host runs `--replica`
 
 
 class Flooder(threading.Thread):
@@ -877,7 +1132,8 @@ def dry_run(repo: Path, ports: Ports, names: list[str], lan_port: int | None, sa
             say(f"client {who}: " + " ".join(client_argv(repo, name=who, port=ports.client(who), frame=ports.frame(who), run_dir=d / f"client-{who}",
                                                          join=None if name == "singleplayer" else ports.server(name),
                                                          world="<world>" if name == "singleplayer" else None)))
-        say("fake host: " + " ".join(fakehost_argv(port=ports.client("CbHost1"), name="CbHost1", ver="<mod version>", frame=ports.frame("CbHost1"), out_dir=d / "frames")))
+        say("fake host: " + " ".join(fakehost_argv(port=ports.client("CbHost1"), name="CbHost1", ver="<mod version>", frame=ports.frame("CbHost1"), out_dir=d / "frames",
+                                                    layers=() if name in PHASE3 else (2,), modes=("replica",) if name in PHASE3 else ())))
 
 
 def main(argv: list[str] | None = None, repo: Path = ROOT) -> int:

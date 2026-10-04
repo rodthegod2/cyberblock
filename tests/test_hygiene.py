@@ -25,6 +25,7 @@ DRIVE_LETTER_FILES = (
     "mc/src/client/java/dev/cyberblock/client/settings/*", "mc/src/client/java/dev/cyberblock/client/view/*",  # Q-B5, Q-V
     "mc/src/test/java/dev/cyberblock/Outline*Test.java", "mc/src/test/java/dev/cyberblock/SafeSpotsTest.java",
     "cp/scripts/Cyberblock/Locomotion.reds",                                                  # Q-S2
+    "docs/WEBMAP.md", "docs/notes/phase3-*.md", "tests/test_phase3_docs.py",                  # 3-P1
 )
 
 GENERIC_NAMES = {"runner", "runneradmin", "user", "admin", "administrator", "root", "ubuntu", "default", "vsts", "system", "public"}
