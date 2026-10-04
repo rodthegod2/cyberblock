@@ -108,8 +108,9 @@ Guest: use the **Comms Panel**, pick the host, write "Meet me at the Afterlife" 
 1. Guest: use the **Net Map** (or a map item bound to the host) and ask for the **photo feed**.
 2. **Expect:** a **128 x 128 picture of the host's view in map colours**, refreshed about **once a second**, only while the guest looks at it.
    It is low-resolution by design. Look away or close it: the host's `Cyberblock.log` says the feed went off (`feedreq off`).
-3. If the picture does not appear and the log says the copy was too slow (it cost more than 0.5 ms a frame), the plugin used the fallback:
-   Minecraft draws a **top-down replica view** on the map instead. Tell Claude which one you saw.
+3. If the host's `Cyberblock.log` says the back-buffer feed is off (the copy cost more than 0.5 ms a frame, or could not run), the plugin used
+   the fallback: after about **3 seconds** the Net Map panel and the map item show a **top-down replica view** around V (map colours, V a red mark
+   in the middle) instead, and the server log says `the top-down replica render around V (the fallback)`. Tell Claude which one you saw.
 
 ### P6-9. Which way is it working? (the runtime paths)
 The scripts and the plugin write **one line** for each Phase 6 feature that has a fallback. Open `red4ext\logs\Cyberblock.log` (and the server

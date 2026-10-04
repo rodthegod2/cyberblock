@@ -25,8 +25,8 @@ final class FeedViewers {
 	/** host -> viewer -> until (ms); `screen` viewers get the frames, map holders see the map item. */
 	private final Map<UUID, Map<UUID, Long>> screens = new HashMap<>();
 	private final Map<UUID, Map<UUID, Long>> maps = new HashMap<>();
-	/** Hosts whose last feedreq was on. */
-	private final Set<UUID> on = new HashSet<>();
+	/** Hosts whose last feedreq was on, and when it went on (ms). */
+	private final Map<UUID, Long> on = new HashMap<>();
 
 	/** A Net Map viewer starts, renews or stops watching. */
 	void watch(final UUID host, final UUID viewer, final boolean watching, final long now) {
@@ -84,12 +84,12 @@ final class FeedViewers {
 
 		List<Change> out = new ArrayList<>();
 		for (UUID host : wanted) {
-			if (this.on.add(host)) {
+			if (this.on.putIfAbsent(host, now) == null) {
 				out.add(new Change(host, true));
 			}
 		}
 
-		for (UUID host : Set.copyOf(this.on)) {
+		for (UUID host : Set.copyOf(this.on.keySet())) {
 			if (!wanted.contains(host)) {
 				this.on.remove(host);
 				out.add(new Change(host, false));
@@ -102,8 +102,13 @@ final class FeedViewers {
 	private Set<UUID> union() {
 		Set<UUID> all = new HashSet<>(this.screens.keySet());
 		all.addAll(this.maps.keySet());
-		all.addAll(this.on);
+		all.addAll(this.on.keySet());
 		return all;
+	}
+
+	/** The hosts whose feedreq is on now, each with when it went on (ms). */
+	Map<UUID, Long> requested() {
+		return Map.copyOf(this.on);
 	}
 
 	/** The host's DLL said hello again: it forgot the request, so the next changes() asks again when someone watches. */

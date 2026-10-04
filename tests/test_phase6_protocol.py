@@ -290,7 +290,7 @@ def test_p6_rules_are_stated_in_the_document():
                    "the fallback of Phase 0 check (h)", "answered `unsupported`", "`unsupported daemon`", "reserved for a failed Breach", "always sent alone",
                    "exactly one `hackresult`", "must carry an id the session issued", "the owner's `hacks` toggle", "`/cyberblock guests hacks on|off`",
                    "the owner's `devices` toggle", "`cyberblock.guest.blocked`", "never trusted with a result", "within 1 s of the request", "at most one `feed` per second",
-                   "0.5 ms of frame time", "top-down replica view", "`base × 4 + shade`", "transparent colour", "`hs_ack.features` bit 8 (hacking)", "an 18th id, `firewall`",
+                   "0.5 ms of frame time", "top-down replica view", "sends no other message", "no `feed` within 3 s of `feedreq` `on:true`", "`base × 4 + shade`", "transparent colour", "`hs_ack.features` bit 8 (hacking)", "an 18th id, `firewall`",
                    "never names an owner or an id", "validates **every** pick", "the first pick is in row 0", "no cell twice", "`daemon` with `[\"alarm\"]`",
                    "`/cyberblock test breach <x> <y> <z> solve|fail`", "the written fallback is the Phase 4 devices", "150 m of V", "never fatal", "Every `act` is at most 8000 bytes",
                    "Minecraft's own use path", "at most 4 per second", "at most one every 2 s", "the camera's position and facing are already in the `devices` list"):

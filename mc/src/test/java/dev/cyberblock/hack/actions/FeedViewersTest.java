@@ -47,6 +47,23 @@ class FeedViewersTest {
 	}
 
 	@Test
+	void requestedKeepsWhenTheFeedWentOn() {
+		// the replica fallback waits 3 s from this moment (PhotoFeed / ReplicaFeed)
+		FeedViewers v = new FeedViewers();
+		v.watch(HOST, ANA, true, 100L);
+		v.changes(100L);
+		v.watch(HOST, ANA, true, 2000L); // a renewal does not move it
+		v.changes(2000L);
+		assertEquals(java.util.Map.of(HOST, 100L), v.requested());
+		v.restarted(HOST);
+		assertTrue(v.requested().isEmpty());
+		v.changes(3000L); // asked again after the hello: the wait starts over
+		assertEquals(java.util.Map.of(HOST, 3000L), v.requested());
+		v.ended(HOST);
+		assertTrue(v.requested().isEmpty());
+	}
+
+	@Test
 	void cooldownsRoundUp() {
 		Cooldowns c = new Cooldowns();
 		assertEquals(0L, c.secondsLeft("a", 0L));
