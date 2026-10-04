@@ -14,21 +14,27 @@ Phase 7 of the multiplayer plan: **talking to Night City's people, the Afterlife
 side; the mod, plugin and scripts of Phase 7 have their own entries. The in-game list is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md),
 "Re-test: Wave C, Phase 7".
 - **Protocol.** `shared/protocol.md` "Phase 7": `hub` (DOWN to a host's DLL: full-screen Minecraft on or off, always sent together with a `park`: on
-  entering `park on:true` then `hub in:true`, on leaving `hub in:false` then `park on:false`), `reply` with `kind:"vendor"` (groups are stock
-  categories of kind `buy` or `sell`, lines are items, the price in eddies is the line's `state`, LOCAL: a host's shop never leaves its PC),
-  `uiact` `vendorreq`, `buy` and `sell` (one unit of a line's `hash` per action, paid in the host's real Cyberpunk money) and the enabled
-  `fasttravel`; the `parked` relay row (2 per second, burst 4: the server relays the DLL's answer to `park` from the hub on) and class rows for `hub` and
-  `parked`; validators, names and examples in `tests/test_protocol_md.py`.
-- **Fake host.** `tools.fakehost --vendor`: a Night City gun shop (V's 5000 eddies in `stats`, the shop's screen from 2 s to 8 s, the stock of two pistols and a
-  broken radio to sell), `uiact` `vendorreq`, `buy`, `sell` and `fasttravel` answered the way the scripts do (`notify` and the new `stats`, refusals as warnings,
-  the "Use the Night City map" toast for fast travel), `park` answered with `parked` at once and `vteleport` after 2 s; it prints `uiact`, `hub`, `park` and
-  `vteleport`.
-- **Harness.** `tools.mpcheck hub`: `/cyberblock hub` sends the host's DLL `park on:true` then `hub in:true`, once each, and puts Steve in
-  `cyberblock:afterlife`; a guest's trip tells no DLL; leaving sends `hub in:false` then `park on:false` and puts Steve back; a second entry works; a link
-  dropped inside the hub ends the session cleanly; the relay drops nothing. It needs 7H's `/cyberblock hub`.
+  entering `hub in:true` then `park on:true`, on leaving `park on:false` then `hub in:false`), the hub's safety rules (the cover only over a parked V: a
+  `parked ok:false` takes the player out; a new host session of a player still in the hub hears the entering pair again; a Holo-Table spawn leaves the hub
+  before the `vteleport`; no way in before `/login`), `reply` with `kind:"vendor"` (sent unrequested when the host opens a vendor; the vendor as its pin,
+  stock categories as groups whose sell side is `kind:"sell"` or `done:true`, items as lines with the unit price in `state`; LOCAL: a host's shop never
+  leaves its PC), `uiact` `buy` and `sell` (a line's `hash`, its index on its side and a quantity, paid in the host's real Cyberpunk money), the Holo-Table's
+  `fasttravel` list (`atlasreq arg:"fasttravel"`), the `parked` relay row (2 per second, burst 4: the server relays the DLL's answer to `park` from the hub
+  on), class rows for `hub` and `parked`, and the readings that differ from megaplan section 1 for the integrator; validators, names and examples in
+  `tests/test_protocol_md.py`.
+- **Fake host.** `tools.fakehost --vendor`: a Night City gun shop (V's 5000 eddies in `stats`, the shop's screen from 2 s to 8 s with its unrequested stock: a
+  stack of two pistols and a revolver to buy, a broken radio to sell), `uiact buy` and `sell` answered the way the scripts do (a money toast, the new
+  `stats` and the stock again; refusals as warnings; the quantity clamped to the stack and the money), the fast-travel list, `park` answered with `parked`
+  at once and `vteleport` after 2 s; it prints `uiact`, `hub`, `park` and `vteleport`. `--park-refuse` answers `park on:true` with `parked ok:false`.
+- **Harness.** `tools.mpcheck hub`, on a server with the join password like the live one: a locked player's `/cyberblock hub` does nothing; `/cyberblock hub`
+  sends the host's DLL `hub in:true` then `park on:true`, once each, puts Steve in `cyberblock:afterlife` and the DLL's `parked` reaches the server; a guest's
+  trip tells no DLL; leaving sends `park on:false` then `hub in:false` and puts Steve back; a link dropped inside the hub ends the session and a returning one
+  hears the entering pair again; a refused park takes the host out; the relay drops nothing. It needs 7H's `/cyberblock hub` (and the refused-park exit,
+  which 7H still has to add).
 - **Docs.** HOW-TO-PLAY "Talking to Night City (Phase 7)", "The Afterlife hub (Phase 7)" and "The Holo-Table (Phase 7)", "Re-test: Wave C, Phase 7" in
-  `docs/TESTING-PLAN.md` (the host shop, the hub with V parked, the Holo-Table spawns, fast travel), and the descopes of Phase 0 checks (f) and (g): hosts' shop
-  stock, the 2D fallback of the table, V unseen while parked, the repair of a Cyberpunk car and fast travel until verified.
+  `docs/TESTING-PLAN.md` (the host shop, the hub with V parked and its safety checks, the Holo-Table spawns, fast travel), and the descopes of Phase 0
+  checks (f) and (g): hosts' shop stock, the 2D fallback of the table, V unseen while parked, the repair of a Cyberpunk car and fast travel only when the
+  game allows it.
 
 ### Unreleased additions: Wave B integration (Phases 3, 4 and 5 together)
 Phases 4 and 5 merged on top of Phase 3 (and the Wave A leftovers) for one combined in-game test,

@@ -2101,13 +2101,16 @@ def test_p4_shop_validator_rejects_out_of_limit_messages(m):
     assert not ok, m
 
 
-# ---- Phase 7 (NPC interaction, the Afterlife hub and the Holo-Table): `hub`, the vendor `reply`, `uiact` vendorreq, buy and sell -------------
-# Plan 2026-10-04 megaplan sections 1.9 (rows 7), 1.8 (row 7) and 11. The wire changes are three: `hub` DOWN, `reply kind:"vendor"` and three more `uiact` actions.
+# ---- Phase 7 (NPC interaction, the Afterlife hub and the Holo-Table): `hub`, the vendor `reply`, `uiact` buy and sell -------------------------------
+# Plan 2026-10-04 megaplan sections 1.9 (rows 7, with the 2026-10-04 amendment), 1.8 (row 7) and 11. The wire changes are three: `hub` DOWN, the unrequested
+# `reply kind:"vendor"` and two more `uiact` actions (plus new meanings of `arg` for `cpmenu`, `atlasreq` and `fasttravel`).
 P7_CP_TO_MC, P7_MC_TO_CP = "Phase 7: Cyberpunk → Minecraft", "Phase 7: Minecraft → Cyberpunk"
 P7_CP_EXAMPLES, P7_MC_EXAMPLES = "Phase 7 examples, Cyberpunk to Minecraft:", "Phase 7 examples, Minecraft to Cyberpunk:"
 P7_SECTION, P7_HEADING = "Phase 7 semantics and limits", "## Phase 7 (NPC interaction, the Afterlife hub and the Holo-Table)"
+P7_DIFFERENCES = "Phase 7 differences from megaplan section 1 (for the integrator)"
 P7_GROUP_KINDS = ["buy", "sell"]
-P7_UI_ACTIONS = ["vendorreq", "buy", "sell"]
+P7_UI_ACTIONS = ["buy", "sell"]
+P7_VENDOR_PINS = ("vendor", "ripperdoc")
 P7_MAX_PRICE = 2**31 - 1
 
 
@@ -2117,19 +2120,25 @@ def p7_names(label: str) -> list[str]:
 
 
 def vendor_line_ok(e) -> bool:
-    """A stock line: the item's hash, its name and its price in eddies in `state` (the other reply kinds use 0, 1, 2 there)."""
+    """A stock line: the item's hash, its name and its unit price in eddies in `state` (the other reply kinds use 0, 1, 2 there)."""
     return fields_are(e, {"hash", "text", "state"}) and uint32(e["hash"]) and ctext(e["text"], 256) and whole(e["state"], 0, P7_MAX_PRICE)
 
 
 def vendor_group_ok(g) -> bool:
+    """A stock category: its `kind` is any string (a receiver reads the sell side from `kind:"sell"` or `done:true`, everything else is the vendor's stock)."""
     return (fields_are(g, {"hash", "title", "kind", "tracked", "done", "lines"}) and uint32(g["hash"]) and ctext(g["title"], 128)
-            and g["kind"] in P7_GROUP_KINDS and g["tracked"] is False and g["done"] is False
+            and isinstance(g["kind"], str) and isinstance(g["tracked"], bool) and isinstance(g["done"], bool)
             and isinstance(g["lines"], list) and all(vendor_line_ok(e) for e in g["lines"]))
+
+
+def vendor_sell_side(g) -> bool:
+    return g["kind"] == "sell" or g["done"] is True
 
 
 def vendor_reply_ok(m) -> bool:
     return (fields_are(m, {"t", "kind", "id", "groups", "pins"}) and m["kind"] == "vendor" and whole(m["id"]) and list_ok(m, "groups", 128, vendor_group_ok)
-            and sum(len(g["lines"]) for g in m["groups"]) <= 512 and m["pins"] == [] and len(json.dumps(m).encode("utf-8")) <= REPLY_BYTES)
+            and list_ok(m, "pins", 1, lambda e: reply_pin_ok(e) and e["kind"] in P7_VENDOR_PINS)
+            and sum(len(g["lines"]) for g in m["groups"]) <= 512 and len(json.dumps(m).encode("utf-8")) <= REPLY_BYTES)
 
 
 def hub_msg_ok(m) -> bool:
@@ -2137,7 +2146,7 @@ def hub_msg_ok(m) -> bool:
 
 
 def p7_uiact_ok(m) -> bool:
-    """Re-test 3's `uiact` with the three Phase 7 actions: `buy` and `sell` need a `hash` (1..2^32 - 1: one line of the stock)."""
+    """Re-test 3's `uiact` with the two Phase 7 actions: `buy` and `sell` need a `hash` (1..2^32 - 1: one line of the stock)."""
     if not (fields_are(m, {"t", "a", "arg", "hash", "id"}) and m["a"] in UI_ACTIONS + P7_UI_ACTIONS and ctext(m["arg"], 64) and uint32(m["hash"]) and whole(m["id"])):
         return False
     return m["hash"] >= 1 if m["a"] in ("buy", "sell") else True
@@ -2153,14 +2162,20 @@ def p7_example(t, index=0, **changes):
     return m
 
 
-def p7_group(**changes):
-    g = copy.deepcopy(p7_example("reply")["groups"][0])
+def p7_group(index=0, **changes):
+    g = copy.deepcopy(p7_example("reply")["groups"][index])
     g.update(changes)
     return g
 
 
 def p7_line(**changes):
     e = copy.deepcopy(p7_example("reply")["groups"][0]["lines"][0])
+    e.update(changes)
+    return e
+
+
+def p7_pin(**changes):
+    e = copy.deepcopy(p7_example("reply")["pins"][0])
     e.update(changes)
     return e
 
@@ -2181,9 +2196,9 @@ def test_p7_every_type_has_a_row_an_example_and_a_validator():
 def test_p7_every_example_field_is_named_in_its_row():
     rows = {**rows_by_type(P7_CP_TO_MC), **rows_by_type(P7_MC_TO_CP)}
     for t, m in P7_EXAMPLES:
-        for key in set(m) - {"t", "arg"}:  # `arg` is the Re-test 3 field every uiact carries
+        for key in set(m) - {"t"}:
             assert re.search(rf"`{key}\b", rows[t]), f"{t}.{key} is not described in its row"
-    for key in ("hash", "title", "kind", "lines", "text", "state"):  # the nested fields of the stock
+    for key in ("hash", "title", "kind", "lines", "text", "state", "done", "name", "p", "i"):  # the nested fields of the stock and of the vendor pin
         assert re.search(rf"`{key}\b", rows["reply"]), key
 
 
@@ -2194,39 +2209,55 @@ def test_p7_example_obeys_the_documented_limits(t, m):
 
 def test_p7_names_have_the_plan_values_and_the_re_test_3_lists_are_unchanged():
     assert p7_names("Vendor group kinds") == P7_GROUP_KINDS and p7_names("Reply kinds") == ["vendor"] and p7_names("UI actions") == P7_UI_ACTIONS
-    assert len(UI_ACTIONS) == 10 and "fasttravel" in UI_ACTIONS and not set(P7_UI_ACTIONS) & set(UI_ACTIONS)  # the three are new; `fasttravel` is only enabled
-    assert "vendor" not in names("Reply kinds") and len(UI_ACTIONS) + len(P7_UI_ACTIONS) == 13
+    assert len(UI_ACTIONS) == 10 and "fasttravel" in UI_ACTIONS and not set(P7_UI_ACTIONS) & set(UI_ACTIONS)  # the two are new; `fasttravel` only changes its path
+    assert "vendor" not in names("Reply kinds") and len(UI_ACTIONS) + len(P7_UI_ACTIONS) == 12 and "vendorreq" not in TEXT  # nothing asks for the stock
+    assert set(P7_VENDOR_PINS) <= set(PIN_KINDS)  # the vendor pin uses the Re-test 3 pin kinds
 
 
 def test_p7_the_examples_tell_one_story():
-    reply, request, buy, sell = p7_example("reply"), p7_uiact("vendorreq"), p7_uiact("buy"), p7_uiact("sell")
-    assert reply["id"] == request["id"] == buy["id"] == sell["id"]  # the request, its answer and the two actions that came from that stock
-    groups = {g["kind"]: g for g in reply["groups"]}
-    assert set(groups) == set(P7_GROUP_KINDS)
-    assert buy["hash"] in {e["hash"] for e in groups["buy"]["lines"]} and sell["hash"] in {e["hash"] for e in groups["sell"]["lines"]}
-    assert sell["hash"] > 2**31 and request["hash"] == 0  # a hash above the signed 32-bit range travels as a plain number; the request has none
+    reply, buy, sell = p7_example("reply"), p7_uiact("buy"), p7_uiact("sell")
+    stock, mine = [[g for g in reply["groups"] if vendor_sell_side(g) == side] for side in (False, True)]
+    assert [g["kind"] for g in stock] == ["buy"] and [g["kind"] for g in mine] == ["sell"] and not stock[0]["done"] and mine[0]["done"]
+    sides = {False: [e["hash"] for g in stock for e in g["lines"]], True: [e["hash"] for g in mine for e in g["lines"]]}
+    assert sides[False][buy["id"]] == buy["hash"] and sides[True][sell["id"]] == sell["hash"]  # `id` is the line's index on its side
+    assert sell["hash"] > 2**31 and buy["arg"] == "1" and sell["arg"] == "10"  # a hash above the signed range travels as a plain number; the scripts clamp 10 to 1
+    assert reply["pins"] == [p7_pin()] and reply["pins"][0]["kind"] == "vendor" and reply["pins"][0]["i"] == -1
+    assert p7_uiact("cpmenu")["arg"] == "vendor" and p7_uiact("cpmenu")["id"] == reply["id"]  # back to Cyberpunk's own screen for this vendor session
     assert [m["in"] for t, m in P7_EXAMPLES if t == "hub"] == [True, False]
-    ft = p7_uiact("fasttravel")
-    assert ft["id"] == 4 and ft["hash"] == 0  # the fast-travel index of the Re-test 3 atlas example (`i`: 4)
-    assert next(m for t, m in R3_EXAMPLES if t == "reply" and m["kind"] == "atlas")["pins"][0]["i"] == ft["id"]
+    ask, ft = p7_uiact("atlasreq"), p7_uiact("fasttravel")
+    assert ask["arg"] == "fasttravel" and ft["hash"] == 0
+    pin = next(m for t, m in R3_EXAMPLES if t == "reply" and m["kind"] == "atlas")["pins"][0]
+    assert (pin["kind"], pin["i"], pin["name"]) == ("fasttravel", ft["id"], ft["arg"])  # the Re-test 3 atlas example's point: `i` and its name
 
 
 def test_p7_rules_are_stated_in_the_document():
     text = " ".join((section(P7_SECTION) + section(P7_CP_TO_MC) + section(P7_MC_TO_CP) + section("Phase 7 log lines")).split())
     for phrase in ("full-screen Minecraft", "the loading-cover path", "`cyberblock:afterlife`", "V stays where it was", "both messages in the same tick",
-                   "on entering `park on:true` then `hub in:true`", "on leaving `hub in:false` then `park on:false`", "on the DLL side", "no message needed",
-                   "a guest has no DLL", "relayed from Phase 7", "rate row: 2 per second, burst 4", "one the session did not ask for is dropped and counted",
-                   "`MarketSystem.GetVendorItemsForSale(vendor, false)`", "no usable reply", "the pass-through screen stays", "prologue ripperdoc", "quest-critical",
-                   "neither `buy` nor `sell` as `buy`", "one unit per action", "real Cyberpunk money", "never Minecraft eddies", "re-read the real price",
-                   "never trusted with a price", "`notify`", "`stats.money`", "`vendorreq`", "`FastTravelEnabled`", "Use the Night City map", "bit 16 (hub)",
-                   "never fatal", "the whole message invalid", "the price in eddies", "`state`", "LOCAL", "never relayed", "Phase 0 check (g)", "one line saying which runtime path is active"):
+                   "on entering `hub in:true` then `park on:true`", "on leaving `park on:false` then `hub in:false`", "V is released under the cover",
+                   "a guest has no DLL", "The cover only stays up over a parked V", "locked by the join password", "`parked ok:false`",
+                   "takes the player out of the hub at once", "A new session hears the hub again", "no message needed", "every host session start",
+                   "the entering pair again, once", "Leaving by a Holo-Table spawn", "only then", "`blocked (parked)`", "would undo an earlier teleport",
+                   "`why:\"hub_exit\"` stays reserved", "relayed from Phase 7", "rate row: 2 per second, burst 4", "sent unrequested",
+                   "`MarketSystem.GetVendorItemsForSale(vendor, false)`", "`VendorDataManager`", "No Minecraft screen within 1.5 s", "the pass-through stays",
+                   "prologue ripperdoc", "quest-locked", "`kind:\"sell\"` or `done:true`", "files `buy` and `sell` as `other`", "index among the lines of its side",
+                   "the quantity", "real Cyberpunk money", "never Minecraft eddies", "re-read the real price", "never trusted with a price", "`notify`",
+                   "`stats.money`", "never events", "`arg:\"fasttravel\"`", "`FastTravelEnabled`", "Not now: <why>", "bit 16 (hub)", "never fatal",
+                   "the whole message invalid", "the twelve names", "unit price in eddies", "`state`", "LOCAL", "never relayed", "Phase 0 check (g)",
+                   "one line saying which runtime path is active", "`hub: <name> V not parked (<reason>)`", "`hub: park path: ...`"):
         assert phrase.lower() in text.lower(), f"{phrase!r} is not stated"
+
+
+def test_p7_section_1_differences_are_declared_for_the_integrator():
+    text = " ".join(section(P7_DIFFERENCES).split())
+    for phrase in ("The vendor `reply` is LOCAL, not UP", "Section 1.9 row 7", "section 1.2", "7-V1", "`groups[].kind` `buy` and `sell`", "files them as `other`",
+                   "The hub sends `park` too", "\"the scripts park V\"", "New hub rules", "7H", "7T", "7S", "not in 7H's branch yet"):
+        assert phrase in text, f"{phrase!r} is not declared"
 
 
 def test_p7_class_rate_and_feature_rows():
     cp, mc = dict(class_rows(MP_CP)), dict(class_rows(MP_MC))
     assert mc["hub"] == mc["park"] == "DOWN" and cp["parked"] == "UP" and cp["reply"] == "LOCAL"  # the vendor stock never leaves its PC
-    assert rate_rows()["parked"] == (2, 4)
+    assert rate_rows()["parked"] == (2, 4) and "reply" not in rate_rows()
     assert "16 hub" in " ".join(section(MP_PAYLOADS).split())  # hs_ack.features: 16 hub
 
 
@@ -2237,13 +2268,14 @@ def test_p7_section_sits_after_phase_5_and_before_the_shared_memory_section():
 
 
 def _p7_out_of_limits():
-    reply, line, group = p7_example("reply"), p7_line, p7_group
+    reply, line, group, pin = p7_example("reply"), p7_line, p7_group, p7_pin
     many_lines = lambda n: {**reply, "groups": [group(lines=[line(hash=i) for i in range(n)])]}  # noqa: E731
     return [
         ("reply", {**reply, "kind": "journal"}), ("reply", {**reply, "id": -1}), ("reply", {**reply, "id": 1.5}), ("reply", {**reply, "pins": [{}]}),
-        ("reply", {k: v for k, v in reply.items() if k != "pins"}), ("reply", {**reply, "extra": 1}),
-        ("reply", {**reply, "groups": [group(kind="other")]}), ("reply", {**reply, "groups": [group(kind="main")]}), ("reply", {**reply, "groups": [group(kind=None)]}),
-        ("reply", {**reply, "groups": [group(tracked=True)]}), ("reply", {**reply, "groups": [group(done=1)]}), ("reply", {**reply, "groups": [group(title="é" * 65)]}),
+        ("reply", {k: v for k, v in reply.items() if k != "pins"}), ("reply", {**reply, "extra": 1}), ("reply", {**reply, "pins": [pin(), pin()]}),
+        ("reply", {**reply, "pins": [pin(kind="quest")]}), ("reply", {**reply, "pins": [pin(name="é" * 33)]}), ("reply", {**reply, "pins": [pin(p=[0, 0])]}),
+        ("reply", {**reply, "groups": [group(kind=None)]}), ("reply", {**reply, "groups": [group(kind=1)]}), ("reply", {**reply, "groups": [{k: v for k, v in group().items() if k != "kind"}]}),
+        ("reply", {**reply, "groups": [group(tracked=1)]}), ("reply", {**reply, "groups": [group(done=1)]}), ("reply", {**reply, "groups": [group(title="é" * 65)]}),
         ("reply", {**reply, "groups": [group(hash=-1)]}), ("reply", {**reply, "groups": [group(hash=2**32)]}), ("reply", {**reply, "groups": [group(lines="none")]}),
         ("reply", {**reply, "groups": [group(lines=[line(state=-1)])]}), ("reply", {**reply, "groups": [group(lines=[line(state=P7_MAX_PRICE + 1)])]}),
         ("reply", {**reply, "groups": [group(lines=[line(state=1.5)])]}), ("reply", {**reply, "groups": [group(lines=[line(state=True)])]}),
@@ -2253,7 +2285,8 @@ def _p7_out_of_limits():
         ("reply", {**reply, "groups": [group() for _ in range(129)]}), ("reply", many_lines(513)),
         ("hub", {"t": "hub", "in": 1}), ("hub", {"t": "hub", "in": "true"}), ("hub", {"t": "hub"}), ("hub", {"t": "hub", "in": True, "park": True}),
         ("uiact", p7_uiact("buy", hash=0)), ("uiact", p7_uiact("sell", hash=0)), ("uiact", p7_uiact("buy", hash=2**32)), ("uiact", p7_uiact("buy", hash=-1)),
-        ("uiact", p7_uiact("buy", id=-1)), ("uiact", p7_uiact("vendorreq", id=1.5)), ("uiact", p7_uiact("buy", a="purchase")), ("uiact", p7_uiact("buy", arg="x" * 65)),
+        ("uiact", p7_uiact("buy", id=-1)), ("uiact", p7_uiact("sell", id=1.5)), ("uiact", p7_uiact("buy", a="purchase")), ("uiact", p7_uiact("buy", a="vendorreq")),
+        ("uiact", p7_uiact("buy", arg="x" * 65)), ("uiact", p7_uiact("buy", arg=1)),
     ]
 
 
@@ -2272,10 +2305,15 @@ def test_p7_validators_reject_out_of_limit_messages(t, m):
 def test_p7_validators_accept_the_limits_themselves():
     reply = p7_example("reply")
     assert vendor_reply_ok({**reply, "groups": []}) and vendor_reply_ok({**reply, "id": 0}) and vendor_reply_ok({**reply, "id": 2**31 - 1})
+    assert vendor_reply_ok({**reply, "pins": []}) and vendor_reply_ok({**reply, "pins": [p7_pin(kind="ripperdoc", name="é" * 32)]})
     assert vendor_reply_ok({**reply, "groups": [p7_group(lines=[p7_line(hash=i) for i in range(512)])]})
     assert vendor_reply_ok({**reply, "groups": [p7_group(lines=[]) for _ in range(128)]})
     assert vendor_line_ok(p7_line(state=0)) and vendor_line_ok(p7_line(state=P7_MAX_PRICE)) and vendor_line_ok(p7_line(hash=0)) and vendor_line_ok(p7_line(hash=2**32 - 1))
     assert vendor_line_ok(p7_line(text="é" * 128)) and vendor_group_ok(p7_group(title="é" * 64, kind="sell"))
+    # a DLL that files the scripts' kinds as `other` (or an unknown kind): still valid, and the side comes from `done`
+    other_stock, other_mine = p7_group(0, kind="other"), p7_group(1, kind="other")
+    assert vendor_reply_ok({**reply, "groups": [other_stock, other_mine]}) and not vendor_sell_side(other_stock) and vendor_sell_side(other_mine)
+    assert vendor_sell_side(p7_group(0, kind="sell", done=False)) and not vendor_sell_side(p7_group(0, kind="weird"))
     assert all(hub_msg_ok({"t": "hub", "in": v}) for v in (True, False))
-    assert p7_uiact_ok(p7_uiact("buy", hash=1)) and p7_uiact_ok(p7_uiact("sell", hash=2**32 - 1)) and p7_uiact_ok(p7_uiact("vendorreq", id=0, hash=0))
+    assert p7_uiact_ok(p7_uiact("buy", hash=1)) and p7_uiact_ok(p7_uiact("sell", hash=2**32 - 1)) and p7_uiact_ok(p7_uiact("buy", arg="")) and p7_uiact_ok(p7_uiact("buy", arg="abc"))
     assert all(p7_uiact_ok({"t": "uiact", "a": a, "arg": "", "hash": 0, "id": 0}) for a in UI_ACTIONS)  # the ten of Re-test 3 stay valid

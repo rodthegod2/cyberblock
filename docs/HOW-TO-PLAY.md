@@ -1233,14 +1233,17 @@ The people of the [Afterlife hub](#the-afterlife-hub-phase-7) are always there, 
 
 **Cyberpunk's own vendors and ripperdocs, as a Minecraft screen (hosts).** When you open a shop in your own game while Cyberblock is on, Minecraft
 now opens a **true Minecraft shop screen** instead of letting Cyberpunk's own show through: the stock is the shop's real stock, and a purchase or a sale
-goes into your game and is **paid with your real Cyberpunk money** (the amount in the HUD). One unit per click. If the plugin cannot read a shop's stock,
-or the shop belongs to a mission (the **ripperdoc of the prologue** and anything quest-critical), the usual Cyberpunk screen stays (the pass-through of [The Minecraft interface](#the-minecraft-interface)) and the log says so.
-**Fast travel** is offered in the [Holo-Table](#the-holo-table-phase-7) (your game's fast-travel points) once it has been verified in game; until then
-a click on a fast-travel point only says "Use the Night City map".
+goes into your game and is **paid with your real Cyberpunk money** (the amount in the HUD). One unit per click, up to ten with Shift+click; the list
+updates after every trade. The screen's **Night City vendor...** button opens Cyberpunk's own screen for the same shop (installing cyberware at a ripperdoc,
+buyback). If the plugin cannot read a shop's stock, or the shop belongs to a mission (the **ripperdoc of the prologue** and anything quest-critical), the
+usual Cyberpunk screen stays (the pass-through of [The Minecraft interface](#the-minecraft-interface)) and the log says so.
+**Fast travel** is offered in the [Holo-Table](#the-holo-table-phase-7): your game's fast-travel points, and a click fast travels you the game's own way.
+When the game does not allow it right now (a job locks fast travel, V is in a vehicle or in combat, a scene holds V) the list says so and a click only
+says "Not now".
 
 **Limits and fallbacks (Phase 0 and the in-game check).**
-- **Hosts' shop stock** depends on Phase 0 check (f): `MarketSystem.GetVendorItemsForSale` is read from the vendor. If a shop's stock cannot be read,
-  that shop stays Cyberpunk's own screen (the written fallback); guests are never affected, their shops are the server's.
+- **Hosts' shop stock** depends on Phase 0 check (f): the stock is read from the shop's own screen data when you open it. If a shop's stock cannot be
+  read, that shop stays Cyberpunk's own screen (the written fallback); guests are never affected, their shops are the server's.
 - **The mechanic's repair of a Cyberpunk car** needs a game call nobody has verified yet; until it is, that part is switched off (the written
   descope) and the mechanic repairs elytra and armour.
 - The check list is [Re-test: Wave C, Phase 7](TESTING-PLAN.md), P7-1 to P7-4 and P7-7.
@@ -1257,7 +1260,10 @@ button of the pause screen. You leave **the same way** and are brought **back to
 **If you are a host (Cyberpunk linked):** the hub is a **full-screen Minecraft** place, so Cyberpunk's picture is hidden while you are in it, the way
 a loading screen covers the game. Meanwhile **V is parked**: invisible, invulnerable, unseen by the people of Night City (an NPC walks past and
 ignores V), the camera and movement locked and saving switched off. Leaving puts everything back: Night City comes back, V is released where it was.
-If your link drops, Cyberblock goes Off or the session ends while you are in the hub, Cyberpunk releases V by itself; nobody stays parked.
+The cover only ever goes up over a parked V: you cannot go in while V is in a vehicle or held by a scene ("Not now"), and if your game still cannot park V
+you are taken straight back out with the reason. If your link drops, Cyberblock goes Off or the session ends while you are in the hub, Cyberpunk releases V
+by itself; nobody stays parked. When Cyberpunk comes back while you are still in the hub, the hub picks up again (full screen, V parked).
+Before you have typed `/login` on a server with a join password, none of the ways in works.
 **If you are a guest** there is nothing to switch: you simply walk in.
 
 **What is in it.**
@@ -1281,7 +1287,8 @@ territory, matches and Van drones fill in as those modes arrive.
 **Spawning from the map.** Click a place and spawn there:
 - the **district landmarks** (from the `landmark` content), your **team's base**, a **Spawn Beacon** (a block you can place) or **a friend** ("join a friend");
 - a **Minecraft-only player** is put in the replica at that spot; for a **linked player V is teleported** there (the plugin snaps V to the ground and waits
-  for the world to stream in) and Steve is placed to match, so both stay together;
+  for the world to stream in) and Steve is placed to match, so both stay together. From the table in the hub you leave the hub first (Night City comes
+  back and V is released), then V is teleported;
 - you get **5 seconds of spawn protection**, then a **60 second cooldown** before the next spawn. You never spawn into a locked match zone, and inside a
   match only your team's spawns are offered.
 - A host also gets its **fast-travel points** here (the Atlas itself stays a plain map): see [Talking to Night City](#talking-to-night-city-phase-7).

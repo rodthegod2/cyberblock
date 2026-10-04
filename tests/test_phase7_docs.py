@@ -30,8 +30,8 @@ def test_guide_talking_to_night_city_says_what_the_plan_promises():
                    "surgery minigame", "timing bar", "30 second debuff", "never kills you", "`ripperdoc` content", "`shop` content", "buy and sell", "`contract` content",
                    "deliver an item", "defeat a number of hostiles of one faction", "reach a landmark", "breach a device", "rumours", "drinks", "heals Steve for eddies",
                    "elytra and armour", "vendor type", "`npc_role`", "`skin_map`", "always there, whoever is online", "true Minecraft shop screen", "real Cyberpunk money",
-                   "One unit per click", "ripperdoc of the prologue", "quest-critical", "pass-through", "Use the Night City map", "Phase 0 check (f)", "written fallback",
-                   "has been verified", "Re-test: Wave C, Phase 7"):
+                   "One unit per click", "up to ten with Shift+click", "Night City vendor...", "ripperdoc of the prologue", "quest-critical", "pass-through",
+                   "the game's own way", "says \"Not now\"", "Phase 0 check (f)", "written fallback", "Re-test: Wave C, Phase 7"):
         assert plain(phrase) in text, f"HOW-TO-PLAY.md Talking to Night City does not say {phrase!r}"
 
 
@@ -40,7 +40,8 @@ def test_guide_the_afterlife_hub_says_what_the_plan_promises():
     for phrase in ("`cyberblock:afterlife`", "always day and nothing hostile spawns", "even when no host is online", "`/cyberblock hub`", "hub portal", "pause screen",
                    "back to where you came from", "full-screen Minecraft", "V is parked", "invisible, invulnerable, unseen", "ignores V", "saving switched off",
                    "releases V by itself", "nobody stays parked", "you simply walk in", "ripperdoc corner", "row of shops", "Match Terminal", "coming in Phase 8",
-                   "leaderboards", "match wins", "gigs done", "chaos", "Holo-Table", "Phase 0 check (g)", "fallback", "`park: on ...`"):
+                   "leaderboards", "match wins", "gigs done", "chaos", "Holo-Table", "Phase 0 check (g)", "fallback", "`park: on ...`",
+                   "The cover only ever goes up over a parked V", "taken straight back out with the reason", "the hub picks up again", "`/login`"):
         assert plain(phrase) in text, f"HOW-TO-PLAY.md The Afterlife hub does not say {phrase!r}"
 
 
@@ -48,7 +49,8 @@ def test_guide_the_holo_table_says_what_the_plan_promises():
     text = plain(section_of(GUIDE, TABLE))
     for phrase in ("shared live 3D model", "**Drag** to rotate", "**scroll** to zoom", "tilt", "2D map", "Atlas", "head and name", "team colour", "`[V]`", "in a car",
                    "in combat", "downed", "NPC density", "enemy hot spots", "Server Heat", "Gang Wars", "Van drones", "`landmark` content", "team's base", "Spawn Beacon",
-                   "join a friend", "Minecraft-only player", "V is teleported", "snaps V to the ground", "5 seconds of spawn protection", "60 second cooldown",
+                   "join a friend", "Minecraft-only player", "V is teleported", "snaps V to the ground", "you leave the hub first", "5 seconds of spawn protection",
+                   "60 second cooldown",
                    "locked match zone", "only your team's spawns", "fast-travel points", "Privacy", "hide my pin", "scan", "spectators and the Overlord see all",
                    "falls back to a **2D map**", "\"no ground\" or \"timeout\""):
         assert plain(phrase) in text, f"HOW-TO-PLAY.md The Holo-Table does not say {phrase!r}"
@@ -75,26 +77,30 @@ def test_re_test_wave_c_phase_7_is_the_first_section_and_has_the_plan_checks():
                  "a vendor figure", "a fixer", "ripperdoc", "surgery minigame", "timing bar", "30 second debuff", "never killed", "`/cyberblock hub`", "full-screen Minecraft",
                  "**parked**", "walks right past V", "ignores", "Leave with `/cyberblock hub` again", "close Cyberpunk", "V must be released", "coming in Phase 8",
                  "Holo-Table", "3D model", "2D", "`[V]`", "district landmark", "V is **teleported**", "Steve stands where V is", "5 seconds of spawn protection", "60 second cooldown",
-                 "Spawn Beacon", "join a friend", "hide my pin", "gun shop", "real Cyberpunk money", "ripperdoc of the prologue", "pass-through", "fast-travel", "Use the Night City map",
-                 "`tools.fakehost --vendor`", "`tools.mpcheck hub`", "descopes"):
+                 "Spawn Beacon", "join a friend", "hide my pin", "gun shop", "real Cyberpunk money", "ripperdoc of the prologue", "pass-through", "fast-travel", "Not now",
+                 "Never over a free V", "taken straight back out", "Start Cyberpunk again", "Before `/login`", "not an operator", "you leave the hub **first**",
+                 "**not** put back where it was parked", "Shift+click", "Night City vendor...", "`tools.fakehost --vendor`", "`tools.mpcheck hub`", "join password",
+                 "`--park-refuse`", "descopes"):
         assert fact in text, f"Re-test: Wave C, Phase 7 does not say {fact!r}"
 
 
 def test_re_test_phase_7_names_the_runtime_paths_and_the_descopes():
     table = flat(section_of(TESTING, "### P7-9. Which way is it working? (the runtime paths)"))
-    for fact in ("`park:`", "full park", "fallback", "nearest fast-travel point", "unavailable: unseen", "`vendor`", "pass-through", "`fast travel`", "off until it is verified",
-                 "server log", "who and how"):
+    for fact in ("`park:`", "full park", "fallback", "nearest fast-travel point", "unavailable: unseen", "`vendor`", "`vendors: path: ...`", "pass-through", "`fast travel`",
+                 "`Holo-Table path active`", "server log", "who and how", "`V not parked`"):
         assert fact in table, fact
     risks = flat(section_of(TESTING, "### Phase 7 descopes and risks (short)"))
-    for fact in ("**(f)**", "stock", "2D Atlas screen", "**(g)**", "Cyberpunk car", "elytra and armour", "Fast travel", "Match Terminal", "Phase 8"):
+    for fact in ("**(f)**", "stock", "2D Atlas screen", "**(g)**", "Cyberpunk car", "elytra and armour", "Fast travel", "runtime check", "Match Terminal", "Phase 8"):
         assert fact in risks, fact
 
 
 def test_the_changelog_has_a_phase_7_entry_above_the_wave_b_integration_one():
     assert CHANGELOG.index(ENTRY) < CHANGELOG.index("### Unreleased additions: Wave B integration")
     text = flat(section_of(CHANGELOG, ENTRY))
-    for phrase in ("`hub`", "`park`", "`reply` with `kind:\"vendor\"`", "`uiact` `vendorreq`, `buy` and `sell`", "`fasttravel`", "`parked` relay row", "`tools.fakehost --vendor`",
-                   "`tools.mpcheck hub`", "`cyberblock:afterlife`", "HOW-TO-PLAY", "Re-test: Wave C, Phase 7", "(f) and (g)"):
+    for phrase in ("`hub`", "`park`", "on entering `hub in:true` then `park on:true`", "on leaving `park on:false` then `hub in:false`", "`parked ok:false` takes the player out",
+                   "hears the entering pair again", "before the `vteleport`", "no way in before `/login`", "`reply` with `kind:\"vendor\"`", "sent unrequested",
+                   "`uiact` `buy` and `sell`", "`fasttravel`", "`parked` relay row", "differ from megaplan section 1", "`tools.fakehost --vendor`", "`--park-refuse`",
+                   "`tools.mpcheck hub`", "join password", "`cyberblock:afterlife`", "HOW-TO-PLAY", "Re-test: Wave C, Phase 7", "(f) and (g)"):
         assert phrase in text, f"CHANGELOG does not say {phrase!r}"
 
 

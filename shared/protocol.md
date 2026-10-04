@@ -687,7 +687,7 @@ the same validators the client ran before (the limits above), plus the envelope 
 | `surveystate` | LOCAL | `SurveyClient` | |
 | `env` | UP | `EnvSync` (server), Phase 3 | the primary host's clock and weather |
 | `vteleported` | UP | `MeetUp` (server), routed to the request's owner, Phase 3 | a reply: it must carry a request id the session issued |
-| `parked` | UP | session (server), **Phase 7** (the hub) | the answer to `park`; the DLL builds it from Phase 3, but no Phase 3 server sends `park`, so a Phase 3 relay drops a `parked` (counted) and has no rate row; from Phase 7 the client relay and the server accept it (rate row 2 per second, burst 4, see [Phase 7](#phase-7-npc-interaction-the-afterlife-hub-and-the-holo-table)) |
+| `parked` | UP | session (server), **Phase 7** (the hub) | the answer to `park`; the DLL builds it from Phase 3, but no Phase 3 server sends `park`, so a Phase 3 relay drops a `parked` (counted) and has no rate row; from Phase 7 the client relay and the server accept it (7H adds it to the client's UP set and a `RelayGuard` row, 2 per second, burst 4; the hub reads it: see [Phase 7](#phase-7-npc-interaction-the-afterlife-hub-and-the-holo-table)) |
 | `devices` | UP | the device layer per session (server), Phase 4 | the devices within 48 m: changes and a full list every 5 s |
 | `devstate` | UP | the device layer per session (server), Phase 4 | one device changed state |
 | `devresult` | UP | the device layer (server), routed to the request's asker, Phase 4 | a reply: it must carry a request id the session issued |
@@ -727,7 +727,7 @@ The frame export (`Local\CyberblockFrame`) is LOCAL: `FrameExporter` on the clie
 | `pteleport` | DOWN | `ServerPlayerMixin` | Steve was teleported by a command; documented below |
 | `vteleport` | DOWN | `MeetUp` (server), Phase 3 | to the host's session only |
 | `park` | DOWN | session (server), **Phase 7** (the hub) | to the host's session only; the DLL and scripts handle it from Phase 3, the server first sends it in Phase 7 (with every `hub`) |
-| `hub` | DOWN | `HubSession` (server), Phase 7 | to the host's session only: a host entered or left the Afterlife hub, the DLL switches the compositor to full-screen Minecraft or back |
+| `hub` | DOWN | `HubTravel` (server), Phase 7 | to the host's session only: a host entered or left the Afterlife hub, the DLL switches the compositor to full-screen Minecraft or back |
 | `devact` | DOWN | the device layer (server), Phase 4 | to the device's owner only; the owner's `devices` toggle and the device type's bit when a guest asked |
 
 ### Multiplayer: new messages
@@ -1209,82 +1209,125 @@ Phase 5 examples, Cyberpunk to Minecraft:
 ## Phase 7 (NPC interaction, the Afterlife hub and the Holo-Table)
 
 Same wire, same conventions; `proto` stays 1 and older builds ignore the new `t` values, actions and fields. Plan:
-`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 1.9 (rows 7), section 1.8 (row 7) and section 11, with the dated Phase 0
-amendment (fallbacks (f) and (g)). Three things cross the DLL wire in Phase 7: **the Afterlife hub** (the server tells a host's DLL to
-switch to full-screen Minecraft and, with `park`, to put V away safely), **the stock of Night City's own vendors and ripperdocs** (so Minecraft can
-draw their screens) and **the purchases and sales back** (paid with the host's real Cyberpunk money, megaplan 1.16). The role screens of figures,
-the hub's Minecraft shops and the Holo-Table (7N, 7H, 7T) are Minecraft and server only: they use `cyberblock:act` and `cyberblock:ui` payloads that
-their packages define and never reach a DLL; a Holo-Table spawn of a linked player is the existing [`vteleport` with `why:"holo"`](#phase-3-minecraft--cyberpunk).
+`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 1.9 (rows 7, with the 2026-10-04 amendment of the vendor `reply` and `uiact`
+rows), section 1.8 (row 7) and section 11, with the dated Phase 0 amendment (fallbacks (f) and (g)). Three things cross the DLL wire in Phase 7: **the
+Afterlife hub** (`hub` with the Phase 3 `park`: the server tells a host's DLL to switch to full-screen Minecraft and to put V away safely), **the stock of the
+Night City vendor or ripperdoc the host opened** (so Minecraft can draw its screen) and **the purchases and sales back** (paid with the host's real Cyberpunk
+money, megaplan 1.16), plus the Holo-Table's list of the host's fast-travel points. The role screens of figures, the hub's Minecraft shops and the Holo-Table
+(7N, 7H, 7T) are Minecraft and server only: they use `cyberblock:act` and `cyberblock:ui` payloads that their packages define and never reach a DLL; a
+Holo-Table spawn of a linked player is the existing [`vteleport` with `why:"holo"`](#phase-3-minecraft--cyberpunk), in the order given below.
 
 ### Phase 7: Cyberpunk → Minecraft
 | `t` | fields | when |
 |---|---|---|
-| `reply` | **extends re-test 3 and the Atlas:** `kind` also ∈ `vendor`. `id` echoes the `uiact vendorreq` it answers; `groups` are the **stock categories**, each with `kind` ∈ `buy` (what the vendor sells) or `sell` (what V can sell to it) and the usual `hash`, `title` (≤ 128), `tracked:false`, `done:false`; `lines` are the **items**: `hash` (uint32, what `uiact buy` and `sell` send back), `text` (≤ 256) and **`state` = the price in eddies** (a whole number 0..2147483647) instead of the 0, 1, 2 of the other kinds; `pins` is `[]`. The limits of [Re-test 3](#re-test-3-semantics-and-limits) hold (≤ 128 groups, ≤ 512 lines in all, ≤ 256 KB) | the answer to `uiact vendorreq`, LOCAL (the host's own Night City interface: never relayed) |
+| `reply` | **extends re-test 3 and the Atlas:** `kind` also ∈ `vendor`, **sent unrequested**. `id` = the host's vendor session (one more each time a vendor is taken over; the resend after a trade keeps it); `pins` is `[]` or **one pin, the vendor itself**: `kind` ∈ `vendor`, `ripperdoc`, `name` its shop name (≤ 64), `p` where it stands, `i:-1`; `groups` are the **stock categories** (`hash` the category's index, `title` its name, `tracked:false`): `kind:"buy"` with `done:false` for the vendor's stock, `kind:"sell"` with `done:true` for V's items the vendor takes; `lines` are the **items**: `hash` (the low 32 bits of the item's TweakDB id, what `uiact buy` and `sell` send back), `text` (≤ 256, `<name> x<n>` for a stack) and **`state` = the unit price in eddies** (a whole number 0..2147483647) instead of the 0, 1, 2 of the other kinds. The limits of [Re-test 3](#re-test-3-semantics-and-limits) hold (≤ 128 groups, ≤ 512 lines in all, ≤ 256 KB) | the host opened a vendor or a ripperdoc in Night City (Cyberblock On, Minecraft linked), and again after every trade; LOCAL (the host's own Night City interface: never relayed) |
 
 ### Phase 7: Minecraft → Cyberpunk
 | `t` | fields | when |
 |---|---|---|
-| `hub` | `in:bool` (`true` the host entered the Afterlife hub, `false` it left or its hub session ended) | the server, DOWN to that host's DLL only; always together with a `park` (see the order below) |
-| `uiact` | **extends re-test 3:** `a` also ∈ `vendorreq`, `buy`, `sell`. `vendorreq` (`id` a request id) asks for the stock of the vendor whose screen is open; `buy` and `sell` carry `hash` (the line's `hash` from the `reply`, **one unit per action**) and `id` (the `id` of that `reply`), and an absent or zero `hash` makes them invalid. `fasttravel` (`id` = the `i` of an `atlas` pin) is **enabled in Phase 7** once verified | a Minecraft vendor or ripperdoc screen (7V), or the Holo-Table's fast-travel list; LOCAL |
+| `hub` | `in:bool` (`true` the host entered the Afterlife hub, `false` it left) | the server, DOWN to that host's DLL only; always together with a `park` (see the order below) |
+| `uiact` | **extends re-test 3:** `a` also ∈ `buy`, `sell`: `hash` = the line's `hash` from the vendor `reply` (an absent or zero `hash` makes them invalid), `id` = the line's **index among the lines of its side** (the buy or the sell groups, in reply order), `arg` = the **quantity** as a decimal string (`"1"`, with Shift `"10"`; `""` or not a number means 1). `cpmenu` also takes `arg:"vendor"` (`id` the vendor session): this vendor again as Cyberpunk's own screen, for installing cyberware and buyback. `atlasreq` with `arg:"fasttravel"` asks for the Holo-Table's fast-travel list; `fasttravel` (`id` = the `i` of a pin of that list, `arg` = its `name`) fast travels the host | a Minecraft vendor or ripperdoc screen (7V), or the Holo-Table's fast-travel list; LOCAL |
 
 ### Phase 7 semantics and limits
 - **The hub.** `hub in:true` switches the compositor to **full-screen Minecraft** (the loading-cover path: no depth blending, Cyberpunk's picture is
   hidden) and `in:false` switches back. The hub is a Minecraft dimension (`cyberblock:afterlife`): entering moves Steve there, V stays where
-  it was. The server sends **both messages in the same tick, in an order that never shows V exposed: on entering `park on:true` then `hub in:true`, on leaving
-  `hub in:false` then `park on:false`**. `park` is the [Phase 3 message](#phase-3-minecraft--cyberpunk) (V invisible, invulnerable, unseen by NPCs, saving locked,
-  no movement or camera); the DLL answers it with `parked`, as before. A host whose link drops, whose Cyberblock goes Off or whose `session` leaves `host`
-  has its cover and its park ended **on the DLL side** (no message needed), exactly as the Phase 3 cleanup releases a parked V; a `hub` or `park` that arrives
-  without a host session is ignored. Hosts only: a guest has no DLL, so no `hub` and no `park` is ever sent for it.
-- **`parked` is relayed from Phase 7.** The client relay and the server accept the DLL's `parked` (it answers the last `park`: it carries no request id,
-  like `vteleported` it is a reply, so one the session did not ask for is dropped and counted). Rate row: 2 per second, burst 4
-  ([the table](#multiplayer-security-rate-limits-and-guest-toggles)). `parked.ok:false` (V cannot be parked now: in a vehicle, a scene, combat) carries
-  its reason; what the server does with it is the hub's business (7H), the wire only says that every `park` is answered.
-- **Vendor stock (Phase 0 check (f)).** `MarketSystem.GetVendorItemsForSale(vendor, false)` is the readable stock; the scripts send it only for a
-  vendor whose stock they can read. When Minecraft sees `screen pass:"vendor"` or `pass:"ripperdoc"` it sends `uiact vendorreq`; **no usable reply (none, or one with no
-  lines) means "not readable" and the pass-through screen stays** (logged), as for the prologue ripperdoc and anything quest-critical, which the scripts never
-  answer. A ripperdoc's stock is a vendor stock like any other. The DLL builds the `reply` like the journal's (control characters stripped, text cut at a
-  character boundary, extra entries dropped and counted); a receiver treats a group `kind` that is neither `buy` nor `sell` as `buy`.
-- **Buying and selling.** `uiact buy` and `sell` are one unit per action. They are paid from and into the host's **real Cyberpunk money**, never Minecraft eddies
-  (megaplan 1.16): the scripts re-read the real price and the real stock at the moment of the action, so Minecraft is never trusted with a price. A refusal
-  (not enough money, a hash that is no longer in the stock) is a `notify` (`warning`); success is a `notify` (`item` or `money`), the new balance arrives as the
-  next `stats.money`, and Minecraft asks again with `vendorreq` to redraw the stock. Inside the DLL the scripts receive `hub`, `buy` and `sell` as events
-  (megaplan 1.8 row 7); `vendorreq` is answered by a `reply` builder like `journalreq`.
-- **Fast travel.** `uiact fasttravel` was parsed in re-test 3 but answered with an `info` toast ("Use the Night City map") while the scripts' `FastTravelEnabled`
-  switch was off. Phase 7 turns it on after an in-game check; until then the toast is the answer. The wire does not change.
-- **Validation (receivers).** `hub.in` is a boolean (anything else is dropped and counted); `uiact.a` outside the thirteen names makes the whole message invalid, as
-  before; `buy` and `sell` need a `hash` of 1..2^32 − 1 and an `id` ≥ 0; a vendor `reply` follows the Re-test 3 limits plus `kind` ∈ `buy`, `sell` for its
-  groups, `state` a whole number 0..2147483647 for its lines, `tracked` and `done` booleans and `pins` empty. A bad message is counted and dropped, never fatal.
+  it was. The server sends **both messages in the same tick: on entering `hub in:true` then `park on:true`, on leaving `park on:false` then
+  `hub in:false`** (V is released under the cover, then Night City's picture returns; 7H's `HubRules.sync`). `park` is the
+  [Phase 3 message](#phase-3-minecraft--cyberpunk) (V invisible, invulnerable, unseen by NPCs, saving locked, no movement or camera); the scripts park V on the
+  `hub` event as well and try again every 1 s while the hub lasts (7S `Hub.reds`), and the DLL answers every `park` with `parked`, as before. Hosts only: a
+  guest has no DLL, so no `hub` and no `park` is ever sent for it.
+- **The cover only stays up over a parked V.** The server refuses an entry (a chat message, nobody moves) while the player is locked by the join password
+  (`JoinLock`: the command, the hub portal and the pause screen's button alike), while the session says the game holds V (a scene or a ride) and while V is
+  in a vehicle. When the DLL still answers the hub's `park on:true` with **`parked ok:false`** (V cannot be parked now: not live, a vehicle, a scene, a
+  teleport, saving; the reason is `blocked (<why>)`), the server **takes the player out of the hub at once**, back to where they came from (the leaving pair:
+  `park on:false`, `hub in:false`), and shows the reason; the cover is never left over an unparked V for longer than that one answer. No answer within 10 s
+  is logged as an unconfirmed park path (a Phase 3 DLL answers every `park` from the scripts' `park:` log lines).
+- **A new session hears the hub again.** What a DLL was told ends with its session: the DLL drops its cover by itself (and the scripts release V) on a link
+  drop, on every `hello` and when its `session` leaves `host`, with no message needed. So on **every host session start** (the `hello` after a link drop, a
+  Cyberpunk restart or a reconnect) the server counts the DLL as out of the hub, and a player who is still in `cyberblock:afterlife` gets the entering pair
+  again, once (7H: `HostSessions.onStart`). Cyberblock going Off releases V (the compositor draws nothing while Off) but keeps the DLL's hub, so V is parked
+  again at On. A `hub` or `park` that arrives without a host session is ignored.
+- **Leaving by a Holo-Table spawn.** The Holo-Table stands in the hub, so a linked host's spawn from it is a hub exit first: Steve is moved out to the spot,
+  the server sends the leaving pair (`park on:false`, `hub in:false`: V released, the picture back), and **only then** the `vteleport why:"holo"` (7T sends it
+  1.5 s after the exit). Never the other way round: the scripts refuse a `vteleport` while V is parked (`blocked (parked)`), and releasing a park may move V
+  back to where V was parked (the (g) fast-travel fallback), which would undo an earlier teleport. On `vteleported ok:true` Steve goes to V's snapped spot; on
+  `ok:false` the host stays out of the hub with V where it was, and the reason is shown. `why:"hub_exit"` stays reserved (Phase 7 does not use it). A fast
+  travel picked at the table runs once the park is released, the same way.
+- **`parked` is relayed from Phase 7.** The client relay (its UP set) and the server (`RelayGuard`, rate row: 2 per second, burst 4,
+  [the table](#multiplayer-security-rate-limits-and-guest-toggles); a `HostSessions` listener of 7H's hub) accept the DLL's `parked`, the answer to the
+  last `park` (it carries no request id). The server acts on it only for a player in the hub: `ok:false` takes the player out (above), the first answer of a
+  server run is logged as the park path (Phase 0 check (g)).
+- **Vendor stock (Phase 0 check (f)).** The research verdict reads the stock with `MarketSystem.GetVendorItemsForSale(vendor, false)`; the scripts read the
+  same stock through the vendor screen's own `VendorDataManager`, and that read is the runtime feature check. When the host opens a vendor or a ripperdoc
+  while Cyberblock is On and Minecraft is linked, the scripts send the `reply`; Minecraft opens its vendor screen, and once Minecraft reports a screen open
+  Cyberpunk's own screen closes. **No Minecraft screen within 1.5 s, a stock that reads empty, a stash, the prologue ripperdoc, the ripperdoc tutorials and
+  anything quest-locked keep Cyberpunk's own screen: the pass-through stays** (logged). A ripperdoc's stock is a vendor stock like any other; installing
+  cyberware stays Cyberpunk's own screen (`cpmenu arg:"vendor"`). The DLL builds the `reply` like the journal's (control characters stripped, text cut at a
+  character boundary, extra entries dropped and counted). **A receiver tells the sides apart by `kind:"sell"` or `done:true`: a group with neither is the
+  vendor's stock**, whatever its `kind` says (a DLL that knows only the Re-test 3 group kinds files `buy` and `sell` as `other`).
+- **Buying and selling.** One `uiact buy` or `sell` per click, for `arg` units. They are paid from and into the host's **real Cyberpunk money**, never
+  Minecraft eddies (megaplan 1.16): the scripts find the line by `id` and `hash` (by `hash` alone when the index no longer matches), clamp the quantity to the
+  stack and to what the money allows, re-read the real price and trade through Cyberpunk's own vendor path, so Minecraft is never trusted with a price.
+  0.3 s later the result is a `notify` (`money`: "Bought ..." or "Sold ..." with the eddies; `warning`: "Not enough eddies", "The vendor cannot pay for
+  that", a trade that changed no money) and the stock is sent again with the same `id`; a line that is no longer in the stock only sends the stock again.
+  The new balance also arrives as the next `stats.money`. Inside the DLL `buy` and `sell` are `uiact` actions the scripts read (`Cyberblock_NextUiAction`),
+  never events (megaplan 1.8 row 7 as amended).
+- **Fast travel (the Holo-Table).** `uiact atlasreq arg:"fasttravel"` is answered with an `atlas` `reply` of the known fast-travel points only, each `i` its
+  index while the host can fast travel now and −1 otherwise (with an `info` toast saying why); `uiact fasttravel` (`id` that `i`, `arg` the pin's `name`: the
+  index counts only while the name still matches) fast travels the host the game's own way. A runtime check (no job locks fast travel, V on foot, out of
+  combat, not held by a scene) replaces the `FastTravelEnabled` switch of Re-test 3; a refusal is a `warning` toast "Not now: <why>". The Atlas itself stays a
+  map (every `i` −1). The wire does not change.
+- **Validation (receivers).** `hub.in` is a boolean (anything else is dropped and counted); `uiact.a` outside the twelve names makes the whole message invalid, as
+  before; `buy` and `sell` need a `hash` of 1..2^32 − 1 and an `id` ≥ 0; a vendor `reply` follows the Re-test 3 limits plus: `pins` empty or one pin of `kind`
+  `vendor` or `ripperdoc`; each group's `kind` a string, read as above; `tracked` and `done` booleans; `state` a whole number 0..2147483647 for its lines. A bad
+  message is counted and dropped, never fatal.
 - **Features.** `hs_ack.features` bit 16 (hub) is set by a Phase 7 server.
+
+### Phase 7 differences from megaplan section 1 (for the integrator)
+Section 1 is the contract; these readings differ from its text or add to it, and the integrator amends section 1 (or the packages) at the merge.
+- **The vendor `reply` is LOCAL, not UP.** Section 1.9 row 7 classes `reply` (ext) `kind:"vendor"` as UP. It is the host's own Night City screen
+  (section 1.2: UI messages are LOCAL; task 7-V1), so no relay and no `RelayGuard` row may carry it: a host's shop never reaches the server.
+- **`groups[].kind` `buy` and `sell`.** Section 1.9 row 7 (amended 2026-10-04) says the DLL files them as `other`; 7D keeps `buy` and `sell` in a vendor
+  reply (an unknown kind becomes `buy`). Either works, because receivers read the sell side from `kind:"sell"` or `done:true`.
+- **The hub sends `park` too.** Section 1.9 row 7 says that on `hub` "the scripts park V". The server also sends the Phase 3 `park` with every `hub`, in the
+  order above, and the scripts park V on either one (7S: `Hub.reds` on `hub`, `Park.reds` on `park`); the DLL's `parked` answers the `park`.
+- **New hub rules.** The refused-park exit, the second entering pair on a session start and the order of a Holo-Table spawn out of the hub are this
+  section's requirements for 7H (`HubTravel`: the exit on `parked ok:false` is not in 7H's branch yet), 7T (the `vteleport` after the leaving pair) and 7S
+  (`Teleport.reds` refuses while parked; `Park.reds` releases before any teleport).
 
 ### Phase 7 names
 - **Vendor group kinds** (`reply.groups[].kind` for `kind:"vendor"`) — `buy`, `sell`
 - **Reply kinds** (Phase 7 adds one to the three of Re-test 3) — `vendor`
-- **UI actions** (Phase 7 adds three to the ten of Re-test 3) — `vendorreq`, `buy`, `sell`
+- **UI actions** (Phase 7 adds two to the ten of Re-test 3) — `buy`, `sell`
 
 ### Phase 7 log lines
-In-game checks grep for them (Re-test: Wave C, Phase 7 in `docs/TESTING-PLAN.md`). The exact text belongs to the packages that print them (7S and 7D in
+In-game checks grep for them (Re-test: Wave C, Phase 7 in `docs/TESTING-PLAN.md`). The exact text belongs to the packages that print them (7S, 7V and 7D in
 Cyberpunk, 7H and 7V on the server and the client); the integrator copies the final lines into the Re-test.
-- Each feature that has a fallback prints **one line saying which runtime path is active**: whether a vendor's stock was readable (and how many lines)
-  or the pass-through stayed, whether fast travel is on or off, and the park method (the Phase 3 `park: on|off (<reason>)` line, now also written for every hub
-  entry and exit; its text says when the unseen-by-NPCs part is unavailable, Phase 0 check (g)).
-- The server logs every hub entry and exit (who, how: the command, the portal block, the pause screen).
+- Each feature that has a fallback prints **one line saying which runtime path is active**: whether a vendor's stock was read or the pass-through stayed
+  (`vendors: path: ...`, `vendors: <name> pass-through (<why>)`), whether fast travel from the Holo-Table is on or off (`fast travel: ...`), and the park
+  method (the Phase 3 `park: on|off (<reason>)` line, now also written for every hub entry and exit; its text says when the unseen-by-NPCs part is
+  unavailable, Phase 0 check (g)).
+- The server logs every hub entry and exit (who, how: the command, the portal block, the pause screen), every pair it sends (`hub: <name> <- hub in:<b>,
+  park on:<b>`), the park path once a run (`hub: park path: ...`) and every refused park (`hub: <name> V not parked (<reason>)`).
 
 ### Phase 7 examples
-One message per line (JSON Lines). The vendor `reply` shows both group kinds; the `uiact` lines show the request, a purchase, a sale and a fast travel.
+One message per line (JSON Lines). The vendor `reply` shows both sides of a gun shop; the `uiact` lines show a purchase, a sale of up to ten, the
+fast-travel list, a fast travel and the way back to Cyberpunk's own vendor screen.
 
 Phase 7 examples, Cyberpunk to Minecraft:
 ```jsonl
-{"t":"reply","kind":"vendor","id":31,"groups":[{"hash":501,"title":"Pistols","kind":"buy","tracked":false,"done":false,"lines":[{"hash":90210,"text":"Kessler K9 pistol","state":1200},{"hash":90211,"text":"Dune Runner revolver","state":2400}]},{"hash":502,"title":"Your items","kind":"sell","tracked":false,"done":false,"lines":[{"hash":4000000001,"text":"Broken radio","state":35}]}],"pins":[]}
+{"t":"reply","kind":"vendor","id":3,"groups":[{"hash":2,"title":"Pistols","kind":"buy","tracked":false,"done":false,"lines":[{"hash":90210,"text":"Kessler K9 pistol x2","state":1200},{"hash":90211,"text":"Dune Runner revolver","state":2400}]},{"hash":9,"title":"Your items","kind":"sell","tracked":false,"done":true,"lines":[{"hash":4000000001,"text":"Broken radio","state":35}]}],"pins":[{"p":[-1201.5,64.0,845.0],"kind":"vendor","name":"Watson Arms","i":-1}]}
 ```
 
 Phase 7 examples, Minecraft to Cyberpunk:
 ```jsonl
 {"t":"hub","in":true}
 {"t":"hub","in":false}
-{"t":"uiact","a":"vendorreq","arg":"","hash":0,"id":31}
-{"t":"uiact","a":"buy","arg":"","hash":90210,"id":31}
-{"t":"uiact","a":"sell","arg":"","hash":4000000001,"id":31}
-{"t":"uiact","a":"fasttravel","arg":"","hash":0,"id":4}
+{"t":"uiact","a":"buy","arg":"1","hash":90210,"id":0}
+{"t":"uiact","a":"sell","arg":"10","hash":4000000001,"id":0}
+{"t":"uiact","a":"atlasreq","arg":"fasttravel","hash":0,"id":32}
+{"t":"uiact","a":"fasttravel","arg":"Watson Docks","hash":0,"id":4}
+{"t":"uiact","a":"cpmenu","arg":"vendor","hash":0,"id":3}
 ```
 
 ## Shared memory `Local\CyberblockFrame`
