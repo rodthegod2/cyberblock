@@ -61,7 +61,7 @@ public final class DevCommands {
 				.then(Commands.argument("y", IntegerArgumentType.integer()).then(Commands.argument("z", IntegerArgumentType.integer())
 					.then(Commands.argument("block", StringArgumentType.greedyString())
 						.executes(c -> place(c.getSource(), new BlockPos(IntegerArgumentType.getInteger(c, "x"), IntegerArgumentType.getInteger(c, "y"),
-							IntegerArgumentType.getInteger(c, "z")), StringArgumentType.getString(c, "block")))))))));
+							IntegerArgumentType.getInteger(c, "z")), StringArgumentType.getString(c, "block"))))))))));
 	}
 
 	private static HostSession sessionOf(final CommandSourceStack source, final String host) {
