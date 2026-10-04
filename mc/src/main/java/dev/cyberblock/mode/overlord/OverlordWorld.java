@@ -295,9 +295,12 @@ final class OverlordWorld {
 				}
 			}
 
+			// tracked before it is added: the entity-load listener removes tagged mobs that no match tracks
+			m.mobs.add(mobEntity.getUUID());
 			if (level.addFreshEntity(mobEntity)) {
-				m.mobs.add(mobEntity.getUUID());
 				placed++;
+			} else {
+				m.mobs.remove(mobEntity.getUUID());
 			}
 		}
 
