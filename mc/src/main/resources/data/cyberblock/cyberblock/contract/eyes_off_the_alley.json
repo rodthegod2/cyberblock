@@ -1,0 +1,16 @@
+{
+	"schema": 1,
+	"title": "Eyes off the Alley",
+	"text": "Three cameras watch the back of a friend's shop. Put them out for an evening so deliveries can arrive unremarked.",
+	"done_text": "The alley is blind and the deliveries are in. A fine evening's work.",
+	"type": "breach_device",
+	"target": {
+		"kind": "camera",
+		"count": 3
+	},
+	"reward": {
+		"eddies": 300
+	},
+	"difficulty": 2,
+	"repeatable": true
+}

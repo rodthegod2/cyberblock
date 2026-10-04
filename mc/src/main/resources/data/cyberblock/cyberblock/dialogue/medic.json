@@ -1,0 +1,37 @@
+{
+	"schema": 1,
+	"role": "cyberblock:medic",
+	"lines": {
+		"greeting": [
+			"Let me look at you, {player}. Sit, breathe, tell me where it hurts.",
+			"Plenty of bandages, no judgement. What happened?",
+			"Trauma-free zone. For the moment.",
+			"Quick check, quick fix. Hold your arm out."
+		],
+		"farewell": [
+			"Rest. Water. Fewer stairs.",
+			"Come back if anything leaks.",
+			"Keep your head down and your hearts up.",
+			"Try not to need me again. I will be here if you do."
+		],
+		"bark": [
+			"Anyone bleeding? Anyone? No? Boring.",
+			"The cure for most things is sleep and bandages.",
+			"I have seen worse. I have also seen the same, twice.",
+			"The coffee here is medicinal. Do not ask what it treats.",
+			"Nothing is broken that cannot be taped."
+		],
+		"healed": [
+			"There. Good as new, give or take a scar.",
+			"All patched up, {player}. Try to keep it that way.",
+			"Healed. That will be {price} eddies and a promise to be careful.",
+			"Sit back, you are done. Slowly now.",
+			"Your hearts are full again. Treat them kindly."
+		],
+		"no_funds": [
+			"I cannot treat you for free, {player}. It costs {price}.",
+			"That is {price} eddies. Bring them and I will be quick.",
+			"Come back with the fee. I will be here."
+		]
+	}
+}

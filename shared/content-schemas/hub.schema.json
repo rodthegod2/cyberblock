@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "hub",
+  "description": "The `hub` content kind (megaplan 1.7, 7-H1 and task 7-A1): the layout of the Afterlife hub, written by `art/gen_hub.py` and built once into the dimension `cyberblock:afterlife` by the hub package. All positions are layout cells: the layout cell (0, 0, 0) is the world cell `origin`, x grows east, z south, y up, and the floor layer is y 0 (players stand at y 1). `size` is the bounding box [width, height, depth] in cells. `steps` are applied in order: each fills the cells from `from` to `to` (both included) with `block` (a block id with optional state; `minecraft:air` carves), `mode` `fill` (default) the whole box or `hollow` only its outer shell. `areas` are named boxes (lobby, hall, bar, booths, shops, board_wall, holo_room, clinic, garage, match_floor); `spawn` is where a player arrives (feet position and Minecraft yaw: 0 south, 90 west, 180 north, 270 east); `stations` are the cells of the Match Terminal block, the Holo-Table block and the exit hub portal block; `boards` are the leaderboard board blocks, each with the way it faces, the scoreboard `objective` it shows (at most 16 characters) and the lang key of its title; `figures` are the hub NPCs, always present: `role` is an `npc_role`, `area` one of `areas`, `pos` the feet position, `yaw` as for spawn, `gender` picks the skin row, `name` the figure's display name and `shop` (vendors only) the `shop` it sells. The layout uses only vanilla blocks and the cyberblock blocks of art/gen_block_art.py and art/gen_hub.py. At most 4000 steps.",
+  "type": "object",
+  "required": [
+    "schema",
+    "title_key",
+    "origin",
+    "size",
+    "spawn",
+    "areas",
+    "steps",
+    "stations",
+    "boards",
+    "figures"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128
+    },
+    "title_key": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.]+$",
+      "maxBytes": 96
+    },
+    "origin": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": -512,
+        "maximum": 512
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "size": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 256
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "spawn": {
+      "type": "object",
+      "required": [
+        "pos",
+        "yaw"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "pos": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -512,
+            "maximum": 512
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "yaw": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 360
+        }
+      }
+    },
+    "areas": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -512,
+              "maximum": 512
+            },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -512,
+              "maximum": 512
+            },
+            "minItems": 3,
+            "maxItems": 3
+          }
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4000,
+      "items": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "block"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -512,
+              "maximum": 512
+            },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -512,
+              "maximum": 512
+            },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "block": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+(\\[[a-z0-9_]+=[a-z0-9_]+(,[a-z0-9_]+=[a-z0-9_]+)*\\])?$",
+            "maxBytes": 160
+          },
+          "mode": {
+            "enum": [
+              "fill",
+              "hollow"
+            ]
+          }
+        }
+      }
+    },
+    "stations": {
+      "type": "object",
+      "required": [
+        "match_terminal",
+        "holo_table",
+        "exit_portal"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "match_terminal": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": -512,
+            "maximum": 512
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "holo_table": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": -512,
+            "maximum": 512
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "exit_portal": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": -512,
+            "maximum": 512
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      }
+    },
+    "boards": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "required": [
+          "pos",
+          "facing",
+          "objective",
+          "title_key"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "pos": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -512,
+              "maximum": 512
+            },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "facing": {
+            "enum": [
+              "north",
+              "east",
+              "south",
+              "west"
+            ]
+          },
+          "objective": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]{1,16}$"
+          },
+          "title_key": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.]+$",
+            "maxBytes": 96
+          }
+        }
+      }
+    },
+    "figures": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "area",
+          "pos",
+          "yaw",
+          "gender",
+          "name"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]{1,32}$"
+          },
+          "role": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+            "maxBytes": 128,
+            "x-ref": "npc_role"
+          },
+          "area": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$",
+            "maxBytes": 32
+          },
+          "pos": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": -512,
+              "maximum": 512
+            },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "yaw": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 360
+          },
+          "gender": {
+            "enum": [
+              "male",
+              "female"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxBytes": 32
+          },
+          "shop": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+            "maxBytes": 128,
+            "x-ref": "shop"
+          }
+        }
+      }
+    }
+  }
+}

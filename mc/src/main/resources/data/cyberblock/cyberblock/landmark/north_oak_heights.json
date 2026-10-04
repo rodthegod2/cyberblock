@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"name": "North Oak Heights",
+	"district": "Westbrook",
+	"kind": "viewpoint",
+	"pos": [
+		-350,
+		60,
+		-900
+	],
+	"yaw": 0,
+	"description": "Hillside gardens with a long view over the sprawl and its lights.",
+	"approx": true
+}

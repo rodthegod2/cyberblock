@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "contract",
+  "description": "The `contract` content kind (megaplan 1.7 and task 7-A1): one fixer gig, original text. `title` and `text` are what the fixer's screen shows (at most 48 and 280 bytes), `done_text` the line when the gig is handed in; `type` is the objective and `target` its parameters, exactly the keys of that type: `deliver_item` {item, count} (hand the items to the fixer), `defeat_hostiles` {faction, count} (`faction` is a faction name of the `npcs` message, the names `skin_map` uses, for example TygerClaws; count kills of that faction's figures or of hostile mobs dressed as it), `reach_landmark` {landmark} (stand within 6 blocks of the `landmark`) and `breach_device` {kind, count} (breach that many devices of a section 1.11 kind with the Phase 6 Breach Protocol). `reward` is paid in Minecraft eddies (section 1.16) and optionally items; `difficulty` 1..3 sorts and colours the list; `time_limit` is in seconds (absent or 0: none); `repeatable` gigs come back after being handed in (absent: false). A file with the same id as a default replaces it.",
+  "type": "object",
+  "required": [
+    "schema",
+    "title",
+    "text",
+    "type",
+    "target",
+    "reward"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxBytes": 48
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxBytes": 280
+    },
+    "done_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxBytes": 200
+    },
+    "type": {
+      "enum": [
+        "deliver_item",
+        "defeat_hostiles",
+        "reach_landmark",
+        "breach_device"
+      ]
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "type": "string",
+          "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+          "maxBytes": 128
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "faction": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]+$",
+          "minLength": 1,
+          "maxBytes": 48
+        },
+        "landmark": {
+          "type": "string",
+          "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+          "maxBytes": 128,
+          "x-ref": "landmark"
+        },
+        "kind": {
+          "enum": [
+            "door",
+            "gate",
+            "light",
+            "camera",
+            "terminal",
+            "vending",
+            "traffic",
+            "elevator",
+            "turret",
+            "screen",
+            "container"
+          ]
+        }
+      }
+    },
+    "reward": {
+      "type": "object",
+      "required": [
+        "eddies"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "eddies": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99999
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": [
+              "item",
+              "count"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "item": {
+                "type": "string",
+                "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+                "maxBytes": 128
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 64
+              }
+            }
+          }
+        }
+      }
+    },
+    "difficulty": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3
+    },
+    "time_limit": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400
+    },
+    "repeatable": {
+      "type": "boolean"
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "type": {
+          "const": "deliver_item"
+        },
+        "target": {
+          "required": [
+            "item",
+            "count"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "item": true,
+            "count": true
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "type": {
+          "const": "defeat_hostiles"
+        },
+        "target": {
+          "required": [
+            "faction",
+            "count"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "faction": true,
+            "count": true
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "type": {
+          "const": "reach_landmark"
+        },
+        "target": {
+          "required": [
+            "landmark"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "landmark": true
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "type": {
+          "const": "breach_device"
+        },
+        "target": {
+          "required": [
+            "kind",
+            "count"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": true,
+            "count": true
+          }
+        }
+      }
+    }
+  ]
+}

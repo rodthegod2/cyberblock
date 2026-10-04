@@ -1,0 +1,51 @@
+{
+	"schema": 1,
+	"role": "cyberblock:vendor",
+	"lines": {
+		"greeting": [
+			"Looking is free. Touching is a conversation.",
+			"Hello, {player}. Something particular, or just browsing?",
+			"Everything here has a story. Most of them are true.",
+			"Welcome. Mind the shelves, they bite.",
+			"Fresh stock today. Fresh in the sense that it exists."
+		],
+		"farewell": [
+			"Come again, {player}.",
+			"Thanks. The till says so, too.",
+			"Mind the step, mind the street.",
+			"Do not spend it all in one place."
+		],
+		"bark": [
+			"Prices as shown, honesty not included.",
+			"No refunds. No receipts. No problem.",
+			"A bargain is only a bargain if you need it.",
+			"Take your time. The store does not go anywhere.",
+			"That crate is not for sale. Ask me why.",
+			"Cards, coins, or chips. I even take thanks, in bulk."
+		],
+		"purchase": [
+			"{item} for {price} eddies. A fine choice.",
+			"Sold. {item}, yours for {price}.",
+			"Enjoy the {item}, {player}. It is better than it looks.",
+			"That is {price} eddies and one very good {item}.",
+			"Handled with care, now yours: {item}."
+		],
+		"sale": [
+			"I will take that off your hands for {price} eddies.",
+			"{item}? Fair price: {price} eddies.",
+			"Not new, not broken. {price} eddies.",
+			"Deal. {price} eddies for the {item}."
+		],
+		"no_funds": [
+			"You are {price} eddies short on that one, {player}.",
+			"The price is {price}. The wallet says otherwise.",
+			"Come back when the chips add up."
+		],
+		"rumour": [
+			"Stock is thin in Heywood this week. Something to do with a missing truck.",
+			"A nice bow came in and left in the same afternoon. Strange.",
+			"I heard the night market might run out of ginger. That would be a crisis.",
+			"Prices go up when the sky goes red. Ask me why. Do not ask me why."
+		]
+	}
+}

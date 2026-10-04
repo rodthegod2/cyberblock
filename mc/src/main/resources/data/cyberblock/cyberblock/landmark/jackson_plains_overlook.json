@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"name": "Jackson Plains Overlook",
+	"district": "Badlands",
+	"kind": "viewpoint",
+	"pos": [
+		1000,
+		70,
+		-3600
+	],
+	"yaw": 0,
+	"description": "A dry bluff with the whole empty plain below and a city glow behind you.",
+	"approx": true
+}

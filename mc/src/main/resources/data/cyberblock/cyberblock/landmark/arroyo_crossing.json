@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"name": "Arroyo Crossing",
+	"district": "Santo Domingo",
+	"kind": "transit",
+	"pos": [
+		-400,
+		20,
+		1250
+	],
+	"yaw": 0,
+	"description": "Rail, road and a footbridge, all crossing over each other without a word.",
+	"approx": true
+}

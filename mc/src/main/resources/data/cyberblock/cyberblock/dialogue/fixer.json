@@ -1,0 +1,48 @@
+{
+	"schema": 1,
+	"role": "cyberblock:fixer",
+	"lines": {
+		"greeting": [
+			"Sit. I have work and you have hands, {player}.",
+			"Ah, {player}. A free pair of boots, at last.",
+			"Business first, small talk later, if at all.",
+			"You look like you can read a map and keep a secret. Good.",
+			"Gigs are like fish. Fresh ones are better."
+		],
+		"farewell": [
+			"Come back with results, or at least with a good excuse.",
+			"Do not die. It is bad for repeat business.",
+			"Keep it clean, keep it quiet.",
+			"Call me when the job is done."
+		],
+		"bark": [
+			"Rumour says someone is hiring. It is me. It is always me.",
+			"A gig a day keeps the eviction away.",
+			"Work pays. Excuses do not.",
+			"Discretion is the other half of my fee.",
+			"Do not touch the briefcase. Seriously.",
+			"I do not do heroes. I do invoices."
+		],
+		"rumour": [
+			"Everyone wants something moved, but no one wants to know where.",
+			"The best contracts are the boring ones. The boring ones pay on time.",
+			"A client wants a camera blinded, a door opened and a witness confused. All before breakfast.",
+			"Somebody has been undercutting me with bad maps. That is called competition, and also rude.",
+			"The Badlands pay better but the roads are slower. Pick your poison."
+		],
+		"gig_offer": [
+			"Here is a job, {player}: {title}. It pays {reward} eddies.",
+			"Interested in {title}? {reward} eddies when it is done.",
+			"{title}. {reward} eddies, no questions. Mostly.",
+			"I have {title} on the table. {reward} eddies, no paperwork.",
+			"Take {title}, {player}. The pay is {reward} eddies and a handshake."
+		],
+		"gig_done": [
+			"{title}, done. {reward} eddies, as agreed.",
+			"Clean work on {title}. Here are your {reward} eddies.",
+			"That is the end of {title}. {reward} eddies for you.",
+			"I like the way you handled {title}. {reward} eddies and my respect.",
+			"Fine. {title} is closed and so is the account: {reward} eddies."
+		]
+	}
+}

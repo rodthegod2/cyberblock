@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"name": "Little China Night Market",
+	"district": "Watson",
+	"kind": "market",
+	"pos": [
+		-1400,
+		22,
+		-1280
+	],
+	"yaw": 0,
+	"description": "Steam, neon and a hundred signs fighting for the same patch of sky.",
+	"approx": true
+}

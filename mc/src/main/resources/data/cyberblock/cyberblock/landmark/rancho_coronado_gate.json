@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"name": "Rancho Coronado Gate",
+	"district": "Santo Domingo",
+	"kind": "district",
+	"pos": [
+		-150,
+		20,
+		1700
+	],
+	"yaw": 0,
+	"description": "Lawns behind walls; the gate is the only part that talks to strangers.",
+	"approx": true
+}

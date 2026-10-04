@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"name": "The Glen Promenade",
+	"district": "Heywood",
+	"kind": "plaza",
+	"pos": [
+		-1150,
+		20,
+		850
+	],
+	"yaw": 0,
+	"description": "A tree-lined walk that has seen more handshakes than sunsets.",
+	"approx": true
+}

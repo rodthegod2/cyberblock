@@ -1,0 +1,55 @@
+{
+	"schema": 1,
+	"role": "cyberblock:ripperdoc",
+	"lines": {
+		"greeting": [
+			"Hop up on the chair, {player}. The chair is cleaner than it looks.",
+			"Chrome today, {player}? Tell me what you want, I will tell you what it costs.",
+			"I only work on volunteers. Mostly.",
+			"Sit still. The smell is antiseptic, not fear.",
+			"Everything in here is sterile except my sense of humour."
+		],
+		"farewell": [
+			"Come back for the follow-up. Or do not, it will not hurt. Much.",
+			"Do not do anything stupid with the new hardware.",
+			"Keep it clean, keep it cool.",
+			"If it itches, that is normal. If it screams, that is not."
+		],
+		"bark": [
+			"That drawer is not for snacks.",
+			"Hold still, I will be ten seconds. Minutes. Hours?",
+			"A cheap implant is an expensive lesson.",
+			"The cat is a surgical assistant. Do not ask.",
+			"Never trust an arm you did not choose.",
+			"Everything is reversible, with the right invoice."
+		],
+		"installed": [
+			"{implant}, in and humming. Move it slowly at first.",
+			"That is {implant} fitted. Try not to use it on the furniture.",
+			"Done. {implant} is part of you now.",
+			"Everything is connected. {implant} says hello."
+		],
+		"surgery_ok": [
+			"Perfect timing. The bar did not even shake.",
+			"A steady hand and a steadier mind. Well done.",
+			"Smooth. I could not have done it better. I probably could have.",
+			"In and out. You make it look easy."
+		],
+		"surgery_fail": [
+			"Ow. That is not the sound I wanted. Hold on, breathe.",
+			"A bit of a slip. You will be fine, but you will not feel fine.",
+			"Not my fault, not yours, just physics. Lie still for a minute.",
+			"That went sideways. I will bill you for the coffee anyway."
+		],
+		"no_funds": [
+			"{price} eddies for {implant}. The chair is not a payment plan.",
+			"Come back with {price} and I will cut the ribbon.",
+			"Cash first, chrome second. Rules of the clinic."
+		],
+		"rumour": [
+			"There is a new kind of sandevistan on the market. I will not touch it, but I will tell you about it.",
+			"People pay more for a good story than for a good eye. Be careful what you install.",
+			"A client came in asking for a second heart and a second opinion."
+		]
+	}
+}

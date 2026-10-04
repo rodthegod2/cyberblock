@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"name": "Biotechnica Flats Ridge",
+	"district": "Badlands",
+	"kind": "wilds",
+	"pos": [
+		-900,
+		19,
+		-1710
+	],
+	"yaw": 0,
+	"description": "Wind-cut scrub above the farm domes, a good place to sit and hear nothing.",
+	"approx": true
+}

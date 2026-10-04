@@ -1,0 +1,16 @@
+{
+	"schema": 1,
+	"title_key": "cyberblock.role.fixer",
+	"screen": "contracts",
+	"services": [
+		"gigs",
+		"rumours"
+	],
+	"tags": [
+		"fixer"
+	],
+	"dialogue": "cyberblock:fixer",
+	"hub": {
+		"area": "booths"
+	}
+}

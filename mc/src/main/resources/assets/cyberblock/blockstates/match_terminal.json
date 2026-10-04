@@ -1,0 +1,19 @@
+{
+	"variants": {
+		"facing=east": {
+			"model": "cyberblock:block/match_terminal",
+			"y": 90
+		},
+		"facing=north": {
+			"model": "cyberblock:block/match_terminal"
+		},
+		"facing=south": {
+			"model": "cyberblock:block/match_terminal",
+			"y": 180
+		},
+		"facing=west": {
+			"model": "cyberblock:block/match_terminal",
+			"y": 270
+		}
+	}
+}

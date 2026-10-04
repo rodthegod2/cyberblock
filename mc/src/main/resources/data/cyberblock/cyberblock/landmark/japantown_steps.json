@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"name": "Japantown Steps",
+	"district": "Westbrook",
+	"kind": "plaza",
+	"pos": [
+		-800,
+		26,
+		-420
+	],
+	"yaw": 0,
+	"description": "A wide stair of lanterns and screens where the evening crowd gathers.",
+	"approx": true
+}

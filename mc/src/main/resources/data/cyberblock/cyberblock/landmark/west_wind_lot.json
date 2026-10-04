@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"name": "West Wind Lot",
+	"district": "Pacifica",
+	"kind": "district",
+	"pos": [
+		-1650,
+		10,
+		2050
+	],
+	"yaw": 0,
+	"description": "A half-finished resort district where the plans outlived the money.",
+	"approx": true
+}

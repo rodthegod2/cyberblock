@@ -1,0 +1,15 @@
+{
+	"schema": 1,
+	"title": "Quartz Courier",
+	"text": "A clinic wants clean quartz for its trays. Sixteen pieces, polished or not, delivered to me, not them.",
+	"done_text": "Sterile and shiny. The clinic owes you a favour.",
+	"type": "deliver_item",
+	"target": {
+		"item": "minecraft:quartz",
+		"count": 16
+	},
+	"reward": {
+		"eddies": 210
+	},
+	"difficulty": 2
+}

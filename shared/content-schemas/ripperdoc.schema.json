@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ripperdoc",
+  "description": "The `ripperdoc` content kind (megaplan 1.7 and task 7-A1): one clinic's implant catalogue, paid in Minecraft eddies (section 1.16). `implants` lists what the clinic installs: `implant` is a cyberware id (the 17 of `shared/protocol.md`, then the ids megaplan section 1.17 appends: firewall from Phase 6; netrunner joins this list with Phase 8), `price` the cost in eddies. An entry with a `surgery` object is installed through the timing-bar minigame: a marker sweeps the bar once every `period` ticks and the player must stop it inside the centre `window` (a percentage of the bar, 5 to 90: a smaller window is a riskier surgery). Missing it applies the catalogue's `failure`: `damage` half-hearts (never lethal: it leaves the player at half a heart at the least) and a debuff (slowness and weakness) of `debuff_s` seconds. An entry without `surgery` installs at once. `title_key` is the lang key of the screen title. A file with the same id as a default replaces it.",
+  "type": "object",
+  "required": [
+    "schema",
+    "title_key",
+    "implants",
+    "failure"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128
+    },
+    "title_key": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.]+$",
+      "maxBytes": 96
+    },
+    "implants": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "required": [
+          "implant",
+          "price"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "implant": {
+            "enum": [
+              "mantis_blades",
+              "gorilla_arms",
+              "monowire",
+              "projectile_launch_system",
+              "reinforced_tendons",
+              "fortified_ankles",
+              "lynx_paws",
+              "sandevistan",
+              "berserk",
+              "cyberdeck",
+              "kerenzikov",
+              "optical_camo",
+              "subdermal_armor",
+              "kiroshi_optics",
+              "biomonitor",
+              "second_heart",
+              "ram_upgrade",
+              "firewall"
+            ]
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 99999
+          },
+          "surgery": {
+            "type": "object",
+            "required": [
+              "window",
+              "period"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "window": {
+                "type": "integer",
+                "minimum": 5,
+                "maximum": 90
+              },
+              "period": {
+                "type": "integer",
+                "minimum": 10,
+                "maximum": 200
+              }
+            }
+          }
+        }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "required": [
+        "damage",
+        "debuff_s"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "damage": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "debuff_s": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600
+        }
+      }
+    }
+  }
+}

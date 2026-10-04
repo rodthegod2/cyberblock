@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "npc_role",
+  "description": "The `npc_role` content kind (megaplan 1.7 and task 7-A1): what a figure with this role does when a player right-clicks it, and where the role lives in the Afterlife hub. One role per file. `screen` is the Minecraft screen: ripperdoc (the `catalogue` clinic), shop (the `shop` list, or the shop of the figure's vendor tag in `shop_by_tag`), contracts (the fixer's gigs, every `contract`), bartender (rumours and `drinks`), medic (heal for `prices.heal_per_heart`) and mechanic (repair for `prices.repair_vehicle` and `prices.repair_gear`). `services` is what the screen offers. `tags` are the role tags of the Phase 5 `npcs` message (the vendor-type names and content roles `skin_map` matches on) that give a Night City figure this role. `dialogue` is the role's `dialogue` file. `drinks` are the bartender's short potion buffs: `key` is the lang key suffix of its name (`cyberblock.drink.<key>`), `effect` a status effect id, `seconds` its length. `hub` (absent: the role does not live in the hub) says which named `area` of the hub layout its figures stand in; the placement itself (position, yaw, name, gender and a vendor's shop) is the `figures` list of the `hub` layout, the one place the hub NPCs are spawned from (7N) and counted (7H), and every figure of this role must stand in this area. `prices` are in Minecraft eddies. A datapack adds a role with a new file or replaces one with the same id.",
+  "type": "object",
+  "required": [
+    "schema",
+    "title_key",
+    "screen",
+    "services",
+    "tags",
+    "dialogue"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128
+    },
+    "title_key": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.]+$",
+      "maxBytes": 96
+    },
+    "screen": {
+      "enum": [
+        "ripperdoc",
+        "shop",
+        "contracts",
+        "bartender",
+        "medic",
+        "mechanic"
+      ]
+    },
+    "services": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "install_implant",
+          "surgery",
+          "buy",
+          "sell",
+          "gigs",
+          "rumours",
+          "drinks",
+          "heal",
+          "repair_vehicle",
+          "repair_gear"
+        ]
+      }
+    },
+    "tags": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_]+$",
+        "minLength": 1,
+        "maxBytes": 48
+      }
+    },
+    "dialogue": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128,
+      "x-ref": "dialogue"
+    },
+    "shop": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128,
+      "x-ref": "shop"
+    },
+    "shop_by_tag": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+        "maxBytes": 128,
+        "x-ref": "shop"
+      }
+    },
+    "catalogue": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128,
+      "x-ref": "ripperdoc"
+    },
+    "prices": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "heal_per_heart": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9999
+        },
+        "repair_vehicle": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99999
+        },
+        "repair_gear": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99999
+        }
+      }
+    },
+    "drinks": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "price",
+          "effect",
+          "seconds"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$",
+            "maxBytes": 32
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9999
+          },
+          "effect": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+            "maxBytes": 128
+          },
+          "amplifier": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4
+          },
+          "seconds": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 600
+          }
+        }
+      }
+    },
+    "hub": {
+      "type": "object",
+      "required": [
+        "area"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "area": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$",
+          "maxBytes": 32
+        }
+      }
+    }
+  }
+}

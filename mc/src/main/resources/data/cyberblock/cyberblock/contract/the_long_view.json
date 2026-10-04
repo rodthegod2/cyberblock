@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"title": "The Long View",
+	"text": "Someone is buying maps of the Badlands. Stand on the Jackson Plains Overlook and tell me what you can see from there.",
+	"done_text": "Empty and enormous. That is exactly the answer I was paid for.",
+	"type": "reach_landmark",
+	"target": {
+		"landmark": "cyberblock:jackson_plains_overlook"
+	},
+	"reward": {
+		"eddies": 450
+	},
+	"difficulty": 3
+}

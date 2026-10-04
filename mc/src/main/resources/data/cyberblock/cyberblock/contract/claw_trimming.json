@@ -1,0 +1,16 @@
+{
+	"schema": 1,
+	"title": "Claw Trimming",
+	"text": "The Claws have been leaning on a few shopkeepers. Show them the street belongs to the people who sweep it: six of them.",
+	"done_text": "Word travels. The shopkeepers are already sweeping again.",
+	"type": "defeat_hostiles",
+	"target": {
+		"faction": "TygerClaws",
+		"count": 6
+	},
+	"reward": {
+		"eddies": 260
+	},
+	"difficulty": 2,
+	"repeatable": true
+}

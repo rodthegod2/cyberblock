@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"name": "Corpo Plaza",
+	"district": "City Center",
+	"kind": "plaza",
+	"pos": [
+		-1050,
+		30,
+		120
+	],
+	"yaw": 0,
+	"description": "A square of glass towers where the money wears suits and the pigeons wear drones.",
+	"approx": true
+}

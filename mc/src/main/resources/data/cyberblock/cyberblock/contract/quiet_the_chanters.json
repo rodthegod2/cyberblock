@@ -1,0 +1,15 @@
+{
+	"schema": 1,
+	"title": "Quiet the Chanters",
+	"text": "Voodoo Boys on the wrong side of the wall again. Five of them, and be polite about the wall.",
+	"done_text": "The wall stands and so do you. Take this.",
+	"type": "defeat_hostiles",
+	"target": {
+		"faction": "VoodooBoys",
+		"count": 5
+	},
+	"reward": {
+		"eddies": 330
+	},
+	"difficulty": 3
+}

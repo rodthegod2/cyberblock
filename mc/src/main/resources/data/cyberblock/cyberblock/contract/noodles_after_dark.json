@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"title": "Noodles After Dark",
+	"text": "Skip the wire, skip the guns: go to the Little China Night Market, smell it for me and tell me what was cooking.",
+	"done_text": "Ginger and burnt sugar, you say. I knew it. Here is the fee for your nose.",
+	"type": "reach_landmark",
+	"target": {
+		"landmark": "cyberblock:little_china_night_market"
+	},
+	"reward": {
+		"eddies": 160
+	},
+	"difficulty": 1
+}

@@ -1,0 +1,15 @@
+{
+	"schema": 1,
+	"title": "Open the Ledger",
+	"text": "Two terminals hold a landlord's books. Breach them and the tenants will know what they really owe.",
+	"done_text": "The numbers were worse than we thought. The tenants thank you.",
+	"type": "breach_device",
+	"target": {
+		"kind": "terminal",
+		"count": 2
+	},
+	"reward": {
+		"eddies": 380
+	},
+	"difficulty": 3
+}

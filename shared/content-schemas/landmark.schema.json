@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "landmark",
+  "description": "The `landmark` content kind (megaplan 1.7 and task 7-A1): a named place of Night City the Holo-Table can spawn a player at and a `contract` can send them to (`reach_landmark`). One place per file. `pos` is a Minecraft position in the replica ([x, y, z]; the Cyberpunk position (x, y, z) is the Minecraft position (x, z, -y), section 1.9), `yaw` the way the player faces on arrival (Minecraft yaw: 0 south, 90 west, 180 north, 270 east), `district` the district name the way the game's own district label spells it (shown on the Holo-Table), `kind` what sort of place it is (a district's own spawn is `district`) and `description` one original sentence. `approx` is true while the position was written without game data to check it: the table snaps the arrival to the ground and refuses a spawn with no ground (`vteleported` reason `no ground`), so an approximate point costs a refused spawn, never a stuck player; a datapack or a later release replaces the file with a measured position and `approx` false. A file with the same id as a default replaces it, so a datapack ships only the places it changes.",
+  "type": "object",
+  "required": [
+    "schema",
+    "name",
+    "district",
+    "kind",
+    "pos"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxBytes": 48
+    },
+    "district": {
+      "type": "string",
+      "minLength": 1,
+      "maxBytes": 48
+    },
+    "kind": {
+      "enum": [
+        "district",
+        "plaza",
+        "market",
+        "transit",
+        "viewpoint",
+        "wilds"
+      ]
+    },
+    "pos": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": -30000,
+        "maximum": 30000
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "yaw": {
+      "type": "number",
+      "minimum": -180,
+      "maximum": 360
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxBytes": 200
+    },
+    "approx": {
+      "type": "boolean"
+    }
+  }
+}
