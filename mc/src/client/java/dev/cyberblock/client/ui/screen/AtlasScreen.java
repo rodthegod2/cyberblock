@@ -15,8 +15,10 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -38,8 +40,34 @@ import org.jspecify.annotations.Nullable;
  * cover each other (the more important kind wins). Clicking a pin selects it: a quest pin can be tracked ({@code uiact track},
  * arg "pin", id = its index in the reply; Menus.reds TrackPin tracks its journal entry as the world map does); fast travel is
  * offered only for pins the reply marks as fast-travel points (index &gt;= 0, off in 1.0.0).
+ *
+ * <p>Reusable (megaplan 7-T1, for the Holo-Table's 2D mode and 6I's Net Map): another screen opens the Atlas with an
+ * {@link Overlay} (its own title, start view, widgets, drawing over the map and clicks on it) through
+ * {@link #AtlasScreen(Screen, Component, Overlay, double, double, double)}; the plain {@link #AtlasScreen(Screen)} is unchanged.
  */
 public final class AtlasScreen extends Screen {
+	/**
+	 * What another screen draws on the Atlas. Map coordinates go through the {@link AtlasView} handed in, with the map's centre at
+	 * screen ({@code viewX}, {@code viewY}).
+	 */
+	public interface Overlay {
+		/** From init: the overlay's widgets ({@code add} puts each on the screen; keep clear of the top-right filter buttons). */
+		default void init(final AtlasScreen screen, final Consumer<AbstractWidget> add) {
+		}
+
+		/** Inside the map's scissor, after the Atlas's own pins and before the player arrow. */
+		void extract(GuiGraphicsExtractor graphics, AtlasView view, double viewX, double viewY, int mouseX, int mouseY);
+
+		/** Over everything (tooltips, status lines), after the widgets. */
+		default void extractTop(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY) {
+		}
+
+		/** A click on the map at (x, y), before the Atlas's own pin pick; true when the overlay took it. */
+		default boolean click(final AtlasView view, final double viewX, final double viewY, final double x, final double y) {
+			return false;
+		}
+	}
+
 	private static final int MARGIN = 8;
 	private static final int TOP = 26;
 	private static final int BOTTOM = 28;
@@ -59,6 +87,9 @@ public final class AtlasScreen extends Screen {
 
 	private final @Nullable Screen parent;
 	private final AtlasView view;
+	private final @Nullable Overlay overlay;
+	/** The opener chose the start view: init does not centre on the player. */
+	private final boolean placed;
 	private final Set<AtlasPins.Filter> shown = EnumSet.allOf(AtlasPins.Filter.class);
 	private UiModel.@Nullable Reply reply;
 	private int requestId = -1;
@@ -71,15 +102,31 @@ public final class AtlasScreen extends Screen {
 	public AtlasScreen(final @Nullable Screen parent) {
 		super(NightCityPauseScreen.ui("atlas.title", "Atlas"));
 		this.parent = parent;
+		this.overlay = null;
+		this.placed = false;
 		HostState.Pose pose = HostState.frame();
 		this.view = new AtlasView(pose != null ? pose.px() : 0.0, pose != null ? pose.pz() : 0.0, 0.5);
+	}
+
+	/** The Atlas for another screen: its title, its overlay and the start view (centre in blocks, zoom in GUI px per block). */
+	public AtlasScreen(final @Nullable Screen parent, final Component title, final Overlay overlay, final double centreX, final double centreZ, final double zoom) {
+		super(title);
+		this.parent = parent;
+		this.overlay = overlay;
+		this.placed = true;
+		this.view = new AtlasView(centreX, centreZ, zoom);
+	}
+
+	/** The map's pan and zoom (an overlay may centre it). */
+	public AtlasView view() {
+		return this.view;
 	}
 
 	@Override
 	protected void init() {
 		LocalPlayer player = this.minecraft.player;
 		if (this.requestId < 0 && this.reply == null) {
-			if (player != null && HostState.frame() == null) {
+			if (player != null && HostState.frame() == null && !this.placed) {
 				this.view.centreOn(player.getX(), player.getZ());
 			}
 
@@ -107,6 +154,10 @@ public final class AtlasScreen extends Screen {
 				b.setMessage(this.filterLabel(filter));
 			}).bounds(x, 3, w, 20).build());
 			x += w + 2;
+		}
+
+		if (this.overlay != null) {
+			this.overlay.init(this, this::addRenderableWidget);
 		}
 
 		this.updateButtons();
@@ -215,6 +266,10 @@ public final class AtlasScreen extends Screen {
 				McTheme.GOLD, PIN_SIZE);
 		}
 
+		if (this.overlay != null) {
+			this.overlay.extract(graphics, this.view, this.viewX(), this.viewY(), mouseX, mouseY);
+		}
+
 		HostState.Pose pose = HostState.frame();
 		LocalPlayer player = this.minecraft.player;
 		if (pose != null || player != null) {
@@ -230,7 +285,7 @@ public final class AtlasScreen extends Screen {
 		graphics.disableScissor();
 		graphics.text(this.font, this.title, MARGIN, 9, McTheme.WHITE, true);
 		graphics.text(this.font, this.statusLine(), MARGIN + this.font.width(this.title) + 8, 9, McTheme.GRAY, true);
-		if (r == null) {
+		if (r == null && this.overlay == null) {
 			Component status = this.requestId < 0 ? NightCityPauseScreen.ui("screen.unavailable", "Night City is not connected") : Component.literal("...");
 			graphics.centeredText(this.font, status, this.width / 2, this.bottom() - 12, this.requestId < 0 ? McTheme.RED : McTheme.PANEL_TEXT);
 		}
@@ -252,6 +307,10 @@ public final class AtlasScreen extends Screen {
 			}
 
 			graphics.setComponentTooltipForNextFrame(this.font, lines, mouseX, mouseY);
+		}
+
+		if (this.overlay != null) {
+			this.overlay.extractTop(graphics, mouseX, mouseY);
 		}
 	}
 
@@ -377,6 +436,10 @@ public final class AtlasScreen extends Screen {
 		}
 
 		this.dragging = true;
+		if (this.overlay != null && this.overlay.click(this.view, this.viewX(), this.viewY(), event.x(), event.y())) {
+			return true;
+		}
+
 		int size = this.view.zoom() < 0.15 ? SMALL_PIN : PIN_SIZE;
 		// the topmost drawn pin under the cursor (drawn last = on top)
 		for (int k = this.drawn.size() - 1; k >= 0; k--) {

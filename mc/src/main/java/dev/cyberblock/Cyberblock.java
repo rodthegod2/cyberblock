@@ -114,6 +114,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.hack.actions.RemoteActions.init();
 		// Phase 7N: role screens on figures and hub NPCs, gigs, the hub NPC entity and its content kinds (megaplan 7-N1)
 		dev.cyberblock.npc.NpcModule.init();
+		// Phase 7T: the Holo-Table and Spawn Beacon blocks, the table's pins, layers and spawns, the landmark content kind (7-T1)
+		dev.cyberblock.holo.HoloModule.init();
 		LOG.info("cyberblock loaded");
 	}
 

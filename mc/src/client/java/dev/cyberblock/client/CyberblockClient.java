@@ -72,6 +72,8 @@ public class CyberblockClient implements ClientModInitializer {
 		dev.cyberblock.client.hack.screen.ActionsClient.init();
 		// Phase 7N: role screens (vendor, ripperdoc and its surgery bar, fixer, bartender, medic, mechanic) and hub NPCs
 		dev.cyberblock.client.npc.NpcClient.init();
+		// Phase 7T: the Holo-Table view (3D miniature, pins, spawns; its 2D mode on the Atlas)
+		dev.cyberblock.client.holo.HoloClient.init();
 		ClientTickEvents.START_CLIENT_TICK.register(minecraft -> ClientInput.tickStart());
 		ClientTickEvents.END_CLIENT_TICK.register(CyberblockClient::tick);
 		// launcher players (plan retest3 M5): a "Play Cyberblock" button on the title screen
