@@ -111,6 +111,11 @@ class HandshakeTest {
 	}
 
 	@Test
+	void theServerSaysItHasFigures() {
+		assertEquals(Payloads.FEATURE_FIGURES, ServerNet.FEATURES & Payloads.FEATURE_FIGURES, "hs_ack.features bit 4 (task 3-F1)");
+	}
+
+	@Test
 	void timeoutIsTenSeconds() {
 		assertEquals(200, Handshake.TIMEOUT_TICKS);
 	}

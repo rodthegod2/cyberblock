@@ -540,6 +540,21 @@ TEST(npcs_entries_with_non_finite_numbers_are_left_out)
 	CHECK(json::parse(cb::world::make_npcs(ids, feet, yaws, flags, flags, 0.0)->dump()).at("list").size() == 1);
 }
 
+TEST(npcs_dead_flag_is_sent_only_when_set)
+{
+	const std::vector<uint64_t> ids{1, 2};
+	const std::vector<cb::Vec3> feet{{0, 0, 0}, {1, 1, 1}};
+	const std::vector<double> yaws{0, 0};
+	const std::vector<uint8_t> flags{0, 0};
+	const std::vector<uint8_t> dead{0, 1};
+	const json list = cb::world::make_npcs(ids, feet, yaws, flags, flags, 0.0, dead)->at("list");
+	CHECK(!list[0].contains("dead"));
+	CHECK(list[1].at("dead") == true);
+	CHECK(!cb::world::make_npcs(ids, feet, yaws, flags, flags, 0.0)->at("list")[1].contains("dead"));
+	const std::vector<uint8_t> oneDead{1};
+	CHECK(!cb::world::make_npcs(ids, feet, yaws, flags, flags, 0.0, oneDead));
+}
+
 TEST(cp_yaw_to_mc_yaw_agrees_with_the_quaternion_conversion)
 {
 	// a Cyberpunk yaw of a degrees about +Z is the quaternion (0, 0, sin(a/2), cos(a/2)); cbmath's truth gives the

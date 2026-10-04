@@ -36,7 +36,7 @@ Messages are JSON text frames, one object per frame, discriminated by `t`.
 | `cursor` | `x, y` in 0..1 of the window | only while `status.screen` |
 | `click` | `b` 0 left, 1 right, 2 middle, `down:bool` | only while `status.screen` |
 | `dmg` | `frac` 0..4 (fraction of V's max health the hit would have taken), `kind` ∈ `bullet, explosion, melee, fall, vehicle, fire, other`, `from:[x,y,z]` or `null` | each damage event on V while active (layer 2) |
-| `npcs` | `list:[{id:"<uint64 as decimal string>", p:[x,y,z] feet, yaw, kind:"human"\|"vehicle", hostile:bool}]` | 10 Hz while active: everything alive within 48 m, nearest first, at most 48 entries; an id missing from the list is gone (layer 2) |
+| `npcs` | `list:[{id:"<uint64 as decimal string>", p:[x,y,z] feet, yaw, kind:"human"\|"vehicle", hostile:bool, dead:true (optional)}]` | 10 Hz while active: everything alive within 48 m, nearest first, at most 48 entries; an id missing from the list is gone (layer 2). Phase 3: an NPC that died (or is defeated) or a vehicle that was destroyed, whoever caused it, is listed once more after the living with `dead:true` (its last sighting; the key is only ever `true` and absent otherwise), and Minecraft leaves a body for 3 s or a wreck for 5 s; `killed` stays the report of V's own kills (XP) |
 
 ### Minecraft → Cyberpunk
 | `t` | fields | when |

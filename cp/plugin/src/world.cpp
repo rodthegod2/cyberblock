@@ -769,10 +769,11 @@ namespace cb::world
 
 	std::optional<json> make_npcs(std::span<const uint64_t> ids, std::span<const Vec3> feetCp,
 								  std::span<const double> yawsCp, std::span<const uint8_t> vehicles,
-								  std::span<const uint8_t> hostile, double off)
+								  std::span<const uint8_t> hostile, double off, std::span<const uint8_t> dead)
 	{
 		const size_t n = ids.size();
-		if (feetCp.size() != n || yawsCp.size() != n || vehicles.size() != n || hostile.size() != n)
+		if (feetCp.size() != n || yawsCp.size() != n || vehicles.size() != n || hostile.size() != n ||
+			(!dead.empty() && dead.size() != n))
 			return std::nullopt;
 		json list = json::array();
 		for (size_t i = 0; i < n; ++i)
@@ -780,11 +781,14 @@ namespace cb::world
 			if (!finite(feetCp[i]) || !std::isfinite(yawsCp[i]))
 				continue;
 			const Vec3 feet = cp_to_mc_pos(feetCp[i].x, feetCp[i].y, feetCp[i].z, off);
-			list.push_back({{"id", std::to_string(ids[i])},
-							{"p", triple_json(feet)},
-							{"yaw", rounded(cp_yaw_to_mc_yaw(yawsCp[i]), 1e2)},
-							{"kind", vehicles[i] != 0 ? "vehicle" : "human"},
-							{"hostile", hostile[i] != 0}});
+			json entry = {{"id", std::to_string(ids[i])},
+						  {"p", triple_json(feet)},
+						  {"yaw", rounded(cp_yaw_to_mc_yaw(yawsCp[i]), 1e2)},
+						  {"kind", vehicles[i] != 0 ? "vehicle" : "human"},
+						  {"hostile", hostile[i] != 0}};
+			if (!dead.empty() && dead[i] != 0)
+				entry["dead"] = true;
+			list.push_back(std::move(entry));
 		}
 		return json{{"t", "npcs"}, {"list", std::move(list)}};
 	}

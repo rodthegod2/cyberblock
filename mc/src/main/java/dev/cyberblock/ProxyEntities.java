@@ -10,7 +10,10 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MobCategory;
 
-/** The two proxy entity types, differing only in the hitbox. Registered at startup, on both sides. */
+/**
+ * The two proxy entity types, differing only in the hitbox. Registered at startup, on both sides; guests see them as figures
+ * (client/figure, plan 2026-10-04 task 3-F1).
+ */
 public final class ProxyEntities {
 	/** A pedestrian: 0.6 x 1.8. */
 	public static EntityType<ProxyEntity> HUMAN;
@@ -23,6 +26,8 @@ public final class ProxyEntities {
 	static void register() {
 		HUMAN = register("proxy_human", 0.6F, 1.8F);
 		VEHICLE = register("proxy_vehicle", 3.0F, 1.6F);
+		// the host's kill reports turn proxies into bodies and wrecks (WorldModule.init registers the other proxy messages)
+		ProxyManager.listen();
 	}
 
 	private static EntityType<ProxyEntity> register(final String name, final float width, final float height) {
