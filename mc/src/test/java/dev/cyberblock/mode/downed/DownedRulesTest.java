@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -108,12 +107,13 @@ class DownedRulesTest {
 
 	@Test
 	void whoGoesDownInsteadOfDying() {
-		assertEquals(DownedRules.Death.DOWN, DownedRules.onDeath(false, false, false, false, false));
-		assertEquals(DownedRules.Death.DIE, DownedRules.onDeath(true, false, false, false, false), "the bleed-out ending");
-		assertEquals(DownedRules.Death.DIE, DownedRules.onDeath(false, true, false, false, false), "already down");
-		assertEquals(DownedRules.Death.DIE, DownedRules.onDeath(false, false, true, false, false), "the void, /kill");
-		assertEquals(DownedRules.Death.DIE, DownedRules.onDeath(false, false, false, true, false), "a totem: vanilla saves");
-		assertEquals(DownedRules.Death.DIE, DownedRules.onDeath(false, false, false, false, true), "creative, spectator");
+		assertEquals(DownedRules.Death.DOWN, DownedRules.onDeath(false, false, false, false, false, false));
+		assertEquals(DownedRules.Death.DIE, DownedRules.onDeath(true, false, false, false, false, false), "the bleed-out ending");
+		assertEquals(DownedRules.Death.DIE, DownedRules.onDeath(false, true, false, false, false, false), "already down");
+		assertEquals(DownedRules.Death.DIE, DownedRules.onDeath(false, false, true, false, false, false), "the void, /kill");
+		assertEquals(DownedRules.Death.DIE, DownedRules.onDeath(false, false, false, true, false, false), "a totem: vanilla saves");
+		assertEquals(DownedRules.Death.DIE, DownedRules.onDeath(false, false, false, false, true, false), "a ready Second Heart: the implant saves");
+		assertEquals(DownedRules.Death.DIE, DownedRules.onDeath(false, false, false, false, false, true), "creative, spectator");
 	}
 
 	@Test
@@ -142,10 +142,6 @@ class DownedRulesTest {
 		assertEquals(DownedWire.Status.UP, DownedWire.parseStatus(DownedWire.status(DownedWire.Status.UP)));
 		assertNull(DownedWire.parseStatus("{\"down\":true,\"left\":-3,\"trauma\":-1,\"revive\":0,\"by\":\"\",\"price\":1}"));
 		assertNull(DownedWire.parseStatus("{\"down\":true,\"left\":3,\"trauma\":-1,\"revive\":2,\"by\":\"\",\"price\":1}"));
-		Set<UUID> list = Set.of(MATE, OTHER);
-		assertEquals(list, DownedWire.parseList(DownedWire.list(list)));
-		assertEquals(Set.of(), DownedWire.parseList(DownedWire.list(Set.of())));
-		assertNull(DownedWire.parseList("{\"list\":[\"not a uuid\"]}"));
 		DownedWire.Revive r = new DownedWire.Revive("CbHost1", 0.25F);
 		assertEquals(r, DownedWire.parseRevive(DownedWire.revive(r)));
 		assertNull(DownedWire.parseRevive("{\"name\":\"x\",\"p\":1.5}"));

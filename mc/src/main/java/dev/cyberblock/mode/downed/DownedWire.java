@@ -1,13 +1,8 @@
 package dev.cyberblock.mode.downed;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -16,14 +11,14 @@ import org.jspecify.annotations.Nullable;
  * <li>{@code downed} to the downed player, twice a second while down and once more when it ends: {@code {"down":bool, "left":s,
  * "trauma":s|-1, "revive":0..1, "by":"<reviver>"|"", "price":eddies, "solo":bool}}: bleed-out seconds left, the flyer's
  * countdown, a teammate's revive in progress, Trauma Team's price, and whether nobody else is around to revive.</li>
- * <li>{@code downlist} to every player, on change and on join: {@code {"list":["<uuid>", ...]}} (at most 200): who is down, so every
- * client draws them crawling.</li>
  * <li>{@code revive} to the reviver while it holds: {@code {"name":"<downed>", "p":0..1}}.</li>
  * </ul>
+ * Who is down reaches every client through the {@code cyberblock:roster} entry's {@code downed} (megaplan section 1.3), so every
+ * client draws them crawling.
  */
 public final class DownedWire {
-	public static final String T_DOWNED = "downed", T_LIST = "downlist", T_REVIVE = "revive";
-	static final int LIST_CAP = 200, NAME_CAP = 64;
+	public static final String T_DOWNED = "downed", T_REVIVE = "revive";
+	static final int NAME_CAP = 64;
 
 	/** The downed player's own view. */
 	public record Status(boolean down, int left, int trauma, float revive, String by, int price, boolean solo) {
@@ -60,32 +55,6 @@ public final class DownedWire {
 			}
 
 			return new Status(o.get("down").getAsBoolean(), left, trauma, revive, by, price, o.has("solo") && o.get("solo").getAsBoolean());
-		} catch (RuntimeException e) {
-			return null;
-		}
-	}
-
-	public static String list(final Set<UUID> down) {
-		JsonArray a = new JsonArray();
-		down.stream().sorted().limit(LIST_CAP).forEach(u -> a.add(u.toString()));
-		JsonObject o = new JsonObject();
-		o.add("list", a);
-		return o.toString();
-	}
-
-	public static @Nullable Set<UUID> parseList(final String json) {
-		try {
-			JsonArray a = JsonParser.parseString(json).getAsJsonObject().getAsJsonArray("list");
-			if (a.size() > LIST_CAP) {
-				return null;
-			}
-
-			Set<UUID> out = new HashSet<>();
-			for (JsonElement e : a) {
-				out.add(UUID.fromString(e.getAsString()));
-			}
-
-			return out;
 		} catch (RuntimeException e) {
 			return null;
 		}

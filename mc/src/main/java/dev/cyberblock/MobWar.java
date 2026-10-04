@@ -2,6 +2,7 @@
 package dev.cyberblock;
 
 import com.google.gson.JsonObject;
+import dev.cyberblock.holo.HoloHooks;
 import dev.cyberblock.mixin.MobAccessor;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
@@ -212,6 +213,11 @@ public final class MobWar {
 		}
 
 		MinecraftServer s = WorldBridge.server();
+		ServerPlayer steve = host.player();
+		if (d.by() == 0L && steve != null && HoloHooks.downed.test(steve)) {
+			return; // V's own hit while the host is down (8T): a downed player fights nobody
+		}
+
 		if (s != null && d.frac() > 0.0F && host.active()) {
 			hurt(s.overworld(), host.uuid(), d);
 		}

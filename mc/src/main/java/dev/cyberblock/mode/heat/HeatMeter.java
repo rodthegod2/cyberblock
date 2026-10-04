@@ -1,6 +1,6 @@
 package dev.cyberblock.mode.heat;
 
-import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The server-wide meter 0..100 (megaplan 8-T1): fed by chaos through a gain budget ({@link HeatRules#GAIN_PER_SECOND}, burst
@@ -31,12 +31,12 @@ public final class HeatMeter {
 		return Math.max(0.0, gain);
 	}
 
-	/** Cools the meter up to {@code tick} (call about once a second). */
-	public void tick(final long tick, final List<HeatTier> sorted) {
+	/** Cools the meter up to {@code tick} at tier {@code current} (null: below tier 1); call about once a second. */
+	public void tick(final long tick, final @Nullable HeatTier current) {
 		long dt = tick - this.lastTick;
 		this.refill(tick);
 		if (dt > 0) {
-			this.value = HeatRules.decay(this.value, dt / 20.0, tick - this.lastChaos, sorted);
+			this.value = HeatRules.decay(this.value, dt / 20.0, tick - this.lastChaos, current);
 		}
 	}
 

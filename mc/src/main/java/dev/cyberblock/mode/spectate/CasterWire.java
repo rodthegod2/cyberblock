@@ -16,14 +16,16 @@ import org.jspecify.annotations.Nullable;
  * {"on":bool, "title":"", "timer":-1|seconds, "heat":0..100, "tier":0..5,
  *  "teams":[{"name":"", "colour":0xRRGGBB, "players":[{"name":"", "down":bool}]}],
  *  "board":{"title":"", "rows":[{"name":"", "v":int}]},
- *  "feed":[{"a":"", "verb":"", "b":"", "age":seconds}]}
+ *  "feed":[{"a":"", "verb":"", "b":"", "age":seconds}],
+ *  "pins":[{"name":"", "x":blocks, "z":blocks, "colour":0xRRGGBB|-1, "down":bool}]}
  * </pre>
- * At most {@link #TEAMS} teams of {@link #PLAYERS} players, {@link #ROWS} board rows and {@link KillFeed#CAP} feed entries; names at
- * most {@link #NAME_CAP} bytes.
+ * {@code pins}: the Holo-Table pins this spectator may see (the Holo-Table's privacy rules for its role), nearest first, drawn on the
+ * overlay's map. At most {@link #TEAMS} teams of {@link #PLAYERS} players, {@link #ROWS} board rows, {@link KillFeed#CAP} feed
+ * entries and {@link #PINS} pins; names at most {@link #NAME_CAP} bytes.
  */
 public final class CasterWire {
 	public static final String T = "caster";
-	public static final int TEAMS = 8, PLAYERS = 16, ROWS = 8, NAME_CAP = 64;
+	public static final int TEAMS = 8, PLAYERS = 16, ROWS = 8, PINS = 32, NAME_CAP = 64;
 
 	public record Member(String name, boolean down) {
 	}
@@ -37,9 +39,14 @@ public final class CasterWire {
 	public record Feed(String who, String verb, String whom, int age) {
 	}
 
+	/** A player's pin on the overlay's map: where it is (Night City, blocks), its team colour (-1 none), downed. */
+	public record Pin(String name, double x, double z, int colour, boolean down) {
+	}
+
 	/** Everything the overlay shows. */
-	public record View(boolean on, String title, int timer, int heat, int tier, List<Team> teams, String boardTitle, List<Row> board, List<Feed> feed) {
-		public static final View OFF = new View(false, "", -1, 0, 0, List.of(), "", List.of(), List.of());
+	public record View(boolean on, String title, int timer, int heat, int tier, List<Team> teams, String boardTitle, List<Row> board, List<Feed> feed,
+		List<Pin> pins) {
+		public static final View OFF = new View(false, "", -1, 0, 0, List.of(), "", List.of(), List.of(), List.of());
 	}
 
 	private CasterWire() {
@@ -93,6 +100,18 @@ public final class CasterWire {
 		}
 
 		o.add("feed", feed);
+		JsonArray pins = new JsonArray();
+		for (Pin p : v.pins().subList(0, Math.min(PINS, v.pins().size()))) {
+			JsonObject po = new JsonObject();
+			po.addProperty("name", cap(p.name()));
+			po.addProperty("x", Double.isFinite(p.x()) ? p.x() : 0.0);
+			po.addProperty("z", Double.isFinite(p.z()) ? p.z() : 0.0);
+			po.addProperty("colour", p.colour() < 0 ? -1 : p.colour() & 0xFFFFFF);
+			po.addProperty("down", p.down());
+			pins.add(po);
+		}
+
+		o.add("pins", pins);
 		return o.toString();
 	}
 
@@ -132,7 +151,20 @@ public final class CasterWire {
 				feed.add(new Feed(name(fo, "a"), name(fo, "verb"), name(fo, "b"), Math.max(0, fo.get("age").getAsInt())));
 			}
 
-			return new View(true, name(o, "title"), timer, heat, tier, List.copyOf(teams), name(board, "title"), List.copyOf(rows), List.copyOf(feed));
+			List<Pin> pins = new ArrayList<>();
+			for (JsonElement pe : capped(o.getAsJsonArray("pins"), PINS)) {
+				JsonObject po = pe.getAsJsonObject();
+				double x = po.get("x").getAsDouble(), z = po.get("z").getAsDouble();
+				int colour = po.get("colour").getAsInt();
+				if (!Double.isFinite(x) || !Double.isFinite(z) || Math.abs(x) > 3.0E7 || Math.abs(z) > 3.0E7 || colour < -1 || colour > 0xFFFFFF) {
+					return null;
+				}
+
+				pins.add(new Pin(name(po, "name"), x, z, colour, po.get("down").getAsBoolean()));
+			}
+
+			return new View(true, name(o, "title"), timer, heat, tier, List.copyOf(teams), name(board, "title"), List.copyOf(rows), List.copyOf(feed),
+				List.copyOf(pins));
 		} catch (RuntimeException e) {
 			return null;
 		}

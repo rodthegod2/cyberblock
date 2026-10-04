@@ -3,13 +3,14 @@ package dev.cyberblock.mode.heat;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /**
  * The rules of the Server Heat meter (megaplan 8-T1), pure so the tests can drive them: what each kind of chaos adds, the gain cap,
- * the decay, the tier of a value, the wanted level a host gets, and the squads a tier asks for. {@link HeatMeter} and
- * {@link ChaosBoard} hold the state; {@link ServerHeat} wires them to the server.
+ * the decay, the tier of a value (with the tiers' enter/exit hysteresis), the wanted level a host gets, and the squads a tier asks
+ * for. {@link HeatMeter} and {@link ChaosBoard} hold the state; {@link ServerHeat} wires them to the server.
  */
 public final class HeatRules {
 	public static final double MAX = 100.0;
@@ -17,12 +18,12 @@ public final class HeatRules {
 	public static final double GAIN_PER_SECOND = 15.0;
 	/** ...with this much saved up for a burst. */
 	public static final double GAIN_BURST = 30.0;
-	/** No decay until this long after the last chaos (server ticks: 10 s). */
-	public static final long QUIET_TICKS = 200;
+	/** Below tier 1: no decay until this long after the last chaos (server ticks: 10 s); a tier has its own {@code grace_s}. */
+	public static final long CALM_GRACE_TICKS = 200;
 	/** Points per second lost below tier 1. */
 	public static final double CALM_DECAY = 1.0;
-	/** The real wanted level that brings Max-Tac in 2.31 (the top chaos host at a tier with Max-Tac). */
-	public static final int MAXTAC_WANTED = 5;
+	/** A {@code loudest} tier chases at most this many players (the loudest first). */
+	public static final int LOUDEST = 2;
 
 	/** What fed the meter. */
 	public enum Source {
@@ -57,13 +58,23 @@ public final class HeatRules {
 		}
 	}
 
-	/** The built-in tiers (used while no {@code heat_tier} content is loaded). */
+	private static HeatTier builtIn(final int tier, final String name, final int enter, final int exit, final double decay, final int grace, final int wanted,
+		final int topWanted, final HeatTier.Target target, final int maxAlive, final HeatTier.Wave... waves) {
+		return new HeatTier(tier, name, enter, exit, decay, grace, wanted, topWanted, new HeatTier.Response(target, maxAlive, List.of(waves)));
+	}
+
+	private static HeatTier.Wave wave(final String entry, final int every) {
+		return new HeatTier.Wave("cyberblock:" + entry, every);
+	}
+
+	/** The built-in tiers (used while no {@code heat_tier} content is loaded): the same numbers as 8A's default files. */
 	public static final List<HeatTier> BUILT_IN = List.of(
-		new HeatTier(1, 20, 0.5, 1, new HeatTier.Response(2, 0, 0, 0, 0, 0, false)),
-		new HeatTier(2, 40, 0.4, 2, new HeatTier.Response(0, 2, 2, 0, 0, 0, false)),
-		new HeatTier(3, 60, 0.35, 3, new HeatTier.Response(0, 2, 2, 1, 1, 0, false)),
-		new HeatTier(4, 80, 0.3, 4, new HeatTier.Response(0, 2, 2, 1, 1, 3, false)),
-		new HeatTier(5, 95, 0.25, 5, new HeatTier.Response(0, 0, 2, 1, 1, 3, true)));
+		builtIn(1, "Noticed", 15, 10, 0.4, 10, 1, -1, HeatTier.Target.AREA, 4, wave("ncpd_patrol", 90)),
+		builtIn(2, "Pursuit", 35, 30, 0.35, 15, 2, -1, HeatTier.Target.LOUDEST, 6, wave("ncpd_patrol", 45)),
+		builtIn(3, "Heavy Response", 55, 50, 0.3, 20, 3, -1, HeatTier.Target.LOUDEST, 8, wave("ncpd_enforcers", 60), wave("wyvern_drones", 90)),
+		builtIn(4, "Max-Tac Hunt", 75, 70, 0.25, 25, 4, 5, HeatTier.Target.TOP_CHAOS, 8, wave("maxtac_squad", 120), wave("ncpd_enforcers", 60)),
+		builtIn(5, "Citywide Lockdown", 92, 88, 0.2, 30, 5, -1, HeatTier.Target.EVERYONE, 12, wave("maxtac_squad", 90), wave("wyvern_drones", 60),
+			wave("ncpd_enforcers", 45)));
 
 	private HeatRules() {
 	}
@@ -73,72 +84,136 @@ public final class HeatRules {
 		return Math.clamp(value + (Double.isFinite(amount) ? amount : 0.0), 0.0, MAX);
 	}
 
-	/** The tiers sorted by threshold (tier numbers follow the order). */
+	/** The tiers by tier number. */
 	public static List<HeatTier> sorted(final List<HeatTier> tiers) {
 		List<HeatTier> out = new ArrayList<>(tiers);
-		out.sort(Comparator.comparingDouble(HeatTier::threshold).thenComparingInt(HeatTier::tier));
+		out.sort(Comparator.comparingInt(HeatTier::tier));
 		return out;
 	}
 
-	/** The current tier for a meter value: the highest one whose threshold it reached, or null below them all (tier 0). */
-	public static @Nullable HeatTier tierOf(final double value, final List<HeatTier> sorted) {
-		HeatTier at = null;
+	/** The tier with this number, or null (tier 0, or a number the tiers lack). */
+	public static @Nullable HeatTier byNumber(final int tier, final List<HeatTier> sorted) {
 		for (HeatTier t : sorted) {
-			if (value >= t.threshold()) {
-				at = t;
+			if (t.tier() == tier) {
+				return t;
 			}
 		}
 
-		return at;
-	}
-
-	/** The tier number 0..5 for a meter value. */
-	public static int tier(final double value, final List<HeatTier> sorted) {
-		HeatTier t = tierOf(value, sorted);
-		return t == null ? 0 : t.tier();
+		return null;
 	}
 
 	/**
-	 * The meter after {@code seconds} of cooling: nothing within {@link #QUIET_TICKS} of the last chaos, then the current tier's decay
-	 * (or {@link #CALM_DECAY} below tier 1). Never below 0.
+	 * The tier number 0..5 after the meter moved to {@code value} while the tier was {@code current}: up to the highest tier whose
+	 * {@code enter} it reached; otherwise down, tier by tier, while it is below the tier's {@code exit} (so a meter sitting on a
+	 * boundary does not flicker between two tiers).
 	 */
-	public static double decay(final double value, final double seconds, final long ticksSinceChaos, final List<HeatTier> sorted) {
-		if (ticksSinceChaos < QUIET_TICKS || value <= 0.0) {
+	public static int next(final double value, final int current, final List<HeatTier> sorted) {
+		int reached = 0;
+		for (HeatTier t : sorted) {
+			if (value >= t.enter()) {
+				reached = Math.max(reached, t.tier());
+			}
+		}
+
+		HeatTier at = byNumber(current, sorted);
+		if (reached >= current || at == null) {
+			return reached; // a rise, or a tier that is no longer loaded: start over from the value
+		}
+
+		int t = current;
+		while (at != null && value < at.exit()) {
+			HeatTier below = null;
+			for (HeatTier h : sorted) {
+				if (h.tier() < t && (below == null || h.tier() > below.tier())) {
+					below = h;
+				}
+			}
+
+			t = below == null ? 0 : below.tier();
+			at = below;
+		}
+
+		return t;
+	}
+
+	/**
+	 * The meter after {@code seconds} of cooling at tier {@code current}: nothing within its grace time of the last chaos, then its
+	 * decay ({@link #CALM_GRACE_TICKS} and {@link #CALM_DECAY} below tier 1). Never below 0.
+	 */
+	public static double decay(final double value, final double seconds, final long ticksSinceChaos, final @Nullable HeatTier current) {
+		long grace = current == null ? CALM_GRACE_TICKS : current.graceSeconds() * 20L;
+		if (ticksSinceChaos < grace || value <= 0.0) {
 			return Math.max(0.0, value);
 		}
 
-		HeatTier t = tierOf(value, sorted);
-		double rate = t == null ? CALM_DECAY : t.decay();
+		double rate = current == null ? CALM_DECAY : current.decayPerSecond();
 		return Math.max(0.0, value - rate * seconds);
 	}
 
 	/**
-	 * The real wanted level for a host (Phase 0 e): the tier's {@code wanted}; the top chaos player at a tier that sends Max-Tac gets
-	 * {@link #MAXTAC_WANTED} (Night City's own Max-Tac). 0 below tier 1.
+	 * The real wanted level for a host (Phase 0 e): the tier's {@code host_wanted}; the top chaos player gets {@code top_chaos_wanted}
+	 * when the tier has one (tier 4: Night City's own Max-Tac). 0 below tier 1.
 	 */
 	public static int wanted(final @Nullable HeatTier tier, final boolean topChaos) {
 		if (tier == null) {
 			return 0;
 		}
 
-		int w = topChaos && tier.response().maxtac() > 0 ? MAXTAC_WANTED : tier.wanted();
+		int w = topChaos && tier.topChaosWanted() >= 0 ? tier.topChaosWanted() : tier.hostWanted();
 		return Math.clamp(w, 0, 5);
+	}
+
+	/**
+	 * Is this player answered by Minecraft squads like a guest? Yes unless it has a session whose Cyberpunk is active (On and
+	 * streaming): a linked host with Cyberpunk Off plays Minecraft and gets no real wanted level.
+	 */
+	public static boolean minecraftOnly(final boolean session, final boolean active) {
+		return !session || !active;
 	}
 
 	/** A Minecraft squad unit. */
 	public enum Unit {
-		PATROL, OFFICER, HEAVY, DRONE, MAXTAC
+		OFFICER, HEAVY, DRONE, MAXTAC
 	}
 
-	/** {@code count} units of one kind sent after (or, for a patrol, around) one player. */
-	public record Order(UUID target, Unit unit, int count) {
+	/** The Minecraft squad of a {@code spawn_palette} entry: which unit and how many come per wave. */
+	public record Squad(Unit unit, int count) {
+	}
+
+	/**
+	 * The squad a wave's {@code spawn_palette} entry sends in the Minecraft world: 8A's law entries by id (the counts of their
+	 * {@code squad}), any other entry by the words in its id (maxtac, drone, enforcer or heavy; else NCPD officers), two per wave.
+	 * The palette itself is 8O's kind; after the merge the integrator may resolve entries through it instead.
+	 */
+	public static Squad squad(final String entry) {
+		return switch (entry) {
+			case "cyberblock:ncpd_patrol" -> new Squad(Unit.OFFICER, 2);
+			case "cyberblock:ncpd_enforcers" -> new Squad(Unit.HEAVY, 2);
+			case "cyberblock:wyvern_drones" -> new Squad(Unit.DRONE, 2);
+			case "cyberblock:octant_drone" -> new Squad(Unit.DRONE, 1);
+			case "cyberblock:maxtac_squad" -> new Squad(Unit.MAXTAC, 2);
+			default -> {
+				String path = entry.substring(entry.indexOf(':') + 1).toLowerCase(Locale.ROOT);
+				Unit unit = path.contains("maxtac") || path.contains("max_tac") ? Unit.MAXTAC : path.contains("drone") ? Unit.DRONE
+					: path.contains("enforcer") || path.contains("heavy") ? Unit.HEAVY : Unit.OFFICER;
+				yield new Squad(unit, 2);
+			}
+		};
+	}
+
+	/**
+	 * One wave of one tier sent after (or, when not {@code chase}, patrolling around) one player: {@code count} units of a kind every
+	 * {@code everyTicks}. {@code wave} is the wave's index in the tier (its timer).
+	 */
+	public record Order(UUID target, int wave, Unit unit, int count, long everyTicks, boolean chase) {
 	}
 
 	/**
 	 * The squads a tier asks for. {@code ranked}: the players squads may hunt (Minecraft-only players, and hosts whose real wanted level
-	 * is not confirmed), loudest first, each with its recent chaos; {@code top} the server's top chaos player (any player, it may be a
-	 * host Night City answers instead). Patrols only when nobody is chased; chases only players with chaos (all of them with
-	 * {@code everyone}); Max-Tac only on the top player and only when it may be hunted.
+	 * did not follow), loudest first, each with its recent chaos; {@code top} the server's top chaos player (any player: it may be a
+	 * host Night City answers instead). By the tier's {@code target}: area = patrols near every one of them (no chase), loudest = the
+	 * {@link #LOUDEST} players with chaos, top_chaos = only the top player and only when squads may hunt it, everyone = all of them.
+	 * Every target gets every wave.
 	 */
 	public static List<Order> plan(final @Nullable HeatTier tier, final List<Ranked> ranked, final @Nullable UUID top) {
 		List<Order> out = new ArrayList<>();
@@ -147,34 +222,20 @@ public final class HeatRules {
 		}
 
 		HeatTier.Response r = tier.response();
-		List<UUID> chased = new ArrayList<>();
-		for (Ranked p : ranked) {
-			if (r.everyone() || p.chaos() > 0.0 && chased.size() < r.chase()) {
-				chased.add(p.uuid());
+		List<UUID> targets = switch (r.target()) {
+			case AREA, EVERYONE -> ranked.stream().map(Ranked::uuid).toList();
+			case LOUDEST -> ranked.stream().filter(p -> p.chaos() > 0.0).limit(LOUDEST).map(Ranked::uuid).toList();
+			case TOP_CHAOS -> top != null && ranked.stream().anyMatch(p -> p.uuid().equals(top)) ? List.of(top) : List.of();
+		};
+		for (UUID u : targets) {
+			for (int i = 0; i < r.waves().size(); i++) {
+				HeatTier.Wave w = r.waves().get(i);
+				Squad s = squad(w.entry());
+				out.add(new Order(u, i, s.unit(), s.count(), w.everySeconds() * 20L, r.target() != HeatTier.Target.AREA));
 			}
 		}
 
-		for (UUID u : chased) {
-			add(out, u, Unit.OFFICER, r.officers());
-			add(out, u, Unit.HEAVY, r.heavy());
-			add(out, u, Unit.DRONE, r.drones());
-		}
-
-		if (r.maxtac() > 0 && top != null && ranked.stream().anyMatch(p -> p.uuid().equals(top))) {
-			add(out, top, Unit.MAXTAC, r.maxtac());
-		}
-
-		if (chased.isEmpty() && r.patrol() > 0 && !ranked.isEmpty()) {
-			add(out, ranked.getFirst().uuid(), Unit.PATROL, r.patrol());
-		}
-
 		return out;
-	}
-
-	private static void add(final List<Order> out, final UUID target, final Unit unit, final int count) {
-		if (count > 0) {
-			out.add(new Order(target, unit, count));
-		}
 	}
 
 	/** A player squads may hunt, with its recent chaos. */

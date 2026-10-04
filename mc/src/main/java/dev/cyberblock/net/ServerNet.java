@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.content.Content;
+import dev.cyberblock.holo.HoloHooks;
 import dev.cyberblock.net.admin.ServerAdmin;
 import dev.cyberblock.skin.CyberSkins;
 import java.util.ArrayList;
@@ -401,7 +402,10 @@ public final class ServerNet {
 		return !s.isDedicatedServer() && s.isSingleplayerOwner(player.nameAndId());
 	}
 
-	/** Every online player (at most 200): linked = a LINKED or ACTIVE session, body from the player (5K); the rest are Phase 1 defaults. */
+	/**
+	 * Every online player (at most 200): linked = a LINKED or ACTIVE session, body from the player (5K), downed from 8T (HoloHooks.downed);
+	 * the rest are Phase 1 defaults.
+	 */
 	static Payloads.Roster roster(final MinecraftServer s) {
 		List<Payloads.RosterEntry> list = new ArrayList<>();
 		boolean pvp = ServerConfig.get().pvpDefault();
@@ -411,7 +415,7 @@ public final class ServerNet {
 			}
 
 			list.add(new Payloads.RosterEntry(p.getUUID(), cap(p.getPlainTextName(), Payloads.NAME_CAP), CyberSkins.linked(p), CyberSkins.body(p), -1,
-				pvp, false, false));
+				pvp, HoloHooks.downed.test(p), false));
 		}
 
 		return new Payloads.Roster(List.copyOf(list));

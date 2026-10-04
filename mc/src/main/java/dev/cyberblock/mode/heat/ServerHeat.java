@@ -115,9 +115,9 @@ public final class ServerHeat {
 		return meter.value();
 	}
 
-	/** The tier 0..5. */
+	/** The tier 0..5 (with the tiers' enter/exit hysteresis). */
 	public static int tier() {
-		return HeatRules.tier(meter.value(), tiers);
+		return lastTier;
 	}
 
 	/**
@@ -226,18 +226,18 @@ public final class ServerHeat {
 
 		long now = s.getTickCount();
 		tiers = HeatRules.sorted(HeatTiers.active());
-		meter.tick(now, tiers);
+		meter.tick(now, HeatRules.byNumber(lastTier, tiers));
 		chaos.decay(1.0);
 		while (!spots.isEmpty() && now - spots.peekFirst().tick() > SPOT_TICKS) {
 			spots.removeFirst();
 		}
 
-		HeatTier tier = HeatRules.tierOf(meter.value(), tiers);
-		int t = tier == null ? 0 : tier.tier();
+		int t = HeatRules.next(meter.value(), lastTier, tiers);
+		HeatTier tier = HeatRules.byNumber(t, tiers);
 		if (t != lastTier) {
 			Cyberblock.LOG.info("heat: tier {} -> {} (meter {})", lastTier, t, Math.round(meter.value()));
-			if (t > lastTier) {
-				s.getPlayerList().broadcastSystemMessage(tierMessage(t), true);
+			if (t > lastTier && tier != null) {
+				s.getPlayerList().broadcastSystemMessage(tierMessage(tier), true);
 			}
 
 			lastTier = t;
@@ -251,6 +251,8 @@ public final class ServerHeat {
 
 	/** Each active host: its real wanted level for the tier (sent on change), and its runtime check. */
 	private static void hosts(final @Nullable HeatTier tier, final @Nullable UUID top, final long now) {
+		// a host whose Cyberpunk went Off gets the wanted level again when it is back On
+		sentWanted.keySet().removeIf(u -> HostSessions.active().stream().noneMatch(s -> s.uuid().equals(u)));
 		for (HostSession session : HostSessions.active()) {
 			WantedCheck check = checks.computeIfAbsent(session.uuid(), u -> new WantedCheck());
 			int wanted = HeatRules.wanted(tier, session.uuid().equals(top));
@@ -260,9 +262,13 @@ public final class ServerHeat {
 			} else if (sent == null || sent != wanted) {
 				session.send(HeatWire.down(wanted));
 				sentWanted.put(session.uuid(), wanted);
-				check.sent(wanted, now);
 				Cyberblock.LOG.info("heat: {} wanted {} (tier {}{})", session.name(), wanted, tier == null ? 0 : tier.tier(),
 					session.uuid().equals(top) ? ", top chaos" : "");
+				if (check.sent(wanted, now, session.wanted())) {
+					Cyberblock.LOG.info("heat: {} testing the real wanted level: heat {} sent at stats.wanted {}, waiting up to {} s for {} ({})",
+						session.name(), wanted, session.wanted(), WantedCheck.WINDOW_TICKS / 20, check.needed(),
+						check.squadsHunt() ? "the fallback stays on meanwhile" : "Night City answers meanwhile");
+				}
 			}
 
 			if (check.update(session.wanted(), now)) {
@@ -270,22 +276,26 @@ public final class ServerHeat {
 					Cyberblock.LOG.info("heat: {} real wanted level path active (stats.wanted {} after heat {}): Night City's NCPD and Max-Tac answer "
 						+ "for this host", session.name(), session.wanted(), check.expected());
 				} else {
-					Cyberblock.LOG.info("heat: {} real wanted level not seen within {} s after heat {} (stats.wanted {}): fallback active, Minecraft "
-						+ "squads hunt this host", session.name(), WantedCheck.WINDOW_TICKS / 20, check.expected(), session.wanted());
+					Cyberblock.LOG.info("heat: {} real wanted level not seen within {} s after heat {} (stats.wanted {}, needed {}): fallback active, "
+						+ "Minecraft squads hunt this host until the next raise tests again", session.name(), WantedCheck.WINDOW_TICKS / 20,
+						check.expected(), session.wanted(), check.needed());
 				}
 			}
 		}
 	}
 
-	/** Who squads may hunt now: an online player in the replica, playing (not creative or spectating), not downed, not locked. */
+	/**
+	 * Who squads may hunt now: an online player in the replica, playing (not creative or spectating), not downed, not locked; a host
+	 * only while its Cyberpunk is not active (F9 Off: it plays Minecraft like a guest) or its real wanted level did not follow.
+	 */
 	private static boolean huntable(final ServerPlayer p, final MinecraftServer s) {
 		if (p.level() != s.overworld() || p.isSpectator() || p.isCreative() || !p.isAlive() || HoloHooks.downed.test(p) || JoinLock.locked(p)) {
 			return false;
 		}
 
 		HostSession session = HostSessions.of(p);
-		if (session == null || session.state() == HostSession.State.NONE) {
-			return true; // a Minecraft-only player
+		if (HeatRules.minecraftOnly(session != null, session != null && session.active())) {
+			return true;
 		}
 
 		WantedCheck check = checks.get(p.getUUID());
@@ -307,7 +317,7 @@ public final class ServerHeat {
 			}
 		}
 
-		squads.reconcile(s, HeatRules.plan(tier, ranked, top), p -> huntable(p, s));
+		squads.reconcile(s, HeatRules.plan(tier, ranked, top), tier == null ? 0 : tier.response().maxAlive(), now, p -> huntable(p, s));
 		String described = String.join(", ", squads.describe());
 		if (!described.equals(lastSquads) && now - lastSquadLog >= 200) {
 			lastSquads = described;
@@ -330,15 +340,9 @@ public final class ServerHeat {
 		}
 	}
 
-	static Component tierMessage(final int tier) {
-		String english = switch (tier) {
-			case 1 -> "Server Heat 1: more NCPD patrols";
-			case 2 -> "Server Heat 2: NCPD is chasing the loudest players";
-			case 3 -> "Server Heat 3: heavy units and drones";
-			case 4 -> "Server Heat 4: Max-Tac is hunting the top chaos player";
-			default -> "Server Heat 5: full response on everyone";
-		};
-		return Component.translatableWithFallback("cyberblock.heat.tier." + tier, english);
+	/** "Server Heat 4: Max-Tac Hunt": the tier's number and its name from the heat_tier file. */
+	static Component tierMessage(final HeatTier tier) {
+		return Component.translatableWithFallback("cyberblock.heat.tier", "Server Heat %s: %s", tier.tier(), tier.name());
 	}
 
 	/** The Holo-Table's heat layer: recent chaos summed per 64-block square, newer counting more, strongest first. */

@@ -1,12 +1,16 @@
 package dev.cyberblock.mode.downed;
 
 import dev.cyberblock.Cyberblock;
+import dev.cyberblock.cyber.CyberData;
+import dev.cyberblock.cyber.Cyberware;
 import dev.cyberblock.device.Shops;
 import dev.cyberblock.device.block.DeviceBlocks;
 import dev.cyberblock.holo.HoloHooks;
 import dev.cyberblock.mode.heat.HeatRules;
 import dev.cyberblock.mode.heat.ServerHeat;
 import dev.cyberblock.mode.spectate.Spectate;
+import dev.cyberblock.net.HostSession;
+import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.ServerNet;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -71,19 +75,22 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Hosts go down the same way: Steve's hearts are the one health (HostDamage), so V's "death" reaches this flow, and the scripts' death
  * screen hand-off (8S) keeps Cyberpunk's own death screen away. The downed screen and HUD show on the Minecraft layer the host sees.
+ * The crawl is a Slowness V effect on Steve (a quarter of walking speed), so the existing {@code effect} DOWN slows V too (the scripts
+ * map slowness to V's MaxSpeed, at least x0.3); V's own hits on Minecraft mobs ({@code mobdmg} without an NPC) do not count while down
+ * (MobWar). Night City combat itself is not blocked: section 1.9 has no message for it (a descope for Re-test 8).
  *
- * <p>Wire: {@link DownedWire}. Commands: {@code /cyberblock trauma}, {@code /cyberblock giveup}. Hooks for other phases:
+ * <p>Who is down reaches every client through the roster's {@code downed} (section 1.3; {@link HostSessions#rosterChanged} on every
+ * change). Wire: {@link DownedWire}. Commands: {@code /cyberblock trauma}, {@code /cyberblock giveup}. Hooks for other phases:
  * {@link #teammates} (8M), {@link #isDown}. Server thread (the client half only reads {@link #clientDowned}).
  */
 public final class Downed {
-	/** The client's own answer to {@link #isDown} for client-side players (the downlist); the client entrypoint installs it. */
+	/** The client's own answer to {@link #isDown} for client-side players (the roster's downed); the client entrypoint installs it. */
 	public static volatile Predicate<Player> clientDowned = player -> false;
 	/** May the first player revive the second? 8M can replace it; the default reads match teams (HoloHooks.match), then vanilla teams. */
 	public static volatile BiPredicate<ServerPlayer, ServerPlayer> teammates = Downed::defaultTeammates;
-	static final Identifier SLOW = Identifier.fromNamespaceAndPath(Cyberblock.ID, "downed_slow");
 	static final Identifier NO_JUMP = Identifier.fromNamespaceAndPath(Cyberblock.ID, "downed_no_jump");
-	/** Crawling speed: a quarter of walking. */
-	static final double CRAWL = -0.75;
+	/** Crawling: Slowness V is -75 % speed (vanilla's -15 % per level), a quarter of walking. */
+	static final int CRAWL_AMPLIFIER = 4;
 	private static final Map<UUID, DownState> down = new HashMap<>();
 	private static final Set<UUID> finishing = new HashSet<>();
 	private static final Map<UUID, Long> refusedAt = new HashMap<>();
@@ -102,7 +109,6 @@ public final class Downed {
 		UseBlockCallback.EVENT.register((player, level, hand, hit) -> isDown(player) ? InteractionResult.FAIL : InteractionResult.PASS);
 		AttackBlockCallback.EVENT.register((player, level, hand, pos, dir) -> isDown(player) ? InteractionResult.FAIL : InteractionResult.PASS);
 		ServerTickEvents.END_SERVER_TICK.register(Downed::tick);
-		ServerPlayConnectionEvents.JOIN.register((handler, sender, s) -> ServerNet.ui(handler.getPlayer(), DownedWire.T_LIST, DownedWire.list(down.keySet())));
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, s) -> {
 			ServerPlayer p = handler.getPlayer();
 			if (server != null && down.containsKey(p.getUUID())) {
@@ -118,10 +124,23 @@ public final class Downed {
 			Cyberblock.LOG.info("downed: ready (bleed-out {} s, revive hold {} s, Trauma Team {} eddies, {} s)", DownState.BLEED_TICKS / 20,
 				DownState.REVIVE_TICKS / 20, DownedRules.TRAUMA_PRICE, DownState.TRAUMA_TICKS / 20);
 		});
-		// a stopping server keeps its downed players at their 1 health (nobody bleeds out because the server went down)
+		// a stopping server keeps its downed players at their 1 health (nobody bleeds out because the server went down), not crawling
 		ServerLifecycleEvents.SERVER_STOPPING.register(s -> {
+			for (UUID u : down.keySet()) {
+				ServerPlayer p = s.getPlayerList().getPlayer(u);
+				if (p != null) {
+					modify(p, false);
+				}
+			}
+
 			down.clear();
 			server = null;
+		});
+		// a crash or a kill saved a downed player with the crawl's endless slowness: it is not down any more, so it goes
+		ServerPlayConnectionEvents.JOIN.register((handler, sender, s) -> {
+			if (!isDown(handler.getPlayer()) && crawling(handler.getPlayer())) {
+				modify(handler.getPlayer(), false);
+			}
 		});
 		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> dispatcher.register(Commands.literal("cyberblock")
 			.then(Commands.literal("trauma").executes(c -> trauma(c.getSource())))
@@ -129,7 +148,7 @@ public final class Downed {
 		HoloHooks.downed = Downed::isDown;
 	}
 
-	/** Is this player down? On the server its state; on the client the server's downlist. */
+	/** Is this player down? On the server its state; on the client the roster's downed. */
 	public static boolean isDown(final Player player) {
 		if (player instanceof ServerPlayer p) {
 			return down.containsKey(p.getUUID());
@@ -154,9 +173,11 @@ public final class Downed {
 		}
 
 		boolean totem = p.getMainHandItem().is(Items.TOTEM_OF_UNDYING) || p.getOffhandItem().is(Items.TOTEM_OF_UNDYING);
+		// ALLOW_DEATH runs before vanilla's totem check, where CyberLivingEntityMixin's Second Heart saves the player: let it
+		boolean secondHeart = CyberData.has(p, Cyberware.SECOND_HEART) && CyberData.ready(p, Cyberware.SECOND_HEART);
 		boolean wasDown = down.containsKey(p.getUUID());
 		DownedRules.Death d = DownedRules.onDeath(finishing.contains(p.getUUID()), wasDown, source.is(DamageTypeTags.BYPASSES_INVULNERABILITY), totem,
-			p.isCreative() || p.isSpectator());
+			secondHeart, p.isCreative() || p.isSpectator());
 		if (d == DownedRules.Death.DIE) {
 			if (wasDown && !finishing.contains(p.getUUID())) {
 				// the void or /kill while down: no bleed-out left to wait for
@@ -194,8 +215,10 @@ public final class Downed {
 
 		p.level().getServer().getPlayerList().broadcastSystemMessage(Component.translatableWithFallback("cyberblock.downed.went_down",
 			"%s is down: hold right-click on them for 4 s to revive", p.getDisplayName()), false);
-		Cyberblock.LOG.info("downed: {} went down ({}{})", name, source.getMsgId(), killer != null && killer != p ? " by " + killer.getPlainTextName() : "");
-		sendList();
+		HostSession session = HostSessions.of(p);
+		Cyberblock.LOG.info("downed: {} went down ({}{}){}", name, source.getMsgId(), killer != null && killer != p ? " by " + killer.getPlainTextName() : "",
+			session != null && session.active() ? "; host: V crawls through the slowness effect, Night City combat is not blocked" : "");
+		HostSessions.rosterChanged();
 		sendStatus(p, st, now);
 	}
 
@@ -276,7 +299,7 @@ public final class Downed {
 			DownState st = e.getValue();
 			if (p == null) {
 				down.remove(e.getKey());
-				sendList();
+				HostSessions.rosterChanged();
 				continue;
 			}
 
@@ -286,6 +309,10 @@ public final class Downed {
 				case NONE -> {
 					if (p.getHealth() != 1.0F) {
 						p.setHealth(1.0F); // half a heart until revived: no natural regeneration while bleeding out
+					}
+
+					if (!crawling(p)) {
+						modify(p, true); // an /effect clear: crawl again
 					}
 
 					if (st.traumaCalled()) {
@@ -376,7 +403,7 @@ public final class Downed {
 		}
 
 		modify(p, false);
-		sendList();
+		HostSessions.rosterChanged();
 		ServerNet.ui(p, DownedWire.T_DOWNED, DownedWire.status(DownedWire.Status.UP));
 	}
 
@@ -390,16 +417,18 @@ public final class Downed {
 		};
 	}
 
-	/** Crawling: a quarter of the walking speed and no jump. */
+	/**
+	 * Crawling: a quarter of the walking speed (Slowness V, no particles; as a status effect it also reaches a host's V through the
+	 * {@code effect} DOWN) and no jump.
+	 */
 	private static void modify(final ServerPlayer p, final boolean on) {
-		AttributeInstance speed = p.getAttribute(Attributes.MOVEMENT_SPEED), jump = p.getAttribute(Attributes.JUMP_STRENGTH);
-		if (speed != null) {
-			speed.removeModifier(SLOW);
-			if (on) {
-				speed.addTransientModifier(new AttributeModifier(SLOW, CRAWL, AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL));
-			}
+		if (on) {
+			p.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, MobEffectInstance.INFINITE_DURATION, CRAWL_AMPLIFIER, false, false, true));
+		} else if (crawling(p)) {
+			p.removeEffect(MobEffects.SLOWNESS);
 		}
 
+		AttributeInstance jump = p.getAttribute(Attributes.JUMP_STRENGTH);
 		if (jump != null) {
 			jump.removeModifier(NO_JUMP);
 			if (on) {
@@ -408,16 +437,10 @@ public final class Downed {
 		}
 	}
 
-	private static void sendList() {
-		MinecraftServer s = server;
-		if (s == null) {
-			return;
-		}
-
-		String json = DownedWire.list(down.keySet());
-		for (ServerPlayer p : s.getPlayerList().getPlayers()) {
-			ServerNet.ui(p, DownedWire.T_LIST, json);
-		}
+	/** Our crawl's slowness is on the player (an endless Slowness V). */
+	private static boolean crawling(final ServerPlayer p) {
+		MobEffectInstance e = p.getEffect(MobEffects.SLOWNESS);
+		return e != null && e.isInfiniteDuration() && e.getAmplifier() == CRAWL_AMPLIFIER;
 	}
 
 	private static void sendStatus(final ServerPlayer p, final DownState st, final long now) {

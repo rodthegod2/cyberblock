@@ -15,7 +15,10 @@ public final class DownedRules {
 	public enum Death {
 		/** goes down instead (bleed-out, revive, Trauma Team) */
 		DOWN,
-		/** dies as vanilla says (the bleed-out ended, the void or /kill, a totem, creative or spectator, already down) */
+		/**
+		 * dies as vanilla says (the bleed-out ended, the void or /kill, a totem or a ready Second Heart that saves the player, creative or
+		 * spectator, already down)
+		 */
 		DIE
 	}
 
@@ -27,10 +30,13 @@ public final class DownedRules {
 	 * @param down the player is already down (a hit that bypasses invulnerability, the void, /kill)
 	 * @param bypasses the damage bypasses invulnerability (the void, /kill)
 	 * @param totem a totem of undying in either hand (vanilla saves the player)
+	 * @param secondHeart the Second Heart implant is installed and ready (its hook after vanilla's totem check saves the player; it
+	 * never saves from damage that bypasses invulnerability, which dies anyway)
 	 * @param exempt creative or spectator
 	 */
-	public static Death onDeath(final boolean finishing, final boolean down, final boolean bypasses, final boolean totem, final boolean exempt) {
-		return finishing || down || bypasses || totem || exempt ? Death.DIE : Death.DOWN;
+	public static Death onDeath(final boolean finishing, final boolean down, final boolean bypasses, final boolean totem, final boolean secondHeart,
+		final boolean exempt) {
+		return finishing || down || bypasses || totem || secondHeart || exempt ? Death.DIE : Death.DOWN;
 	}
 
 	/**
