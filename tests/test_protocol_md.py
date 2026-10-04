@@ -1010,6 +1010,7 @@ def test_guide_documents_the_atlas_and_the_one_time_survey():
 
 
 # ---- Phase Q (third-person view and step-up assist): `prefs` and `cam.vdbg` (plan 2026-10-04 megaplan section 1.9) ----------
+P3_CP_TO_MC, P3_MC_TO_CP = "Phase 3: Cyberpunk → Minecraft", "Phase 3: Minecraft → Cyberpunk"
 PQ_CP_TO_MC, PQ_MC_TO_CP = "Phase Q: Cyberpunk → Minecraft", "Phase Q: Minecraft → Cyberpunk"
 PQ_CP_EXAMPLES, PQ_MC_EXAMPLES = "Phase Q examples, Cyberpunk to Minecraft:", "Phase Q examples, Minecraft to Cyberpunk:"
 PREFS_FIELDS = {"dist", "shoulder", "fov", "recenter", "vdist", "stepup", "debug"}
@@ -1061,20 +1062,22 @@ SESSION_REASON_BYTES = 128
 
 MP_CP_CLASSES = {
     **dict.fromkeys(("hello", "state", "aim", "npcs", "stats"), "BOTH"),
-    **dict.fromkeys(("ground", "unground", "clear", "dmg", "mobdmg", "pcells", "unlead", "killed", "scaninfo", "hackresult", "hackspread"), "UP"),
+    **dict.fromkeys(("ground", "unground", "clear", "dmg", "mobdmg", "pcells", "unlead", "killed", "scaninfo", "hackresult", "hackspread",
+                     "env", "vteleported", "parked"), "UP"),  # the last three: Phase 3
     **dict.fromkeys(("cam", "view", "hud", "key", "slot", "scroll", "cursor", "click", "char", "skey", "look", "quest", "pins", "prompt",
                      "choices", "sub", "call", "notify", "screen", "reply", "terrain", "surveystate", "cmd"), "LOCAL"),
 }
 MP_MC_CLASSES = {
     **dict.fromkeys(("hello", "status", "binds", "uiact", "persp", "flight", "survey", "prefs"), "LOCAL"),
     **dict.fromkeys(("block", "blocks", "align", "explosion", "knock", "hit", "ignite", "lead", "pull", "mobs", "proj", "teleport", "effect",
-                     "scan", "hack", "perks", "cyberware", "cyberfx", "pteleport"), "DOWN"),
+                     "scan", "hack", "perks", "cyberware", "cyberfx", "pteleport", "vteleport", "park"), "DOWN"),  # the last two: Phase 3
 }
 MP_RATES = {  # plan section 1.6: type -> (tokens per second, burst)
     **dict.fromkeys(("ground", "unground", "clear"), (40, 120)), "npcs": (15, 30), "dmg": (20, 40), "aim": (15, 30),
     **dict.fromkeys(("hstate", "state"), (10, 20)), **dict.fromkeys(("mobdmg", "pcells"), (30, 60)),
     **dict.fromkeys(("scaninfo", "hackresult", "hackspread"), (40, 80)), **dict.fromkeys(("killed", "unlead"), (10, 20)),
     "stats": (2, 4), "terrain": (30, 200), "hello": (1, 3), **dict.fromkeys(("devices", "devstate", "devresult"), (10, 40)),
+    "env": (2, 4), **dict.fromkeys(("vteleported", "parked"), (5, 10)),  # Phase 3 (3P proposal, section 1.6 names no rate for them)
 }
 MP_PAYLOADS_EXPECTED = {  # plan section 1.3: id -> direction
     "hs": "C2S", "hs_ack": "S2C", "up": "C2S", "down": "S2C", "roster": "S2C", "perms": "C2S", "content": "S2C", "act": "C2S", "ui": "S2C",
@@ -1195,8 +1198,8 @@ def test_mp_class_tables_classify_every_wire_message_once_with_the_plan_class():
 
 
 def test_mp_class_tables_cover_every_documented_type_of_the_wire():
-    cp = documented(CP_TO_MC) | documented(L36_CP_TO_MC) | documented(R3_CP_TO_MC) | documented(AT_CP_TO_MC)
-    mc = documented(MC_TO_CP) | documented(L36_MC_TO_CP) | documented(R3_MC_TO_CP) | documented(AT_MC_TO_CP) | documented(PQ_MC_TO_CP)
+    cp = documented(CP_TO_MC) | documented(L36_CP_TO_MC) | documented(R3_CP_TO_MC) | documented(AT_CP_TO_MC) | documented(P3_CP_TO_MC)
+    mc = documented(MC_TO_CP) | documented(L36_MC_TO_CP) | documented(R3_MC_TO_CP) | documented(AT_MC_TO_CP) | documented(PQ_MC_TO_CP) | documented(P3_MC_TO_CP)
     assert set(MP_CP_CLASSES) == cp | {"cmd"}  # `cmd` is the test tools' command, documented only here
     assert set(MP_MC_CLASSES) == (mc - {"perkfx"}) | {"pteleport"}  # `perkfx` is superseded and never sent; `pteleport` was undocumented
     assert {"hello"} <= set(MP_CP_CLASSES) & set(MP_MC_CLASSES)
@@ -1433,3 +1436,228 @@ def test_mp_session_and_survey_cmd_rules_are_written_down():
 def test_mp_section_sits_before_the_shared_memory_section_and_points_at_the_plan():
     assert TEXT.index("## Multiplayer (Phase 1)") < TEXT.index("## Shared memory")
     assert "2026-10-04-multiplayer-megaplan.md" in TEXT.split("## Multiplayer (Phase 1)", 1)[1].split("###", 1)[0]
+
+
+# ---- Phase 3 (the Night City replica): `ground.m`, `unground.seen`, `env`, `vteleport`/`vteleported`, `park`/`parked`, `maptile` ---
+# Plan 2026-10-04 megaplan section 1.9 (rows 3) with the Phase 0 amendment; materials: tools/cbmath.py and shared/vectors.json.
+P3_CP_EXAMPLES, P3_MC_EXAMPLES = "Phase 3 examples, Cyberpunk to Minecraft:", "Phase 3 examples, Minecraft to Cyberpunk:"
+P3_ACT_EXAMPLES = "Phase 3 examples, client to server (`cyberblock:act`, `t:\"maptile\"`):"
+P3_UI_EXAMPLES = "Phase 3 examples, server to client (`cyberblock:ui`, `t:\"maptile\"`):"
+P3_SECTION, P3_PAYLOADS = "Phase 3 semantics and limits", "Phase 3: payloads (client ↔ server)"
+WEATHER, TELEPORT_WHY = names("Weather names"), names("Teleport reasons")
+MATERIAL_CODES = names("Material codes")
+TELEPORT_REASONS = ("", "no ground", "timeout")
+MAX_MATERIAL_CODE = 26
+
+
+def p3_ground_ok(m) -> bool:
+    """A layer 1 `ground` plus the optional material list: one code 0..26 per quadruple."""
+    c = m["c"]
+    if not (isinstance(c, list) and len(c) % 4 == 0 and 0 < len(c) <= 4 * 512 and all(whole(v, -2**31, 2**31 - 1) for v in c)):
+        return False
+    return set(m) <= {"t", "c", "m"} and ("m" not in m or (isinstance(m["m"], list) and len(m["m"]) == len(c) // 4
+                                                            and all(whole(v, 0, MAX_MATERIAL_CODE) for v in m["m"])))
+
+
+def p3_unground_ok(m) -> bool:
+    c = m["c"]
+    return (isinstance(c, list) and len(c) % 4 == 0 and 0 < len(c) <= 4 * 512 and all(whole(v, -2**31, 2**31 - 1) for v in c)
+            and set(m) <= {"t", "c", "seen"} and ("seen" not in m or m["seen"] is True))
+
+
+def p3_env_ok(m) -> bool:
+    t = m["time"]
+    return (set(m) == {"t", "time", "weather"} and isinstance(t, list) and len(t) == 2 and whole(t[0], 0, 23) and whole(t[1], 0, 59)
+            and m["weather"] in WEATHER)
+
+
+def reason_ok(ok, reason) -> bool:
+    return isinstance(reason, str) and len(reason.encode("utf-8")) <= 128 and (reason == "" or not ok)
+
+
+def p3_vteleported_ok(m) -> bool:
+    if not (set(m) == {"t", "id", "ok", "reason", "p"} and whole(m["id"]) and isinstance(m["ok"], bool) and reason_ok(m["ok"], m["reason"]) and vec3(m["p"])):
+        return False
+    return m["reason"] in TELEPORT_REASONS or (m["reason"].startswith("blocked (") and m["reason"].endswith(")"))
+
+
+def p3_parked_ok(m) -> bool:
+    return set(m) == {"t", "on", "ok", "reason"} and isinstance(m["on"], bool) and isinstance(m["ok"], bool) and reason_ok(m["ok"], m["reason"])
+
+
+def p3_vteleport_ok(m) -> bool:
+    return set(m) == {"t", "id", "p", "yaw", "why"} and whole(m["id"]) and vec3(m["p"]) and num(m["yaw"], -3e7, 3e7) and m["why"] in TELEPORT_WHY
+
+
+def maptile_request_ok(m) -> bool:
+    tiles = m["tiles"]
+    return (set(m) == {"id", "tiles"} and whole(m["id"]) and isinstance(tiles, list) and len(tiles) % 2 == 0 and 0 < len(tiles) <= 32
+            and all(whole(v, -100000, 100000) for v in tiles))
+
+
+def maptile_tile_ok(m) -> bool:
+    import base64, zlib
+    if not (set(m) == {"id", "tx", "tz", "v", "cells"} and whole(m["id"]) and whole(m["tx"], -100000, 100000) and whole(m["tz"], -100000, 100000)
+            and whole(m["v"]) and isinstance(m["cells"], str)):
+        return False
+    if m["cells"] == "":
+        return True  # a tile the server does not have
+    try:
+        return len(zlib.decompress(base64.b64decode(m["cells"], validate=True))) == 4096 * 2
+    except (ValueError, zlib.error):
+        return False
+
+
+P3_VALIDATORS = {"ground": p3_ground_ok, "unground": p3_unground_ok, "env": p3_env_ok, "vteleported": p3_vteleported_ok, "parked": p3_parked_ok,
+                 "vteleport": p3_vteleport_ok, "park": lambda m: set(m) == {"t", "on"} and isinstance(m["on"], bool)}
+P3_EXAMPLES = [(m["t"], m) for first in (P3_CP_EXAMPLES, P3_MC_EXAMPLES) for m in examples(first)]
+
+
+def p3_example(t, **changes):
+    m = copy.deepcopy(next(m for u, m in P3_EXAMPLES if u == t))
+    m.update(changes)
+    return m
+
+
+def test_p3_every_type_has_a_row_an_example_and_a_validator():
+    assert documented(P3_CP_TO_MC) == {"ground", "unground", "env", "vteleported", "parked"} and documented(P3_MC_TO_CP) == {"vteleport", "park"}
+    assert {t for t, _ in P3_EXAMPLES} == set(P3_VALIDATORS) and len(P3_EXAMPLES) == len(P3_VALIDATORS)
+    rows = rows_by_type(P3_CP_TO_MC)
+    assert "**extends layer 1:**" in rows["ground"] and "**extends layer 1:**" in rows["unground"]
+    assert not any("**extends" in rows[t] for t in ("env", "vteleported", "parked"))
+
+
+def test_p3_every_example_field_is_named_in_its_row():
+    rows = {**rows_by_type(P3_CP_TO_MC), **rows_by_type(P3_MC_TO_CP)}
+    old = {"ground": {"c"}, "unground": {"c"}}  # the layer 1 field the extension row does not repeat
+    for t, m in P3_EXAMPLES:
+        for key in set(m) - {"t"} - old.get(t, set()):
+            assert re.search(rf"\b{key}\b", rows[t]), f"{t}.{key} is not described in its Phase 3 row"
+
+
+@pytest.mark.parametrize("t, m", P3_EXAMPLES, ids=[f"{t}-{i}" for i, (t, _) in enumerate(P3_EXAMPLES)])
+def test_p3_example_obeys_the_documented_limits(t, m):
+    assert P3_VALIDATORS[t](m)
+
+
+def test_p3_the_ground_and_unground_examples_show_the_new_fields_and_keep_the_layer_1_shape():
+    ground, unground = p3_example("ground"), p3_example("unground")
+    assert len(ground["m"]) == len(ground["c"]) // 4 and unground["seen"] is True
+    assert set(ground) == {"t", "c", "m"} and set(unground) == {"t", "c", "seen"}
+    layer1 = {m["t"]: m for m in examples("Cyberpunk → Minecraft:")}
+    assert set(layer1["ground"]) == {"t", "c"} and set(layer1["unground"]) == {"t", "c"}  # unchanged: older builds still send these
+
+
+def test_p3_a_request_and_its_reply_share_the_id_and_the_position():
+    asked, answered = p3_example("vteleport"), p3_example("vteleported")
+    assert asked["id"] == answered["id"] and asked["p"] == answered["p"] and asked["why"] == "meetup"
+    assert answered["ok"] is True and answered["reason"] == ""
+
+
+def test_p3_names_have_the_plan_values():
+    assert WEATHER == ["clear", "cloudy", "rain", "storm", "fog", "smog", "sandstorm", "other"]
+    assert TELEPORT_WHY == ["meetup", "holo", "hub_exit"]
+    assert MATERIAL_CODES[:11] == ["unknown", "concrete_light", "concrete_dark", "asphalt", "sidewalk", "glass", "metal", "brick", "tile", "ground", "water"]
+
+
+def test_p3_material_codes_in_the_document_match_cbmath_and_the_vectors():
+    from tools import cbmath
+    assert MATERIAL_CODES[:11] == list(cbmath.SURFACE_MATERIALS)
+    text = " ".join(section(P3_SECTION).split())
+    assert "11 to 26 `nc_neon_<dye>` in the vanilla dye order (" + ", ".join(cbmath.DYES) + ")" in text
+    vectors = json.loads(Path("shared/vectors.json").read_text(encoding="utf-8"))["materials"]
+    assert [c["code"] for c in vectors["codes"]] == list(range(MAX_MATERIAL_CODE + 1))
+    for c in vectors["codes"][1:11]:
+        assert f"{c['code']} `{c['id']}`" in text, f"code {c['code']} {c['id']} is not in the document"
+    assert f"`materials` in `shared/vectors.json` lists the codes, their substrings and {len(vectors['cases'])} name cases" in text
+
+
+def _p3_out_of_limits():
+    bad_p = lambda **kw: p3_example("vteleported", **kw)  # noqa: E731
+    return [
+        ("ground", p3_example("ground", m=[3, 3])), ("ground", p3_example("ground", m=[3, 3, 7, 7])), ("ground", p3_example("ground", m=[3, 3, 27])),
+        ("ground", p3_example("ground", m=[3, 3, -1])), ("ground", p3_example("ground", m=[3, 3, 1.5])), ("ground", p3_example("ground", m=[3, 3, True])),
+        ("ground", p3_example("ground", m="337")), ("ground", p3_example("ground", c=[1, 2, 3])),
+        ("unground", p3_example("unground", seen=False)), ("unground", p3_example("unground", seen=1)), ("unground", p3_example("unground", seen="true")),
+        ("env", p3_example("env", time=[24, 0])), ("env", p3_example("env", time=[12, 60])), ("env", p3_example("env", time=[-1, 0])),
+        ("env", p3_example("env", time=[12])), ("env", p3_example("env", time=[12.5, 0])), ("env", p3_example("env", weather="hail")),
+        ("env", p3_example("env", weather=None)), ("env", {k: v for k, v in p3_example("env").items() if k != "weather"}),
+        ("vteleported", bad_p(id=-1)), ("vteleported", bad_p(ok=1)), ("vteleported", bad_p(reason="bad weather")),
+        ("vteleported", bad_p(reason="x" * 129, ok=False)), ("vteleported", bad_p(ok=False, reason="no ground", p=[1, 2])),
+        ("vteleported", bad_p(p=[0, float("nan"), 0])), ("vteleported", bad_p(p=[3e7, 0, 0])),
+        ("vteleported", {k: v for k, v in p3_example("vteleported").items() if k != "id"}), ("vteleported", bad_p(ok=True, reason="timeout")),
+        ("parked", p3_example("parked", on="yes")), ("parked", p3_example("parked", ok=True, reason="no")), ("parked", {"t": "parked", "on": True}),
+        ("vteleport", p3_example("vteleport", why="fun")), ("vteleport", p3_example("vteleport", id=1.5)), ("vteleport", p3_example("vteleport", p=[1, 2])),
+        ("vteleport", p3_example("vteleport", yaw=float("inf"))), ("vteleport", p3_example("vteleport", yaw="90")),
+        ("vteleport", {k: v for k, v in p3_example("vteleport").items() if k != "yaw"}),
+        ("park", {"t": "park"}), ("park", {"t": "park", "on": 1}),
+    ]
+
+
+P3_OUT_OF_LIMITS = _p3_out_of_limits()
+
+
+@pytest.mark.parametrize("t, m", P3_OUT_OF_LIMITS, ids=[f"{t}-{i}" for i, (t, _) in enumerate(P3_OUT_OF_LIMITS)])
+def test_p3_validators_reject_out_of_limit_messages(t, m):
+    try:
+        ok = P3_VALIDATORS[t](m)
+    except (KeyError, TypeError):
+        ok = False
+    assert not ok
+
+
+def test_p3_validators_accept_the_limits_themselves():
+    assert p3_ground_ok({"t": "ground", "c": [0, 0, 63, 63], "m": [0]}) and p3_ground_ok({"t": "ground", "c": [0, 0, 63, 63], "m": [26]})
+    assert p3_ground_ok({"t": "ground", "c": [0, 0, 63, 63]})  # `m` is optional: an older DLL
+    assert p3_env_ok(p3_example("env", time=[0, 0])) and p3_env_ok(p3_example("env", time=[23, 59])) and all(p3_env_ok(p3_example("env", weather=w)) for w in WEATHER)
+    for reason in ("", "no ground", "timeout", "blocked (in a vehicle)"):
+        assert p3_vteleported_ok(p3_example("vteleported", ok=reason == "", reason=reason))
+    assert p3_vteleported_ok(p3_example("vteleported", ok=False, reason="blocked (" + "é" * 59 + ")"))  # exactly 128 bytes
+    assert not p3_vteleported_ok(p3_example("vteleported", ok=False, reason="blocked (" + "é" * 60 + ")"))
+    assert p3_parked_ok(p3_example("parked", on=False, ok=False, reason="no way")) and all(p3_vteleport_ok(p3_example("vteleport", why=w)) for w in TELEPORT_WHY)
+
+
+def test_p3_maptile_examples_are_valid_and_the_validators_reject_bad_ones():
+    request, tiles = examples(P3_ACT_EXAMPLES), examples(P3_UI_EXAMPLES)
+    assert len(request) == 1 and maptile_request_ok(request[0]) and len(tiles) == 2 and all(maptile_tile_ok(m) for m in tiles)
+    assert tiles[0]["id"] == request[0]["id"] and tiles[1]["cells"] == ""  # an unknown tile answers an empty `cells`
+    for bad in ({**request[0], "tiles": []}, {**request[0], "tiles": [1, 2, 3]}, {**request[0], "tiles": list(range(34))}, {**request[0], "id": -1},
+                {**request[0], "tiles": [0, 200000]}):
+        assert not maptile_request_ok(bad)
+    assert not maptile_request_ok({"id": 1, "tiles": [], "extra": 1}) and not maptile_request_ok({"id": 1, "tiles": [1, 2], "extra": 1})
+    for bad in ({**tiles[0], "cells": "not base64!"}, {**tiles[0], "cells": "AAAA"}, {**tiles[0], "v": -1}, {**tiles[0], "tx": 1.5}, {"id": 1}):
+        try:
+            ok = maptile_tile_ok(bad)
+        except KeyError:
+            ok = False
+        assert not ok
+
+
+def test_p3_the_tile_example_decodes_to_the_atlas_cell_format():
+    import base64, struct, zlib
+    cells = struct.unpack(">4096h", zlib.decompress(base64.b64decode(examples(P3_UI_EXAMPLES)[0]["cells"])))
+    assert [c & 0xFFFF for c in cells[:8]] == [(64 + 4000 + 1) << 1] * 8
+    assert cells[8] & 1 == 1 and (cells[8] & 0xFFFF) >> 1 == 60 + 4000 + 1 and cells[9:] == (0,) * 4087
+
+
+def test_p3_rules_are_stated_in_the_document():
+    text = " ".join((section(P3_SECTION) + section(P3_PAYLOADS) + section(P3_CP_TO_MC) + section(P3_MC_TO_CP)).split())
+    for phrase in ("air cells only", "only with `seen:true`", "`clear` never removes a replica block", "saved in the world", "never\nsent to any host".replace("\n", " "),
+                   "does not draw them", "first match wins", "unmatched name is 0", "`TraceResult.material`", "`meshAppearance`", "working table",
+                   "CET lines B1 to B5", "cast again past it", "primary host", "06:00 is tick 0", "noon 6000", "second host never changes them",
+                   "`rain` is rain", "`storm` is thunder", "exempt from the sanity radius", "`timeout` after 15 s", "`no ground`", "`blocked (<why>)`",
+                   "fast-travel fallback", "locks saving, movement and camera", "never fatal", "bit 1 (replica)", "`terrain` is **BOTH**",
+                   "nightcity-map", "64 × 64 two-metre cells", "at most 16 tiles", "Flag for the integrator", "travels as `act`",
+                   "the DLL answers exactly once with the same `id`", "DOWN to that host only"):
+        assert phrase in text, f"{phrase!r} is not stated"
+
+
+def test_p3_new_up_types_have_rate_limits_and_class_rows():
+    assert rate_rows()["env"] == (2, 4) and rate_rows()["vteleported"] == rate_rows()["parked"] == (5, 10)
+    cp, mc = dict(class_rows(MP_CP)), dict(class_rows(MP_MC))
+    assert cp["env"] == cp["vteleported"] == cp["parked"] == "UP" and mc["vteleport"] == mc["park"] == "DOWN"
+
+
+def test_p3_section_sits_between_multiplayer_and_the_shared_memory_section():
+    assert TEXT.index("## Multiplayer (Phase 1)") < TEXT.index("## Phase 3 (the Night City replica)") < TEXT.index("## Shared memory")
+    assert "2026-10-04-multiplayer-megaplan.md" in TEXT.split("## Phase 3 (the Night City replica)", 1)[1].split("###", 1)[0]

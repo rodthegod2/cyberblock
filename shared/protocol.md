@@ -683,8 +683,11 @@ the same validators the client ran before (the limits above), plus the envelope 
 | `notify` | LOCAL | client UI (`UiLink`) | |
 | `screen` | LOCAL | client UI (`UiLink`) | |
 | `reply` | LOCAL | client UI (`UiLink`) | |
-| `terrain` | LOCAL | `AtlasStore` (client) | LOCAL until Phase 3, then BOTH: UP into the server's shared Night City map |
+| `terrain` | LOCAL | `AtlasStore` (client) | LOCAL until Phase 3, then BOTH: UP into the server's shared Night City map (Phase 3: BOTH, see [Phase 3](#phase-3-the-night-city-replica)) |
 | `surveystate` | LOCAL | `SurveyClient` | |
+| `env` | UP | `EnvSync` (server), Phase 3 | the primary host's clock and weather |
+| `vteleported` | UP | `MeetUp` (server), routed to the request's owner, Phase 3 | a reply: it must carry a request id the session issued |
+| `parked` | UP | session (server), Phase 3 | the answer to `park` |
 | `cmd` | LOCAL | `WorldBridge.command` in a dev client | test tools only: never relayed (the relay drops it), a dedicated server refuses it |
 
 The frame export (`Local\CyberblockFrame`) is LOCAL: `FrameExporter` on the client.
@@ -719,6 +722,8 @@ The frame export (`Local\CyberblockFrame`) is LOCAL: `FrameExporter` on the clie
 | `cyberware` | DOWN | `Ripperdoc` for that host | |
 | `cyberfx` | DOWN | `CyberwareEffects` for that host | `perkfx` stays superseded (never sent) |
 | `pteleport` | DOWN | `ServerPlayerMixin` | Steve was teleported by a command; documented below |
+| `vteleport` | DOWN | `MeetUp` (server), Phase 3 | to the host's session only |
+| `park` | DOWN | session (server), Phase 3 | to the host's session only |
 
 ### Multiplayer: new messages
 | `t` | class | fields | when |
@@ -792,7 +797,7 @@ moved to the client thread (client). For reference; the owner of the exact caps 
   mob targets and tethers and forgets its pending requests. After each host `hello` the server sends `align`, `perks`,
   `cyberware`, the `effect` set and the block resync (`align` immediately followed by `blocks reset:true`) in one tick.
 - **Several hosts.** The model is multi-host from Phase 1; `maxHosts` (server config) is 1 until a later phase's multi-host
-  check passes.
+  check passes (Phase 3's `twohosts2` check raises the default to 4).
 - **Log lines** (tests grep for them). Server: `handshake: <name> mod X dll Y -> host|guest (<reason>)`, `session: <name>
   started|active|ended (<reason>)`, `relay: <name> dropped <t> x N (<why>)`. Client: `handshake: server X -> <role>`,
   `relay: up N msgs/s, down N msgs/s`, `reconnect: in N s (<reason>)`. DLL: `session: <state> (<reason>)`,
@@ -823,6 +828,8 @@ moved to the client thread (client). For reference; the owner of the exact caps 
 | `terrain` | 30 | 200 | the burst is 200 during a survey |
 | `hello` | 1 | 3 | |
 | `devices`, `devstate`, `devresult` | 10 | 40 | Phase 4 and later |
+| `env` | 2 | 4 | Phase 3 (1 Hz and on change) |
+| `vteleported`, `parked` | 5 | 10 | Phase 3 (replies) |
 
 - **Overflow.** A session that keeps overflowing at five times its rate for 10 s is ended and the player kicked with
   "Cyberblock: too many messages from your Cyberpunk link".
@@ -868,6 +875,121 @@ Multiplayer examples, client to server (`cyberblock:up`):
 Multiplayer examples, server to client only (`cyberblock:down`):
 ```jsonl
 {"t":"survey_cmd","op":"start"}
+```
+
+## Phase 3 (the Night City replica)
+
+Same wire, same conventions; `proto` stays 1 and older builds ignore the new `t` values and fields. Plan:
+`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 1.9 (rows 3) with the dated Phase 0 amendment after it.
+Night City becomes visible to guests as **replica blocks**: the server builds solid material blocks from the host's probes, saves
+them in the world and keeps them while the host is away. Everything below is already in Minecraft convention (positions get the
+[ground alignment](#ground-alignment-re-test-2) offset on the Cyberpunk side, as before).
+
+### Phase 3: Cyberpunk → Minecraft
+| `t` | fields | when |
+|---|---|---|
+| `ground` | **extends layer 1:** adds optional `m:[code, …]`, one material code (0..26) per quadruple of `c`, in the same order; a missing `m` means every code is 0 (unknown) | probe deltas (new solid ranges), UP |
+| `unground` | **extends layer 1:** adds optional `seen:true` when the cells were observed empty inside the probe radius (a column hit again without the old range); absent: the cells only left the radius | probe deltas, UP |
+| `env` | `time:[h, m]` (`h` 0..23, `m` 0..59) from the game time, `weather` ∈ the weather names below (`other` when the preset is not mapped) | 1 Hz and on change, deduplicated, UP |
+| `vteleported` | `id` (the `vteleport` request id), `ok:bool`, `reason` (`""` when `ok`, else `no ground`, `timeout` or `blocked (<why>)`), `p:[x, y, z]` the snapped feet position (V's position when it failed) | the answer to every `vteleport`, UP |
+| `parked` | `on:bool` (the state now), `ok:bool`, `reason` (`""` when `ok`) | the answer to every `park`, UP |
+
+### Phase 3: Minecraft → Cyberpunk
+| `t` | fields | when |
+|---|---|---|
+| `vteleport` | `id` int ≥ 0 (a request id the session issued), `p:[x, y, z]` the Minecraft position to put V's feet at, `yaw`, `why` ∈ `meetup`, `holo`, `hub_exit` | Meet Up (Phase 3), the Holo-Table and the hub exit (later phases); DOWN to that host only |
+| `park` | `on:bool` | the server parks or releases that host's V (invisible, invulnerable, unseen by NPCs, saving locked, no movement or camera); DOWN to that host only |
+
+### Phase 3 semantics and limits
+- **Replica blocks.** The server turns each `ground` range into `cyberblock:nc_<material>` blocks in **air cells only** (never over
+  a player's block); the block comes from the range's `m` code through the code table below (`material_palette` decides code 0).
+  A range with no `m` is code 0. `unground` removes replica blocks **only with `seen:true`**: leaving the probe radius keeps them
+  (the map grows as a host explores). `clear` never removes a replica block (it only ends outline barriers and temp cells), and the
+  replica is saved in the world, so it stays when the host's Cyberpunk is closed. Replica blocks are host ground: they are never
+  sent to any host as player `block` or `blocks`. An active host's own client does not draw them (Night City is the real thing
+  there); guests and inactive hosts see them.
+- **Material codes.** 0 unknown; 1 `concrete_light`, 2 `concrete_dark`, 3 `asphalt`, 4 `sidewalk`, 5 `glass`, 6 `metal`, 7 `brick`,
+  8 `tile`, 9 `ground`, 10 `water`; 11 to 26 `nc_neon_<dye>` in the vanilla dye order (white, orange, magenta, light_blue, yellow,
+  lime, pink, gray, light_gray, cyan, purple, blue, brown, green, red, black), light level 15. The scripts send the raw name of the
+  probe hit (`TraceResult.material`, or the hit mesh's `meshAppearance` when it is `None`); the DLL maps names to codes with one fixed
+  rule: the lower-case name is matched by substring against each code's list, tried in the order of `shared/vectors.json`
+  `materials.order` (a dye neon, any other neon, glass, water, metal, brick, tile, asphalt, sidewalk, dark concrete, light concrete,
+  ground); the first match wins and an unmatched name is 0 (logged once per name). `tools/cbmath.py` is the reference
+  (`material_code`, `material_block`); `materials` in `shared/vectors.json` lists the codes, their substrings and 38 name cases that
+  every copy checks. **The substring lists are a working table**: Phase 0's CET lines B1 to B5 show the real names and the integrator
+  corrects the table once.
+- **Doors and devices.** A probe ray whose hit entity is a `Device` is cast again past it, so doors and gates never enter the replica.
+- **Time and weather.** From the **primary host** (the first active session) the server stops the daylight cycle and sets the day time
+  to `((h·60 + m) / 1440 · 24000 + 18000) mod 24000` (06:00 is tick 0, noon 6000, 00:00 18000; `shared/vectors.json`
+  `materials.clock`), and the weather from `env.weather`: `rain` is rain, `storm` is thunder, every other name is clear. A second host
+  never changes them; with no host the world keeps the last values.
+- **Meet Up.** `vteleport` and `vteleported` are a request and its reply: the server issues `id`, the DLL answers exactly once with the
+  same `id`. `vteleported.p` is where V arrived and is **exempt from the sanity radius** (it may be far from where V was); the host's next
+  `hstate` follows it. The DLL refuses in a vehicle, a scene or combat (`blocked (<why>)`), waits for the world to stream in at the
+  target (`timeout` after 15 s) and snaps V to the ground below (`no ground` when there is none). `why` only labels the request.
+- **Park.** `park on:true` makes V invisible, invulnerable, unseen by NPCs (or the fast-travel fallback), locks saving, movement and
+  camera; `on:false` undoes it. The DLL answers with `parked` carrying the state it is in.
+- **Validation (receivers).** `m` has exactly one whole number 0..26 per quadruple of `c` (a bad `m` drops the codes, not the ranges: the
+  ranges become code 0); `seen` is `true` or absent; `env.time` is `[0..23, 0..59]` and `weather` one of the names below (an unknown name is
+  `other`); `vteleport.p` is finite with `|c| < 3e7`, `yaw` finite, `id` a whole number ≥ 0, `why` one of the three names;
+  `vteleported.id` a whole number ≥ 0, `reason` at most 128 UTF-8 bytes and `""` when `ok` is true; `parked.reason` likewise. A bad
+  message is counted and dropped, never fatal. Rate limits are in the [rate table](#multiplayer-security-rate-limits-and-guest-toggles).
+- **Features.** `hs_ack.features` bit 1 (replica) and bit 4 (figures) are set by a Phase 3 server.
+
+### Phase 3: payloads (client ↔ server)
+The shared Night City map: from Phase 3 `terrain` is **BOTH** (a host also uploads its cells, `terrain` UP as in the Atlas), and the server
+keeps the cells in `<world>/cyberblock/nightcity-map/` in the Atlas region format (tiles of 64 × 64 two-metre cells, one big-endian short
+per cell, regions of 8 × 8 tiles). A client that needs tiles it does not have asks for them:
+
+| Id | Direction | Fields | When |
+|---|---|---|---|
+| `cyberblock:act` `t:"maptile"` | C2S | `id` int ≥ 0 (the request id), `tiles:[tx, tz, …]` whole numbers, at most 16 tiles (32 numbers), `\|v\| ≤ 100000` | the guest Atlas or radar needs tiles; at most 5 requests per second per player |
+| `cyberblock:ui` `t:"maptile"` | S2C | `id` (echoed), `tx`, `tz`, `v` int ≥ 0 (the tile's change counter), `cells` (base64 of the deflated tile: 4096 shorts, big-endian, 0 unknown, else `((y + 4000 + 1) << 1) \| water`; `""` for a tile the server does not have) | one message per requested tile |
+
+**Flag for the integrator:** package 3R owns the final shape of this exchange (megaplan 3-R2 names only `cyberblock:ui t:"maptile"`);
+`ui` is server-to-client by section 1.3, so the request travels as `act`. If 3R or 3C chose other fields, correct these two rows and the
+examples below together.
+
+### Phase 3 names
+- **Material codes** (`ground.m`, `shared/vectors.json` `materials.codes`) — `unknown`, `concrete_light`, `concrete_dark`, `asphalt`, `sidewalk`, `glass`, `metal`, `brick`, `tile`, `ground`, `water`, then `neon_<dye>` ×16
+- **Weather names** (`env.weather`) — `clear`, `cloudy`, `rain`, `storm`, `fog`, `smog`, `sandstorm`, `other`
+- **Teleport reasons** (`vteleport.why`) — `meetup`, `holo`, `hub_exit`
+- **Teleport results** (`vteleported.reason`) — `""`, `no ground`, `timeout`, `blocked (<why>)`
+
+### Phase 3 log lines
+In-game checks grep for them (Re-test 3 in `docs/TESTING-PLAN.md`). The exact text belongs to the packages that print them (3R, 3E on
+the server, 3S and 3D in Cyberpunk); the integrator copies the final lines into Re-test 3.
+- Each feature that has a fallback prints **one line saying which runtime path is active**: the material source (`material`, `meshAppearance` or
+  heuristic), the weather reader, the teleport method and the park method. Scripts print `park: on|off (<reason>)`.
+- The server logs replica changes, Meet Up requests and the environment changes of the primary host.
+
+### Phase 3 examples
+One message per line (JSON Lines). Every new `t` has a line; `ground` and `unground` show the new fields.
+
+Phase 3 examples, Cyberpunk to Minecraft:
+```jsonl
+{"t":"ground","c":[10,-21,62,63,11,-21,62,63,12,-21,64,70],"m":[3,3,7]}
+{"t":"unground","c":[10,-21,64,66],"seen":true}
+{"t":"env","time":[22,30],"weather":"rain"}
+{"t":"vteleported","id":4,"ok":true,"reason":"","p":[-1230.5,64.0,820.5]}
+{"t":"parked","on":true,"ok":true,"reason":""}
+```
+
+Phase 3 examples, Minecraft to Cyberpunk:
+```jsonl
+{"t":"vteleport","id":4,"p":[-1230.5,64.0,820.5],"yaw":90.0,"why":"meetup"}
+{"t":"park","on":true}
+```
+
+Phase 3 examples, client to server (`cyberblock:act`, `t:"maptile"`):
+```jsonl
+{"id":3,"tiles":[-2,5,-1,5]}
+```
+
+Phase 3 examples, server to client (`cyberblock:ui`, `t:"maptile"`):
+```jsonl
+{"id":3,"tx":-2,"tz":5,"v":17,"cells":"eNrtwTENAAAIAzCczL8GPpRxI4GkbSZ3FwAAAAAAAADwzAIpIQfj"}
+{"id":3,"tx":-1,"tz":5,"v":0,"cells":""}
 ```
 
 ## Shared memory `Local\CyberblockFrame`

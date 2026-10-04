@@ -268,3 +268,44 @@ def test_survey_vectors_match_truth():
         assert list(cbmath.survey_cell(*case["hit"], cbmath.level_offset(case["k"]))) == case["cell"]
     for case in data["survey_column"]:
         assert list(cbmath.survey_column(*case["cell"])) == case["cp"]
+
+
+# ---- Phase 3: material codes and the clock (megaplan 1.9 `ground.m`, 3-E1) -------------------------------------------------
+def test_material_codes_are_the_plan_table():
+    assert cbmath.SURFACE_MATERIALS == ("unknown", "concrete_light", "concrete_dark", "asphalt", "sidewalk", "glass", "metal", "brick", "tile",
+                                        "ground", "water")
+    assert cbmath.DYES == ("white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray", "light_gray", "cyan", "purple", "blue",
+                           "brown", "green", "red", "black")
+    assert cbmath.NEON_FIRST == 11 and cbmath.MATERIAL_MAX_CODE == 26
+    assert cbmath.material_block(0) is None and cbmath.material_block(27) is None and cbmath.material_block(-1) is None
+    assert cbmath.material_block(1) == "cyberblock:nc_concrete_light" and cbmath.material_block(10) == "cyberblock:nc_water"
+    assert cbmath.material_block(11) == "cyberblock:nc_neon_white" and cbmath.material_block(26) == "cyberblock:nc_neon_black"
+    assert cbmath.material_block(14) == "cyberblock:nc_neon_light_blue" and cbmath.material_block(19) == "cyberblock:nc_neon_light_gray"
+
+
+def test_every_code_has_a_matching_rule_and_the_order_covers_each_rule_once():
+    assert set(cbmath.MATERIAL_MATCH) == set(range(1, 27))
+    rules = [r for r in cbmath.MATERIAL_ORDER if r != "neon"]
+    assert sorted(rules) == list(range(1, 27)) and cbmath.MATERIAL_ORDER.count("neon") == 1
+
+
+def test_material_names_map_by_substring_first_rule_wins():
+    for name, code in (("Glass_Window_01", 5), ("neon_light_blue_tube", 14), ("neon_blue_tube", 22), ("neon_sign", 11), ("brick_wall", 7),
+                       ("asphalt", 3), ("sidewalk_a", 4), ("concrete_dark_01", 2), ("terrain", 9), ("water", 10), ("environment_probe", 0), ("", 0)):
+        assert cbmath.material_code(name) == code, name
+
+
+def test_materials_vectors_match_truth():
+    m = json.loads(Path("shared/vectors.json").read_text())["materials"]
+    assert [c["code"] for c in m["codes"]] == list(range(27))
+    assert all(c["block"] == cbmath.material_block(c["code"]) for c in m["codes"])
+    assert m["order"] == list(cbmath.MATERIAL_ORDER) and m["neon_any"] == list(cbmath.NEON_ANY) and m["neon_any_code"] == 11
+    assert len(m["cases"]) >= 30 and all(cbmath.material_code(c["name"]) == c["code"] for c in m["cases"])
+    assert {c["code"] for c in m["cases"]} >= set(range(1, 11)) | {0, 11, 14, 19, 22, 25}  # every surface code and several neon dyes
+    assert all(c["ticks"] == cbmath.env_ticks(*c["time"]) for c in m["clock"])
+
+
+def test_env_ticks_follow_the_plan_formula():
+    assert [cbmath.env_ticks(h, 0) for h in (6, 12, 18, 0)] == [0, 6000, 12000, 18000]
+    assert cbmath.env_ticks(22, 30) == 16500 and cbmath.env_ticks(23, 59) == 17983 and cbmath.env_ticks(5, 59) == 23983
+    assert all(0 <= cbmath.env_ticks(h, m) < 24000 for h in range(24) for m in range(60))
