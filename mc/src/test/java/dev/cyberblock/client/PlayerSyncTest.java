@@ -39,6 +39,21 @@ class PlayerSyncTest {
 		assertEquals(0.0F, PlayerSync.pitch(third), "an orbiting vehicle camera's pitch is not Steve's gaze");
 	}
 
+	/** Megaplan Q-V5: vanilla divides the destroy speed by 5 when not on the ground; while V stands Steve is on the ground. */
+	@Test
+	void steveIsOnTheGroundExactlyWhileVStandsAndHeDoesNotFly() {
+		HostState.Pose standing = pose("{'p':[10,72,5],'r':[30,10,0],'fp':true,'pl':[11,70.4,6],'air':false}");
+		HostState.Pose airborne = pose("{'p':[10,72,5],'r':[30,10,0],'fp':true,'pl':[11,70.4,6],'air':true}");
+		HostState.Pose oldHost = pose("{'p':[10,72,5],'r':[30,10,0],'fp':true,'pl':[11,70.4,6]}");
+		assertTrue(PlayerSync.standing(standing.air(), false), "survival, V stands: no airborne mining penalty");
+		assertTrue(PlayerSync.standing(oldHost.air(), false), "a host without cam.air: standing");
+		assertFalse(PlayerSync.standing(airborne.air(), false), "V jumps or falls: Steve is in the air too");
+		assertFalse(PlayerSync.standing(standing.air(), true), "a flying player is never on the ground");
+		assertFalse(PlayerSync.standing(airborne.air(), true));
+		HostState.Pose badAir = pose("{'p':[10,72,5],'r':[30,10,0],'fp':true,'pl':[11,70.4,6],'air':'yes'}");
+		assertTrue(PlayerSync.standing(badAir.air(), false), "a non-boolean air flag is not airborne");
+	}
+
 	@Test
 	void onFootIsUnchanged() {
 		HostState.Pose first = pose("{'p':[10,72,5],'r':[30,10,0],'fp':true,'pl':[11,70.4,6],'h':80}");

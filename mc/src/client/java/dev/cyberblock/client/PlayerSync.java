@@ -126,6 +126,7 @@ public final class PlayerSync {
 		Flight.tick(player);
 		HostState.Pose p = HostState.live();
 		if (p == null || !Flight.followsCam()) {
+			lastX = Double.NaN; // the first tick back with V is no stride from where he was before the flight
 			return;
 		}
 
@@ -154,6 +155,16 @@ public final class PlayerSync {
 		// Steve has no physics, so nothing else tells Minecraft that he stands: V's ground is his (cam.air). Off the ground he mines
 		// 5 times slower and every hit can crit; the server takes a stale "on ground" for standing on air. A flying player is never
 		// on the ground (vanilla's aiStep would stop the creative flight every tick).
-		player.setOnGround(!p.air() && !abilities.flying);
+		player.setOnGround(standing(p.air(), abilities.flying));
+	}
+
+	/**
+	 * Q-V5: whether Steve is on the ground, so Player.getDestroySpeed never divides by 5 while V stands. Set at the start of his
+	 * tick; nothing in the tick undoes it: with no physics (PlayerMixin) Entity.move only moves him and leaves onGround alone,
+	 * LocalPlayer.sendPosition then tells the server, and ServerGamePacketListenerImpl.handleMovePlayer takes the packet's
+	 * onGround for the server's own destroy progress. Creative flight (never on the ground) mines instantly anyway.
+	 */
+	static boolean standing(final boolean vAirborne, final boolean flying) {
+		return !vAirborne && !flying;
 	}
 }
