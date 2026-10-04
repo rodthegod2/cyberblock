@@ -29,7 +29,8 @@ Scenarios (megaplan task 1-T2). Each one starts what it needs on its own test po
                 a Night City person opens every 4 s) and a guest: the devices stand as blocks (the ground through the door does not become a
                 replica block), the guest's `devact` reaches the owner's DLL and its answer opens, closes and switches in Minecraft, the NPC's
                 changes show, a quest door and an elevator call change nothing, `guests devices door off` blocks only the doors, the whole
-                `guests devices` toggle blocks all, and the devices go with the session
+                `guests devices` toggle blocks all, and the devices go with the session; a door is a block of `#minecraft:doors` or 4B's
+                `cyberblock:device_door` / `cyberblock:device_iron_door` (with the vanilla `open` property)
   joinpassword  a server with a join password: a host waits as a guest until `/login`, then hosts at once; after a reconnect it
                 is remembered; five wrong passwords kick; the password is in no log (it is random per run, like the RCON one)
 
@@ -39,7 +40,7 @@ folder (it is never printed, logged or put on a command line); APEX_FTP_PASS is 
 port 25600 and `Local\\CyberblockFrame` are never used. The scenarios assume the plan's devtools commands (task 1-N4,
 `-Dcyberblock.devtools=true`): `/cyberblock test hit <host> <id> <dmg>`, `/cyberblock test explode <x> <y> <z> <power>` and
 `/cyberblock test place <x> <y> <z> <block>` (Phase 4's `devices` scenario adds `/cyberblock test device <x> <y> <z> <act>`: the same
-use of the device block that a right-click or a `cyberblock:act` `devact` is)
+use of the device block that a right-click is)
 run as the guest with `/execute as CbGuest1 run ...` (from the RCON console alone there is no player behind them, and an action
 with no player behind it is always allowed), and `/execute as <host> run cyberblock guests <toggle> on|off` flips that host's
 toggle. They also assume that `runServer` and `runClient` honour `-Pcyberblock.runDir` (task 1-L1) and that the dedicated
@@ -1056,12 +1057,15 @@ def scenario_meetup(env: Env, rep: Report) -> None:
 # ---- Phase 4: the device layer (megaplan 4-P1) ------------------------------------------------------------------------------
 # These scenarios need packages 4M (devices on the server) and 4B (device blocks) merged: the fake host `--devices` (tools/fakehost.py)
 # plays Cyberpunk, RCON looks at the world, and the guest acts through the devtools command `/cyberblock test device <x> <y> <z> <act>` (4M's
-# DeviceCommands: run as the guest it does exactly what a right-click or a `cyberblock:act` `devact` on that block does). The doors are the vanilla ones (the `#minecraft:doors` tag, driven by the server); every other device only has to stand as a
+# DeviceCommands: run as the guest it does exactly what a right-click on that block does). A door is a block of the `#minecraft:doors` tag or one of 4B's door blocks
+# (`cyberblock:device_door`, `cyberblock:device_iron_door`: 4M prefers them when registered), driven by the server and with the vanilla `open`
+# property; every other device only has to stand as a
 # block (not air): which block it is belongs to 4A's `device_map` and 4B.
 DEVICE_ACT = r"\[CbHost1\] devact: (\{.*\})"
 DEVICE_RESULT = r"\[CbHost1\] devresult: (\{.*\})"
 DEVICE_IDS = fakehost.device_ids()
-DOOR_KEYS = ("door", "npcdoor")  # the devices that must be vanilla doors; the sealed quest door shows greyed (any block)
+DOOR_KEYS = ("door", "npcdoor")  # the devices that must be doors; the sealed quest door shows greyed (any block)
+DOOR_BLOCKS = ("#minecraft:doors", "cyberblock:device_door", "cyberblock:device_iron_door")  # vanilla doors, or 4B's (4M's DeviceBlocks prefers them)
 DEVICE_PLACE_TIMEOUT = 60.0  # the devices of a fresh host may need a full 5 s list and a chunk or two
 GUEST_AT = (-1.5, 64.0, 6.5)  # the guest stands on the street, in front of the doors
 GUEST_GAP_S = 0.7  # between two uses by the guest: the server ignores a second use within 4 ticks (DeviceRules.USE_GAP_TICKS)
@@ -1087,19 +1091,24 @@ def result_ok_since(host: FakeHost, since: int) -> bool:
     return any(m.get("ok") is True for m in logged_events(host.log, DEVICE_RESULT, since))
 
 
+def is_door(server: Server, cell: tuple[int, int, int], state: str = "") -> bool:
+    """A door of any of DOOR_BLOCKS stands at `cell` (with block state `state`, such as `[open=true]`)."""
+    x, y, z = cell
+    return any(server.passes(f"execute if block {x} {y} {z} {block}{state}") for block in DOOR_BLOCKS)
+
+
 def device_stands(server: Server, key: str, shift: int = 0) -> bool:
-    """The device is a block at its cell: a door of the `#minecraft:doors` tag for the two doors, anything but air for the others."""
-    x, y, z = fakehost.device_cell(key, shift)
-    return server.passes(f"execute if block {x} {y} {z} #minecraft:doors") if key in DOOR_KEYS else server.passes(f"execute unless block {x} {y} {z} minecraft:air")
+    """The device is a block at its cell: a door (DOOR_BLOCKS) for the two doors, anything but air for the others."""
+    x, y, z = cell = fakehost.device_cell(key, shift)
+    return is_door(server, cell) if key in DOOR_KEYS else server.passes(f"execute unless block {x} {y} {z} minecraft:air")
 
 
 def door_is_open(server: Server, key: str, shift: int = 0) -> bool:
-    x, y, z = fakehost.device_cell(key, shift)
-    return server.passes(f"execute if block {x} {y} {z} #minecraft:doors[open=true]")
+    return is_door(server, fakehost.device_cell(key, shift), "[open=true]")
 
 
 def guest_act(server: Server, key: str, act: str) -> None:
-    """As the guest: use the block of device `key` the way a right-click does (the devtools command sends the `cyberblock:act` `devact`)."""
+    """As the guest: use the block of device `key` the way a right-click does (the devtools command takes the same server-side use path)."""
     x, y, z = fakehost.device_cell(key)
     time.sleep(GUEST_GAP_S)
     server.test(f"device {x} {y} {z} {act}", as_player="CbGuest1")

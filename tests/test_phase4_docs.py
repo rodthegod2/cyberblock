@@ -92,7 +92,7 @@ def test_the_changelog_has_a_phase_4_entry_above_the_phase_3_one():
 
 def test_the_descopes_note_lists_the_risks_of_the_plan_and_the_contract_limits():
     text = flat(DESCOPES)
-    for phrase in ("Lift call and vending purchase are greyed", "No size", "Position-based ids", "Polling fallback", "Containers", "Only `st` and `fl` travel",
+    for phrase in ("Lift call is greyed; vending is a Minecraft shop", "Door models","No size", "Position-based ids", "Polling fallback", "Containers", "Only `st` and `fl` travel",
                    "`disable` reads as quest-locked", "`by:guest`", "Reach and rate", "The first real run is the test", "`devact` payload", "Devtools command",
                    "Contract additions made by 4P", "no full or partial mark"):
         assert phrase in text, f"phase4-descopes.md does not say {phrase!r}"

@@ -14,14 +14,15 @@ Phase 4 of the multiplayer plan: **Night City's devices as Minecraft blocks**. T
 mod, plugin and scripts of Phase 4 have their own entries. The in-game list is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md),
 "Re-test: Wave B, Phase 4".
 - **Protocol.** `shared/protocol.md` "Phase 4": `devices` (at most 64 devices within 48 m: the new and changed ones and a full list every 5 s, no `size`),
-  `devstate` (`by` `npc`, `host`, `guest` or `script`), `devresult`, `devact` (DOWN to the owner only), the `cyberblock:act` `t:"devact"` payload (`pos`, `act` or
-  `use`, `i` and `n` for `buy`), the device kinds with their toggle bits, the 14 acts (the DLL runs 11, `call`, `buy` and `breach` are `unsupported`), class rows
-  for the four types, validators, names and examples in `tests/test_protocol_md.py`.
+  `devstate` (`by` `npc`, `host`, `guest` or `script`), `devresult`, `devact` (DOWN to the owner only), the `cyberblock:act` `t:"devact"` payload (only the vending
+  screen's purchase: `pos`, `act` `buy`, the shop `line`; right-clicks go through the server's use path and send no payload), the vending shop
+  `cyberblock:ui` `t:"shop"` (`pos`, `title`, `eddies`, `result`, up to 27 `lines`), the device kinds with their toggle bits, the 14 acts (the DLL runs
+  11, `call`, `buy` and `breach` are `unsupported`), class rows for the four types, validators, names and examples in `tests/test_protocol_md.py`.
 - **Fake host.** `tools.fakehost --devices`: a door, a light, a camera, a vending machine, a lift, a sealed quest door and a door a Night City
   person opens and closes every 4 s (`devstate by:npc`) on the replica street's ground, a `ground` column through the guest door (the server must keep the door),
   and every `devact` answered with a `devresult` (and the `devstate by:guest`): ok for the supported acts, `unsupported` for `call`/`buy`/`breach`,
   `quest locked`, `device gone`. `--shift` moves the scene for a second host.
-- **Harness.** `tools.mpcheck devices`: the devices stand as blocks (the doors as `#minecraft:doors`), the guest door ground does not become a replica block,
+- **Harness.** `tools.mpcheck devices`: the devices stand as blocks (the doors as `#minecraft:doors` or 4B's `cyberblock:device_door` and `cyberblock:device_iron_door`), the guest door ground does not become a replica block,
   a guest's use reaches the owner's DLL and opens, closes and switches in Minecraft, the NPC door follows Night City, a quest door and a lift call change
   nothing, `/cyberblock guests devices door off` blocks only doors, the whole `devices` toggle blocks all, and the devices go with the session. It
   needs 4M's `/cyberblock test device <x> <y> <z> <act>` (run as the guest).

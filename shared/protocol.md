@@ -1055,7 +1055,8 @@ before it sends, as for `npcs`).
   `unlock`, `on`, `off`, `disable`, `enable`, `distract` and `friendly`** through the device's own persistent-state actions and answers
   `devresult ok:true` once it did (and sends the `devstate`); `call`, `buy` and `breach` are not Cyberpunk actions (a lift call is unproven,
   vending is a Minecraft shop paid in eddies, Breach is a Minecraft minigame whose daemons send the supported acts), so the DLL answers
-  `{ok:false, reason:"unsupported"}`. The server greys those controls (`cyberblock.device.unsupported`) and does not send them. A device
+  `{ok:false, reason:"unsupported"}`. The server does not send them: it greys those controls (`cyberblock.device.unsupported`) for
+  `call` and `breach`, and a vending machine opens its Minecraft shop instead of sending `buy`. A device
   that is quest-locked is never touched (`reason` `quest locked`), and a device that is gone answers `device gone`; the reason is free
   text of at most 128 UTF-8 bytes, `""` exactly when `ok` is true.
 - **Who may send it.** `devact` is DOWN to the device's **owner only**. A guest's request needs the owner's `devices` toggle **and** the bit of the
@@ -1076,14 +1077,22 @@ before it sends, as for `npcs`).
 ### Phase 4: payloads (client ↔ server)
 | Id | Direction | Fields | When |
 |---|---|---|---|
-| `cyberblock:act` `t:"devact"` | C2S | `pos:[x, y, z]` the block the player used (three whole numbers, `\|c\| ≤ 30000000`), `act` one of the fourteen device acts or `use` (what a right-click does for that kind of device; a missing `act` is `use`), and for `buy` only: `i` the shop row (0..23) and `n` how many (1..16) | a player right-clicks a device block (a door, a lamp switch, a camera, a lift call button, a turret, a vending machine); `json` is at most 8000 bytes like every `act` |
+| `cyberblock:act` `t:"devact"` | C2S | `pos:[x, y, z]` the vending machine's block (three whole numbers, `\|c\| ≤ 30000000`), `act` exactly `buy`, `line` the id of the shop line to buy (a string of 1 to 32 characters, one of the `id`s of the `shop` the server sent) | the vending screen's purchase, and nothing else; `json` is at most 8000 bytes like every `act` |
+| `cyberblock:ui` `t:"shop"` | S2C | `pos:[x, y, z]` the machine's block, `title` at most 64 characters (`""`: the screen's own "Vending machine"), `eddies` the player's Minecraft eddies as the server counts them (a whole number ≥ 0), `result` the answer to the player's last purchase, one of the shop results below (`""` none), `lines:[{id, item, n, price, stock}]` at most 27 lines: `id` 1 to 32 characters, `item` an item id (`namespace:path`), `n` how many one purchase gives (1..64), `price` in eddies (0..1000000), `stock` how many purchases are left (-1 not known, else 0..9999) | a player right-clicks a vending machine (the server opens its shop), and again after each purchase with the new balance, counts and result |
 
-- **Which device.** The server finds the device whose block stands at `pos` (any block of a multi-block device counts) and takes its owner and id from
-  its own registry, so the client never names an owner or an id: a `pos` with no device block is dropped (counted), and one farther than 8 blocks from the player is
-  refused (`cyberblock.device.out_of_range`). A second use by the same player within 4 ticks is ignored. After the permission check the server turns the
-  request into the DOWN `devact` above (with a fresh request id remembered for the asker), shows the shop of a vending machine (`buy` with `i` and `n` is
-  paid in Minecraft eddies and never goes DOWN), or greys the control (`call`, `breach`, a quest-locked device, a locked door that would open: a message on
-  the action bar, nothing is sent). An `act` the server does not know is greyed like `call`.
+- **Right-clicks send no payload.** A right-click on a device block (a door, a lamp switch, a camera, a lift call button, a turret, a vending
+  machine) is handled on the server through Minecraft's own use path: the server finds the device whose block stands there (any block of a
+  multi-block device counts) and takes its owner and id from its own registry, so the client never names an owner or an id. A second use by the
+  same player within 4 ticks is ignored. After the permission check the server turns the use into the DOWN `devact` above (with a fresh request id
+  remembered for the asker), opens the shop of a vending machine (paid in Minecraft eddies, never sent DOWN), or greys the control (`call`,
+  `breach`, a quest-locked device, a locked door that would open: a message on the action bar, nothing is sent).
+- **Which device (the `buy` payload).** `cyberblock:act` `t:"devact"` is only the vending screen's purchase. Any other `act`, a `pos` with no device
+  block, or one farther than 8 blocks from the player's eyes is dropped (logged at debug level, not counted, no message). The server checks the
+  line, the price and the player's eddies itself (the client is never trusted with a price or a balance), pays in Minecraft eddies, and sends the
+  `shop` again with the `result`; a purchase never goes DOWN.
+- **Shop results** (`shop.result`) — `""` (no purchase yet), `ok`, `poor` (not enough eddies), `stock` (sold out), `full` (no room), `far`
+  (out of reach), `gone` (the machine or its line left), `refused` (the host's toggles); the screen shows `cyberblock.shop.result.<code>`.
+  A `shop` that breaks a limit is dropped by the client.
 - **Answers.** A `devresult` is routed to the asker the request id was issued for; `ok:false` shows its reason on the action bar. The next
   `devstate` (or the `devresult ok:true`) updates the block for everyone.
 
@@ -1119,8 +1128,12 @@ Phase 4 examples, Minecraft to Cyberpunk:
 
 Phase 4 examples, client to server (`cyberblock:act`, `t:"devact"`):
 ```jsonl
-{"pos":[-1239,64,811],"act":"open"}
-{"pos":[-1242,64,806],"act":"buy","i":0,"n":2}
+{"pos":[-1242,64,806],"act":"buy","line":"0"}
+```
+
+Phase 4 examples, server to client (`cyberblock:ui`, `t:"shop"`):
+```jsonl
+{"pos":[-1242,64,806],"title":"","eddies":85,"result":"ok","lines":[{"id":"0","item":"minecraft:honey_bottle","n":1,"price":15,"stock":-1},{"id":"1","item":"minecraft:bread","n":2,"price":10,"stock":4}]}
 ```
 
 ## Shared memory `Local\CyberblockFrame`

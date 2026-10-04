@@ -1275,11 +1275,12 @@ def test_the_replica_helpers_read_the_answers_rcon_gives():
 
 
 # ---- Phase 4: the `devices` scenario against a simulated server (megaplan 4-P1) ------------------------------------------------------
-# An ideal 4M/4B server as the plan describes it: the fake host's `devices` become blocks (doors are vanilla doors), a guest's `devact`
+# An ideal 4M/4B server as the plan describes it: the fake host's `devices` become blocks (the guest door is 4B's `cyberblock:device_door`, as 4M places it when 4B is merged, and the NPC door a vanilla door, as without 4B; the quest door 4B's iron door), a guest's `devact`
 # is checked against the owner's toggles and the device type's bit, goes to the owner's DLL (the real fake host logic answers it) and
 # its `devresult`/`devstate` change the block; NPC changes show; quest doors and unsupported acts are never sent; the devices go with the
 # session. `bugs` switch parts off. One simulated second of the fake host's script is SIM real seconds.
 DEVICE_KIND_OF = {key: kind for key, _, _, kind, *_ in fakehost.DEVICE_SCENE}
+SIM_DOOR_BLOCKS = {"door": "cyberblock:device_door", "npcdoor": "#minecraft:doors", "sealed": "cyberblock:device_iron_door"}
 
 
 class Sim4Server(Sim3Server):
@@ -1299,7 +1300,8 @@ class Sim4Server(Sim3Server):
             if cell in self.replica and "door-replica" in self.bugs:  # the bug: a replica block is in the way of the door
                 continue
             door = DEVICE_KIND_OF[key] == "door"  # the sealed quest door is a (greyed) door too
-            self.dev_blocks[cell] = {"id": entry["id"], "owner": owner, "key": key, "door": door, "open": entry["st"] == 1}
+            block = SIM_DOOR_BLOCKS.get(key, "cyberblock:device") if door else "cyberblock:device"
+            self.dev_blocks[cell] = {"id": entry["id"], "owner": owner, "key": key, "door": door, "block": block, "open": entry["st"] == 1}
             for cleared in (cell, (cell[0], cell[1] + 1, cell[2])) if door else (cell,):  # the device replaces replica cells (a door's top half too)
                 self.replica.discard(cleared)
                 self.world.pop(cleared, None)
@@ -1326,9 +1328,9 @@ class Sim4Server(Sim3Server):
     # -- commands ---------------------------------------------------------------------------------------------------------------
     def rcon(self, command):
         self.advance()
-        if match := re.fullmatch(r"execute if block (-?\d+) (-?\d+) (-?\d+) #minecraft:doors(\[open=true\])?", command):
+        if match := re.fullmatch(r"execute if block (-?\d+) (-?\d+) (-?\d+) (#minecraft:doors|cyberblock:device_door|cyberblock:device_iron_door)(\[open=true\])?", command):
             block = self.dev_blocks.get(tuple(int(v) for v in match.groups()[:3]))
-            return "Test passed" if block and block["door"] and (not match.group(4) or block["open"]) else "Test failed"
+            return "Test passed" if block and block["door"] and block["block"] == match.group(4) and (not match.group(5) or block["open"]) else "Test failed"
         if match := re.fullmatch(r"execute unless block (-?\d+) (-?\d+) (-?\d+) minecraft:air", command):
             cell = tuple(int(v) for v in match.groups())
             return "Test passed" if cell in self.dev_blocks or cell in self.world else "Test failed"
@@ -1491,9 +1493,11 @@ def test_the_device_helpers_read_the_answers_rcon_gives():
             return mpcheck.passed(self.answers.get(command, "Test failed"))
 
     x, y, z = fakehost.device_cell("door")
-    stands = S({f"execute if block {x} {y} {z} #minecraft:doors": "Test passed"})
-    assert mpcheck.device_stands(stands, "door") and not mpcheck.device_stands(stands, "npcdoor") and not mpcheck.door_is_open(stands, "door")
-    assert mpcheck.door_is_open(S({f"execute if block {x} {y} {z} #minecraft:doors[open=true]": "Test passed"}), "door")
+    for block in ("#minecraft:doors", "cyberblock:device_door", "cyberblock:device_iron_door"):  # vanilla doors or 4B's door blocks
+        stands = S({f"execute if block {x} {y} {z} {block}": "Test passed"})
+        assert mpcheck.device_stands(stands, "door") and not mpcheck.device_stands(stands, "npcdoor") and not mpcheck.door_is_open(stands, "door")
+        assert mpcheck.door_is_open(S({f"execute if block {x} {y} {z} {block}[open=true]": "Test passed"}), "door")
+    assert not mpcheck.device_stands(S({f"execute if block {x} {y} {z} minecraft:stone": "Test passed"}), "door")  # any other block is no door
     lx, ly, lz = fakehost.device_cell("light")
     assert mpcheck.device_stands(S({f"execute unless block {lx} {ly} {lz} minecraft:air": "Test passed"}), "light")  # a light is any block
     sx, sy, sz = fakehost.device_cell("sealed")

@@ -1698,6 +1698,7 @@ def test_p3_section_sits_between_multiplayer_and_the_shared_memory_section():
 P4_CP_TO_MC, P4_MC_TO_CP = "Phase 4: Cyberpunk → Minecraft", "Phase 4: Minecraft → Cyberpunk"
 P4_CP_EXAMPLES, P4_MC_EXAMPLES = "Phase 4 examples, Cyberpunk to Minecraft:", "Phase 4 examples, Minecraft to Cyberpunk:"
 P4_ACT_EXAMPLES = "Phase 4 examples, client to server (`cyberblock:act`, `t:\"devact\"`):"
+P4_UI_EXAMPLES = "Phase 4 examples, server to client (`cyberblock:ui`, `t:\"shop\"`):"
 P4_SECTION, P4_PAYLOADS = "Phase 4 semantics and limits", "Phase 4: payloads (client ↔ server)"
 DEVICE_KINDS, DEVICE_ACTS = names("Device kinds"), names("Device acts")
 SUPPORTED_ACTS, DEVICE_BY = names("Supported acts"), names("State changers")
@@ -1732,13 +1733,34 @@ def devact_ok(m) -> bool:
     return set(m) == {"t", "id", "dev", "act"} and whole(m["id"]) and dev_id_ok(m["dev"]) and m["act"] in DEVICE_ACTS
 
 
+def block_pos_ok(pos) -> bool:
+    return isinstance(pos, list) and len(pos) == 3 and all(whole(c, -POS_LIMIT, POS_LIMIT) for c in pos)
+
+
 def devact_payload_ok(m) -> bool:
-    """`cyberblock:act` `t:"devact"`: the block the player used and the act (the server finds the device and its owner): `act` is one of the
-    fourteen or `use` (a missing one is `use`); `i` (a shop row 0..23) and `n` (1..16) only go with `buy`."""
-    pos = m.get("pos")
-    return (set(m) <= {"pos", "act", "i", "n"} and isinstance(pos, list) and len(pos) == 3 and all(whole(c, -POS_LIMIT, POS_LIMIT) for c in pos)
-            and m.get("act", "use") in (*DEVICE_ACTS, "use") and ("i" not in m or (m.get("act") == "buy" and whole(m["i"], 0, 23)))
-            and ("n" not in m or (m.get("act") == "buy" and whole(m["n"], 1, 16))))
+    """`cyberblock:act` `t:"devact"`: only the vending screen's purchase (4B's ShopWire.buy / DeviceHooks): the machine's block, `act` exactly
+    `buy` and the shop `line` id (1..32 chars). Right-clicks go through the server's use path and send no payload."""
+    line = m.get("line")
+    return (set(m) == {"pos", "act", "line"} and block_pos_ok(m["pos"]) and m["act"] == "buy" and isinstance(line, str)
+            and 1 <= len(line) <= SHOP_ID_CAP)
+
+
+SHOP_RESULTS = ("", "ok", "poor", "stock", "full", "far", "gone", "refused")
+SHOP_MAX_LINES, SHOP_TITLE_CAP, SHOP_ID_CAP, SHOP_MAX_PRICE, SHOP_MAX_STOCK = 27, 64, 32, 1_000_000, 9999
+SHOP_ITEM = re.compile(r"[a-z0-9_.-]{1,64}:[a-z0-9_./-]{1,128}")  # 4B's ShopWire.ITEM
+
+
+def shop_line_ok(line) -> bool:
+    return (isinstance(line, dict) and set(line) == {"id", "item", "n", "price", "stock"} and isinstance(line["id"], str)
+            and 1 <= len(line["id"]) <= SHOP_ID_CAP and isinstance(line["item"], str) and SHOP_ITEM.fullmatch(line["item"]) is not None
+            and whole(line["n"], 1, 64) and whole(line["price"], 0, SHOP_MAX_PRICE) and whole(line["stock"], -1, SHOP_MAX_STOCK))
+
+
+def shop_ok(m) -> bool:
+    """`cyberblock:ui` `t:"shop"` (4B's ShopWire.shop, sent by 4M's Vending): one machine's shop as one player sees it."""
+    return (set(m) == {"pos", "title", "eddies", "result", "lines"} and block_pos_ok(m["pos"]) and isinstance(m["title"], str)
+            and len(m["title"]) <= SHOP_TITLE_CAP and whole(m["eddies"]) and m["result"] in SHOP_RESULTS and isinstance(m["lines"], list)
+            and len(m["lines"]) <= SHOP_MAX_LINES and all(shop_line_ok(line) for line in m["lines"]))
 
 
 P4_VALIDATORS = {"devices": devices_ok, "devstate": devstate_ok, "devresult": devresult_ok, "devact": devact_ok}
@@ -1780,10 +1802,24 @@ def test_p4_example_obeys_the_documented_limits(t, m):
     assert P4_VALIDATORS[t](m)
 
 
-def test_p4_the_act_payload_example_is_valid_and_matches_the_devact_example():
-    payloads = examples(P4_ACT_EXAMPLES)
-    assert len(payloads) == 2 and all(devact_payload_ok(m) for m in payloads) and payloads[1]["act"] == "buy" and {"i", "n"} <= set(payloads[1])  # a use and a purchase
-    assert payloads[0]["act"] == p4_example("devact")["act"] and payloads[0]["pos"] == [math.floor(c) for c in p4_example("devices")["list"][0]["p"]]
+def test_p4_the_buy_payload_and_the_shop_examples_are_valid_and_tell_one_story():
+    payloads, shops = examples(P4_ACT_EXAMPLES), examples(P4_UI_EXAMPLES)
+    assert len(payloads) == 1 and devact_payload_ok(payloads[0]) and len(shops) == 1 and shop_ok(shops[0])
+    vending = next(e for e in p4_example("devices")["list"] if e["kind"] == "vending")
+    buy, shop = payloads[0], shops[0]
+    assert buy["pos"] == shop["pos"] == [math.floor(c) for c in vending["p"]]  # the machine's block
+    assert buy["line"] in {line["id"] for line in shop["lines"]} and shop["result"] == "ok"  # the shop sent again after that purchase
+
+
+def test_p4_payload_rows_name_every_example_field_and_the_shop_results():
+    rows = {m.group(1): m.group(0) for m in re.finditer(r'^\| `cyberblock:\w+` `t:"(\w+)"` \|.*$', section(P4_PAYLOADS), re.M)}
+    assert set(rows) == {"devact", "shop"}
+    for key in ("pos", "act", "line"):
+        assert f"`{key}" in rows["devact"], key
+    for key in ("pos", "title", "eddies", "result", "lines", "id", "item", "n", "price", "stock"):
+        assert re.search(rf"`{key}\b", rows["shop"]), key
+    bullet = section(P4_PAYLOADS).split("- **Shop results**", 1)[1].split("\n- **", 1)[0]
+    assert all(f"`{code}`" in bullet for code in SHOP_RESULTS if code) and '`""`' in bullet
 
 
 def test_p4_names_have_the_plan_values():
@@ -1821,8 +1857,10 @@ def test_p4_rules_are_stated_in_the_document():
                    "needs the owner's `devices` toggle **and** the bit of the device's kind", "`cyberblock.guest.blocked`", "never shows a state Night City refused",
                    "`/cyberblock guests devices <type> on|off`", "never fatal", "10 per second, burst 40", "probe ray that hits a device is cast again past it",
                    "never makes a replica block inside a device's box", "`cyberblock.device.quest_locked`", "bit 2 (devices)",
-                   "the client never names an owner or an id", "a `pos` with no device block is dropped", "fresh request id", "8000 bytes", "or `use`",
-                   "farther than 8 blocks", "within 4 ticks", "never goes DOWN", "a DLL that gets one anyway answers `unsupported`"):
+                   "the client never names an owner or an id", "a `pos` with no device block", "fresh request id", "8000 bytes", "exactly `buy`",
+                   "farther than 8 blocks", "within 4 ticks", "a purchase never goes DOWN", "a DLL that gets one anyway answers `unsupported`",
+                   "Right-clicks send no payload", "Minecraft's own use path", "only the vending screen's purchase", "not counted, no message",
+                   "never trusted with a price or a balance", "opens its Minecraft shop instead of sending `buy`"):
         assert phrase in text, f"{phrase!r} is not stated"
 
 
@@ -1886,10 +1924,52 @@ def test_p4_validators_accept_the_limits_themselves():
     assert devresult_ok(p4_example("devresult", ok=False, reason="unsupported")) and devresult_ok(p4_example("devresult", ok=False, reason="é" * 64))
     assert not devresult_ok(p4_example("devresult", ok=False, reason="é" * 65))  # 130 bytes
     assert devact_ok(p4_example("devact", id=0)) and devact_ok(p4_example("devact", id=2**31 - 1))
-    assert all(devact_payload_ok({"pos": [-POS_LIMIT, 0, POS_LIMIT], "act": act}) for act in (*DEVICE_ACTS, "use")) and devact_payload_ok({"pos": [0, 0, 0]})
-    assert devact_payload_ok({"pos": [0, 0, 0], "act": "buy", "i": 23, "n": 16}) and devact_payload_ok({"pos": [0, 0, 0], "act": "buy", "i": 0})
-    for bad in ({"pos": [1, 2], "act": "open"}, {"pos": [1.5, 2, 3], "act": "open"}, {"pos": [POS_LIMIT + 1, 0, 0], "act": "open"},
-                {"pos": [0, 0, 0], "act": "dig"}, {"act": "open"}, {"pos": [0, 0, 0], "act": "open", "owner": "x"}, {"pos": "0,0,0", "act": "open"},
-                {"pos": [0, 0, 0], "act": "open", "i": 1}, {"pos": [0, 0, 0], "act": "buy", "i": 24}, {"pos": [0, 0, 0], "act": "buy", "n": 0},
-                {"pos": [0, 0, 0], "act": "buy", "n": 17}, {"pos": [0, 0, 0], "act": "buy", "i": 1.5}, {"pos": [0, 0, 0], "act": None}):
+    assert devact_payload_ok({"pos": [-POS_LIMIT, 0, POS_LIMIT], "act": "buy", "line": "x" * SHOP_ID_CAP}) and devact_payload_ok({"pos": [0, 0, 0], "act": "buy", "line": "0"})
+    buy = {"pos": [0, 0, 0], "act": "buy", "line": "0"}
+    for bad in ({**buy, "pos": [1, 2]}, {**buy, "pos": [1.5, 2, 3]}, {**buy, "pos": [POS_LIMIT + 1, 0, 0]}, {**buy, "pos": "0,0,0"},
+                *({**buy, "act": act} for act in (*(a for a in DEVICE_ACTS if a != "buy"), "use", None)), {"pos": [0, 0, 0], "act": "open"},
+                {"pos": [0, 0, 0]}, {"act": "buy", "line": "0"}, {"pos": [0, 0, 0], "act": "buy"}, {**buy, "line": ""}, {**buy, "line": "x" * 33},
+                {**buy, "line": 0}, {**buy, "owner": "x"}, {"pos": [0, 0, 0], "act": "buy", "i": 0, "n": 2}):
         assert not devact_payload_ok(bad), bad
+
+
+def _shop(**changes):
+    m = copy.deepcopy(examples(P4_UI_EXAMPLES)[0])
+    m.update(changes)
+    return m
+
+
+def _shop_line(**changes):
+    line = copy.deepcopy(examples(P4_UI_EXAMPLES)[0]["lines"][0])
+    line.update(changes)
+    return line
+
+
+def test_p4_shop_validator_accepts_the_limits_themselves():
+    full = [_shop_line(id=str(i)) for i in range(SHOP_MAX_LINES)]
+    assert shop_ok(_shop(lines=full)) and shop_ok(_shop(lines=[])) and shop_ok(_shop(title="x" * SHOP_TITLE_CAP, eddies=0))
+    assert all(shop_ok(_shop(result=code)) for code in SHOP_RESULTS)
+    assert shop_ok(_shop(lines=[_shop_line(id="x" * SHOP_ID_CAP, n=64, price=SHOP_MAX_PRICE, stock=SHOP_MAX_STOCK)]))
+    assert shop_ok(_shop(lines=[_shop_line(n=1, price=0, stock=-1)])) and shop_ok(_shop(lines=[_shop_line(stock=0)]))
+
+
+def _shop_out_of_limits():
+    line = _shop_line
+    return [
+        _shop(lines=[line(id=str(i)) for i in range(SHOP_MAX_LINES + 1)]), _shop(title="x" * (SHOP_TITLE_CAP + 1)), _shop(title=None),
+        _shop(eddies=-1), _shop(eddies=1.5), _shop(eddies=True), _shop(result="maybe"), _shop(result=None), _shop(pos=[0, 0]),
+        _shop(pos=[0.5, 0, 0]), _shop(pos=[POS_LIMIT + 1, 0, 0]), _shop(lines="none"), {k: v for k, v in _shop().items() if k != "eddies"},
+        {**_shop(), "owner": "x"}, _shop(lines=[line(id="")]), _shop(lines=[line(id="x" * (SHOP_ID_CAP + 1))]), _shop(lines=[line(item="honey")]),
+        _shop(lines=[line(item="Minecraft:Bread")]), _shop(lines=[line(n=0)]), _shop(lines=[line(n=65)]), _shop(lines=[line(price=-1)]),
+        _shop(lines=[line(price=SHOP_MAX_PRICE + 1)]), _shop(lines=[line(stock=-2)]), _shop(lines=[line(stock=SHOP_MAX_STOCK + 1)]),
+        _shop(lines=[{k: v for k, v in line().items() if k != "price"}]), _shop(lines=[{**line(), "extra": 1}]), _shop(lines=[7]),
+    ]
+
+
+@pytest.mark.parametrize("m", _shop_out_of_limits(), ids=lambda m: "shop")
+def test_p4_shop_validator_rejects_out_of_limit_messages(m):
+    try:
+        ok = shop_ok(m)
+    except (KeyError, TypeError):
+        ok = False
+    assert not ok, m
