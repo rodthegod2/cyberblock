@@ -15,6 +15,7 @@ import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -150,6 +151,25 @@ class DeviceRegistryTest {
 		assertTrue(this.world.get(cell(4, 64, 0)).isAir());
 		assertEquals(0, this.registry.size());
 		assertFalse(this.registry.excluded(cell(4, 64, 0)));
+	}
+
+	@Test
+	void aPlayersBlockEqualToTheDevicesBlockIsNeitherClaimedNorRemoved() {
+		// a player's oak door (the door's block here) and redstone lamp (the light's vanilla stand-in) stand where the devices go
+		BlockState lower = Blocks.OAK_DOOR.defaultBlockState(), upper = lower.setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER);
+		this.world.put(cell(0, 64, 0), lower);
+		this.world.put(cell(0, 65, 0), upper);
+		Device light = new Device(2, true, "Light", DeviceType.LIGHT, 4.5, 64.0, 0.5, 0, Device.ST_ON, 16);
+		long lightCell = DeviceShape.cells(light, DeviceMap.entry(light.cls(), light.type()), new DeviceShape.Blocks(Blocks.REDSTONE_LAMP.defaultBlockState(), List.of()))
+			.keySet().iterator().next();
+		this.world.put(lightCell, Blocks.REDSTONE_LAMP.defaultBlockState());
+		this.registry.update(HOST, List.of(door(1, 0, Device.DOOR_CLOSED, 16), light), 0, this.cells);
+		assertNull(this.registry.at(cell(0, 64, 0)), "the player's door is not the device's");
+		assertNull(this.registry.at(lightCell), "nor the player's lamp");
+		this.registry.end(HOST, this.cells);
+		assertEquals(lower, this.world.get(cell(0, 64, 0)));
+		assertEquals(upper, this.world.get(cell(0, 65, 0)));
+		assertEquals(Blocks.REDSTONE_LAMP, this.world.get(lightCell).getBlock(), "the session ended and the player's lamp stays");
 	}
 
 	@Test

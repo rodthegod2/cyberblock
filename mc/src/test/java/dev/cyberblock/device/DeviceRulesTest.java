@@ -34,7 +34,10 @@ class DeviceRulesTest {
 		assertFalse(DeviceRules.mayPlace(air, door, false, null), "never into another device's cell");
 		assertTrue(DeviceRules.mayPlace(door, door.setValue(net.minecraft.world.level.block.DoorBlock.OPEN, true), true, door), "its own block changes state");
 		assertFalse(DeviceRules.mayPlace(stone, door, true, door), "a player's block took the cell since: it stays");
-		assertTrue(DeviceRules.mayPlace(door, door, null, null), "a leftover of the same block (a crash kept it) is taken over");
+		assertFalse(DeviceRules.mayPlace(door, door, null, null), "a vanilla block equal to the wanted one may be a player's: never claimed");
+		BlockState iron = Blocks.IRON_BLOCK.defaultBlockState();
+		assertFalse(DeviceRules.mayPlace(iron, iron, null, null), "nor a block equal to a vanilla stand-in");
+		assertFalse(DeviceRules.unownable(iron));
 	}
 
 	@Test

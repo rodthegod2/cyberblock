@@ -1,7 +1,9 @@
 package dev.cyberblock.device;
 
+import dev.cyberblock.Cyberblock;
 import dev.cyberblock.net.Permissions.DeviceType;
 import dev.cyberblock.replica.ReplicaBlocks;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jspecify.annotations.Nullable;
 
@@ -51,7 +53,9 @@ public final class DeviceRules {
 
 	/**
 	 * May a device block go into this cell? Never over another device's block or a player's block: only into air, a replica block,
-	 * its own earlier block (still the same block), or a leftover of the very block it wants (a crash left it in the save).
+	 * its own earlier block (still the same block), or a leftover of the very block it wants when that is a cyberblock block (a crash
+	 * left it in the save). Cyberblock blocks have no item, so no player owns one; a vanilla block (a stand-in, a door, a datapack's
+	 * choice) may be a player's and is never claimed.
 	 *
 	 * @param ownedByMe null when no device holds the cell, else whether this device does
 	 * @param placedHere what this device set there before, or null
@@ -65,7 +69,12 @@ public final class DeviceRules {
 			return true;
 		}
 
-		return placedHere != null && current.getBlock() == placedHere.getBlock() || current.getBlock() == want.getBlock();
+		return placedHere != null && current.getBlock() == placedHere.getBlock() || current.getBlock() == want.getBlock() && unownable(current);
+	}
+
+	/** A block no player can own: a cyberblock block (none has an item). */
+	static boolean unownable(final BlockState state) {
+		return BuiltInRegistries.BLOCK.getKey(state.getBlock()).getNamespace().equals(Cyberblock.ID);
 	}
 
 	/** The device left every list 10 s ago. */
