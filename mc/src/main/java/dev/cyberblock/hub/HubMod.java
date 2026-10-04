@@ -18,6 +18,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.level.Level;
 
 /**
@@ -35,17 +36,22 @@ public final class HubMod implements ModInitializer {
 		ServerLifecycleEvents.SERVER_STARTED.register(HubMod::started);
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> HubTravel.stopping());
 		ServerTickEvents.END_SERVER_TICK.register(HubTravel::tick);
-		// besides mayBuild (HubTravel.grounding, which covers the rest of what vanilla checks): no breaking, and none of the refused
-		// items on a block (a hub block's own use still works) or in the air
+		// besides mayBuild (HubTravel.grounding, which covers the rest of what vanilla checks, block placing included): no breaking, and
+		// none of the refused items on a block (a hub block's or the Holo-Table's own use still works) or in the air
 		PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, be) -> !Afterlife.is(level) || player.isCreative());
-		UseBlockCallback.EVENT.register((player, level, hand, hit) -> refused(player, level, hand, true)
-			&& !HubBlocks.is(level.getBlockState(hit.getBlockPos())) ? InteractionResult.FAIL : InteractionResult.PASS);
-		UseItemCallback.EVENT.register((player, level, hand) -> refused(player, level, hand, false) ? InteractionResult.FAIL : InteractionResult.PASS);
+		UseBlockCallback.EVENT.register((player, level, hand, hit) -> grounded(player, level)
+			&& HubRules.refusedOnBlock(held(player, hand), HubBlocks.usable(level.getBlockState(hit.getBlockPos())))
+			? InteractionResult.FAIL : InteractionResult.PASS);
+		UseItemCallback.EVENT.register((player, level, hand) -> grounded(player, level) && HubRules.refusedItem(held(player, hand))
+			? InteractionResult.FAIL : InteractionResult.PASS);
 	}
 
-	private static boolean refused(final Player player, final Level level, final InteractionHand hand, final boolean onBlock) {
-		return Afterlife.is(level) && HubRules.grounded(true, player.isCreative())
-			&& HubRules.refusedItem(player.getItemInHand(hand).getItem().getClass(), onBlock);
+	private static boolean grounded(final Player player, final Level level) {
+		return Afterlife.is(level) && HubRules.grounded(true, player.isCreative());
+	}
+
+	private static Class<? extends Item> held(final Player player, final InteractionHand hand) {
+		return player.getItemInHand(hand).getItem().getClass();
 	}
 
 	/** Builds the hub once, the first time the Afterlife exists; one line says whether the hub is open. */

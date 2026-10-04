@@ -1,34 +1,32 @@
-// The mechanic's repair and the medic's heal on the host's Cyberpunk side (megaplan 2026-10-04 tasks 7-S1 and 7-N1: a
-// Minecraft mechanic repairs "the host's current Cyberpunk vehicle through a verified call", a medic heals Steve).
+// The mechanic's repair of the host's Cyberpunk car (megaplan 2026-10-04 tasks 7-S1 and 7-N1: a Minecraft mechanic
+// repairs "the host's current Cyberpunk vehicle through a verified call").
 //
-// Events (Events.reds hands them here whatever the state; each refuses itself unless live):
-//   n"repair": the host's current vehicle is repaired: the one V is mounted in, else V's own car nearest to V within
-//              30 m (VehicleObject.IsPlayerVehicle; the attached-entity registry of Tether.reds). A destroyed car is
-//              refused (a wreck stays a wreck).
-//   n"heal":   Steve's health is the only health (Health.reds), so the medic heals Steve in Minecraft; on V's side the
-//              damage-over-time effects that would keep hurting Steve through Health.reds (burning, bleeding, poison,
-//              shock: every effect tagged DoT) are removed and V's own Health pool is filled.
-//   Cyberblock_EventId = the request id (logged only: no result native is named for these in section 1.8).
-// Section 1.8 names no Phase 7 event for either (only hub, buy, sell): the DLL queues them once the integrator adds the
-// wire message; until then these hooks are reached only by that change (a contract deviation in the 7S report).
+// NOT WIRED (Phase 7 descope, megaplan Phase 7 "Descopes and risks", 7S fix amendment): sections 1.8 and 1.9 name no
+// `repair` wire message, the DLL has no `repair` event kind and no result native, so nothing queues n"repair" and
+// Minecraft's Garage greys the host car repair out ("your Cyberpunk game cannot confirm a car repair"). This hook is the
+// Cyberpunk half, ready for when the integrator adds the contract: a DOWN `repair {id}`, the DLL event kind, a result
+// back to Minecraft so Garage can confirm it and charge (section 1.16), and the server-side permission and rate limit.
+// The script itself charges nothing and only refuses a second repair while one is being checked. The medic needs no
+// Cyberpunk hook: 7-N1's medic heals Steve for eddies on the Minecraft side (Steve's health is the only health).
+//
+// Event n"repair" (Events.reds hands it here whatever the state; refused unless live): the host's current vehicle is
+// repaired: the one V is mounted in, else V's own car nearest to V within 30 m (VehicleObject.IsPlayerVehicle; the
+// attached-entity registry of Tether.reds). A destroyed car is refused (a wreck stays a wreck).
+// Cyberblock_EventId = the request id (logged only).
 //
 // The repair is not proven in game, so it is checked at runtime: vanilla's own path is used first, a VehicleRepairEvent
 // queued on the car (VehicleComponent.OnVehicleRepairEvent runs VehicleComponent.RepairVehicle). 10 ticks (1 s) later
 // the car's Health pool must be at least 99 %; if it is not, the written fallback runs: VehicleComponent.RepairVehicle
 // called directly, the destruction grid and glass reset (VehicleObject.DestructionResetGrid/DestructionResetGlass) and
-// the Health pool set to its maximum. The heal is checked at once: an effect tagged DoT left after
-// StatusEffectHelper.RemoveStatusEffectsWithTag is removed by its record (the fallback).
-// Log lines: 'mechanic: repair <id> refused (<why>)', 'mechanic: repair <id> started on <car> (hp N %)',
-// 'mechanic: repaired <car> (repair event, hp N %)', 'mechanic: repaired <car> (fallback: direct reset; the repair event
-// left hp at N %)', 'medic: heal <id> refused (<why>)', 'medic: healed V (N DoT effects removed[, fallback: by record];
-// health pool full)'. Results are also Minecraft toasts.
+// the Health pool set to its maximum.
+// Log lines (the in-game check once wired): 'mechanic: repair <id> refused (<why>)', 'mechanic: repair <id> started on
+// <car> (hp N %)', then 'mechanic: repaired <car> (repair event, hp N %)' (vanilla path) or 'mechanic: repaired <car>
+// (fallback: direct reset; the repair event left hp at N %)'. Results are also Minecraft toasts.
 //
 // 2.31 script API (NativeDB, redscript), compile-checked by cp/scripts/compile_check.py: VehicleComponent.GetVehicle(
 // GameInstance, wref<GameObject>, out wref<VehicleObject>), VehicleObject.IsPlayerVehicle/IsDestroyed/GetVehicleComponent/
 // DestructionResetGrid/DestructionResetGlass, VehicleRepairEvent, Entity.QueueEvent, VehicleComponent.RepairVehicle,
 // StatPoolsSystem.GetStatPoolValue(StatsObjectID, gamedataStatPoolType, Bool)/RequestSettingStatPoolMaxValue,
-// StatusEffectHelper.RemoveStatusEffectsWithTag(GameObject, CName)/RemoveStatusEffect(GameObject, TweakDBID),
-// StatusEffectSystem.GetAppliedEffectsWithTag(EntityID, CName, out array<ref<StatusEffect>>), StatusEffect.GetRecord,
 // GameObject.GetDisplayName.
 
 public class CyberblockServicesService extends ScriptableService {
@@ -43,14 +41,9 @@ public class CyberblockServicesService extends ScriptableService {
 }
 
 public abstract class CyberblockServices {
-  // An n"repair" or n"heal" event is current (Cyberblock_NextEvent). live: Active or Vehicle, with a player, not saving.
-  public static func OnEvent(game: GameInstance, kind: CName, live: Bool) -> Void {
-    let id = Cyberblock_EventId();
-    if Equals(kind, n"repair") {
-      CyberblockServices.Repair(game, id, live);
-    } else {
-      CyberblockServices.Heal(game, id, live);
-    }
+  // An n"repair" event is current (Cyberblock_NextEvent). live: Active or Vehicle, with a player, not saving.
+  public static func OnEvent(game: GameInstance, live: Bool) -> Void {
+    CyberblockServices.Repair(game, Cyberblock_EventId(), live);
   }
 
   // "" when the repair started, else why not.
@@ -88,33 +81,6 @@ public abstract class CyberblockServices {
     s.checkIn = 10;
     Cyberblock_Log(s"mechanic: repair \(id) started on \(s.carName) (hp \(RoundF(CyberblockServices.CarHp(game, car))) %)");
     car.QueueEvent(new VehicleRepairEvent());
-    return "";
-  }
-
-  // "" when V was healed, else why not.
-  public static func Heal(game: GameInstance, id: Int32, live: Bool) -> String {
-    let player = GetPlayer(game);
-    if !IsDefined(player) || !live {
-      let why = "Cyberblock is not active";
-      Cyberblock_Log(s"medic: heal \(id) refused (\(why))");
-      return why;
-    }
-    let effects = GameInstance.GetStatusEffectSystem(game);
-    let entity = player.GetEntityID();
-    let before: array<ref<StatusEffect>>;
-    effects.GetAppliedEffectsWithTag(entity, n"DoT", before);
-    StatusEffectHelper.RemoveStatusEffectsWithTag(player, n"DoT");
-    let left: array<ref<StatusEffect>>;
-    effects.GetAppliedEffectsWithTag(entity, n"DoT", left);
-    let fallback = ArraySize(left) > 0;
-    for effect in left {
-      if IsDefined(effect) && IsDefined(effect.GetRecord()) {
-        StatusEffectHelper.RemoveStatusEffect(player, effect.GetRecord().GetID());
-      }
-    }
-    GameInstance.GetStatPoolsSystem(game).RequestSettingStatPoolMaxValue(Cast<StatsObjectID>(entity), gamedataStatPoolType.Health, player);
-    Cyberblock_Log(s"medic: healed V (\(ArraySize(before)) DoT effects removed\(fallback ? ", fallback: by record" : ""); health pool full)");
-    Cyberblock_Notify(n"info", "Medic", "Patched up", 2.0);
     return "";
   }
 

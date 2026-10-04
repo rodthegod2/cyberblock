@@ -41,9 +41,47 @@ class RangeRuleTest {
 
 	@Test
 	void sightAndDistanceWordsCount() {
-		for (String reason : new String[] {"line of sight blocked", "too far", "distance", "target not visible", "unreachable", "obstructed"}) {
+		for (String reason : new String[] {"line of sight blocked", "too far", "distance", "target not visible", "unreachable", "obstructed",
+			"not hackable (no line of sight)", "Too far from V"}) {
 			RangeRule rule = new RangeRule();
 			assertTrue(rule.observe(false, reason, 60.0, "x"), reason);
 		}
+	}
+
+	@Test
+	void theScriptsOwnAnswersAndUnknownPlacesNeverCount() {
+		RangeRule rule = new RangeRule();
+		for (int i = 0; i < 5; i++) {
+			assertFalse(rule.observe(false, "not in range", 120.0, "relay open"), "Devices.reds: the device is not in its last list");
+			assertFalse(rule.observe(false, "Target Gone", 120.0, "breach port ping"), "not streamed");
+			assertFalse(rule.observe(false, "arrangement", 120.0, "x"), "whole words only");
+			assertFalse(rule.observe(false, "insightful", 120.0, "x"));
+			assertFalse(rule.observe(false, "out of range", Double.NaN, "relay open"), "V's place unknown: says nothing about 50 m");
+			assertFalse(rule.observe(false, "out of range", -1.0, "x"));
+		}
+
+		assertFalse(rule.fallback());
+		assertFalse(RangeRule.rangeRefusal("not in range"));
+		assertTrue(RangeRule.rangeRefusal("out of range"));
+		assertTrue(rule.allows(Double.NaN, true), "V's place unknown: the documented path still sends");
+		assertFalse(new RangeRule("near").allows(Double.NaN, true), "the fallback does not");
+	}
+
+	@Test
+	void thePropertyForcesOnePathForEveryRemoteAction() {
+		RangeRule near = new RangeRule("near");
+		assertTrue(near.fallback());
+		assertFalse(near.allows(60.0, true));
+		assertTrue(near.takeLine().contains("forced by -Dcyberblock.remoteRange=near"));
+		near.reset();
+		assertTrue(near.fallback(), "a new server starts on the forced path again");
+
+		RangeRule streamed = new RangeRule(" Streamed ");
+		assertFalse(streamed.observe(false, "out of range", 120.0, "x"), "the fallback stays off");
+		assertTrue(streamed.allows(500.0, true));
+		assertTrue(streamed.line().contains("forced by -Dcyberblock.remoteRange=streamed"), streamed.line());
+
+		RangeRule other = new RangeRule("bogus");
+		assertTrue(other.observe(false, "out of range", 120.0, "x"), "anything else is the default");
 	}
 }

@@ -1758,6 +1758,14 @@ def test_park_refuse_answers_a_park_on_with_the_scripts_refusal():
         assert host.reply({"t": "park", "on": False}) == [{"t": "parked", "on": False, "ok": True, "reason": ""}]  # a release is always fine
 
 
+def test_park_off_answers_a_park_on_as_the_scripts_do_while_cyberblock_is_off():
+    for mode in ("vendor", "replica"):
+        host = fakehost.Cyberpunk(frozenset(), frozenset({mode}), park_off=True)
+        (no,) = host.reply({"t": "park", "on": True})
+        assert no == {"t": "parked", "on": True, "ok": False, "reason": "blocked (Cyberblock is not active)"} and p3_valid(no)
+        assert host.reply({"t": "park", "on": False}) == [{"t": "parked", "on": False, "ok": True, "reason": ""}]
+
+
 def test_vendor_mode_plays_the_shop_over_the_link_and_prints_what_minecraft_asks(tmp_path, exporting, quick, capsys):
     asks = [uiact("buy", PISTOL, 0), uiact("sell", RADIO, 0, arg="10"), uiact("atlasreq", rid=32, arg="fasttravel"), uiact("fasttravel", rid=4, arg="Watson Docks")]
     hub, park = {"t": "hub", "in": True}, {"t": "park", "on": True}
@@ -1793,12 +1801,13 @@ def test_vendor_and_park_refuse_flags_pick_the_mode_and_are_checked(monkeypatch)
 
     monkeypatch.setattr(fakehost, "run", fake_run)
     for argv in (["--vendor"], ["--vendor", "--hold", "3", "--cmd", "say hi", "--layer2"], ["--vendor", "--replica"], ["--vendor", "--park-refuse"],
-                 ["--replica", "--park-refuse"]):
+                 ["--replica", "--park-refuse"], ["--vendor", "--park-off"]):
         monkeypatch.setattr("sys.argv", ["fakehost", *argv])
         assert fakehost.main() == 0
-    assert [a[9] for a, _ in seen] == [frozenset({"vendor"}), frozenset({"vendor"}), frozenset({"vendor", "replica"}), frozenset({"vendor"}), frozenset({"replica"})]
-    assert [k for _, k in seen] == [{}, {}, {}, {"park_refuse": True}, {"park_refuse": True}] and all(len(a) == 13 for a, _ in seen)
-    for bad in (["--vendor", "--ui"], ["--park-refuse"], ["--seat", "--park-refuse"]):
+    assert [a[9] for a, _ in seen] == [frozenset({"vendor"}), frozenset({"vendor"}), frozenset({"vendor", "replica"}), frozenset({"vendor"}), frozenset({"replica"}),
+                                       frozenset({"vendor"})]
+    assert [k for _, k in seen] == [{}, {}, {}, {"park_refuse": True}, {"park_refuse": True}, {"park_off": True}] and all(len(a) == 13 for a, _ in seen)
+    for bad in (["--vendor", "--ui"], ["--park-refuse"], ["--seat", "--park-refuse"], ["--park-off"], ["--vendor", "--park-off", "--park-refuse"]):
         monkeypatch.setattr("sys.argv", ["fakehost", *bad])
         with pytest.raises(SystemExit) as e:
             fakehost.main()

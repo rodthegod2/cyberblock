@@ -9,9 +9,11 @@ import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.replica.ChangeLog;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Locale;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -33,6 +35,10 @@ import net.minecraft.world.level.block.Block;
  * <li>{@code /cyberblock test session <host>}: dumps the host's session</li>
  * <li>{@code /cyberblock test place <x> <y> <z> <block>}: sets a block as the source player's own placement (the Offline Builds log
  * records it by that player's name, as a block placed by hand)</li>
+ * <li>{@code /cyberblock test act <t> <json>}: the source player sends that cyberblock:act (the same handler and checks as one from
+ * the client: the Vehicle Panel, Net Map, Traffic Tool and Comms Panel acts of shared/protocol.md "Phase 6")</li>
+ * <li>{@code /cyberblock test eid <targets>}: prints "test: eid &lt;entity id&gt; &lt;type&gt; &lt;uuid&gt;" for each entity, so a harness can
+ * name a car figure in an act</li>
  * </ul>
  */
 public final class DevCommands {
@@ -61,7 +67,38 @@ public final class DevCommands {
 				.then(Commands.argument("y", IntegerArgumentType.integer()).then(Commands.argument("z", IntegerArgumentType.integer())
 					.then(Commands.argument("block", StringArgumentType.greedyString())
 						.executes(c -> place(c.getSource(), new BlockPos(IntegerArgumentType.getInteger(c, "x"), IntegerArgumentType.getInteger(c, "y"),
-							IntegerArgumentType.getInteger(c, "z")), StringArgumentType.getString(c, "block"))))))))));
+							IntegerArgumentType.getInteger(c, "z")), StringArgumentType.getString(c, "block"))))))))
+			.then(Commands.literal("act").then(Commands.argument("t", StringArgumentType.word())
+				.then(Commands.argument("json", StringArgumentType.greedyString())
+					.executes(c -> act(c.getSource(), StringArgumentType.getString(c, "t"), StringArgumentType.getString(c, "json"))))))
+			.then(Commands.literal("eid").then(Commands.argument("targets", EntityArgument.entities())
+				.executes(c -> eid(c.getSource(), EntityArgument.getEntities(c, "targets")))))));
+	}
+
+	private static int act(final CommandSourceStack source, final String t, final String json) {
+		ServerPlayer actor = source.getPlayer();
+		if (actor == null) {
+			source.sendFailure(Component.literal("test: act needs a player (execute as <player> run ...)"));
+			return 0;
+		}
+
+		boolean sent = ServerNet.dispatchAct(actor, t, json);
+		String line = String.format(Locale.ROOT, "test: act %s by %s -> %s", t, actor.getPlainTextName(), sent ? "handled" : "dropped");
+		Cyberblock.LOG.info(line);
+		source.sendSuccess(() -> Component.literal(line), false);
+		return sent ? 1 : 0;
+	}
+
+	private static int eid(final CommandSourceStack source, final Collection<? extends Entity> entities) {
+		StringBuilder out = new StringBuilder();
+		for (Entity e : entities) {
+			out.append(out.isEmpty() ? "" : "\n").append("test: eid ").append(e.getId()).append(' ').append(BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()))
+				.append(' ').append(e.getUUID());
+		}
+
+		String text = out.toString();
+		source.sendSuccess(() -> Component.literal(text), false);
+		return entities.size();
 	}
 
 	private static HostSession sessionOf(final CommandSourceStack source, final String host) {

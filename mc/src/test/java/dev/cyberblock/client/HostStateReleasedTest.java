@@ -3,6 +3,7 @@ package dev.cyberblock.client;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.google.gson.JsonParser;
+import dev.cyberblock.client.hub.HubClient;
 import dev.cyberblock.client.net.Relay;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.AfterEach;
@@ -14,8 +15,20 @@ class HostStateReleasedTest {
 
 	@AfterEach
 	void reset() {
+		HubClient.where(false);
 		HostState.released = false;
 		HostState.hostLinked = this.linked;
+	}
+
+	@Test
+	void theLevelChangeReleasesSteveBeforeHisFirstTickInTheHub() {
+		HostState.hostLinked = () -> true;
+		cam(); // an active host sends cam every frame
+		HubClient.where(true); // ClientLevelEvents.AFTER_CLIENT_LEVEL_CHANGE: the respawn into cyberblock:afterlife, before any tick or frame
+		assertNull(HostState.live(), "PlayerSync's first tick there never puts Steve at V's Night City position");
+		HostState.beginFrame();
+		assertNull(HostState.frame(), "nor does the first frame: his first position packet is the server's arrival point");
+		assertFalse(HostState.hstate(false).active(), "and the server hears at once that Cyberpunk does not drive");
 	}
 
 	private static void cam() {
@@ -46,6 +59,22 @@ class HostStateReleasedTest {
 		HostState.hostLinked = () -> false;
 		assertFalse(HostState.hostInput(), "no DLL (or a guest session): Minecraft's own window is the input");
 		assertNull(HostState.exportPose(), "and Minecraft's own picture stays in its window");
+	}
+
+	@Test
+	void aLinkedHostWithCyberblockOffInTheHubKeepsMinecraftsOwnInput() {
+		HostState.hostLinked = () -> true; // Off keeps the link and the host role
+		HostState.released = true;
+		HostState.resetKeys();
+		assertFalse(HostState.hostInput(), "no cam since the link came: the DLL is not showing the hub");
+		cam();
+		assertTrue(HostState.hostInput(), "cams coming (Active, V parked): the DLL shows the hub and forwards input");
+		long off = System.nanoTime() + 6_000_000_000L;
+		assertFalse(HostState.hostInput(off), "Off sends no cam: after 5 s the DLL no longer counts as showing the hub");
+		assertFalse(HostState.live() != null || HostState.hostInput(off), "so the host's cursor is not the screens' cursor (HostCursor.active)");
+		HostState.resetKeys(); // the cam is gone: live() is null
+		HostCursor.hubInputEnded(); // what HubClient does as the hub input ends
+		assertFalse(HostCursor.active(), "and its last position never stands in for the real mouse");
 	}
 
 	@Test

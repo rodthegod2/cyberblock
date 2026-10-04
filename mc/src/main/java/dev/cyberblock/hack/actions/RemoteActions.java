@@ -189,8 +189,9 @@ public final class RemoteActions {
 		}
 
 		int id = session.newRequest(player.getUUID());
-		int secs = hack == RemoteHack.BLACKOUT ? request.secs() : hack.seconds();
-		session.send(ActWire.rhack(id, r.target(), hack, r.district(), hack.target() == RemoteHack.Target.POINT ? r.at() : null, secs));
+		int secs = hack.downSeconds(request.secs());
+		// an area hack is centred on its point, a district hack on V (r.at()); the district name stays in this server's log only
+		session.send(ActWire.rhack(id, r.target(), hack, hack.area() ? r.at() : null, secs));
 		pending.put(new CyberRoute.Key(owner, id), new Pending(player.getUUID(), hack, now, r.at(), distance, r.name(), r.yaw()));
 		cooldowns.start(coolKey, now, hack.cooldownSeconds());
 		if (hack == RemoteHack.BLACKOUT) {
@@ -414,10 +415,10 @@ public final class RemoteActions {
 			}
 			case PING_AREA -> {
 				for (Entity e : figures(player.level(), p.at(), RemoteHack.PING_RADIUS)) {
-					Bridge.pingProxy.accept(e, p.hack().seconds() * 20);
+					Bridge.pingProxy.accept(e, RemoteHack.PING_MARK_SECONDS * 20);
 				}
 
-				String json = ActWire.ping(p.at(), p.hack().seconds(), player.getPlainTextName());
+				String json = ActWire.ping(p.at(), RemoteHack.PING_MARK_SECONDS, player.getPlainTextName());
 				team(player).forEach(q -> ServerNet.ui(q, ActWire.UI_PING, json));
 			}
 			default -> {

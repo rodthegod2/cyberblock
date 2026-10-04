@@ -116,6 +116,11 @@ class HandshakeTest {
 	}
 
 	@Test
+	void theServerSaysItHasHacking() {
+		assertEquals(Payloads.FEATURE_HACKING, ServerNet.FEATURES & Payloads.FEATURE_HACKING, "hs_ack.features bit 8 (Phase 6)");
+	}
+
+	@Test
 	void timeoutIsTenSeconds() {
 		assertEquals(200, Handshake.TIMEOUT_TICKS);
 	}

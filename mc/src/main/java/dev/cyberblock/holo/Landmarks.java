@@ -16,17 +16,19 @@ import org.jspecify.annotations.Nullable;
 /**
  * The {@code landmark} content kind (megaplan section 1.7: district landmarks and spawn points; defaults by 7A in
  * {@code data/cyberblock/cyberblock/landmark/}): {@code {"schema": 1, "name": str <= 64, "pos": [x, y, z], "district"?: str <= 64,
- * "kind"?: str <= 32 (default "landmark"), "yaw"?: number, "spawn"?: bool (default true)}}; unknown fields are ignored. The
- * Holo-Table offers every entry with {@code spawn} as a spawn point; 7N's gigs may read the same entries ("reach a landmark").
+ * "kind"?: str <= 32 (default "landmark"), "yaw"?: number, "spawn"?: bool (default true), "approx"?: bool (default false)}}; unknown
+ * fields are ignored. The Holo-Table offers every entry with {@code spawn} as a spawn point; 7N's gigs may read the same entries ("reach a landmark").
  *
  * <p>The kind is registered once: if another package registered {@code landmark} first (7N reads landmarks too), this class reads
  * that package's entries by their record fields ({@code name}, {@code pos} as {@code double[]} or {@code Vec3}, and the optional
- * {@code district}, {@code kind}, {@code yaw}, {@code spawn}) and says so in the log, so the two never collide at startup.
+ * {@code district}, {@code kind}, {@code yaw}, {@code spawn}, {@code approx}) and says so in the log, so the two never collide at
+ * startup.
  */
 public final class Landmarks {
 	public static final String KIND = "landmark";
 
-	public record Landmark(String name, Vec3 pos, String district, String kind, float yaw, boolean spawn) {
+	/** {@code approx}: the position was written without game data, so its height may be off (a reach gig ignores it). */
+	public record Landmark(String name, Vec3 pos, String district, String kind, float yaw, boolean spawn, boolean approx) {
 	}
 
 	private static @Nullable ContentKind<?> kind;
@@ -70,7 +72,12 @@ public final class Landmarks {
 			spawn = s.getAsBoolean();
 		}
 
-		return new Landmark(name, new Vec3(p[0], p[1], p[2]), district, kind, yaw, spawn);
+		JsonElement a = json.get("approx");
+		if (a != null && (!a.isJsonPrimitive() || !a.getAsJsonPrimitive().isBoolean())) {
+			throw new IllegalArgumentException("approx must be true or false");
+		}
+
+		return new Landmark(name, new Vec3(p[0], p[1], p[2]), district, kind, yaw, spawn, a != null && a.getAsBoolean());
 	}
 
 	/** Every loaded landmark by id (sorted), whoever registered the kind. */
@@ -105,7 +112,7 @@ public final class Landmarks {
 			String name = null, district = "", kind = "landmark";
 			Vec3 pos = null;
 			float yaw = 0.0F;
-			boolean spawn = true;
+			boolean spawn = true, approx = false;
 			for (RecordComponent c : value.getClass().getRecordComponents()) {
 				java.lang.reflect.Method accessor = c.getAccessor();
 				accessor.trySetAccessible();
@@ -116,13 +123,14 @@ public final class Landmarks {
 					case "kind" -> kind = v instanceof String s ? s : "landmark";
 					case "yaw" -> yaw = v instanceof Number n ? n.floatValue() : 0.0F;
 					case "spawn" -> spawn = !(v instanceof Boolean b) || b;
+					case "approx" -> approx = v instanceof Boolean b && b;
 					case "pos" -> pos = v instanceof Vec3 vec ? vec : v instanceof double[] d && d.length == 3 ? new Vec3(d[0], d[1], d[2]) : null;
 					default -> {
 					}
 				}
 			}
 
-			return name == null || pos == null ? null : new Landmark(name, pos, district, kind, yaw, spawn);
+			return name == null || pos == null ? null : new Landmark(name, pos, district, kind, yaw, spawn, approx);
 		} catch (ReflectiveOperationException | RuntimeException e) {
 			return null;
 		}

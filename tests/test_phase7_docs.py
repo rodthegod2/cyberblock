@@ -94,6 +94,46 @@ def test_re_test_phase_7_names_the_runtime_paths_and_the_descopes():
         assert fact in risks, fact
 
 
+def hub_button_labels() -> tuple[str, str]:
+    """The pause-screen button 7H ships (HubClient.label): its English fallbacks for cyberblock.hub.button.enter and .leave."""
+    java = (ROOT / "mc/src/client/java/dev/cyberblock/client/hub/HubClient.java").read_text(encoding="utf-8")
+    enter = re.search(r'"cyberblock\.hub\.button\.enter", "([^"]+)"', java).group(1)
+    leave = re.search(r'"cyberblock\.hub\.button\.leave", "([^"]+)"', java).group(1)
+    return enter, leave
+
+
+def test_the_docs_name_the_real_hub_button_of_the_pause_screen():
+    enter, leave = hub_button_labels()
+    assert (enter, leave) == ("Afterlife hub", "Leave the Afterlife")
+    guide = flat(section_of(GUIDE, HUB)).split("**Getting in and out.**", 1)[1].split("**If you are a host", 1)[0]
+    step = flat(section_of(TESTING, "### P7-5. The hub, with V parked"))
+    for name, text in (("HOW-TO-PLAY Getting in and out", guide), ("TESTING-PLAN P7-5", step)):
+        assert f"**{enter}**" in text and f"**{leave}**" in text and "top right of the pause screen" in text, name
+        assert "Cyberblock..." not in text, f"{name} sends the tester to the settings button"
+    assert step.count(f"**{enter}** button") >= 2  # the locked guest's way in (step 8) and the guest's (step 9) name it too
+
+
+def test_re_test_phase_7_drops_the_link_in_the_hub_and_checks_the_7v_amendment_lines():
+    step5 = flat(section_of(TESTING, "### P7-5. The hub, with V parked"))
+    for fact in ("Drop the link while in the hub", "close the Minecraft client", "like a crash", "V visible, moving, the camera free and saving allowed",
+                 "`park: off (Minecraft lost)`", "`hub: forgotten (Minecraft lost)`", "`hub: forgotten (the link dropped)`", "rejoin"):
+        assert fact in step5, f"P7-5 does not say {fact!r}"
+    step7 = flat(section_of(TESTING, "### P7-7. A Cyberpunk shop as a Minecraft screen (host)"))
+    for fact in ("A ripperdoc as the host", "`vendors: <name> -> minecraft screen open`", "for **both**", "**no** `vendors: <name> pass-through`"):
+        assert fact in step7, f"P7-7 does not say {fact!r}"
+    step8 = flat(section_of(TESTING, "### P7-8. Fast travel from the Holo-Table (host)"))
+    for fact in ("Picked in the hub", "you leave the hub first", "Steve follows", "V **stays** at the destination", "when you leave the hub",
+                 "`fast travel: to <name> (Holo-Table)` comes **after** `park: off (hub exit)`", "`fast travel: to <name> when V leaves the hub (V is parked)`",
+                 "leaving the hub first"):
+        assert fact in step8, f"P7-8 does not say {fact!r}"
+    # the lines the steps grep are the ones the scripts print
+    scripts = ROOT / "cp/scripts/Cyberblock"
+    hub, menus, vendors, main = ((scripts / f).read_text(encoding="utf-8") for f in ("Hub.reds", "Menus.reds", "Vendors.reds", "Cyberblock.reds"))
+    assert 'hub: forgotten (\\(reason))' in hub and 'CyberblockHub.Forget("Minecraft lost")' in main and 'Forget("the link dropped")' in hub
+    assert '"hub exit"' in hub and 'fast travel: to \\(pointName) (Holo-Table)' in menus and 'when V leaves the hub (V is parked)' in menus
+    assert '-> minecraft screen open' in vendors and 'pass-through (\\(why))' in vendors
+
+
 def test_the_changelog_has_a_phase_7_entry_above_the_wave_b_integration_one():
     assert CHANGELOG.index(ENTRY) < CHANGELOG.index("### Unreleased additions: Wave B integration")
     text = flat(section_of(CHANGELOG, ENTRY))

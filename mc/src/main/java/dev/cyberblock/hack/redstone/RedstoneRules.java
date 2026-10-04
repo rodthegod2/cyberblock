@@ -148,6 +148,14 @@ public final class RedstoneRules {
 			return new Deck(DECK_MAX_RAM, now);
 		}
 
+		/**
+		 * A Cyberdeck block a player just placed: empty, refilling from now. Its drop is a plain item, so breaking and replacing it
+		 * never gives RAM back faster than the refill.
+		 */
+		public static Deck placed(final long now) {
+			return new Deck(0, now);
+		}
+
 		public int ram(final long now) {
 			long refilled = Math.max(0L, now - this.since) / DECK_REFILL_TICKS;
 			return (int) Math.min(DECK_MAX_RAM, this.stored + refilled);

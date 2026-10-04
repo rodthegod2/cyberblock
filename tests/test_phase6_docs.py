@@ -49,34 +49,47 @@ def test_guide_interaction_map_lists_every_entry_of_the_plan_and_the_fallbacks()
     for tool in ("Hack Wheel", "Vehicle Panel", "Traffic Tool", "Net Map", "Comms Panel", "Net Port", "Overlord Console", "TNT"):
         assert tool in tools, tool
     text = flat(section)
-    for phrase in ("lock the doors, kill the engine, force a brake, start it remotely, jam it", "switch a district's traffic lights", "gridlock a road",
-                   "black out a district for minutes", "camera's feed", "outline", "ping", "photo feed", "toast and a locator-bar waypoint", "Overlord Console", "Phase 8",
-                   "about **50 metres of V**", "check (h)", "out of range", "fall back to the device layer", "within 150 metres of V", "not** Cyberpunk's own camera view",
+    for phrase in ("**lock the doors** (2 minutes), **kill the engine** (30 seconds), **force a brake** (a few seconds), **jam it** (3 seconds)",
+                   "**start it remotely** (that one stays)", "it is a screen, not an item", "**switch the lights** of the intersection nearest V", "gridlock a road",
+                   "black out the lights around V for 1, 2 or 5 minutes", "camera's feed", "outline", "ping", "photo feed", "toast and a locator-bar waypoint",
+                   "up to 64 characters", "Overlord Console", "Phase 8", "everything the host's game is showing the server", "**50 metres of V**", "check (h)",
+                   "out of range", "fall back to the device layer", "within 150 metres of V", "not** Cyberpunk's own camera view", "within your view distance",
                    "128 x 128 map colours", "once a second", "only while someone is watching it", "low-resolution by design", "more than half a millisecond",
-                   "top-down replica view", "no Cyberpunk change at all", "`/cyberblock guests hacks on|off`", "Which way is it working?"):
+                   "the server draws a **top-down replica view** around V", "no Cyberpunk change at all", "`/cyberblock guests hacks on|off`", "Which way is it working?"):
         assert phrase in text, f"HOW-TO-PLAY.md The interaction map does not say {phrase!r}"
 
 
 def test_guide_and_retest_cover_the_review_fixes_abort_timed_effects_reach_from_v_and_the_feed_toggle():
     breach, tools = flat(section_of(GUIDE, BREACH)), flat(section_of(GUIDE, MAP))
-    for phrase in ("**Closing the screen after your first pick is a failure**", "the same grid with the same timer still running", "**10 seconds**"):
+    for phrase in ("**Closing the screen after your first pick is a failure**", "The timer starts when the screen opens", "same timer still running",
+                   "you must wait **10 seconds**", "walking more than 8 blocks away from the Net Port counts as closing it", "at most one alarm a minute",
+                   "A refused Breach does not open"):
         assert phrase in breach, phrase
-    for phrase in ("each for **30 seconds**, then the car is as it was", "**from V, not from you**", "work from anywhere in the world", "**Nothing a hack does lasts.**",
-                   "puts everything back **at once**", "cannot **save** while a hack is still running", "the host's `hacks` toggle (also for the photo feed)",
+    assert "locked for 30 seconds" not in breach and "starts running with your **first pick**" not in breach
+    for phrase in ("**from V, not from you**", "work from anywhere in the world", "**Nothing a hack does lasts.**", "a remote start simply stays",
+                   "puts everything back **at once** before **every save**", "the host's `hacks` toggle (also for the photo feed)",
                    "every guest watching the feed loses it at once"):
         assert phrase in tools, phrase
+    for stale in ("each for **30 seconds**", "cannot **save** while a hack is still running", "there is **no picture**", "switch a district's traffic lights"):
+        assert stale not in tools, stale
     retest = flat(TESTING.split(RETEST_HEADING, 1)[1].split("## Re-test: Wave B", 1)[0])
-    for phrase in ("**No free re-roll:**", "**same grid** with the timer still running", "**Every effect wears off:**", "the save waits until the effect is over",
-                   "Open the Vehicle Panel **from the Net Map** while the guest stands far from V", "the reach is measured from V",
-                   "guest's picture **stops at once**", "`feedreq off` (no viewer left)"):
+    for phrase in ("**No free re-roll:**", "**same grid** with the timer still running", "says to wait (10 s)", "`alarm merged`",
+                   "**Every effect wears off, each after its own time:**", "the doors unlock after **120 s**", "**Remote start is not undone**",
+                   "the save happens at once and the car is **unlocked first**", "`rhack: cleared`", "There is **no Vehicle Panel item**",
+                   "**more than 50 metres from V** but still shown as a figure", "`hack range: fallback active: ...`", "the reach is measured from V",
+                   "flips **one intersection**", "guest's picture **stops at once**", "`feed: off (Minecraft stopped asking)` (no viewer left)",
+                   "a **top-down replica view** around V", "`feed: <host> feedreq on`"):
         assert phrase in retest, phrase
+    for stale in ("the save waits until the effect is over", "`cyberblock.breach.locked_out`", "**Minecraft draws no stand-in picture**", "`feedreq off`",
+                  "**Vehicle Panel**, **Traffic Tool**, **Net Map** (an item)", "about **30 seconds** after each hack", "timer bar that **starts with your first pick**"):
+        assert stale not in retest, stale
     p610 = flat(TESTING.split("### P6-10.", 1)[1].split("### ", 1)[0])
     assert "`/cyberblock guests hacks off`: **expect** the guest's picture **stops at once**" in p610
 
 
 def test_guide_range_and_names_agree_with_the_protocol():
     from test_protocol_md import TEXT
-    assert "50 m from V" in flat(TEXT) and len(REMOTE_HACKS) == 11 and len(AREA_HACKS) == 5
+    assert "every streamed target" in flat(TEXT) and "more than 50 m from V" in flat(TEXT) and len(REMOTE_HACKS) == 11 and len(AREA_HACKS) == 5
     text = flat(section_of(GUIDE, MAP))
     for word in ("lock", "engine", "brake", "start", "jam"):  # the five vehicle hacks of the protocol, in player words
         assert word in text, word
@@ -112,9 +125,11 @@ def test_re_test_6_leads_the_testing_plan_and_has_the_plan_checks():
 
 def test_re_test_6_has_one_line_per_runtime_path_of_the_script_and_dll_packages():
     table = flat(section_of(TESTING, "### P6-9. Which way is it working? (the runtime paths)"))
-    for feature, word in (("Traffic", "traffic"), ("Blackout", "blackout"), ("Vehicle hacks", "rhack"), ("Breach", "breach"), ("Photo feed", "feed"), ("Redstone", "redstone")):
+    for feature, word in (("Traffic", "traffic"), ("Blackout", "blackout"), ("Vehicle hacks", "rhack"), ("Range", "hack range"), ("Breach", "breach"), ("Photo feed", "feed"),
+                          ("Redstone", "redstone")):
         assert f"| {feature} | `{word}` |" in table, feature
-    for fact in ("search for the word", "`cyberblock.hack.out_of_range`", "`feedreq on`", "`cyberblock.redstone.loop`", "the compositor copy or the replica fallback", "(fallback)"):
+    for fact in ("search for the word", "`cyberblock.hack.out_of_range`", "`feed: on (path: ...)`", "`feed: <host> feedreq on`", "`cyberblock.redstone.loop`",
+                 "the compositor copy or the server's top-down replica stand-in (the fallback)", "(fallback)", "`rhack: traffic path: ...`", "`hack range: every streamed target (...)`"):
         assert fact in table, fact
 
 
@@ -127,14 +142,17 @@ def test_the_changelog_has_a_phase_6_entry_above_the_wave_b_integration_one():
     assert CHANGELOG.index("## [1.0.0]") < CHANGELOG.index(CHANGELOG_HEADING) < CHANGELOG.index("### Unreleased additions: Wave B integration")
     text = flat(section_of(CHANGELOG, CHANGELOG_HEADING))
     for phrase in ("`rhack`", "`daemon`", "`feedreq`", "`feed`", "`hackresult`", "`cyberblock:act`", "`cyberblock:ui`", "`firewall`", "`tools.fakehost --hacks2`", "`tools.mpcheck breach`",
-                   "`/cyberblock test breach <x> <y> <z> solve|fail`", "HOW-TO-PLAY", "Re-test 6", "`docs/notes/phase6-descopes.md`", "`cyberblock.hack.out_of_range`", "50 m", "bit 8"):
+                   "`/cyberblock test breach <x> <y> <z> solve|fail`", "HOW-TO-PLAY", "Re-test 6", "`docs/notes/phase6-descopes.md`", "`cyberblock.hack.out_of_range`", "50 m", "bit 8",
+                   "`shared/phase6-messages.json`", "`shared/rhack-vectors.json`", "`/cyberblock test act <t> <json>`", "`target:null`", "one alarm a minute"):
         assert phrase in text, f"CHANGELOG does not say {phrase!r}"
 
 
 def test_the_descopes_note_lists_the_risks_of_the_plan_and_the_contract_limits():
     text = flat(DESCOPES)
-    for phrase in ("Remote range (check (h))", "50 m from V", "`cyberblock.hack.out_of_range`", "Traffic and blackout fall back to the device layer", "within 150 m of V",
-                   "No true Cyberpunk camera view", "replica", "low-resolution by design", "0.5 ms of frame time", "Shapes the plan left open", "`alarm`", "Daemon ids are content",
+    for phrase in ("Remote range (check (h))", "**every target the host's game streams**", "50 m from V", "`cyberblock.hack.out_of_range`",
+                   "Traffic and blackout fall back to the device layer", "within 150 m of V", "No true Cyberpunk camera view", "replica", "low-resolution by design",
+                   "0.5 ms of frame time", "a top-down replica render around V", "One contract, checked from four sides", "`shared/phase6-messages.json`",
+                   "there is no save lock", "an owner gets one alarm a minute", "`alarm`", "Daemon ids are content",
                    "Heat", "One answer per `daemon`", "The `feed` is BOTH", "The first real run is the test", "Devtools command", "`/cyberblock test breach <x> <y> <z> solve|fail`",
                    "Loops", "merge order", "6D, 6S, 6A, 6B, 6R, 6I, 6P"):
         assert phrase in text or phrase.lower() in text.lower(), f"phase6-descopes.md does not say {phrase!r}"
@@ -146,3 +164,13 @@ def test_the_phase_6_docs_hold_no_private_values():
         assert not re.search(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/]", text), f"{name}: a drive-letter path"
         assert not re.search(r"APEX_FTP_PASS\s*=|ftp://|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", text), f"{name}: a secret or an address"
         assert not re.search(r"_PASS\s*=|joinPassword\"?\s*:\s*\"[^\"]", text), f"{name}: a password"
+
+
+def test_the_lang_keys_the_phase_6_docs_promise_exist():
+    """Re-test 6 and the protocol name action bar keys; each must be a key of en_us.json."""
+    import json
+    from test_protocol_md import TEXT
+    lang = json.loads((ROOT / "mc/src/main/resources/assets/cyberblock/lang/en_us.json").read_text(encoding="utf-8"))
+    named = set(re.findall(r"`(cyberblock\.(?:breach|guest|hack|rhack)\.[a-z_.]+)`", section_of(TESTING, RETEST_HEADING) + TEXT.split("## Phase 6", 1)[1].split("## Phase 7", 1)[0]))
+    assert {"cyberblock.breach.cooldown", "cyberblock.guest.blocked", "cyberblock.hack.out_of_range"} <= named
+    assert not named - set(lang), sorted(named - set(lang))

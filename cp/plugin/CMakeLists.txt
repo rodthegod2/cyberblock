@@ -39,7 +39,8 @@ target_link_libraries(cb_tests PRIVATE nlohmann_json::nlohmann_json ws2_32)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui.cpp AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui.cpp)
 	target_sources(cb_tests PRIVATE src/ui.cpp tests/test_ui.cpp)
 endif()
-target_compile_definitions(cb_tests PRIVATE CB_VECTORS="${ROOT}/shared/vectors.json" ${CB_VERSION_DEFINITIONS})
+target_compile_definitions(cb_tests PRIVATE CB_VECTORS="${ROOT}/shared/vectors.json" CB_P6_MESSAGES="${ROOT}/shared/phase6-messages.json"
+	${CB_VERSION_DEFINITIONS})
 add_test(NAME cb_tests COMMAND cb_tests)
 
 # fx_check (re-test 3 plan task D7): ReShade's own FX front end (third_party/reshade, BSD-3-Clause) compiles
