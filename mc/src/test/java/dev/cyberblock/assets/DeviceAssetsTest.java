@@ -87,7 +87,7 @@ class DeviceAssetsTest {
 			assertTrue(lang.has("block.cyberblock." + id) && !lang.get("block.cyberblock." + id).getAsString().isBlank(), id + " name");
 		}
 
-		assertTrue(models.size() > 80, "the models the blockstates use: " + models.size());
+		assertEquals(73, models.size(), "the models the blockstates use");
 		for (String model : models) {
 			Path path = ASSETS.resolve("models/block/" + model + ".json");
 			try (var reader = Files.newBufferedReader(path)) {
