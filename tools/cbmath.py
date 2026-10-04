@@ -226,3 +226,26 @@ def env_ticks(hour: int, minute: int) -> int:
     """Minecraft day time of Cyberpunk's clock (megaplan 3-E1): ((h*60 + m) / 1440 * 24000 + 18000) mod 24000, so 06:00 is
     tick 0 (sunrise), 12:00 tick 6000 (noon), 18:00 tick 12000 (sunset) and 00:00 tick 18000 (midnight)."""
     return round(((hour * 60 + minute) / 1440 * 24000 + 18000) % 24000) % 24000
+
+
+# ---- Phase 5: vehicle colours of `npcs.col` (megaplan 1.9 amendment item 7, 5-D1) ---------------------------------------------
+COLOUR_FORMATS = ("hsb", "rgb")
+COLOUR_FORMAT = "hsb"
+"""How the three numbers of a `VehicleColorTemplate.MainColor` are read until Phase 0's CET line F2 says otherwise: hue,
+saturation and brightness, each 0..255 (hue 0..255 is 0..360 degrees). The DLL's `world::colour_hex` is the mirror."""
+
+
+def colour_hex(packed: int, fmt: str = COLOUR_FORMAT) -> str | None:
+    """`#RRGGBB` (upper case) of the packed template triple (first << 16 | second << 8 | third, each 0..255) the scripts send in
+    `colours`; None for -1 (the car has no colour template) or anything that is not three bytes."""
+    if not 0 <= packed <= 0xFFFFFF:
+        return None
+    first, second, third = (packed >> 16) & 255, (packed >> 8) & 255, packed & 255
+    r, g, b = first / 255.0, second / 255.0, third / 255.0
+    if fmt == "hsb":
+        hue = first * 360.0 / 256.0 / 60.0
+        sat, val = second / 255.0, third / 255.0
+        f = hue - math.floor(hue)
+        p, q, t = val * (1.0 - sat), val * (1.0 - sat * f), val * (1.0 - sat * (1.0 - f))
+        r, g, b = ((val, t, p), (q, val, p), (p, val, t), (p, q, val), (t, p, val), (val, p, q))[int(hue) % 6]
+    return "#%02X%02X%02X" % tuple(int(c * 255.0 + 0.5) for c in (r, g, b))

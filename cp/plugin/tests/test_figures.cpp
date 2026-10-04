@@ -3,6 +3,7 @@
 #include "test.hpp"
 #include "world.hpp"
 #include <cmath>
+#include <fstream>
 #include <initializer_list>
 #include <limits>
 #include <string>
@@ -61,6 +62,20 @@ TEST(colour_hex_rgb_format_is_the_triple_itself)
 	CHECK(colour_hex(pack(10, 200, 255), ColourFormat::Rgb) == "#0AC8FF");
 	CHECK(colour_hex(0, ColourFormat::Rgb) == "#000000");
 	CHECK(colour_hex(0xFFFFFF, ColourFormat::Rgb) == "#FFFFFF");
+}
+
+TEST(colour_hex_matches_tools_cbmath_vectors)
+{
+	// shared/vectors.json `colour` (tools/cbmath.py colour_hex is the truth), both readings of the template triple
+	std::ifstream file(CB_VECTORS);
+	const json colour = json::parse(file).at("colour");
+	CHECK(colour.size() >= 20);
+	for (const json &c : colour)
+	{
+		const auto format = c.at("format") == "rgb" ? cb::world::ColourFormat::Rgb : cb::world::ColourFormat::Hsb;
+		const auto got = cb::world::colour_hex(c.at("packed").get<int32_t>(), format);
+		CHECK(c.at("hex").is_null() ? !got.has_value() : (got.has_value() && *got == c.at("hex").get<std::string>()));
+	}
 }
 
 TEST(colour_hex_rejects_none_and_non_bytes)
