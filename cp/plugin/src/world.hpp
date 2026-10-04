@@ -53,12 +53,13 @@ namespace cb::world
 		Session, // Phase 1 (megaplan 2026-10-04 sections 1.2 and 1.8): the Minecraft server's verdict on this host changed
 		VTeleport, // Phase 3 (megaplan sections 1.8 and 1.9): move V to a spot (Meet Up, Holo-Table, hub exit)
 		Park,      // Phase 3: park V (on) or bring V back (off)
-		DevAct,    // Phase 4 (megaplan sections 1.8 and 1.9, task 4-D1): act on a device; parsed by devices.cpp
+		Hub,       // Phase 7 (megaplan 7-D1): the Minecraft player entered (`flag`) or left the Afterlife hub; transient
+		DevAct,   // Phase 4 (megaplan sections 1.8 and 1.9, task 4-D1): act on a device; parsed by devices.cpp
 	};
 
 	/// The CName redscript sees from Cyberblock_NextEvent: "explosion", "hit", "ignite", "block_add", "block_remove",
 	/// "block_reset", "teleport", "lead", "lead_release", "pull", "knock", "effect", "hack", "scan", "perk", "perkfx",
-	/// "cyber", "cyberfx", "prefs", "session", "vteleport", "park", "devact"; "" (the empty CName) for None.
+	/// "cyber", "cyberfx", "prefs", "session", "vteleport", "park", "hub", "devact"; "" (the empty CName) for None.
 	const char *event_name(EventKind kind);
 
 	/// One Minecraft event, already in Cyberpunk space. Which fields each kind fills is the event table of plan
@@ -75,7 +76,7 @@ namespace cb::world
 							 // effect seconds | perk rank | perkfx seconds | cyber 1 installed, 0 not | cyberfx seconds |
 							 // prefs vdist (0 = the game's own)
 		Vec3 vector{};       // hit impulse, m/s
-		bool flag = false;   // explosion fire | lead has a fixed anchor | hack chains | prefs stepup | park on
+		bool flag = false;   // explosion fire | lead has a fixed anchor | hack chains | prefs stepup | park on | hub in
 		std::string name;    // effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id | session state |
 							 // vteleport why | devact act
 		double extra = 0;    // knock strength | effect amplifier | session perms bitmask
@@ -130,6 +131,7 @@ namespace cb::world
 	/// without `mob` the mob id -1. Positions (block AABBs, explosion, teleport, lead anchor, pull toward, knock centre)
 	/// get `+off`; the hit impulse does not. The production caller passes the current level_offset; the 0.0 default is
 	/// for tests. Phase 3: `vteleport` {id 0..2^31-1, p (feet, `+off`), yaw, why of kVTeleportWhy} and `park` {on bool}.
+	/// Phase 7: `hub` {in bool} (the event's flag; parse_event itself changes no state, on_minecraft_message sets hub_in()).
 	/// Never throws.
 	Parsed parse_event(const nlohmann::json &message, double off = 0.0);
 
@@ -227,6 +229,10 @@ namespace cb::world
 	/// status, when a status has no boolean `pause` (older Minecraft builds), after every `hello` and after a link drop.
 	/// Any thread. The UI bridge turns it into pause/resume actions (plan section 1.1: level-triggered).
 	bool minecraft_pause();
+	/// Phase 7 (megaplan 7-D1): the last valid `hub` said in (the player is in the Afterlife hub: the compositor shows
+	/// Minecraft full-screen with no depth blending). False before any, after every `hello`, after a link drop and when a
+	/// `session` moves this host away from Host. Any thread.
+	bool hub_in();
 	/// A linked Minecraft went away (main.cpp's drop handler, link thread): forgets `persp`, the pause and the `prefs`.
 	void on_link_dropped();
 

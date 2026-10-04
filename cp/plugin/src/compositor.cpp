@@ -44,6 +44,9 @@ namespace
 	std::atomic<float> g_lookLight{-1.0f}, g_lookBias{-1.0f}, g_lookSlope{-1.0f};
 	std::atomic<float> g_shakeX{0.0f}, g_shakeY{0.0f}, g_shakeRoll{0.0f}, g_portalWarp{0.0f};
 	std::atomic<bool> g_menu{false}; // re-test 3: a Cyberpunk menu is passed through (cb_menu)
+	std::atomic<bool> g_full{false}; // Phase 7: the Afterlife hub, Minecraft full-screen (cb_full)
+	/// In the hub the last Minecraft frame stays up this long when Minecraft stalls (a dimension change, a world load).
+	constexpr float kMaxFullFrameAgeMs = 2000.0f;
 	// re-test 3: the Sandevistan / Kerenzikov screen effect (cb_slowmo)
 	std::mutex g_slowmoLock;
 	cb::screenfx::SlowMo g_slowmo;
@@ -455,7 +458,7 @@ namespace
 		if (on)
 			upload(runtime);
 		const float age = g_hasFrame ? std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - g_frameTime).count() : 1e9f;
-		on = on && g_hasFrame && age <= kMaxFrameAgeMs;
+		on = on && g_hasFrame && age <= (g_full && !test ? kMaxFullFrameAgeMs : kMaxFrameAgeMs);
 		// The technique stays enabled (preset); cb_active gates it, so Cyberpunk passes through untouched until a
 		// Minecraft frame is here. (Toggling techniques from inside this callback crashes ReShade.)
 		if (const effect_uniform_variable v = uniform("cb_active"); v.handle != 0)
@@ -496,6 +499,8 @@ namespace
 			runtime->set_uniform_value_float(v, g_portalWarp.load());
 		if (const effect_uniform_variable v = uniform("cb_menu"); v.handle != 0)
 			runtime->set_uniform_value_bool(v, g_menu.load() && !test);
+		if (const effect_uniform_variable v = uniform("cb_full"); v.handle != 0)
+			runtime->set_uniform_value_bool(v, g_full.load() && !g_menu.load() && !test);
 		if (const effect_uniform_variable v = uniform("cb_slowmo"); v.handle != 0)
 		{
 			std::array<float, 4> slowmo;
@@ -644,6 +649,12 @@ namespace compositor
 	{
 		if (g_menu.exchange(menu) != menu)
 			cb::log::info("compositor: menu pass-through %s", menu ? "on" : "off");
+	}
+
+	void set_full_screen(bool full)
+	{
+		if (g_full.exchange(full) != full)
+			cb::log::info("compositor: full-screen Minecraft (the hub) %s", full ? "on" : "off");
 	}
 
 	void set_look(float light_match, float depth_bias, float slope_bias)

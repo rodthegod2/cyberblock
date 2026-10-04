@@ -250,6 +250,68 @@ TEST(leaving_the_host_role_asks_for_the_link_drop_cleanup_once)
 	fresh();
 }
 
+// ---- Phase 7: the hub switch (megaplan 7-D1) ---------------------------------------------------------------------------------
+
+TEST(hub_switches_the_compositor_state_and_queues_an_event_while_active)
+{
+	fresh();
+	cb::world::EventQueue &q = cb::world::events();
+	q.set_active(true);
+	deliver(R"({"t":"session","state":"host"})");
+	CHECK(q.next() == EventKind::Session);
+	CHECK(!cb::world::hub_in());
+	deliver(R"({"t":"hub","in":true})");
+	CHECK(cb::world::hub_in());
+	CHECK(q.next() == EventKind::Hub && q.current().flag);
+	deliver(R"({"t":"hub","in":false})");
+	CHECK(!cb::world::hub_in());
+	CHECK(q.next() == EventKind::Hub && !q.current().flag);
+	deliver(R"({"t":"hub","in":1})"); // rejected: the state is kept and nothing is queued
+	deliver(R"({"t":"hub","in":true})");
+	deliver(R"({"t":"hub","in":"no"})");
+	CHECK(cb::world::hub_in());
+	CHECK(q.next() == EventKind::Hub && q.current().flag && q.next() == EventKind::None);
+	fresh();
+}
+
+TEST(hub_state_follows_the_message_even_while_cyberblock_is_off)
+{
+	// the compositor only draws once the scripts turn it on; when they do, a player already in the hub must see it
+	fresh();
+	cb::world::events().set_active(false);
+	deliver(R"({"t":"hub","in":true})");
+	CHECK(cb::world::hub_in());
+	CHECK(cb::world::events().next() == EventKind::None); // the scripts' copy is transient
+	fresh();
+}
+
+TEST(the_hub_ends_with_a_hello_a_link_drop_or_leaving_the_host_role)
+{
+	fresh();
+	deliver(R"({"t":"session","state":"host"})");
+	deliver(R"({"t":"hub","in":true})");
+	deliver(R"({"t":"session","state":"host","perms":{"damage":true}})"); // a perms change keeps the hub
+	CHECK(cb::world::hub_in());
+	deliver(R"({"t":"hello","proto":1})"); // a new Minecraft
+	CHECK(!cb::world::hub_in());
+
+	deliver(R"({"t":"session","state":"host"})");
+	deliver(R"({"t":"hub","in":true})");
+	cb::world::on_link_dropped(); // Minecraft went away
+	CHECK(!cb::world::hub_in());
+
+	for (const char *state : {"guest", "none", "refused"})
+	{
+		fresh();
+		deliver(R"({"t":"session","state":"host"})");
+		deliver(R"({"t":"hub","in":true})");
+		CHECK(cb::world::hub_in());
+		deliver((std::string(R"({"t":"session","state":")") + state + R"(","reason":"r"})").c_str());
+		CHECK(!cb::world::hub_in());
+	}
+	fresh();
+}
+
 TEST(a_non_host_session_drops_the_block_events_queued_before_it)
 {
 	// next() hands out the session event before the block changes: if they stayed, they would come out after Session.reds's

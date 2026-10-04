@@ -57,6 +57,8 @@ namespace
 		cb::ui::pump(); // the UI bridge (ui_game.cpp) throttles itself to 30 Hz and runs while paused too
 		// a Cyberpunk menu passed through (no Minecraft screen replaced it): Minecraft's world is not drawn over it
 		compositor::set_menu_mode(cb::natives::active && cb::natives::menuOpen && !cb::link().screen_open());
+		// the Afterlife hub (megaplan 7-D1): Minecraft's own picture full-screen, no depth blending (the cover path)
+		compositor::set_full_screen(cb::world::hub_in());
 		return false;
 	}
 }
