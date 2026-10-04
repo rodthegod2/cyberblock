@@ -131,6 +131,116 @@ Material accuracy depends on Phase 0 (b): without the real material names the pa
 the weather depends on the Codeware reader; the replica grows with exploration (disk; Phase 9 measures it); a host's client
 needs a re-mesh when Cyberblock is switched On or Off; the web map is optional. Details: `docs/notes/phase3-descopes.md`.
 
+## Re-test: Wave B, Phase 4 (the device layer)
+
+The Phase 4 part of the Wave B session: **Night City's devices as Minecraft blocks**. Doors, gates, lights, cameras, terminals, vending
+machines, traffic lights, lifts, turrets, screens and crates stand in Minecraft where the host's Cyberpunk game has them, a guest can
+use them and the real device changes, and what a pedestrian does to a door shows in Minecraft. You play this **in the same session,
+straight after [Re-test: Wave B, Phase 3](#re-test-wave-b-phase-3-the-night-city-replica)** (same test server, same host, same guest);
+the Phase 5 section of Wave B follows it. Plan: `docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 8. The player guide is
+[Devices](HOW-TO-PLAY.md#devices-phase-4). Tell Claude "P4-1: what you saw" and it reads `Cyberblock.log`, the server log, `latest.log`
+and the game window.
+
+**Before you start.**
+- Everything from Phase 3's "Before you start" still holds. Phase 0's CET lines **C1 to C5** decide which way the plugin lists
+  devices, finds their ids and reads their changes; if you have not run them yet (Wave A, W-A8), the written fallbacks are used and
+  the "which way" lines (P4-9) say so.
+- Use **survival** for the guest in P4-1 to P4-8. The guest needs eddies for P4-5: as an operator, `/give <guest> cyberblock:eddies 50`.
+- The guest stands within 8 blocks of the device (the host's V a few metres from it, so the device is inside the plugin's 48 m).
+
+**What to try (one screen):**
+1. **Doorman:** V stands at an ordinary door; the guest right-clicks the door block: "Waiting for Night City...", then the door opens
+   in Night City and V can walk through; right-click again closes it (P4-1).
+2. **Watch a pedestrian walk through a door:** it opens in Minecraft a moment later (P4-2).
+3. **Light switch:** the guest right-clicks a lamp: the light goes off in Night City (P4-3).
+4. **Cameras:** an eye block with a cone; see what the cone does near the guest (P4-4).
+5. **Vending machine:** `/give` the guest eddies, buy a snack; the host's own Cyberpunk money is untouched (P4-5).
+6. **Elevator:** the call button is greyed with a message (P4-6).
+7. **`/cyberblock guests devices door off`:** the guest cannot use doors, lights still work; `on` brings doors back (P4-7).
+8. **A mission door** shows greyed and cannot be used (P4-8).
+9. **Read the "which way" lines** and paste them to Claude (P4-9).
+10. **Quit Cyberpunk:** the device blocks go within about 10 seconds; a host never sees them on its own screen (P4-10).
+
+| Item | What changed |
+|---|---|
+| Devices | `devices` lists (at most 64 within 48 m, a full list every 5 s), `devstate` changes (who did it: host, guest, npc, script), `devact` and `devresult` for every use; blocks placed only in air or replica cells, removed 10 s after the last list naming them |
+| Doors | vanilla wooden doors (iron when secure, a red lamp while locked); a guest's use goes to the owner's game and the block follows Night City's answer |
+| Greyed | quest-locked devices, the lift call and Breach; vending is a Minecraft shop paid in eddies |
+| Toggles | `/cyberblock guests devices <type> on|off` per kind of device |
+| Tools | `tools.mpcheck devices` (automatic checks with a fake host), `tools.fakehost --devices` |
+
+### P4-1. A guest opens and closes a door in front of V
+1. Host: join the test server, Cyberblock On, stand a few metres from an ordinary door (a shop or flat door in the street).
+2. Guest: find the same spot; there is a **wooden door block** (an **iron** one for a secure door) where Night City's door is.
+3. Guest: right-click the door. **Expect:** the action bar says "Waiting for Night City...", and then the door opens **in Night
+   City** (V sees it open and can walk through) and in Minecraft. Right-click again: it closes in both.
+4. Server log (grep `devices`): the guest's use and the `devact`, then the `devresult ... ok`; the host's `Cyberblock.log` has the line
+   for the `devact` it ran (grep `devact`).
+
+### P4-2. A pedestrian walks through a door
+1. Guest: stand where you can watch a Night City door that people use (the Minecraft door block).
+2. A pedestrian walks up to it in Night City: **expect** the door block **opens in Minecraft** a moment after it opens in Night City
+   and closes again when it closes there. A door that stays closed all the time means the plugin found no change events: see P4-9
+   (the 2 Hz polling fallback is slower but must show it).
+
+### P4-3. Lights off from Minecraft
+1. Guest: right-click a lamp block (a street light or a lit sign that is a device).
+2. **Expect:** the light goes **off in Night City** (right-click again: on). Not every neon sign is a device; if nothing is there to
+   click, try another.
+
+### P4-4. Cameras
+1. A surveillance camera stands as an **eye block** with a vision cone of particles. Right-click it: it switches off in Night City
+   (the camera stops turning), and on again.
+2. The plan also wants the cone to turn **red** when the camera spots the guest. This version has **no alarm field** in the protocol
+   (only on/off and locked), so the cone may stay white: that is the documented limit. Tell Claude what the cone does.
+
+### P4-5. A vending machine for eddies
+1. Operator: `/give <guest> cyberblock:eddies 50`.
+2. Guest: right-click a vending machine block: a **shop screen** (snack, drinks or gear machine) lists items with prices in eddies.
+   Buy one: it is in the inventory, the eddies are gone, and **nothing happens in Night City** (the host's own money is untouched).
+3. A machine marked broken says so and sells nothing.
+
+### P4-6. An elevator call
+The lift stands as a platform with a **call button**. Right-click the button: it is **greyed** and says "Night City cannot do that
+with this device yet" (a lift call is unproven in the plugin). If the lift really comes, tell Claude: that is new information.
+
+### P4-7. Guests devices per type
+1. Host: `/cyberblock guests devices door off` (host only; `/cyberblock guests devices door` alone shows whether doors are allowed).
+2. Guest: right-click a door: **blocked** on the action bar, Night City's door does not move. A **light** still works.
+3. Host: `/cyberblock guests devices door on`: the guest can use doors again. Then `/cyberblock guests devices off` blocks every
+   type, `on` brings them all back. The host's own right-clicks are never blocked.
+
+### P4-8. A quest door shows greyed
+Find a door that belongs to a mission (sealed: V cannot open it in Night City, whatever you do). Its block shows **greyed**, and
+right-click says "This device belongs to a mission and cannot be used now"; nothing reaches Night City. Sealed doors are rare in the open
+street: if you find none, skip this and say so.
+
+### P4-9. Which way is it working? (the runtime paths)
+The plugin writes **one line** for each device feature that has a fallback. Open `red4ext\logs\Cyberblock.log` (and the server log) and copy these
+lines to Claude. The exact wording belongs to the packages that print them: **search for the word**.
+
+| Feature | Search for | The line says |
+|---|---|---|
+| Device ids | `devices: ids from` | `entity hash` (the game's own id, best) or `position+class fallback` (a device that moves is then a new device) |
+| Changes | `devices: changes via` | `events` (the game tells the plugin when a device changes) or `2 Hz poll` (fallback: slower, but the NPC door still shows) |
+| Device-box filter | `probes: device hits` | `recast` (probe rays that hit a device are cast past it: doors are not walls) or `not named by the hit entity ... device-box filter only` (the DLL drops hits inside a known device box) |
+| Device list | `devices: sent` | how many devices are streamed, by kind, and how many were left out (beyond 48 m, other classes, over the cap of 64) |
+| Actions | `devact` | each action the host's game ran (`ok` or `refused (reason)`); `unsupported` for `call`, `buy` and `breach` |
+| Server | `devices:` | the host streaming its devices, each use (`-> devact N`, `-> blocked (the host's guest toggle)`), each `devresult`, and devices gone |
+
+### P4-10. Hosts, the end of a session and the replica
+1. The **host** does not see the device blocks on their own screen (Night City has the real devices); a guest does. Cyberblock Off
+   for a moment shows them.
+2. Host: quit Cyberpunk (or press F9 and close it): the device blocks **go within about 10 seconds** (the session ended); the replica
+   streets stay.
+3. In the replica, doorways are open: no replica block stands where a door is (doors are not walls).
+
+### Phase 4 descopes and risks (short)
+A device action exists only if Phase 0's check (c) found a callable action: the lift call and Breach are greyed. Ids may be
+position-based (a moved device is a new device). Container contents only if the loot can be read (else a closed crate). The protocol
+carries no lift floor, traffic colour or camera alarm, so those blocks show on/off only. Terminals and traffic lights wait for Phase 6.
+Details: `docs/notes/phase4-descopes.md`.
+
 ## Re-test: Wave A (Phase Q + Phase 1 + Phase 2 tools)
 
 One combined session for everything Wave A built: **Phase Q** (quick wins), **Phase 1** (the server/client split: every

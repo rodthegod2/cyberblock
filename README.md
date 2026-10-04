@@ -103,6 +103,10 @@ Everything works on Night City's real NPCs, vehicles and devices.
   blocks (neon glows) that are saved in the world, the people and cars as figures at real speed, Cyberpunk's time of day and
   weather, can build while the host is away, and `/cyberblock meetup <player>` takes you to a friend
   ([details](docs/HOW-TO-PLAY.md#night-city-as-minecraft-phase-3); a [web map](docs/WEBMAP.md) is possible with BlueMap).
+- **Devices (Phase 4, on a server):** Night City's doors, gates, lights, cameras, terminals, vending machines, traffic lights,
+  lifts, turrets and screens stand in Minecraft as blocks a guest can use (a door opens in the host's game, a pedestrian's door opens
+  in Minecraft); vending machines sell for eddies; hosts switch each kind off with `/cyberblock guests devices <type> off`
+  ([details](docs/HOW-TO-PLAY.md#devices-phase-4)).
 
 ## Build from source
 ```
