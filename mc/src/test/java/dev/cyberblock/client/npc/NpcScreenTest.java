@@ -14,6 +14,9 @@ class NpcScreenTest {
 		assertEquals(1, NpcScreen.pages(5));
 		assertEquals(2, NpcScreen.pages(6));
 		assertEquals(7, NpcScreen.pages(NpcWire.MAX_ROWS));
+		assertEquals(NpcScreen.height(1), NpcScreen.height(0), "room for one row when empty");
+		assertTrue(NpcScreen.height(2) < NpcScreen.height(5));
+		assertEquals(NpcScreen.height(5), NpcScreen.height(30), "never more than a page");
 	}
 
 	@Test
@@ -48,6 +51,6 @@ class NpcScreenTest {
 		NpcWire.Row gig = new NpcWire.Row("c0", "", 0, "", "Claw Trimming", "", 260, "take", true);
 		assertEquals("Claw Trimming", NpcScreen.rowName(gig, net.minecraft.world.item.ItemStack.EMPTY).getString());
 		NpcWire.Row heal = new NpcWire.Row("heal", "", 3, "", "", "", 18, "heal", true);
-		assertEquals("Patch up 3 missing hearts", NpcScreen.rowName(heal, net.minecraft.world.item.ItemStack.EMPTY).getString());
+		assertEquals("Heal 3 hearts", NpcScreen.rowName(heal, net.minecraft.world.item.ItemStack.EMPTY).getString());
 	}
 }

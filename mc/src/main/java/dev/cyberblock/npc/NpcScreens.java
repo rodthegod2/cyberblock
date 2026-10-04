@@ -23,7 +23,10 @@ import org.jspecify.annotations.Nullable;
 final class NpcScreens {
 	/** How far from the NPC a player may use its screen (vanilla's entity reach, plus a margin). */
 	static final double REACH = 8.0;
+	/** Acts closer together than this from one player are dropped. */
+	static final long MIN_ACT_MS = 40;
 	private static final Map<UUID, Visit> visits = new HashMap<>();
+	private static final Map<UUID, Long> lastAct = new HashMap<>();
 	static final Shopkeeper shopkeeper = new Shopkeeper();
 	static final Clinic clinic = new Clinic();
 	private static final Map<String, Visit.Service> services = Map.of("shop", shopkeeper, "ripperdoc", clinic.ripperdoc, "medic", clinic.medic,
@@ -76,6 +79,13 @@ final class NpcScreens {
 
 	/** {@code cyberblock:act t:"npc"}: a tab, a press, a surgery cut or abort. */
 	static void act(final ServerPlayer player, final JsonObject json) {
+		long now = System.currentTimeMillis();
+		Long last = lastAct.put(player.getUUID(), now);
+		if (last != null && now - last < MIN_ACT_MS) {
+			// a client pressing faster than a person can: dropped (each act costs a screen sent back)
+			return;
+		}
+
 		NpcWire.Act act = NpcWire.parseAct(json);
 		Entity npc = act == null ? null : player.level().getEntity(act.e());
 		if (npc == null || npc.isRemoved() || npc.distanceToSqr(player) > REACH * REACH) {
@@ -83,14 +93,14 @@ final class NpcScreens {
 		}
 
 		Visit fresh = visit(player, npc);
-		Visit last = visits.get(player.getUUID());
+		Visit before = visits.get(player.getUUID());
 		if (fresh == null) {
 			// a /reload took the role away: nothing more to do here
 			visits.remove(player.getUUID());
 			return;
 		}
 
-		Visit v = last != null && last.npc == npc && last.roleId.equals(fresh.roleId) ? last : fresh;
+		Visit v = before != null && before.npc == npc && before.roleId.equals(fresh.roleId) ? before : fresh;
 		visits.put(player.getUUID(), v);
 		List<String> tabs = tabs(v);
 		if (!tabs.contains(v.tab)) {
@@ -135,11 +145,13 @@ final class NpcScreens {
 
 	static void forget(final UUID player) {
 		visits.remove(player);
+		lastAct.remove(player);
 		clinic.forget(player);
 	}
 
 	static void clear() {
 		visits.clear();
+		lastAct.clear();
 		shopkeeper.clear();
 		clinic.clear();
 		Gigs.clear();

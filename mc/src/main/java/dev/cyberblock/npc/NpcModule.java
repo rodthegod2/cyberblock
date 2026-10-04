@@ -15,6 +15,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 
 /**
@@ -33,11 +34,13 @@ public final class NpcModule {
 		HubNpcs.register();
 		ServerNet.onAct(NpcWire.ACT, NpcScreens::act);
 		UseEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
-			if (player instanceof ServerPlayer p && !player.isSpectator() && !player.isShiftKeyDown() && !JoinLock.locked(p) && NpcScreens.open(p, entity)) {
-				return InteractionResult.SUCCESS;
+			if (!(player instanceof ServerPlayer p) || player.isSpectator() || player.isShiftKeyDown() || JoinLock.locked(p)) {
+				return InteractionResult.PASS;
 			}
 
-			return InteractionResult.PASS;
+			// the client asks again with the off hand after a main hand it saw pass: one screen, and no item used on a role NPC either way
+			boolean role = hand == InteractionHand.OFF_HAND ? NpcScreens.visit(p, entity) != null : NpcScreens.open(p, entity);
+			return role ? InteractionResult.SUCCESS : InteractionResult.PASS;
 		});
 		AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
 			if (player instanceof ServerPlayer p && !level.isClientSide()) {

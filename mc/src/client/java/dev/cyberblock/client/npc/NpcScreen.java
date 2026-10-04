@@ -134,7 +134,7 @@ public final class NpcScreen extends Screen {
 		}
 
 		return switch (row.btn()) {
-			case "heal" -> Component.translatableWithFallback("cyberblock.npc.row.heal", "Patch up %s missing hearts", row.n());
+			case "heal" -> Component.translatableWithFallback("cyberblock.npc.row.heal", "Heal %s hearts", row.n());
 			case "repair_vehicle" -> Component.translatableWithFallback("cyberblock.npc.row.repair_vehicle", "Repair your Cyberpunk car");
 			case "ask" -> Component.translatableWithFallback("cyberblock.npc.row.ask", "Heard any rumours?");
 			default -> stack.getHoverName();
@@ -146,11 +146,17 @@ public final class NpcScreen extends Screen {
 	}
 
 	private int top() {
-		return (this.height - height()) / 2;
+		return (this.height - this.panelHeight()) / 2;
 	}
 
-	static int height() {
-		return TOP + PER_PAGE * ROW + 30;
+	/** As tall as the rows shown: a full page when there are several. */
+	private int panelHeight() {
+		return height(this.screen.rows().size());
+	}
+
+	/** The panel's height for this many rows (at least one row's room, at most a page). Pure. */
+	static int height(final int rows) {
+		return TOP + Math.clamp(rows, 1, PER_PAGE) * ROW + 30;
 	}
 
 	@Override
@@ -180,7 +186,7 @@ public final class NpcScreen extends Screen {
 
 		int pages = pages(rows.size());
 		if (pages > 1) {
-			int y = top + height() - 26;
+			int y = top + this.panelHeight() - 26;
 			Button prev = Button.builder(Component.literal("<"), b -> this.turn(-1)).bounds(left + 8, y, 20, 20).build();
 			Button next = Button.builder(Component.literal(">"), b -> this.turn(1)).bounds(left + WIDTH - 28, y, 20, 20).build();
 			prev.active = this.page > 0;
@@ -217,7 +223,7 @@ public final class NpcScreen extends Screen {
 	@Override
 	public void extractBackground(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY, final float a) {
 		super.extractBackground(graphics, mouseX, mouseY, a);
-		McTheme.panel(graphics, this.left(), this.top(), WIDTH, height());
+		McTheme.panel(graphics, this.left(), this.top(), WIDTH, this.panelHeight());
 	}
 
 	@Override
@@ -251,7 +257,7 @@ public final class NpcScreen extends Screen {
 		}
 
 		int pages = pages(rows.size());
-		int bottom = top + height() - 20;
+		int bottom = top + this.panelHeight() - 20;
 		if (pages > 1) {
 			graphics.centeredText(this.font, Component.literal((this.page + 1) + " / " + pages), left + WIDTH / 2, bottom - 12, McTheme.PANEL_TEXT);
 		}
