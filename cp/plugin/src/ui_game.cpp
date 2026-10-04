@@ -3,9 +3,11 @@
 // others through cb::natives::add, and the pump that calls the script function CyberblockUi.Pump (Ui.reds) on the
 // game thread.
 //
-// RED4ext.SDK APIs (third_party/RED4ext.SDK): CRTTISystem::GetClass, CClass::GetFunction (static functions included,
-// RTTITypes-inl.hpp), ExecuteFunction(void *instance, CBaseFunction *, void *out) (Scripting/Utils-inl.hpp; a static
-// script function takes no instance), GetParameter, CName::ToString, DynArray, CString.
+// RED4ext.SDK APIs (third_party/RED4ext.SDK): CRTTISystem::GetClass/GetClassByScriptName, CClass::staticFuncs/funcs/
+// parent and CBaseFunction::fullName/shortName (RTTITypes.hpp, Scripting/Functions.hpp; CClass::GetFunction compares
+// shortName only, RTTITypes-inl.hpp, so the pump walks the functions itself), ExecuteFunction(void *instance,
+// CBaseFunction *, void *out) (Scripting/Utils-inl.hpp; a static script function takes no instance), GetParameter,
+// CName::ToString, DynArray, CString.
 #include "ui.hpp"
 #include "link.hpp"
 #include "log.hpp"
@@ -408,8 +410,9 @@ namespace
 			*out = g_current.id;
 	}
 
-	// Cyberblock_UiPumpLive() -> Bool: the DLL ran CyberblockUi.Pump within the last 0.5 s. While it is false the scripts'
-	// 10 Hz tick pumps instead, so Minecraft's screen requests are answered even when the DLL cannot find the function.
+	// Cyberblock_UiPumpLive() -> Bool: the DLL runs CyberblockUi.Pump right now or ran it within the last 0.5 s. While it
+	// is false the scripts' 10 Hz tick pumps instead, so Minecraft's screen requests are answered even when the DLL cannot
+	// find the function, and Menus.reds does not pause Night City (that tick stands still while paused: no resume).
 	void UiPumpLive(IScriptable *, CStackFrame *frame, bool *out, int64_t)
 	{
 		++frame->code;
@@ -507,9 +510,53 @@ namespace
 			cb::log::info("ui: unpaused (%s)", reason);
 	}
 
+	/// The script function `wanted` of `type` or a parent: static and member functions, matched by
+	/// cb::ui::script_function_matches (a script function's full name is mangled, "Pump;"; CClass::GetFunction compares
+	/// shortName only). `matched` gets the full name that matched.
+	RED4ext::CBaseFunction *find_script_function(RED4ext::CClass *type, const char *wanted, std::string &matched)
+	{
+		for (; type != nullptr; type = type->parent)
+		{
+			const auto pick = [&](auto &functions) -> RED4ext::CBaseFunction *
+			{
+				for (RED4ext::CBaseFunction *function : functions)
+					if (function != nullptr &&
+						cb::ui::script_function_matches(name_text(function->fullName), name_text(function->shortName), wanted))
+					{
+						matched = name_text(function->fullName);
+						return function;
+					}
+				return nullptr;
+			};
+			if (RED4ext::CBaseFunction *function = pick(type->staticFuncs))
+				return function;
+			if (RED4ext::CBaseFunction *function = pick(type->funcs))
+				return function;
+		}
+		return nullptr;
+	}
+
+	/// "full/short" of each function `type` declares (for the not-found log).
+	std::string function_names(const RED4ext::CClass *type)
+	{
+		std::string names;
+		const auto add = [&names](const auto &functions)
+		{
+			for (const RED4ext::CBaseFunction *function : functions)
+				if (function != nullptr)
+					names += (names.empty() ? "" : ", ") + name_text(function->fullName) + "/" + name_text(function->shortName);
+		};
+		add(type->staticFuncs);
+		add(type->funcs);
+		return names.empty() ? "none" : names;
+	}
+
 	/// CyberblockUi.Pump; null while it cannot be found. In game (2026-10-03) the first look, on the first Running frame
 	/// at the main menu, found no CyberblockUi class yet and the old code never looked again, so no Night City screen
-	/// ever got its reply (the Atlas stayed empty): it is now looked up again every 2 s until it is found.
+	/// ever got its reply (the Atlas stayed empty): it is now looked up again every 2 s until it is found. In game
+	/// (2026-10-04) CClass::GetFunction("Pump") never found it although the scripts called CyberblockUi.Pump themselves:
+	/// the compiled script blob names it "Pump;" (redscript's mangled full name), so the lookup now walks the class's
+	/// static and member functions itself and accepts the plain or the mangled name.
 	RED4ext::CBaseFunction *pump_function()
 	{
 		static RED4ext::CBaseFunction *function = nullptr;
@@ -521,12 +568,23 @@ namespace
 		if (now < nextTry)
 			return nullptr;
 		nextTry = now + 2.0;
-		RED4ext::CClass *type = RED4ext::CRTTISystem::Get()->GetClass("CyberblockUi");
-		function = type ? type->GetFunction("Pump") : nullptr;
+		RED4ext::CRTTISystem *rtti = RED4ext::CRTTISystem::Get();
+		RED4ext::CClass *type = rtti->GetClass("CyberblockUi");
+		if (type == nullptr)
+			type = rtti->GetClassByScriptName("CyberblockUi");
+		std::string matched;
+		function = type != nullptr ? find_script_function(type, "Pump", matched) : nullptr;
 		if (function)
-			cb::log::info("ui: pump ready%s", warned ? " (found on a later look)" : "");
+			cb::log::info("ui: pump ready (CyberblockUi.%s, %s%s)", matched.c_str(), function->flags.isStatic ? "static" : "member",
+						  warned ? ", found on a later look" : "");
 		else if (!std::exchange(warned, true))
-			cb::log::warn("ui: pump not found yet: CyberblockUi.Pump missing; looking again every 2 s");
+		{
+			if (type == nullptr)
+				cb::log::warn("ui: pump not found yet: no CyberblockUi class; looking again every 2 s");
+			else
+				cb::log::warn("ui: pump not found yet: CyberblockUi has no Pump (its functions, full/short: %s); looking again every 2 s",
+							  function_names(type).c_str());
+		}
 		return function;
 	}
 }
@@ -613,8 +671,15 @@ namespace cb::ui
 			return;
 		if (RED4ext::CBaseFunction *function = pump_function())
 		{
-			RED4ext::ExecuteFunction(static_cast<void *>(nullptr), function, nullptr);
-			g_lastPump = now;
+			// live while it runs: the `pause` it may handle checks Cyberblock_UiPumpLive (Menus.reds)
+			const double previous = g_lastPump.exchange(now);
+			if (!RED4ext::ExecuteFunction(static_cast<void *>(nullptr), function, nullptr))
+			{
+				g_lastPump = previous;
+				static bool warned = false;
+				if (!std::exchange(warned, true))
+					cb::log::warn("ui: CyberblockUi.Pump did not run (ExecuteFunction failed); the scripts keep pumping from their tick");
+			}
 		}
 	}
 

@@ -38,6 +38,8 @@ public class CyberblockUiService extends ScriptableService {
   public let shownFor: String;
   // Cyberblock paused the game for Minecraft's Night City pause screen.
   public let pausedByUs: Bool;
+  // A `pause` was refused because the DLL pump was not running (Menus.reds; logged once).
+  public let pauseRefusedLogged: Bool;
   // The in-game menu controller (Menus.reds) and the one-shot bypass for the escape hatch.
   public let menuController: wref<gameuiInGameMenuGameController>;
   public let bypass: Bool;

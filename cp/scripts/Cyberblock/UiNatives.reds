@@ -34,7 +34,8 @@ public native func Cyberblock_Notify(kind: CName, title: String, text: String, s
 // NextUiAction pops one and makes it current: n"pause", n"resume", n"save", n"loadlast", n"mainmenu", n"cpmenu",
 // n"track", n"smsreply", n"fasttravel", n"journalreq", n"phonereq", n"atlasreq"; n"" when empty.
 public native func Cyberblock_NextUiAction() -> CName;
-// The DLL ran CyberblockUi.Pump within the last 0.5 s; while false, CyberblockSystem's tick pumps instead.
+// The DLL runs CyberblockUi.Pump now or ran it within the last 0.5 s; while false, CyberblockSystem's tick pumps
+// instead and a `pause` is refused (Menus.reds: nothing would deliver the resume while Night City is paused).
 public native func Cyberblock_UiPumpLive() -> Bool;
 public native func Cyberblock_UiActionArg() -> String;
 public native func Cyberblock_UiActionHash() -> Uint32;

@@ -475,3 +475,26 @@ TEST(ui_reply_pin_carries_its_district_only_when_known)
 	CHECK(pins.size() == 3 && pins[0]["d"] == "Westbrook" && !pins[1].contains("d"));
 	CHECK(pins[2]["d"].get<std::string>().size() == 64); // cut to kNameBytes, the control character stripped
 }
+
+// ---- script_function_matches (the pump lookup) ------------------------------------------------------------------------
+
+TEST(ui_script_function_matches_the_mangled_and_the_plain_name)
+{
+	// redscript's full name of `public static func Pump() -> Void` (seen in final.redscripts.modded) with either short name
+	CHECK(script_function_matches("Pump;", "Pump", "Pump"));
+	CHECK(script_function_matches("Pump;", "Pump;", "Pump"));
+	CHECK(script_function_matches("Pump;", "", "Pump"));
+	CHECK(script_function_matches("Act;GameInstanceCNameBool", "Act;GameInstanceCNameBool", "Act"));
+	CHECK(script_function_matches("GetWorldPosition", "GetWorldPosition", "GetWorldPosition")); // a native
+	CHECK(script_function_matches("Pump", "", "Pump"));
+}
+
+TEST(ui_script_function_matches_rejects_other_names)
+{
+	CHECK(!script_function_matches("PumpSave;", "PumpSave", "Pump")); // a longer name with the same start
+	CHECK(!script_function_matches("Pum;", "Pum", "Pump"));
+	CHECK(!script_function_matches(";Pump", "", "Pump"));
+	CHECK(!script_function_matches("pump;", "pump", "Pump"));         // names are case-sensitive
+	CHECK(!script_function_matches("", "", "Pump"));
+	CHECK(!script_function_matches("Pump;", "Pump", ""));
+}

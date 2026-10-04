@@ -292,9 +292,18 @@ public abstract class CyberblockMenus {
     switch action {
       case n"pause":
         if on && !s.pausedByUs && IsDefined(requests) && !requests.IsGamePaused() {
-          requests.PauseGame();
-          s.pausedByUs = true;
-          Cyberblock_Log("ui: paused by Minecraft");
+          // Only the DLL's pump runs while Night City is paused; without it the `resume` would never be drained and the
+          // player would be stranded (the CyberblockSystem tick that pumps instead stands still while paused).
+          if Cyberblock_UiPumpLive() {
+            requests.PauseGame();
+            s.pausedByUs = true;
+            Cyberblock_Log("ui: paused by Minecraft");
+          } else {
+            if !s.pauseRefusedLogged {
+              s.pauseRefusedLogged = true;
+              Cyberblock_Log("ui: not pausing Night City (the DLL pump is not running, a resume could not be delivered)");
+            }
+          }
         }
         break;
       case n"resume":
