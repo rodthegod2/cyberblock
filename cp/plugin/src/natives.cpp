@@ -1523,7 +1523,8 @@ namespace cb::natives
 		add(rtti, "Cyberblock_SubmitNpcs", &SubmitNpcs, nullptr,
 			{{"array:Uint64", "ids"}, {"array:Vector4", "feet"}, {"array:Float", "yaws"}, {"array:Bool", "vehicles"},
 			 {"array:Bool", "hostile"}, {"array:Bool", "dead"}});
-		add(rtti, "Cyberblock_SubmitNpcs2", &SubmitNpcs2, nullptr, // Phase 5 (task 5-D1)
+		// Phase 5 (task 5-D1)
+		add(rtti, "Cyberblock_SubmitNpcs2", &SubmitNpcs2, nullptr,
 			{{"array:Uint64", "ids"}, {"array:Vector4", "feet"}, {"array:Float", "yaws"}, {"array:Bool", "vehicles"},
 			 {"array:Bool", "hostile"}, {"array:Bool", "dead"}, {"array:CName", "roles"}, {"array:CName", "factions"},
 			 {"array:Int32", "genders"}, {"array:CName", "archetypes"}, {"array:Int32", "anims"}, {"array:CName", "vclass"},
