@@ -116,8 +116,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.npc.NpcModule.init();
 		// Phase 7T: the Holo-Table and Spawn Beacon blocks, the table's pins, layers and spawns, the landmark content kind (7-T1)
 		dev.cyberblock.holo.HoloModule.init();
-		// Phase 8T: Server Heat and its squads (heat_tier), megaplan 8-T1
-		dev.cyberblock.mode.heat.ServerHeat.init();
+		// Phase 8T: Server Heat and its squads (heat_tier), spectator and caster mode, megaplan 8-T1 and 8-T3
+		dev.cyberblock.mode.heat.ServerHeat.init(); dev.cyberblock.mode.spectate.Spectate.init();
 		LOG.info("cyberblock loaded");
 	}
 

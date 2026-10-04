@@ -74,8 +74,9 @@ public class CyberblockClient implements ClientModInitializer {
 		dev.cyberblock.client.npc.NpcClient.init();
 		// Phase 7T: the Holo-Table view (3D miniature, pins, spawns; its 2D mode on the Atlas)
 		dev.cyberblock.client.holo.HoloClient.init();
-		// Phase 8T: the Server Heat meter (8-T1)
+		// Phase 8T: the Server Heat meter and the caster overlay (8-T1, 8-T3)
 		dev.cyberblock.client.mode.heat.HeatClient.init();
+		dev.cyberblock.client.mode.spectate.CasterClient.init();
 		ClientTickEvents.START_CLIENT_TICK.register(minecraft -> ClientInput.tickStart());
 		ClientTickEvents.END_CLIENT_TICK.register(CyberblockClient::tick);
 		// launcher players (plan retest3 M5): a "Play Cyberblock" button on the title screen
