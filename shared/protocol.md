@@ -503,8 +503,10 @@ Re-test 3 examples, Minecraft to Cyberpunk:
 
 Same wire, same conventions; `proto` stays 1 and older builds ignore the new `t` values and fields. Minecraft's Atlas and
 radar draw Night City as a Minecraft map from **real collision geometry**: Cyberpunk casts long down rays and reports the
-highest Night City surface of each **2-m cell** (no Cyberpunk map art is used). Minecraft keeps the explored cells per
-world. `/cyberblock survey` carries V across the whole city once so the map fills in everywhere.
+highest Night City surface of each **2-m cell** (no Cyberpunk map art is used). Minecraft keeps the cells **once per
+installation** (`<game dir>/cyberblock/nightcity-map/`), shared by every Minecraft world and every Cyberpunk save, since
+Night City is the same in all of them. `/cyberblock survey` carries V across the whole city once so the map fills in
+everywhere.
 
 ### Atlas: Cyberpunk → Minecraft
 | `t` | fields | when |

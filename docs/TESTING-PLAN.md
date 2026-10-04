@@ -4,6 +4,50 @@ Everything below is built, unit-tested, compile-checked against the real 2.31 ga
 bottom (**Re-test 3 first**); each step says what should happen. Tell Claude "F4: what you saw" or "R5 L-1: what you saw" (or "step N: ...") and it reads
 `red4ext\logs\Cyberblock.log`, Minecraft's `mc\run\logs\latest.log` and captures the game window to diagnose.
 
+## Atlas re-test (branch feat/atlas)
+The Atlas (M) now draws Night City from Cyberpunk's collision, and `/cyberblock survey` maps the whole city once. Player
+guide: `docs/HOW-TO-PLAY.md` "The Atlas (map)"; wire: `shared/protocol.md` "Atlas".
+
+### A1. The Atlas answers at all (the root cause of the empty map)
+1. Load a save, F9 on, press **M**. **Expect:** pins all over Night City (fast-travel points, vendors, ripperdocs, gigs,
+   quests), not just the objective marker; hover one: its name, kind and (fast-travel points) district.
+- **Log:** `ui: pump ready` (possibly "found on a later look"; never only `ui: pump not found yet`), then on M
+  `ui: action atlasreq`, `script: ui: atlas reply: N pins of M map mappins, K more fast-travel points` and
+  `ui: reply atlas 0 groups, 0 lines, N pins`. **Report** N, M and K.
+2. J (Journal) and the phone also answer (they share the pump).
+
+### A2. The map fills in as you move
+1. Walk and drive a few blocks, then press M. **Expect:** the streets you passed are light sand, buildings grey (taller is
+   darker), water blue, with Minecraft map shading; unmeasured areas stay parchment. Zoom in: crisp squares. Zoom out far:
+   it still draws (region textures). The radar (top left) shows the same map under you, turning with the camera.
+2. Quit Minecraft and start it again (or open another world): the map is still there.
+- **Files:** `%APPDATA%\.minecraft-cyberblock\cyberblock\nightcity-map\r.*.cbat` appear within 30 s.
+- **Report** anything mis-coloured (a street drawn as a building, water missing, the map mirrored or offset from the pins).
+
+### A3. Pins, filters, districts, tracking
+1. Toggle **Quests / Travel / Shops / Gigs / Places**: each kind hides and shows. Zoomed out, pins thin out instead of
+   piling up, and district names appear.
+2. Select a quest pin, press **Track**: the quest is tracked (the quest panel and the red marker follow).
+- **Log:** `script: ui: tracked pin <i>` (or `track pin <i> unresolved (...)` for a non-quest pin, with a toast).
+
+### A4. The survey tour (AFK)
+1. On foot, out of combat, type `/cyberblock survey`. **Expect:** a boss bar "Atlas survey: n of N stops (p %), Xh Ym left";
+   V is moved from stop to stop high above the city, invisible, taking no damage; the Atlas fills in around each stop.
+2. Open a Cyberpunk menu (Esc passes through the Minecraft pause screen; or Night City Menu...): the bar says paused.
+3. `/cyberblock survey status` prints the progress. Try saving: it must be refused while the tour runs.
+4. `/cyberblock survey stop` (or F9): **V is put back exactly where V stood**, visible, saving works again.
+5. `/cyberblock survey` again: it resumes (the stops already done are skipped). When all are done: toast "Atlas survey done";
+   another `/cyberblock survey` says Night City is already mapped; `/cyberblock survey redo` starts over.
+- **Log:** `survey: start asked by Minecraft (n stops already done)`, `survey: bounds x a..b, y c..d from P map pins: N
+  stops, L left, home (...)`, `survey: started: V hidden, invulnerable, saving locked`, one `survey: stop i/N (gx, gy)
+  sampled|skipped (water)|skipped (nothing streamed): ... eta ...` per stop, `survey: done|stopped (...)`,
+  `survey: V put back at (...)` (DLL and script), `survey: V visible again, survey god mode and save lock removed`.
+- **Report** the bounds line, how long a stop takes, and any stop where V was left somewhere or fell.
+
+### A5. The survey refuses and ends safely
+1. In a vehicle, in combat or during a scene: `/cyberblock survey` → toast "Atlas survey refused" (vehicle / combat / held).
+2. While it runs: get V into a scene or let combat start (unlikely while invisible), or quit Minecraft: it ends with V home.
+
 ## Re-test 3 (do this first)
 
 The third session (`out/user-issues.md`, section "Re-test 3 feedback") raised thirteen items, **F1 to F13**. They are all

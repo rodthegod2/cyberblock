@@ -39,7 +39,7 @@ current k.
 
 Re-test 3 modes (shared/protocol.md "Re-test 3"; combinable with each other and with the layer flags, same --hold, --cmd,
 --port and NPC resend; each mode runs for --hold seconds after the orbit and prints what Minecraft reports):
-  --ui     plays the UI stream: `stats`, a `quest` with a waypoint, `pins`, a `prompt`, a 4-choice `choices` hub whose
+  --ui     plays the UI stream: `stats`, a `quest` with a waypoint, `pins`, a patch of Atlas `terrain`, a `prompt`, a 4-choice `choices` hub whose
            selection changes while its timer runs down, a `sub`title, a ringing `call`, three `notify` toasts,
            `screen open:"pause"`, then `screen pass:"vendor"` with `cam menu:true` and `pass:""`, and a `key
            perspective` tap (F5); the camera follows `persp back` (`fp:false`). Answers `uiact journalreq`, `phonereq`
@@ -233,7 +233,19 @@ def ui_script() -> list[tuple[float, dict]]:
         (5.5, {**sub, "show": False}),
         (5.0, {"t": "screen", "open": "pause"}), (UI_MENU[0], {"t": "screen", "pass": "vendor"}), (UI_MENU[1], {"t": "screen", "pass": ""}),
         (PERSPECTIVE_KEY[0], key(True)), (PERSPECTIVE_KEY[1], key(False)),
-    ], key=lambda e: e[0])
+    ] + [(0.3, m) for m in ui_terrain()], key=lambda e: e[0])
+
+
+def ui_terrain() -> list[dict]:
+    """--ui: a sample of the Atlas's explored map around the slab (protocol.md "Atlas" `terrain`): 2-m cells 80 m around, a
+    street level at the slab, a 30 m building block north-east of it and the sea to the west, at most 64 cells a message."""
+    cells = []
+    for cz in range(-20, 20):
+        for cx in range(-20, 20):
+            water = cx < -12
+            tall = 4 <= cx < 10 and -10 <= cz < -4
+            cells += [cx, cz, -1 if water else int(SLAB_Y) + (30 if tall else 0), 1 if water else 0]
+    return [{"t": "terrain", "c": cells[i:i + 256]} for i in range(0, len(cells), 256)]
 
 
 def ui_replies(m: dict) -> list[dict]:
@@ -251,7 +263,7 @@ def ui_replies(m: dict) -> list[dict]:
              "lines": [{"hash": 5, "text": "Call me later.", "state": 0}, {"hash": 6, "text": "Will do.", "state": 2}]}]}]
     if m.get("a") == "atlasreq":
         return [{"t": "reply", "kind": "atlas", "id": rid, "groups": [], "pins": [
-            {"p": [-5.5, SLAB_Y + 1.0, 3.5], "kind": "fasttravel", "name": "Watson Docks", "i": 4},
+            {"p": [-5.5, SLAB_Y + 1.0, 3.5], "kind": "fasttravel", "name": "Watson Docks", "i": 4, "d": "Watson"},
             {"p": [4.5, SLAB_Y + 1.0, -6.5], "kind": "quest", "name": "The Pickup", "i": -1}]}]
     return []
 

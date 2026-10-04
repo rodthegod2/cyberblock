@@ -992,3 +992,12 @@ def test_atlas_survey_constants_agree_with_the_dll():
                         ("kProbeStep", "80.0"), ("kSettleMin", "1.5"), ("kSettleStable", "1.0"), ("kSettleTimeout", "15.0"),
                         ("kMinPins", "8"), ("kBoundsMargin", "200.0"), ("kMaxSpan", "9000.0"), ("kWorldLimit", "8000.0"), ("kMaxDone", "4096")):
         assert re.search(rf"\b{name} = {re.escape(value)};", hpp), f"survey.hpp {name} is not {value}"
+
+
+def test_guide_documents_the_atlas_and_the_one_time_survey():
+    text = " ".join(GUIDE.split())
+    for phrase in ("#### The Atlas (map)", "Survey once, and every world and save uses it.", "`/cyberblock survey`", "`/cyberblock survey redo`",
+                   "/cyberblock survey stop", "/cyberblock survey status", "put back exactly where V stood", "nightcity-map",
+                   "Quests, Travel, Shops, Gigs, Places", "**Track**"):
+        assert phrase in text, f"HOW-TO-PLAY.md does not say {phrase!r}"
+    assert "Nothing of Cyberpunk's own map art is used" in text
