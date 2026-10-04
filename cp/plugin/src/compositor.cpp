@@ -16,6 +16,7 @@
 #include <reshade.hpp>
 #include <d3d12.h>
 #include <dxgi1_4.h>
+#include "feed_capture.hpp"
 #include "link.hpp"
 #include "log.hpp"
 #include "natives.hpp"
@@ -588,6 +589,7 @@ namespace compositor
 		reshade::register_event<reshade::addon_event::reshade_present>(on_present);
 		reshade::register_event<reshade::addon_event::reshade_reloaded_effects>(on_reloaded_effects);
 		reshade::register_event<reshade::addon_event::destroy_effect_runtime>(on_destroy_effect_runtime);
+		feed_capture::register_events(); // Phase 6: the photo feed (feed_capture.hpp)
 		g_registered = true;
 		reshade::log::message(reshade::log::level::info, "Cyberblock: registered");
 		return true;

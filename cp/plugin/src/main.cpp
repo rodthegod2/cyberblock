@@ -8,6 +8,7 @@
 #include "compositor.h"
 #include "devices.hpp"
 #include "drive.hpp"
+#include "feed.hpp"
 #include "input.hpp"
 #include "link.hpp"
 #include "log.hpp"
@@ -104,6 +105,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 				cb::survey_game::on_minecraft_message(message);
 				cb::devices::on_minecraft_message(message); // Phase 4: `devact`
 				cb::rhack::on_minecraft_message(message);   // Phase 6: `rhack`, `daemon`
+				cb::feed::on_minecraft_message(message);    // Phase 6: `feedreq` (and `hello`, `session`)
 				if (message.value("t", "") == "session")
 				{
 					// megaplan 1-H1: a new server session gets the whole ground again; leaving the host role cleans the DLL
@@ -125,6 +127,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle aHandle, RED4e
 				cb::ui::on_link_dropped();
 				cb::survey_game::on_link_dropped();
 				cb::devices::on_link_dropped();
+				cb::feed::on_link_dropped();
 			});
 		break;
 	}

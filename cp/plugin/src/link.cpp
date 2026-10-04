@@ -31,7 +31,8 @@ namespace
 	/// Messages where only the newest counts: each one carries the whole current state.
 	bool is_state_stream(const std::string &type)
 	{
-		return type == "cam" || type == "npcs" || type == "aim" || type == "cursor" || type == "pcells";
+		return type == "cam" || type == "npcs" || type == "aim" || type == "cursor" || type == "pcells" ||
+			   type == "feed"; // Phase 6: a whole picture each time
 	}
 
 	/// Messages that build Minecraft's Night City ground; a `clear` starts it over.
