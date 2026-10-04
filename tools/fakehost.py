@@ -775,7 +775,7 @@ QUICKHACK_NAMES = ("short_circuit", "overheat", "reboot_optics", "cripple_moveme
 NO_TARGET = (None, "", "0")  # `target` absent, null, "" or "0": no target (the server sends "" for an area hack)
 REQUEST_ID_MAX, R_MAX, SECS_MAX = 2**31 - 1, 150.0, 600
 # what each vehicle hack does to the car and for how long (RemoteHacks.reds on a car that is not V's): the lock 120 s, the engine 30 s, the brake about 5 s,
-# the jam 3 s; `veh_start` is never undone (it also ends a pending engine hold). The wire carries no `secs` for them: these are the scripts' own times.
+# the jam 3 s; `veh_start` is never undone (it also ends a pending engine hold). The server's `secs` (30) is ignored, as the scripts do: these are their own times.
 VEHICLE_EFFECT = {"veh_lock": ({"locked": True}, 120), "veh_engine_off": ({"engine": False}, 30), "veh_brake": ({"braked": True}, 5),
                   "veh_start": ({"engine": True}, 0), "veh_jam": ({"jammed": True}, 3)}
 GRIDLOCK_SECS, GRIDLOCK_R, LIGHT_R, OUTLINE_R, PING_R = 60, 25.0, 40.0, 25.0, 30.0  # the scripts' radii and the gridlock's hold

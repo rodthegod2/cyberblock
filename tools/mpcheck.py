@@ -1330,13 +1330,14 @@ def rhack_answered_ok(host: FakeHost, sent: list[dict], since: int) -> bool:
 
 
 def is_vehicle_rhack(m: dict) -> bool:
-    """The server's shape of a Vehicle Panel hack (ActWire.rhack): the car's Night City id as the target and nothing else."""
-    return set(m) == {"t", "id", "target", "hack"} and m["hack"] == "veh_brake" and m["target"] == CAR_ID and isinstance(m["id"], int)
+    """The server's shape of a Vehicle Panel hack (ActWire.rhack, shared/rhack-vectors.json): the car's Night City id as the target and `secs` 30."""
+    return (set(m) == {"t", "id", "target", "hack", "secs"} and m["hack"] == "veh_brake" and m["target"] == CAR_ID and isinstance(m["id"], int)
+            and m["secs"] == 30)
 
 
 def is_point_rhack(m: dict) -> bool:
-    """The server's shape of a Net Map point hack: no target, the point, its radius and its seconds."""
-    return (set(m) == {"t", "id", "target", "hack", "p", "r", "secs"} and m["hack"] == "ping_area" and m["target"] == "" and isinstance(m["r"], (int, float))
+    """The server's shape of a Net Map point hack: `target` null, the point, its radius (whole metres) and its seconds."""
+    return (set(m) == {"t", "id", "target", "hack", "p", "r", "secs"} and m["hack"] == "ping_area" and m["target"] is None and type(m["r"]) is int
             and isinstance(m["secs"], int) and isinstance(m["p"], list) and len(m["p"]) == 3 and math.dist(m["p"], NETMAP_POINT) < 0.01)
 
 
@@ -1345,13 +1346,13 @@ def remote_hacks(server: Server, host: FakeHost, rep: Report) -> None:
     eid = poll(lambda: car_figure_eid(server), T_EFFECT, T_POLL, "the car figure")
     mark = host.log.mark()
     guest_sends_act(server, "rhack", {"hack": "veh_brake", "eid": eid})
-    rep.step("a guest's Vehicle Panel act sends the owner's DLL one `rhack` with the car's Night City id (no `secs`, no `p`)",
+    rep.step("a guest's Vehicle Panel act sends the owner's DLL one `rhack` with the car's Night City id and `secs` 30 (no `p`)",
              lambda: poll(lambda: [m for m in rhacks_since(host, mark) if is_vehicle_rhack(m)], T_EFFECT, T_POLL, "the vehicle rhack"))
     sent = [m for m in rhacks_since(host, mark) if is_vehicle_rhack(m)]
     rep.step("... answered with exactly one `hackresult ok:true` of the same id", lambda: poll(lambda: rhack_answered_ok(host, sent, mark), T_EFFECT, T_POLL, "the hackresult"))
     mark = host.log.mark()
     guest_sends_act(server, "rhack", {"hack": "ping_area", "p": list(NETMAP_POINT)})
-    rep.step("a guest's Net Map act at a point sends one `rhack` with `target:\"\"`, `p`, `r` and `secs` to the host whose V is near it",
+    rep.step("a guest's Net Map act at a point sends one `rhack` with `target:null`, `p`, `r` and `secs` to the host whose V is near it",
              lambda: poll(lambda: [m for m in rhacks_since(host, mark) if is_point_rhack(m)], T_EFFECT, T_POLL, "the point rhack"))
     sent = [m for m in rhacks_since(host, mark) if is_point_rhack(m)]
     rep.step("... answered with exactly one `hackresult ok:true` of the same id", lambda: poll(lambda: rhack_answered_ok(host, sent, mark), T_EFFECT, T_POLL, "the hackresult"))

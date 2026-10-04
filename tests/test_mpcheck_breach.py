@@ -14,7 +14,7 @@ from tools.mpcheck import LogFile
 KIND6 = {key: kind for key, _, _, kind, *_ in fakehost.HACKS2_SCENE}
 SOLVED = ["open_door", "disable_cameras"]
 CAR_EID = 212  # the car figure's Minecraft entity id on the simulated server
-POINT_SECS, POINT_R = {"gridlock": 60, "outline": 20, "ping_area": 10}, {"gridlock": 24.0, "outline": 24.0, "ping_area": 32.0}  # RemoteHack
+POINT_SECS, POINT_R = {"gridlock": 60, "outline": 20, "ping_area": 0}, {"gridlock": 24, "outline": 24, "ping_area": 32}  # RemoteHack
 
 
 class Sim6Server(Sim4Server):
@@ -66,11 +66,11 @@ class Sim6Server(Sim4Server):
             return f"test: act {t} by {actor} -> handled"
         self.request += 1
         if m.get("eid") == CAR_EID:
-            down = {"t": "rhack", "id": self.request, "target": fakehost.NPC_IDS[2], "hack": m["hack"]}
+            down = {"t": "rhack", "id": self.request, "target": fakehost.NPC_IDS[2], "hack": m["hack"], "secs": 30}
             if "rhack-old-shape" in self.bugs:
-                down["secs"] = 30  # the shape protocol.md used to document
+                del down["secs"]  # the shape the server sent before the 6I review fix
         else:
-            down = {"t": "rhack", "id": self.request, "target": "", "hack": m["hack"], "p": [float(c) for c in m["p"]], "r": POINT_R[m["hack"]],
+            down = {"t": "rhack", "id": self.request, "target": None, "hack": m["hack"], "p": [float(c) for c in m["p"]], "r": POINT_R[m["hack"]],
                     "secs": POINT_SECS[m["hack"]]}
         host = self.sim.hosts[owner]
         append(host["log"], f"[{owner}] rhack: {json.dumps(down)}")
@@ -147,7 +147,7 @@ def test_breach_scenario_passes_against_an_ideal_server(tmp_path):
     assert all(m["dev"] == fakehost.device_ids(fakehost.HACKS2_SCENE)["netport"] for m in daemons) and len({m["id"] for m in daemons}) == 3
     results = [json.loads(line.split("hackresult: ", 1)[1]) for line in host_log.splitlines() if "] hackresult: " in line]
     rhacks = [json.loads(line.split("rhack: ", 1)[1]) for line in host_log.splitlines() if "] rhack: " in line]
-    assert [m["hack"] for m in rhacks] == ["veh_brake", "ping_area"] and [m["target"] for m in rhacks] == [fakehost.NPC_IDS[2], ""]
+    assert [m["hack"] for m in rhacks] == ["veh_brake", "ping_area"] and [m["target"] for m in rhacks] == [fakehost.NPC_IDS[2], None]
     assert [m["ok"] for m in results] == [True] * 5 and [m["id"] for m in results] == [m["id"] for m in daemons] + [m["id"] for m in rhacks]
 
 
@@ -158,7 +158,7 @@ def test_breach_scenario_passes_against_an_ideal_server(tmp_path):
     ("alarm-on-solve", {"a solved Breach sends the owner's DLL a `daemon` for the Net Port: 1 to 3 known daemon ids, strength 1..3"}),
     ("bad-strength", {"a solved Breach sends the owner's DLL a `daemon` for the Net Port: 1 to 3 known daemon ids, strength 1..3"}),
     ("devices-stay", {"the Net Port goes with the session"}),
-    ("rhack-old-shape", {"a guest's Vehicle Panel act sends the owner's DLL one `rhack` with the car's Night City id (no `secs`, no `p`)"}),
+    ("rhack-old-shape", {"a guest's Vehicle Panel act sends the owner's DLL one `rhack` with the car's Night City id and `secs` 30 (no `p`)"}),
     ("dll-silent", {"... answered with exactly one `hackresult ok:true` of the same id"}),
 ])
 def test_breach_scenario_notices_each_breach_bug(tmp_path, bug, expected):
