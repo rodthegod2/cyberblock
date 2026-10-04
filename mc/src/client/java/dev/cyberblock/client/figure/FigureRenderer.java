@@ -16,7 +16,6 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.geom.ModelLayers;
-import net.minecraft.client.model.player.PlayerModel;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
@@ -31,13 +30,13 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 
 /**
- * A Night City person as guests see it (plan 2026-10-04 tasks 3-F1 and 5-F1): the player model, classic or slim, in the skin the
+ * A Night City person as guests see it (plan 2026-10-04 tasks 3-F1 and 5-F1): the player body (FigureModel), classic or slim, in the skin the
  * server chose from skin_map (the neutral figure skin when there is none or its texture is missing); idle, walk or run from the host's
  * bits or from the speed it is drawn at; aim, fire, combat and crouch poses; a ragdoll's limp tumble; lying down once dead; a red hit
  * flash; the name tag in the threat colour. Moves at the speed the host reports, smoothed (FigureSmoothing). An active host's own
  * client draws nothing: its Cyberpunk shows the real NPC.
  */
-public final class FigureRenderer extends LivingEntityRenderer<ProxyEntity, FigureModel.State, PlayerModel> {
+public final class FigureRenderer extends LivingEntityRenderer<ProxyEntity, FigureModel.State, FigureModel> {
 	private static final Identifier NEUTRAL = FigureRules.NEUTRAL;
 	/** What the log last said: which neutral skin, and whether this client draws figures (null: nothing yet). */
 	private static Boolean loggedNeutral, loggedDrawn;
@@ -67,9 +66,9 @@ public final class FigureRenderer extends LivingEntityRenderer<ProxyEntity, Figu
 	}
 
 	private FigureRenderer(final EntityRendererProvider.Context context) {
-		super(context, new FigureModel(context.bakeLayer(ModelLayers.PLAYER), false), 0.5F);
-		this.wide = (FigureModel) this.model;
-		this.slim = new FigureModel(context.bakeLayer(ModelLayers.PLAYER_SLIM), true);
+		super(context, new FigureModel(context.bakeLayer(ModelLayers.PLAYER)), 0.5F);
+		this.wide = this.model;
+		this.slim = new FigureModel(context.bakeLayer(ModelLayers.PLAYER_SLIM));
 		boolean neutral = context.getResourceManager().getResource(NEUTRAL).isPresent();
 		this.neutral = neutral ? NEUTRAL : DefaultPlayerSkin.getDefaultTexture();
 		if (!Boolean.valueOf(neutral).equals(loggedNeutral)) {
@@ -131,7 +130,6 @@ public final class FigureRenderer extends LivingEntityRenderer<ProxyEntity, Figu
 		// the proxy is invisible to vanilla (and to mobs' eyes); the figure is what guests see of it
 		state.isInvisible = false;
 		state.isInvisibleToPlayer = false;
-		state.showHat = state.showJacket = state.showLeftPants = state.showRightPants = state.showLeftSleeve = state.showRightSleeve = true;
 		Track track = smooth(this.tracks, entity, state);
 		FigureEffects.Fx fx = FigureEffects.of(entity);
 		int anim = entity.anim();

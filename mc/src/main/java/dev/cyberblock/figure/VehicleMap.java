@@ -1,5 +1,6 @@
 package dev.cyberblock.figure;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import dev.cyberblock.content.Content;
 import java.util.Collection;
@@ -8,27 +9,29 @@ import java.util.TreeSet;
 import net.minecraft.resources.Identifier;
 
 /**
- * The {@code vehicle_map} content kind (megaplan sections 1.7 and 1.12, task 5-F1): which of the 12 vehicle models a Night City
- * vehicle is, and its paint when the host sends no {@code col}. One row per file:
- * <pre>{"schema":1, "model":"police", "class":["Car/Alvarado", "Car"], "faction":"NCPD", "colour":"#1D2633"}</pre>
- * {@code model} is a VehicleModel id; {@code class} (a string or a list) holds the host's {@code vc} values ("&lt;type&gt;/&lt;model&gt;",
- * or a bare type such as "Bike" for every model of it) and {@code faction} the vehicle's {@code fac}, both matched without case or
- * punctuation. The most specific matching row wins (exact class 4, faction 2, type 1; then the row id). With no matching row the class
- * default applies: a bike for type Bike, a police car for NCPD, a Trauma Team aerodyne for TraumaTeam, else a sedan. The paint is the
- * host's {@code col}, else the row's {@code colour}, else the model's own. Pure apart from the content snapshot.
+ * The {@code vehicle_map} content kind (megaplan sections 1.7 and 1.12, tasks 5-A2 and 5-F1): which of the 12 vehicle models a Night
+ * City vehicle is drawn as, and its paint. One row per file, as 5A's art/gen_vehicle_art.py writes them:
+ * <pre>{"schema":1, "model":"police_cruiser", "colour":"#1f2c4a", "vc":["Car/Turbo"], "type":"Car", "faction":"NCPD",
+ * "keepColour":true, "priority":20}</pre>
+ * A vehicle matches a row when each of its match keys holds: {@code vc} (the npcs {@code vc}, "&lt;type&gt;/&lt;model&gt;"),
+ * {@code type} (the part of {@code vc} before the slash) and {@code faction} (its {@code fac}); a key is one name or a list, matched
+ * without case or punctuation. The highest {@code priority} wins, then the row with more keys, then the lowest id (rows come in id
+ * order). A row without keys matches every vehicle. The paint is the host's {@code col}, else the row's {@code colour}; a row with
+ * {@code keepColour} (a livery) always paints its own. With no rows at all the class default applies (a bike for type Bike, a police
+ * cruiser for NCPD, a Trauma Team aerodyne for TraumaTeam, else a sedan) in the model's own colour. Pure apart from the snapshot.
  */
 public final class VehicleMap {
-	/** One row: classes are normalised "type/model" (or a bare "type"), colour 0xRRGGBB or -1. */
-	public record Row(VehicleModel model, Set<String> classes, Set<String> factions, int colour) {
-		int score(final String vc, final String fac) {
-			if (this.classes.isEmpty() && this.factions.isEmpty()) {
+	/** One row: vcs normalised "type/model", types and factions normalised; colour 0xRRGGBB. */
+	public record Row(VehicleModel model, int colour, Set<String> vcs, Set<String> types, Set<String> factions, boolean keepColour, int priority) {
+		/** -1 when the row does not match, else how many match keys it has. */
+		int keys(final String vc, final String fac) {
+			String full = vehicleClass(vc);
+			if (!this.vcs.isEmpty() && !this.vcs.contains(full) || !this.types.isEmpty() && !this.types.contains(type(full))
+				|| !this.factions.isEmpty() && !this.factions.contains(SkinMap.key(fac))) {
 				return -1;
 			}
 
-			String full = vehicleClass(vc), type = type(full);
-			int classScore = this.classes.isEmpty() ? 0 : this.classes.contains(full) && full.contains("/") ? 4 : this.classes.contains(type) ? 1 : -1;
-			int factionScore = this.factions.isEmpty() ? 0 : this.factions.contains(SkinMap.key(fac)) ? 2 : -1;
-			return classScore < 0 || factionScore < 0 ? -1 : classScore + factionScore;
+			return (this.vcs.isEmpty() ? 0 : 1) + (this.types.isEmpty() ? 0 : 1) + (this.factions.isEmpty() ? 0 : 1);
 		}
 	}
 
@@ -47,51 +50,60 @@ public final class VehicleMap {
 			throw new IllegalArgumentException("model must be one of the 12 vehicle models, not " + name);
 		}
 
-		Set<String> classes = new TreeSet<>();
+		Set<String> vcs = new TreeSet<>();
 		// SkinMap.keys would strip the slash: read the strings, then normalise each half
-		for (String raw : SkinMap.strings(json, "class")) {
-			if (SkinMap.key(raw).isEmpty()) {
-				throw new IllegalArgumentException("class needs letters or digits");
+		for (String raw : SkinMap.strings(json, "vc")) {
+			String vc = vehicleClass(raw);
+			if (!vc.matches("[a-z0-9]+/[a-z0-9]+")) {
+				throw new IllegalArgumentException("vc must be <type>/<model>, not " + raw);
 			}
 
-			classes.add(vehicleClass(raw));
+			vcs.add(vc);
 		}
 
-		Set<String> factions = SkinMap.keys(json, "faction");
-		if (classes.isEmpty() && factions.isEmpty()) {
-			throw new IllegalArgumentException("a row needs a class or a faction");
+		boolean keep = false;
+		if (json.has("keepColour")) {
+			JsonElement k = json.get("keepColour");
+			if (!k.isJsonPrimitive() || !k.getAsJsonPrimitive().isBoolean()) {
+				throw new IllegalArgumentException("keepColour must be true or false");
+			}
+
+			keep = k.getAsBoolean();
 		}
 
-		return new Row(model, classes, factions, json.has("colour") ? Content.colour(json, "colour") : -1);
+		return new Row(model, Content.colour(json, "colour"), vcs, SkinMap.keys(json, "type"), SkinMap.keys(json, "faction"), keep,
+			SkinMap.priority(json));
 	}
 
 	/** The vehicle with these tags among the rows (in id order). */
 	public static Vehicle resolve(final Collection<Row> rows, final FigureTags tags) {
 		Row best = null;
-		int bestScore = -1;
+		int bestKeys = -1;
 		for (Row row : rows) {
-			int score = row.score(tags.vc(), tags.fac());
-			if (score > bestScore) {
+			int keys = row.keys(tags.vc(), tags.fac());
+			if (keys >= 0 && (best == null || row.priority() > best.priority() || row.priority() == best.priority() && keys > bestKeys)) {
 				best = row;
-				bestScore = score;
+				bestKeys = keys;
 			}
 		}
 
-		VehicleModel model = best != null ? best.model() : classDefault(tags);
-		int colour = tags.col() >= 0 ? tags.col() : best != null && best.colour() >= 0 ? best.colour() : model.defaultColour();
-		return new Vehicle(model, colour);
+		if (best == null) {
+			VehicleModel model = classDefault(tags);
+			return new Vehicle(model, tags.col() >= 0 ? tags.col() : model.defaultColour());
+		}
+
+		return new Vehicle(best.model(), tags.col() >= 0 && !best.keepColour() ? tags.col() : best.colour());
 	}
 
-	/** The model when no row matches. */
+	/** The model when no row matches (no vehicle_map at all). */
 	static VehicleModel classDefault(final FigureTags tags) {
-		String fac = SkinMap.key(tags.fac());
 		if (type(vehicleClass(tags.vc())).equals("bike")) {
 			return VehicleModel.BIKE;
 		}
 
-		return switch (fac) {
-			case "ncpd" -> VehicleModel.POLICE;
-			case "traumateam" -> VehicleModel.TRAUMA_AV;
+		return switch (SkinMap.key(tags.fac())) {
+			case "ncpd" -> VehicleModel.POLICE_CRUISER;
+			case "traumateam" -> VehicleModel.TRAUMA_AERODYNE;
 			default -> VehicleModel.SEDAN;
 		};
 	}

@@ -60,7 +60,7 @@ class FigureRulesTest {
 
 	@Test
 	void unknownVehicleModelsAreSedans() {
-		assertEquals(VehicleModel.POLICE, FigureRules.vehicle("police"));
+		assertEquals(VehicleModel.POLICE_CRUISER, FigureRules.vehicle("police_cruiser"));
 		assertEquals(VehicleModel.SEDAN, FigureRules.vehicle("hovercraft"));
 	}
 

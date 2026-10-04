@@ -1,18 +1,22 @@
 package dev.cyberblock.client.figure;
 
+import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.model.geom.ModelPart;
-import net.minecraft.client.model.player.PlayerModel;
-import net.minecraft.client.renderer.entity.state.AvatarRenderState;
+import net.minecraft.client.renderer.entity.state.HumanoidRenderState;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 
 /**
- * The player model posed as a Night City person (megaplan task 5-F1): vanilla's walk, run and crouch, then the host's poses on top:
- * aiming (both arms raised at the target), firing (the same with a recoil kick), combat (arms ready), a ragdoll's limp, splayed limbs.
+ * The player's body (the vanilla player mesh, classic or slim, with its outer layer) posed as a Night City person (megaplan task
+ * 5-F1): vanilla's humanoid walk, run and crouch, then the host's poses on top: aiming (both arms raised at the target), firing (the
+ * same with a recoil kick), combat (arms ready), a ragdoll's limp, splayed limbs. Not the player's own model class: its render state
+ * would be an AvatarRenderState, and Minecraft's entity dispatcher hands every AvatarRenderState to the vanilla player renderer (a
+ * default skin and none of these poses).
  */
-final class FigureModel extends PlayerModel {
-	/** What a figure's render state carries beyond the player's. */
-	static final class State extends AvatarRenderState {
+final class FigureModel extends HumanoidModel<FigureModel.State> {
+	/** What a figure's render state carries beyond a humanoid's. */
+	static final class State extends HumanoidRenderState {
 		Identifier texture = FigureRules.NEUTRAL;
 		boolean slim;
 		boolean aim;
@@ -22,17 +26,14 @@ final class FigureModel extends PlayerModel {
 		float ragdollSeconds;
 	}
 
-	FigureModel(final ModelPart root, final boolean slim) {
-		super(root, slim);
+	/** root: a baked player layer (ModelLayers.PLAYER or PLAYER_SLIM); skins have see-through outer layers, so translucent. */
+	FigureModel(final ModelPart root) {
+		super(root, RenderTypes::entityTranslucent);
 	}
 
 	@Override
-	public void setupAnim(final AvatarRenderState state) {
-		super.setupAnim(state);
-		if (!(state instanceof State s)) {
-			return;
-		}
-
+	public void setupAnim(final State s) {
+		super.setupAnim(s);
 		if (s.ragdollSeconds > 0.0F) {
 			// limp: arms flung out, legs apart, the head lolling, a little flop as it lands
 			float flop = Mth.sin(s.ageInTicks * 0.9F) * Math.max(0.0F, 0.3F - s.ragdollSeconds * 0.2F);
@@ -67,5 +68,4 @@ final class FigureModel extends PlayerModel {
 			this.leftArm.zRot = -0.15F;
 		}
 	}
-
 }

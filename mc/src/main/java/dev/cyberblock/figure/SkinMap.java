@@ -81,18 +81,22 @@ public final class SkinMap {
 			});
 		}
 
-		int priority = 0;
-		if (json.has("priority")) {
-			JsonElement p = json.get("priority");
-			if (!p.isJsonPrimitive() || !p.getAsJsonPrimitive().isNumber() || p.getAsDouble() != Math.rint(p.getAsDouble()) || Math.abs(p.getAsDouble()) > 1000) {
-				throw new IllegalArgumentException("priority must be a whole number within -1000..1000");
-			}
+		return new Row(parsed.toString(), slim, keys(json, "role"), keys(json, "faction"), keys(json, "archetype"), genders, priority(json),
+			json.has("cyber"));
+	}
 
-			priority = p.getAsInt();
+	/** An optional whole-number priority within -1000..1000 (default 0). */
+	static int priority(final JsonObject json) {
+		JsonElement p = json.get("priority");
+		if (p == null) {
+			return 0;
 		}
 
-		return new Row(parsed.toString(), slim, keys(json, "role"), keys(json, "faction"), keys(json, "archetype"), genders, priority,
-			json.has("cyber"));
+		if (!p.isJsonPrimitive() || !p.getAsJsonPrimitive().isNumber() || p.getAsDouble() != Math.rint(p.getAsDouble()) || Math.abs(p.getAsDouble()) > 1000) {
+			throw new IllegalArgumentException("priority must be a whole number within -1000..1000");
+		}
+
+		return p.getAsInt();
 	}
 
 	/** The skin of a person with these tags and entity id among the rows: the best match, else the neutral skin. */

@@ -18,6 +18,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
@@ -52,8 +53,9 @@ public final class ProxyManager {
 	/** Each host's scanned threats by id (task 5-F1: the figures' threat colour); at most MAX_SCANNED per host. */
 	private static final Map<UUID, Map<Long, Integer>> scanned = new HashMap<>();
 	private static final int MAX_SCANNED = 512;
-	/** Hosts whose npcs tags were logged this session (the Phase 0 f path line). */
+	/** Hosts whose npcs tags were logged this session, and the tags each has sent (the Phase 0 f path line). */
 	private static final Set<UUID> tagsLogged = new HashSet<>();
+	private static final Map<UUID, Set<String>> tagsSeen = new HashMap<>();
 	/** Each host's latest explosion on V (a {"t":"dmg"} of kind explosion): a person dying near it right after was blown up. */
 	record Blast(Vec3 at, long nanos) {
 	}
@@ -86,8 +88,11 @@ public final class ProxyManager {
 
 		// the Phase 5 tags (role, faction, gender, archetype, anim, vehicle class and colour, hp): the figures' look (task 5-F1)
 		FigureTags.Parsed tags = FigureTags.parse(message);
-		if (!parsed.entries().isEmpty() && tagsLogged.add(s.uuid())) {
-			Cyberblock.LOG.info(Figures.tagsLine(s.name(), tags.seen()));
+		// the Phase 0 (f) path line: at the session's first list with anyone in it, and again whenever a tag shows up for the first time
+		Set<String> seen = tagsSeen.computeIfAbsent(s.uuid(), o -> new TreeSet<>());
+		if (!parsed.entries().isEmpty() && (seen.addAll(tags.seen()) || tagsLogged.add(s.uuid()))) {
+			tagsLogged.add(s.uuid());
+			Cyberblock.LOG.info(Figures.tagsLine(s.name(), seen));
 		}
 
 		ProxyFleet<ProxyEntity> fleet = fleets.of(s.uuid());
@@ -180,6 +185,7 @@ public final class ProxyManager {
 	private static void forget(final UUID owner) {
 		scanned.remove(owner);
 		tagsLogged.remove(owner);
+		tagsSeen.remove(owner);
 		blasts.remove(owner);
 	}
 
