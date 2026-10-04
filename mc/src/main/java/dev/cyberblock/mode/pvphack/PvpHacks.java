@@ -55,9 +55,12 @@ import org.jspecify.annotations.Nullable;
  * <li>a charged {@code firewall} implant blocks it at once and recharges 60 s;</li>
  * <li>otherwise "Intrusion detected" warns the target and opens the short Breach (6-B1, 4x4, 5 s) on his screen; solving it blocks the
  * hack, anything else (failed, timed out, aborted, never started within a few seconds) lets it land;</li>
- * <li>a landed chip hits through vanilla effects and damage (a linked victim's Steve carries them to V as today), shorter against the
- * {@code netrunner} implant; Reboot Optics also sends the {@code glitch} DOWN to a Cyberpunk-linked victim.</li>
+ * <li>a landed chip hits through vanilla effects and damage, shorter against the {@code netrunner} implant.</li>
  * </ol>
+ * A Cyberpunk-linked victim's game gets only part of it: damage (hearts) reaches V, and Reboot Optics sends the {@code glitch} DOWN.
+ * The mob effects (Short Circuit's Slowness and Mining Fatigue, Cripple Movement's Slowness, Reboot Optics' Blindness) stay on Steve,
+ * whose position follows V, and no relay carries them (section 1.9 has no slow or stun DOWN): against a linked victim Cripple Movement
+ * does nothing in his game and Short Circuit is its damage. Each landing on a linked victim says so in its log line.
  * Server thread.
  */
 public final class PvpHacks {
@@ -94,7 +97,8 @@ public final class PvpHacks {
 	private static void announce() {
 		announced = true;
 		Cyberblock.LOG.info("pvphack: ready; {}; firewall blocks one hack then recharges {} s; netrunner halves effects; Reboot Optics sends "
-			+ "glitch DOWN to linked victims (a DLL without the 8D glitch pass ignores it: Minecraft overlay only)", PvpHooks.describe(),
+			+ "glitch DOWN to linked victims (a DLL without the 8D glitch pass ignores it: Minecraft overlay only); slowness, mining fatigue and "
+			+ "blindness stay on a linked victim's Steve (no relay to his game: there only damage and the glitch land)", PvpHooks.describe(),
 			Cyberware.FIREWALL.cooldownTicks() / 20);
 	}
 
@@ -102,14 +106,20 @@ public final class PvpHacks {
 
 	/**
 	 * The player along the hack key's ray, nearer than {@code limit} (the proxy the ray found, or its reach) and not behind a block;
-	 * never the hacker, a spectator or a dead player. Null when none.
+	 * never the hacker, and only a player the hacker could hack now ({@link PvpHackRules#lockable}: both in the fight, the target not
+	 * shielded). Null when none, so the scan goes on to the NPC behind a bystander.
 	 */
 	public static @Nullable ServerPlayer pick(final ServerPlayer hacker, final Vec3 eye, final Vec3 look, final double limit) {
+		Party self = party(hacker);
+		if (!PvpHackRules.targetable(self.pvpOn(), self.warZone(), self.linked())) {
+			return null; // out of the fight: players never take the lock
+		}
+
 		Vec3 end = eye.add(look.scale(limit));
 		ServerPlayer best = null;
 		double bestDistance = limit;
 		for (ServerPlayer p : hacker.level().players()) {
-			if (p == hacker || p.isSpectator() || !p.isAlive()) {
+			if (p == hacker || !PvpHackRules.lockable(self, party(p))) {
 				continue;
 			}
 
@@ -256,9 +266,17 @@ public final class PvpHacks {
 
 		long now = s.getTickCount();
 		for (Map.Entry<UUID, Intrusion> e : List.copyOf(intrusions.entrySet())) {
-			if (now >= e.getValue().deadline()) {
+			Intrusion in = e.getValue();
+			if (now >= in.deadline()) {
 				intrusions.remove(e.getKey());
-				finish(e.getKey(), e.getValue(), PvpHackRules.Result.LANDED, e.getValue().breach() ? "breach not finished in time" : "upload");
+				ServerPlayer target = in.breach() ? player(e.getKey()) : null;
+				if (target != null) {
+					// the intrusion's own short Breach is still running (its end would have removed the intrusion): close it. Its outcome
+					// is ignored (the intrusion is gone). With breach=false the target's breach is someone else's and is never touched.
+					Breach.close(target);
+				}
+
+				finish(e.getKey(), in, PvpHackRules.Result.LANDED, in.breach() ? "breach not finished in time" : "upload");
 			}
 		}
 	}
@@ -293,7 +311,7 @@ public final class PvpHacks {
 
 		boolean netrunner = CyberwareRules.netrunnerResists(CyberData.installed(target));
 		PvpHackRules.Effect effect = PvpHackRules.effect(in.hack(), netrunner);
-		String extra = land(hacker, target, in.hack(), effect);
+		String extra = land(hacker, target, in.hack(), effect) + linkedGap(target, in.hack());
 		target.sendOverlayMessage(Component.translatableWithFallback("cyberblock.pvphack.hit", "Hacked by %s: %s", in.hackerName(), hackName(in.hack()))
 			.withColor(0xFF4B4B));
 		if (hacker != null) {
@@ -355,6 +373,20 @@ public final class PvpHacks {
 		}
 
 		return "";
+	}
+
+	/** What of a landed chip a Cyberpunk-linked victim's game never sees (no relay carries mob effects to V); "" otherwise. */
+	private static String linkedGap(final ServerPlayer target, final Hack hack) {
+		if (!CyberSkins.linked(target)) {
+			return "";
+		}
+
+		return switch (hack) {
+			case SHORT_CIRCUIT -> "; linked victim: only the damage reaches his game (Slowness and Mining Fatigue stay on Steve)";
+			case CRIPPLE_MOVEMENT -> "; linked victim: the Slowness stays on Steve, nothing reaches his game";
+			case REBOOT_OPTICS -> "; linked victim: Blindness stays on Steve, his game gets only the glitch DOWN";
+			default -> "";
+		};
 	}
 
 	/** Memory Wipe: the selected hotbar slot is emptied and its stack dropped at the target's feet (never deleted), picked up after a delay. */

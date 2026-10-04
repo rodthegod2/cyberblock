@@ -157,7 +157,8 @@ public final class Hacking {
 			e = hint(player, scan, reach);
 		}
 
-		// megaplan 8-X1: a player nearer along the ray than the NPC (or within reach when there is none) becomes the lock instead
+		// megaplan 8-X1: a player nearer along the ray than the NPC (or within reach when there is none) becomes the lock instead, but
+		// only one the hacker could hack now (both in the fight, not shielded): any other player is ignored and the NPC keeps the lock
 		ServerPlayer victim = PvpHacks.pick(player, scan.eye(), scan.look(), e == null ? reach : scan.eye().distanceTo(e.getBoundingBox().getCenter()));
 		if (victim != null) {
 			unlock(uuid);

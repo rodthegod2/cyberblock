@@ -50,6 +50,28 @@ class PvpHackRulesTest {
 		assertEquals(Refusal.NONE, check(Hack.PING, new Party(false, true, true, false), IN));
 	}
 
+	/**
+	 * The scan locks a player only when a hack could go: with PvP off by default (pvpDefault=false) a bystander in front of an NPC is
+	 * ignored and the NPC behind him keeps the lock.
+	 */
+	@Test
+	void theScanLocksOnlyAHackablePlayer() {
+		assertFalse(PvpHackRules.lockable(GUEST_OUT, GUEST_OUT), "pvpDefault=false: nobody steals the NPC lock");
+		assertFalse(PvpHackRules.lockable(GUEST_OUT, IN), "the hacker is out of the fight");
+		assertFalse(PvpHackRules.lockable(IN, GUEST_OUT), "the target did not opt in");
+		assertFalse(PvpHackRules.lockable(IN, new Party(true, false, false, true)), "the target is shielded");
+		assertFalse(PvpHackRules.lockable(IN, new Party(false, true, false, false)), "a guest in a war zone who did not opt in");
+		assertTrue(PvpHackRules.lockable(IN, IN));
+		assertTrue(PvpHackRules.lockable(new Party(false, true, true, false), new Party(false, true, true, false)), "two linked players in a war zone");
+		// lockable is exactly "check would get past the party rules"
+		for (Party hacker : new Party[]{IN, GUEST_OUT}) {
+			for (Party target : new Party[]{IN, GUEST_OUT, new Party(true, false, false, true)}) {
+				Refusal r = check(Hack.PING, hacker, target);
+				assertEquals(r == Refusal.NONE, PvpHackRules.lockable(hacker, target), hacker + " -> " + target);
+			}
+		}
+	}
+
 	@Test
 	void onlyTheSixPlayerChipsWork() {
 		assertEquals(EnumSet.of(Hack.SHORT_CIRCUIT, Hack.REBOOT_OPTICS, Hack.CRIPPLE_MOVEMENT, Hack.PING, Hack.OVERHEAT, Hack.MEMORY_WIPE),

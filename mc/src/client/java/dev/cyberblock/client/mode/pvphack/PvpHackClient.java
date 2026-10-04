@@ -2,7 +2,6 @@ package dev.cyberblock.client.mode.pvphack;
 
 import com.google.gson.JsonParser;
 import dev.cyberblock.Cyberblock;
-import dev.cyberblock.client.hack.breach.BreachScreen;
 import dev.cyberblock.client.net.UiRoutes;
 import dev.cyberblock.mode.pvphack.PvpHackWire;
 import java.util.HashMap;
@@ -19,7 +18,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * The client side of hacking players (megaplan 8-X1): {@code cyberblock:ui pvphack} drives the Intrusion warning ({@link IntrusionHud}),
  * the glitch overlay ({@link GlitchOverlay}) and Ping's outlines for the hacker's team (a box drawn around the pinged player every
- * tick, as the scan box is). An intrusion that ends while its Breach screen is still open closes that screen. Client thread.
+ * tick, as the scan box is). The client never closes a Breach screen itself: the server ends an intrusion's own short Breach. Client
+ * thread.
  */
 public final class PvpHackClient {
 	/** Ping's outline: hot pink, translucent fill. */
@@ -68,12 +68,9 @@ public final class PvpHackClient {
 				intrusionStartMs = now;
 				intrusionEndMs = now + m.ms();
 			}
-			case END -> {
-				intrusion = null;
-				if (m.why().equals("landed") && Minecraft.getInstance().gui.screen() instanceof BreachScreen screen) {
-					screen.onClose(); // the upload beat the Breach: its screen goes (an abort the server ignores)
-				}
-			}
+			// the warning goes; an intrusion's own short Breach that the upload beat is ended by the server (Breach.close), never closed
+			// here: a Breach screen open now may be the player's own device or practice breach
+			case END -> intrusion = null;
 			case GLITCH -> {
 				glitchStartMs = now;
 				glitchEndMs = now + m.ms();

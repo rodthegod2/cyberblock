@@ -68,6 +68,15 @@ public final class PvpHackRules {
 	}
 
 	/**
+	 * Whether the hack key's scan may lock this player instead of the NPC behind him: only when a hack could go (the hacker is in the
+	 * fight, the target is not shielded and opted in). Anyone else is ignored by the scan, so a bystander never steals an NPC lock.
+	 */
+	public static boolean lockable(final Party hacker, final Party target) {
+		return targetable(hacker.pvpOn(), hacker.warZone(), hacker.linked()) && !target.shielded()
+			&& targetable(target.pvpOn(), target.warZone(), target.linked());
+	}
+
+	/**
 	 * Whether this hack may start, in the order the hacker hears the reasons. The hacker is held to the target's rule: nobody hacks into a
 	 * fight he cannot be hacked back in.
 	 *
