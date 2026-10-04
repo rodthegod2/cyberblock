@@ -51,6 +51,8 @@ public class CyberblockSession {
       system.Teleport().Abort(game, s"session \(NameToString(state))");
       system.Park().Release(game, s"session \(NameToString(state))");
     }
+    // Megaplan 7-S1: a hub of the ended host session is over (Hub.reds); V was released just above.
+    CyberblockHub.Forget(s"session \(NameToString(state))");
     Cyberblock_Log(s"session: cleaned (\(StrLen(reason) > 0 ? reason : NameToString(state)))");
     if Equals(state, n"refused") && StrLen(reason) > 0 && NotEquals(reason, this.shownRefusal) {
       if IsDefined(system) && (!system.InkOn() || !Cyberblock_IsLinked()) {

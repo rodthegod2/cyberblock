@@ -109,7 +109,22 @@ public class CyberblockPark {
     Cyberblock_Log(s"park: on (fallback: nearest fast-travel point \(name), \(RoundF(distance)) m away, invisible and invulnerable; unavailable: \(unavailable))");
   }
 
-  // Undoes on (`reason` for the log: requested, Cyberblock off, Minecraft lost, session end, detach, session <state>).
+  // The Afterlife hub (Hub.reds, megaplan task 7-S1) parks V the way an n"park" on does, without the current event:
+  // WhyNot says why V cannot be parked now ("" when it can; nothing is tried or logged), Hold parks V (on's log line)
+  // and is true when V is parked afterwards.
+  public func WhyNot(game: GameInstance, live: Bool) -> String {
+    return this.parked ? "" : this.Refusal(game, GetPlayer(game), live);
+  }
+
+  public func Hold(game: GameInstance, live: Bool) -> Bool {
+    if !this.parked {
+      this.On(game, live);
+    }
+    return this.parked;
+  }
+
+  // Undoes on (`reason` for the log: requested, Cyberblock off, Minecraft lost, session end, detach, session <state>,
+  // hub exit).
   public func Release(game: GameInstance, reason: String) -> Void {
     if !this.parked {
       if Equals(reason, "requested") {

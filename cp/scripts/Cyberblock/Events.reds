@@ -20,6 +20,9 @@
 //     refusing while not live (megaplan 2026-10-04 task 4-S1, Devices.reds)
 //   rhack -> CyberblockRemoteHacks.OnEvent, daemon -> CyberblockDaemons.OnEvent, whatever the state: each answers every
 //     request with Cyberblock_HackResult, refusing while not live (megaplan 2026-10-04 task 6-S1, RemoteHacks.reds, Daemons.reds)
+//   hub -> CyberblockHub.OnEvent (EventFlag = in), repair / heal -> CyberblockServices.OnEvent (EventId = request id):
+//     whatever the state, each refusing itself while not live (megaplan 2026-10-04 task 7-S1; Hub.reds, Services.reds).
+//     A vendor's buy and sell are not events: they are `uiact buy|sell` (Menus.reds -> Vendors.reds, section 1.8).
 //
 // While a save is written, CyberblockSystem does not call Tick at all: the events wait in the DLL's queue and are applied
 // after the save. While not live otherwise (Off, Lost, no player) Night City is left alone:
@@ -94,6 +97,10 @@ public class CyberblockEvents {
           CyberblockRemoteHacks.OnEvent(game, live); // refuses itself while not live (RemoteHacks.reds)
         } else if Equals(kind, n"daemon") {
           CyberblockDaemons.OnEvent(game, live); // refuses itself while not live (Daemons.reds)
+        } else if Equals(kind, n"hub") {
+          CyberblockHub.OnEvent(game, live); // megaplan 7-S1: parks V while Steve is in the hub (Hub.reds)
+        } else if Equals(kind, n"repair") || Equals(kind, n"heal") {
+          CyberblockServices.OnEvent(game, kind, live); // megaplan 7-S1: refuses itself while not live (Services.reds)
         } else if !live {
           if !CyberblockEvents.Refuse(kind) {
             dropped += 1;
