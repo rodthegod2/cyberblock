@@ -210,7 +210,7 @@ def test_default_ports_are_package_1t_and_stay_in_the_phase_1_ranges():
     p.check()
     servers = {name: p.server(name) for name in mpcheck.SCENARIOS}
     assert servers == {"singleplayer": 25914, "guest": 25914, "versions": 25915, "flood": 25916, "reconnect": 25917, "twohosts": 25918, "joinpassword": 25915,
-                       "replica": 25914, "twohosts2": 25916, "meetup": 25915, "devices": 25917, "figures": 25917}
+                       "replica": 25914, "twohosts2": 25916, "meetup": 25915, "devices": 25917, "figures": 25917, "breach": 25917}
     assert {p.client(n) for n in mpcheck.OFFLINE_NAMES} == {25754, 25755, 25756, 25757} and 25600 not in servers.values()
     assert [p.frame(n) for n in mpcheck.OFFLINE_NAMES] == ["Local\\CyberblockFrame1TH", "Local\\CyberblockFrame1TH2", "Local\\CyberblockFrame1TG", "Local\\CyberblockFrame1TG2"]
 
@@ -234,7 +234,7 @@ def test_a_frame_prefix_that_makes_the_users_frame_name_is_refused():
 def test_every_scenario_has_a_function_and_a_server_slot():
     assert set(mpcheck.SCENARIOS) == set(mpcheck.SCENARIO_FUNCS) == set(mpcheck.SERVER_SLOT)
     assert mpcheck.SCENARIOS == ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup", "devices",
-                                 "figures")
+                                 "figures", "breach")
 
 
 # ---- logs ------------------------------------------------------------------------------------------------------------------
