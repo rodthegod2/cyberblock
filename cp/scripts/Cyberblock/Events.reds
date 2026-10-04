@@ -92,6 +92,8 @@ public class CyberblockEvents {
           CyberblockDeviceService.OnEvent(game); // refuses itself while not live (Devices.reds)
         } else if Equals(kind, n"rhack") {
           CyberblockRemoteHacks.OnEvent(game, live); // refuses itself while not live (RemoteHacks.reds)
+        } else if Equals(kind, n"daemon") {
+          CyberblockDaemons.OnEvent(game, live); // refuses itself while not live (Daemons.reds)
         } else if !live {
           if !CyberblockEvents.Refuse(kind) {
             dropped += 1;

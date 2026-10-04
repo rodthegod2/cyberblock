@@ -851,6 +851,11 @@ public class CyberblockRemoteService extends ScriptableService {
     GameInstance.GetDelaySystem(game).DelayCallback(timer, seconds);
   }
 
+  // Daemons.reds: the switch-off batch serial comes back on after seconds.
+  public func ScheduleOff(game: GameInstance, serial: Int32, seconds: Float) -> Void {
+    this.Schedule(game, n"off", 0ul, serial, seconds);
+  }
+
   public func OnTimer(game: GameInstance, what: CName, target: Uint64, serial: Int32) -> Void {
     if Equals(what, n"engine") {
       this.Release(game, target, serial, true);
