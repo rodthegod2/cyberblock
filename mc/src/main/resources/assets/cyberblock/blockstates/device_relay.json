@@ -1,0 +1,16 @@
+{
+	"variants": {
+		"linked=false,powered=false": {
+			"model": "cyberblock:block/device_relay_unlinked_off"
+		},
+		"linked=false,powered=true": {
+			"model": "cyberblock:block/device_relay_unlinked_on"
+		},
+		"linked=true,powered=false": {
+			"model": "cyberblock:block/device_relay_linked_off"
+		},
+		"linked=true,powered=true": {
+			"model": "cyberblock:block/device_relay_linked_on"
+		}
+	}
+}

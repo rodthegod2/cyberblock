@@ -1,0 +1,52 @@
+{
+	"variants": {
+		"power=0": {
+			"model": "cyberblock:block/heat_sensor_0"
+		},
+		"power=1": {
+			"model": "cyberblock:block/heat_sensor_1"
+		},
+		"power=2": {
+			"model": "cyberblock:block/heat_sensor_1"
+		},
+		"power=3": {
+			"model": "cyberblock:block/heat_sensor_1"
+		},
+		"power=4": {
+			"model": "cyberblock:block/heat_sensor_2"
+		},
+		"power=5": {
+			"model": "cyberblock:block/heat_sensor_2"
+		},
+		"power=6": {
+			"model": "cyberblock:block/heat_sensor_2"
+		},
+		"power=7": {
+			"model": "cyberblock:block/heat_sensor_3"
+		},
+		"power=8": {
+			"model": "cyberblock:block/heat_sensor_3"
+		},
+		"power=9": {
+			"model": "cyberblock:block/heat_sensor_3"
+		},
+		"power=10": {
+			"model": "cyberblock:block/heat_sensor_4"
+		},
+		"power=11": {
+			"model": "cyberblock:block/heat_sensor_4"
+		},
+		"power=12": {
+			"model": "cyberblock:block/heat_sensor_4"
+		},
+		"power=13": {
+			"model": "cyberblock:block/heat_sensor_5"
+		},
+		"power=14": {
+			"model": "cyberblock:block/heat_sensor_5"
+		},
+		"power=15": {
+			"model": "cyberblock:block/heat_sensor_5"
+		}
+	}
+}

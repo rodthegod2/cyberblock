@@ -1,0 +1,10 @@
+{
+	"variants": {
+		"powered=false": {
+			"model": "cyberblock:block/charge_off"
+		},
+		"powered=true": {
+			"model": "cyberblock:block/charge_on"
+		}
+	}
+}

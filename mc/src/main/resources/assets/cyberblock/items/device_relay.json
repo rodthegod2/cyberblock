@@ -1,0 +1,6 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "cyberblock:block/device_relay_linked_off"
+	}
+}

@@ -1,0 +1,79 @@
+{
+	"variants": {
+		"facing=east,ram=0": {
+			"model": "cyberblock:block/cyberdeck_block_0",
+			"y": 90
+		},
+		"facing=east,ram=1": {
+			"model": "cyberblock:block/cyberdeck_block_1",
+			"y": 90
+		},
+		"facing=east,ram=2": {
+			"model": "cyberblock:block/cyberdeck_block_2",
+			"y": 90
+		},
+		"facing=east,ram=3": {
+			"model": "cyberblock:block/cyberdeck_block_3",
+			"y": 90
+		},
+		"facing=east,ram=4": {
+			"model": "cyberblock:block/cyberdeck_block_4",
+			"y": 90
+		},
+		"facing=north,ram=0": {
+			"model": "cyberblock:block/cyberdeck_block_0"
+		},
+		"facing=north,ram=1": {
+			"model": "cyberblock:block/cyberdeck_block_1"
+		},
+		"facing=north,ram=2": {
+			"model": "cyberblock:block/cyberdeck_block_2"
+		},
+		"facing=north,ram=3": {
+			"model": "cyberblock:block/cyberdeck_block_3"
+		},
+		"facing=north,ram=4": {
+			"model": "cyberblock:block/cyberdeck_block_4"
+		},
+		"facing=south,ram=0": {
+			"model": "cyberblock:block/cyberdeck_block_0",
+			"y": 180
+		},
+		"facing=south,ram=1": {
+			"model": "cyberblock:block/cyberdeck_block_1",
+			"y": 180
+		},
+		"facing=south,ram=2": {
+			"model": "cyberblock:block/cyberdeck_block_2",
+			"y": 180
+		},
+		"facing=south,ram=3": {
+			"model": "cyberblock:block/cyberdeck_block_3",
+			"y": 180
+		},
+		"facing=south,ram=4": {
+			"model": "cyberblock:block/cyberdeck_block_4",
+			"y": 180
+		},
+		"facing=west,ram=0": {
+			"model": "cyberblock:block/cyberdeck_block_0",
+			"y": 270
+		},
+		"facing=west,ram=1": {
+			"model": "cyberblock:block/cyberdeck_block_1",
+			"y": 270
+		},
+		"facing=west,ram=2": {
+			"model": "cyberblock:block/cyberdeck_block_2",
+			"y": 270
+		},
+		"facing=west,ram=3": {
+			"model": "cyberblock:block/cyberdeck_block_3",
+			"y": 270
+		},
+		"facing=west,ram=4": {
+			"model": "cyberblock:block/cyberdeck_block_4",
+			"y": 270
+		}
+	}
+}
