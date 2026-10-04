@@ -48,7 +48,7 @@ class FigureTagsTest {
 		assertEquals("NCPD", p.byId().get(-1L).fac());
 		assertEquals(0.5F, p.byId().get(-1L).hp());
 		assertEquals("Car/Turbo", p.byId().get(7L).vc());
-		assertEquals(Set.of("fac", "hp", "vc"), p.seen());
+		assertEquals(Set.of("fac", "hp", "vc", FigureTags.VEHICLES), p.seen(), "a vehicle came, but without a fac of its own");
 	}
 
 	@Test

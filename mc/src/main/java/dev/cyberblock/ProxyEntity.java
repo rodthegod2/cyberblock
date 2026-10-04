@@ -95,8 +95,10 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	static final int BLAST_TICKS = 40;
 	/** Ticks since it died, on each side (the client counts from when it saw it die): how far the body has fallen. */
 	private int deadTicks;
-	/** When a Minecraft explosion last reached it (server tick count). */
-	private int blastTick = Integer.MIN_VALUE;
+	/** No Minecraft explosion has reached it yet. */
+	static final int NO_BLAST = Integer.MIN_VALUE;
+	/** When a Minecraft explosion last reached it (server tick count), NO_BLAST for never. */
+	private int blastTick = NO_BLAST;
 
 	public ProxyEntity(final EntityType<? extends ProxyEntity> type, final Level level) {
 		super(type, level);
@@ -187,11 +189,16 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	 * there for the guests until ProxyManager removes it.
 	 */
 	void die(final boolean blown) {
-		this.entityData.set(DATA_BLOWN, blown || this.tickCount - this.blastTick <= BLAST_TICKS);
+		this.entityData.set(DATA_BLOWN, blown || blastRecent(this.tickCount, this.blastTick));
 		this.entityData.set(DATA_DEAD, true);
 		this.entityData.set(DATA_HP, 0.0F);
 		this.setHostile(false);
 		this.setPinged(0);
+	}
+
+	/** Whether an explosion at blastTick (NO_BLAST: never) reached it within BLAST_TICKS before now; the sentinel is checked, not subtracted. */
+	static boolean blastRecent(final int now, final int blastTick) {
+		return blastTick != NO_BLAST && now >= blastTick && now - blastTick <= BLAST_TICKS;
 	}
 
 	/** Dead in Night City; valid on the client too (the figure lies down or is a wreck). */

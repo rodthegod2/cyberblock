@@ -106,10 +106,10 @@ public final class FigureRules {
 	}
 
 	/**
-	 * Whether a figure gets the red outline through walls on this client: a living hostile within OUTLINE_RANGE, unless the Kiroshi
-	 * optics already outline it (the player has them and it is within their range).
+	 * Whether a figure gets the red outline through walls on this client: a living hostile within OUTLINE_RANGE. Kiroshi optics are no
+	 * exception: their box (CyberwareClient) is depth-tested, so only this one shows through walls.
 	 */
-	static boolean outlined(final boolean hostile, final boolean dead, final double distanceSq, final boolean kiroshi, final double kiroshiRange) {
-		return hostile && !dead && distanceSq <= OUTLINE_RANGE * OUTLINE_RANGE && !(kiroshi && distanceSq <= kiroshiRange * kiroshiRange);
+	static boolean outlined(final boolean hostile, final boolean dead, final double distanceSq) {
+		return hostile && !dead && distanceSq <= OUTLINE_RANGE * OUTLINE_RANGE;
 	}
 }

@@ -66,11 +66,10 @@ class FigureRulesTest {
 
 	@Test
 	void hostilesAreOutlinedThroughWallsOncePerClient() {
-		assertTrue(FigureRules.outlined(true, false, 40 * 40, false, 32));
-		assertFalse(FigureRules.outlined(true, false, 49 * 49, false, 32), "beyond the host's 48 m list");
-		assertFalse(FigureRules.outlined(false, false, 4, false, 32), "only hostiles");
-		assertFalse(FigureRules.outlined(true, true, 4, false, 32), "never a body");
-		assertFalse(FigureRules.outlined(true, false, 20 * 20, true, 32), "the Kiroshi optics outline it already");
-		assertTrue(FigureRules.outlined(true, false, 40 * 40, true, 32), "beyond the optics' range");
+		assertTrue(FigureRules.outlined(true, false, 40 * 40));
+		assertTrue(FigureRules.outlined(true, false, 20 * 20), "near ones too: the Kiroshi box does not show through walls");
+		assertFalse(FigureRules.outlined(true, false, 49 * 49), "beyond the host's 48 m list");
+		assertFalse(FigureRules.outlined(false, false, 4), "only hostiles");
+		assertFalse(FigureRules.outlined(true, true, 4), "never a body");
 	}
 }

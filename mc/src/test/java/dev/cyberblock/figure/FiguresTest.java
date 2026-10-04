@@ -46,4 +46,24 @@ class FiguresTest {
 		assertEquals("figures: CbHost1 npcs tags anim arch fac g hp vc; missing role col (fallback: skins by faction (no role), class default colours)",
 			Figures.tagsLine("CbHost1", new java.util.TreeSet<>(Set.of("anim", "arch", "fac", "g", "hp", "vc"))));
 	}
+
+	@Test
+	void vehiclesWithoutAFactionAreNamedInTheTagsLine() {
+		java.util.TreeSet<String> seen = new java.util.TreeSet<>(Set.of(FigureTags.FIELDS));
+		seen.add(FigureTags.VEHICLES);
+		assertEquals("figures: CbHost1 npcs tags anim arch col fac g hp role vc (all); vehicles: fac missing (fallback: no police or Trauma liveries)",
+			Figures.tagsLine("CbHost1", seen));
+		seen.add(FigureTags.VEHICLE_FAC);
+		assertEquals("figures: CbHost1 npcs tags anim arch col fac g hp role vc (all); vehicles: fac sent", Figures.tagsLine("CbHost1", seen));
+	}
+
+	@Test
+	void aVehicleEntryWithAnEmptyFacDoesNotCountAsSendingIt() {
+		com.google.gson.JsonObject message = com.google.gson.JsonParser.parseString(
+			"{\"t\":\"npcs\",\"list\":[{\"id\":\"1\",\"kind\":\"human\",\"fac\":\"NCPD\"},{\"id\":\"2\",\"kind\":\"vehicle\",\"fac\":\"\",\"vc\":\"Car/Cortes\"}]}")
+			.getAsJsonObject();
+		Set<String> seen = FigureTags.parse(message).seen();
+		assertTrue(seen.contains("fac") && seen.contains(FigureTags.VEHICLES));
+		assertFalse(seen.contains(FigureTags.VEHICLE_FAC), "people sent fac, the vehicle did not");
+	}
 }

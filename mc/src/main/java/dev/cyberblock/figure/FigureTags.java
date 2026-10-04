@@ -25,6 +25,11 @@ public record FigureTags(String role, String fac, int g, String arch, int anim, 
 	public static final FigureTags NONE = new FigureTags("", "", 0, "", 0, "", -1, 1.0F);
 	/** The tag names in the order the log lists them. */
 	public static final String[] FIELDS = {"role", "fac", "g", "arch", "anim", "vc", "col", "hp"};
+	/**
+	 * Markers in Parsed.seen beside the tag names: a vehicle entry came, and one came with a non-empty fac (police and Trauma Team
+	 * vehicles are told apart by it). A host whose people send fac but whose vehicles do not would otherwise look complete in the log.
+	 */
+	public static final String VEHICLES = "vehicles", VEHICLE_FAC = "vehicles.fac";
 	/** Text tags are short enum names; the amendment caps vc at 32 chars. */
 	static final int MAX_TEXT = 32;
 	private static final Pattern COLOUR = Pattern.compile("#[0-9A-Fa-f]{6}");
@@ -54,8 +59,16 @@ public record FigureTags(String role, String fac, int g, String arch, int anim, 
 				}
 			}
 
+			FigureTags tags = of(o);
+			if (o.get("kind") instanceof JsonPrimitive kind && "vehicle".equals(kind.getAsString())) {
+				seen.add(VEHICLES);
+				if (!tags.fac().isEmpty()) {
+					seen.add(VEHICLE_FAC);
+				}
+			}
+
 			try {
-				byId.putIfAbsent(Long.parseUnsignedLong(id.getAsString()), of(o));
+				byId.putIfAbsent(Long.parseUnsignedLong(id.getAsString()), tags);
 			} catch (NumberFormatException tooBig) {
 				// more than 2^64 - 1: ProxyDiff skips the entry too
 			}

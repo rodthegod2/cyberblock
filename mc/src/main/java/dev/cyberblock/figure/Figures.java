@@ -47,14 +47,11 @@ public final class Figures {
 	 * user's test shows which path is active; every missing one names its written fallback.
 	 */
 	public static String tagsLine(final String host, final Set<String> seen) {
-		List<String> missing = new ArrayList<>();
-		for (String field : FigureTags.FIELDS) {
-			if (!seen.contains(field)) {
-				missing.add(field);
-			}
-		}
+		List<String> fields = List.of(FigureTags.FIELDS);
+		List<String> sent = seen.stream().filter(fields::contains).toList();
+		List<String> missing = fields.stream().filter(field -> !seen.contains(field)).toList();
 
-		if (seen.isEmpty()) {
+		if (sent.isEmpty()) {
 			return "figures: " + host + " sends no npcs tags (fallback: neutral skins, walk and run from motion, class default colours, full hp)";
 		}
 
@@ -77,7 +74,10 @@ public final class Figures {
 			fallbacks.add("vehicles by faction or sedan");
 		}
 
-		return "figures: " + host + " npcs tags " + String.join(" ", seen) + (missing.isEmpty() ? " (all)"
-			: "; missing " + String.join(" ", missing) + (fallbacks.isEmpty() ? "" : " (fallback: " + String.join(", ", fallbacks) + ")"));
+		// a vehicle's fac is checked on its own: people sending fac says nothing about vehicles
+		String vehicles = !seen.contains(FigureTags.VEHICLES) ? ""
+			: seen.contains(FigureTags.VEHICLE_FAC) ? "; vehicles: fac sent" : "; vehicles: fac missing (fallback: no police or Trauma liveries)";
+		return "figures: " + host + " npcs tags " + String.join(" ", sent) + (missing.isEmpty() ? " (all)"
+			: "; missing " + String.join(" ", missing) + (fallbacks.isEmpty() ? "" : " (fallback: " + String.join(", ", fallbacks) + ")")) + vehicles;
 	}
 }

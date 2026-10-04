@@ -3,8 +3,6 @@ package dev.cyberblock.client.figure;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.ProxyEntities;
 import dev.cyberblock.ProxyEntity;
-import dev.cyberblock.cyber.CyberData;
-import dev.cyberblock.cyber.Cyberware;
 import dev.cyberblock.figure.FigureTags;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -28,8 +26,6 @@ import org.jspecify.annotations.Nullable;
 final class FigureEffects {
 	/** Ticks the red hit flash lasts. */
 	static final int FLASH_TICKS = 8;
-	/** CyberwareClient's Kiroshi range: within it, a player with the optics already sees hostiles outlined. */
-	private static final double KIROSHI_RANGE = 32.0;
 	private static final int OUTLINE_STROKE = 0xE0FF2B45, OUTLINE_FILL = 0x0CFF2B45;
 	private static final Map<Entity, Fx> FX = new WeakHashMap<>();
 	/** What the log last said about where walk and run come from (null: nothing yet). */
@@ -59,11 +55,10 @@ final class FigureEffects {
 			return;
 		}
 
-		boolean kiroshi = CyberData.has(player, Cyberware.KIROSHI_OPTICS);
 		for (Entity e : level.entitiesForRendering()) {
 			if (e instanceof ProxyEntity proxy && !proxy.isRemoved()) {
 				tick(level, proxy, of(proxy));
-				if (FigureRules.outlined(proxy.hostile(), proxy.dead(), proxy.distanceToSqr(player), kiroshi, KIROSHI_RANGE)) {
+				if (FigureRules.outlined(proxy.hostile(), proxy.dead(), proxy.distanceToSqr(player))) {
 					Gizmos.cuboid(proxy.getBoundingBox().inflate(0.08), GizmoStyle.strokeAndFill(OUTLINE_STROKE, 2.5F, OUTLINE_FILL)).setAlwaysOnTop();
 				}
 			}

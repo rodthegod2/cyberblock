@@ -15,4 +15,16 @@ class ProxyBlastTest {
 		assertFalse(ProxyManager.blownBy(blast, new Vec3(10, 64, 10), 1_000L + ProxyManager.BLAST_NANOS + 1L), "too long ago");
 		assertFalse(ProxyManager.blownBy(null, new Vec3(10, 64, 10), 1_000L), "no explosion at all");
 	}
+
+	/** ProxyEntity.die's own test: only an explosion that reached the proxy within 40 ticks makes it blown. */
+	@Test
+	void aProxyNeverHitByAnExplosionIsNotBlown() {
+		for (int now : new int[] {0, 100, 72_000, Integer.MAX_VALUE}) {
+			assertFalse(ProxyEntity.blastRecent(now, ProxyEntity.NO_BLAST), "never hit, tick " + now);
+		}
+		assertTrue(ProxyEntity.blastRecent(500, 500), "the same tick");
+		assertTrue(ProxyEntity.blastRecent(500 + ProxyEntity.BLAST_TICKS, 500), "40 ticks later");
+		assertFalse(ProxyEntity.blastRecent(500 + ProxyEntity.BLAST_TICKS + 1, 500), "41 ticks later");
+		assertTrue(ProxyEntity.blastRecent(10, 0), "hit on its first tick");
+	}
 }
