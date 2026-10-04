@@ -92,6 +92,8 @@ public class Cyberblock implements ModInitializer {
 					.then(Commands.literal("off").executes(command -> outline(command.getSource(), false)))))));
 		// /cyberblock worldcheck [on|off]: a dedicated server refuses hosts on a world that is not the Night City type; spawn platform
 		dev.cyberblock.net.WorldCheck.init();
+		// /cyberblock lan offline on|off: the owner lets offline guests join a world opened to LAN (off at every world start)
+		dev.cyberblock.net.LanAccess.init();
 		// content as data (megaplan section 1.7)
 		ContentLoader.init();
 		// dedicated-server admin bits (megaplan 2-M1): startup line, whitelist warning, /cyberblock status and hosts add|remove
