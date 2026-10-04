@@ -54,8 +54,9 @@ You play ordinary Minecraft; Cyberblock turns it into Night City effects for the
 ## Your settings
 
 Press **Esc**, then **Cyberblock...** (or type `/cyberblock settings`): one screen with your own choices: your cyber skin, whether PvP
-is on for you, and **Performance mode** if the game is slow on your PC
-([what it does](HOW-TO-PLAY.md#performance-mode)). Guest permissions are the **host's** choice, not yours.
+is on for you, and **Performance mode** if the game is slow on your PC: on the **Performance** tab lower **Frame scale**
+(50 to 100 percent, 100 by default), then **Figures** (16 to 48, 48 by default); both are saved on your PC only
+([what they do](HOW-TO-PLAY.md#performance-mode)). Guest permissions are the **host's** choice, not yours.
 
 ## When something goes wrong
 
@@ -66,7 +67,7 @@ is on for you, and **Performance mode** if the game is slow on your PC
 | "This server needs a password: type /login <password>" | type `/login` and the password your friend gave you |
 | "Reconnecting to ... in N s" (with **Cancel**) | your connection dropped; it retries by itself for ten minutes |
 | the world is empty around you | no host has explored this part of Night City yet: ask a host to walk there, or use the Holo-Table to go where the map exists |
-| the game stutters | turn on Performance mode (Esc, Cyberblock..., Performance) |
+| the game stutters | Performance mode: Esc, Cyberblock..., Performance, lower Frame scale, then Figures |
 
 ## Respect the server
 

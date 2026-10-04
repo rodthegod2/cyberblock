@@ -86,20 +86,20 @@ Each recipe shows the file's path inside your pack and its whole content. All of
 
 ### A dialogue line
 
-A role's lines live in one file named after the role. **A datapack replaces a role's whole file by shipping the same id**, so to
-add a line, copy the shipped file (`mc/src/main/resources/data/cyberblock/cyberblock/dialogue/bartender.json` in the repository, or
-the jar's `data/cyberblock/cyberblock/dialogue/`) and add your line to the list. `greeting`, `farewell` and `bark` are required;
-the other contexts (`rumour`, `purchase`, `sale`, `no_funds`, `gig_offer`, `gig_done`, `drink`, `healed`, `repaired`, `installed`,
-`surgery_ok`, `surgery_fail`) are optional. A line may use `{player}`, `{item}`, `{price}`, `{title}`, `{reward}`, `{implant}`
-and `{drink}`.
+A person picks its lines from **every** dialogue file whose `"role"` names its role, so to add lines you write a small file of
+your own, in **your namespace**, that names the role. Your lines join the shipped ones: nothing is lost, and a later mod update
+that adds lines to the bartender still reaches your server. `greeting`, `farewell` and `bark` are required in every file, so give
+at least one line of each; the other contexts (`rumour`, `purchase`, `sale`, `no_funds`, `gig_offer`, `gig_done`, `drink`,
+`healed`, `repaired`, `installed`, `surgery_ok`, `surgery_fail`) are optional. A line may use `{player}`, `{item}`, `{price}`,
+`{title}`, `{reward}`, `{implant}` and `{drink}`.
 
-`data/cyberblock/cyberblock/dialogue/bartender.json`
+`data/friend/cyberblock/dialogue/bartender_more.json`
 ```json
 {
   "schema": 1,
   "role": "cyberblock:bartender",
   "lines": {
-    "greeting": ["Pull up a stool, {player}. The neon is free, the drinks are not.", "The new regular! Sit down, {player}."],
+    "greeting": ["Pull up a stool, {player}. The neon is free, the drinks are not."],
     "farewell": ["Safe streets, {player}."],
     "bark": ["Somebody keep the music up, the silence is getting ideas."],
     "rumour": ["They say the late train to Arroyo runs on gossip alone."]
@@ -107,9 +107,12 @@ and `{drink}`.
 }
 ```
 
-Replacing the shipped file means your pack's copy must carry every line you want to keep. To give a **new role** its own lines
-instead, add an `npc_role` file and a `dialogue` file with the role's id, and list its `tags` (the vendor types and content roles
-of the figures that get this role).
+After `/reload` the log line `content: loaded dialogue N (cyberblock, friend)` names your namespace. **Replacing** the shipped
+lines instead is the general rule (a file with the same id as a default replaces it: here
+`data/cyberblock/cyberblock/dialogue/bartender.json`); do that only when you want the shipped lines gone, because your copy then
+has to carry every line you keep and no longer gets the mod's new ones. To give a **new role** its own lines, add an `npc_role`
+file and a `dialogue` file with the role's id, and list its `tags` (the vendor types and content roles of the figures that get
+this role).
 
 ### A skin
 

@@ -113,7 +113,25 @@ def test_the_content_recipes_are_valid_content(tmp_path):
     assert "6 file(s) ok" in done.stdout
 
 
+def test_the_dialogue_recipe_adds_lines_in_the_friends_own_namespace():
+    """Dialogue.lines() joins every file naming the role, so the recipe adds lines next to the shipped ones (R9-1 expects the friend's namespace in the log)."""
+    (path, body), = [r for r in recipes() if r[0].split("/")[3] == "dialogue"]
+    assert path.split("/")[1] != "cyberblock" and json.loads(body)["role"] == "cyberblock:bartender"
+    assert set(json.loads(body)["lines"]) >= {"greeting", "farewell", "bark"}
+    has(CONTENT, "content: loaded dialogue N (cyberblock, friend)")
+    has(section_of(TESTING, RETEST), "in your own namespace", "it does not replace the shipped file")
+
+
 # ---- docs/SERVER.md -----------------------------------------------------------------------------------------------------------------
+
+
+def test_the_server_guide_updates_jar_only_and_never_re_runs_the_bundle():
+    update = SERVER.split("- **Updating the mod**", 1)[1].split("\n- **Content.**", 1)[0]
+    has(update, "delete or rename", "duplicate mod id", "Upload only the new jar", "Never re-run `tools.server_bundle`", "join password", "server.properties.rodsores",
+        "cyberblock server: ready")
+    assert "the old jar is replaced" not in SERVER
+    has(SERVER, "is for this first move only", "Set `\"maxHosts\": 4`", "maxHosts N", "edit the file and restart", "only shows")
+    has(section_of(CHANGELOG, NOTES), "Never re-run `tools.server_bundle` against a live Cyberblock server", "server.properties.rodsores")
 
 
 def test_the_server_guide_documents_every_key_of_the_config_example():
@@ -129,7 +147,7 @@ def test_the_server_guide_documents_every_key_of_the_config_example():
 def test_the_server_guide_says_what_the_plan_promises():
     has(SERVER, "Fabric 26.3", "Java 25", "void world", "`cyberblock:nightcity`", "guest", "host", "tools.server_sync backup", "tools.server_sync verify", "tools.server_bundle",
         "tools.server_sync upload", "--go", "never delete anything on the server", "Custom Jar", "cyberblock server: ready", "worldcheck", "whitelist", "join password", "`/login <password>`",
-        "Five wrong tries", "120 seconds", "`hosts`", "`maxHosts`", "An older file keeps its old values", "`/cyberblock status`", "`/cyberblock backup now`", "`backups.hour`",
+        "Five wrong tries", "120 seconds", "`hosts`", "`maxHosts`", "An existing file keeps its values", "`/cyberblock status`", "`/cyberblock backup now`", "`backups.hour`",
         "`backups.keep`", "twice the world size", "backup: <file> <size>", "tools.server_sync pull-backups --to", "`/reload`", "tools.modpack", "tools.respack", "the way back",
         "server.properties.rodsores", "Never put the server address", "major and minor", "Performance mode", "[CONTENT.md](CONTENT.md)", "[JOIN.md](JOIN.md)", "[WEBMAP.md](WEBMAP.md)")
     for command in ("hosts add|remove", "password reset", "worldcheck", "outline erase", "guests <toggle>"):
@@ -150,9 +168,10 @@ def test_the_guide_has_the_settings_tabs_performance_mode_and_the_short_creative
     for tab in ("Guests", "Look", "PvP", "Difficulty", "Performance", "World"):
         assert f"| **{tab}** |" in settings, tab
     has(settings, "`/cyberblock settings`", "the server decides", "Only the host or an operator can change this", "skin mode", "Overlord intensity", "Server Heat",
-        "Creative can erase the replica permanently", "`explosions`", "`damage`", "`hacks`", "`spawns`", "`devices`")
+        "Creative can erase the replica permanently", "`explosions`", "`damage`", "`hacks`", "`spawns`", "`devices`", "Hide my Holo pin", "read-only")
+    assert "the server's default" not in settings
     perf = section_of(GUIDE, "#### Performance mode")
-    has(perf, "`prefs.scale`", "50 to 100 percent", "scales it back up", "Figure cap", "16 to 48", "stop animating", "Server budgets", "off by default", "Numbers", "R9-5", "Stutter, swimming or lag")
+    has(perf, "`prefs.scale`", "50 to 100 percent", "scales it back up", "Frame scale", "Figures", "the figure cap", "16 to 48", "no on/off switch", "saved on this PC only", "lower Frame scale first, then Figures", "Numbers", "R9-5", "Stutter, swimming or lag")
     creative = section_of(GUIDE, "### Creative mode and the outline blocks")
     assert len(creative.splitlines()) <= 16 and "Creative can erase the replica permanently" in creative and "**World** tab" in creative
     has(section_of(GUIDE, "### Playing together (LAN)"), "[SERVER.md](SERVER.md)", "[JOIN.md](JOIN.md)", "`backups.hour`", "`/cyberblock backup now`", "backup: <file> <size>", "pull-backups",

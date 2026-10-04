@@ -12,6 +12,7 @@ and published only after the in-game multiplayer session ([docs/TESTING-PLAN.md]
 "Added", ships in 2.0.0.
 
 ### Release notes: 2.0.0, the multiplayer version
+<!-- integrator: name the distance level of detail and the server tick budgets under "The finish" only if wc/9F merged them. -->
 **Cyberblock is now a multiplayer game.** What was a single-player passthrough of Minecraft in Night City is a Minecraft server
 that friends join with Minecraft only, while one or more players ("hosts") link their own Cyberpunk 2077 game to it.
 
@@ -29,7 +30,8 @@ that friends join with Minecraft only, while one or more players ("hosts") link 
   counterplay, Server Heat with Max-Tac, going down and revives, the Trauma Team, spectators and a caster overlay.
 - **The finish (Phase 9).** Every content kind is data: friends add dialogue, skins, shops, landmarks, Breach daemons and Overlord events
   as a datapack ([docs/CONTENT.md](docs/CONTENT.md)); one **settings screen** with the tabs Guests, Look, PvP, Difficulty, Performance
-  and World; **Performance mode** (a resolution scale, a figure cap, server budgets); **daily server backups** with
+  and World (the World tab shows `server.json` read-only); **Performance mode**, two sliders saved on each player's PC: **Frame scale**
+  (50 to 100 %, default 100) and **Figures** (16 to 48, default 48); **daily server backups** with
   `tools.server_sync pull-backups`; the save and load lists as a Minecraft screen where the game's API allows, otherwise documented
   as pass-through.
 - **Quality of life from the first sessions.** Survival mining of placed blocks, stairs with no vault prompt and a step-up assist,
@@ -38,8 +40,13 @@ that friends join with Minecraft only, while one or more players ("hosts") link 
 **Upgrading from the 1.0.0 draft or earlier**
 - **Install the same version on both sides.** The mod's major and minor version must match the server's (`2.0.x` with `2.0.y`); the
   DLL, the scripts and the mod jar come from the same release, as before. Run `install.bat` again and replace the mod jar.
+- **Update a running server jar-only** ([docs/SERVER.md](docs/SERVER.md) section 7): stop it, delete or rename the old
+  `mods/cyberblock-<old>.jar` (the new jar has another name, and two Cyberblock jars stop Fabric from starting), upload only the new jar,
+  start. **Never re-run `tools.server_bundle` against a live Cyberblock server:** it is for the first move only, and its upload replaces
+  `config/cyberblock/server.json` (the join password), `server.properties` and `server.properties.rodsores` (the way back).
 - **A server that ran an earlier build keeps its old `config/cyberblock/server.json`**: set `"maxHosts": 4` yourself if you want more than
-  one host (new files are written with 4), and look at the new `backups` and `joinPassword` keys.
+  one host (only a file the server writes itself gets 4; the example file `tools.server_bundle` stages says 1), and look at the new
+  `backups` and `joinPassword` keys.
 - The new `/cyberblock` commands are listed in [HOW-TO-PLAY](docs/HOW-TO-PLAY.md#commands): `settings`, `backup now`, `login`,
   `hub`, `spectate`, `guests <toggle>` and more. Hosts' guest permissions default to **on** except `spawns` (off).
 - Nothing in Cyberpunk's saves changes: everything Cyberblock adds is removed before each save, as in 1.0.0.
@@ -64,7 +71,7 @@ Phase 9 of the multiplayer plan, docs and release side: the finish. The mod, cli
   "Creative mode and the outline blocks" note with the World-tab setting **Creative can erase the replica permanently**.
 - **Test plan.** `docs/TESTING-PLAN.md` starts with the **Full multiplayer pass** (the one session for Waves A to C and Phase 9, steps M-1 to
   M-10, each pointing into the detailed older sections) and **Re-test 9** (R9-1 to R9-8: a friend's datapack with a dialogue line and a skin shown
-  by `/reload`, the example datapack, every settings tab, a backup at the set hour and `pull-backups`, Performance mode with four guests, the save
+  by `/reload`, the other kinds from CONTENT.md (and the example datapack where the build has it), every settings tab, a backup at the set hour and `pull-backups`, Performance mode with four guests, the save
   and load screen or its documented pass-through, the escape hatch, the "which way" lines and the machine checks).
 - **Version 2.0.0 (proposed).** `pyproject.toml`, `uv.lock`, `cp/plugin/CMakeLists.txt` (and with it `CB_VERSION` and the DLL's `kVersion`),
   `mc/gradle.properties` (the mod jar and `fabric.mod.json`), the `Natives.reds` header and this changelog say 2.0.0, and the documents name

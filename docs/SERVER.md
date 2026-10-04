@@ -49,7 +49,14 @@ The tools in `tools/` do the file work and **never delete anything on the server
    ```
    It stages `mods/`, `config/cyberblock/server.json`, a `server.properties` (your old one with a few keys changed), a byte-identical
    copy of your old one that the tool names `server.properties.rodsores` (the way back, see section 8), and the world as `cyberblock.zip`. `--dry-run`
-   prints the list and writes nothing. For a **fresh Night City void world** rather than an uploaded one, edit the staged
+   prints the list and writes nothing. **Before uploading, open the staged `config\cyberblock\server.json`** in
+   `%LOCALAPPDATA%\Cyberblock\server-staging\`: it is a copy of the repository's `server/server.json.example`, which says
+   `"maxHosts": 1`. Set `"maxHosts": 4` (or how many Cyberpunk players you expect) and, if you use the join password instead of the
+   whitelist (section 3), set `"joinPassword"` there too. The server's built-in default of 4 applies only when it writes the file
+   itself, and a staged file is already there.
+   **`tools.server_bundle` is for this first move only.** Never run it again against a server that already runs Cyberblock: its
+   upload would replace the live `server.json` (and with it the join password), `server.properties` and
+   `server.properties.rodsores` (your only copy of the old server's properties). Updates are jar-only (section 7). For a **fresh Night City void world** rather than an uploaded one, edit the staged
    `server.properties` before uploading: `level-name=nightcity` and `level-type=cyberblock:nightcity`; the server then generates
    the void world on its first start.
 4. **Upload.** A dry run first (it lists what would be written, and it refuses to overwrite a remote file outside an allowlist):
@@ -65,8 +72,9 @@ The tools in `tools/` do the file work and **never delete anything on the server
    3. **Server type / jar**: choose **Custom Jar** and type the exact launcher jar file name the tool printed.
    4. **Start**, then open the **Console**.
 6. **Read the log.** A healthy start says `cyberblock loaded`, then
-   `cyberblock server: ready (protocol 1, maxHosts 4, requireMod, whitelist on|OFF)`, then `worldcheck: overworld is cyberblock:nightcity (ok)`.
-   Anything else is in section 9.
+   `cyberblock server: ready (protocol 1, maxHosts N, requireMod, whitelist on|OFF)`, then `worldcheck: overworld is cyberblock:nightcity (ok)`.
+   `N` is the `maxHosts` of the uploaded `server.json`: 4 if you changed it in step 3, 1 if you did not (then set it now, section 4,
+   and restart). Anything else is in section 9.
 7. **Decide who may join** (section 3), then **join yourself**: Minecraft with the Cyberblock installation, Multiplayer, add the
    address, join. In the log: `handshake: <you> ...` and, once your Cyberpunk is linked, `session: <you> active`.
 
@@ -87,15 +95,16 @@ There are two ways to keep strangers out. Use one of them.
 
 ## 4. The configuration file
 
-`config/cyberblock/server.json` is written with every value on the first start and kept after that. A value that is wrong is
-logged and replaced by its default. **An older file keeps its old values:** a server that ran an earlier version still says
-`"maxHosts": 1` until you change it.
+`config/cyberblock/server.json` is read at every start. If it is missing, the server writes it with every value at its default
+(the table) and keeps it after that. A value that is wrong is logged and replaced by its default. **An existing file keeps its
+values:** the file `tools.server_bundle` stages (a copy of `server/server.json.example`, `"maxHosts": 1`) and a file from an earlier
+version both say `"maxHosts": 1` until you change it. **To change a value, edit the file and restart the server.**
 
 | Key | Default | What it does |
 |---|---|---|
 | `allowHosts` | `true` | `false` turns every player into a guest |
 | `hosts` | `[]` | player names or UUIDs allowed to host; empty means every whitelisted (or logged-in) player |
-| `maxHosts` | `4` | how many Cyberpunk games play at once |
+| `maxHosts` | `4` (the staged example file says `1`: set it) | how many Cyberpunk games play at once |
 | `requireMod` | `true` | refuse players without the Cyberblock mod, with `joinHelp` in the message |
 | `joinHelp` | `""` | one line added to every refusal ("get the modpack from ...") |
 | `rate` | `1.0` | scales every message rate limit |
@@ -110,8 +119,11 @@ logged and replaced by its default. **An older file keeps its old values:** a se
 
 Per host the server also keeps (in the world, not the file) the host's guest permissions and its last session time; per player
 the cyber skin (`body`), the PvP switch and a few other choices. Hosts change their own switches with `/cyberblock guests ...` or
-the settings screen, and **operators can change the server's own values from the settings screen** (Esc, **Cyberblock...**, or
-`/cyberblock settings`; see [HOW-TO-PLAY](HOW-TO-PLAY.md#the-cyberblock-settings-screen)).
+the settings screen (Esc, **Cyberblock...**, or `/cyberblock settings`; see
+[HOW-TO-PLAY](HOW-TO-PLAY.md#the-cyberblock-settings-screen)). The screen's **World** tab **only shows** the values of this file to
+the host and operators, read-only; you change them in the file, then restart. The one exception is the creative erase, which an
+operator switches for the world with `/cyberblock outline erase on|off` (or its row on that tab) while `creativeErasesReplica` is
+`false`; `true` in the file forces it on.
 
 ## 5. Operator commands
 
@@ -148,9 +160,21 @@ per-player data; it does not hold the Night City map your own PC keeps (the surv
 
 ## 7. Updating, content and tuning
 
-- **Updating the mod.** Every player's mod must match the server's in major and minor version (`2.0.x` with `2.0.y`). Stop the
-  server, stage the new jar with `tools.server_bundle` and upload it with `tools.server_sync upload` (`mods/*` is on the
-  allowlist, so the old jar is replaced), start. Players update from the new modpack. A player on another version sees
+- **Updating the mod** (jar only). Every player's mod must match the server's in major and minor version (`2.0.x` with `2.0.y`).
+  1. **Stop** the server in the panel.
+  2. **File Manager:** delete or rename (for example to `.jar.old`) the old `mods/cyberblock-<old version>.jar`. The new jar has a
+     different file name, so an upload does not replace the old one, and two Cyberblock jars in `mods/` stop Fabric from starting
+     (duplicate mod id `cyberblock`). `tools.server_sync` never deletes, so this step is yours.
+  3. **Upload only the new jar** `mods/cyberblock-<new version>.jar`: through the panel's File Manager, or with
+     `tools.server_sync upload --stage <folder>` (dry run first, then `--go`) where `<folder>` holds nothing but
+     `mods\cyberblock-<new version>.jar`.
+  4. Update Fabric API the same way only if the release notes ask for a newer one.
+  5. **Start**, and check the console for `cyberblock server: ready`.
+
+  **Never re-run `tools.server_bundle` for an update.** It is for the first move only: its staged `config/cyberblock/server.json`
+  (from the example file, `joinPassword` empty and `maxHosts` 1), `server.properties` (whitelist on, `level-name=cyberblock`) and
+  `server.properties.rodsores` would overwrite the live join password, the world and whitelist settings, and the only copy of the
+  old server's properties that section 8 needs. Players update from the new modpack. A player on another version sees
   "Cyberblock version mismatch: server X, your mod Y. Update from the modpack."
 - **Content.** Friends' dialogue lines, skins, shops, landmarks, daemons and events are datapacks in the world's `datapacks/`
   folder. `/reload` loads them. [CONTENT.md](CONTENT.md) has a worked example of each.
@@ -160,9 +184,11 @@ per-player data; it does not hold the Night City map your own PC keeps (the surv
 - **The modpack for friends.** `uv run python -m tools.modpack --mods-from <jar folder> --urls <urls.json> --server-file
   <server.json>` builds `dist/cyberblock-<version>.mrpack` with a **Join Cyberblock** button wired to your server. The three input
   files stay outside the repository, and the `.mrpack` holds your address, so give it to friends directly, never publish it.
-- **Performance.** The server spends its time on the replica placements, device updates and the downed-player queue, each with a
-  per-tick budget so a busy night stays smooth. Players on weaker PCs turn on **Performance mode** in their own settings screen
-  ([HOW-TO-PLAY](HOW-TO-PLAY.md#performance-mode)); nothing for you to configure. `/cyberblock status` shows message rates, and
+- **Performance.** Players on weaker PCs use **Performance mode** in their own settings screen: they lower **Frame scale**, then
+  **Figures**, saved on their own PC ([HOW-TO-PLAY](HOW-TO-PLAY.md#performance-mode)); nothing for you to configure.
+  <!-- integrator: keep the next sentence only if wc/9F merged the server tick budgets. -->
+  Where the release notes list them, the server's replica placements, device updates and downed-player queue also have a
+  per-tick budget so a busy night stays smooth. `/cyberblock status` shows message rates, and
   the log lists `relay: <name> dropped <t> x N (<why>)` when a player's game floods the server.
 - **A web map** of the replica is possible with BlueMap: [WEBMAP.md](WEBMAP.md).
 
@@ -191,7 +217,7 @@ backup of step 1.
 | a player says "This server needs a password: type /login <password>" | the join password is on: they type `/login` and the password you gave them |
 | "This server needs the Cyberblock modpack" | the player has no Cyberblock mod: send them [JOIN.md](JOIN.md) |
 | "Cyberblock version mismatch: server X, your mod Y" | update the mod on one side so major and minor match |
-| a second linked player is a guest | `maxHosts` in `server.json` is still 1 (an older file): set it to 4 and restart |
+| a second linked player is a guest | `maxHosts` in `server.json` is still 1 (the staged example file, or an older file): set it to 4 and restart |
 | `relay: <name> dropped <t> x N (<why>)` | that player's game sends more than its rate allows or something invalid; if it persists they are kicked with "too many messages from your Cyberpunk link": ask them to restart both games |
 | `content: <kind> <id> skipped: <why>` | a datapack file is wrong; [CONTENT.md](CONTENT.md) |
 | `backup: ...` never appears | `backups.daily` is `false`, or the disk is under twice the world size (the log says so), or the hour has not come yet; try `/cyberblock backup now` |

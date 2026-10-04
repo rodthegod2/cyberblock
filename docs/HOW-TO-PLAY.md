@@ -933,26 +933,29 @@ change is greyed, and its tooltip says "Only the host or an operator can change 
 | Tab | What is on it |
 |---|---|
 | **Guests** | what guests may do to **your** Cyberpunk game: one switch each for `explosions`, `damage`, `hacks`, `spawns` and `devices`, and under `devices` one switch per device type (door, gate, light, camera, terminal, vending machine, traffic light, lift, turret, screen, container). The same as `/cyberblock guests <toggle> on|off`. Only a host sees these rows enabled |
-| **Look** | your **skin mode** (the cyber skin body, male or female: V or Lucy, `/cyberblock body`), the **third-person camera** (distance, shoulder, FOV, auto-recenter, vehicle distance: [the options](#third-person-camera-options-and-the-debug-overlay)) and **Step-up assist** ([stairs](#mining-placed-blocks-stairs-and-the-step-up-assist)) |
-| **PvP** | your PvP switch ([the rule](#matches-pvp-and-gang-wars): off by default, on for both players or no damage, 15 seconds before you can turn it off again) and the server's default |
+| **Look** | your **skin mode** (the cyber skin body, male or female: V or Lucy, `/cyberblock body`), **Hide my Holo pin** (outside matches your pin is left off other players' Holo-Tables, `/cyberblock holo hide on|off`), the **third-person camera** (distance, shoulder, FOV, auto-recenter, vehicle distance: [the options](#third-person-camera-options-and-the-debug-overlay)) and **Step-up assist** ([stairs](#mining-placed-blocks-stairs-and-the-step-up-assist)) |
+| **PvP** | your PvP switch ([the rule](#matches-pvp-and-gang-wars): off by default, on for both players or no damage, 15 seconds before you can turn it off again) |
 | **Difficulty** | the **Overlord intensity** default (Chill, Normal or Brutal) and how strongly **Server Heat** scales (host and operators) |
-| **Performance** | **Performance mode**, the resolution scale and the figure cap ([below](#performance-mode)) |
-| **World** | **Creative can erase the replica permanently** (off by default; only you in your own world, or an operator: [the outline blocks](#creative-mode-and-the-outline-blocks)), and, for operators, the server's own values you would otherwise edit in `server.json` |
+| **Performance** | the two sliders of **Performance mode**, **Frame scale** and **Figures** ([below](#performance-mode)), saved on this PC only |
+| **World** | **Creative can erase the replica permanently** (off by default; only you in your own world, or an operator: [the outline blocks](#creative-mode-and-the-outline-blocks)). For the host and operators it also **shows** the server's `server.json` values (join password on or off, hosting, the hosts list, hosts at once, PvP for new players, backups, join help and the rest) **read-only**: the server owner changes them in the file and restarts |
 
 A change takes effect at once and **Done** closes the screen. Anything the server refuses (you are not the host or an operator)
 says so on the action bar and leaves the row as it was.
 
 #### Performance mode
-Cyberblock draws one extra picture per frame, so a PC with a heavy Cyberpunk setup can run short of time. **Performance mode** (the
-**Performance** tab of [the settings screen](#the-cyberblock-settings-screen)) trades looks for frame time. It is **off by
-default** and changes nothing for the other players:
-- **Resolution scale** (`prefs.scale`, 50 to 100 percent): Minecraft renders and exports its picture at that fraction of the
-  window, and the ReShade effect **scales it back up** into Cyberpunk's picture. 100 percent is the picture as before; 75 percent
-  costs a little sharpness for a lot less time; 50 percent is for rescuing a weak PC.
-- **Figure cap:** how many of the host's Night City people and cars you see as figures (the nearest 16 to 48; 48 by default).
-  Beyond a distance, figures also **stop animating** and stand still, which costs nothing and is hard to notice.
-- **Server budgets** (nothing to set): replica placements, device updates and the downed-player queue each have a per-tick budget, so
-  four guests exploring at once do not stall the server tick.
+Cyberblock draws one extra picture per frame, so a PC with a heavy Cyberpunk setup can run short of time. **Performance mode** is
+the name for the two sliders on the **Performance** tab of [the settings screen](#the-cyberblock-settings-screen); there is no
+on/off switch. Both start at full quality (100 percent and 48 figures), are **saved on this PC only** and change nothing for the
+other players. To trade looks for frame time, **lower Frame scale first, then Figures**:
+- **Frame scale** (`prefs.scale`, 50 to 100 percent in steps of 5, default 100): Minecraft renders and exports its picture at that
+  share of the window, and the ReShade effect **scales it back up** into Cyberpunk's picture. 100 percent is the picture as
+  before; 75 percent costs a little sharpness for a lot less time; 50 percent is for rescuing a weak PC.
+- **Figures** (the figure cap, 16 to 48 in steps of 4, default 48): how many of the nearest Night City people and cars of the
+  host you see as figures.
+<!-- integrator: keep each item below only if wc/9F merged it; otherwise delete the item (and the CHANGELOG / TESTING-PLAN mention). -->
+- **Also part of the performance pass, when this build has it (the release notes say):** beyond a distance, figures
+  **stop animating** and stand still; and **Server budgets** (nothing to set): replica placements, device updates and the
+  downed-player queue each get a per-tick budget, so four guests exploring at once do not stall the server tick.
 
 **Numbers** (measured by the performance pass with two hosts and four guests on the local test server; your PC will differ):
 
@@ -963,8 +966,8 @@ default** and changes nothing for the other players:
 | server tick time, two hosts and four guests | not recorded in this guide yet | not recorded in this guide yet |
 
 The measurement steps are check R9-5 of [Re-test 9](TESTING-PLAN.md). The figures come from that run and not from a guess, so this
-table is filled in after the first full measurement. **If the frame time still stutters** with four guests in view, lower the scale
-one step first, then the figure cap, and read [Stutter, swimming or lag](#stutter-swimming-or-lag).
+table is filled in after the first full measurement. **If the frame time still stutters** with four guests in view, lower Frame
+scale one step first, then Figures, and read [Stutter, swimming or lag](#stutter-swimming-or-lag).
 
 #### Menus Cyberblock cannot replace
 Some Cyberpunk menus have no Minecraft equivalent that could do the same job: **shops and vendors, the ripperdoc, the
@@ -983,7 +986,7 @@ border) around them, and Minecraft's own world is not drawn over them. When the 
   [Re-test 9](TESTING-PLAN.md) check R9-6 looks at it. Saving from the pause screen always works through "Save Game".
 - **Escape hatch:** if you ever want Cyberpunk's own pause menu, open the Minecraft pause screen and click **Night City
   Menu...**. It opens the real Cyberpunk menu once. If Minecraft is not running or not linked, every Cyberpunk menu works
-  as in vanilla. It works at all times, also on a server, in a match and while Performance mode is on (a test checks it, and
+  as in vanilla. It works at all times, also on a server, in a match and with Frame scale lowered (a test checks it, and
   [Re-test 9](TESTING-PLAN.md) R9-6 has the in-game check).
 
 ### Playing together (LAN)
@@ -1782,8 +1785,8 @@ Minecraft restart all un-pause Cyberpunk. Cyberblock.log says `ui: unpaused (<re
 ### Stutter, swimming or lag
 - Turn frame generation off. Keep "Re-project to Cyberpunk's camera" on in the effect.
 - Minecraft is capped at 120 fps and 2 GB of heap on purpose, so it leaves the GPU and memory to Cyberpunk.
-- Still short of frame time? Turn on [Performance mode](#performance-mode) (Esc, **Cyberblock...**, **Performance**): a lower
-  resolution scale and fewer, calmer figures.
+- Still short of frame time? Use [Performance mode](#performance-mode) (Esc, **Cyberblock...**, **Performance**): lower
+  **Frame scale**, then **Figures**.
 
 ### Memory and the page file
 Running both games needs a lot of **Windows commit** (RAM plus page file), not just VRAM.

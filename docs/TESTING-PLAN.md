@@ -112,7 +112,7 @@ Copy these lines to Claude (the wording is the packages', so search for the word
 | `backup:` | server log | the backup file and its size |
 | `spawn: path`, `heat: path`, `attitude: path` | `Cyberblock.log` | which of the Phase 8 paths is active (real enemies and wanted level, or the fallback) |
 
-**Tell Claude, at the end:** what was fun, what was confusing, what broke, and the frame time (a number, or "smooth", "stutters") with and without Performance mode.
+**Tell Claude, at the end:** what was fun, what was confusing, what broke, and the frame time (a number, or "smooth", "stutters") at the default Performance sliders and with them lowered.
 
 ## Re-test 9 (Phase 9: the finish: content, settings, performance, backups)
 
@@ -132,38 +132,41 @@ every option; **Performance mode** lowers the frame cost; the server **backs its
 
 **What to try (one screen):**
 1. **A friend's datapack:** add a dialogue line and a skin from [CONTENT.md](CONTENT.md), `/reload`, hear the line and see the skin (R9-1).
-2. **The other kinds:** a shop, a landmark, a Breach daemon and an Overlord event from the example datapack (R9-2).
+2. **The other kinds:** a shop, a landmark, a Breach daemon and an Overlord event from the [CONTENT.md](CONTENT.md) recipes (R9-2).
 3. **The settings screen:** every tab, every option (R9-3).
 4. **A backup** at the set hour (or `/cyberblock backup now`) and `pull-backups` to your PC (R9-4).
-5. **Performance mode** with four guests: frame time steady, and the numbers (R9-5).
+5. **Performance mode** (the Frame scale and Figures sliders) with four guests: frame time steady, and the numbers (R9-5).
 6. **Save and load:** the Night City saves screen, or the documented pass-through; and the **escape hatch** (R9-6).
 7. **Read the "which way" lines** to Claude (R9-7).
 8. **Without Cyberpunk:** the machine checks (R9-8).
 
 | Item | What changed |
 |---|---|
-| Content | every kind of section 1.7 has a schema, a loader, defaults and hot reload; `docs/CONTENT.md`; an example datapack in `examples/content-datapack/`; `tools.content_check` |
+| Content | every kind of section 1.7 has a schema, a loader, defaults and hot reload; `docs/CONTENT.md` with six checked recipes; `tools.content_check`; an example datapack in `examples/content-datapack/` when the build has that folder |
 | UI gaps | the save and load lists as a Minecraft screen where the API is verified (else the pass-through, documented in `docs/notes/ui-coverage.md`); the escape hatch tested |
-| Performance | **Performance mode**: a resolution scale (`prefs.scale`, 50 to 100 percent), a figure cap (16 to 48) and a distance level of detail, plus server budgets for replica placements, device updates and the down queue |
-| Settings screen | six tabs: **Guests**, **Look**, **PvP**, **Difficulty**, **Performance**, **World**; server values go through `/cyberblock` commands, so the server decides |
+| Performance | **Performance mode**: two sliders saved on your PC, **Frame scale** (`prefs.scale`, 50 to 100 percent by 5, default 100) and **Figures** (the figure cap, 16 to 48 by 4, default 48); a distance level of detail and server budgets only where the release notes list them |
+| Settings screen | six tabs: **Guests**, **Look**, **PvP**, **Difficulty**, **Performance**, **World**; server values go through `/cyberblock` commands, so the server decides; the World tab shows `server.json` read-only |
 | Backups | `backups.hour`, `backups.keep`, `backups/cyberblock-<date>.zip`, a skip with a warning when the disk is low, `/cyberblock backup now`, `tools.server_sync pull-backups --to <folder>` |
 | Docs and version | HOW-TO-PLAY, `docs/SERVER.md`, `docs/JOIN.md`, `docs/CONTENT.md`, the README, the release notes, and the version **2.0.0** (proposed: the owner decides; no tag, no release, no push) |
 
 ### R9-1. A friend's datapack: a dialogue line and a skin, shown by `/reload`
 1. Close nothing: the server runs. Make a datapack folder in the world's `datapacks` (the layout is in [CONTENT.md](CONTENT.md), "Where the files go"), with
-   `pack.mcmeta`, a **dialogue** file that replaces the bartender's (a copy of the shipped file with one new line in `greeting`) and a **skin_map** row with a higher
+   `pack.mcmeta`, a **dialogue** file in **your own namespace** that adds lines to the bartender (CONTENT.md's recipe `data/<yours>/cyberblock/dialogue/bartender_more.json`
+   with `"role": "cyberblock:bartender"` and at least one `greeting`, `farewell` and `bark`; it does not replace the shipped file) and a **skin_map** row with a higher
    `priority` than the shipped rows for one faction, plus its 64 x 64 PNG in a resource pack the guests have.
 2. Run `uv run python -m tools.content_check --dir <your pack>` first. **Expect:** `content: N file(s) ok`.
 3. As an operator type `/reload`. **Expect in the server log:** `content: loaded dialogue N (cyberblock, <yours>)` and `content: loaded skin_map N (...)`; with a
    deliberate typo in a second file, `content: <kind> <id> skipped: <why>` and **nothing else breaks**.
-4. A guest right-clicks the **bartender** in the Afterlife a few times. **Expect:** your new greeting among the lines. The faction you re-skinned shows in your skin
+4. A guest right-clicks the **bartender** in the Afterlife a few times. **Expect:** your new greeting among the shipped ones (both kinds show up). The faction you re-skinned shows in your skin
    (`Cyberblock.log` and the figures: Re-test: Wave B, Phase 5 explains what a figure is). **Edit the file again** (change the line), `/reload` again: **expect** the new text
    without a restart or a rejoin.
 
 ### R9-2. The other content kinds, and the example datapack
-1. Copy `examples/content-datapack/` (it holds one file of each kind of the table in [CONTENT.md](CONTENT.md)) into the world's `datapacks`, `uv run python -m tools.content_check --dir
-   examples/content-datapack` first, then `/reload`. **Expect:** the log lists the kinds loaded.
-2. **A shop:** point a vending machine's `device_map` or a person's `npc_role` at your shop (the example does); buy and sell. **A landmark:** it appears on the Holo-Table and a gig can
+<!-- integrator: the examples/content-datapack lines of R9-2 and R9-8 stay only once 9C's folder exists and passes content_check --dir; if 9C is descoped, delete them. -->
+1. Add the **shop**, **landmark**, **Breach daemon** and **Overlord event** recipes of [CONTENT.md](CONTENT.md) to your R9-1 pack, run
+   `uv run python -m tools.content_check --dir <your pack>` first, then `/reload`. **Expect:** the log lists the kinds loaded. If your build has the folder
+   `examples/content-datapack/` (one file of each kind), check it the same way (`tools.content_check --dir examples/content-datapack`) and copy it in as well.
+2. **A shop:** point a vending machine's `device_map` or a person's `npc_role` at your shop (CONTENT.md says how); buy and sell. **A landmark:** it appears on the Holo-Table and a gig can
    send you there. **A Breach daemon:** run a Breach on a Net Port; your re-skinned daemon is offered. **An Overlord event:** it is on the Overlord Console's event list with your cost and
    warning.
 3. Remove the datapack and `/reload`: **expect** everything back to the defaults, no leftover entry.
@@ -173,13 +176,16 @@ Press **Esc**, then **Cyberblock...** (or `/cyberblock settings`). Take a screen
 1. **Guests** (host): switch `explosions`, `damage`, `hacks`, `spawns` and `devices` and one device type off and on, with a guest trying the action each time. **Expect:** "blocked" on
    the guest's action bar while off, the action reaching your game while on; the same as `/cyberblock guests ...`. As a **guest** the rows are greyed with the tooltip "Only the
    host or an operator can change this".
-2. **Look:** your cyber skin (male or female), the third-person camera options and Step-up assist. **Expect:** they apply at once (F5; walk up a stair).
+2. **Look:** your cyber skin (male or female), **Hide my Holo pin**, the third-person camera options and Step-up assist. **Expect:** they apply at once (F5; walk up a stair;
+   with the pin hidden, outside a match your pin is gone from the other players' Holo-Tables).
 3. **PvP:** your PvP switch. **Expect:** a red name tag while on; the 15 second rule after a hit; outside a match it does nothing to others.
 4. **Difficulty** (host or operator): the Overlord intensity default (Chill, Normal, Brutal) and the Heat scaling. **Expect:** a new match's Overlord starts at the chosen
    intensity; the Heat climbs slower or faster.
 5. **Performance:** see R9-5.
 6. **World** (host or operator): **Creative can erase the replica permanently** on and off (a creative player breaks a replica block: it returns in about 10 seconds, or stays
-   broken when on; log `outline: <name> broke <x> <y> <z> (snap back in 10 s)` or `(kept: permanent erase)`). As a guest or a non-operator the row is greyed.
+   broken when on; log `outline: <name> broke <x> <y> <z> (snap back in 10 s)` or `(kept: permanent erase)`). As a guest or a non-operator the row is greyed. Under it the
+   `server.json` values (join password, hosting, hosts list, hosts at once, PvP for new players, backups, join help, ...) are **shown read-only**, with the note that the
+   server admin sets them in `server.json`: **expect** they match the file and cannot be clicked.
 7. Close and reopen the screen, then **rejoin**: **expect** every value is as you left it (server values from the server, your own from your PC).
 
 ### R9-4. A backup at the set hour, and `pull-backups`
@@ -192,11 +198,12 @@ Press **Esc**, then **Cyberblock...** (or `/cyberblock settings`). Take a screen
 5. Open one zip: **expect** the world folder with `level.dat`. (The restore steps are in [SERVER.md](SERVER.md), section 6.)
 
 ### R9-5. Performance mode with four guests, and the numbers
-1. All four players on the server, the host linked, V in a busy street. Note the frame rate in Cyberpunk with Performance mode **off** (the number you normally look at, or
-   "smooth"/"stutters"). Claude will also read the frame export and compositor times the performance pass logs (search `Cyberblock.log` for `perf` or `frame`; the exact word is 9F's).
-2. **Esc, Cyberblock..., Performance:** turn Performance mode on, set the **resolution scale** to 75 percent and the **figure cap** to 24. **Expect:** the Minecraft picture a little
-   softer, **fewer figures** in the distance (the far ones stand still), and the frame rate **steady** or better with all four guests in view; V's controls unchanged.
-3. Set the scale to 50 percent: **expect** a clearly softer picture and a larger gain. Set it back to 100: **expect** the first picture. Turn the mode off: **expect** the old behaviour.
+1. All four players on the server, the host linked, V in a busy street. Note the frame rate in Cyberpunk with the **Performance** tab at its defaults (**Frame scale** 100 %,
+   **Figures** 48: full quality; the number you normally look at, or "smooth"/"stutters"). Claude will also read the frame export and compositor times the performance pass logs
+   (search `Cyberblock.log` for `perf` or `frame`; the exact word is 9F's).
+2. **Esc, Cyberblock..., Performance:** there is no on/off switch; lower **Frame scale** to 75 percent, then **Figures** to 24. **Expect:** the Minecraft picture a little
+   softer, **fewer figures** in the distance, and the frame rate **steady** or better with all four guests in view; V's controls unchanged. The tab says "Saved on this PC only".
+3. Set Frame scale to 50 percent: **expect** a clearly softer picture and a larger gain. Put both sliders back to their defaults (100 % and 48): **expect** the first picture and the old behaviour.
 4. Server side: with the four guests flying and building at once (a guest running forward with a stack of blocks is enough), **expect** no tick warnings in the server log ("Can't keep up"),
    and `/cyberblock status` rates staying sane.
 5. **Write the numbers down** (or let Claude read them): frame export time, compositor time and the server tick with two hosts and four guests, before and after. They go into the table of
@@ -206,7 +213,7 @@ Press **Esc**, then **Cyberblock...** (or `/cyberblock settings`). Take a screen
 1. Open the pause screen (Esc) and pick **Save Game**, then **Load Last Save**. **Expect:** the game saves and loads (the toasts "Saving Night City...", "Saved").
 2. Open the **save and load list**. **Expect one of two answers, both fine:** a Minecraft **Night City saves** screen (list, load, save) where the 2.31 save-list API was verified, or Cyberpunk's own
    save list, restyled with the Minecraft frame, as `docs/notes/ui-coverage.md` documents. Say which you saw.
-3. **The escape hatch, at every moment:** press Esc, then **Night City Menu...**: the real Cyberpunk menu opens once. Do it on the server, inside a match, in the hub (V parked), with Performance mode on and
+3. **The escape hatch, at every moment:** press Esc, then **Night City Menu...**: the real Cyberpunk menu opens once. Do it on the server, inside a match, in the hub (V parked), with Frame scale lowered and
    with the settings screen just closed. **Expect:** it always opens. Close Minecraft and press Esc in Cyberpunk: every Cyberpunk menu works as in vanilla.
 
 ### R9-7. Which way is it working? (the runtime paths)
@@ -220,7 +227,8 @@ Copy these lines to Claude (the wording is the packages', so search for the word
 | `handshake:` and `session:` | server log | the players and sessions of the test |
 
 ### R9-8. Without Cyberpunk: the machine checks
-1. `uv run pytest -q`, `uv run python -m tools.content_check` and `uv run python -m tools.content_check --dir examples/content-datapack` (the shipped defaults and the example), and
+1. `uv run pytest -q`, `uv run python -m tools.content_check` (the shipped defaults; the test suite also checks the six CONTENT.md recipes), `uv run python -m tools.content_check
+   --dir examples/content-datapack` only when the build has that folder, and
    `uv run python -m tools.mpcheck --all` on a worktree (never the folder you play from). **Expect:** all pass; a SKIP is not a pass, so if a scenario says SKIP, read why.
 2. In a worktree `gradlew.bat test build`, then `cmake --build cp/plugin/build --config Release`, `cp\plugin\build\Release\cb_tests.exe` and `ctest -C Release` (which runs `fx_check`).
 
