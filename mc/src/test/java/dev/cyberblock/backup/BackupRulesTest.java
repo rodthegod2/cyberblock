@@ -14,6 +14,8 @@ class BackupRulesTest {
 		assertEquals("cyberblock-2026-10-04.zip", BackupRules.fileName(FIVE_OH_ONE, List.of()));
 		assertEquals("cyberblock-2026-10-04-050107.zip", BackupRules.fileName(FIVE_OH_ONE, List.of("cyberblock-2026-10-04.zip")));
 		assertEquals("cyberblock-2026-10-04.zip", BackupRules.fileName(FIVE_OH_ONE, List.of("cyberblock-2026-10-03.zip")));
+		// the plain name was pruned but a timed one of the day is left: the plain name would sort as the oldest, so it is not reused
+		assertEquals("cyberblock-2026-10-04-050107.zip", BackupRules.fileName(FIVE_OH_ONE, List.of("cyberblock-2026-10-04-020000.zip")));
 	}
 
 	@Test

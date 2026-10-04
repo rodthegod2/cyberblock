@@ -22,10 +22,14 @@ final class BackupRules {
 		return NAME.matcher(name).matches();
 	}
 
-	/** The file name for a backup taken at {@code now}: the plain daily name, or with the time when that day already has one. */
+	/**
+	 * The file name for a backup taken at {@code now}: the plain daily name for the day's first backup, with the time for every later
+	 * one. The plain name sorts before the timed ones, so it must never be reused once a timed one exists (pruning goes by name order).
+	 */
 	static String fileName(final LocalDateTime now, final Collection<String> existing) {
-		String plain = "cyberblock-" + DAY.format(now) + ".zip";
-		return existing.contains(plain) ? "cyberblock-" + DAY.format(now) + "-" + TIME.format(now) + ".zip" : plain;
+		return hasBackupOn(now.toLocalDate(), existing)
+			? "cyberblock-" + DAY.format(now) + "-" + TIME.format(now) + ".zip"
+			: "cyberblock-" + DAY.format(now) + ".zip";
 	}
 
 	/** The configured hour has come (server local time) and no backup of today exists yet. */

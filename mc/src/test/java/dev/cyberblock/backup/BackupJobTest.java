@@ -96,6 +96,21 @@ class BackupJobTest {
 	}
 
 	@Test
+	void manyBackupsOneDayWithKeepTwoAlwaysLeaveTheNewestTwo() throws IOException {
+		// found on a real server: after the plain name was pruned, the next backup reused it and pruned itself
+		LocalDateTime t = DAY;
+		for (int i = 0; i < 5; i++) {
+			BackupJob.Result r = run(2, t, PLENTY);
+			assertEquals(BackupJob.Outcome.DONE, r.outcome(), r.detail());
+			assertTrue(Files.exists(this.backups.resolve(r.file())), "the new backup is never the one pruned");
+			t = t.plusSeconds(7);
+		}
+
+		assertEquals(List.of("cyberblock-2026-10-04-050021.zip", "cyberblock-2026-10-04-050028.zip"),
+			BackupJob.names(this.backups).stream().sorted().toList());
+	}
+
+	@Test
 	void lowDiskSkipsWithAWarningAndWritesNothing() throws IOException {
 		long worldBytes = "level".length() + "region bytes".length();
 		BackupJob.Result r = run(7, DAY, 2 * worldBytes - 1);

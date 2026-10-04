@@ -54,7 +54,9 @@ final class BackupJob {
 
 			Files.move(part, target, StandardCopyOption.ATOMIC_MOVE);
 			for (String old : BackupRules.toPrune(names(dir), keep)) {
-				Files.deleteIfExists(dir.resolve(old));
+				if (!old.equals(name)) { // never the one just made, whatever the clock did
+					Files.deleteIfExists(dir.resolve(old));
+				}
 			}
 
 			return new Result(Outcome.DONE, name, Files.size(target), "");
