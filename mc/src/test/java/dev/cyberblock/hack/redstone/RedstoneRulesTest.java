@@ -102,15 +102,35 @@ class RedstoneRulesTest {
 	}
 
 	@Test
-	void theRemotePathFallsBackOnARangeRefusal() {
+	void theCyberdeckLightsFollowTheRamAndTheNextRefillIsKnown() {
+		assertEquals(Deck.LIGHTS, Deck.full(0).lights(0));
+		assertEquals(0, new Deck(0, 0).lights(0), "dark only when empty");
+		assertEquals(1, new Deck(1, 0).lights(0));
+		assertEquals(1, new Deck(4, 0).lights(0));
+		assertEquals(2, new Deck(5, 0).lights(0));
+		assertEquals(3, new Deck(12, 0).lights(0));
+		assertEquals(4, new Deck(13, 0).lights(0));
+		assertEquals(0L, Deck.full(0).untilRefill(500), "full: nothing to wait for");
+		assertEquals(RedstoneRules.DECK_REFILL_TICKS, new Deck(3, 0).untilRefill(0));
+		assertEquals(RedstoneRules.DECK_REFILL_TICKS - 30, new Deck(3, 0).untilRefill(30));
+		assertEquals(RedstoneRules.DECK_REFILL_TICKS - 30, new Deck(3, 0).untilRefill(RedstoneRules.DECK_REFILL_TICKS + 30), "after one point came back");
+		assertEquals(0L, new Deck(15, 0).untilRefill(RedstoneRules.DECK_REFILL_TICKS), "the last point made it full");
+	}
+
+	@Test
+	void theRemotePathFallsBackOnRangeRefusals() {
 		RemotePath path = new RemotePath();
 		path.configure("");
 		assertEquals(RemotePath.Mode.STREAMED, path.mode());
 		assertTrue(path.reaches(120.0));
-		assertFalse(path.observe(false, "target gone", 120.0), "gone from the streamed area is the documented path working");
-		assertFalse(path.observe(false, "out of range", 30.0), "close to V: says nothing about the 50 m rule");
-		assertFalse(path.observe(true, "", 120.0));
-		assertTrue(path.observe(false, "out of range", 120.0));
+		assertFalse(path.observe(false, "target gone", 120.0, true), "gone from the streamed area is the documented path working");
+		assertFalse(path.observe(false, "out of range", 30.0, true), "close to V: says nothing about the 50 m rule");
+		assertFalse(path.observe(false, "out of range", 120.0, false), "not listed in the last second: says nothing");
+		assertFalse(path.observe(false, "out of range", 120.0, true), "one strike");
+		assertFalse(path.observe(true, "", 120.0, true), "a yes from that far clears the strikes");
+		assertFalse(path.observe(false, "out of range", 120.0, true));
+		assertEquals(RemotePath.Mode.STREAMED, path.mode());
+		assertTrue(path.observe(false, "not hackable (line of sight)", 120.0, true), "the second strike");
 		assertEquals(RemotePath.Mode.NEAR, path.mode());
 		assertFalse(path.reaches(51.0));
 		assertTrue(path.reaches(49.0));
@@ -123,6 +143,36 @@ class RedstoneRulesTest {
 	}
 
 	@Test
+	void notInRangeIsTheScriptsListNotAGameCheck() {
+		RemotePath path = new RemotePath();
+		path.configure("");
+		for (int i = 0; i < 5; i++) {
+			assertFalse(path.observe(false, "not in range", 60.0, true), "Devices.reds: the device is not in its last list");
+			assertFalse(path.observe(false, "Target Gone", 60.0, true));
+		}
+
+		assertEquals(RemotePath.Mode.STREAMED, path.mode());
+		assertFalse(RemotePath.rangeRefusal("not in range"));
+		assertFalse(RemotePath.rangeRefusal("arrangement"), "whole words only");
+		assertFalse(RemotePath.rangeRefusal("insightful"));
+		assertTrue(RemotePath.rangeRefusal("out of range"));
+		assertTrue(RemotePath.rangeRefusal("not hackable (no line of sight)"));
+		assertTrue(RemotePath.rangeRefusal("Too far from V"));
+	}
+
+	@Test
+	void aNewServerStartsOnTheDefaultPath() {
+		RemotePath path = new RemotePath();
+		path.configure("");
+		path.observe(false, "out of range", 120.0, true);
+		path.observe(false, "out of range", 120.0, true);
+		assertEquals(RemotePath.Mode.NEAR, path.mode());
+		path.configure(null); // what SERVER_STOPPING does
+		assertEquals(RemotePath.Mode.STREAMED, path.mode());
+		assertFalse(path.observe(false, "out of range", 120.0, true), "the strikes start again too");
+	}
+
+	@Test
 	void theDeviceTableForgetsGoneDevicesAndEndedOwners() {
 		DeviceTable table = new DeviceTable();
 		UUID owner = new UUID(1, 1);
@@ -130,6 +180,9 @@ class RedstoneRulesTest {
 		assertEquals(1, table.of(owner, 10).size());
 		table.state(owner, 1, Device.DOOR_OPENED, 0);
 		assertTrue(table.get(owner, 1, 10).open(), "a devstate updates it");
+		assertTrue(table.listedWithin(owner, 1, RemotePath.FRESH_TICKS, RemotePath.FRESH_TICKS));
+		assertFalse(table.listedWithin(owner, 1, RemotePath.FRESH_TICKS + 1, RemotePath.FRESH_TICKS), "still in the table, but not fresh");
+		assertFalse(table.listedWithin(owner, 2, 0, RemotePath.FRESH_TICKS));
 		assertTrue(table.of(owner, DeviceTable.GONE_TICKS).isEmpty(), "no list named it for 10 s");
 		table.update(owner, List.of(door(Device.DOOR_CLOSED, 0)), 300);
 		table.end(owner);

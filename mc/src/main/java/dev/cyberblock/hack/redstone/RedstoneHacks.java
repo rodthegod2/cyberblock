@@ -14,6 +14,7 @@ import dev.cyberblock.device.Device;
 import dev.cyberblock.device.DeviceMap;
 import dev.cyberblock.device.DeviceShape;
 import dev.cyberblock.device.DeviceWire;
+import dev.cyberblock.hack.breach.Breach;
 import dev.cyberblock.hack.redstone.RedstoneRules.Deck;
 import dev.cyberblock.hack.redstone.RedstoneRules.Refusal;
 import dev.cyberblock.net.HostSession;
@@ -46,6 +47,8 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -64,17 +67,6 @@ import org.jspecify.annotations.Nullable;
  * {@code redstone: charge at x y z exploded in N Night City games ...}.
  */
 public final class RedstoneHacks {
-	/**
-	 * Breach Protocol on a linked device (package 6B installs it; the Breach Port's screen calls it). True when the Breach screen opened.
-	 */
-	@FunctionalInterface
-	public interface BreachOpener {
-		boolean open(ServerPlayer player, UUID owner, long deviceId, BlockPos from);
-	}
-
-	/** 6B's Breach Protocol, or null until it is installed (the button then says it is not there yet). */
-	public static volatile @Nullable BreachOpener breachOpener;
-
 	/** Answers older than this are forgotten (and a Breach Port's RAM for them is not refunded). */
 	static final long ANSWER_TICKS = 1200;
 	private static final DeviceTable table = new DeviceTable();
@@ -87,8 +79,12 @@ public final class RedstoneHacks {
 	private record PendingKey(UUID owner, int request) {
 	}
 
-	/** A devact or a hack a block sent: where from, who acts, the RAM to refund and the target's distance from V. */
-	private record Pending(String what, ResourceKey<Level> dimension, BlockPos pos, @Nullable BlockPos deck, int cost, UUID actor, double toV, long tick) {
+	/**
+	 * A devact or a hack a block sent: where from, who acts, the RAM to refund, the target's distance from V and whether the owner
+	 * listed the target within the last second (only then can a refusal speak for the Phase 0 h reach).
+	 */
+	private record Pending(String what, ResourceKey<Level> dimension, BlockPos pos, @Nullable BlockPos deck, int cost, UUID actor, double toV, boolean fresh,
+		long tick) {
 	}
 
 	private RedstoneHacks() {
@@ -134,6 +130,7 @@ public final class RedstoneHacks {
 			Cyberblock.LOG.info(path.line());
 		});
 		ServerLifecycleEvents.SERVER_STOPPING.register(s -> {
+			path.configure(System.getProperty("cyberblock.remoteRange")); // the next world in this JVM starts on the default path
 			table.clear();
 			rate.clear();
 			loops.clear();
@@ -217,10 +214,11 @@ public final class RedstoneHacks {
 		}
 
 		UUID asker = actor == null ? link.owner() : actor;
+		boolean fresh = table.listedWithin(link.owner(), d.id(), now, RemotePath.FRESH_TICKS);
 		for (String act : RedstoneRules.relayActs(d)) {
 			int request = s.newRequest(asker);
 			s.send(DeviceWire.devact(request, d, act));
-			pending.put(new PendingKey(link.owner(), request), new Pending("relay " + act, level.dimension(), pos, null, 0, asker, toV, now));
+			pending.put(new PendingKey(link.owner(), request), new Pending("relay " + act, level.dimension(), pos, null, 0, asker, toV, fresh, now));
 			Cyberblock.LOG.info("redstone: relay at {} -> devact {} {} {} of {} (request {})", pos.toShortString(), act, d.type().id(), d.idText(), s.name(), request);
 		}
 
@@ -274,8 +272,9 @@ public final class RedstoneHacks {
 			UUID asker = actor == null ? owner : actor;
 			int request = s.newRequest(asker);
 			s.send(CyberWire.hack(request, Bridge.proxyIdOf.applyAsLong(e), hack, false));
+			// a figure exists only while its host lists it (ProxyManager removes the ones a list leaves out): the target is fresh
 			pending.put(new PendingKey(owner, request), new Pending("breach port " + hack.wire(), level.dimension(), pos, deckEntity.getBlockPos(), hack.ram(), asker,
-				toV, now));
+				toV, true, now));
 			sent++;
 		}
 
@@ -309,7 +308,7 @@ public final class RedstoneHacks {
 		}
 
 		if (blocked > 0) {
-			refuse(level, pos, be, "charge", Refusal.BLOCKED);
+			refuse(level, pos, be, "charge", Refusal.EXPLOSIONS_OFF);
 		}
 
 		if (reached == 0) {
@@ -381,8 +380,8 @@ public final class RedstoneHacks {
 
 		switch (kind) {
 			case BREACH_PORT -> HackMenu.open(player, level, pos, true);
-			case CHARGE -> player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.redstone.charge.info",
-				"Charge: a redstone signal sets off a real explosion in Night City (hosts within 128 blocks)"));
+			case CHARGE -> player.sendOverlayMessage(Component.translatableWithFallback("item.cyberblock.charge.tooltip",
+				"On a redstone signal it blows up in Night City"));
 			case RELAY -> player.sendOverlayMessage(relayStatus(be));
 		}
 	}
@@ -395,9 +394,8 @@ public final class RedstoneHacks {
 
 		HostSession s = HostSessions.of(link.owner());
 		boolean resolved = s != null && s.state() != HostSession.State.NONE && link.resolve(table.of(link.owner(), tick()), s.levelK()) != null;
-		Component state = resolved ? Component.translatableWithFallback("cyberblock.redstone.resolved", "resolved")
-			: Component.translatableWithFallback("cyberblock.redstone.unresolved_short", "unresolved (its host is offline or the device is not in its list)");
-		return Component.translatableWithFallback("cyberblock.redstone.relay.status", "Device Relay: linked to %s, %s", be.linkLabel(), state);
+		return resolved ? Component.translatableWithFallback("cyberblock.redstone.link.resolved", "Linked: %s", be.linkLabel())
+			: Component.translatableWithFallback(Refusal.UNRESOLVED.key(), Refusal.UNRESOLVED.fallback());
 	}
 
 	static void useSensor(final ServerLevel level, final BlockPos pos, final SensorBlock.Kind kind, final ServerPlayer player) {
@@ -405,12 +403,14 @@ public final class RedstoneHacks {
 			HackMenu.open(player, level, pos, false);
 		} else {
 			int signal = sense(level, pos, kind);
-			player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.redstone.heat.info", "Heat Sensor: the nearest host's heat is %s (signal %s)",
-				signal / 3, signal));
+			player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.redstone.heat.level", "NCPD heat %s", signal / 3));
 		}
 	}
 
-	/** The Breach Port screen's button: Breach Protocol (6B) on the linked device. */
+	/**
+	 * The Breach Port screen's button: Breach Protocol (6B) on the linked device, anchored at the port (the player stays near it).
+	 * Breach checks the owner's guest toggles for the player and tells them when it refuses.
+	 */
 	static void breach(final ServerLevel level, final BlockPos pos, final ServerPlayer player) {
 		HackBlockEntity be = level.getBlockEntity(pos) instanceof HackBlockEntity e ? e : null;
 		Link link = be == null ? null : be.link();
@@ -421,11 +421,10 @@ public final class RedstoneHacks {
 
 		HostSession s = HostSessions.of(link.owner());
 		Device d = s == null || s.state() == HostSession.State.NONE ? null : link.resolve(table.of(link.owner(), tick()), s.levelK());
-		BreachOpener opener = breachOpener;
 		if (d == null) {
 			player.sendOverlayMessage(Component.translatableWithFallback(Refusal.UNRESOLVED.key(), Refusal.UNRESOLVED.fallback()));
-		} else if (opener == null || !opener.open(player, link.owner(), d.id(), pos)) {
-			player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.device.breach_later", "Breach Protocol and the Traffic Tool come in a later update"));
+		} else {
+			Breach.openOnDevice(player, pos, link.owner(), d);
 		}
 	}
 
@@ -471,8 +470,7 @@ public final class RedstoneHacks {
 		}
 
 		CyberdeckLinkItem.store(stack, found.link(), found.label());
-		p.sendOverlayMessage(Component.translatableWithFallback("cyberblock.redstone.picked", "Picked %s: now right-click a Device Relay or a Breach Port with the link",
-			found.label()));
+		p.sendOverlayMessage(picked(found));
 		return InteractionResult.SUCCESS;
 	}
 
@@ -480,14 +478,20 @@ public final class RedstoneHacks {
 	static void pickLocked(final ServerPlayer player, final ItemStack stack) {
 		Found found = locked(player);
 		if (found == null) {
-			player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.redstone.link.how",
-				"Scan a device with the hack key, or right-click a device block with the Cyberdeck Link"));
+			player.sendOverlayMessage(howToLink());
 			return;
 		}
 
 		CyberdeckLinkItem.store(stack, found.link(), found.label());
-		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.redstone.picked", "Picked %s: now right-click a Device Relay or a Breach Port with the link",
-			found.label()));
+		player.sendOverlayMessage(picked(found));
+	}
+
+	private static Component picked(final Found found) {
+		return Component.translatableWithFallback("cyberblock.redstone.link.begin", "Link started: %s. Right-click a Device Relay to finish", found.label());
+	}
+
+	private static Component howToLink() {
+		return Component.translatableWithFallback(Refusal.NO_LINK.key(), Refusal.NO_LINK.fallback());
 	}
 
 	private static void linkBlock(final ServerLevel level, final BlockPos pos, final ServerPlayer player, final ItemStack stack) {
@@ -502,13 +506,17 @@ public final class RedstoneHacks {
 		}
 
 		if (found == null) {
-			player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.redstone.link.how",
-				"Scan a device with the hack key, or right-click a device block with the Cyberdeck Link"));
+			player.sendOverlayMessage(howToLink());
 			return;
 		}
 
 		be.link(found.link(), found.label(), player.getUUID());
-		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.redstone.linked", "Linked to %s", found.label()));
+		BlockState state = level.getBlockState(pos);
+		if (state.hasProperty(TriggerBlock.LINKED) && !state.getValue(TriggerBlock.LINKED)) {
+			level.setBlock(pos, state.setValue(TriggerBlock.LINKED, true), Block.UPDATE_CLIENTS);
+		}
+
+		player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.redstone.link.done", "Linked to %s", found.label()));
 		level.sendParticles(ParticleTypes.ELECTRIC_SPARK, pos.getX() + 0.5, pos.getY() + 1.05, pos.getZ() + 0.5, 6, 0.25, 0.05, 0.25, 0.0);
 		Cyberblock.LOG.info("redstone: {} linked the {} at {} to {}", player.getPlainTextName(), level.getBlockState(pos).getBlock().getName().getString(),
 			pos.toShortString(), found.label());
@@ -561,7 +569,7 @@ public final class RedstoneHacks {
 			return; // the device layer's or a player's request, or a late answer
 		}
 
-		if (path.observe(ok, reason, p.toV())) {
+		if (path.observe(ok, reason, p.toV(), p.fresh())) {
 			Cyberblock.LOG.info(path.line());
 		}
 

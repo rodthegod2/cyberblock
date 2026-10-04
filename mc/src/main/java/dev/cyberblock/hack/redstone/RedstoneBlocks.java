@@ -24,9 +24,13 @@ import net.minecraft.world.level.material.MapColor;
  * The redstone hacking blocks and the Cyberdeck Link (megaplan 6-R1), registered on both sides at startup ({@link #register}, from
  * Cyberblock.onInitialize). Ids ({@code cyberblock:<name>}; art, models, item definitions and lang are 6A's):
  * <ul>
- * <li>{@code device_relay}, {@code breach_port}, {@code charge}: block state {@code triggered} (true while powered)</li>
- * <li>{@code proximity_sensor}, {@code heat_sensor}: block state {@code power} 0..15 (the output)</li>
- * <li>{@code cyberdeck_block}: no block state (its RAM is in the block entity; a comparator reads it)</li>
+ * <li>{@code device_relay}: block state {@code linked}, {@code powered} (true while its input is)</li>
+ * <li>{@code breach_port}: {@code facing} (horizontal), {@code powered}</li>
+ * <li>{@code charge}: {@code powered}</li>
+ * <li>{@code proximity_sensor}: {@code powered} (its output: 0 or 15)</li>
+ * <li>{@code heat_sensor}: {@code power} 0..15 (its output)</li>
+ * <li>{@code cyberdeck_block}: {@code facing} (horizontal), {@code ram} 0..4 (the lights; the RAM itself is in the block entity and
+ * a comparator reads it)</li>
  * <li>{@code cyberdeck_link}: the item (one per stack)</li>
  * </ul>
  * One block entity type, {@code cyberblock:redstone_hack}, serves all six blocks. Every block has an item (a player's block, unlike the
@@ -89,11 +93,11 @@ public final class RedstoneBlocks {
 	/** A new block, not registered yet (tests build them this way too). */
 	static Block create(final String name) {
 		return switch (name) {
-			case "device_relay" -> new TriggerBlock(TriggerBlock.Kind.RELAY, props(name, MapColor.COLOR_CYAN));
-			case "breach_port" -> new TriggerBlock(TriggerBlock.Kind.BREACH_PORT, props(name, MapColor.COLOR_MAGENTA).lightLevel(state -> 3));
+			case "device_relay" -> new TriggerBlock.Relay(props(name, MapColor.COLOR_CYAN));
+			case "breach_port" -> new TriggerBlock.Port(props(name, MapColor.COLOR_MAGENTA).lightLevel(state -> 3));
 			case "charge" -> new TriggerBlock(TriggerBlock.Kind.CHARGE, props(name, MapColor.COLOR_RED).strength(0.5F, 0.0F).sound(SoundType.GRASS));
-			case "proximity_sensor" -> new SensorBlock(SensorBlock.Kind.PROXIMITY, props(name, MapColor.COLOR_YELLOW));
-			case "heat_sensor" -> new SensorBlock(SensorBlock.Kind.HEAT, props(name, MapColor.COLOR_ORANGE));
+			case "proximity_sensor" -> new SensorBlock.Proximity(props(name, MapColor.COLOR_YELLOW));
+			case "heat_sensor" -> new SensorBlock.Heat(props(name, MapColor.COLOR_ORANGE));
 			case "cyberdeck_block" -> new CyberdeckBlock(props(name, MapColor.COLOR_BLUE).lightLevel(state -> 5));
 			default -> throw new IllegalArgumentException("no redstone hacking block " + name);
 		};

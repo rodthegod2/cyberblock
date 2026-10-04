@@ -56,8 +56,8 @@ final class HackMenu extends ChestMenu {
 	}
 
 	static void open(final ServerPlayer player, final ServerLevel level, final BlockPos pos, final boolean port) {
-		Component title = port ? Component.translatableWithFallback("cyberblock.redstone.breach_port.screen", "Breach Port")
-			: Component.translatableWithFallback("cyberblock.redstone.proximity.screen", "Proximity Sensor");
+		Component title = port ? Component.translatableWithFallback("cyberblock.redstone.breach_port.title", "Breach Port")
+			: Component.translatableWithFallback("cyberblock.redstone.proximity.title", "Proximity Sensor");
 		player.openMenu(new SimpleMenuProvider((id, inventory, p) -> new HackMenu(id, inventory, level, pos, port, new SimpleContainer(port ? 18 : 9)), title));
 	}
 
@@ -134,9 +134,9 @@ final class HackMenu extends ChestMenu {
 		}
 
 		if (!this.port) {
-			this.buttons.setItem(PERSON, toggle(Items.ARMOR_STAND, "cyberblock.redstone.proximity.people", "People", (be.mask() & RedstoneRules.PERSON) != 0));
-			this.buttons.setItem(CAR, toggle(Items.MINECART, "cyberblock.redstone.proximity.cars", "Cars", (be.mask() & RedstoneRules.CAR) != 0));
-			this.buttons.setItem(V, toggle(Items.ENDER_EYE, "cyberblock.redstone.proximity.v", "V (a Cyberpunk host)", (be.mask() & RedstoneRules.V) != 0));
+			this.buttons.setItem(PERSON, toggle(Items.ARMOR_STAND, "cyberblock.redstone.proximity.person", "People", (be.mask() & RedstoneRules.PERSON) != 0));
+			this.buttons.setItem(CAR, toggle(Items.MINECART, "cyberblock.redstone.proximity.car", "Cars", (be.mask() & RedstoneRules.CAR) != 0));
+			this.buttons.setItem(V, toggle(Items.ENDER_EYE, "cyberblock.redstone.proximity.v", "V, the host", (be.mask() & RedstoneRules.V) != 0));
 			this.rangeButtons(be, RANGE_DOWN, RANGE, RANGE_UP);
 			return;
 		}
@@ -147,8 +147,8 @@ final class HackMenu extends ChestMenu {
 			boolean chosen = h == be.hack();
 			icon.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, chosen);
 			icon.set(DataComponents.LORE, lore(Component.translatableWithFallback("cyberblock.redstone.breach_port.cost", "%s RAM per target", h.ram()),
-				chosen ? Component.translatableWithFallback("cyberblock.redstone.chosen", "Chosen") : Component.translatableWithFallback("cyberblock.redstone.choose",
-					"Click to choose")));
+				chosen ? Component.translatableWithFallback("cyberblock.redstone.chosen", "Chosen") : Component.translatableWithFallback("cyberblock.redstone.breach_port.pick",
+					"Pick the quickhack to fire")));
 			this.buttons.setItem(i, icon);
 		}
 
@@ -156,8 +156,8 @@ final class HackMenu extends ChestMenu {
 		HackBlockEntity deck = RedstoneHacks.deckNextTo(this.level, this.pos);
 		long now = RedstoneHacks.now(this.level);
 		this.buttons.setItem(PORT_RAM, button(RedstoneBlocks.CYBERDECK_BLOCK.asItem(), deck == null
-			? Component.translatableWithFallback("cyberblock.redstone.no_deck", "The Breach Port needs a Cyberdeck block next to it")
-			: Component.translatableWithFallback("cyberblock.redstone.deck_ram", "Cyberdeck block: %s / %s RAM (1 back every 5 s)", deck.deck(now).ram(now),
+			? Component.translatableWithFallback(RedstoneRules.Refusal.NO_DECK.key(), RedstoneRules.Refusal.NO_DECK.fallback())
+			: Component.translatableWithFallback("cyberblock.redstone.cyberdeck.ram", "RAM %s of %s", deck.deck(now).ram(now),
 				RedstoneRules.DECK_MAX_RAM)));
 		this.buttons.setItem(PORT_BREACH, button(Items.COMPASS, be.link() == null
 			? Component.translatableWithFallback("cyberblock.redstone.breach_port.breach_unlinked", "Breach Protocol: link a device first (Cyberdeck Link)")
@@ -166,7 +166,7 @@ final class HackMenu extends ChestMenu {
 
 	private void rangeButtons(final HackBlockEntity be, final int down, final int show, final int up) {
 		this.buttons.setItem(down, button(Items.STAINED_GLASS_PANE.red(), Component.translatableWithFallback("cyberblock.redstone.range_down", "Range -1")));
-		ItemStack range = button(Items.REPEATER, Component.translatableWithFallback("cyberblock.redstone.range", "Range: %s blocks", be.range()));
+		ItemStack range = button(Items.REPEATER, Component.translatableWithFallback("cyberblock.redstone.proximity.range", "Range: %s blocks", be.range()));
 		range.setCount(be.range());
 		this.buttons.setItem(show, range);
 		this.buttons.setItem(up, button(Items.STAINED_GLASS_PANE.lime(), Component.translatableWithFallback("cyberblock.redstone.range_up", "Range +1")));

@@ -5,6 +5,7 @@ import dev.cyberblock.hack.redstone.RedstoneRules.Deck;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.UUIDUtil;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
@@ -94,9 +95,13 @@ public final class HackBlockEntity extends BlockEntity {
 		return this.deck;
 	}
 
+	/** The RAM changed: saved, and the Cyberdeck block's lights and comparators follow it. */
 	void deck(final Deck d) {
 		this.deck = d;
 		this.setChanged();
+		if (this.level instanceof ServerLevel server) {
+			CyberdeckBlock.refresh(server, this.worldPosition);
+		}
 	}
 
 	@Override

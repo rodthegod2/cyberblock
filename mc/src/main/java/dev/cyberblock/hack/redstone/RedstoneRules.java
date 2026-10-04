@@ -25,17 +25,19 @@ public final class RedstoneRules {
 	/** Hosts whose V is this close hear a Charge (as ExplosionEvents.REACH). */
 	public static final double CHARGE_REACH = 128.0;
 
-	/** Why an action did not reach Night City: the lang key and its English fallback. */
+	/** Why an action did not reach Night City: the lang key (6A's en_us, or the device layer's) and its English fallback. */
 	public enum Refusal {
 		NONE("", ""),
-		NO_LINK("cyberblock.redstone.no_link", "Not linked: pick a device with the Cyberdeck Link, then right-click this block with it"),
-		UNRESOLVED("cyberblock.redstone.unresolved", "Linked device unresolved: its host is offline or the device is not in its list"),
-		BLOCKED("cyberblock.guest.blocked", "That host does not let guests do this to their Night City"),
-		QUEST_LOCKED("cyberblock.device.quest_locked", "Locked by Night City (a quest or a scene): it cannot be used now"),
-		OUT_OF_RANGE("cyberblock.hack.out_of_range", "Out of range: Night City reaches only targets within 50 m of V"),
-		FROZEN("cyberblock.redstone.loop", "Redstone loop: this device is frozen for 30 s"),
-		NO_DECK("cyberblock.redstone.no_deck", "The Breach Port needs a Cyberdeck block next to it"),
-		NO_RAM("cyberblock.redstone.no_ram", "The Cyberdeck block is out of RAM"),
+		NO_LINK("cyberblock.redstone.link.need_scan", "Scan a device with G first, then link it"),
+		UNRESOLVED("cyberblock.redstone.link.unresolved", "Unresolved: its owner is offline or Night City has not shown the device yet"),
+		BLOCKED("cyberblock.guest.blocked", "That player's Night City does not allow this"),
+		EXPLOSIONS_OFF("cyberblock.redstone.charge.denied", "The host has switched explosions off"),
+		QUEST_LOCKED("cyberblock.device.quest_locked", "This device belongs to a mission and cannot be used now"),
+		OUT_OF_RANGE("cyberblock.hack.out_of_range", "Out of range: the target is too far from V"),
+		FROZEN("cyberblock.redstone.loop", "Redstone loop: frozen for 30 seconds"),
+		NO_DECK("cyberblock.redstone.breach_port.no_deck", "Place a Cyberdeck Block next to this port"),
+		NO_RAM("cyberblock.redstone.breach_port.no_ram", "Not enough RAM in the Cyberdeck Block"),
+		/** Logged only (a Breach Port firing at nobody says nothing). */
 		NO_TARGET("cyberblock.redstone.no_target", "No target in range");
 
 		private final String key;
@@ -139,6 +141,9 @@ public final class RedstoneRules {
 	 * {@link #DECK_MAX_RAM}.
 	 */
 	public record Deck(int stored, long since) {
+		/** The lights on the block's front (its block state {@code ram} 0..4). */
+		public static final int LIGHTS = 4;
+
 		public static Deck full(final long now) {
 			return new Deck(DECK_MAX_RAM, now);
 		}
@@ -167,6 +172,20 @@ public final class RedstoneRules {
 		/** Comparator output 0..15. */
 		public int signal(final long now) {
 			return this.ram(now) * 15 / DECK_MAX_RAM;
+		}
+
+		/** Lights lit 0..{@link #LIGHTS}: dark only when empty, all of them from the last quarter up. */
+		public int lights(final long now) {
+			return (this.ram(now) * LIGHTS + DECK_MAX_RAM - 1) / DECK_MAX_RAM;
+		}
+
+		/** Ticks until the next point comes back; 0 when full. */
+		public long untilRefill(final long now) {
+			if (this.ram(now) >= DECK_MAX_RAM) {
+				return 0L;
+			}
+
+			return DECK_REFILL_TICKS - Math.max(0L, now - this.since) % DECK_REFILL_TICKS;
 		}
 
 		private long restart(final int ram, final long now) {
