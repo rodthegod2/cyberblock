@@ -19,6 +19,14 @@ Cyberblock is on.
 > `docs/TESTING-PLAN.md` starts with the "Re-test 3" list. The fallback switches under
 > [Troubleshooting](#8-troubleshooting) are still there for rough edges.
 >
+> **Phase Q (2026-10-04, not played in game yet).** Survival mining of placed blocks, stairs with no vault or climb prompt
+> (plus a step-up assist), a third-person camera that does not clip or flicker and has its own options, breakable and
+> returning outline blocks in creative, and the first Cyberblock settings screen. See
+> [mining and stairs](#mining-placed-blocks-stairs-and-the-step-up-assist),
+> [the camera options](#third-person-camera-options-and-the-debug-overlay),
+> [creative mode and the outline blocks](#creative-mode-and-the-outline-blocks) and
+> [the settings screen](#the-cyberblock-settings-screen); `docs/TESTING-PLAN.md` starts with "Re-test Q".
+>
 > **Quick links:** [release install](#1-setup), [the key table](#3-controls), [the Minecraft interface](#the-minecraft-interface),
 > [netrunning, step by step](#netrunning-step-by-step), [what each chip does](#what-each-chip-does),
 > [cyberware](#cyberware-u-y-l-and-o), [vehicles](#vehicles-and-third-person) and
@@ -300,9 +308,25 @@ the Minecraft log how many proxies exist ("proxies: H people, C cars").
 - **Night City is solid for Minecraft.** Raycasts around V turn floors and walls into invisible barrier blocks:
   - the radius is 24 m on foot, and grows to 64 m while gliding;
   - Steve, mobs and arrows stand on them and bump into them;
-  - you cannot break them.
+  - in survival and adventure you cannot break them; creative can, and they come back (see
+    [Creative mode and the outline blocks](#creative-mode-and-the-outline-blocks)).
 - **In a car:** Steve rides along: Minecraft shows his hand or the whole seated Steve, and hides the hotbar. Details under
   [Vehicles and third person](#vehicles-and-third-person).
+
+### Mining placed blocks, stairs and the step-up assist
+Placed blocks behave like blocks in Minecraft, in survival too:
+- **Mining.** Hold the attack button on a placed block with a pickaxe (or whatever fits the block): the cracks grow and it
+  breaks in the normal Minecraft time, at eye height and at your feet alike. Night City's real surfaces behind a block
+  never get in the way of the aim, and V standing on the ground does not slow the mining down as if you were in mid-air.
+  To see what the crosshair is aiming at, switch the aim debug on (`/cyberblock debug aim on`): Minecraft's latest.log
+  then gets one `aim: target <block|entity|none> d=<m> limit=<m>` line per tick.
+- **Stairs.** Build a staircase of placed blocks and walk up it: Cyberpunk no longer offers its **vault** or **climb**
+  prompt on your blocks, so V simply walks up. Real Night City ledges, ladders and kerbs still vault and climb as before.
+  Cyberblock.log says `locomotion: vault refused on Cyberblock box` (or `climb`) at most once a second when it steps in.
+- **Step-up assist.** With **Step-up assist** on (the default; Esc, then **Cyberblock...**, see
+  [the settings screen](#the-cyberblock-settings-screen)), walking into a single placed block that is at most one block
+  high, with 2 m of free room above it, lifts V onto it smoothly in about a sixth of a second. It never lifts V onto
+  Night City's own geometry, and not in a vehicle or a scene. With it off, jump up the steps instead.
 
 ### Layer 2: building, explosions, weapons
 - **Placed blocks are solid in Night City too.** They stop pedestrians, traffic and V:
@@ -467,6 +491,32 @@ camera instead of where V was when Minecraft drew the picture, and in a third-pe
 is (Steve's own physics may be a block or two ahead), so the camera no longer seems to trail him. It switches itself off (back to first person) in vehicles, scenes, workspots, menus, braindances and
 photo mode, and whenever Cyberblock goes off. A "Third person" or "First person" message confirms it. Cyberblock.log says
 `view: third person on (distance D m)` or `view: first person (<reason>)`.
+
+#### Third-person camera options and the debug overlay
+The third-person view (F5) has settings of its own, in [the settings screen](#the-cyberblock-settings-screen) (Esc, then
+**Cyberblock...**, or `/cyberblock settings`). They apply at once:
+
+| Row | What it does | Range (default) |
+|---|---|---|
+| **Distance** | how far behind Steve the camera sits | 1.5 to 8 m (3.2) |
+| **Shoulder** | how far to the right of Steve the camera sits (negative = left) | -1 to 1 m (0.45) |
+| **FOV** | the third-person field of view; 0 keeps the game's own | 0, or 50 to 110 (0) |
+| **Auto-recenter** | when a wall is close on the shoulder side, the camera swings to the centre, and back when it is clear | on |
+| **Vehicle distance** | the third-person vehicle camera's distance; 0 keeps the game's own, and it does nothing if Cyberpunk's vehicle camera cannot be changed | 0, or 3 to 14 m (0) |
+
+The camera no longer clips through walls: it tests four rays instead of one, stops 0.25 m in front of the nearest surface
+(never closer than 0.4 m to Steve), eases in and out instead of jumping, and never shows the inside of a wall when you
+turn in a corridor. Elytra, shield and use-item poses of third-person Steve no longer flicker, and Steve stays locked to
+the camera while you walk, sprint, glide or launch. The crosshair is drawn where Steve's own aim meets the target, so what
+it covers is what you hit; with nothing in reach it is at the screen centre. Third person stays off in braindances, photo
+mode, scenes and menus (Cyberblock.log says `view: gate <reason>` when the reason changes).
+
+**The view debug overlay.** `/cyberblock debug view on` (and `off`) shows a small overlay at the top left: frame time, the
+age of the newest camera pose, the interpolation factor, first or third person, the camera distance and the collision
+distance. Minecraft's latest.log gets `view: frame <ms> pose age <ms> interp <f> dist <m> collide <m>` every 5 s, and
+Cyberblock.log `view: dist <m> collide <m> shoulder <m> recenter <on|off>` whenever it changes. Steady numbers mean a smooth
+view; if you report jitter, please include these lines. Both debug switches (`aim` and `view`) need no operator rights and
+are off at every start.
 
 ### Layer 6: Cyberpunk in Minecraft form
 
@@ -864,6 +914,17 @@ facing north is brighter, the ground north of a tall building darker). Squares n
 - **Tracking:** select a quest pin and press **Track** to track that job (as the Night City map does for quest pins); other
   pins are tracked on the Night City map (*Night City Menu...*). The Journal's **Track** works as before.
 
+#### The Cyberblock settings screen
+**Esc, then Cyberblock...** (a button on Minecraft's pause screen and on the Night City pause screen), or
+`/cyberblock settings`, opens one place for Cyberblock's own settings. It is plain Minecraft widgets; a row you may not
+change is greyed, and its tooltip says "Only the host or an operator can change this".
+- **Third-person camera:** distance, shoulder, FOV, auto-recenter and vehicle distance (see
+  [the camera options](#third-person-camera-options-and-the-debug-overlay)), and **Step-up assist**
+  (see [stairs](#mining-placed-blocks-stairs-and-the-step-up-assist)).
+- **Creative can erase the replica permanently:** the world setting of
+  [the outline blocks](#creative-mode-and-the-outline-blocks) (off by default; only you in your own world, or an
+  operator, can change it).
+
 #### Menus Cyberblock cannot replace
 Some Cyberpunk menus have no Minecraft equivalent that could do the same job: **shops and vendors, the ripperdoc, the
 stash, the wardrobe, crafting benches, breach protocol, arcade machines, the braindance editor, tutorial and shard popups,
@@ -933,13 +994,27 @@ Switch modes with Minecraft's `/gamemode` (cheats are on in the `cyberblock` wor
 | Potions | Swiftness, Invisibility, Leaping |
 | Spawn eggs | 4 zombie, 2 skeleton, 2 creeper |
 
+### Creative mode and the outline blocks
+Night City's streets and walls exist in Minecraft as **outline blocks**: invisible barrier blocks that Cyberblock puts
+around V so Steve, mobs and arrows have something solid to stand on. In creative mode you see them as outlines.
+- **Survival and adventure:** they cannot be broken, and explosions never remove them.
+- **Creative:** you may break one (it is only a Minecraft block: nothing happens in Cyberpunk). It **comes back in about
+  10 seconds**, or at once when Cyberpunk reports that spot again. If you dig through the street and fall, Cyberblock
+  catches you and puts you back on the last safe ground ("Caught you: back to safe ground").
+- **Permanent erase:** the setting **Creative can erase the replica permanently** (off by default; Esc, **Cyberblock...**,
+  or `/cyberblock outline erase on|off`; `/cyberblock outline` shows the state; operators, or you in singleplayer) makes
+  broken outline blocks stay broken until you walk away and back and Cyberpunk reports the spot again.
+- The server decides from your game mode, so a client cannot cheat around it. Log lines: `outline: <name> broke <x> <y> <z>
+  (snap back in 10 s)` or `(kept: permanent erase)`, and `outline: restored N`.
+
 ### Commands
 Press **T** (chat) or **/** (command line) and type right in Cyberpunk: while a Minecraft screen is open, the text you
 type, Enter, Backspace, Delete, the arrows, Home/End and Tab all go to Minecraft, accents and emoji included. Enter
 sends, Esc cancels. V stands still meanwhile. (Cyberblock.log notes "typing reaches Minecraft's screens" the first
 time.)
 
-Useful commands: `/cyberblock kit`, `/cyberblock level` (re-align the ground to where V stands), `/cyberblock survey`
+Useful commands: `/cyberblock kit`, `/cyberblock settings` (the [settings screen](#the-cyberblock-settings-screen)),
+`/cyberblock outline erase on|off`, `/cyberblock debug aim|view on|off`, `/cyberblock level` (re-align the ground to where V stands), `/cyberblock survey`
 (map all of Night City once for the [Atlas](#the-atlas-map); `stop`, `status`, `redo`),
 `/cyberblock perks free on|off` (free skill points), `/gamemode creative`, `/gamemode survival`,
 `/xp add @s 30 levels`, `/effect clear @s`.

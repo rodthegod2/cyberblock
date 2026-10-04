@@ -1,8 +1,122 @@
 # Cyberblock — in-game test session (2026-10-03)
 
 Everything below is built, unit-tested, compile-checked against the real 2.31 game scripts and reviewed. Work top to
-bottom (**In-game fixes 3 first**, then Re-test 3); each step says what should happen. Tell Claude "F4: what you saw" or "R5 L-1: what you saw" (or "step N: ...") and it reads
+bottom (**Re-test Q first**, then **In-game fixes 3**, then Re-test 3); each step says what should happen. Tell Claude "F4: what you saw" or "R5 L-1: what you saw" (or "step N: ...") and it reads
 `red4ext\logs\Cyberblock.log`, Minecraft's `mc\run\logs\latest.log` and captures the game window to diagnose.
+
+## Re-test Q (do this first)
+
+One session for **Wave A**: Phase Q (below) and Phase 0's CET lines (Q7) are in this list; the integrator appends "Re-test 1"
+(the server/client split) and the Phase 2 tool checks **below the end marker of this section**, so everything is played in one
+sitting. Plan: `docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 3 (Phase Q) and section 4 (Phase 0). The
+player guide is `docs/HOW-TO-PLAY.md` ("Mining placed blocks, stairs and the step-up assist", "Third-person camera options
+and the debug overlay", "Creative mode and the outline blocks", "The Cyberblock settings screen"); the wire is
+`shared/protocol.md` "Phase Q". Tell Claude "Q3: what you saw" and it reads `red4ext\logs\Cyberblock.log`, Minecraft's
+`mc\run\logs\latest.log` and captures the game window.
+
+**What to try (one screen):**
+1. Mine a placed stone with an iron pickaxe in survival: cracks grow, it breaks in the vanilla time.
+2. Build a staircase of five placed blocks and walk up it: no vault or climb prompt. Try a real kerb and a ladder: they still work.
+3. Press F5. Esc, then **Cyberblock...**: play with Distance, Shoulder, FOV and Auto-recenter; walk along a wall.
+4. Glide, launch with a wind charge and raise the shield in third person: no flicker.
+5. `/cyberblock debug view on`: look at the overlay (frame time, pose age) while you walk.
+6. Creative: break the outline block under the crosshair on the street and watch it come back; survival: it cannot be broken.
+7. Flip "Creative can erase the replica permanently" and break one again.
+8. Esc, then Night City Menu... still opens Cyberpunk's own menu; read `docs/notes/ui-coverage.md` against what you see.
+9. Try a Gorilla Arms charged punch (Q6).
+10. Run the Phase 0 CET lines (Q7) and paste the output to Claude.
+
+| Item | What changed |
+|---|---|
+| **Q1** mining placed blocks | The aim limit has a 0.35 m margin, smoothing and a 0.5 s sticky target; a held attack is not released by a screen opening; V on the ground no longer counts as mid-air for the mining speed; the Cyberpunk aim ray ignores Cyberblock's own boxes. |
+| **Q2** stairs | Vault and climb are refused on Cyberblock boxes; a step-up assist lifts V onto a single block (a setting, on by default). |
+| **Q3** third person | Four-ray camera collision, smoothing, shoulder offset with auto-recenter, distance, FOV and vehicle distance options; Steve is placed per rendered frame; steady elytra, shield and use-item poses; a crosshair at Steve's own aim; a debug overlay and log. |
+| **Q4** UI coverage | `docs/notes/ui-coverage.md`; a Minecraft-style loading screen; the "Cyberblock..." button on the Night City pause screen; the "Night City Menu..." escape hatch is tested. |
+| **Q5** outline blocks | Creative breaks them and they return in about 10 s (or stay broken with the new setting); survival and adventure cannot; a void-fall rescue; the first settings screen. |
+| **Q6** Gorilla Arms | (package QG) the implant's strong blow needs a charged swing. |
+| **Q7** Phase 0 | The CET lines that answer the Cyberpunk feasibility checks b to h (no game code changes). |
+
+### Q1. Survival mining
+1. Survival, iron pickaxe. Place a stone block at **eye height** and one at your **feet**, then hold the attack button on each.
+   Expected: cracks grow steadily and each breaks in the vanilla time (about 0.4 s for stone with an iron pickaxe); not
+   slower than in a normal Minecraft world. Do the same on the street in front of a wall, and with a block placed right
+   against Night City's wall.
+   - **Log (Minecraft):** `/cyberblock debug aim on`, then `aim: target block d=... limit=...` on every tick, never `none`
+     while the crosshair is on the block. `/cyberblock debug aim off` afterwards.
+2. Hold attack, then press T (or open a menu) and close it: mining carries on or stops cleanly, the button is never stuck down.
+
+### Q2. A staircase of placed blocks
+1. Build a staircase of **five** placed blocks (each step one block higher) against open street and walk up it.
+   Expected: no vault or climb prompt; V goes up step by step with the assist (Esc, **Cyberblock...**, **Step-up assist**
+   on), or by jumping with it off.
+   - **Log (Cyberblock.log):** `locomotion: vault refused on Cyberblock box` or `locomotion: climb refused on Cyberblock box`
+     (at most once a second).
+2. A real kerb or ledge and a ladder in Night City: the vault and the climb still work as before.
+3. The assist never lifts V onto Night City's own geometry, in a vehicle or in a scene.
+
+### Q3. Third person
+1. **F5**, then walk, sprint, **glide**, **launch with a wind charge** and **raise the shield**. Expected: no flicker of
+   Steve's pose (wings open for the whole glide and launch, one steady shield pose), no clipping, no lag behind V.
+2. Walk **along a wall** with the camera on the wall side and turn in a **corridor**. Expected: the camera swings off the wall
+   towards the centre and back, and never shows the inside of a wall.
+3. The **crosshair** sits where Steve's aim meets the target: what it covers is what you hit; at open air it is at the centre.
+4. Esc, **Cyberblock...**: Distance (1.5 to 8 m), Shoulder (-1 to 1 m), FOV (0 or 50 to 110), Auto-recenter and Vehicle
+   distance (a car's third-person camera; it may do nothing if Cyberpunk does not allow it: report which).
+5. `/cyberblock debug view on`: an overlay at the top left; frame time and pose age stay steady while you walk and glide.
+   - **Log:** latest.log `view: frame <ms> pose age <ms> interp <f> dist <m> collide <m>` every 5 s; Cyberblock.log
+     `view: dist <m> collide <m> shoulder <m> recenter <on|off>` on a change and `view: gate <reason>` when third person is
+     refused (braindance, photo mode, scenes, menus, vehicles' cameras).
+
+### Q4. UI coverage and the escape hatch
+1. Read `docs/notes/ui-coverage.md`: every Cyberpunk screen and layer in it matches what you see (Minecraft, pass-through or
+   never touched), and each says which phase converts it.
+2. A loading cover (load a save or travel far): a dark dirt-style Minecraft loading screen with "Loading Night City...",
+   animated dots and a tip.
+3. Esc, **Night City Menu...** still opens Cyberpunk's own menu; the Night City pause screen has a **Cyberblock...** button.
+
+### Q5. Outline blocks and the settings screen
+1. **Creative:** break the invisible outline block under the crosshair on the street. Expected: it **comes back in about
+   10 seconds**.
+   - **Log (Minecraft):** `outline: <name> broke <x> <y> <z> (snap back in 10 s)`, then `outline: restored N`. Nothing is
+     sent to Cyberpunk (no `block` event in the Cyberblock.log).
+2. **Survival:** the same block cannot be broken. Explosions (TNT) never remove outline blocks.
+3. Esc, **Cyberblock...**, switch **Creative can erase the replica permanently** on (or `/cyberblock outline erase on`;
+   `/cyberblock outline` shows the state): break an outline block in creative. Expected: it **stays broken until you walk
+   away and come back** (`outline: <name> broke ... (kept: permanent erase)`). Switch it off again.
+4. Dig through the street in creative and fall: you are put back on safe ground with "Caught you: back to safe ground".
+5. As a non-operator (a second player or a test account) the row is greyed with the tooltip "Only the host or an operator
+   can change this".
+
+### Q6. Gorilla Arms charged punch (package QG)
+1. Install **Gorilla Arms** (U), empty hand. Hit a pedestrian with a **fully charged** swing (wait for the attack indicator),
+   then with quick, **uncharged** clicks. Expected: the fully charged swing knocks the pedestrian down (they fall); the
+   uncharged clicks only stagger them (they stumble back, never fall). **L** still does the slam.
+   - **Log (Cyberblock.log):** one `knock: <id> s=<speed> tier=<tier> impulse=<i>` line per hit: about `s=7` with
+     `tier=knockdown` for the charged swing, about `s=4.5` with `tier=stagger` for an uncharged click.
+   (QG is built in parallel: the integrator corrects this line to the merged behaviour.)
+
+### Q7. Phase 0 CET checks (about 10 minutes, nothing changes a save)
+The CET console lines from package 0R for checks (b) to (h) of the megaplan section 4.1, each with the printout to expect.
+Paste what each prints (or tell Claude to read `Cyberblock.log` when the line logs there). Every line undoes what it does.
+**These rows are placeholders until 0R's notes land (`docs/notes/phase0-feasibility.md`); the integrator replaces each
+"to be filled" with the exact line and the expected printout.**
+
+| Check | What it asks of Cyberpunk 2.31 | CET line | Expected printout |
+|---|---|---|---|
+| (b) | raycast hit object and material: cast at a wall, a door, glass, asphalt and a neon sign | to be filled | to be filled |
+| (c) | devices: enumerate devices within 48 m, read type, state and locked; open and close a door, toggle a light | to be filled | to be filled |
+| (d) | spawn one ganger 10 m away and despawn it | to be filled | to be filled |
+| (e) | raise heat to 2 and back to 0; make one gang friendly toward V and back | to be filled | to be filled |
+| (f) | print role, affiliation, gender and archetype of a few NPCs, a car's record, class and colour, and a vendor's stock | to be filled | to be filled |
+| (g) | teleport V 2 km away and back; park V for 30 s next to a hostile NPC | to be filled | to be filled |
+| (h) | hack an NPC 40 m away behind a wall through the event pump | to be filled | to be filled |
+
+**Descopes and risks (Phase Q):** the vehicle camera distance may not be settable in 2.31 (the row then does nothing and the
+DLL log says so); the climb refusal depends on reading the obstacle point (fallbacks: a raycast tag test, then a collision
+preset only if NPCs and cars still stop); third-person FOV depends on a verified setter. Phase 0's descopes are listed in its
+notes and in the integrator's report.
+
+<!-- end of Re-test Q. The Wave A integrator appends "## Re-test 1 (Wave A, after Re-test Q)" and the Phase 2 tool checks directly below this line, above "In-game fixes 3". -->
 
 ## In-game fixes 3 (2026-10-03 evening; do these first)
 
@@ -813,6 +927,23 @@ already running still has the old mod. The full key table and the netrunning wal
 ---
 
 ## Appendix — every in-game check the build agents recorded
+
+### Phase Q — needsInGame lists
+
+The checks only the real game can answer, from the Phase Q plan; each package appends its own lines here when the integrator
+merges it. The Q1-Q7 checks at the top cover them in the user's order.
+- [ ] **QB (Q-B1, Q-B6):** survival pickaxe on a placed stone shows growing cracks and breaks it in vanilla time; `aim:` lines
+  stay on the block. In creative the street outline block under the crosshair is back after about 10 s; in survival it cannot
+  be broken; with permanent erase on it stays broken until V walks away and back.
+- [ ] **QV (Q-V1 to Q-V5):** under `tools.fakehost --view` and in game, third-person Steve shows no jitter while walking,
+  sprinting, gliding and launching; glide, launch and shield poses are steady; the overlay numbers are steady.
+- [ ] **QD (Q-D1):** F5, walk along a wall with the camera on the wall side: it swings to the centre and never shows the
+  inside of the wall; turning in a corridor never clips. Whether the vehicle camera distance is settable.
+- [ ] **QS (Q-S1, Q-S2):** looking at a placed block in front of a wall, the `aim` distance is the wall's, not the block's;
+  walking up a one-block staircase of placed blocks shows no vault or climb prompt, and a real ledge and a ladder still
+  vault and climb.
+- [ ] **QU (Q-U2):** the loading cover and the Night City pause screen's "Cyberblock..." button.
+
 
 ### Re-test 3 — needsInGame lists
 

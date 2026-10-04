@@ -24,7 +24,10 @@ chips, and install cyberware (Mantis Blades, Sandevistan, Cyberdeck and more) in
 > assets, fonts or code from either game are included or redistributed. See [NOTICE.md](NOTICE.md).
 
 Status: version 1.0.0 is set in the files. Layer 1 (the passthrough) has been verified in game; everything else passes every
-automated suite and is being re-played in game (the checklist is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test 3").
+automated suite and is being re-played in game (the checklist is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md): "Re-test Q" first,
+then "Re-test 3"). Unreleased: survival mining of placed blocks, stairs and a step-up assist, a third-person camera that does not
+clip, breakable outline blocks in creative and the first Cyberblock settings screen
+([the guide](docs/HOW-TO-PLAY.md#mining-placed-blocks-stairs-and-the-step-up-assist)).
 
 ## Install (players)
 You need a Windows PC that can run both games at once (about 64 GB of RAM, see
