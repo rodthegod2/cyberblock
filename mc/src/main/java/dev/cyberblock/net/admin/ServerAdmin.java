@@ -30,8 +30,13 @@ import net.minecraft.server.level.ServerPlayer;
  * `/cyberblock status` and `/cyberblock hosts add|remove <name>`. Nothing here is panel-specific: the server runs on the
  * stock Fabric 26.3 server launcher jar (a panel's Custom Jar option).
  *
- * Minecraft 26.3 names (javap on the Loom jars): {@code Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)} is permission
- * level 2; {@code MinecraftServer.isDedicatedServer()}; {@code PlayerList.isUsingWhitelist()}; {@code Player.getPlainTextName()}.
+ * Minecraft 26.3 names (javap on the Loom jars): {@code Commands.LEVEL_GAMEMASTERS} is permission level 2 and
+ * {@code Commands.LEVEL_ADMINS} level 3 (vanilla {@code WhitelistCommand} uses it); {@code MinecraftServer.isDedicatedServer()},
+ * {@code isSingleplayerOwner(NameAndId)}; {@code PlayerList.isUsingWhitelist()}; {@code Player.getPlainTextName()}, {@code nameAndId()}.
+ *
+ * Integration (package 1N lives in {@code dev.cyberblock.net}, where its package-private config and connections are): set
+ * {@link #configChanged}, {@link #versionOf}, {@link #rateOf} and {@link #contentCounts} there, wrap every handshake refusal in
+ * {@link #refusal}, and call {@link #init()} after 1N's {@code NetCommands} registration.
  */
 public final class ServerAdmin {
 	/** `hs.proto` (plan section 1.3). */
@@ -43,8 +48,11 @@ public final class ServerAdmin {
 	public static volatile Function<UUID, String> rateOf = uuid -> "";
 	/** Loaded content per kind (plan section 1.7). Set by 1N's content loader; empty until then. */
 	public static volatile Supplier<Map<String, Integer>> contentCounts = Map::of;
-	/** Called after `/cyberblock hosts` changed server.json, so 1N's server config re-reads it. */
-	public static volatile Runnable configChanged = () -> {};
+	/**
+	 * Re-reads server.json into 1N's server config after `/cyberblock hosts` changed it. Null until wired: an edit then applies
+	 * only after a server restart, and the op is told so.
+	 */
+	public static volatile Runnable configChanged;
 
 	/** Used only by the warning timer's one thread. */
 	private static final WhitelistWarning WARNING = new WhitelistWarning();
@@ -95,19 +103,32 @@ public final class ServerAdmin {
 
 	private static LiteralArgumentBuilder<CommandSourceStack> commands() {
 		var ops = Commands.<CommandSourceStack>hasPermission(Commands.LEVEL_GAMEMASTERS);
-		// the requirement sits on each leaf, so it holds however Brigadier merges this tree with package 1N's /cyberblock hosts
+		// editing who may host is level 3, like vanilla /whitelist: datapack functions and command blocks run at level 2
+		var admins = Commands.<CommandSourceStack>hasPermission(Commands.LEVEL_ADMINS);
+		// When Brigadier merges a literal into an existing node it keeps the first node's requirement, so `hosts` carries the
+		// same requirement as package 1N's `/cyberblock hosts` listing: the merged node is gated whichever registers first.
 		return Commands.literal("cyberblock")
 			.then(Commands.literal("status").requires(ops).executes(c -> status(c.getSource())))
-			.then(Commands.literal("hosts")
-				.then(Commands.literal("add").requires(ops)
+			.then(Commands.literal("hosts").requires(ServerAdmin::opOrOwner)
+				.then(Commands.literal("add").requires(admins)
 					.then(Commands.argument("name", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(c.getSource().getServer().getPlayerList().getPlayers().stream()
 							.map(ServerPlayer::getPlainTextName).toList(), b))
 						.executes(c -> hosts(c.getSource(), StringArgumentType.getString(c, "name"), true))))
-				.then(Commands.literal("remove").requires(ops)
+				.then(Commands.literal("remove").requires(admins)
 					.then(Commands.argument("name", StringArgumentType.word())
 						.suggests((c, b) -> SharedSuggestionProvider.suggest(HostsConfig.read(configFile()).hosts(), b))
 						.executes(c -> hosts(c.getSource(), StringArgumentType.getString(c, "name"), false)))));
+	}
+
+	/** Ops (level 2) and the singleplayer/LAN owner: the same test as package 1N's {@code NetCommands.opOrOwner}. */
+	private static boolean opOrOwner(final CommandSourceStack source) {
+		if (Commands.<CommandSourceStack>hasPermission(Commands.LEVEL_GAMEMASTERS).test(source)) {
+			return true;
+		}
+
+		ServerPlayer p = source.getPlayer();
+		return p != null && !source.getServer().isDedicatedServer() && source.getServer().isSingleplayerOwner(p.nameAndId());
 	}
 
 	private static int status(final CommandSourceStack source) {
@@ -135,11 +156,16 @@ public final class ServerAdmin {
 		switch (r.outcome()) {
 			case ADDED, REMOVED -> {
 				settings = HostsConfig.read(configFile());
-				configChanged.run();
+				Runnable reload = configChanged;
+				if (reload != null) {
+					reload.run();
+				}
+
 				Cyberblock.LOG.info("admin: {} {} host {} (hosts: {})", source.getTextName(), add ? "added" : "removed", r.name(), list);
+				String when = reload != null ? "at their next handshake" : "after a server restart";
 				source.sendSuccess(() -> add
-					? Component.translatableWithFallback("cyberblock.admin.hosts.added", "%s may now host Cyberpunk; applies at their next handshake (hosts: %s)", r.name(), list)
-					: Component.translatableWithFallback("cyberblock.admin.hosts.removed", "%s removed from the hosts list; applies at their next handshake (hosts: %s)", r.name(), list),
+					? Component.translatableWithFallback("cyberblock.admin.hosts.added", "%s may now host Cyberpunk; applies %s (hosts: %s)", r.name(), when, list)
+					: Component.translatableWithFallback("cyberblock.admin.hosts.removed", "%s removed from the hosts list; applies %s (hosts: %s)", r.name(), when, list),
 					true);
 				if (r.hosts().isEmpty()) {
 					source.sendSuccess(() -> Component.translatableWithFallback("cyberblock.admin.hosts.empty",
