@@ -97,7 +97,7 @@ def test_the_testing_plan_intro_and_the_old_sections_are_still_in_their_order():
 
 
 def test_the_changelog_has_a_phase_3_entry_above_the_join_password_one():
-    assert CHANGELOG.index("## [1.0.0]") < CHANGELOG.index("### Unreleased additions: Phase 3") < CHANGELOG.index("### Unreleased additions: join password")
+    assert CHANGELOG.index("## [2.0.0]") < CHANGELOG.index("### Unreleased additions: Phase 3") < CHANGELOG.index("### Unreleased additions: join password")
     text = flat(section_of(CHANGELOG, "### Unreleased additions: Phase 3 (multiplayer plan, package 3P)"))
     for phrase in ("`ground.m`", "`unground.seen`", "`env`", "`vteleport`/`vteleported`", "`park`/`parked`", "`maptile`", "`materials`", "`tools.fakehost --replica`",
                    "`--shift`", "`--env-hours`", "`tools.mpcheck replica twohosts2 meetup`", "HOW-TO-PLAY", "`docs/WEBMAP.md`", "Re-test: Wave B, Phase 3"):

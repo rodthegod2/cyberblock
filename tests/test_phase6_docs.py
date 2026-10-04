@@ -139,7 +139,7 @@ def test_the_testing_plan_keeps_the_wave_b_blocks_and_the_older_ones_in_order():
 
 
 def test_the_changelog_has_a_phase_6_entry_above_the_wave_b_integration_one():
-    assert CHANGELOG.index("## [1.0.0]") < CHANGELOG.index(CHANGELOG_HEADING) < CHANGELOG.index("### Unreleased additions: Wave B integration")
+    assert CHANGELOG.index("## [2.0.0]") < CHANGELOG.index(CHANGELOG_HEADING) < CHANGELOG.index("### Unreleased additions: Wave B integration")
     text = flat(section_of(CHANGELOG, CHANGELOG_HEADING))
     for phrase in ("`rhack`", "`daemon`", "`feedreq`", "`feed`", "`hackresult`", "`cyberblock:act`", "`cyberblock:ui`", "`firewall`", "`tools.fakehost --hacks2`", "`tools.mpcheck breach`",
                    "`/cyberblock test breach <x> <y> <z> solve|fail`", "HOW-TO-PLAY", "Re-test 6", "`docs/notes/phase6-descopes.md`", "`cyberblock.hack.out_of_range`", "50 m", "bit 8",

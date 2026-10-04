@@ -287,12 +287,12 @@ TEST(out_queue_stays_bounded_under_every_kind_of_message)
 	CHECK(q.size() == 0 && !q.take_ground_lost());
 }
 
-// ---- re-test 3 (plan 2026-10-03-retest3-polish task D8): version 1.0.0 and hello.ver -----------------------------------
+// ---- re-test 3 (plan 2026-10-03-retest3-polish task D8): version 2.0.0 (was 1.0.0) and hello.ver -----------------------------------
 
-TEST(the_dll_version_is_1_0_0_from_cmake)
+TEST(the_dll_version_is_2_0_0_from_cmake)
 {
-	CHECK(std::string(CB_VERSION) == "1.0.0");
-	CHECK(CB_VERSION_MAJOR == 1 && CB_VERSION_MINOR == 0 && CB_VERSION_PATCH == 0);
+	CHECK(std::string(CB_VERSION) == "2.0.0");
+	CHECK(CB_VERSION_MAJOR == 2 && CB_VERSION_MINOR == 0 && CB_VERSION_PATCH == 0);
 }
 
 TEST(hello_ver_is_logged_and_a_mismatch_is_named)

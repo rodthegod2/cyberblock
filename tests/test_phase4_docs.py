@@ -83,7 +83,7 @@ def test_the_testing_plan_keeps_the_phase_3_block_and_the_older_ones_in_order():
 
 
 def test_the_changelog_has_a_phase_4_entry_above_the_phase_3_one():
-    assert CHANGELOG.index("## [1.0.0]") < CHANGELOG.index("### Unreleased additions: Phase 4") < CHANGELOG.index("### Unreleased additions: Phase 3")
+    assert CHANGELOG.index("## [2.0.0]") < CHANGELOG.index("### Unreleased additions: Phase 4") < CHANGELOG.index("### Unreleased additions: Phase 3")
     text = flat(section_of(CHANGELOG, "### Unreleased additions: Phase 4 (multiplayer plan, package 4P)"))
     for phrase in ("`devices`", "`devstate`", "`devresult`", "`devact`", "`cyberblock:act` `t:\"devact\"`", "`tools.fakehost --devices`", "`tools.mpcheck devices`", "`unsupported`",
                    "`/cyberblock test device <x> <y> <z> <act>`", "HOW-TO-PLAY", "Re-test: Wave B, Phase 4", "`docs/notes/phase4-descopes.md`", "`--shift`"):

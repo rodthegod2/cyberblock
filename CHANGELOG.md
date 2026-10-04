@@ -5,9 +5,74 @@ All notable changes to Cyberblock are listed here. The format follows
 [Semantic Versioning](https://semver.org/). One version number covers the DLL, the scripts, the shader, the Minecraft mod
 and the tools.
 
-## [1.0.0] - unreleased
-Version 1.0.0 is set in the files on 2026-10-03; it is tagged and published only after the in-game re-test
-([docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test 3") has passed.
+## [2.0.0] - unreleased
+Version 2.0.0 is **proposed** (the wire grew a server: the owner decides the number) and is set in the files on 2026-10-04. It is tagged
+and published only after the in-game multiplayer session ([docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Full multiplayer pass" and
+"Re-test 9") has passed **and the owner says "push"**. The never-released 1.0.0 draft is part of it: every entry below, down to
+"Added", ships in 2.0.0.
+
+### Release notes: 2.0.0, the multiplayer version
+**Cyberblock is now a multiplayer game.** What was a single-player passthrough of Minecraft in Night City is a Minecraft server
+that friends join with Minecraft only, while one or more players ("hosts") link their own Cyberpunk 2077 game to it.
+
+**What is new, in one list**
+- **A server.** Every world, singleplayer included, runs through a server; a LAN world and a dedicated Fabric 26.3 server work the same
+  way. Hosts link Cyberpunk, guests play with Minecraft only. A join password (or the whitelist) keeps strangers out.
+  Guide for the owner: [docs/SERVER.md](docs/SERVER.md); for friends: [docs/JOIN.md](docs/JOIN.md).
+- **Night City as Minecraft.** The streets the hosts explore become a saved, shared replica of solid coloured blocks; the people and
+  cars are figures with skins and poses; Cyberpunk's time and weather follow the primary host; guests build while the host is away.
+- **A world you can use.** Devices (doors, gates, lights, cameras, terminals, vending machines, traffic lights, lifts, turrets,
+  screens) are blocks; redstone hacking, the Breach Protocol and the interaction map hack Night City from Minecraft.
+- **People and places.** Ripperdocs, vendors, fixers, bartenders, medics and mechanics are screens; the Afterlife hub and the
+  Holo-Table; hosts' Cyberpunk shops as Minecraft screens.
+- **Roles and modes.** The Hacker in the Van, the Overlord, matches (team deathmatch, Gang Wars), PvP by consent, hacking players with
+  counterplay, Server Heat with Max-Tac, going down and revives, the Trauma Team, spectators and a caster overlay.
+- **The finish (Phase 9).** Every content kind is data: friends add dialogue, skins, shops, landmarks, Breach daemons and Overlord events
+  as a datapack ([docs/CONTENT.md](docs/CONTENT.md)); one **settings screen** with the tabs Guests, Look, PvP, Difficulty, Performance
+  and World; **Performance mode** (a resolution scale, a figure cap, server budgets); **daily server backups** with
+  `tools.server_sync pull-backups`; the save and load lists as a Minecraft screen where the game's API allows, otherwise documented
+  as pass-through.
+- **Quality of life from the first sessions.** Survival mining of placed blocks, stairs with no vault prompt and a step-up assist,
+  a calmer third-person camera, outline blocks that come back in creative, the escape hatch to Cyberpunk's own menu at all times.
+
+**Upgrading from the 1.0.0 draft or earlier**
+- **Install the same version on both sides.** The mod's major and minor version must match the server's (`2.0.x` with `2.0.y`); the
+  DLL, the scripts and the mod jar come from the same release, as before. Run `install.bat` again and replace the mod jar.
+- **A server that ran an earlier build keeps its old `config/cyberblock/server.json`**: set `"maxHosts": 4` yourself if you want more than
+  one host (new files are written with 4), and look at the new `backups` and `joinPassword` keys.
+- The new `/cyberblock` commands are listed in [HOW-TO-PLAY](docs/HOW-TO-PLAY.md#commands): `settings`, `backup now`, `login`,
+  `hub`, `spectate`, `guests <toggle>` and more. Hosts' guest permissions default to **on** except `spawns` (off).
+- Nothing in Cyberpunk's saves changes: everything Cyberblock adds is removed before each save, as in 1.0.0.
+
+**Known limits** (the full list is each phase's descopes note and "Phase 9 descopes and risks" in the test plan)
+- The Phase 0 in-game checks have **not** been run. Wherever the game's API is unconfirmed, the build uses the documented call with a runtime
+  check and the written fallback (Minecraft squads instead of Night City enemies, a guessed surface material, no wanted level write, ...),
+  and logs one line saying which path is active.
+- Everything passes the automatic suites (pytest, Gradle, the C++ tests, `fx_check`, `compile_check`, `content_check` and `mpcheck
+  --all`); the Cyberpunk side of it is played in game only through the test lists.
+- The performance numbers in the guide are filled in after the first measured run (R9-5).
+
+### Unreleased additions: Phase 9 (multiplayer plan, package 9P)
+Phase 9 of the multiplayer plan, docs and release side: the finish. The mod, client, tools and scripts of Phase 9 have their own entries
+(packages 9C content, 9U UI gaps, 9F performance, 9S settings screen and 9B backups).
+- **Docs.** New [docs/SERVER.md](docs/SERVER.md) (running a server: the setup step by step, who may join, `server.json`, operator commands, daily
+  backups and `pull-backups`, updating, the way back and a troubleshooting table), [docs/JOIN.md](docs/JOIN.md) (a friend's way in: the modpack,
+  **Join Cyberblock**, the password, settings) and [docs/CONTENT.md](docs/CONTENT.md) (a datapack with one worked, machine-checked recipe each for a
+  dialogue line, a skin, a shop, a landmark, a Breach daemon and an Overlord event); all three are linked from the README ("Play together").
+  HOW-TO-PLAY has a full pass: the version, the status banner, the settings screen with its six tabs, **Performance mode**, datapack content, daily
+  backups, the save and load lists and the escape hatch, joining troubleshooting, the commands list, and the short
+  "Creative mode and the outline blocks" note with the World-tab setting **Creative can erase the replica permanently**.
+- **Test plan.** `docs/TESTING-PLAN.md` starts with the **Full multiplayer pass** (the one session for Waves A to C and Phase 9, steps M-1 to
+  M-10, each pointing into the detailed older sections) and **Re-test 9** (R9-1 to R9-8: a friend's datapack with a dialogue line and a skin shown
+  by `/reload`, the example datapack, every settings tab, a backup at the set hour and `pull-backups`, Performance mode with four guests, the save
+  and load screen or its documented pass-through, the escape hatch, the "which way" lines and the machine checks).
+- **Version 2.0.0 (proposed).** `pyproject.toml`, `uv.lock`, `cp/plugin/CMakeLists.txt` (and with it `CB_VERSION` and the DLL's `kVersion`),
+  `mc/gradle.properties` (the mod jar and `fabric.mod.json`), the `Natives.reds` header and this changelog say 2.0.0, and the documents name
+  `Cyberblock-2.0.0.zip` and `cyberblock-2.0.0.jar` (`tests/test_version.py` checks every one). The DLL's version test in
+  `cp/plugin/tests/test_link.cpp` moved with it. **No tag, no release and no push** until the owner says so; if the owner prefers another number,
+  one search and replace in those files changes it.
+- **Tests.** `tests/test_phase9_docs.py` checks the three new guides (links, anchors, the recipes validated by `tools.content_check`, no private
+  value), the guide's Phase 9 sections, the test plan's new sections and this entry.
 
 ### Unreleased additions: Phase 6 (multiplayer plan, package 6P)
 Phase 6 of the multiplayer plan: **Redstone Hacking, Breach Protocol and the interaction map**. This entry is the protocol, tools and docs
