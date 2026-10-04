@@ -18,6 +18,10 @@
 //     not live, so every vteleport gets its Cyberblock_TeleportDone (megaplan 2026-10-04 task 3-S1, Teleport.reds, Park.reds)
 //   devact -> CyberblockDeviceService.OnEvent, whatever the state: it answers every request with Cyberblock_DeviceResult,
 //     refusing while not live (megaplan 2026-10-04 task 4-S1, Devices.reds)
+//   hub -> CyberblockHub.OnEvent (EventFlag = in), buy / sell -> CyberblockVendorStock.OnEvent (EventTarget = item hash,
+//     EventAmount = count, EventId = reply id), repair / heal -> CyberblockServices.OnEvent (EventId = request id):
+//     whatever the state, each refusing itself while not live (megaplan 2026-10-04 task 7-S1; Hub.reds, VendorStock.reds,
+//     Services.reds)
 //
 // While a save is written, CyberblockSystem does not call Tick at all: the events wait in the DLL's queue and are applied
 // after the save. While not live otherwise (Off, Lost, no player) Night City is left alone:
@@ -88,6 +92,12 @@ public class CyberblockEvents {
           }
         } else if Equals(kind, n"devact") {
           CyberblockDeviceService.OnEvent(game); // refuses itself while not live (Devices.reds)
+        } else if Equals(kind, n"hub") {
+          CyberblockHub.OnEvent(game, live); // megaplan 7-S1: parks V while Steve is in the hub (Hub.reds)
+        } else if Equals(kind, n"buy") || Equals(kind, n"sell") {
+          CyberblockVendorStock.OnEvent(game, kind, live); // megaplan 7-S1: answered whatever the state (VendorStock.reds)
+        } else if Equals(kind, n"repair") || Equals(kind, n"heal") {
+          CyberblockServices.OnEvent(game, kind, live); // megaplan 7-S1: refuses itself while not live (Services.reds)
         } else if !live {
           if !CyberblockEvents.Refuse(kind) {
             dropped += 1;

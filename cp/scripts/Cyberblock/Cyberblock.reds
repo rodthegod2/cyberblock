@@ -51,6 +51,11 @@
 // linked), CyberblockTeleport (Teleport.reds: n"vteleport", ticked every tick with a player; the probes pause while it
 // holds V) and CyberblockPark (Park.reds: n"park"). A running teleport is aborted and a park released at session end and
 // on detach (forgotten on session ready); a park is also released when Cyberblock stops being On.
+//
+// Phase 7 (megaplan 2026-10-04 task 7-S1): every tick with a player also runs CyberblockHub.Tick (Hub.reds: V parked
+// again while Steve is in the hub) and CyberblockServices.Tick (Services.reds: the mechanic's repair check); the hub,
+// the vendor stock (VendorStock.reds) and a pending repair are forgotten on session ready and end (the hub also on
+// detach, the vendor stock also when Cyberblock stops being On).
 
 enum CyberblockState {
   Off = 0,
@@ -130,6 +135,7 @@ public class CyberblockSystem extends ScriptableSystem {
     this.surveyTour.Undo(this.GetGameInstance(), GetPlayer(this.GetGameInstance()));
     this.teleport.Abort(this.GetGameInstance(), "detach");
     this.park.Release(this.GetGameInstance(), "detach");
+    CyberblockHub.Forget("detach");
     CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
     this.state = CyberblockState.Off;
     Cyberblock_SetActive(false, false);
@@ -175,6 +181,9 @@ public class CyberblockSystem extends ScriptableSystem {
     CyberblockInk.RestoreFor(this.GetGameInstance(), "session ready");
     this.teleport.Forget();
     this.park.Forget();
+    CyberblockHub.Forget("session ready");
+    CyberblockVendorStock.Forget();
+    CyberblockServices.Forget();
     this.playerState.Clear(player);
     this.creative.Clear(player);
     if IsDefined(player) {
@@ -195,6 +204,9 @@ public class CyberblockSystem extends ScriptableSystem {
     this.surveyTour.Undo(this.GetGameInstance(), GetPlayer(this.GetGameInstance()));
     this.teleport.Abort(this.GetGameInstance(), "session end");
     this.park.Release(this.GetGameInstance(), "session end");
+    CyberblockHub.Forget("session end");
+    CyberblockVendorStock.Forget();
+    CyberblockServices.Forget();
     CyberblockInk.RestoreFor(this.GetGameInstance(), "session end");
     this.hud.ClearMinecraft();
     this.hud.Unregister();
@@ -315,6 +327,9 @@ public class CyberblockSystem extends ScriptableSystem {
     }
     // Megaplan 3-S1: a running V teleport (Meet Up) holds, probes and snaps V every tick until it is done (Teleport.reds).
     this.teleport.Tick(game, player);
+    // Megaplan 7-S1: V parked again while Steve is in the hub; the mechanic's repair check (Hub.reds, Services.reds).
+    CyberblockHub.Tick(game, live);
+    CyberblockServices.Tick(game);
     if live {
       CyberblockCollision.Stream(game, CyberblockFlight.Center(game, player));
     }
@@ -472,6 +487,8 @@ public class CyberblockSystem extends ScriptableSystem {
       // A parked V is never left frozen once Minecraft is no longer shown (Park.reds). Released before ClearWorld so
       // Buffs' cleanup decides V's invisibility last (CyberblockBuffs.ApplyInvisible).
       this.park.Release(this.GetGameInstance(), Equals(next, CyberblockState.Lost) ? "Minecraft lost" : "Cyberblock off");
+      // Megaplan 7-S1: Minecraft's vendor screen is gone with it (VendorStock.reds: its UI pump stops while Off).
+      CyberblockVendorStock.Forget();
       CyberblockSystem.ClearWorld(this.GetGameInstance(), true);
       CyberblockInk.RestoreFor(this.GetGameInstance(), Equals(next, CyberblockState.Lost) ? "lost" : "off");
     }
