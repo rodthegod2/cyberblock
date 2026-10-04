@@ -43,6 +43,10 @@
 //     interactiveDevice.swift 2) is cast again from 10 cm past the hit, as our boxes are, so doors and gates never enter
 //     the static replica; 'probes: device hits recast' once, when the first one is seen. The aim ray, Blocked (Scan's
 //     line of sight) and the survey keep treating devices as solid (a closed door stops reach and sight).
+//     Task 4-S1 adds the other path's line: when a listed device (Devices.reds) stood within 12 m of V for 30 s of probing
+//     (300 ticks) and no probe hit was a Device, the hit entity does not name devices (CET B2 negative), so the DLL's
+//     device-box filter (package 4D) is what keeps them out of the replica: 'probes: device hits not named by the hit
+//     entity (...); device-box filter only', once per session.
 // 2.31 script API (NativeDB, redscript): TraceResult.material: CName (orphans.swift), IsNameValid(CName) -> Bool;
 // Codeware 1.20.3: TraceResult.GetHitObject(script_ref<TraceResult>) -> ref<ISerializable>, worldINodeInstance.GetNode()
 // -> ref<worldNode>, worldMeshNode.meshAppearance, worldInstancedMeshNode.meshAppearance (CName).
@@ -73,6 +77,9 @@ public class CyberblockProbes {
   private let fromNone: Int32;
   private let materialsLogged: Bool;
   private let devicesLogged: Bool;
+  // Ticks probed with a listed device within 12 m and no device hit yet, and whether the fallback line was written.
+  private let deviceQuietTicks: Int32;
+  private let deviceFilterLogged: Bool;
 
   public func Tick(player: ref<PlayerPuppet>) -> Void {
     let game = player.GetGame();
@@ -130,6 +137,7 @@ public class CyberblockProbes {
       }
     }
     this.LogMaterials();
+    this.CheckDeviceHits();
     Cyberblock_SubmitProbeMaterials(downMaterials, wallMaterials);
     Cyberblock_SubmitProbes(feet, downHits, wallHits, radius);
     this.Aim(player, queries, filter);
@@ -315,6 +323,22 @@ public class CyberblockProbes {
     this.materialsLogged = true;
     let source = this.fromTrace > 0 ? "trace" : (this.fromMesh > 0 ? "mesh appearance" : "none (heuristic palette)");
     Cyberblock_Log(s"probes: materials from \(source) (of \(total) hits: \(this.fromTrace) trace, \(this.fromMesh) mesh appearance, \(this.fromNone) none)");
+  }
+
+  // The device-hit path check of task 4-S1 (header): devices near V for 300 probed ticks and none hit.
+  private func CheckDeviceHits() -> Void {
+    if this.devicesLogged || this.deviceFilterLogged {
+      return;
+    }
+    let service = CyberblockDeviceService.Get();
+    if !IsDefined(service) || service.Nearest() > 12.0 {
+      return;
+    }
+    this.deviceQuietTicks += 1;
+    if this.deviceQuietTicks >= 300 {
+      this.deviceFilterLogged = true;
+      Cyberblock_Log("probes: device hits not named by the hit entity (a device within 12 m for 30 s of probing, none hit); device-box filter only");
+    }
   }
 
   // The point 1 cm past where the ray from -> to leaves the 1 m box centred on `center`; false when that is beyond `to`.
