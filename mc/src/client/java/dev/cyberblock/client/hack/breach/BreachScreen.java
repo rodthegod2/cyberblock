@@ -17,10 +17,11 @@ import net.minecraft.network.chat.Component;
  * The Breach Protocol screen (megaplan 6-B1), in the Minecraft container look ({@link McTheme}, vanilla buttons and font): the code
  * grid on the left, the buffer and the daemon sequences on the right, the timer bar on top. The server decides everything: a click
  * sends the pick ({@code cyberblock:act breach}) and the screen shows the data the server answers; the cells the rule allows next
- * ({@link BreachRules#allowed}, the highlighted line) are the only active buttons. Disconnect (or Esc) before the end aborts.
+ * ({@link BreachRules#allowed}, the highlighted line) are the only active buttons. Abort (or Esc) before the end aborts. Lang keys are
+ * 6A's where it has them.
  */
 public final class BreachScreen extends Screen {
-	static final int CELL = 22, BUTTON = 20, SLOT = 18, SIDE = 152, PAD = 8, TOP = 34, BOTTOM = 30;
+	static final int CELL = 22, BUTTON = 20, SLOT = 18, SIDE = 152, PAD = 8, TOP = 34, BOTTOM = 44;
 	/** The boss-bar sprite is 182 px wide. */
 	static final int BAR = 182;
 	/** Dark green (ChatFormatting.DARK_GREEN): readable on the light panel, where the bright green is not. */
@@ -86,8 +87,8 @@ public final class BreachScreen extends Screen {
 		}
 
 		Component action = this.data.done() ? Component.translatableWithFallback("cyberblock.breach.close", "Close")
-			: Component.translatableWithFallback("cyberblock.breach.disconnect", "Disconnect");
-		this.addRenderableWidget(Button.builder(action, x -> this.onClose()).bounds(left + width(n) - PAD - 90, top + height(n) - BOTTOM + 4, 90, 20).build());
+			: Component.translatableWithFallback("cyberblock.breach.abort", "Abort");
+		this.addRenderableWidget(Button.builder(action, x -> this.onClose()).bounds(left + width(n) - PAD - 90, top + height(n) - 26, 90, 20).build());
 	}
 
 	private void pick(final int cell) {
@@ -151,7 +152,8 @@ public final class BreachScreen extends Screen {
 		long now = System.currentTimeMillis();
 		McTheme.bossBar(graphics, left + PAD, top + 22, BAR, timeLeft(this.deadline, now, this.data.total(), this.data.done()));
 		double seconds = this.data.done() ? this.data.left() : this.deadline < 0 ? this.data.total() : Math.max(0, this.deadline - now) / 1000.0;
-		graphics.text(this.font, String.format(Locale.ROOT, "%.1f s", seconds), left + PAD + BAR + 6, top + 20, McTheme.PANEL_TEXT, false);
+		graphics.text(this.font, Component.translatableWithFallback("cyberblock.breach.time", "Time: %s s", String.format(Locale.ROOT, "%.1f", seconds)),
+			left + PAD + BAR + 6, top + 20, McTheme.PANEL_TEXT, false);
 
 		int x = left + PAD + n * CELL + PAD;
 		int y = top + TOP;
@@ -165,14 +167,19 @@ public final class BreachScreen extends Screen {
 		}
 
 		y += 34;
-		graphics.text(this.font, Component.translatableWithFallback("cyberblock.breach.daemons", "Daemons"), x, y, McTheme.PANEL_TEXT, false);
+		graphics.text(this.font, Component.translatableWithFallback("cyberblock.breach.sequences", "Sequences"), x, y, McTheme.PANEL_TEXT, false);
 		for (int d = 0; d < this.data.seqs().size(); d++) {
 			this.daemon(graphics, this.data.seqs().get(d), buffer, x, y + 10 + d * 26);
 		}
 
+		int bottom = top + height(n) - BOTTOM + 6;
 		if (this.data.done()) {
-			graphics.text(this.font, this.result(), left + PAD, top + height(n) - BOTTOM + 10, this.data.state().equals(BreachWire.SOLVED) ? DONE
+			graphics.text(this.font, this.result(), left + PAD, bottom, this.data.state().equals(BreachWire.SOLVED) ? DONE
 				: this.data.state().equals("aborted") ? McTheme.PANEL_TEXT : McTheme.RED, false);
+		} else if (buffer.length < this.data.buffer()) {
+			Component hint = buffer.length % 2 == 0 ? Component.translatableWithFallback("cyberblock.breach.pick_row", "Pick a code in the lit row")
+				: Component.translatableWithFallback("cyberblock.breach.pick_column", "Pick a code in the lit column");
+			graphics.text(this.font, hint, left + PAD, bottom, McTheme.PANEL_TEXT, false);
 		}
 	}
 
@@ -190,9 +197,11 @@ public final class BreachScreen extends Screen {
 
 	private Component result() {
 		return switch (this.data.state()) {
-			case BreachWire.SOLVED -> Component.translatableWithFallback("cyberblock.breach.result.solved", "Breach successful: strength %s", this.data.strength());
-			case "timeout" -> Component.translatableWithFallback("cyberblock.breach.result.timeout", "Time is up: breach failed");
-			case "failed" -> Component.translatableWithFallback("cyberblock.breach.result.failed", "Breach failed");
+			case BreachWire.SOLVED -> Component.translatableWithFallback("cyberblock.breach.complete", "Breach complete: %s of %s daemons",
+				this.data.seqs().stream().filter(BreachWire.Seq::ok).count(), this.data.seqs().size()).append(" ")
+				.append(Component.translatableWithFallback("cyberblock.breach.strength", "Strength %s", this.data.strength()));
+			case "timeout" -> Component.translatableWithFallback("cyberblock.breach.timeout", "Time ran out");
+			case "failed" -> Component.translatableWithFallback("cyberblock.breach.failed", "Breach failed");
 			default -> Component.translatableWithFallback("cyberblock.breach.result.aborted", "Breach aborted");
 		};
 	}

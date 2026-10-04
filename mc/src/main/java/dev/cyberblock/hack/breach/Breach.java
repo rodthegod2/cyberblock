@@ -179,7 +179,7 @@ public final class Breach {
 			tell(player, Component.translatableWithFallback("cyberblock.device.no_link", "Night City is not connected: devices cannot be used"));
 		} else if (cooldowns.getOrDefault(key, Long.MIN_VALUE) > ticks()) {
 			long seconds = (cooldowns.get(key) - ticks() + 19) / 20;
-			tell(player, Component.translatableWithFallback("cyberblock.breach.cooldown", "This port is rebooting its ICE: try again in %s s", seconds));
+			tell(player, Component.translatableWithFallback("cyberblock.breach.locked_out", "This device is locked out for %s s", seconds));
 		} else {
 			Spec spec = new Spec(device.type().id(), BreachContent.security(device), 0, false, device.idText());
 			return open(player, spec, Vec3.atCenterOf(pos), o -> deviceOutcome(player.getUUID(), key, device, o));
@@ -214,12 +214,12 @@ public final class Breach {
 				h.add(key.owner(), player, BreachResults.FAILURE_HEAT);
 			}
 
-			tell(player, Component.translatableWithFallback("cyberblock.breach.failed", "Breach failed: the alarm is raised"));
+			tell(player, Component.translatableWithFallback("cyberblock.breach.alarm", "Alarm raised: the cameras around it are alerted"));
 			Cyberblock.LOG.info("breach: {} {} on {} {} of {} -> daemon {} [alarm] ({})", who, o.state(), device.type().id(), device.idText(), session.name(),
 				request, h != null ? "Heat +" + BreachResults.FAILURE_HEAT : "Heat meter absent: wanted +1 by the scripts where Phase 0 (e) allows");
 		} else {
-			tell(player, Component.translatableWithFallback("cyberblock.breach.uploaded", "Daemons uploaded: %s (strength %s)",
-				ComponentUtils.formatList(o.ids().stream().map(BreachWire::daemonName).toList(), Component.literal(", ")), o.strength()));
+			tell(player, Component.translatableWithFallback("cyberblock.breach.uploaded", "Daemon uploaded: %s",
+				ComponentUtils.formatList(o.ids().stream().map(BreachWire::daemonName).toList(), Component.literal(", "))));
 			Cyberblock.LOG.info("breach: {} solved {} (strength {}) on {} {} of {} -> daemon {}", who, o.ids(), o.strength(), device.type().id(),
 				device.idText(), session.name(), request);
 		}
