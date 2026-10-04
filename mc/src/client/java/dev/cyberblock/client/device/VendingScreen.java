@@ -76,7 +76,9 @@ public final class VendingScreen extends Screen {
 	}
 
 	private static Component title(final ShopWire.Shop shop) {
-		return shop.title().isEmpty() ? Component.translatableWithFallback("cyberblock.shop.title", "Vending machine") : Component.literal(shop.title());
+		Component name = shop.title().isEmpty() ? Component.translatableWithFallback("block.cyberblock.vending_machine", "Vending Machine")
+			: Component.literal(shop.title());
+		return Component.translatableWithFallback("cyberblock.shop.title", "Shop: %s", name);
 	}
 
 	private boolean same(final ShopWire.Shop other) {
@@ -173,7 +175,7 @@ public final class VendingScreen extends Screen {
 		int left = this.left();
 		int top = this.top();
 		graphics.text(this.font, this.title, left + 8, top + 8, McTheme.PANEL_TEXT, false);
-		Component eddies = Component.translatableWithFallback("cyberblock.shop.eddies", "%s eddies", this.shop.eddies());
+		Component eddies = Component.translatableWithFallback("cyberblock.shop.balance", "Your eddies: %s", this.shop.eddies());
 		int eddiesX = left + WIDTH - 8 - this.font.width(eddies);
 		graphics.text(this.font, eddies, eddiesX, top + 8, McTheme.PANEL_TEXT, false);
 		if (DeviceBlocks.EDDIES != null) {
@@ -182,7 +184,7 @@ public final class VendingScreen extends Screen {
 
 		List<ShopWire.Line> lines = this.shop.lines();
 		if (lines.isEmpty()) {
-			graphics.centeredText(this.font, Component.translatableWithFallback("cyberblock.shop.empty", "Nothing for sale"), left + WIDTH / 2, top + TOP + 8,
+			graphics.centeredText(this.font, Component.translatableWithFallback("cyberblock.shop.empty", "Nothing for sale here"), left + WIDTH / 2, top + TOP + 8,
 				McTheme.PANEL_TEXT);
 		}
 
@@ -211,7 +213,7 @@ public final class VendingScreen extends Screen {
 		Component name = stack.getHoverName();
 		graphics.text(this.font, this.font.plainSubstrByWidth(name.getString(), textWidth), x + 24, y + 2, McTheme.PANEL_TEXT, false);
 		Component price = Component.translatableWithFallback("cyberblock.shop.price", "%s eddies", line.price());
-		Component stock = line.stock() == 0 ? Component.translatableWithFallback("cyberblock.shop.sold_out", "sold out")
+		Component stock = line.stock() == 0 ? Component.translatableWithFallback("cyberblock.shop.sold_out", "Sold out")
 			: line.stock() > 0 ? Component.translatableWithFallback("cyberblock.shop.stock", "%s left", line.stock()) : Component.empty();
 		graphics.text(this.font, price, x + 24, y + 12, line.price() <= this.shop.eddies() ? McTheme.DARK_GRAY : McTheme.RED, false);
 		graphics.text(this.font, stock, x + 24 + this.font.width(price) + 6, y + 12, line.stock() == 0 ? McTheme.RED : McTheme.DARK_GRAY, false);
@@ -227,18 +229,17 @@ public final class VendingScreen extends Screen {
 		return item == null ? new ItemStack(Items.BARRIER) : new ItemStack(item, line.n());
 	}
 
-	/** The words of a purchase result code. */
+	/** The words of a purchase result code (4A's shop and device keys where they fit, else cyberblock.shop.result.<code>). */
 	static Component result(final String code) {
-		String fallback = switch (code) {
-			case "ok" -> "Bought";
-			case "poor" -> "Not enough eddies";
-			case "stock" -> "Sold out";
-			case "full" -> "No room in your inventory";
-			case "far" -> "Too far from the machine";
-			case "gone" -> "This machine is gone";
-			case "refused" -> "The host does not let guests buy here";
-			default -> code;
+		return switch (code) {
+			case "stock" -> Component.translatableWithFallback("cyberblock.shop.sold_out", "Sold out");
+			case "full" -> Component.translatableWithFallback("cyberblock.shop.no_space", "Your inventory is full");
+			case "far" -> Component.translatableWithFallback("cyberblock.device.out_of_range", "That device is out of range");
+			case "ok" -> Component.translatableWithFallback("cyberblock.shop.result.ok", "Bought");
+			case "poor" -> Component.translatableWithFallback("cyberblock.shop.result.poor", "Not enough eddies");
+			case "gone" -> Component.translatableWithFallback("cyberblock.shop.result.gone", "This machine is gone");
+			case "refused" -> Component.translatableWithFallback("cyberblock.shop.result.refused", "The host does not let guests buy here");
+			default -> Component.literal(code);
 		};
-		return Component.translatableWithFallback("cyberblock.shop.result." + code, fallback);
 	}
 }

@@ -32,6 +32,6 @@ public final class NetPortBlock extends FacingDeviceBlock {
 
 	@Override
 	protected InteractionResult useWithoutItem(final BlockState state, final Level level, final BlockPos pos, final Player player, final BlockHitResult hit) {
-		return DeviceHooks.say(player, "cyberblock.device.net_port.phase6", "Breach Protocol on Net Ports comes in Phase 6");
+		return DeviceHooks.say(player, "cyberblock.device.net_port.phase6", "Breach Protocol arrives in a later update");
 	}
 }

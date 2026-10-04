@@ -29,6 +29,7 @@ public final class DeviceClient {
 		TurretBlock.clientTicker = TurretRenderer::tick;
 		BlockEntityRenderers.register(DeviceBlocks.TURRET_ENTITY, TurretRenderer::new);
 		EntityRenderers.register(EntityTypes.ITEM_FRAME, ScreenFrameRenderer::new);
+		EntityRenderers.register(EntityTypes.GLOW_ITEM_FRAME, ScreenFrameRenderer::new);
 		UiRoutes.listen(ShopWire.T_SHOP, VendingScreen::onUi);
 		Cyberblock.LOG.info("device: {} device block types hidden while Cyberpunk is the picture (with camera cones, turret heads and screens); vending screen ready",
 			blocks.length);

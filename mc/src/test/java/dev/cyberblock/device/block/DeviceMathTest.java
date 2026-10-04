@@ -47,10 +47,17 @@ class DeviceMathTest {
 
 	@Test
 	void gatesAndLiftsMoveOneStepAtATime() {
-		assertEquals(2, Gates.next(3, 4, true));
-		assertEquals(0, Gates.next(0, 4, true));
-		assertEquals(4, Gates.next(3, 4, false));
-		assertEquals(4, Gates.next(4, 4, false));
+		// a gate opens by quarter blocks (0 closed .. 4 x width open) and its far column empties first
+		assertEquals(1, Gates.next(0, 4, true));
+		assertEquals(16, Gates.next(16, 4, true));
+		assertEquals(4, Gates.next(5, 4, false));
+		assertEquals(0, Gates.next(0, 4, false));
+		assertEquals(1, Gates.stepOf(1, 4, 3));
+		assertEquals(0, Gates.stepOf(1, 4, 2));
+		assertEquals(4, Gates.stepOf(5, 4, 3));
+		assertEquals(1, Gates.stepOf(5, 4, 2));
+		assertEquals(0, Gates.stepOf(5, 4, 0));
+		assertEquals(4, Gates.stepOf(16, 4, 0));
 		assertEquals(65, Lifts.next(64, 70));
 		assertEquals(63, Lifts.next(64, 50));
 		assertEquals(64, Lifts.next(64, 64));
@@ -59,7 +66,9 @@ class DeviceMathTest {
 		assertThrows(IllegalArgumentException.class, () -> new Gates.Gate(BlockPos.ZERO, Direction.EAST, 2, Gates.MAX_SIZE + 1));
 		assertThrows(IllegalArgumentException.class, () -> new Lifts.Shaft(0, 0, 2, 2, 70, 60));
 		assertThrows(IllegalArgumentException.class, () -> new Lifts.Shaft(0, 0, Lifts.MAX_SIZE + 1, 2, 60, 70));
-		assertEquals(new BlockPos(3, 6, 0), new Gates.Gate(new BlockPos(1, 5, 0), Direction.EAST, 4, 3).cell(2, 1));
+		// facing north, a gate spans east (clockwise) from its origin
+		assertEquals(new BlockPos(3, 6, 0), new Gates.Gate(new BlockPos(1, 5, 0), Direction.NORTH, 4, 3).cell(2, 1));
+		assertEquals(new BlockPos(1, 5, 2), new Gates.Gate(new BlockPos(1, 5, 0), Direction.EAST, 4, 3).cell(2, 0));
 	}
 
 	@Test
@@ -68,6 +77,7 @@ class DeviceMathTest {
 		ScreenFrames.Screen screen = new ScreenFrames.Screen(new BlockPos(10, 64, 0), Direction.SOUTH, 3, 2);
 		assertEquals(new BlockPos(12, 64, 0), screen.cell(2, 0));
 		assertEquals(new BlockPos(10, 65, 0), screen.cell(0, 1));
+		assertEquals(new BlockPos(12, 64, 1), screen.frame(2, 0), "the frame hangs on the body's front");
 		assertThrows(IllegalArgumentException.class, () -> new ScreenFrames.Screen(BlockPos.ZERO, Direction.SOUTH, ScreenFrames.MAX_SIZE + 1, 1));
 	}
 

@@ -17,16 +17,14 @@ import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
-import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.shapes.CollisionContext;
-import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Turrets (section 1.11, toggle bit 256 {@code turret}; Phase 0 d: Minecraft-side only, never spawned in Night City). The block is
- * the dispenser-style base; the client's renderer draws the head on top, turned toward its target and coloured by {@link #MODE} (off
- * grey and drooping, active red and tracking the nearest player, friendly green and sweeping). A right-click asks to {@code disable}
+ * the dispenser-style body (4A's art, its front LED shows the mode); the client's renderer draws a gun head on top, turned toward its
+ * target and coloured by {@link #MODE} (off grey and drooping, active red and tracking the nearest player, friendly green and
+ * sweeping). A right-click asks to {@code disable}
  * an active or friendly turret or {@code enable} one that is off; sneaking asks for {@code friendly}.
  */
 public final class TurretBlock extends FacingDeviceBlock implements EntityBlock {
@@ -44,7 +42,6 @@ public final class TurretBlock extends FacingDeviceBlock implements EntityBlock 
 	public static final double RANGE = 16.0;
 	/** Degrees the head turns per client tick at most. */
 	public static final float TURN_SPEED = 9.0F;
-	private static final VoxelShape SHAPE = Block.box(1.0, 0.0, 1.0, 15.0, 15.0, 15.0);
 	/** The client's aim (client/device installs it before any level loads); null on a dedicated server. */
 	public static volatile @Nullable BlockEntityTicker<DeviceBlockEntity> clientTicker;
 
@@ -57,12 +54,6 @@ public final class TurretBlock extends FacingDeviceBlock implements EntityBlock 
 	protected void createBlockStateDefinition(final StateDefinition.Builder<Block, BlockState> builder) {
 		super.createBlockStateDefinition(builder);
 		builder.add(MODE);
-	}
-
-	/** The base (the block model, bottom half) and the head the client draws above it (not a full cube: light reaches the head). */
-	@Override
-	protected VoxelShape getShape(final BlockState state, final BlockGetter level, final BlockPos pos, final CollisionContext context) {
-		return SHAPE;
 	}
 
 	@Override

@@ -8,7 +8,9 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.decoration.HangingEntity;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Lift platforms for the server (4M). A {@link Shaft} is the car's {@code width x depth} footprint from (x, z) (its smallest corner)
@@ -47,8 +49,8 @@ public final class Lifts {
 			return false;
 		}
 
-		platformY(level, shaft).ifPresent(old -> layer(level, shaft, old, false));
-		layer(level, shaft, y, true);
+		platformY(level, shaft).ifPresent(old -> layer(level, shaft, old, null));
+		layer(level, shaft, y, false);
 		return true;
 	}
 
@@ -78,7 +80,7 @@ public final class Lifts {
 	/** Takes the platform away (stops its motion). */
 	public static void remove(final ServerLevel level, final Shaft shaft) {
 		DeviceMotions.stop(key(level, shaft));
-		platformY(level, shaft).ifPresent(y -> layer(level, shaft, y, false));
+		platformY(level, shaft).ifPresent(y -> layer(level, shaft, y, null));
 	}
 
 	/** The layer after one step toward {@code target}. Pure. */
@@ -95,23 +97,25 @@ public final class Lifts {
 		int y = now.getAsInt();
 		int to = next(y, target);
 		if (to == y) {
+			layer(level, shaft, y, false);
 			return false;
 		}
 
 		if (!layerFree(level, shaft, to)) {
 			Cyberblock.LOG.info("device: lift at {} {} stopped at y {} (blocked)", shaft.x(), shaft.z(), y);
+			layer(level, shaft, y, false);
 			return false;
 		}
 
 		int dy = to - y;
-		var riders = level.getEntities((Entity) null, new AABB(shaft.x(), y + 0.9, shaft.z(), shaft.x() + shaft.width(), y + 3.0, shaft.z() + shaft.depth()),
+		var riders = level.getEntities((Entity) null, new AABB(shaft.x(), y + LiftPlatformBlock.HEIGHT - 0.05, shaft.z(), shaft.x() + shaft.width(), y + 2.5, shaft.z() + shaft.depth()),
 			e -> e.isAlive() && !e.isSpectator() && !(e instanceof HangingEntity));
 		if (dy > 0) {
 			ride(riders, dy);
 		}
 
-		layer(level, shaft, to, true);
-		layer(level, shaft, y, false);
+		layer(level, shaft, to, to != target);
+		layer(level, shaft, y, null);
 		if (dy < 0) {
 			ride(riders, dy);
 		}
@@ -140,16 +144,17 @@ public final class Lifts {
 		return true;
 	}
 
-	/** Sets (platform) or clears (air, only where a platform is) one layer. */
-	private static void layer(final ServerLevel level, final Shaft shaft, final int y, final boolean platform) {
+	/** Sets one layer to the platform (moving or not), or clears it ({@code moving} null: air, only where a platform is). */
+	private static void layer(final ServerLevel level, final Shaft shaft, final int y, final @Nullable Boolean moving) {
 		BlockPos.MutableBlockPos cell = new BlockPos.MutableBlockPos();
 		for (int dx = 0; dx < shaft.width(); dx++) {
 			for (int dz = 0; dz < shaft.depth(); dz++) {
 				cell.set(shaft.x() + dx, y, shaft.z() + dz);
-				var state = level.getBlockState(cell);
-				if (platform && DeviceBlocks.free(state)) {
-					level.setBlock(cell, DeviceBlocks.LIFT_PLATFORM.defaultBlockState(), Block.UPDATE_ALL);
-				} else if (!platform && state.is(DeviceBlocks.LIFT_PLATFORM)) {
+				BlockState state = level.getBlockState(cell);
+				BlockState platform = moving == null ? null : DeviceBlocks.LIFT_PLATFORM.defaultBlockState().setValue(LiftPlatformBlock.MOVING, moving);
+				if (platform != null && (DeviceBlocks.free(state) || state.is(DeviceBlocks.LIFT_PLATFORM) && state != platform)) {
+					level.setBlock(cell, platform, Block.UPDATE_ALL);
+				} else if (platform == null && state.is(DeviceBlocks.LIFT_PLATFORM)) {
 					level.setBlock(cell, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
 				}
 			}

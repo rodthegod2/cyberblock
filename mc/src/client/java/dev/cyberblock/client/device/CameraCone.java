@@ -27,8 +27,8 @@ final class CameraCone {
 	static final double LENGTH = 8.0;
 	static final double HALF_ANGLE = Math.toRadians(16.0);
 	/** Particles per burst, a burst every {@link #EVERY} client ticks. */
-	static final int PARTICLES = 7;
-	static final int EVERY = 3;
+	static final int PARTICLES = 10;
+	static final int EVERY = 2;
 	/** Cameras farther than this from the player draw nothing. */
 	static final double VISIBLE = 48.0;
 	static final float TILT = 22.0F;

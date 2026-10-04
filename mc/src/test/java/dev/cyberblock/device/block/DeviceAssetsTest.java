@@ -20,30 +20,30 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The contract between 4B's blocks and 4A's art (megaplan 4-B1, 4-A1): every device blockstate file 4A ships names only this block's
- * properties and values, every state of the block has a model, and every {@code cyberblock:} model it uses exists; the lang has the
- * keys 4B's code uses. Skipped while 4A's assets are not merged.
+ * properties and values, every state of the block has a model, every {@code cyberblock:} model it uses exists, and every device block
+ * has one; the lang has 4A's keys 4B's code uses. Skipped while 4A's assets are not merged.
  */
 class DeviceAssetsTest {
 	private static final Path ASSETS = Path.of("src/main/resources/assets/cyberblock");
-	/** The translation keys 4B's code uses (each also has an English fallback in the code). */
+	/** 4A's keys 4B's code uses (each also has an English fallback in the code): a rename on 4A's side shows here. */
 	static final List<String> KEYS = List.of(
-		"cyberblock.device.quest_locked", "cyberblock.device.unsupported", "cyberblock.device.offline", "cyberblock.device.net_port.phase6",
-		"cyberblock.device.vending.broken", "cyberblock.device.crate.sealed", "cyberblock.device.loot",
-		"cyberblock.shop.title", "cyberblock.shop.eddies", "cyberblock.shop.buy", "cyberblock.shop.price", "cyberblock.shop.stock",
-		"cyberblock.shop.sold_out", "cyberblock.shop.empty", "cyberblock.shop.result.ok", "cyberblock.shop.result.poor",
-		"cyberblock.shop.result.stock", "cyberblock.shop.result.full", "cyberblock.shop.result.far", "cyberblock.shop.result.gone",
-		"cyberblock.shop.result.refused", "item.cyberblock.eddies", "item.cyberblock.eddie_chip");
+		"cyberblock.device.quest_locked", "cyberblock.device.unsupported", "cyberblock.device.no_link", "cyberblock.device.net_port.phase6",
+		"cyberblock.device.broken", "cyberblock.device.container.closed", "cyberblock.device.out_of_range", "cyberblock.shop.title",
+		"cyberblock.shop.balance", "cyberblock.shop.buy", "cyberblock.shop.price", "cyberblock.shop.sold_out", "cyberblock.shop.empty",
+		"cyberblock.shop.no_space", "item.cyberblock.eddies", "item.cyberblock.eddie_chip");
+	/** 4B's own keys 4A's lang does not have yet: shown through their English fallbacks until the lang owner adds them. */
+	static final List<String> FALLBACK_ONLY = List.of("cyberblock.device.loot", "cyberblock.shop.stock", "cyberblock.shop.result.ok",
+		"cyberblock.shop.result.poor", "cyberblock.shop.result.gone", "cyberblock.shop.result.refused", "block.cyberblock.device_door",
+		"block.cyberblock.device_iron_door");
 
 	@Test
 	void everyShippedDeviceBlockstateFitsTheBlock() throws IOException {
-		int checked = 0;
+		List<String> missing = DeviceBlocks.NAMES.stream().filter(name -> !Files.isRegularFile(ASSETS.resolve("blockstates/" + name + ".json"))).toList();
+		Assumptions.assumeTrue(missing.size() < DeviceBlocks.NAMES.size(), "4A's device art is not merged yet");
+		// once the art is in, a device block without a blockstate would show as the missing-model cube
+		assertTrue(missing.isEmpty(), "device blocks without a blockstate: " + missing);
 		for (String name : DeviceBlocks.NAMES) {
 			Path file = ASSETS.resolve("blockstates/" + name + ".json");
-			if (!Files.isRegularFile(file)) {
-				continue;
-			}
-
-			checked++;
 			Block block = DeviceTestBlocks.block(name);
 			JsonObject json = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
 			if (json.has("variants")) {
@@ -62,8 +62,6 @@ class DeviceAssetsTest {
 				}
 			}
 		}
-
-		Assumptions.assumeTrue(checked > 0, "4A's device art is not merged yet");
 	}
 
 	@Test
@@ -75,7 +73,8 @@ class DeviceAssetsTest {
 		}
 
 		for (String name : DeviceBlocks.NAMES) {
-			assertTrue(lang.has("block.cyberblock." + name), "block.cyberblock." + name);
+			String key = "block.cyberblock." + name;
+			assertTrue(lang.has(key) || FALLBACK_ONLY.contains(key), key);
 		}
 	}
 

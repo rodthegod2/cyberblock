@@ -24,6 +24,7 @@ import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
@@ -31,7 +32,7 @@ import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The turret's head (section 1.11 turrets): the block is the base, this draws the head and barrel on top, turned toward the target
+ * The turret's gun head (section 1.11 turrets): the block is the body, this draws the head and barrel on top of it, turned toward the target
  * and tinted by the mode: active red and tracking the nearest player within {@link TurretBlock#RANGE}, friendly green and sweeping,
  * off grey with the barrel drooping. The aim is client-side (every client sees the same nearest player). Nothing while Cyberpunk is
  * the picture (an active host). The head is a tint over the player's own vanilla iron block texture: no art of ours.
@@ -69,7 +70,7 @@ final class TurretRenderer implements BlockEntityRenderer<DeviceBlockEntity, Tur
 		turret.age++;
 		TurretBlock.Mode mode = state.getValue(TurretBlock.MODE);
 		Direction facing = state.getValue(FacingDeviceBlock.FACING);
-		Vec3 head = Vec3.atCenterOf(pos).add(0.0, 0.25, 0.0);
+		Vec3 head = Vec3.atCenterOf(pos).add(0.0, 0.65, 0.0);
 		AbstractClientPlayer target = mode == TurretBlock.Mode.ACTIVE ? target(level, head) : null;
 		float yaw;
 		float pitch;
@@ -121,6 +122,11 @@ final class TurretRenderer implements BlockEntityRenderer<DeviceBlockEntity, Tur
 	public void extractRenderState(final DeviceBlockEntity turret, final State state, final float partialTicks, final Vec3 cameraPos,
 		final ModelFeatureRenderer.@Nullable CrumblingOverlay breakProgress) {
 		BlockEntityRenderer.super.extractRenderState(turret, state, partialTicks, cameraPos, breakProgress);
+		// the head sits on top of the block: lit as the cell above it, not as the inside of a full block
+		if (turret.getLevel() != null) {
+			state.lightCoords = LightCoordsUtil.getLightCoords(turret.getLevel(), turret.getBlockPos().above());
+		}
+
 		state.yaw = Mth.rotLerp(partialTicks, turret.yawO, turret.yaw);
 		state.pitch = Mth.lerp(partialTicks, turret.pitchO, turret.pitch);
 		BlockState block = turret.getBlockState();
@@ -135,12 +141,12 @@ final class TurretRenderer implements BlockEntityRenderer<DeviceBlockEntity, Tur
 	@Override
 	public void submit(final State state, final PoseStack poseStack, final SubmitNodeCollector collector, final CameraRenderState camera) {
 		poseStack.pushPose();
-		// the head turns about the middle of the block's upper half; +z is the barrel's way (the way a yaw faces)
-		poseStack.translate(0.5, 0.75, 0.5);
+		// the head sits on the block and turns about its own middle; +z is the barrel's way (the way a yaw faces)
+		poseStack.translate(0.5, 1.15, 0.5);
 		poseStack.rotateDegrees(Axis.YP, -state.yaw);
 		poseStack.rotateDegrees(Axis.XP, state.pitch);
-		box(state, poseStack, collector, 0.0, -0.1875, 0.0, 0.5F, 0.375F, 0.5F, state.colour);
-		box(state, poseStack, collector, 0.0, -0.0625, 0.5, 0.125F, 0.125F, 0.5F, BARREL);
+		box(state, poseStack, collector, 0.0, -0.15, 0.0, 0.45F, 0.3F, 0.45F, state.colour);
+		box(state, poseStack, collector, 0.0, -0.06, 0.45, 0.12F, 0.12F, 0.5F, BARREL);
 		poseStack.popPose();
 	}
 

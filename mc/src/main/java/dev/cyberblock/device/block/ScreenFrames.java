@@ -11,11 +11,15 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.ProblemReporter;
+import net.minecraft.world.entity.decoration.GlowItemFrame;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.saveddata.SavedDataType;
@@ -27,10 +31,11 @@ import net.minecraft.world.phys.AABB;
 import org.jspecify.annotations.Nullable;
 
 /**
- * TVs and billboards (section 1.11, toggle bit 512 {@code screen}) for the server (4M): a {@code width x height} wall of vanilla item
- * frames, each holding a locked filled map with its tile of a {@link ScreenImage} picture. The frames are fixed (no support needed,
- * nothing can be taken out, only creative players can break them) and their map items carry the custom-data mark {@link #MARK}, so
- * an active host's client hides them like the device blocks. The maps are made once per picture tile and reused (SavedData
+ * TVs and billboards (section 1.11, toggle bit 512 {@code screen}) for the server (4M): a {@code width x height} wall of
+ * {@link ScreenFrameBlock}s (the screen's body), each with a vanilla glow item frame on its front (4A's device_map {@code entity})
+ * holding a locked filled map with its tile of a {@link ScreenImage} picture. The frames are fixed (nothing can be taken out, only
+ * creative players can break them) and their map items carry the custom-data mark {@link #MARK}, so an active host's client hides
+ * them like the device blocks. The maps are made once per picture tile and reused (SavedData
  * {@code cyberblock:screens}), so screens that come and go never pile up map files. Server thread.
  */
 public final class ScreenFrames {
@@ -65,9 +70,14 @@ public final class ScreenFrames {
 			origin = origin.immutable();
 		}
 
-		/** The cell of frame (column from the viewer's left, row from the bottom). */
+		/** The body cell of tile (column from the viewer's left, row from the bottom). */
 		BlockPos cell(final int column, final int row) {
 			return this.origin.relative(this.facing.getCounterClockWise(), column).above(row);
+		}
+
+		/** The cell in front of a body cell, where its frame hangs. */
+		BlockPos frame(final int column, final int row) {
+			return this.cell(column, row).relative(this.facing);
 		}
 	}
 
@@ -89,17 +99,26 @@ public final class ScreenFrames {
 	private ScreenFrames() {
 	}
 
-	/** Hangs the screen's frames (cells that already hold one of its frames keep it); returns how many were hung. */
+	/**
+	 * Puts the screen up: its body blocks into {@link DeviceBlocks#free free} cells, and a frame in front of each body block whose
+	 * front cell is air (one that already hangs there stays); returns how many frames were hung.
+	 */
 	public static int place(final ServerLevel level, final Screen screen, final int pattern, final boolean on) {
+		BlockState body = DeviceBlocks.SCREEN_FRAME.defaultBlockState().setValue(FacingDeviceBlock.FACING, screen.facing()).setValue(ScreenFrameBlock.ON, on);
 		int hung = 0;
 		for (int column = 0; column < screen.width(); column++) {
 			for (int row = 0; row < screen.height(); row++) {
 				BlockPos cell = screen.cell(column, row);
-				if (frameAt(level, cell, screen.facing()) != null || !DeviceBlocks.free(level.getBlockState(cell))) {
+				if (DeviceBlocks.free(level.getBlockState(cell))) {
+					level.setBlock(cell, body, Block.UPDATE_ALL);
+				}
+
+				BlockPos front = screen.frame(column, row);
+				if (!level.getBlockState(cell).is(DeviceBlocks.SCREEN_FRAME) || frameAt(level, front, screen.facing()) != null || !level.getBlockState(front).isAir()) {
 					continue;
 				}
 
-				ItemFrame frame = new ItemFrame(level, cell, screen.facing());
+				ItemFrame frame = new GlowItemFrame(level, front, screen.facing());
 				frame.setItem(map(level, screen, pattern, on, column, row), false);
 				frame.addTag(MARK);
 				fix(level, frame);
@@ -116,7 +135,13 @@ public final class ScreenFrames {
 	public static void set(final ServerLevel level, final Screen screen, final int pattern, final boolean on) {
 		for (int column = 0; column < screen.width(); column++) {
 			for (int row = 0; row < screen.height(); row++) {
-				ItemFrame frame = frameAt(level, screen.cell(column, row), screen.facing());
+				BlockPos cell = screen.cell(column, row);
+				BlockState body = level.getBlockState(cell);
+				if (body.is(DeviceBlocks.SCREEN_FRAME) && body.getValue(ScreenFrameBlock.ON) != on) {
+					level.setBlock(cell, body.setValue(ScreenFrameBlock.ON, on), Block.UPDATE_ALL);
+				}
+
+				ItemFrame frame = frameAt(level, screen.frame(column, row), screen.facing());
 				if (frame != null) {
 					frame.setItem(map(level, screen, pattern, on, column, row), false);
 				}
@@ -124,13 +149,17 @@ public final class ScreenFrames {
 		}
 	}
 
-	/** Takes the screen's frames away. */
+	/** Takes the screen away: its frames and body blocks. */
 	public static void remove(final ServerLevel level, final Screen screen) {
 		for (int column = 0; column < screen.width(); column++) {
 			for (int row = 0; row < screen.height(); row++) {
-				ItemFrame frame = frameAt(level, screen.cell(column, row), screen.facing());
+				ItemFrame frame = frameAt(level, screen.frame(column, row), screen.facing());
 				if (frame != null) {
 					frame.discard();
+				}
+
+				if (level.getBlockState(screen.cell(column, row)).is(DeviceBlocks.SCREEN_FRAME)) {
+					level.setBlock(screen.cell(column, row), Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
 				}
 			}
 		}

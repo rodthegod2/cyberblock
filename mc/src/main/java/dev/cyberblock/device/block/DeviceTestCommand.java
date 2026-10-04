@@ -2,6 +2,7 @@ package dev.cyberblock.device.block;
 
 import com.google.gson.JsonObject;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import dev.cyberblock.Cyberblock;
@@ -37,6 +38,8 @@ import org.jspecify.annotations.Nullable;
  * <li>{@code /cyberblock test devices <x> <y> <z>}: builds the showcase row eastward from there, every front facing south</li>
  * <li>{@code /cyberblock test devices <x> <y> <z> cycle}: steps every device to its next state (doors, gate and lift move)</li>
  * <li>{@code /cyberblock test devices <x> <y> <z> clear}: takes it all away</li>
+ * <li>{@code /cyberblock test devices use <x> <y> <z> <act>}: a device block use as the source player ({@code execute as}), the way
+ * a right-click asks</li>
  * <li>{@code /cyberblock test devices echo on|off}: a stand-in for the device layer (4M) that answers block uses itself (doors open,
  * lamps switch, the vending machine opens a demo shop, a readable crate shows demo loot); never installed by itself</li>
  * </ul>
@@ -60,6 +63,8 @@ final class DeviceTestCommand {
 	/** The stand-in handler, and the one it replaced (restored by echo off). */
 	private static final DeviceHooks.Handler ECHO = DeviceTestCommand::answer;
 	private static DeviceHooks.@Nullable Handler before;
+	/** The last showcase built (its gate's full size: an open gate keeps only its floor rail, so it cannot be measured then). */
+	private static @Nullable BlockPos built;
 
 	private DeviceTestCommand() {
 	}
@@ -77,6 +82,9 @@ final class DeviceTestCommand {
 		return Commands.literal("devices")
 			.then(Commands.literal("echo").then(Commands.literal("on").executes(c -> echo(c.getSource(), true)))
 				.then(Commands.literal("off").executes(c -> echo(c.getSource(), false))))
+			.then(Commands.literal("use").then(Commands.argument("x", IntegerArgumentType.integer()).then(Commands.argument("y", IntegerArgumentType.integer())
+				.then(Commands.argument("z", IntegerArgumentType.integer()).then(Commands.argument("act", StringArgumentType.word())
+					.executes(c -> use(c.getSource(), pos(c), StringArgumentType.getString(c, "act"))))))))
 			.then(Commands.argument("x", IntegerArgumentType.integer()).then(Commands.argument("y", IntegerArgumentType.integer(-64, 300))
 				.then(Commands.argument("z", IntegerArgumentType.integer()).executes(c -> build(c.getSource(), pos(c)))
 					.then(Commands.literal("cycle").executes(c -> cycle(c.getSource(), pos(c))))
@@ -90,6 +98,7 @@ final class DeviceTestCommand {
 	private static int build(final CommandSourceStack source, final BlockPos o) {
 		ServerLevel level = source.getLevel();
 		clear(source, o);
+		built = o.immutable();
 		DyeColor[] colours = {DyeColor.CYAN, DyeColor.MAGENTA, DyeColor.YELLOW, DyeColor.RED};
 		for (int i = 0; i < colours.length; i++) {
 			set(level, o.offset(i / 2, i % 2, 0), LampBlock.state(colours[i], true));
@@ -106,9 +115,9 @@ final class DeviceTestCommand {
 		set(level, o.offset(CAMERAS + 1, 0, 0), facing(DeviceBlocks.NET_PORT).setValue(NetPortBlock.BREACHED, true));
 		set(level, o.offset(CAMERAS + 2, 0, 0), facing(DeviceBlocks.VENDING_MACHINE));
 		set(level, o.offset(CAMERAS + 2, 1, 0), facing(DeviceBlocks.VENDING_MACHINE).setValue(VendingMachineBlock.BROKEN, true));
-		TrafficLampBlock.Light[] lights = TrafficLampBlock.Light.values();
-		for (int i = 0; i < lights.length; i++) {
-			set(level, o.offset(TRAFFIC + i, 1, 0), facing(DeviceBlocks.TRAFFIC_LAMP).setValue(TrafficLampBlock.LIGHT, lights[i]));
+		TrafficLampBlock.Signal[] signals = TrafficLampBlock.Signal.values();
+		for (int i = 0; i < signals.length; i++) {
+			set(level, o.offset(TRAFFIC + i, 1, 0), DeviceBlocks.TRAFFIC_LAMP.defaultBlockState().setValue(TrafficLampBlock.SIGNAL, signals[i]));
 		}
 
 		TurretBlock.Mode[] turrets = TurretBlock.Mode.values();
@@ -126,7 +135,7 @@ final class DeviceTestCommand {
 		Gates.place(level, gate(o), false);
 		Lifts.place(level, shaft(o), o.getY());
 		set(level, o.offset(LIFT + 2, 1, 0), LiftCallButtonBlock.state(FRONT));
-		set(level, o.offset(LIFT + 2, 2, 0), LiftCallButtonBlock.state(FRONT).setValue(LiftCallButtonBlock.UNSUPPORTED, false));
+		set(level, o.offset(LIFT + 2, 2, 0), LiftCallButtonBlock.state(FRONT).setValue(LiftCallButtonBlock.LIT, true));
 		ScreenFrames.place(level, screen(o, 0), 0, true);
 		ScreenFrames.place(level, screen(o, 1), 1, true);
 		ScreenFrames.place(level, screen(o, 2), 2, false);
@@ -141,12 +150,12 @@ final class DeviceTestCommand {
 			for (int y = 0; y <= 6; y++) {
 				BlockPos p = o.offset(x, y, 0);
 				BlockState s = level.getBlockState(p);
-				if (s.is(DeviceBlocks.LAMP)) {
+				if (s.getBlock() instanceof LampBlock) {
 					set(level, p, s.cycle(LampBlock.LIT));
 				} else if (s.is(DeviceBlocks.EYE_CAMERA)) {
 					set(level, p, s.cycle(EyeCameraBlock.MODE));
 				} else if (s.is(DeviceBlocks.TRAFFIC_LAMP)) {
-					set(level, p, s.cycle(TrafficLampBlock.LIGHT));
+					set(level, p, s.cycle(TrafficLampBlock.SIGNAL));
 				} else if (s.is(DeviceBlocks.TURRET)) {
 					set(level, p, s.cycle(TurretBlock.MODE));
 				} else if (s.getBlock() instanceof DeviceDoorBlock && s.getValue(DoorBlock.HALF) == DoubleBlockHalf.LOWER) {
@@ -156,7 +165,7 @@ final class DeviceTestCommand {
 		}
 
 		Gates.Gate gate = gate(o);
-		Gates.slide(level, gate, Gates.closedColumns(level, gate) > 0);
+		Gates.slide(level, gate, Gates.opened(level, gate) == 0);
 		Lifts.Shaft shaft = shaft(o);
 		Lifts.moveTo(level, shaft, Lifts.platformY(level, shaft).orElse(o.getY()) == o.getY() ? shaft.maxY() : o.getY());
 		boolean even = level.getGameTime() % 2 == 0;
@@ -186,7 +195,8 @@ final class DeviceTestCommand {
 	}
 
 	private static Gates.Gate gate(final BlockPos o) {
-		return new Gates.Gate(o.offset(GATE, 0, 0), Direction.EAST, 4, 3);
+		// facing north: the gate spans east from its origin and slides back west into it
+		return new Gates.Gate(o.offset(GATE, 0, 0), Direction.NORTH, 4, 3);
 	}
 
 	private static Lifts.Shaft shaft(final BlockPos o) {
@@ -216,6 +226,24 @@ final class DeviceTestCommand {
 		return 1;
 	}
 
+	/** A device block use as the source player (execute as <player> run ...), through the same hook a right-click takes. */
+	private static int use(final CommandSourceStack source, final BlockPos pos, final String act) {
+		ServerPlayer player = source.getPlayer();
+		BlockState s = source.getLevel().getBlockState(pos);
+		if (player == null || !DeviceBlocks.is(s)) {
+			source.sendFailure(Component.literal(player == null ? "test: use needs a player (execute as <player> run ...)" : "test: no device block at " + pos.toShortString()));
+			return 0;
+		}
+
+		if (DeviceHooks.questLocked(s)) {
+			DeviceHooks.tell(player, "cyberblock.device.quest_locked", "Night City is holding this device for a quest");
+		} else {
+			DeviceHooks.request(player, pos, act, new JsonObject());
+		}
+
+		return say(source, "test: device use " + act + " at " + pos.toShortString() + " by " + player.getPlainTextName());
+	}
+
 	private static int echo(final CommandSourceStack source, final boolean on) {
 		if (on && DeviceHooks.handler() != ECHO) {
 			before = DeviceHooks.handler();
@@ -237,10 +265,14 @@ final class DeviceTestCommand {
 				if (s.getBlock() instanceof DeviceDoorBlock) {
 					Doors.setOpen(level, pos, act.equals("open"));
 				} else if (s.is(DeviceBlocks.SLIDING_GATE)) {
-					Gates.slide(level, new Gates.Gate(gateOrigin(level, pos, s), Direction.EAST, 4, 3), true);
+					Gates.slide(level, gateAt(level, pos, s), act.equals("open"));
 				}
 			}
-			case "on", "off" -> set(level, pos, s.setValue(LampBlock.LIT, act.equals("on")));
+			case "on", "off" -> {
+				if (s.getBlock() instanceof LampBlock) {
+					set(level, pos, s.setValue(LampBlock.LIT, act.equals("on")));
+				}
+			}
 			case "enable", "disable", "friendly" -> {
 				if (s.is(DeviceBlocks.EYE_CAMERA)) {
 					set(level, pos, s.setValue(EyeCameraBlock.MODE, act.equals("disable") ? EyeCameraBlock.Mode.OFF : act.equals("friendly")
@@ -258,17 +290,37 @@ final class DeviceTestCommand {
 		}
 	}
 
-	private static BlockPos gateOrigin(final ServerLevel level, final BlockPos pos, final BlockState s) {
-		BlockPos p = pos;
-		while (level.getBlockState(p.west()).is(DeviceBlocks.SLIDING_GATE)) {
-			p = p.west();
+	/** The whole gate a cell belongs to: the showcase's gate, else walk to its origin (toward where it slides) and bottom and measure it. */
+	private static Gates.Gate gateAt(final ServerLevel level, final BlockPos pos, final BlockState s) {
+		if (built != null) {
+			Gates.Gate shown = gate(built);
+			if (pos.getY() >= shown.origin().getY() && pos.getY() < shown.origin().getY() + shown.height() && pos.getZ() == shown.origin().getZ()
+				&& pos.getX() >= shown.origin().getX() && pos.getX() < shown.origin().getX() + shown.width()) {
+				return shown;
+			}
 		}
 
-		while (level.getBlockState(p.below()).is(DeviceBlocks.SLIDING_GATE)) {
-			p = p.below();
+		Direction facing = s.getValue(FacingDeviceBlock.FACING);
+		BlockPos origin = pos;
+		while (level.getBlockState(origin.relative(facing.getCounterClockWise())).is(DeviceBlocks.SLIDING_GATE)) {
+			origin = origin.relative(facing.getCounterClockWise());
 		}
 
-		return p;
+		while (level.getBlockState(origin.below()).is(DeviceBlocks.SLIDING_GATE)) {
+			origin = origin.below();
+		}
+
+		int width = 1;
+		while (width < Gates.MAX_SIZE && level.getBlockState(origin.relative(facing.getClockWise(), width)).is(DeviceBlocks.SLIDING_GATE)) {
+			width++;
+		}
+
+		int height = 1;
+		while (height < Gates.MAX_SIZE && level.getBlockState(origin.above(height)).is(DeviceBlocks.SLIDING_GATE)) {
+			height++;
+		}
+
+		return new Gates.Gate(origin, facing, width, height);
 	}
 
 	private static void shop(final ServerPlayer player, final BlockPos pos, final String result) {

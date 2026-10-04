@@ -12,26 +12,31 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
-import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.phys.BlockHitResult;
 
 /**
- * Lights and neon (section 1.11, toggle bit 4 {@code light}): one lamp block in the 16 dye colours, lit (light 15) or unlit. A
- * right-click asks Night City to switch it ({@code on}/{@code off}).
+ * Lights and neon (section 1.11, toggle bit 4 {@code light}): the lamp in one of the 16 dye colours ({@code cyberblock:lamp_<dye>},
+ * 4A's art), lit (light 15) or unlit. A right-click asks Night City to switch it ({@code on}/{@code off}). The red one is also the lamp
+ * above a locked door ({@link Doors}).
  */
 public final class LampBlock extends DeviceBlock {
-	public static final EnumProperty<DyeColor> COLOR = EnumProperty.create("color", DyeColor.class);
 	public static final BooleanProperty LIT = BlockStateProperties.LIT;
+	private final DyeColor colour;
 
-	LampBlock(final BlockBehaviour.Properties properties) {
+	LampBlock(final DyeColor colour, final BlockBehaviour.Properties properties) {
 		super(properties);
-		this.registerDefaultState(this.stateDefinition.any().setValue(COLOR, DyeColor.WHITE).setValue(LIT, true).setValue(QUEST_LOCKED, false));
+		this.colour = colour;
+		this.registerDefaultState(this.stateDefinition.any().setValue(LIT, true).setValue(QUEST_LOCKED, false));
 	}
 
 	@Override
 	protected void createBlockStateDefinition(final StateDefinition.Builder<Block, BlockState> builder) {
 		super.createBlockStateDefinition(builder);
-		builder.add(COLOR, LIT);
+		builder.add(LIT);
+	}
+
+	public DyeColor colour() {
+		return this.colour;
 	}
 
 	@Override
@@ -45,7 +50,7 @@ public final class LampBlock extends DeviceBlock {
 
 	/** The lamp in a colour, lit or not. */
 	public static BlockState state(final DyeColor colour, final boolean lit) {
-		return DeviceBlocks.LAMP.defaultBlockState().setValue(COLOR, colour).setValue(LIT, lit);
+		return DeviceBlocks.lamp(colour).defaultBlockState().setValue(LIT, lit);
 	}
 
 	/** The dye whose colour is nearest to {@code rgb} (a {@code device_map} {@code #RRGGBB} colour), by squared RGB distance. Pure. */

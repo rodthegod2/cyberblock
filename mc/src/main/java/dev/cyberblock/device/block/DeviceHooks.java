@@ -110,7 +110,7 @@ public final class DeviceHooks {
 	static void request(final ServerPlayer player, final BlockPos pos, final String act, final JsonObject extra) {
 		Handler h = handler;
 		if (h == null) {
-			tell(player, "cyberblock.device.offline", "This device is not linked to a Night City game right now");
+			tell(player, "cyberblock.device.no_link", "Night City is not connected: devices cannot be used");
 			return;
 		}
 

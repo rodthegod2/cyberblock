@@ -16,7 +16,7 @@ import net.minecraft.world.phys.BlockHitResult;
  * Vending machines (section 1.11, toggle bit 32 {@code vending}): a Minecraft shop paid in Minecraft eddies (section 1.16). A
  * right-click asks the server for the machine's shop ({@code shop}); the server answers with {@code cyberblock:ui t:"shop"}
  * ({@link ShopWire}), the client opens the vending screen, a purchase comes back as {@code devact buy}, and the server takes the eddies
- * and gives the item. Phase 0 c: buying never reaches Night City. A {@link #BROKEN} machine says "out of order".
+ * and gives the item. Phase 0 c: buying never reaches Night City. A {@link #BROKEN} machine says it is broken.
  */
 public final class VendingMachineBlock extends FacingDeviceBlock {
 	public static final BooleanProperty BROKEN = BooleanProperty.create("broken");
@@ -35,7 +35,7 @@ public final class VendingMachineBlock extends FacingDeviceBlock {
 	@Override
 	protected InteractionResult useWithoutItem(final BlockState state, final Level level, final BlockPos pos, final Player player, final BlockHitResult hit) {
 		if (state.getValue(BROKEN)) {
-			return DeviceHooks.say(player, "cyberblock.device.vending.broken", "Out of order");
+			return DeviceHooks.say(player, "cyberblock.device.broken", "This device is broken");
 		}
 
 		return DeviceHooks.act(state, level, pos, player, "shop");

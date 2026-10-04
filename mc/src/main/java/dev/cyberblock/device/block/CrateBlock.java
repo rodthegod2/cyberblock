@@ -33,7 +33,7 @@ public final class CrateBlock extends DeviceBlock {
 	@Override
 	protected InteractionResult useWithoutItem(final BlockState state, final Level level, final BlockPos pos, final Player player, final BlockHitResult hit) {
 		if (!state.getValue(READABLE)) {
-			return DeviceHooks.say(player, "cyberblock.device.crate.sealed", "Sealed: Night City does not show what is inside");
+			return DeviceHooks.say(player, "cyberblock.device.container.closed", "A closed crate: its contents are unknown");
 		}
 
 		return DeviceHooks.act(state, level, pos, player, "view");

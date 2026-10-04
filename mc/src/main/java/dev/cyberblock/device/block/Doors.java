@@ -3,6 +3,7 @@ package dev.cyberblock.device.block;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
@@ -63,19 +64,24 @@ public final class Doors {
 		BlockPos lampPos = lower.above(2);
 		BlockState lamp = level.getBlockState(lampPos);
 		if (locked || questLocked) {
-			if (DeviceBlocks.free(lamp) || lamp.is(DeviceBlocks.DOOR_LOCK_LAMP)) {
-				level.setBlock(lampPos, DeviceBlocks.DOOR_LOCK_LAMP.defaultBlockState().setValue(DeviceBlock.QUEST_LOCKED, questLocked), Block.UPDATE_ALL);
+			if (DeviceBlocks.free(lamp) || lamp.is(lockLamp())) {
+				level.setBlock(lampPos, LampBlock.state(DyeColor.RED, true).setValue(DeviceBlock.QUEST_LOCKED, questLocked), Block.UPDATE_ALL);
 			}
-		} else if (lamp.is(DeviceBlocks.DOOR_LOCK_LAMP)) {
+		} else if (lamp.is(lockLamp())) {
 			level.setBlock(lampPos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
 		}
 
 		return true;
 	}
 
+	/** The lock lamp: the red lamp (4A's device_map door attachment {@code cyberblock:lamp_red}, while locked). */
+	private static Block lockLamp() {
+		return DeviceBlocks.lamp(DyeColor.RED);
+	}
+
 	/** Removes the door at {@code lower} and its lock lamp (only device blocks are touched). */
 	public static void remove(final ServerLevel level, final BlockPos lower) {
-		if (level.getBlockState(lower.above(2)).is(DeviceBlocks.DOOR_LOCK_LAMP)) {
+		if (level.getBlockState(lower.above(2)).is(lockLamp())) {
 			level.setBlock(lower.above(2), Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
 		}
 
