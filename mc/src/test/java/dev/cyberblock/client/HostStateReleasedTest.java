@@ -21,6 +21,9 @@ class HostStateReleasedTest {
 		HostState.released = true;
 		assertNull(HostState.live(), "in the hub Steve is Minecraft's");
 		assertFalse(HostState.hstate(false).active(), "and the server hears that Cyberpunk does not drive");
+		HostState.beginFrame();
+		assertNull(HostState.frame(), "nothing places Steve or the camera from Night City");
+		assertNotNull(HostState.exportPose(), "but the frames keep going to the DLL (its full-screen hub mode)");
 		HostState.released = false;
 		assertNotNull(HostState.live(), "back in Night City the pose drives again");
 	}

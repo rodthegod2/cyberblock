@@ -414,6 +414,14 @@ public final class HostState {
 		return frame;
 	}
 
+	/**
+	 * The pose a frame is exported with: this frame's; in the hub ({@link #released}) the latest one received, however old, so Minecraft's
+	 * own picture keeps reaching the DLL, whose full-screen hub mode (megaplan 7-D1) shows it as rendered. Null before any pose.
+	 */
+	public static Pose exportPose() {
+		return released ? latest : frame;
+	}
+
 	public static void beginFrame() {
 		frame = live();
 		active = frame != null;

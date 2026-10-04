@@ -89,7 +89,7 @@ final class HubBuilder {
 		if (holo != null) {
 			placed += station(level, layout, layout.holoTable(), holo, spawn);
 		} else {
-			unknown.add(HOLO_TABLE + " (7T)");
+			unknown.add(HOLO_TABLE.toString());
 		}
 
 		for (HubLayout.Board b : layout.boards()) {

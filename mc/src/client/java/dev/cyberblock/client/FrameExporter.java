@@ -148,7 +148,7 @@ public final class FrameExporter {
 	/** GameRenderer.renderLevel, just before the 3D HUD (hand): copy the world layer, then clear colour for the overlay. */
 	public static void captureWorld(final RenderTarget target) {
 		current = null;
-		HostState.Pose pose = HostState.frame();
+		HostState.Pose pose = HostState.exportPose();
 		if (pose == null || !ensureShm()) {
 			return;
 		}

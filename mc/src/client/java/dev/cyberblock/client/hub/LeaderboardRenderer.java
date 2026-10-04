@@ -26,8 +26,13 @@ import org.jspecify.annotations.Nullable;
  * the side the board faces, like a sign's text.
  */
 final class LeaderboardRenderer implements BlockEntityRenderer<LeaderboardBlockEntity, LeaderboardRenderer.State> {
-	/** Text pixels to blocks: a 90-pixel row is about one block wide. */
-	private static final float SCALE = 0.0105F;
+	/** Text pixels to blocks: a 100-pixel row is about 0.9 of the board. */
+	private static final float SCALE = 0.009F;
+	/**
+	 * Where the board's face is, from the cell's centre toward the way it faces: 7A's model is a 2-pixel plate against the back of the cell
+	 * (its front at 2/16 from the back), and the text floats just in front of it.
+	 */
+	private static final float FACE_Z = -0.5F + 2.0F / 16.0F + 0.01F;
 	private static final int TITLE = 0xFFFFD040;
 	private static final int ROW = 0xFF40E0FF;
 	private static final int LINE = 10;
@@ -69,7 +74,7 @@ final class LeaderboardRenderer implements BlockEntityRenderer<LeaderboardBlockE
 		pose.pushPose();
 		pose.translate(0.5F, 0.5F, 0.5F);
 		pose.rotateDegrees(Axis.YP, -state.facing.toYRot());
-		pose.translate(0.0F, 0.0F, 0.505F);
+		pose.translate(0.0F, 0.0F, FACE_Z);
 		pose.scale(SCALE, -SCALE, SCALE);
 		float top = -state.lines.size() * LINE / 2.0F;
 		for (int i = 0; i < state.lines.size(); i++) {
