@@ -52,6 +52,7 @@ public class Cyberblock implements ModInitializer {
 			MobWar.clear();
 			WorldBridge.detach();
 			OutlineRules.detach();
+			SafeSpots.clear();
 		});
 		// outline blocks: survival may not break them, creative breaks come back (plan Q-B4); server side only
 		PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, blockEntity) ->
@@ -67,6 +68,7 @@ public class Cyberblock implements ModInitializer {
 		ServerTickEvents.END_SERVER_TICK.register(MobWar::tick);
 		ServerTickEvents.END_SERVER_TICK.register(Projectiles::tick);
 		ServerTickEvents.END_SERVER_TICK.register(PlayerEffects::tick);
+		ServerTickEvents.END_SERVER_TICK.register(SafeSpots::tick);
 		// /cyberblock level, for everyone (permission level 0; Brigadier merges it with the cyber track's /cyberblock literals)
 		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> dispatcher.register(
 			Commands.literal("cyberblock").then(Commands.literal("level").executes(command -> level(command.getSource())))));
