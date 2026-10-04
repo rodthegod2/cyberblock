@@ -210,7 +210,7 @@ def test_default_ports_are_package_1t_and_stay_in_the_phase_1_ranges():
     p.check()
     servers = {name: p.server(name) for name in mpcheck.SCENARIOS}
     assert servers == {"singleplayer": 25914, "guest": 25914, "versions": 25915, "flood": 25916, "reconnect": 25917, "twohosts": 25918, "joinpassword": 25915,
-                       "replica": 25914, "twohosts2": 25916, "meetup": 25915}
+                       "replica": 25914, "twohosts2": 25916, "meetup": 25915, "figures": 25917}
     assert {p.client(n) for n in mpcheck.OFFLINE_NAMES} == {25754, 25755, 25756, 25757} and 25600 not in servers.values()
     assert [p.frame(n) for n in mpcheck.OFFLINE_NAMES] == ["Local\\CyberblockFrame1TH", "Local\\CyberblockFrame1TH2", "Local\\CyberblockFrame1TG", "Local\\CyberblockFrame1TG2"]
 
@@ -233,7 +233,7 @@ def test_a_frame_prefix_that_makes_the_users_frame_name_is_refused():
 
 def test_every_scenario_has_a_function_and_a_server_slot():
     assert set(mpcheck.SCENARIOS) == set(mpcheck.SCENARIO_FUNCS) == set(mpcheck.SERVER_SLOT)
-    assert mpcheck.SCENARIOS == ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup")
+    assert mpcheck.SCENARIOS == ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword", "replica", "twohosts2", "meetup", "figures")
 
 
 # ---- logs ------------------------------------------------------------------------------------------------------------------
@@ -866,7 +866,7 @@ def test_dry_run_prints_every_command_and_starts_nothing(capsys, monkeypatch):
     out = capsys.readouterr().out
     for name in mpcheck.SCENARIOS:
         assert f"== {name}" in out
-    assert out.count("runServer") == 9 and "-Pcyberblock.serverPort=25918" in out and "JAVA_TOOL_OPTIONS=-Dcyberblock.devtools=true" in out
+    assert out.count("runServer") == 10 and "-Pcyberblock.serverPort=25918" in out and "JAVA_TOOL_OPTIONS=-Dcyberblock.devtools=true" in out
     assert "--quickPlaySingleplayer" in out and "--quickPlayMultiplayer 127.0.0.1:25915" in out and "tools.fakehost" in out
 
 
@@ -1272,3 +1272,90 @@ def test_the_replica_helpers_read_the_answers_rcon_gives():
     weather = S({'execute if predicate {type:"minecraft:weather_check",raining:true}': "Test passed"})
     assert mpcheck.weather_is(weather, rain=True, thunder=False) and not mpcheck.weather_is(weather, rain=False, thunder=False)
     assert [s[:3] for s in mpcheck.ENV_STATES] == [(16500, False, False), (17000, True, False), (17500, True, True), (23750, False, False)]
+
+
+# ---- Phase 5: the figures scenario (megaplan 5-P1) against a simulated server --------------------------------------------------
+# The server as the plan has it for the proxies: one human or vehicle proxy per entry of the host's tagged `npcs` list, the dead victim's body for
+# 3 s and then gone, all of a host's figures gone with its session. SIM real seconds are one second of the fake host's script.
+class Sim5Server(Sim3Server):
+    def figure_hosts(self):
+        keep = "figures-stay" in self.bugs
+        return [h for h in self.sim.hosts.values() if h.get("figures") and (h["linked"] or keep)]
+
+    def people(self, host):
+        elapsed = (time.monotonic() - host["t0"]) / SIM
+        body_gone = fakehost.FIGURE_DEAD_AT + fakehost.FIGURE_DEAD_FOR + 3.0  # the body lies down for 3 s (ProxyDiff.deadTicks)
+        if "tags-dropped" in self.bugs:
+            return 0
+        if "figure-lost" in self.bugs:
+            return mpcheck.FIGURE_PEOPLE - 1
+        return mpcheck.FIGURE_PEOPLE + (1 if elapsed < body_gone or "victim-stays" in self.bugs else 0)
+
+    def rcon(self, command):
+        hosts = self.figure_hosts()
+        if hosts and command in ("execute if entity @e[type=cyberblock:proxy_human]", "execute if entity @e[type=cyberblock:proxy_vehicle]"):
+            n = sum(self.people(h) if command.endswith("human]") else (0 if "tags-dropped" in self.bugs else mpcheck.FIGURE_CARS) for h in hosts)
+            return f"Test passed. Count: {n}" if n else "Test failed"
+        return super().rcon(command)
+
+
+class Sim5Env(Sim3Env):
+    def server(self, scenario, max_hosts=1, join_password=False):
+        self.max_hosts = max_hosts
+        self.server_obj = Sim5Server(self.tmp, self.ports.server(scenario), self, self.bugs)
+        self.server_obj.log.path.write_text("Done (1s)!\n", encoding="utf-8")
+        self.logs["server"] = self.server_obj.log
+        return self.server_obj
+
+    def grant(self, name, host, layers, modes, ids_from):
+        super().grant(name, host, layers, modes, ids_from)
+        if "figures" in modes:
+            host.update(figures=True, t0=time.monotonic(), ids=host["ids"] | set(fakehost.figure_ids(ids_from)))
+
+
+def run5(tmp, name, bugs=()):
+    return run_scenario(Sim5Env(tmp, bugs), name)
+
+
+def test_figures_scenario_passes_against_an_ideal_server(tmp_path):
+    sim = Sim5Env(tmp_path)
+    rep = run_scenario(sim, "figures")
+    assert rep.ok, failed(rep)
+    assert len(rep.checks) == 8 and sim.max_hosts == 1
+    assert mpcheck.FIGURE_PEOPLE == 39 and mpcheck.FIGURE_CARS == 6 and mpcheck.FIGURE_PEOPLE + mpcheck.FIGURE_CARS + 1 == fakehost.FIGURE_COUNT  # + the victim
+    assert mpcheck.FIGURE_HIT in sim.hosts["CbHost1"]["ids"] and f'"target": "{mpcheck.FIGURE_HIT}"' in sim.hosts["CbHost1"]["log"].text()
+
+
+@pytest.mark.parametrize("bug, expected", [
+    ("tags-dropped", {"every tagged person and car stands as a proxy (39 people once the victim's body has gone, 6 cars)"}),
+    ("figure-lost", {"every tagged person and car stands as a proxy (39 people once the victim's body has gone, 6 cars)"}),
+    ("victim-stays", {"every tagged person and car stands as a proxy (39 people once the victim's body has gone, 6 cars)"}),
+    ("drop-hits", {"a hit on a tagged figure reaches the fake host by its id"}),
+    ("figures-stay", {"the figures go with the session"}),
+    ("no-session-end", {"the session ends when the link drops"}),
+])
+def test_figures_scenario_notices_each_figure_bug(tmp_path, bug, expected):
+    rep = run5(tmp_path, "figures", [bug])
+    assert expected <= set(failed(rep)) and not rep.ok
+
+
+def test_figures_scenario_asks_a_fake_host_for_the_figures_mode_with_no_layer_and_uses_its_own_server_slot(tmp_path, capsys):
+    seen = []
+
+    class Spy(Sim5Env):
+        def fakehost(self, client, **kw):
+            seen.append((client.name, kw.get("layers"), kw.get("modes"), kw.get("wait_host")))
+            return super().fakehost(client, **kw)
+
+    run_scenario(Spy(tmp_path), "figures")
+    assert seen == [("CbHost1", (), ("figures",), mpcheck.T_JOIN)]
+    assert mpcheck.Ports().server("figures") == mpcheck.SERVER_BASE + 3 and "figures" in mpcheck.SCENARIOS
+    assert mpcheck.main(["figures", "--dry-run", "--client-port-base", "25824", "--server-port-base", "25985", "--frame-prefix", "Local\\CyberblockFrame5PM"]) == 0
+    out = capsys.readouterr().out
+    assert "-Pcyberblock.serverPort=25988" in out and "--figures" in out and "--layer" not in out and "Local\\CyberblockFrame5PMH" in out
+    assert "-Pcyberblock.port=25824" in out and "25600" not in out
+
+
+def test_figures_hit_is_the_first_pose_a_hostile_figure_of_the_fake_hosts_list():
+    first = next(e for e in fakehost.figures_npcs(0.0)["list"] if e["id"] == mpcheck.FIGURE_HIT)
+    assert first["hostile"] and first["anim"] & fakehost.FIGURE_ANIM_BITS["aim"] and first["kind"] == "human"
