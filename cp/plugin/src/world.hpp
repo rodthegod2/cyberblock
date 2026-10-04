@@ -263,12 +263,14 @@ namespace cb::world
 	/// space, sent in Minecraft space with `-off`) is null unless `hasFrom` and finite. nullopt when `frac` is not finite.
 	std::optional<nlohmann::json> make_dmg(double frac, std::string_view kind, Vec3 fromCp, bool hasFrom, double off);
 
-	/// {"t":"npcs","list":[{"id","p","yaw","kind","hostile"}]} from the arrays redscript submits: Cyberpunk feet
-	/// positions (`-off`) and yaws, converted to Minecraft. nullopt unless all five arrays have the same length. An entry
-	/// with a non-finite position or yaw is left out.
+	/// {"t":"npcs","list":[{"id","p","yaw","kind","hostile"[,"dead":true]}]} from the arrays redscript submits:
+	/// Cyberpunk feet positions (`-off`) and yaws, converted to Minecraft. `dead` (empty, or one flag per id) marks the
+	/// last sighting of an NPC that died or a vehicle that was destroyed (Phase 3 amendment); the key is sent only when
+	/// set. nullopt unless the arrays have the same length. An entry with a non-finite position or yaw is left out.
 	std::optional<nlohmann::json> make_npcs(std::span<const uint64_t> ids, std::span<const Vec3> feetCp,
 											std::span<const double> yawsCp, std::span<const uint8_t> vehicles,
-											std::span<const uint8_t> hostile, double off);
+											std::span<const uint8_t> hostile, double off,
+											std::span<const uint8_t> dead = {});
 
 	// ---- layers 3-6 (plan 2026-10-03 section 1.2) ----
 

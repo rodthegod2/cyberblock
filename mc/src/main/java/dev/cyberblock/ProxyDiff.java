@@ -71,8 +71,11 @@ public final class ProxyDiff {
 		}
 	}
 
-	/** The usable entries of a message and how many were thrown out. */
-	public record Parsed(List<Entry> entries, int rejected) {
+	/**
+	 * The usable entries of a message and how many were thrown out. dead: the entries flagged {@code "dead":true} (the host's last
+	 * sighting of an NPC that died or a vehicle that was destroyed, whoever caused it); they are not in entries.
+	 */
+	public record Parsed(List<Entry> entries, List<Entry> dead, int rejected) {
 	}
 
 	/** Ticks a dead figure stays before it goes (plan 2026-10-04 task 3-F1): a body lies down for 3 s, a wreck stays dark for 5 s. */
@@ -135,18 +138,21 @@ public final class ProxyDiff {
 		}
 
 		List<Entry> entries = new ArrayList<>();
+		List<Entry> dead = new ArrayList<>();
 		Set<Long> seen = new HashSet<>();
 		int rejected = 0;
 		for (JsonElement e : list) {
-			Entry entry = entries.size() < MAX_ENTRIES ? entry(e, minY, maxY) : null;
+			Entry entry = entries.size() + dead.size() < MAX_ENTRIES ? entry(e, minY, maxY) : null;
 			if (entry == null || !seen.add(entry.id())) {
 				rejected++;
+			} else if (flag(e, "dead")) {
+				dead.add(entry);
 			} else {
 				entries.add(entry);
 			}
 		}
 
-		return new Parsed(entries, rejected);
+		return new Parsed(entries, dead, rejected);
 	}
 
 	private static Entry entry(final JsonElement e, final double minY, final double maxY) {
@@ -166,13 +172,16 @@ public final class ProxyDiff {
 			return null;
 		}
 
-		// optional: an NPC that does not say (or says something else than true or false) is not hostile
-		boolean hostile = o.get("hostile") instanceof JsonPrimitive h && h.isBoolean() && h.getAsBoolean();
 		try {
-			return new Entry(Long.parseUnsignedLong(id.getAsString()), x, y, z, (float) (yaw % 360.0), k, hostile);
+			return new Entry(Long.parseUnsignedLong(id.getAsString()), x, y, z, (float) (yaw % 360.0), k, flag(o, "hostile"));
 		} catch (NumberFormatException tooBig) {
 			return null; // more than 2^64 - 1
 		}
+	}
+
+	/** An optional flag of an entry (hostile, dead): only a JSON true sets it; missing or anything else is false, never an error. */
+	private static boolean flag(final JsonElement entry, final String key) {
+		return entry instanceof JsonObject o && o.get(key) instanceof JsonPrimitive f && f.isBoolean() && f.getAsBoolean();
 	}
 
 	/** A JSON number as a double, NaN for anything else (a string "5" is not a number here). */

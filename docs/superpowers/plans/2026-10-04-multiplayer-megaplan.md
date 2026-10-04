@@ -267,6 +267,17 @@ same validators the client ran before (they move with the code), plus the envelo
   despawned, tethers released, Minecraft pause released, survey stopped, parked V released) while keeping the WebSocket.
 - DLL `hello` gains `ver` (the DLL version, ≤ 32 chars), as Minecraft's `hello` already has.
 
+> **Amendment 2026-10-04 (Phase 3, `npcs` death flag; 3F review fix, for the Phase 3 integrator to confirm).** `killed` is
+> sent only for deaths V (Steve) caused, so 3-F1's wrecks and bodies need a death signal that does not depend on who
+> caused it. `npcs` entries gain an optional `dead:true`: an NPC that the previous list sent alive and that is now dead or
+> defeated, or a vehicle now destroyed, is listed once more after the living (sharing the cap of 48) with `dead:true` at
+> its current position; the key is absent otherwise. `Cyberblock_SubmitNpcs` gains a parallel `dead: array<Bool>`
+> (`Npcs.reds`, `natives.cpp`, `world::make_npcs`). The server's `ProxyManager` buries a live proxy on `dead:true` (a body
+> for 3 s, a wreck for 5 s) and never spawns a new one from a dead entry; `killed` stays the XP path and lays a body only
+> when the list's flag has not already. The server log line `figures: <vehicle|person> <id> died (<wreck|body> for N s;
+> from the <npcs dead flag|killed>)` shows which path fired. Fake hosts that model a destroyed car send it once with
+> `dead:true` before it leaves the list. Phase 5's `anim` bit 32 (dead) is the same state and comes on the same entry.
+
 ### 1.3 The Minecraft custom-payload protocol (client ↔ server)
 Registered with Fabric's payload registry and play networking (exact 26.3 class and method names verified in task
 1-N1 from the Fabric API sources). Every payload is a record with a `StreamCodec`; strings are UTF-8 with a length cap.

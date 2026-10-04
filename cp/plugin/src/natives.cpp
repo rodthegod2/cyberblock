@@ -309,8 +309,10 @@ namespace
 	}
 
 	// Cyberblock_SubmitNpcs(ids: array<Uint64>, feet: array<Vector4>, yaws: array<Float>, vehicles: array<Bool>,
-	// hostile: array<Bool>) -> Void. The full list of nearby NPCs and vehicles (Minecraft despawns the proxy of any id
-	// that is missing). Feet and yaws are Cyberpunk values; a yaw is in degrees as Entity.GetWorldYaw reports it.
+	// hostile: array<Bool>, dead: array<Bool>) -> Void. The full list of nearby NPCs and vehicles (Minecraft despawns
+	// the proxy of any id that is missing); `dead` marks the last sighting of one that died or was destroyed, whoever
+	// caused it (Minecraft leaves a body or a wreck). Feet and yaws are Cyberpunk values; a yaw is in degrees as
+	// Entity.GetWorldYaw reports it.
 	void SubmitNpcs(IScriptable *, CStackFrame *frame, void *, int64_t)
 	{
 		RED4ext::DynArray<uint64_t> ids;
@@ -318,11 +320,13 @@ namespace
 		RED4ext::DynArray<float> yaws;
 		RED4ext::DynArray<bool> vehicles;
 		RED4ext::DynArray<bool> hostile;
+		RED4ext::DynArray<bool> dead;
 		RED4ext::GetParameter(frame, &ids);
 		RED4ext::GetParameter(frame, &feet);
 		RED4ext::GetParameter(frame, &yaws);
 		RED4ext::GetParameter(frame, &vehicles);
 		RED4ext::GetParameter(frame, &hostile);
+		RED4ext::GetParameter(frame, &dead);
 		++frame->code;
 
 		if (!cb::natives::active)
@@ -332,7 +336,9 @@ namespace
 		const std::vector<double> yawList = to_vector<double>(yaws);
 		const std::vector<uint8_t> vehicleList = to_vector<uint8_t>(vehicles);
 		const std::vector<uint8_t> hostileList = to_vector<uint8_t>(hostile);
-		const auto message = cb::world::make_npcs(idList, feetList, yawList, vehicleList, hostileList, level_offset());
+		const std::vector<uint8_t> deadList = to_vector<uint8_t>(dead);
+		const auto message =
+			cb::world::make_npcs(idList, feetList, yawList, vehicleList, hostileList, level_offset(), deadList);
 		if (message)
 			cb::link().send(*message);
 		else
@@ -340,8 +346,9 @@ namespace
 			static bool warned = false;
 			if (!std::exchange(warned, true))
 				cb::log::warn("Cyberblock_SubmitNpcs: arrays differ in length (ids %zu, feet %zu, yaws %zu, vehicles %zu, "
-							  "hostile %zu); dropping the list (logged once)",
-							  idList.size(), feetList.size(), yawList.size(), vehicleList.size(), hostileList.size());
+							  "hostile %zu, dead %zu); dropping the list (logged once)",
+							  idList.size(), feetList.size(), yawList.size(), vehicleList.size(), hostileList.size(),
+							  deadList.size());
 		}
 	}
 
@@ -984,7 +991,7 @@ namespace cb::natives
 			{{"Float", "frac"}, {"CName", "kind"}, {"Vector4", "from"}, {"Bool", "hasFrom"}});
 		add(rtti, "Cyberblock_SubmitNpcs", &SubmitNpcs, nullptr,
 			{{"array:Uint64", "ids"}, {"array:Vector4", "feet"}, {"array:Float", "yaws"}, {"array:Bool", "vehicles"},
-			 {"array:Bool", "hostile"}});
+			 {"array:Bool", "hostile"}, {"array:Bool", "dead"}});
 		add(rtti, "Cyberblock_NextEvent", &NextEvent, "CName");
 		add(rtti, "Cyberblock_EventPos", &EventPos, "Vector4");
 		add(rtti, "Cyberblock_EventTarget", &EventTarget, "Uint64");

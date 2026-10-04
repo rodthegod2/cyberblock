@@ -10,7 +10,7 @@ public native func Cyberblock_SubmitProbes(center: Vector4, downHits: array<Vect
 public native func Cyberblock_SetAim(distance: Float) -> Void; // metres to the Night City surface under the crosshair, -1 if none
 public native func Cyberblock_Log(msg: String) -> Void;        // to red4ext/logs/Cyberblock.log
 public native func Cyberblock_Damage(frac: Float, kind: CName, from: Vector4, hasFrom: Bool) -> Void;
-public native func Cyberblock_SubmitNpcs(ids: array<Uint64>, feet: array<Vector4>, yaws: array<Float>, vehicles: array<Bool>, hostile: array<Bool>) -> Void;
+public native func Cyberblock_SubmitNpcs(ids: array<Uint64>, feet: array<Vector4>, yaws: array<Float>, vehicles: array<Bool>, hostile: array<Bool>, dead: array<Bool>) -> Void;
 // Event queue (Minecraft -> Cyberpunk), already converted to Cyberpunk space. NextEvent pops one and makes it current.
 public native func Cyberblock_NextEvent() -> CName;      // n"explosion" | n"hit" | n"ignite" | n"block_add" | n"block_remove" | ...
                                                          // (Events.reds lists every kind) | n"" when empty

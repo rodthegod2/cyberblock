@@ -18,6 +18,10 @@
 // (CyberblockPuppets.IsPuppet). Every 5 s the log counts what was sent and attached, people and cars apart, and why
 // the rest was left out (beyond 48 m, over the cap of 48, or the Reason).
 //
+// Deaths (megaplan 2026-10-04 section 1.2 amendment, task 3-F1): one that the last list sent alive and that is now
+// dead, defeated or destroyed goes once more, flagged dead, whoever caused it (NCPD, gangs, traffic, a crash), so
+// Minecraft leaves a body or a wreck. Cyberblock_Killed (Kills.reds) stays the XP report for V's own kills.
+//
 // Yaw: degrees counter-clockwise from +Y about +Z, from Entity.GetWorldForward (0 = facing +Y, 90 = facing -X), the
 // EulerAngles yaw convention the DLL's cp_yaw_to_mc_yaw (180 - yaw) expects. AtanF(a, b) is atan2(a, b) (as used in
 // timeSkipPopup: AtanF(dy, dx)).
@@ -29,6 +33,9 @@
 public class CyberblockNpcs {
   private let sent: Bool;
   private let logDelay: Int32;
+  // The hashes the last list sent alive, and how many were sent flagged dead since the last log line.
+  private let lastAlive: array<Uint64>;
+  private let deadSent: Int32;
 
   // Makes sure the shared registry listens (it also does from its own service load and every Tick).
   public func Register() -> Void {
@@ -45,11 +52,13 @@ public class CyberblockNpcs {
     let yaws: array<Float>;
     let vehicles: array<Bool>;
     let hostile: array<Bool>;
+    let dead: array<Bool>;
     if !active {
       if this.sent {
-        Cyberblock_SubmitNpcs(ids, feet, yaws, vehicles, hostile);
+        Cyberblock_SubmitNpcs(ids, feet, yaws, vehicles, hostile, dead);
         this.sent = false;
       }
+      ArrayClear(this.lastAlive);
       return;
     }
 
@@ -72,6 +81,8 @@ public class CyberblockNpcs {
     let far = 0;
     let overCap = 0;
     let rejected: array<CName>;
+    // Died since the last list (it sent them alive): their last sighting, flagged dead.
+    let dying: array<wref<GameObject>>;
     for object in known {
       if IsDefined(object as VehicleObject) {
         cars += 1;
@@ -85,6 +96,9 @@ public class CyberblockNpcs {
         let reason = CyberblockNpcs.Reason(game, object);
         if NotEquals(reason, n"") {
           ArrayPush(rejected, reason);
+          if CyberblockNpcs.Died(reason) && ArrayContains(this.lastAlive, CyberblockIds.Hash(object)) {
+            ArrayPush(dying, object);
+          }
         } else {
           let at = ArraySize(picked);
           while at > 0 {
@@ -104,31 +118,62 @@ public class CyberblockNpcs {
       }
     }
 
+    // The dying share the cap of 48: the farthest living ones make room.
+    if ArraySize(dying) > maxCount {
+      ArrayResize(dying, maxCount);
+    }
+    if ArraySize(picked) + ArraySize(dying) > maxCount {
+      ArrayResize(picked, maxCount - ArraySize(dying));
+    }
+
+    // The living first (nearest first), then the dying: entries from aliveCount on are flagged dead.
+    let aliveCount = ArraySize(picked);
+    for object in dying {
+      ArrayPush(picked, object);
+    }
+
     let sentCars = 0;
-    for object in picked {
-      let id = object.GetEntityID();
+    let alive: array<Uint64>;
+    let k = 0;
+    while k < ArraySize(picked) {
+      let object = picked[k];
+      let hash = CyberblockIds.Hash(object);
+      let isDead = k >= aliveCount;
       let forward = object.GetWorldForward();
       let vehicle = object as VehicleObject;
-      ArrayPush(ids, CyberblockIds.Hash(object));
+      ArrayPush(ids, hash);
       ArrayPush(feet, object.GetWorldPosition());
       ArrayPush(yaws, Rad2Deg(AtanF(-forward.X, forward.Y)));
       ArrayPush(vehicles, IsDefined(vehicle));
+      ArrayPush(dead, isDead);
+      if !isDead {
+        ArrayPush(alive, hash);
+      }
       if IsDefined(vehicle) {
         sentCars += 1;
-        ArrayPush(hostile, IsHostileTowardsPlayer(VehicleComponent.GetDriverMounted(game, id)));
+        ArrayPush(hostile, IsHostileTowardsPlayer(VehicleComponent.GetDriverMounted(game, object.GetEntityID())));
       } else {
         ArrayPush(hostile, IsHostileTowardsPlayer(object));
       }
+      k += 1;
     }
-    Cyberblock_SubmitNpcs(ids, feet, yaws, vehicles, hostile);
+    Cyberblock_SubmitNpcs(ids, feet, yaws, vehicles, hostile, dead);
     this.sent = true;
+    this.lastAlive = alive;
+    this.deadSent += ArraySize(dying);
 
     if this.logDelay > 0 {
       this.logDelay -= 1;
     } else {
       this.logDelay = 50; // 5 s
-      Cyberblock_Log(s"npcs: sent \(ArraySize(ids) - sentCars) people + \(sentCars) cars; attached \(people) people + \(cars) cars; left out: \(far) beyond 48 m, \(overCap) over_cap, \(CyberblockNpcs.Tally(rejected))");
+      Cyberblock_Log(s"npcs: sent \(ArraySize(ids) - sentCars) people + \(sentCars) cars; attached \(people) people + \(cars) cars; left out: \(far) beyond 48 m, \(overCap) over_cap, \(CyberblockNpcs.Tally(rejected)); deaths sent flagged dead (bodies and wrecks for Minecraft): \(this.deadSent)");
+      this.deadSent = 0;
     }
+  }
+
+  // The Reasons that mean it died (or is down) rather than only being out of reach.
+  private static func Died(reason: CName) -> Bool {
+    return Equals(reason, n"dead") || Equals(reason, n"defeated") || Equals(reason, n"destroyed");
   }
 
   // n"" when the entity goes to Minecraft: alive, attached, not riding in a vehicle; else why not. Nested ifs:

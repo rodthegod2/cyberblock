@@ -83,6 +83,23 @@ class ProxyDiffTest {
 	}
 
 	@Test
+	void deadEntriesAreTheHostsLastSightingAndNotAlive() {
+		Parsed p = parse("[{\"id\":\"1\",\"p\":[4,5,6],\"yaw\":10,\"kind\":\"vehicle\",\"hostile\":false,\"dead\":true},"
+			+ "{\"id\":\"2\",\"p\":[0,0,0],\"yaw\":0,\"kind\":\"human\",\"hostile\":false},"
+			+ "{\"id\":\"3\",\"p\":[0,0,0],\"yaw\":0,\"kind\":\"human\",\"dead\":false},"
+			+ "{\"id\":\"4\",\"p\":[0,0,0],\"yaw\":0,\"kind\":\"human\",\"dead\":\"true\"},"
+			+ "{\"id\":\"1\",\"p\":[0,0,0],\"yaw\":0,\"kind\":\"vehicle\"}]");
+		assertEquals(1, p.rejected(), "an id once, dead or alive");
+		assertEquals(Set.of(2L, 3L, 4L), ids(p.entries()), "only a JSON true is dead");
+		assertEquals(1, p.dead().size());
+		Entry wreck = p.dead().get(0);
+		assertEquals(1L, wreck.id());
+		assertEquals(Kind.VEHICLE, wreck.kind());
+		assertEquals(4.0, wreck.x(), "where it died");
+		assertEquals(List.of(), parse("[" + npc("5", "[0,0,0]", "0", "human") + "]").dead());
+	}
+
+	@Test
 	void anEmptyListIsValidButAMissingOneIsNot() {
 		assertEquals(0, parse("[]").entries().size());
 		assertNull(ProxyDiff.parse(JsonParser.parseString("{\"t\":\"npcs\"}").getAsJsonObject(), MIN_Y, MAX_Y));
