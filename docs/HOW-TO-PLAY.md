@@ -1229,7 +1229,7 @@ kind, not a loose id, so it still works after the host restarts Cyberpunk or the
 | **Heat Sensor** | **gives out a signal** of 0 to 15: the nearest host's police heat, 0 to 5 stars, times 3 | a wanted level of 3 stars is signal 9; a later phase adds Server Heat as a second mode |
 | **Breach Port** | a signal makes it **fire the chosen quickhack** at the targets in range (its screen picks the hack) | the hack runs in the host's game and **costs RAM**, taken from a **Cyberdeck block** placed next to it |
 | **Charge** | a signal sets it off | **a real Cyberpunk explosion** at the block's position (the explosion goes to the host's game; the host's `explosions` toggle applies to a guest's charge) |
-| **Cyberdeck block** | (none) | stores RAM for the Breach Ports next to it and **refills slowly** |
+| **Cyberdeck block** | (none) | stores RAM for the Breach Ports next to it and **refills slowly**: up to 16 RAM, 1 back every 5 seconds. A block you place starts **empty** (full after 80 seconds), so breaking and replacing it does not refill it |
 
 **Limits that keep the world calm.** Every block acts **at most twice a second**. A chain of links that toggles the **same device more than
 8 times in 4 seconds** is a loop: the blocks involved are **frozen for 30 seconds** with a puff of smoke (`cyberblock.redstone.loop` in the

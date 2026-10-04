@@ -86,7 +86,10 @@ public final class HackBlockEntity extends BlockEntity {
 		this.setChanged();
 	}
 
-	/** The Cyberdeck block's RAM (full the first time it is read). */
+	/**
+	 * The Cyberdeck block's RAM. A player's placement sets it empty ({@link Deck#placed}); a block no player placed (a command, a save
+	 * from before) is full the first time it is read.
+	 */
 	Deck deck(final long now) {
 		if (this.deck == null) {
 			this.deck = Deck.full(now);
