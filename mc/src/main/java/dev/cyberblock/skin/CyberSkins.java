@@ -26,7 +26,8 @@ import net.minecraft.world.scores.PlayerTeam;
  * female) is a persisted Fabric data attachment, set with {@code /cyberblock body male|female} and sent to every client in
  * {@code cyberblock:roster}, whose {@code linked} flag (a LINKED or ACTIVE host session) makes the clients draw that player in the
  * cyber skin. Linked players are also kept in the scoreboard team {@value #TEAM}, whose coloured {@code [V] } prefix vanilla
- * draws on the name tag, in chat and in the player list.
+ * draws on the name tag, in chat and in the player list. The team is kept cosmetic ({@link SkinRules#makeCosmetic}): no seeing
+ * each other's Optical Camo, friendly fire on.
  */
 public final class CyberSkins {
 	/** The V team; vanilla sends it to every client like any scoreboard team. */
@@ -119,6 +120,9 @@ public final class CyberSkins {
 		PlayerTeam team = found;
 		if (!PREFIX.equals(team.getPlayerPrefix())) {
 			team.setPlayerPrefix(PREFIX);
+		}
+		if (SkinRules.makeCosmetic(team)) {
+			Cyberblock.LOG.info("skin: V team set cosmetic (members cannot see each other's camo, friendly fire on)");
 		}
 
 		Set<String> linked = new HashSet<>();

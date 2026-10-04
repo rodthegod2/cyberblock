@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.function.Predicate;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.Team;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -51,5 +53,34 @@ public final class SkinRules {
 		}
 
 		return new TeamPlan(leave, List.copyOf(join));
+	}
+
+	/**
+	 * Keeps the V team cosmetic (a prefix, not an alliance): members do not see each other through invisibility (Optical Camo is
+	 * the INVISIBILITY effect), can hurt each other, and keep name tags and collision as without a team. Vanilla's team defaults
+	 * would let them see each other's camo. Sets only the values that differ (each set sends a team packet), so a team saved by
+	 * an earlier run is corrected too.
+	 *
+	 * @return whether anything was changed
+	 */
+	static boolean makeCosmetic(final PlayerTeam team) {
+		boolean changed = false;
+		if (team.canSeeFriendlyInvisibles()) {
+			team.setSeeFriendlyInvisibles(false);
+			changed = true;
+		}
+		if (!team.isAllowFriendlyFire()) {
+			team.setAllowFriendlyFire(true);
+			changed = true;
+		}
+		if (team.getNameTagVisibility() != Team.Visibility.ALWAYS) {
+			team.setNameTagVisibility(Team.Visibility.ALWAYS);
+			changed = true;
+		}
+		if (team.getCollisionRule() != Team.CollisionRule.ALWAYS) {
+			team.setCollisionRule(Team.CollisionRule.ALWAYS);
+			changed = true;
+		}
+		return changed;
 	}
 }
