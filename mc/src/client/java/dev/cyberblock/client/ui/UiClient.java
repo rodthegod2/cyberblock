@@ -17,6 +17,8 @@ public class UiClient implements ClientModInitializer {
 	public void onInitializeClient() {
 		UiLink.register();
 		UiHud.register();
+		// megaplan 7-V1: the Holo-Table offers the host's fast-travel points
+		FastTravelPoints.installHoloHook();
 		// the Atlas's shared map of Night City and the survey tour (protocol.md "Atlas")
 		AtlasStore.register();
 		SurveyClient.register();

@@ -265,11 +265,16 @@ the game window.
 3. The screen's **Night City vendor...** button opens Cyberpunk's own screen for the same shop (for installing cyberware at a ripperdoc, or buyback).
 4. Open the **ripperdoc of the prologue** or any shop of a mission: **expect** Cyberpunk's own screen to stay (pass-through).
 5. If a shop's stock cannot be read (fallback of (f)), the same: Cyberpunk's own screen stays and the log says so (P7-9).
+6. At a ripperdoc, find an implant your **Street Cred** (or level) does not unlock yet. **Expect:** it is listed as "... (locked)" and a click shows
+   "Requirements not met"; the money does not change and the log says `vendors: buy ... refused (requirements not met)`.
+7. Fill one ammo type to its cap, then try to buy that ammo (click and Shift+click). **Expect:** "Ammo full" and no money spent. Below the cap, Shift+click
+   buys only up to the cap. A grenade, an injector or an inhaler buys one per click, also with Shift.
 
 ### P7-8. Fast travel from the Holo-Table (host)
 1. In the Holo-Table open the **fast-travel** list: your game's fast-travel points. Pick one.
 2. **Expect:** the game's own fast travel (a loading, then V stands at that point). When the game does not allow it right now (a job locks fast travel, V is in
    a vehicle or in combat, a scene holds V) the list says so and a click shows "Not now: ..." instead. Picked in the hub, it runs once you leave the hub.
+3. As a guest, the table lists no fast-travel points (they are the host's game).
 
 ### P7-9. Which way is it working? (the runtime paths)
 Open `red4ext\logs\Cyberblock.log` and the server log and copy these lines to Claude. The exact wording is the packages', so search for the word.

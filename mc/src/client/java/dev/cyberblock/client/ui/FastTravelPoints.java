@@ -1,5 +1,6 @@
 package dev.cyberblock.client.ui;
 
+import dev.cyberblock.client.holo.HoloFastTravel;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -12,8 +13,8 @@ import java.util.Locale;
  * index and {@code arg} = the point's name (the scripts check that both still match; while V is parked in the hub they travel
  * when the host leaves it).
  *
- * <p>The Holo-Table (package 7T) lists {@link #known()} through its {@code HoloFastTravel.points} hook and runs {@link #travel} for
- * a picked point; the hook is installed where both packages meet (the Phase 7 merge, see {@link #known()}).
+ * <p>The Holo-Table (package 7T) lists {@link #known()} through its {@link HoloFastTravel#points} hook and runs {@link #travel} for
+ * a picked point; {@link UiClient} installs the hook at client init.
  */
 public final class FastTravelPoints {
 	/** The list is asked for again when it is older than this while somebody reads it. */
@@ -38,11 +39,19 @@ public final class FastTravelPoints {
 		return points.stream().anyMatch(p -> p.index() >= 0);
 	}
 
+	/** Client init: the Holo-Table lists {@link #known()} and travels with {@link #travel}. */
+	static void installHoloHook() {
+		HoloFastTravel.points = () -> known().stream().map(FastTravelPoints::holoPoint).toList();
+	}
+
+	/** A point for the Holo-Table; reply pin positions are already Minecraft coordinates (the DLL converts them). */
+	static HoloFastTravel.Point holoPoint(final UiModel.ReplyPin p) {
+		return new HoloFastTravel.Point(p.name(), p.p().x(), p.p().z(), p.district(), () -> travel(p));
+	}
+
 	/**
 	 * Client thread, cheap enough to call every frame: the host's last known points (empty while no host is linked, so guests see
-	 * none), asking Cyberpunk again when the list is older than 5 s. The Holo-Table hook, installed in the Phase 7 merge:
-	 * {@code HoloFastTravel.points = () -> FastTravelPoints.known().stream().map(p -> new HoloFastTravel.Point(p.name(), p.p().x(),
-	 * p.p().z(), p.district(), () -> FastTravelPoints.travel(p))).toList();}
+	 * none), asking Cyberpunk again when the list is older than 5 s.
 	 */
 	public static List<UiModel.ReplyPin> known() {
 		if (!UiLink.linked()) {

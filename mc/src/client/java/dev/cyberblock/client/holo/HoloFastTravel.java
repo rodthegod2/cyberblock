@@ -8,11 +8,7 @@ import java.util.function.Supplier;
  * {@link #points} to the host's own fast-travel points (from its Cyberpunk game, {@code uiact fasttravel} once verified); the table
  * lists them under "Fast travel". The button asks the server first ({@code act holotravel}: the spawn rules, and a host at the table
  * leaves the hub so V is released) and runs the point's action when the server says go ({@code ui holotravel}). Empty (nothing
- * listed) until 7V installs it, and for guests. Client thread.
- *
- * <p>The hook is installed in the Phase 7 merge, with the snippet in 7V's {@code FastTravelPoints.known()} javadoc:
- * {@code HoloFastTravel.points = () -> FastTravelPoints.known().stream().map(p -> new HoloFastTravel.Point(p.name(), p.p().x(),
- * p.p().z(), p.district(), () -> FastTravelPoints.travel(p))).toList();}
+ * listed) until 7V installs it ({@code FastTravelPoints.installHoloHook()} at client init), and for guests. Client thread.
  */
 public final class HoloFastTravel {
 	/** One point: its name, its Minecraft position (x, z) for the miniature, its district, and what travelling there does. */

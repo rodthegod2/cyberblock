@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import dev.cyberblock.client.holo.HoloFastTravel;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -52,6 +53,17 @@ class VendorModelTest {
 		// guests (and a host that went quiet) list nothing on the Holo-Table, and nothing is asked
 		UiLink.forgetHost();
 		assertTrue(FastTravelPoints.known().isEmpty());
+	}
+
+	@Test
+	void holoTableHookMapsTheHostsPoints() {
+		UiModel.ReplyPin pin = new UiModel.ReplyPin(new UiModel.Pos(-1200.5, 64, 3400.25), "fasttravel", "Afterlife", 2, "Watson");
+		HoloFastTravel.Point p = FastTravelPoints.holoPoint(pin);
+		assertEquals(new HoloFastTravel.Point("Afterlife", -1200.5, 3400.25, "Watson", p.travel()), p);
+		assertNotNull(p.travel());
+		FastTravelPoints.installHoloHook();
+		UiLink.forgetHost();
+		assertTrue(HoloFastTravel.points.get().isEmpty(), "installed, and guests (no host) list nothing");
 	}
 
 	@Test

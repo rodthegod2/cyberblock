@@ -73,6 +73,9 @@ side; the mod, plugin and scripts of Phase 7 have their own entries. The in-game
   `docs/TESTING-PLAN.md` (the host shop, the hub with V parked and its safety checks, the Holo-Table spawns, fast travel), and the descopes of Phase 0
   checks (f) and (g): hosts' shop stock, the 2D fallback of the table, V unseen while parked, the repair of a Cyberpunk car and fast travel only when the
   game allows it.
+- **Fixes (7V review).** The Holo-Table now lists the host's fast-travel points (the hook is installed at client init). A host's Minecraft shop keeps
+  Cyberpunk's buy rules: a ware locked by Street Cred or level, or cyberware V cannot equip, shows "(locked)" and is refused; grenades, injectors and
+  inhalers buy one at a time and ammo stops at V's cap ("Ammo full").
 
 ### Unreleased additions: Wave B integration (Phases 3, 4 and 5 together)
 Phases 4 and 5 merged on top of Phase 3 (and the Wave A leftovers) for one combined in-game test,

@@ -12,7 +12,10 @@
 // 1.5 s (no screen, an older mod or DLL that dropped the reply) Cyberpunk's screen simply stays: the pass-through.
 // `uiact buy|sell` (hash = item hash, id = the line's index on its side, arg = the quantity) trade through the vendor's
 // own VendorDataManager (BuyItemFromVendor / SellItemToVendor: MarketSystem's BuyRequest / SellRequest, the vanilla
-// path: Cyberpunk moves the money); 0.3 s later the result is told as a toast and the stock is sent again.
+// path: Cyberpunk moves the money); 0.3 s later the result is told as a toast and the stock is sent again. A buy keeps
+// vanilla's rules first: a vendor ware whose availability prereq (Street Cred, level) or a ripperdoc's "must be wearable"
+// is not met is sent as "<name> (locked)" and refused ("Requirements not met"), and the quantity is capped as the hub's
+// GetMaxQuantity does (1 grenade, injector or inhaler; ammo up to V's cap, "Ammo full" at it).
 // `uiact cpmenu arg:"vendor"` (the screen's "Night City vendor..." button) reopens Cyberpunk's own hub for the same vendor
 // once (UISystem.RequestVendorMenu with the hub's own panel data), for installing cyberware and buyback.
 //
@@ -28,6 +31,9 @@
 // (vendorHubMenuGameController.swift); VendorDataManager GetVendorInstance/GetVendorName/GetVendorInventoryItems/
 // GetRipperDocItems/GetItemsPlayerCanSellFast/CanPlayerSellItem/GetBuyingPrice/GetSellingPrice/BuyItemFromVendor/
 // SellItemToVendor/GetLocalPlayerCurrencyAmount (UI/data/vendor.swift); VendorGameItemData.gameItemData/itemStack,
+// SItemStack.isAvailable (Vendor.PlayerCanBuy, vendor.swift), EquipmentSystem.GetInstance/GetPlayerData and
+// EquipmentSystemPlayerData.IsEquippable (equipmentSystem.swift), RPGManager.GetItemRecord, gameItemData
+// HasTag/GetStatValueByType, TransactionSystem.GetItemQuantity,
 // MarketSystem.GetVendorMoney (marketSystem.swift); VendorPanelData.data, UISystem.RequestVendorMenu (uiSystem.swift);
 // gameItemData GetID/GetQuantity, ItemID.GetTDBID/HasFlag, TDBID.ToNumber, RPGManager.GetItemCategory,
 // UIItemsHelper.GetItemName, StatusEffectSystem.ObjectHasStatusEffectWithTag, QuestsSystem.GetFact (orphans.swift and the
@@ -50,6 +56,8 @@ public class CyberblockVendorService extends ScriptableService {
   public let buyTexts: array<String>;
   public let buyPrices: array<Int32>;
   public let buyCats: array<Int32>;
+  // false: the vendor's availability prereq (Street Cred, level) or a ripperdoc's "must be wearable" is not met yet.
+  public let buyOk: array<Bool>;
   public let sellItems: array<ItemID>;
   public let sellTexts: array<String>;
   public let sellPrices: array<Int32>;
@@ -214,6 +222,7 @@ public abstract class CyberblockVendors {
     ArrayClear(s.buyTexts);
     ArrayClear(s.buyPrices);
     ArrayClear(s.buyCats);
+    ArrayClear(s.buyOk);
     ArrayClear(s.sellItems);
     ArrayClear(s.sellTexts);
     ArrayClear(s.sellPrices);
@@ -230,28 +239,65 @@ public abstract class CyberblockVendors {
     }
     let ids: array<ItemID>;
     let data: array<wref<gameItemData>>;
+    let ok: array<Bool>;
     for item in stock {
       if IsDefined(item) && IsDefined(item.gameItemData) && !ArrayContains(ids, item.gameItemData.GetID()) {
         ArrayPush(ids, item.gameItemData.GetID());
         ArrayPush(data, item.gameItemData);
+        ArrayPush(ok, CyberblockVendors.Buyable(player, item));
       }
     }
-    CyberblockVendors.Sort(manager, ids, data, true, 320, s.buyItems, s.buyTexts, s.buyPrices, s.buyCats);
+    CyberblockVendors.Sort(manager, ids, data, ok, true, 320, s.buyItems, s.buyTexts, s.buyPrices, s.buyCats, s.buyOk);
     let sellIds: array<ItemID>;
     let sellData: array<wref<gameItemData>>;
+    let sellOk: array<Bool>;
     for item in manager.GetItemsPlayerCanSellFast(player, true) {
       if IsDefined(item) && !ItemID.HasFlag(item.GetID(), gameEItemIDFlag.Preview) && manager.CanPlayerSellItem(item.GetID()) && !ArrayContains(sellIds, item.GetID()) {
         ArrayPush(sellIds, item.GetID());
         ArrayPush(sellData, item);
+        ArrayPush(sellOk, true);
       }
     }
-    CyberblockVendors.Sort(manager, sellIds, sellData, false, 190, s.sellItems, s.sellTexts, s.sellPrices, s.sellCats);
+    let sellOkSorted: array<Bool>;
+    CyberblockVendors.Sort(manager, sellIds, sellData, sellOk, false, 190, s.sellItems, s.sellTexts, s.sellPrices, s.sellCats, sellOkSorted);
     return ArraySize(s.buyItems) > 0 || ArraySize(s.sellItems) > 0;
   }
 
-  // One side, category by category (the reply order the screen indexes by), at most `cap` items.
-  private static func Sort(manager: ref<VendorDataManager>, ids: array<ItemID>, data: array<wref<gameItemData>>, buy: Bool, cap: Int32,
-    out items: array<ItemID>, out texts: array<String>, out prices: array<Int32>, out cats: array<Int32>) -> Void {
+  // Vanilla's buy rules the hub screens check before BuyItemFromVendor: the vendor ware's availability prereq
+  // (Vendor.PlayerCanBuy sets itemStack.isAvailable; ripperdoc.swift refuses the click) and a ripperdoc's
+  // MustBeWearableToPurchase (V must be able to equip it). MarketSystem's BuyRequest builds a fresh stack without the flag,
+  // so the check is ours.
+  private static func Buyable(player: ref<PlayerPuppet>, item: ref<VendorGameItemData>) -> Bool {
+    if !item.itemStack.isAvailable {
+      return false;
+    }
+    if !item.gameItemData.HasTag(n"MustBeWearableToPurchase") {
+      return true;
+    }
+    let equipment = EquipmentSystem.GetInstance(player);
+    return IsDefined(equipment) && equipment.GetPlayerData(player).IsEquippable(item.gameItemData);
+  }
+
+  // Vanilla GetMaxQuantity (fullscreenVendorGameController.swift): one grenade, injector or inhaler per purchase, ammo up to
+  // the Quantity cap less what V holds (0 = ammo full), else the vendor's stack.
+  private static func BuyLimit(player: ref<PlayerPuppet>, id: ItemID, itemData: wref<gameItemData>) -> Int32 {
+    let vendorQuantity = itemData.GetQuantity();
+    let tags = RPGManager.GetItemRecord(id).Tags();
+    if ArrayContains(tags, n"Grenade") || ArrayContains(tags, n"Injector") || ArrayContains(tags, n"Inhaler") {
+      return 1;
+    }
+    if !ArrayContains(tags, n"Ammo") {
+      return Max(1, vendorQuantity);
+    }
+    let cap = Cast<Int32>(itemData.GetStatValueByType(gamedataStatType.Quantity));
+    let held = GameInstance.GetTransactionSystem(player.GetGame()).GetItemQuantity(player, id);
+    return Min(cap - held, vendorQuantity);
+  }
+
+  // One side, category by category (the reply order the screen indexes by), at most `cap` items. A line that is not ok
+  // (requirements not met) says "(locked)".
+  private static func Sort(manager: ref<VendorDataManager>, ids: array<ItemID>, data: array<wref<gameItemData>>, ok: array<Bool>, buy: Bool,
+    cap: Int32, out items: array<ItemID>, out texts: array<String>, out prices: array<Int32>, out cats: array<Int32>, out oks: array<Bool>) -> Void {
     let cat = 0;
     while cat < CyberblockVendors.CategoryCount() {
       let i = 0;
@@ -262,8 +308,15 @@ public abstract class CyberblockVendors {
             name = TDBID.ToStringDEBUG(ItemID.GetTDBID(ids[i]));
           }
           let count = data[i].GetQuantity();
+          if count > 1 {
+            name = s"\(name) x\(count)";
+          }
+          if !ok[i] {
+            name = s"\(name) (locked)";
+          }
           ArrayPush(items, ids[i]);
-          ArrayPush(texts, count > 1 ? s"\(name) x\(count)" : name);
+          ArrayPush(texts, name);
+          ArrayPush(oks, ok[i]);
           ArrayPush(prices, Max(0, buy ? manager.GetBuyingPrice(ids[i]) : manager.GetSellingPrice(ids[i])));
           ArrayPush(cats, cat);
         }
@@ -387,7 +440,20 @@ public abstract class CyberblockVendors {
       return;
     }
     let price = buy ? s.buyPrices[i] : s.sellPrices[i];
-    let count = Clamp(StringToInt(arg, 1), 1, Max(1, itemData.GetQuantity()));
+    let most = Max(1, itemData.GetQuantity());
+    if buy {
+      if !s.buyOk[i] {
+        Cyberblock_Notify(n"warning", s.name, "Requirements not met", 3.0);
+        Cyberblock_Log(s"vendors: buy \(s.buyTexts[i]) refused (requirements not met)");
+        return;
+      }
+      most = CyberblockVendors.BuyLimit(player, id, itemData);
+      if most < 1 {
+        Cyberblock_Notify(n"warning", s.name, "Ammo full", 3.0);
+        return;
+      }
+    }
+    let count = Clamp(StringToInt(arg, 1), 1, most);
     let money = s.manager.GetLocalPlayerCurrencyAmount();
     if buy {
       if price > 0 {
