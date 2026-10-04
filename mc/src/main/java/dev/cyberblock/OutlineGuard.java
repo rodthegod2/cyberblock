@@ -2,30 +2,36 @@ package dev.cyberblock;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
-import it.unimi.dsi.fastutil.longs.LongArrayList;
+import it.unimi.dsi.fastutil.longs.Long2IntLinkedOpenHashMap;
 import java.util.Iterator;
 import java.util.function.LongPredicate;
 
 /**
- * Outline blocks a creative player broke (plan Q-B6), by packed cell, until they come back. SNAP_BACK: put back SNAP_BACK_TICKS
- * after the break if the cell is still air and still Night City ground. KEEP ("Creative can erase the replica permanently"):
- * left broken. Either way a new probe report of the cell puts the barrier back at once (WorldBridge.solid places barriers only
- * into air), a probe "unground" of it means Night City has no ground there any more, and a clear or the world stopping forgets
- * everything. No Minecraft world in here: WorldBridge places the blocks. Server thread only.
+ * Outline blocks a creative player broke (plan Q-B6), by packed cell, until they come back: the replica blocks of megaplan 3-R1 (with
+ * their material) and the barriers of before. SNAP_BACK: put back SNAP_BACK_TICKS after the break if the cell is still air. KEEP
+ * ("Creative can erase the replica permanently"): left broken. Either way a new probe report of the cell puts the block back at once
+ * (WorldBridge.solid places only into air), an unground of it seen empty means Night City has nothing there any more, and the world
+ * stopping forgets everything. No Minecraft world in here: WorldBridge places the blocks. Server thread only.
  */
 final class OutlineGuard {
 	/** 10 seconds. */
 	static final int SNAP_BACK_TICKS = 200;
 
-	private record Broken(long tick, OutlineRules.Decision decision) {
+	/** material: the replica material code to put back (Phase 3), 0 for a barrier. */
+	private record Broken(long tick, OutlineRules.Decision decision, int material) {
 	}
 
 	private final Long2ObjectOpenHashMap<Broken> cells = new Long2ObjectOpenHashMap<>();
 
 	/** A player broke the outline block at cell on tick, with this decision (SNAP_BACK or KEEP; DENY never breaks). */
 	void broke(final long cell, final long tick, final OutlineRules.Decision decision) {
+		this.broke(cell, tick, decision, 0);
+	}
+
+	/** The same for a replica block of this material code (megaplan 3-R1): the snap-back puts that block back. */
+	void broke(final long cell, final long tick, final OutlineRules.Decision decision, final int material) {
 		if (decision != OutlineRules.Decision.DENY) {
-			this.cells.put(cell, new Broken(tick, decision));
+			this.cells.put(cell, new Broken(tick, decision, material));
 		}
 	}
 
@@ -45,7 +51,12 @@ final class OutlineGuard {
 	 * in it waits.
 	 */
 	long[] due(final long now, final LongPredicate air, final LongPredicate free) {
-		LongArrayList out = new LongArrayList();
+		return this.dueMaterials(now, air, free).keySet().toLongArray();
+	}
+
+	/** As due, with each cell's material code (0: a barrier). */
+	Long2IntLinkedOpenHashMap dueMaterials(final long now, final LongPredicate air, final LongPredicate free) {
+		Long2IntLinkedOpenHashMap out = new Long2IntLinkedOpenHashMap();
 		for (Iterator<Long2ObjectMap.Entry<Broken>> it = this.cells.long2ObjectEntrySet().iterator(); it.hasNext();) {
 			Long2ObjectMap.Entry<Broken> e = it.next();
 			Broken b = e.getValue();
@@ -57,12 +68,12 @@ final class OutlineGuard {
 			if (!air.test(cell)) {
 				it.remove();
 			} else if (free.test(cell)) {
-				out.add(cell);
+				out.put(cell, b.material());
 				it.remove();
 			}
 		}
 
-		return out.toLongArray();
+		return out;
 	}
 
 	boolean tracks(final long cell) {

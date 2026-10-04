@@ -3,6 +3,7 @@ package dev.cyberblock;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.cyberblock.net.ServerConfig;
+import dev.cyberblock.replica.ReplicaBlocks;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.resources.Identifier;
@@ -157,10 +158,11 @@ public final class OutlineRules {
 	}
 
 	/**
-	 * No explosion removes these (ServerExplosionMixin). Vanilla gives barriers a blast resistance of 3,600,000, but an explosion
-	 * with its own immune-block list (data-driven ones) ignores resistance.
+	 * No explosion removes these (ServerExplosionMixin): barriers and the replica blocks (Night City does not break, megaplan 3-R1).
+	 * Vanilla gives barriers a blast resistance of 3,600,000, but an explosion with its own immune-block list (data-driven ones)
+	 * ignores resistance.
 	 */
 	public static boolean sparedByExplosions(final BlockState state) {
-		return state.is(Blocks.BARRIER);
+		return state.is(Blocks.BARRIER) || ReplicaBlocks.is(state);
 	}
 }

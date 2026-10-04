@@ -27,8 +27,8 @@ import java.util.regex.Pattern;
 public record ServerConfig(boolean allowHosts, List<String> hosts, int maxHosts, boolean requireMod, String joinHelp, double rate,
 	int sanityRadius, boolean creativeErasesReplica, boolean pvpDefault, Backups backups, boolean webMap, String joinPassword) {
 	public static final int SCHEMA = 1;
-	/** Phase 1 runs one host; Phase 3 raises the default to 4 once its multi-host check passes. */
-	public static final int DEFAULT_MAX_HOSTS = 1;
+	/** Four hosts at once by default since Phase 3's multi-host check (mpcheck twohosts2) passed; Phase 1 ran one. */
+	public static final int DEFAULT_MAX_HOSTS = 4;
 	static final int MAX_HOSTS_LIMIT = 16;
 	static final int JOIN_HELP_CAP = 200;
 	/** joinPassword: at most 64 characters after trimming ("" = no join password). */

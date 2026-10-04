@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class ServerConfigTest {
-	private static final String DEFAULTS = "{\"schema\":1, \"allowHosts\":true, \"hosts\":[], \"maxHosts\":1, \"requireMod\":true, \"joinHelp\":\"\", "
+	private static final String DEFAULTS = "{\"schema\":1, \"allowHosts\":true, \"hosts\":[], \"maxHosts\":4, \"requireMod\":true, \"joinHelp\":\"\", "
 		+ "\"rate\":1.0, \"sanityRadius\":160, \"creativeErasesReplica\":false, \"pvpDefault\":false, \"backups\":{\"daily\":true, \"keep\":7, \"hour\":5}, "
 		+ "\"webMap\":false, \"joinPassword\":\"\"}";
 
@@ -33,7 +33,7 @@ class ServerConfigTest {
 		List<String> problems = new ArrayList<>();
 		assertEquals(ServerConfig.DEFAULT, parse(DEFAULTS, problems));
 		assertEquals(List.of(), problems);
-		assertEquals(1, ServerConfig.DEFAULT.maxHosts());
+		assertEquals(4, ServerConfig.DEFAULT.maxHosts(), "Phase 3: four hosts at once");
 		assertEquals(160, ServerConfig.DEFAULT.sanityRadius());
 		assertEquals(new ServerConfig.Backups(true, 7, 5), ServerConfig.DEFAULT.backups());
 	}
@@ -72,7 +72,7 @@ class ServerConfigTest {
 		o.add("backups", backups);
 		List<String> problems = new ArrayList<>();
 		ServerConfig c = ServerConfig.parse(o, problems::add);
-		assertEquals(1, c.maxHosts());
+		assertEquals(4, c.maxHosts());
 		assertEquals(1.0, c.rate());
 		assertEquals(160, c.sanityRadius());
 		assertTrue(c.requireMod());
@@ -86,14 +86,14 @@ class ServerConfigTest {
 	@Test
 	void goodValuesAreKept() {
 		JsonObject o = JsonParser.parseString(DEFAULTS).getAsJsonObject();
-		o.addProperty("maxHosts", 4);
+		o.addProperty("maxHosts", 3);
 		o.addProperty("rate", 2.5);
 		o.addProperty("allowHosts", false);
 		o.addProperty("joinHelp", "Ask Rod for the modpack link");
 		o.add("hosts", JsonParser.parseString("[\"CbHost1\", \"00000000-0000-0001-0000-000000000001\", \"not a name!\", 5]"));
 		List<String> problems = new ArrayList<>();
 		ServerConfig c = ServerConfig.parse(o, problems::add);
-		assertEquals(4, c.maxHosts());
+		assertEquals(3, c.maxHosts());
 		assertEquals(2.5, c.rate());
 		assertFalse(c.allowHosts());
 		assertEquals("Ask Rod for the modpack link", c.joinHelp());
@@ -190,7 +190,7 @@ class ServerConfigTest {
 	@Test
 	void anEditedFileIsRead(@TempDir final Path dir) throws Exception {
 		Path file = dir.resolve("server.json");
-		Files.writeString(file, DEFAULTS.replace("\"maxHosts\":1", "\"maxHosts\":3"), StandardCharsets.UTF_8);
+		Files.writeString(file, DEFAULTS.replace("\"maxHosts\":4", "\"maxHosts\":3"), StandardCharsets.UTF_8);
 		assertEquals(3, ServerConfig.load(file).maxHosts());
 		assertEquals(3, ServerConfig.get().maxHosts());
 	}
