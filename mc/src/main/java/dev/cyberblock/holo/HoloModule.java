@@ -56,10 +56,18 @@ import org.jspecify.annotations.Nullable;
  * back. A host at the table in the hub first steps out to the spot (7H's leave unparks V) and the vteleport follows 1.5 s later.
  * Then 5 s of spawn protection and a 60 s cooldown.
  *
+ * <p><b>Fast travel.</b> A host's own Cyberpunk fast-travel point (7V's list) goes through the server too ({@code act holotravel},
+ * {@link #onTravel}): the same rules, the same hub exit, then {@code ui holotravel} tells the client to run {@code uiact fasttravel}.
+ *
+ * <p><b>Privacy and load.</b> Spawn Beacons follow their owner's privacy ({@link HoloRules#beaconOffered}); spawn, hide and fast
+ * travel share a per-player rate limit (2 a second, a burst of 4; more are dropped quietly); a request never loads a chunk before
+ * its cooldown check.
+ *
  * <p>Log lines: {@code holo: <name> opened the table (<where>)}, {@code holo: <name> spawned at <kind> <id> (<x> <y> <z>)},
  * {@code holo: <name> -> <kind> <id>: vteleport <id> sent}, {@code holo: <name> -> <kind> <id> ok (<x> <y> <z>)},
  * {@code holo: <name> -> <kind> <id> failed (<reason>)}, {@code holo: <name> refused <kind> <id> (<lang key>)},
- * {@code holo: <name> pin hidden|shown}, {@code holo: beacon placed|removed at <x> <y> <z> by <name>}.
+ * {@code holo: <name> pin hidden|shown}, {@code holo: beacon placed|removed at <x> <y> <z> by <name>},
+ * {@code holo: <name> -> travel <point>: leaving the hub first}, {@code holo: <name> -> travel <point>: go}.
  */
 public final class HoloModule {
 	static final double TABLE_REACH = 8.0;
@@ -94,6 +102,13 @@ public final class HoloModule {
 	private record Cached(int tick, HoloWire.Detail detail) {
 	}
 
+	/** A fast travel waiting for the hub exit (sendTick) before the client is told to go. */
+	private record TravelWait(HoloWire.Travel travel, int sendTick) {
+	}
+
+	private static final Map<UUID, double[]> buckets = new HashMap<>();
+	private static final Map<UUID, TravelWait> travels = new HashMap<>();
+	private static long dropped;
 	private static final Map<UUID, Grant> grants = new HashMap<>();
 	private static final Map<UUID, Long> polled = new HashMap<>();
 	private static final Map<UUID, Long> lastSpawn = new HashMap<>();
@@ -111,7 +126,12 @@ public final class HoloModule {
 		HoloLayers.registerBuiltIn();
 		ServerNet.onAct(HoloWire.T_POLL, HoloModule::onPoll);
 		ServerNet.onAct(HoloWire.T_SPAWN, HoloModule::onSpawn);
+		ServerNet.onAct(HoloWire.T_TRAVEL, HoloModule::onTravel);
 		ServerNet.onAct(HoloWire.T_HIDE, (player, m) -> {
+			if (!allowed(player)) {
+				return;
+			}
+
 			Boolean on = HoloWire.parseHide(m);
 			if (on != null && granted(player)) {
 				hide(player, on);
@@ -120,8 +140,9 @@ public final class HoloModule {
 		});
 		HostSessions.listen("vteleported", HoloModule::onAnswer);
 		HostSessions.onEnd(s -> {
-			Pending p = pending.remove(s.uuid());
-			if (p != null) {
+			boolean spawning = pending.remove(s.uuid()) != null;
+			boolean travelling = travels.remove(s.uuid()) != null;
+			if (spawning || travelling) {
 				lastSpawn.remove(s.uuid());
 			}
 		});
@@ -136,6 +157,9 @@ public final class HoloModule {
 			protectedSince.clear();
 			pending.clear();
 			details.clear();
+			buckets.clear();
+			travels.clear();
+			dropped = 0;
 		});
 		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> register(dispatcher));
 		// Phase 0 (g) is not confirmed in game yet: say which path a linked spawn takes
@@ -149,6 +173,20 @@ public final class HoloModule {
 		polled.remove(uuid);
 		protectedSince.remove(uuid);
 		details.remove(uuid);
+		buckets.remove(uuid);
+		travels.remove(uuid);
+	}
+
+	/** The shared spawn, hide and fast-travel rate limit; a request over it is dropped quietly (counted at debug level). */
+	private static boolean allowed(final ServerPlayer player) {
+		long now = System.currentTimeMillis();
+		if (HoloRules.take(buckets.computeIfAbsent(player.getUUID(), u -> HoloRules.bucket(now)), now)) {
+			return true;
+		}
+
+		dropped++;
+		Cyberblock.LOG.debug("holo: a request of {} over the rate limit dropped ({} so far)", player.getPlainTextName(), dropped);
+		return false;
 	}
 
 	// ---- looking ----
@@ -280,9 +318,8 @@ public final class HoloModule {
 				continue;
 			}
 
-			boolean team = HoloRules.teamSpawn(v, b.matchOrNull(), b.team());
-			if (!v.inMatch() || team) {
-				targets.add(new Target(HoloRules.Kind.BEACON, b.id(), b.ownerName(), Vec3.atBottomCenterOf(b.pos().above()), 0.0F, team, "", b.ownerName(), null));
+			if (HoloRules.beaconOffered(v, b.owner(), b.hidden(), b.matchOrNull(), b.team())) {
+				targets.add(beaconTarget(v, b));
 			}
 		}
 
@@ -299,7 +336,7 @@ public final class HoloModule {
 		}
 
 		long cooldown = HoloRules.cooldownLeft(lastSpawn.get(viewer.getUUID()), System.currentTimeMillis());
-		boolean busy = pending.containsKey(viewer.getUUID());
+		boolean busy = busy(viewer);
 		List<HoloWire.SpawnPoint> out = new ArrayList<>();
 		for (Target t : targets) {
 			String why = HoloRules.refusal(v, ask(server, viewer, t), cooldown, busy);
@@ -308,6 +345,11 @@ public final class HoloModule {
 		}
 
 		return out;
+	}
+
+	private static Target beaconTarget(final HoloRules.Who v, final Beacons.Beacon b) {
+		return new Target(HoloRules.Kind.BEACON, b.id(), b.ownerName(), Vec3.atBottomCenterOf(b.pos().above()), 0.0F,
+			HoloRules.teamSpawn(v, b.matchOrNull(), b.team()), "", b.ownerName(), null);
 	}
 
 	private static Target friend(final ServerPlayer p) {
@@ -346,19 +388,18 @@ public final class HoloModule {
 			case BEACON -> {
 				Beacons beacons = beacons(server);
 				Beacons.Beacon b = beacons.byId(a.id());
-				if (b == null) {
+				if (b == null || !HoloRules.beaconOffered(v, b.owner(), b.hidden(), b.matchOrNull(), b.team())) {
 					yield null;
 				}
 
-				if (!server.overworld().getBlockState(b.pos()).is(HoloBlocks.SPAWN_BEACON)) {
+				// only a loaded chunk is checked (a request never loads one); an unloaded beacon counts, as in the spawn list
+				ServerLevel city = server.overworld();
+				if (city.isLoaded(b.pos()) && !city.getBlockState(b.pos()).is(HoloBlocks.SPAWN_BEACON)) {
 					beacons.remove(b.pos());
 					yield null;
 				}
 
-				boolean team = HoloRules.teamSpawn(v, b.matchOrNull(), b.team());
-				yield !v.inMatch() || team
-					? new Target(HoloRules.Kind.BEACON, b.id(), b.ownerName(), Vec3.atBottomCenterOf(b.pos().above()), 0.0F, team, "", b.ownerName(), null)
-					: null;
+				yield beaconTarget(v, b);
 			}
 
 			case BASE -> HoloHooks.bases.apply(viewer).stream().filter(b -> b.id().equals(a.id()) && HoloRules.teamSpawn(v, b.match(), b.team()))
@@ -379,9 +420,25 @@ public final class HoloModule {
 
 	// ---- spawning ----
 
+	private static boolean busy(final ServerPlayer player) {
+		return pending.containsKey(player.getUUID()) || travels.containsKey(player.getUUID());
+	}
+
 	private static void onSpawn(final ServerPlayer player, final JsonObject m) {
+		if (!allowed(player)) {
+			return;
+		}
+
 		HoloWire.SpawnAsk a = HoloWire.parseSpawn(m);
 		if (a == null || !granted(player)) {
+			return;
+		}
+
+		// busy and cooldown first: they need no lookup (and a request in cooldown touches no chunk)
+		long now = System.currentTimeMillis();
+		long cooldown = HoloRules.cooldownLeft(lastSpawn.get(player.getUUID()), now);
+		if (busy(player) || cooldown > 0) {
+			refuse(player, a.kind().key(), a.id(), busy(player) ? "cyberblock.holo.pending" : "cyberblock.holo.cooldown");
 			return;
 		}
 
@@ -392,9 +449,7 @@ public final class HoloModule {
 			return;
 		}
 
-		long now = System.currentTimeMillis();
-		String why = HoloRules.refusal(who(player), ask(server, player, t), HoloRules.cooldownLeft(lastSpawn.get(player.getUUID()), now),
-			pending.containsKey(player.getUUID()));
+		String why = HoloRules.refusal(who(player), ask(server, player, t), cooldown, false);
 		if (why != null) {
 			refuse(player, t.kind().key(), t.id(), why);
 			return;
@@ -410,7 +465,8 @@ public final class HoloModule {
 
 	private static void refuse(final ServerPlayer player, final String kind, final String id, final String key) {
 		player.sendSystemMessage(HoloText.refusal(key, HoloRules.cooldownLeft(lastSpawn.get(player.getUUID()), System.currentTimeMillis())));
-		Cyberblock.LOG.info("holo: {} refused {} {} ({})", player.getPlainTextName(), kind, id, key);
+		// the id may come from the client: no control characters in the log
+		Cyberblock.LOG.info("holo: {} refused {} {} ({})", player.getPlainTextName(), kind, id.replaceAll("\\p{Cntrl}", "?"), key);
 		if (granted(player)) {
 			send(player, false, false);
 		}
@@ -452,6 +508,75 @@ public final class HoloModule {
 		}
 
 		player.sendSystemMessage(Component.translatableWithFallback("cyberblock.holo.moving", "Moving V to %s...", t.name()));
+	}
+
+	// ---- fast travel ----
+
+	/**
+	 * {@code act holotravel}: a host's own Cyberpunk fast travel, picked at the table. The spawn rules apply (cooldown, busy, match,
+	 * locked zone at x/z, V held or in a vehicle; never a team spawn); a host at the table in the hub steps out first (7H's leave
+	 * pair releases V) and the client is told to go {@link #HUB_LEAVE_TICKS} later, as a V teleport would be; elsewhere at once.
+	 * The client then sends {@code uiact fasttravel}, V travels and Steve follows V as always. The cooldown starts on acceptance.
+	 */
+	private static void onTravel(final ServerPlayer player, final JsonObject m) {
+		if (!allowed(player)) {
+			return;
+		}
+
+		HoloWire.Travel travel = HoloWire.parseTravel(m);
+		if (travel == null || !granted(player)) {
+			return;
+		}
+
+		MinecraftServer server = player.level().getServer();
+		ServerLevel city = server.overworld();
+		HostSession s = HostSessions.of(player);
+		boolean drives = s != null && s.active();
+		long now = System.currentTimeMillis();
+		Vec3 spot = surface(city, travel.x(), travel.z());
+		Vec3 zoneAt = spot != null ? spot : new Vec3(travel.x(), city.getSeaLevel(), travel.z());
+		String why = HoloRules.travelRefusal(who(player), drives, HoloHooks.lockedZone.locked(city, zoneAt, player), drives && s.held(),
+			drives && s.vehicle(), HoloRules.cooldownLeft(lastSpawn.get(player.getUUID()), now), busy(player));
+		if (why != null) {
+			refuse(player, "travel", travel.name(), why);
+			return;
+		}
+
+		lastSpawn.put(player.getUUID(), now);
+		if (player.level() == city) {
+			travelGo(player, travel);
+			return;
+		}
+
+		// at the table in the hub: Steve steps out (to the point when Night City is loaded there, else the world spawn), 7H's leave pair
+		// (park off, hub off) releases V, then the client is told to go
+		Vec3 at = spot;
+		if (at == null) {
+			BlockPos p = server.getRespawnData().pos();
+			at = Vec3.atBottomCenterOf(p);
+		}
+
+		player.teleportTo(city, at.x, at.y, at.z, Set.of(), player.getYRot(), player.getXRot(), true);
+		travels.put(player.getUUID(), new TravelWait(travel, server.getTickCount() + HUB_LEAVE_TICKS));
+		player.sendSystemMessage(Component.translatableWithFallback("cyberblock.holo.travel.leaving", "Leaving the Afterlife for %s...", travel.name()));
+		Cyberblock.LOG.info("holo: {} -> travel {}: leaving the hub first", player.getPlainTextName(), travel.name().replaceAll("\\p{Cntrl}", "?"));
+	}
+
+	private static void travelGo(final ServerPlayer player, final HoloWire.Travel travel) {
+		ServerNet.ui(player, HoloWire.T_TRAVEL, HoloWire.travel(travel.name(), travel.x(), travel.z()));
+		Cyberblock.LOG.info("holo: {} -> travel {}: go", player.getPlainTextName(), travel.name().replaceAll("\\p{Cntrl}", "?"));
+	}
+
+	/** Where to stand at (x, z) in a loaded chunk of Night City (never loads one); null when unloaded or nothing is built there. */
+	static @Nullable Vec3 surface(final ServerLevel city, final double x, final double z) {
+		int bx = (int) Math.floor(x), bz = (int) Math.floor(z);
+		LevelChunk chunk = city.getChunkSource().getChunkNow(bx >> 4, bz >> 4);
+		if (chunk == null) {
+			return null;
+		}
+
+		int top = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING, bx & 15, bz & 15);
+		return top < city.getMinY() ? null : ground(city, new Vec3(x, top + 1, z));
 	}
 
 	private static void sendTeleport(final HostSession s, final ServerPlayer player, final Pending p) {
@@ -542,6 +667,22 @@ public final class HoloModule {
 			}
 		}
 
+		for (Map.Entry<UUID, TravelWait> e : List.copyOf(travels.entrySet())) {
+			if (now < e.getValue().sendTick()) {
+				continue;
+			}
+
+			travels.remove(e.getKey());
+			HostSession s = HostSessions.of(e.getKey());
+			ServerPlayer player = server.getPlayerList().getPlayer(e.getKey());
+			if (s == null || !s.active() || player == null) {
+				lastSpawn.remove(e.getKey());
+				continue;
+			}
+
+			travelGo(player, e.getValue().travel());
+		}
+
 		if (now % 20 != 0) {
 			return;
 		}
@@ -617,6 +758,7 @@ public final class HoloModule {
 
 	static void hide(final ServerPlayer player, final boolean on) {
 		player.setAttached(HIDE_PIN, on);
+		beacons(player.level().getServer()).setHidden(player.getUUID(), on); // its beacons say where it goes too
 		player.sendSystemMessage(on
 			? Component.translatableWithFallback("cyberblock.holo.hide.on", "Your Holo-Table pin is hidden (outside matches)")
 			: Component.translatableWithFallback("cyberblock.holo.hide.off", "Your Holo-Table pin is shown"));
@@ -648,7 +790,8 @@ public final class HoloModule {
 	static void beaconPlaced(final ServerLevel level, final BlockPos pos, final ServerPlayer player) {
 		HoloHooks.Match m = HoloHooks.match.apply(player);
 		Beacons beacons = beacons(level.getServer());
-		if (beacons.add(new Beacons.Beacon(pos.immutable(), player.getUUID(), player.getPlainTextName(), m.id() == null ? "" : m.id(), m.team()))) {
+		if (beacons.add(new Beacons.Beacon(pos.immutable(), player.getUUID(), player.getPlainTextName(), m.id() == null ? "" : m.id(), m.team(),
+			hidden(player)))) {
 			player.sendOverlayMessage(Component.translatableWithFallback("cyberblock.holo.beacon.placed", "Spawn Beacon placed (%s of %s)",
 				beacons.count(player.getUUID()), Beacons.PER_PLAYER));
 			Cyberblock.LOG.info("holo: beacon placed at {} {} {} by {}", pos.getX(), pos.getY(), pos.getZ(), player.getPlainTextName());

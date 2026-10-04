@@ -107,6 +107,19 @@ class HoloWireTest {
 	}
 
 	@Test
+	void theFastTravelBothWays() {
+		HoloWire.Travel t = HoloWire.parseTravel(json(HoloWire.travel("Watson Docks", -1240.04, 830.0)));
+		assertEquals(new HoloWire.Travel("Watson Docks", -1240.0, 830.0), t);
+		assertEquals(64, HoloWire.parseTravel(json(HoloWire.travel("x".repeat(80), 0, 0))).name().length(), "a long name is cut");
+		assertNull(HoloWire.parseTravel(json("{\"name\":\"\",\"p\":[0,0]}")));
+		assertNull(HoloWire.parseTravel(json("{\"name\":\"" + "x".repeat(65) + "\",\"p\":[0,0]}")));
+		assertNull(HoloWire.parseTravel(json("{\"name\":\"a\",\"p\":[0,0,0]}")));
+		assertNull(HoloWire.parseTravel(json("{\"name\":\"a\",\"p\":[1e9,0]}")));
+		assertNull(HoloWire.parseTravel(json("{\"name\":\"a\"}")));
+		assertNull(HoloWire.parseTravel(json("{\"name\":7,\"p\":[0,0]}")));
+	}
+
+	@Test
 	void theVteleportAndItsAnswer() {
 		JsonObject v = json(HoloWire.vteleport(7, 1.5, 64, -2.25, 90));
 		assertEquals("vteleport", v.get("t").getAsString());

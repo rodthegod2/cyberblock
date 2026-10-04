@@ -148,6 +148,52 @@ class HoloRulesTest {
 	}
 
 	@Test
+	void fastTravelFollowsTheSpawnRules() {
+		Who host = free(false);
+		assertNull(HoloRules.travelRefusal(host, true, false, false, false, 0, false));
+		assertEquals("cyberblock.holo.pending", HoloRules.travelRefusal(host, true, false, false, false, 0, true));
+		assertEquals("cyberblock.holo.cooldown", HoloRules.travelRefusal(host, true, false, false, false, 12, false));
+		assertEquals("cyberblock.holo.travel_unlinked", HoloRules.travelRefusal(host, false, false, false, false, 0, false));
+		assertEquals("cyberblock.holo.team_only", HoloRules.travelRefusal(in("m1", 1), true, false, false, false, 0, false), "never a team spawn");
+		assertEquals("cyberblock.holo.locked_zone", HoloRules.travelRefusal(host, true, true, false, false, 0, false));
+		assertEquals("cyberblock.holo.held", HoloRules.travelRefusal(host, true, false, true, false, 0, false));
+		assertEquals("cyberblock.holo.vehicle", HoloRules.travelRefusal(host, true, false, false, true, 0, false));
+	}
+
+	@Test
+	void beaconsFollowTheirOwnersPrivacy() {
+		Who viewer = free(false);
+		UUID owner = UUID.randomUUID();
+		assertTrue(HoloRules.beaconOffered(viewer, owner, false, null, -1));
+		assertFalse(HoloRules.beaconOffered(viewer, owner, true, null, -1), "the owner hid its pin");
+		assertFalse(HoloRules.beaconOffered(viewer, owner, false, "m1", 0), "placed in a match");
+		assertTrue(HoloRules.beaconOffered(viewer, viewer.uuid(), true, "m1", 0), "your own beacon always");
+		Who player = in("m1", 2);
+		assertTrue(HoloRules.beaconOffered(player, owner, true, "m1", 2), "a hidden teammate's beacon is a team spawn");
+		assertFalse(HoloRules.beaconOffered(player, owner, false, "m1", 1), "the other team's");
+		assertFalse(HoloRules.beaconOffered(player, owner, false, null, -1), "outside the match");
+		assertFalse(HoloRules.beaconOffered(player, player.uuid(), false, null, -1), "in a match only team spawns, even your own");
+	}
+
+	@Test
+	void requestsAreRateLimited() {
+		double[] bucket = HoloRules.bucket(1_000L);
+		for (int i = 0; i < 4; i++) {
+			assertTrue(HoloRules.take(bucket, 1_000L), "a burst of 4");
+		}
+
+		assertFalse(HoloRules.take(bucket, 1_000L));
+		assertFalse(HoloRules.take(bucket, 1_400L), "0.8 of a request after 400 ms");
+		assertTrue(HoloRules.take(bucket, 1_500L), "2 a second");
+		assertFalse(HoloRules.take(bucket, 1_500L));
+		for (int i = 0; i < 4; i++) {
+			assertTrue(HoloRules.take(bucket, 100_000L));
+		}
+
+		assertFalse(HoloRules.take(bucket, 100_000L), "the burst refills to 4, never more");
+	}
+
+	@Test
 	void kindKeys() {
 		for (Kind k : Kind.values()) {
 			assertEquals(k, Kind.of(k.key()));

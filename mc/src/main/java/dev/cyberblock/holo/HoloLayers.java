@@ -3,9 +3,12 @@ package dev.cyberblock.holo;
 import dev.cyberblock.ProxyEntity;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.function.BiFunction;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -16,7 +19,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * The Holo-Table's optional layers (megaplan 7-T1): each a provider that lists items (a spot, a weight 0..1, a colour, a label) for
  * one viewer. This package fills {@code npcs} (NPC density: Night City figures per 64-block square) and {@code hotspots} (where
- * hostile figures gather); the rest are hooks with a fixed id that later phases fill with {@link #register}: {@code devices}
+ * hostile figures gather), both counting only the figures of hosts whose pins the viewer may see; the rest are hooks with a fixed id that later phases fill with {@link #register}: {@code devices}
  * (Phase 4's device registry), {@code heat} (8-T1 Server Heat per district), {@code events} (8-O1), {@code gangwars} (8-M1
  * territory), {@code matches} (8-M1), {@code drones} (8-V1 Van drones). A layer without a provider is not sent; the client shows a
  * toggle for every layer it gets. Server thread.
@@ -40,9 +43,28 @@ public final class HoloLayers {
 		providers.put(id, provider);
 	}
 
+	/**
+	 * NPC figures exist only around active hosts (each host streams its own surroundings), so their squares would say where a host is:
+	 * a viewer counts only the figures of the hosts whose pins it may see (HoloModule.visible: not a hidden pin, not a match it may
+	 * not see). Figures without an owner are left out too.
+	 */
 	static void registerBuiltIn() {
-		register("npcs", (server, viewer) -> density(figures(server.overworld()), false));
-		register("hotspots", (server, viewer) -> density(figures(server.overworld()), true));
+		register("npcs", (server, viewer) -> density(seenBy(figures(server.overworld()), owners(server, viewer)), false));
+		register("hotspots", (server, viewer) -> density(seenBy(figures(server.overworld()), owners(server, viewer)), true));
+	}
+
+	private static Set<UUID> owners(final MinecraftServer server, final ServerPlayer viewer) {
+		Set<UUID> out = new HashSet<>();
+		for (ServerPlayer p : HoloModule.visible(server, viewer)) {
+			out.add(p.getUUID());
+		}
+
+		return out;
+	}
+
+	/** The figures whose owner is one of {@code owners}. Pure. */
+	static List<Figure> seenBy(final List<Figure> figures, final Set<UUID> owners) {
+		return figures.stream().filter(f -> f.owner() != null && owners.contains(f.owner())).toList();
 	}
 
 	/** The layers for one viewer, in {@link #IDS} order; a provider that fails is skipped (and logged by the caller). */
@@ -58,15 +80,15 @@ public final class HoloLayers {
 		return out;
 	}
 
-	/** A live figure: its position and whether it is hostile. */
-	record Figure(double x, double z, boolean hostile) {
+	/** A live figure: its position, whether it is hostile, and the host whose game it is in (null when unknown). */
+	record Figure(double x, double z, boolean hostile, @Nullable UUID owner) {
 	}
 
 	private static List<Figure> figures(final @Nullable ServerLevel level) {
 		List<Figure> out = new ArrayList<>();
 		if (level != null) {
 			for (ProxyEntity p : level.getEntities(EntityTypeTest.forClass(ProxyEntity.class), p -> !p.dead())) {
-				out.add(new Figure(p.getX(), p.getZ(), p.hostile()));
+				out.add(new Figure(p.getX(), p.getZ(), p.hostile(), p.owner()));
 			}
 		}
 

@@ -1,0 +1,18 @@
+{
+	"type": "minecraft:crafting_shaped",
+	"category": "misc",
+	"key": {
+		"C": "minecraft:compass",
+		"R": "minecraft:redstone",
+		"I": "minecraft:iron_ingot"
+	},
+	"pattern": [
+		" R ",
+		"ICI",
+		"III"
+	],
+	"result": {
+		"id": "cyberblock:spawn_beacon",
+		"count": 1
+	}
+}

@@ -39,6 +39,10 @@ public final class HoloClient {
 	/** The tiles the miniature covers now (inclusive), set by the view each frame; null when no view is open. */
 	private static int @Nullable [] window;
 	private static final Map<Long, Long> asked = new HashMap<>();
+	static final long TRAVEL_NANOS = 60_000_000_000L;
+	/** The fast travel asked for, waiting for the server's go-ahead. */
+	private static HoloFastTravel.@Nullable Point travelling;
+	private static long travelAsked;
 
 	private HoloClient() {
 	}
@@ -46,6 +50,7 @@ public final class HoloClient {
 	/** From the client entrypoint. */
 	public static void init() {
 		UiRoutes.listen(HoloWire.T_STATE, HoloClient::onUi);
+		UiRoutes.listen(HoloWire.T_TRAVEL, HoloClient::onTravel);
 		ClientTickEvents.END_CLIENT_TICK.register(HoloClient::tick);
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, minecraft) -> minecraft.execute(HoloClient::clear));
 	}
@@ -111,6 +116,39 @@ public final class HoloClient {
 		}
 	}
 
+	/**
+	 * Fast travel to one of the host's points: the server checks the spawn rules (and takes a host at the table out of the hub first),
+	 * then answers {@code ui holotravel} and the point's own action (7V's {@code uiact fasttravel}) runs; a refusal is a chat line.
+	 */
+	static void travel(final HoloFastTravel.Point point) {
+		if (ClientPlayNetworking.canSend(Payloads.Act.TYPE)) {
+			travelling = point;
+			travelAsked = System.nanoTime();
+			ClientPlayNetworking.send(new Payloads.Act(HoloWire.T_TRAVEL, HoloWire.travel(point.name(), point.x(), point.z())));
+		}
+	}
+
+	/** The server's go-ahead for the fast travel this client asked for (another name, or one older than a minute, is ignored). */
+	static void onTravel(final String json) {
+		HoloWire.Travel go;
+		try {
+			go = HoloWire.parseTravel(JsonParser.parseString(json).getAsJsonObject());
+		} catch (RuntimeException e) {
+			go = null;
+		}
+
+		HoloFastTravel.Point point = travelling;
+		travelling = null;
+		if (go == null || point == null || !HoloWire.cap(point.name(), HoloWire.NAME_MAX).equals(go.name())
+			|| System.nanoTime() - travelAsked > TRAVEL_NANOS) {
+			Cyberblock.LOG.info("holo: fast travel go-ahead ignored (not the one asked for)");
+			return;
+		}
+
+		Cyberblock.LOG.info("holo: fast travel to {}", point.name());
+		point.travel().run();
+	}
+
 	static void hide(final boolean on) {
 		if (ClientPlayNetworking.canSend(Payloads.Act.TYPE)) {
 			ClientPlayNetworking.send(new Payloads.Act(HoloWire.T_HIDE, HoloWire.hide(on)));
@@ -170,6 +208,7 @@ public final class HoloClient {
 		detail = null;
 		window = null;
 		asked.clear();
+		travelling = null;
 		version++;
 	}
 }

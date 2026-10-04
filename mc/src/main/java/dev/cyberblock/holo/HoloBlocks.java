@@ -1,6 +1,7 @@
 package dev.cyberblock.holo;
 
 import dev.cyberblock.Cyberblock;
+import net.fabricmc.fabric.api.creativetab.v1.CreativeModeTabEvents;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -17,7 +18,8 @@ import net.minecraft.world.level.material.MapColor;
 /**
  * The Holo-Table's two blocks (megaplan 7-T1), registered on both sides at startup with their items: {@code cyberblock:holo_table}
  * (hub furniture, unbreakable in survival, glows) and {@code cyberblock:spawn_beacon} (placeable in Night City, breakable, spared by
- * explosions, drops itself without a loot table). Their art (blockstates, models, textures, item definitions) and English names are
+ * explosions, drops itself without a loot table; crafted from a compass, redstone and iron). Both are in the Cyberblock creative
+ * tab. Their art (blockstates, models, textures, item definitions) and English names are
  * 7A's, under these ids.
  */
 public final class HoloBlocks {
@@ -38,6 +40,11 @@ public final class HoloBlocks {
 			.noLootTable().lightLevel(state -> 7).isValidSpawn(Blocks::never)));
 		HOLO_TABLE_ITEM = item(HOLO_TABLE_ID, HOLO_TABLE);
 		SPAWN_BEACON_ITEM = item(SPAWN_BEACON_ID, SPAWN_BEACON);
+		// in the Cyberblock tab (CyberItems' tab, left untouched); survival players craft the beacon (recipe/spawn_beacon.json)
+		CreativeModeTabEvents.modifyOutputEvent(ResourceKey.create(Registries.CREATIVE_MODE_TAB, id("cyberblock"))).register(output -> {
+			output.accept(HOLO_TABLE_ITEM);
+			output.accept(SPAWN_BEACON_ITEM);
+		});
 	}
 
 	private static Identifier id(final String name) {

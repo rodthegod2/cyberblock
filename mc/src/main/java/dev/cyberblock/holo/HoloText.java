@@ -23,6 +23,7 @@ public final class HoloText {
 			case "cyberblock.holo.held" -> Component.translatableWithFallback(key, "Spawn refused: the game holds V right now (a scene or a ride)");
 			case "cyberblock.holo.vehicle" -> Component.translatableWithFallback(key, "Spawn refused: V is in a vehicle");
 			case "cyberblock.holo.no_ground" -> Component.translatableWithFallback(key, "Night City is not built there yet (no ground under that spot)");
+			case "cyberblock.holo.travel_unlinked" -> Component.translatableWithFallback(key, "Fast travel needs your Cyberpunk game linked and running");
 			default -> Component.translatableWithFallback("cyberblock.holo.gone", "That spawn point is gone");
 		};
 	}

@@ -14,7 +14,9 @@ import org.jspecify.annotations.Nullable;
  * <p><b>Spawning.</b> 60 s between two spawns of one player; 5 s of spawn protection after one; never into a locked match zone (a
  * match area the player is not part of, Phase 8's hook); in a match only the team's spawns (team bases and the team's Spawn
  * Beacons); "join a friend" only to a friend whose pin the player may see and who is in Night City; a linked player's V must not
- * be held by the game or sitting in a vehicle (the same refusals as Meet Up). Spectators (in a match) may use any spawn.
+ * be held by the game or sitting in a vehicle (the same refusals as Meet Up). Spectators (in a match) may use any spawn. A fast
+ * travel from the table follows the same rules (never a team spawn) and needs an active Cyberpunk. Spawn Beacons follow their
+ * owner's privacy ({@link #beaconOffered}). The table's requests are rate limited per player ({@link #take}).
  */
 public final class HoloRules {
 	public static final long COOLDOWN_MS = 60_000L;
@@ -145,6 +147,63 @@ public final class HoloRules {
 		}
 
 		return ask.vehicle() ? "cyberblock.holo.vehicle" : null;
+	}
+
+	/**
+	 * A fast travel picked at the table (a host's own Cyberpunk fast-travel point): the same busy, cooldown, match, locked-zone and V
+	 * rules as a spawn, where it never counts as a team spawn; only a host whose Cyberpunk is active ({@code driving}) can fast travel.
+	 */
+	public static @Nullable String travelRefusal(final Who viewer, final boolean driving, final boolean lockedZone, final boolean held, final boolean vehicle,
+		final long cooldownLeft, final boolean pending) {
+		if (pending || cooldownLeft > 0) {
+			return refusal(viewer, new Ask(Kind.LANDMARK, false, lockedZone, false, false, false, held, vehicle), cooldownLeft, pending);
+		}
+
+		if (!driving) {
+			return "cyberblock.holo.travel_unlinked";
+		}
+
+		return refusal(viewer, new Ask(Kind.LANDMARK, false, lockedZone, false, false, false, held, vehicle), 0, false);
+	}
+
+	/**
+	 * Is a Spawn Beacon offered to this viewer? In a match only the viewer's team's beacons. Outside matches its own beacons always;
+	 * never one placed during a match (stamped with that match id: its spot is the match's business) unless the viewer sees all, and
+	 * never one whose owner hid its pin.
+	 */
+	public static boolean beaconOffered(final Who viewer, final UUID owner, final boolean ownerHidden, final @Nullable String match, final int team) {
+		if (viewer.inMatch()) {
+			return teamSpawn(viewer, match, team);
+		}
+
+		if (viewer.uuid().equals(owner) || viewer.seesAll()) {
+			return true;
+		}
+
+		return match == null && !ownerHidden;
+	}
+
+	/** Holo-Table requests (spawn, hide, fast travel) per player: 2 a second, a burst of 4. */
+	static final double REQUESTS_PER_SECOND = 2.0, REQUEST_BURST = 4.0;
+
+	/** A new request bucket: full, refilled from {@code now} (ms). */
+	static double[] bucket(final long now) {
+		return new double[] {REQUEST_BURST, now};
+	}
+
+	/** Takes one request from {@code bucket} ({tokens, last ms}) at {@code now}; false (nothing taken) when it is empty. */
+	static boolean take(final double[] bucket, final long now) {
+		if (now > bucket[1]) {
+			bucket[0] = Math.min(REQUEST_BURST, bucket[0] + (now - bucket[1]) / 1000.0 * REQUESTS_PER_SECOND);
+			bucket[1] = now;
+		}
+
+		if (bucket[0] < 1.0) {
+			return false;
+		}
+
+		bucket[0]--;
+		return true;
 	}
 
 	/** Where Steve goes after V's teleport: V's snapped spot, unless it is more than 32 blocks (horizontally) from the asked one. */

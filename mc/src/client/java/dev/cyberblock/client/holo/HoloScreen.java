@@ -271,7 +271,7 @@ public final class HoloScreen extends Screen {
 		}
 
 		if (e.point() != null) {
-			e.point().travel().run();
+			HoloClient.travel(e.point()); // through the server: its rules and the hub exit, then the point's action
 			return true;
 		}
 

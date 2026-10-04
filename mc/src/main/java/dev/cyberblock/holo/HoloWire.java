@@ -23,7 +23,11 @@ import org.jspecify.annotations.Nullable;
  * detail around the players when {@code detail}).</li>
  * <li>{@code holospawn} {@code {"kind": "landmark"|"beacon"|"base"|"friend", "id": str <= 64}}: spawn there.</li>
  * <li>{@code holohide} {@code {"on": bool}}: hide my pin (outside matches).</li>
+ * <li>{@code holotravel} {@code {"name": str <= 64, "p": [x, z]}}: fast travel to one of the host's own Cyberpunk fast-travel points
+ * (7V's list): the server checks the spawn rules, takes a host at the table out of the hub first, and answers with the same message
+ * as {@code cyberblock:ui t:"holotravel"} once the client may run it ({@code uiact fasttravel}).</li>
  * </ul>
+ * Spawn, hide and fast travel together are rate limited per player (2 a second, a burst of 4; more are dropped).
  * Server to client ({@code cyberblock:ui t:"holo"}): {@code {"open": bool, "match": bool, "role": "player"|"spectator"|"overlord",
  * "hidden": bool, "cooldown": s, "pins": [...], "spawns": [...], "layers": [...], "detail"?: [...]}} where
  * <ul>
@@ -41,6 +45,8 @@ public final class HoloWire {
 	public static final String T_POLL = "holo";
 	public static final String T_SPAWN = "holospawn";
 	public static final String T_HIDE = "holohide";
+	/** The fast-travel ask (act) and its go-ahead (ui): the same type and body both ways. */
+	public static final String T_TRAVEL = "holotravel";
 	public static final int MAX_PINS = 200, MAX_SPAWNS = 160, MAX_LAYERS = 16, MAX_ITEMS = 512, MAX_DETAIL = 16, MAX_DETAIL_N = 65;
 	public static final int NAME_MAX = 64, ID_MAX = 64;
 	public static final short UNKNOWN = Short.MIN_VALUE;
@@ -118,6 +124,36 @@ public final class HoloWire {
 	/** holohide's flag, or null when the message has none. */
 	public static @Nullable Boolean parseHide(final JsonObject m) {
 		return m.get("on") instanceof JsonPrimitive p && p.isBoolean() ? p.getAsBoolean() : null;
+	}
+
+	/** A fast travel: the point's name and its Minecraft (x, z). */
+	public record Travel(String name, double x, double z) {
+	}
+
+	/** holotravel both ways: {"name", "p": [x, z]}. */
+	public static String travel(final String name, final double x, final double z) {
+		JsonObject o = new JsonObject();
+		o.addProperty("name", cap(name, NAME_MAX));
+		JsonArray p = new JsonArray();
+		p.add(round(x));
+		p.add(round(z));
+		o.add("p", p);
+		return o.toString();
+	}
+
+	/** A holotravel: a non-empty name of at most 64 bytes and two coordinates inside the world, else null. */
+	public static @Nullable Travel parseTravel(final JsonObject m) {
+		String name = string(m, "name", NAME_MAX);
+		if (name == null || name.isBlank()) {
+			return null;
+		}
+
+		try {
+			double[] p = position(m.get("p"), 2);
+			return new Travel(name, p[0], p[1]);
+		} catch (IllegalArgumentException e) {
+			return null;
+		}
 	}
 
 	// ---- server to client ----
