@@ -5,11 +5,13 @@ import dev.cyberblock.client.ui.McTheme;
 import dev.cyberblock.mode.van.VanDrone;
 import dev.cyberblock.mode.van.VanRules;
 import dev.cyberblock.mode.van.VanWire;
+import java.util.List;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.FormattedCharSequence;
 
 /**
  * The drone pilot's HUD (megaplan 8-V1): a camera frame, the battery bar, the distance to the Van against its leash, the aimed
@@ -49,7 +51,11 @@ final class VanHud {
 		VanWire.Target aimed = VanClient.aimed();
 		Component target = aimed == null ? VanScreen.text("hud.no_target", "No target") : VanScreen.name(aimed);
 		graphics.centeredText(minecraft.font, target, w / 2, h / 2 + 12, aimed == null ? McTheme.GRAY : aimed.hostile() ? McTheme.RED : McTheme.AQUA);
-		graphics.centeredText(minecraft.font, VanScreen.text("hud.keys", "WASD fly, Space up, Ctrl down, right-click: Hack Wheel (on nothing: the Van screen), Shift: leave the Van"),
-			w / 2, h - 40, McTheme.GRAY);
+		// the keys under the battery, wrapped: the bottom of the screen belongs to the hotbar, RAM and chat
+		List<FormattedCharSequence> keys = minecraft.font.split(VanScreen.text("hud.keys",
+			"WASD fly, Space up, Ctrl down, right-click: Hack Wheel (on nothing: the Van screen), Shift: leave the Van"), Math.min(w / 3, 180));
+		for (int i = 0; i < keys.size(); i++) {
+			graphics.text(minecraft.font, keys.get(i), barX, barY + 32 + i * 10, McTheme.GRAY, true);
+		}
 	}
 }

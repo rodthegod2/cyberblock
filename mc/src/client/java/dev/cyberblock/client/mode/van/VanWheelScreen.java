@@ -31,7 +31,7 @@ import org.jspecify.annotations.Nullable;
  * screen). Escape goes back without firing.
  */
 final class VanWheelScreen extends Screen {
-	static final int SLOT_W = 92, SLOT_H = 18, DEAD_ZONE = 18;
+	static final int SLOT_W = 92, SLOT_H = 18, DEAD_ZONE = 18, RING_MAX = 8, ROW_H = SLOT_H + 4, COLUMN_GAP = 68;
 	private final VanWire.Target target;
 	private final boolean fromDrone;
 	private final List<VanRules.Option> options;
@@ -73,25 +73,80 @@ final class VanWheelScreen extends Screen {
 		return false;
 	}
 
-	private double radius() {
-		return Math.clamp(Math.min(this.width, this.height) * 0.32, 64.0, 120.0);
-	}
-
-	/** The slot centre of option i. */
 	private int[] slot(final int i) {
-		double angle = 2.0 * Math.PI * i / this.options.size() - Math.PI / 2.0, r = this.radius();
-		return new int[] {(int) Math.round(this.width / 2.0 + Math.cos(angle) * r * 1.25), (int) Math.round(this.height / 2.0 + Math.sin(angle) * r)};
+		return slot(i, this.options.size(), this.width, this.height);
 	}
 
-	/** The option under the mouse: the nearest slot by angle, once the mouse left the middle. */
 	private int at(final double mx, final double my) {
-		double dx = (mx - this.width / 2.0) / 1.25, dy = my - this.height / 2.0;
-		if (Math.hypot(dx, dy) < DEAD_ZONE || this.options.isEmpty()) {
+		return at(mx, my, this.options.size(), this.width, this.height);
+	}
+
+	/**
+	 * The slot centre of option i of n on a w x h screen: in a ring around the target when its slots do not touch (at most
+	 * {@link #RING_MAX}); else (a car or a person with every chip, a small screen) in two columns either side of it. Pure.
+	 */
+	static int[] slot(final int i, final int n, final int w, final int h) {
+		if (ring(n, w, h)) {
+			return ringSlot(i, n, w, h);
+		}
+
+		int rows = (n + 1) / 2, row = i % rows, side = i < rows ? -1 : 1;
+		double y = h / 2.0 + (row - (rows - 1) / 2.0) * ROW_H;
+		return new int[] {(int) Math.round(w / 2.0 + side * columnOffset(w)), (int) Math.round(y)};
+	}
+
+	private static int[] ringSlot(final int i, final int n, final int w, final int h) {
+		double angle = 2.0 * Math.PI * i / n - Math.PI / 2.0, r = Math.clamp(Math.min(w, h) * 0.32, 64.0, 120.0);
+		return new int[] {(int) Math.round(w / 2.0 + Math.cos(angle) * r * 1.25), (int) Math.round(h / 2.0 + Math.sin(angle) * r)};
+	}
+
+	/** A ring holds these options: at most {@link #RING_MAX} and no two slots touch on this screen. */
+	static boolean ring(final int n, final int w, final int h) {
+		if (n > RING_MAX) {
+			return false;
+		}
+
+		for (int i = 0; i < n; i++) {
+			int[] a = ringSlot(i, n, w, h);
+			for (int j = i + 1; j < n; j++) {
+				int[] b = ringSlot(j, n, w, h);
+				if (Math.abs(a[0] - b[0]) < SLOT_W && Math.abs(a[1] - b[1]) < SLOT_H) {
+					return false;
+				}
+			}
+		}
+
+		return true;
+	}
+
+	/** How far the two columns' centres stand from the middle: room for the target's name, inside the screen. */
+	static double columnOffset(final int w) {
+		return Math.min(COLUMN_GAP, w / 2.0 - SLOT_W - 4.0) + SLOT_W / 2.0;
+	}
+
+	/** The option under the mouse (-1: none): in a ring the nearest slot by angle once the mouse left the middle; in columns the slot hit. Pure. */
+	static int at(final double mx, final double my, final int n, final int w, final int h) {
+		if (n == 0) {
+			return -1;
+		}
+
+		if (!ring(n, w, h)) {
+			for (int i = 0; i < n; i++) {
+				int[] p = slot(i, n, w, h);
+				if (Math.abs(mx - p[0]) <= SLOT_W / 2.0 && Math.abs(my - p[1]) <= SLOT_H / 2.0 + 1) {
+					return i;
+				}
+			}
+
+			return -1;
+		}
+
+		double dx = (mx - w / 2.0) / 1.25, dy = my - h / 2.0;
+		if (Math.hypot(dx, dy) < DEAD_ZONE) {
 			return -1;
 		}
 
 		double angle = Math.atan2(dy, dx) + Math.PI / 2.0;
-		int n = this.options.size();
 		return Math.floorMod((int) Math.round(angle / (2.0 * Math.PI) * n), n);
 	}
 
@@ -100,7 +155,10 @@ final class VanWheelScreen extends Screen {
 		graphics.fill(0, 0, this.width, this.height, 0x90000000);
 		this.hovered = this.at(mouseX, mouseY);
 		int cx = this.width / 2, cy = this.height / 2;
-		Component name = VanScreen.name(this.target).copy().withStyle(this.target.hostile() ? ChatFormatting.RED : ChatFormatting.WHITE);
+		// between the two columns the name gets the room they leave
+		int room = !ring(this.options.size(), this.width, this.height) ?(int) (2 * (columnOffset(this.width) - SLOT_W / 2.0)) - 8 : this.width;
+		Component name = Component.literal(this.font.plainSubstrByWidth(VanScreen.name(this.target).getString(), room))
+			.withStyle(this.target.hostile() ? ChatFormatting.RED : ChatFormatting.WHITE);
 		graphics.centeredText(this.font, name, cx, cy - 10, McTheme.WHITE);
 		Component from = this.target.seen() == VanRules.Seen.DRONE ? VanScreen.text("seen.drone", "Seen by your drone") : VanScreen.text("seen.screen", "In the host's area");
 		graphics.centeredText(this.font, from, cx, cy + 2, McTheme.AQUA);

@@ -11,8 +11,8 @@ import net.minecraft.world.level.material.MapColor;
 /**
  * The Van's miniature of the host's area (megaplan 8-V1: "the Holo-Table renderer, scoped"): the same HoloMesh over the shared Night
  * City map, with the replica detail taken from the blocks this client has loaded there (the netrunner's Van usually stands near the
- * action), as one {@link HoloWire.Detail} patch: per column the surface height and map colour, unknown where no chunk is loaded or the
- * top is invisible (an outline barrier: the shared map shows there).
+ * action), as one {@link HoloWire.Detail} patch: per column the surface height and map colour, unknown where no chunk is loaded or
+ * nothing in the column shows on a map (the shared map shows there).
  */
 final class VanMini {
 	/** One column: its surface (the block above the top) and the top block's map colour id, or null when unknown. */
@@ -41,7 +41,10 @@ final class VanMini {
 		return new HoloWire.Detail(x0, z0, n, heights, colours);
 	}
 
-	/** The loaded blocks of this client's level as columns. */
+	/**
+	 * The loaded blocks of this client's level as columns: the top block that shows on a map, as the photo feed's replica view
+	 * (ReplicaFeed) finds it: glass, barriers and the like show what is under them; a column with nothing that shows is unknown.
+	 */
 	static Columns of(final ClientLevel level) {
 		BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 		return (x, z) -> {
@@ -50,14 +53,14 @@ final class VanMini {
 				return null;
 			}
 
-			int top = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING, x & 15, z & 15);
-			if (top < level.getMinY()) {
-				return null;
+			for (int y = chunk.getHeight(Heightmap.Types.WORLD_SURFACE, x & 15, z & 15); y >= level.getMinY(); y--) {
+				MapColor colour = chunk.getBlockState(pos.set(x, y, z)).getMapColor(level, pos);
+				if (colour != MapColor.NONE) {
+					return new int[] {y + 1, colour.id};
+				}
 			}
 
-			pos.set(x, top, z);
-			MapColor colour = chunk.getBlockState(pos).getMapColor(level, pos);
-			return colour == MapColor.NONE ? null : new int[] {top + 1, colour.id};
+			return null;
 		};
 	}
 }

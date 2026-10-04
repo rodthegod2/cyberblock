@@ -68,6 +68,24 @@ final class VanShots {
 					return;
 				}
 
+				if (s != null && s.centre() != null && minecraft.level != null) {
+					int cx = (int) Math.floor(s.centre().x), cz = (int) Math.floor(s.centre().z);
+					VanMini.Columns columns = VanMini.of(minecraft.level);
+					int[] here = columns.at((int) Math.floor(player.getX()), (int) Math.floor(player.getZ()));
+					var detail = VanMini.detail(cx - 64, cz - 64, 129, columns);
+					long known = 0;
+					for (short h : detail.heights()) {
+						known += h == dev.cyberblock.holo.HoloWire.UNKNOWN ? 0 : 1;
+					}
+
+					net.minecraft.core.BlockPos feet = player.blockPosition();
+					var chunk = minecraft.level.getChunk(feet.getX() >> 4, feet.getZ() >> 4, net.minecraft.world.level.chunk.status.ChunkStatus.FULL, false);
+					Cyberblock.LOG.info("shots: miniature around V {} {}: {} of {} columns known; under the netrunner {} (chunk {}, surface {}, below the feet {})",
+						cx, cz, known, 129 * 129, here == null ? "unknown" : here[0] + "/" + here[1], chunk == null ? "not loaded" : "loaded",
+						chunk == null ? "-" : chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, feet.getX() & 15, feet.getZ() & 15),
+						minecraft.level.getBlockState(feet.below()));
+				}
+
 				shot(minecraft, "8v_van_screen");
 			}
 			case 2 -> wheel(minecraft, s, VanRules.Kind.PERSON);
@@ -117,6 +135,9 @@ final class VanShots {
 			}
 			case 10 -> {
 				shot(minecraft, "8v_van_outside");
+			}
+			case 11 -> {
+				// a step after the last shot: the screenshot is written off the client thread
 				minecraft.options.setCameraType(CameraType.FIRST_PERSON);
 				VanClient.dock();
 				Cyberblock.LOG.info("shots: done");

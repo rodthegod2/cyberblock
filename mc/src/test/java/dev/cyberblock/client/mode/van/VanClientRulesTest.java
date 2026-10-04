@@ -2,6 +2,7 @@ package dev.cyberblock.client.mode.van;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.cyberblock.holo.HoloWire;
 import dev.cyberblock.mode.van.VanRules;
@@ -49,6 +50,31 @@ class VanClientRulesTest {
 		assertEquals(HoloWire.UNKNOWN, d.heights()[d.index(12, 20)]);
 		assertEquals(66, d.heights()[d.index(10, 22)]);
 		assertEquals(29, d.colours()[d.index(10, 22)]);
+	}
+
+	@Test
+	void wheelSlotsNeverOverlapAndClicksFindThem() {
+		// the smallest GUI Minecraft picks (320 x 240) and a 1080p screen at GUI scale 4
+		for (int[] screen : new int[][] {{320, 240}, {480, 270}, {960, 540}}) {
+			int w = screen[0], h = screen[1];
+			for (int n = 1; n <= 16; n++) {
+				for (int i = 0; i < n; i++) {
+					int[] a = VanWheelScreen.slot(i, n, w, h);
+					assertTrue(a[0] - VanWheelScreen.SLOT_W / 2 >= 0 && a[0] + VanWheelScreen.SLOT_W / 2 <= w, "slot " + i + " of " + n + " inside " + w);
+					assertTrue(a[1] - VanWheelScreen.SLOT_H / 2 >= 0 && a[1] + VanWheelScreen.SLOT_H / 2 <= h - 20, "slot " + i + " of " + n + " above the hint");
+					assertEquals(i, VanWheelScreen.at(a[0], a[1], n, w, h), "a click on slot " + i + " of " + n);
+					for (int j = i + 1; j < n; j++) {
+						int[] b = VanWheelScreen.slot(j, n, w, h);
+						boolean apart = Math.abs(a[0] - b[0]) >= VanWheelScreen.SLOT_W || Math.abs(a[1] - b[1]) >= VanWheelScreen.SLOT_H;
+						assertTrue(apart, "slots " + i + " and " + j + " of " + n + " on " + w + "x" + h);
+					}
+				}
+			}
+		}
+
+		// the middle picks nothing
+		assertEquals(-1, VanWheelScreen.at(240, 135, 6, 480, 270));
+		assertEquals(-1, VanWheelScreen.at(240, 135, 13, 480, 270));
 	}
 
 	@Test
