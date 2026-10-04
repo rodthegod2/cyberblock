@@ -6,7 +6,9 @@ import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.Permissions;
 import dev.cyberblock.net.ServerNet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
@@ -30,13 +32,17 @@ import org.jspecify.annotations.Nullable;
  * once a second) only while someone watches, asked with `feedreq on|off`. The frames go to the Net Map viewers
  * (`cyberblock:ui t:"feed"`) and into the host's feed map, a locked vanilla filled map whose colours are the picture, so anyone
  * holding it sees the host's view like any map item. The map item remembers its host (custom data), so after a restart holding it
- * finds its host again. Server thread.
+ * finds its host again. When no picture comes within 3 s of `feedreq on` (the DLL fell back: `feed` is then simply absent), the
+ * server draws the replica from above around V instead (ReplicaFeed, the written fallback) into the same frames. Server thread.
  */
 final class PhotoFeed {
 	static final String TAG = "cyberblock_feed";
 	static final FeedViewers viewers = new FeedViewers();
 	/** The feed map of each host (created on the first "take the feed map"). */
 	private static final Map<UUID, MapId> maps = new HashMap<>();
+	/** When each host's last picture came (ms), and the hosts the replica fallback stands in for now (logged on change). */
+	private static final Map<UUID, Long> lastFrame = new HashMap<>();
+	private static final Set<UUID> replica = new HashSet<>();
 	private static int bad;
 
 	private PhotoFeed() {
@@ -44,8 +50,15 @@ final class PhotoFeed {
 
 	static void init() {
 		HostSessions.listen("feed", PhotoFeed::onFeed);
-		HostSessions.onStart(session -> viewers.restarted(session.uuid()));
-		HostSessions.onEnd(session -> viewers.ended(session.uuid()));
+		HostSessions.onStart(session -> {
+			viewers.restarted(session.uuid());
+			replica.remove(session.uuid()); // the DLL tries its capture again: the path is logged again
+		});
+		HostSessions.onEnd(session -> {
+			viewers.ended(session.uuid());
+			lastFrame.remove(session.uuid());
+			replica.remove(session.uuid());
+		});
 	}
 
 	/** `cyberblock:act t:"feed"`: a Net Map viewer starts, renews or stops watching a host. */
@@ -111,6 +124,26 @@ final class PhotoFeed {
 				session.send(ActWire.feedReq(change.on()));
 				Cyberblock.LOG.info("feed: {} feedreq {}", session.name(), change.on() ? "on" : "off");
 			}
+
+			if (!change.on()) {
+				replica.remove(change.host());
+			}
+		}
+
+		// the written fallback: no picture within 3 s of feedreq on, and the server draws the replica around V instead
+		for (Map.Entry<UUID, Long> e : viewers.requested().entrySet()) {
+			HostSession session = HostSessions.of(e.getKey());
+			ServerPlayer v = session == null || !session.active() ? null : session.player();
+			if (v == null || !ReplicaFeed.due(e.getValue(), lastFrame.getOrDefault(e.getKey(), Long.MIN_VALUE), now)) {
+				continue;
+			}
+
+			if (replica.add(e.getKey())) {
+				Cyberblock.LOG.info("feed: {} sent no picture within {} s of feedreq on; path: the top-down replica render around V (the fallback)",
+					session.name(), ReplicaFeed.WAIT_MS / 1000L);
+			}
+
+			deliver(session, ReplicaFeed.render(v.level(), v.position()), server);
 		}
 	}
 
@@ -150,7 +183,16 @@ final class PhotoFeed {
 			return;
 		}
 
-		MinecraftServer server = host.level().getServer();
+		lastFrame.put(session.uuid(), Util.getMillis());
+		if (replica.remove(session.uuid())) {
+			Cyberblock.LOG.info("feed: {} sends pictures again; path: the DLL's back-buffer feed", session.name());
+		}
+
+		deliver(session, px, host.level().getServer());
+	}
+
+	/** One frame (the DLL's picture or the replica fallback) to the host's Net Map viewers and into its feed map. */
+	private static void deliver(final HostSession session, final byte[] px, final MinecraftServer server) {
 		String json = ActWire.feedUi(session.uuid(), px);
 		// the same clock as watch() (Util.getMillis, not the wall clock), and the toggle again: it may have changed since the watch
 		for (UUID viewer : viewers.screenViewers(session.uuid(), Util.getMillis())) {
@@ -178,5 +220,7 @@ final class PhotoFeed {
 	static void clear() {
 		viewers.clear();
 		maps.clear();
+		lastFrame.clear();
+		replica.clear();
 	}
 }

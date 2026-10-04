@@ -1305,7 +1305,8 @@ so a save never keeps a locked car or a dark street.
   from the camera's position and facing**, with the people and cars the figures show.
 - **The photo feed** is the host's own view, shrunk to **128 x 128 map colours**, at most **once a second** and **only while someone is
   watching it**. It is **low-resolution by design**. If copying the picture would cost the host's game more than half a millisecond a frame,
-  the plugin stops sending it and Minecraft draws a **top-down replica view** instead (the fallback, with the same map item).
+  or cannot be done at all, the plugin stops sending it and after about 3 seconds the server draws a **top-down replica view** around V
+  instead (V is the red mark in the middle; the fallback, on the same Net Map panel and map item).
 - **Comms** needs no Cyberpunk change at all: it is Minecraft's own HUD.
 
 **Who may do what.** The host's switches: `/cyberblock guests hacks on|off` (every hack, Breach and remote action),

@@ -1277,8 +1277,11 @@ payloads) this section fixes it; the integrator confirms it against the packages
 - **The photo feed.** `feedreq` `on:true` starts it: within 1 s of the request the DLL copies Cyberpunk's picture, scales it to 128 × 128, maps every
   pixel to the Minecraft map palette and sends `feed`, then at most one `feed` per second until `feedreq` `on:false` (a `session` that is not `host`
   also stops it). One `px` byte is `base × 4 + shade` (shade 0..3); the bytes 0..3 are the transparent colour (a pixel the DLL could not map). If
-  the copy costs more than **0.5 ms of frame time** the DLL stops sending (`feed` is then simply absent and it logs one line) and Minecraft draws a
-  top-down replica view instead (the written fallback: the replica render, low-resolution by design).
+  the copy costs more than **0.5 ms of frame time**, or cannot run, the DLL stops sending (`feed` is then simply absent; it logs one line and sends
+  no other message). The server treats **no `feed` within 3 s of `feedreq` `on:true`** (or none for 3 s since the last one) as the fallback: once a
+  second it draws a top-down replica view around V (one block per pixel, V a red mark in the middle) into the same 128 × 128 map colours and sends
+  them as the usual `cyberblock:ui` `feed` and into the feed map (the written fallback: the replica render, low-resolution by design). The server
+  log says which path is active.
 - **Validation (receivers).** `rhack.id` and `daemon.id` whole numbers ≥ 0; `target` a decimal string below 2^64 (not `0`) or `null`, exactly the
   `null` of the area hacks; `hack` one of the eleven names (any other string is answered `unsupported`, not dropped); `p` finite with `|c| < 3e7`;
   `r` 1..150; `secs` 1..600 on a vehicle hack and on `traffic_switch`, `gridlock` and `blackout`, 0..600 on `outline` and `ping_area`, absent on

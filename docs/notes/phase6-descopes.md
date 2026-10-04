@@ -15,8 +15,8 @@ amendment after section 1.9. Written by package 6P with the docs; the integrator
   the replica of Night City from the camera device's position and facing (both are already in the `devices` list), with the figures that are
   streamed.
 - **The photo feed is low-resolution by design, and may be a replica.** The DLL scales Cyberpunk's picture to 128 x 128 map colours, at most once a
-  second and only while someone asks for it. If the copy costs more than 0.5 ms of frame time it stops and Minecraft draws a top-down replica render
-  on the map item instead. Either way the picture is small and the colours are the map palette's.
+  second and only while someone asks for it. If the copy costs more than 0.5 ms of frame time (or cannot run) it stops, and after 3 s without a
+  picture the Minecraft server draws a top-down replica render around V on the Net Map and the map item instead. Either way the picture is small and the colours are the map palette's.
 
 ## Limits of this version of the contract
 - **Shapes the plan left open, fixed by 6P** (the integrator confirms them against 6B, 6I, 6R, 6S and 6D): the optional `p`, `r` and `secs` of an
