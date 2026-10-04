@@ -1,0 +1,16 @@
+{
+	"variants": {
+		"moving=false,quest_locked=false": {
+			"model": "cyberblock:block/lift_platform"
+		},
+		"moving=false,quest_locked=true": {
+			"model": "cyberblock:block/lift_platform_quest_locked"
+		},
+		"moving=true,quest_locked=false": {
+			"model": "cyberblock:block/lift_platform_moving"
+		},
+		"moving=true,quest_locked=true": {
+			"model": "cyberblock:block/lift_platform_quest_locked"
+		}
+	}
+}

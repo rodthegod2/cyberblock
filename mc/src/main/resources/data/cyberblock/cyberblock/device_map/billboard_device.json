@@ -1,0 +1,1 @@
+{"schema": 1, "class": "BillboardDevice", "kind": "screen", "block": "cyberblock:screen_frame", "entity": "minecraft:glow_item_frame", "size": [4, 3, 1]}

@@ -1,0 +1,55 @@
+{
+	"ambientocclusion": false,
+	"textures": {
+		"side": "cyberblock:block/traffic_lamp_red",
+		"top": "cyberblock:block/traffic_lamp_top",
+		"particle": "#side"
+	},
+	"elements": [
+		{
+			"from": [
+				4,
+				0,
+				4
+			],
+			"to": [
+				12,
+				16,
+				12
+			],
+			"faces": {
+				"north": {
+					"texture": "#side"
+				},
+				"south": {
+					"texture": "#side"
+				},
+				"west": {
+					"texture": "#side"
+				},
+				"east": {
+					"texture": "#side"
+				},
+				"up": {
+					"texture": "#top",
+					"uv": [
+						4,
+						4,
+						12,
+						12
+					]
+				},
+				"down": {
+					"texture": "#top",
+					"uv": [
+						4,
+						4,
+						12,
+						12
+					]
+				}
+			},
+			"light_emission": 12
+		}
+	]
+}

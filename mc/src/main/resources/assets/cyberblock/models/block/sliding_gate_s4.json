@@ -1,0 +1,42 @@
+{
+	"textures": {
+		"panel": "cyberblock:block/sliding_gate_panel",
+		"rail": "cyberblock:block/sliding_gate_rail",
+		"end": "cyberblock:block/sliding_gate_end",
+		"particle": "#end"
+	},
+	"elements": [
+		{
+			"from": [
+				0,
+				0,
+				5
+			],
+			"to": [
+				16,
+				1,
+				11
+			],
+			"faces": {
+				"down": {
+					"texture": "#rail"
+				},
+				"up": {
+					"texture": "#rail"
+				},
+				"north": {
+					"texture": "#rail"
+				},
+				"south": {
+					"texture": "#rail"
+				},
+				"west": {
+					"texture": "#end"
+				},
+				"east": {
+					"texture": "#end"
+				}
+			}
+		}
+	]
+}

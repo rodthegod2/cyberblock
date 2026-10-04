@@ -1,0 +1,71 @@
+{
+	"textures": {
+		"front": "cyberblock:block/lift_call_button_quest_locked",
+		"edge": "cyberblock:block/lift_call_button_quest_locked",
+		"particle": "#edge"
+	},
+	"elements": [
+		{
+			"from": [
+				4,
+				3,
+				14
+			],
+			"to": [
+				12,
+				13,
+				16
+			],
+			"faces": {
+				"north": {
+					"texture": "#front"
+				},
+				"south": {
+					"texture": "#edge",
+					"uv": [
+						0,
+						0,
+						8,
+						10
+					]
+				},
+				"west": {
+					"texture": "#edge",
+					"uv": [
+						0,
+						0,
+						2,
+						10
+					]
+				},
+				"east": {
+					"texture": "#edge",
+					"uv": [
+						0,
+						0,
+						2,
+						10
+					]
+				},
+				"up": {
+					"texture": "#edge",
+					"uv": [
+						0,
+						0,
+						8,
+						2
+					]
+				},
+				"down": {
+					"texture": "#edge",
+					"uv": [
+						0,
+						0,
+						8,
+						2
+					]
+				}
+			}
+		}
+	]
+}

@@ -1,0 +1,64 @@
+{
+	"variants": {
+		"facing=east,lit=false,quest_locked=false": {
+			"model": "cyberblock:block/lift_call_button",
+			"y": 90
+		},
+		"facing=east,lit=false,quest_locked=true": {
+			"model": "cyberblock:block/lift_call_button_quest_locked",
+			"y": 90
+		},
+		"facing=east,lit=true,quest_locked=false": {
+			"model": "cyberblock:block/lift_call_button_lit",
+			"y": 90
+		},
+		"facing=east,lit=true,quest_locked=true": {
+			"model": "cyberblock:block/lift_call_button_quest_locked",
+			"y": 90
+		},
+		"facing=north,lit=false,quest_locked=false": {
+			"model": "cyberblock:block/lift_call_button"
+		},
+		"facing=north,lit=false,quest_locked=true": {
+			"model": "cyberblock:block/lift_call_button_quest_locked"
+		},
+		"facing=north,lit=true,quest_locked=false": {
+			"model": "cyberblock:block/lift_call_button_lit"
+		},
+		"facing=north,lit=true,quest_locked=true": {
+			"model": "cyberblock:block/lift_call_button_quest_locked"
+		},
+		"facing=south,lit=false,quest_locked=false": {
+			"model": "cyberblock:block/lift_call_button",
+			"y": 180
+		},
+		"facing=south,lit=false,quest_locked=true": {
+			"model": "cyberblock:block/lift_call_button_quest_locked",
+			"y": 180
+		},
+		"facing=south,lit=true,quest_locked=false": {
+			"model": "cyberblock:block/lift_call_button_lit",
+			"y": 180
+		},
+		"facing=south,lit=true,quest_locked=true": {
+			"model": "cyberblock:block/lift_call_button_quest_locked",
+			"y": 180
+		},
+		"facing=west,lit=false,quest_locked=false": {
+			"model": "cyberblock:block/lift_call_button",
+			"y": 270
+		},
+		"facing=west,lit=false,quest_locked=true": {
+			"model": "cyberblock:block/lift_call_button_quest_locked",
+			"y": 270
+		},
+		"facing=west,lit=true,quest_locked=false": {
+			"model": "cyberblock:block/lift_call_button_lit",
+			"y": 270
+		},
+		"facing=west,lit=true,quest_locked=true": {
+			"model": "cyberblock:block/lift_call_button_quest_locked",
+			"y": 270
+		}
+	}
+}

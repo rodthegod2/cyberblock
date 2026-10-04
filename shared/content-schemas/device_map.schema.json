@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "device_map",
+  "description": "The `device_map` content kind (megaplan 1.7, 1.11 and tasks 4-A1, 4-M1): which Minecraft block (or entity) a Night City device class becomes, and how big it is, since the DLL sends no size (Phase 0 c). One file per Cyberpunk script class, named after it in snake_case. `class` is the RTTI class name the DLL sends in `devices.cls` (at most 48 characters); `kind` is the section 1.11 device kind, and its toggle bit belongs to the kind: door 1, gate 2, light 4, camera 8, terminal 16, vending 32, traffic 64, elevator 128, turret 256, screen 512, container 1024. `block` is the block placed at the device's position; `alt_block` replaces it while `alt_when` holds (`secure`: flag bit 2, an iron door for a secure door; `readable`: the loot can be read, a chest for a container); `entity` is an entity hung on the block's front (a glow item frame that shows the map image); `size` is [width, height, depth] in blocks along the device's facing; `attachments` are extra blocks at an offset [dx, dy, dz] from the placement corner, always or only while the device is locked (the red lamp above a locked door, the lift call button); `shops` lists the `shop` ids a vending device picks from (stable per device id). Blocks are vanilla ids or the cyberblock device blocks of art/gen_block_art.py (4A). Every one of them also has the block property quest_locked (false/true) except the crate; the others are: lamp_<dye> [lit] for the 16 dyes of the neon blocks; eye_camera [facing, mode off|on|alarm|friendly]; net_port [breached, facing]; vending_machine [broken, facing]; traffic_lamp [signal off|red|amber|green]; lift_platform [moving]; lift_call_button [facing, lit]; turret [facing, mode off|active|friendly]; sliding_gate [facing, step 0..4]; screen_frame [facing, on]; crate []. A file with the same id as a default replaces it, so a datapack ships only the classes it changes.",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128
+    },
+    "offset": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": -16,
+        "maximum": 16
+      },
+      "minItems": 3,
+      "maxItems": 3
+    }
+  },
+  "type": "object",
+  "required": [
+    "schema",
+    "class",
+    "kind",
+    "block",
+    "size"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "#/$defs/id"
+    },
+    "class": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+      "maxBytes": 48
+    },
+    "kind": {
+      "enum": [
+        "door",
+        "gate",
+        "light",
+        "camera",
+        "terminal",
+        "vending",
+        "traffic",
+        "elevator",
+        "turret",
+        "screen",
+        "container"
+      ]
+    },
+    "block": {
+      "$ref": "#/$defs/id"
+    },
+    "alt_block": {
+      "$ref": "#/$defs/id"
+    },
+    "alt_when": {
+      "enum": [
+        "secure",
+        "readable"
+      ]
+    },
+    "entity": {
+      "$ref": "#/$defs/id"
+    },
+    "size": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 16
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "attachments": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": [
+          "block",
+          "offset"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "block": {
+            "$ref": "#/$defs/id"
+          },
+          "offset": {
+            "$ref": "#/$defs/offset"
+          },
+          "when": {
+            "enum": [
+              "always",
+              "locked"
+            ]
+          }
+        }
+      }
+    },
+    "shops": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/id"
+          },
+          {
+            "x-ref": "shop"
+          }
+        ]
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "alt_block",
+        "alt_when"
+      ]
+    },
+    {
+      "properties": {
+        "alt_block": false,
+        "alt_when": false
+      }
+    }
+  ]
+}

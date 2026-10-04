@@ -1,0 +1,28 @@
+{
+	"variants": {
+		"quest_locked=false,signal=amber": {
+			"model": "cyberblock:block/traffic_lamp_amber"
+		},
+		"quest_locked=false,signal=green": {
+			"model": "cyberblock:block/traffic_lamp_green"
+		},
+		"quest_locked=false,signal=off": {
+			"model": "cyberblock:block/traffic_lamp_off"
+		},
+		"quest_locked=false,signal=red": {
+			"model": "cyberblock:block/traffic_lamp_red"
+		},
+		"quest_locked=true,signal=amber": {
+			"model": "cyberblock:block/traffic_lamp_quest_locked"
+		},
+		"quest_locked=true,signal=green": {
+			"model": "cyberblock:block/traffic_lamp_quest_locked"
+		},
+		"quest_locked=true,signal=off": {
+			"model": "cyberblock:block/traffic_lamp_quest_locked"
+		},
+		"quest_locked=true,signal=red": {
+			"model": "cyberblock:block/traffic_lamp_quest_locked"
+		}
+	}
+}
