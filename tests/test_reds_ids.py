@@ -133,6 +133,19 @@ def test_strikes_on_people_carry_a_hit_shape():
                    "ArrayPush(hit.hitRepresentationResult.hitShapes, shape)"):
         assert needed in shape, needed
 
+# Megaplan Q-S1: the aim ray drops hits on our collision boxes (tag test on the hit entity) and casts again from just past
+# the box, at most 4 times, so the aim distance is the Night City surface behind a placed block.
+def test_aim_ray_passes_through_at_most_four_boxes():
+    code = strip_comments((SCRIPTS / "Probes.reds").read_text(encoding="utf-8"))
+    aim = code[code.index("private func Aim("):]
+    aim = aim[:aim.index("\n  }\n")]
+    assert re.search(r"TraceNightCity\([^;]*,\s*4\)", aim), "Aim must trace with a 4-box limit"
+    trace = code[code.index("private static func TraceNightCity("):]
+    trace = trace[:trace.index("\n  }\n")]
+    assert "maxBoxes: Int32" in trace and "boxes <= maxBoxes" in trace
+    assert "IsTagged(entity.GetEntityID(), CyberblockCollisionService.Tag())" in trace
+
+
 # Every native the scripts declare is registered by the DLL with the same parameter count (cb::natives::add), so a script
 # call can never reach a missing function or read its arguments wrongly (the Atlas survey natives included).
 DECL = re.compile(r"native func (Cyberblock_\w+)\(([^)]*)\)")

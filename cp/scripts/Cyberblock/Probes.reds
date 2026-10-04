@@ -14,7 +14,7 @@
 // Our own collision boxes (Collision.reds, Minecraft's blocks) are not Night City: a ray that hits one goes on
 // through it, so the probes and the aim report what is behind (collision-spike "Side effects").
 //
-// 2.31 APIs (decompiled 2.31 scripts): SpatialQueriesSystem.SyncRaycastByQueryFilter(Vector4, Vector4,
+// 2.31 script API (NativeDB, redscript): SpatialQueriesSystem.SyncRaycastByQueryFilter(Vector4, Vector4,
 // QueryFilter, out TraceResult, opt Bool, opt Bool) -> Bool (true on hit), QueryFilter.AddGroup(out QueryFilter,
 // CName), TraceResult.position: Vector3, Cast(Vector3) -> Vector4, FloorF(Float) -> Int32, Deg2Rad, CosF, SinF,
 // SqrtF, CeilF, Entity.GetWorldPosition, TimeSystem.GetSimTime + EngineTime.ToFloat (as Effects.reds).
@@ -135,7 +135,7 @@ public class CyberblockProbes {
     let used = 0;
     let top = new Vector4(x, y, aroundZ + 500.0, 1.0);
     let bottom = new Vector4(x, y, aroundZ - 200.0, 1.0);
-    let hit = CyberblockProbes.TraceNightCity(queries, surface, top, bottom, result, used);
+    let hit = CyberblockProbes.TraceNightCity(queries, surface, top, bottom, result, used, 16);
     casts += used;
     if !hit {
       return new Vector4(x, y, 0.0, 0.0);
@@ -153,7 +153,7 @@ public class CyberblockProbes {
   // box it hit, it casts again, up to 16 boxes deep. True with `result` on the first hit that is not ours.
   private func Trace(queries: ref<SpatialQueriesSystem>, filter: QueryFilter, from: Vector4, to: Vector4, out result: TraceResult) -> Bool {
     let casts = 0;
-    let hit = CyberblockProbes.TraceNightCity(queries, filter, from, to, result, casts);
+    let hit = CyberblockProbes.TraceNightCity(queries, filter, from, to, result, casts, 16);
     this.casts += casts;
     return hit;
   }
@@ -165,15 +165,16 @@ public class CyberblockProbes {
     QueryFilter.AddGroup(filter, n"Terrain");
     let result: TraceResult;
     let casts = 0;
-    return CyberblockProbes.TraceNightCity(GameInstance.GetSpatialQueriesSystem(game), filter, from, to, result, casts);
+    return CyberblockProbes.TraceNightCity(GameInstance.GetSpatialQueriesSystem(game), filter, from, to, result, casts, 16);
   }
 
-  // Trace's raycast; `casts` counts the rays it took.
-  private static func TraceNightCity(queries: ref<SpatialQueriesSystem>, filter: QueryFilter, from: Vector4, to: Vector4, out result: TraceResult, out casts: Int32) -> Bool {
+  // Trace's raycast; `casts` counts the rays it took. A hit on one of our boxes is dropped and the ray cast again from
+  // just past it, through at most `maxBoxes` boxes (false when there are more).
+  private static func TraceNightCity(queries: ref<SpatialQueriesSystem>, filter: QueryFilter, from: Vector4, to: Vector4, out result: TraceResult, out casts: Int32, maxBoxes: Int32) -> Bool {
     let entities = GameInstance.GetStaticEntitySystem();
     let start = from;
     let boxes = 0;
-    while boxes <= 16 {
+    while boxes <= maxBoxes {
       casts += 1;
       let hit: TraceResult;
       if !queries.SyncRaycastByQueryFilter(start, to, filter, hit) {
@@ -296,6 +297,9 @@ public class CyberblockProbes {
   // Re-test 3 (F2, task S5): measured from V's first-person eye (Cyberblock_ViewEye: the camera without the DLL's
   // third-person offset), as Minecraft measures its reach from Steve's eyes in either view; identical to the camera in
   // first person. A zero eye (none known yet) falls back to the camera.
+  // Megaplan Q-S1: the ray goes through our boxes (Minecraft's blocks are not Night City), casting again from just past
+  // each box at most 4 times, so a block placed in front of a wall reports the wall's distance. Behind more than 4 boxes
+  // the aim is -1 (no limit): Minecraft's own blocks are in front then and stop its pick.
   private func Aim(player: ref<PlayerPuppet>, queries: ref<SpatialQueriesSystem>, filter: QueryFilter) -> Void {
     let cameras = GameInstance.GetCameraSystem(player.GetGame());
     let view: Transform;
@@ -308,7 +312,10 @@ public class CyberblockProbes {
     let forward = cameras.GetActiveCameraForward();
     let to = new Vector4(from.X + forward.X * 8.0, from.Y + forward.Y * 8.0, from.Z + forward.Z * 8.0, 1.0);
     let result: TraceResult;
-    if this.Trace(queries, filter, from, to, result) {
+    let casts = 0;
+    let hit = CyberblockProbes.TraceNightCity(queries, filter, from, to, result, casts, 4);
+    this.casts += casts;
+    if hit {
       Cyberblock_SetAim(Vector4.Distance(from, Cast<Vector4>(result.position)));
     } else {
       Cyberblock_SetAim(-1.0);
