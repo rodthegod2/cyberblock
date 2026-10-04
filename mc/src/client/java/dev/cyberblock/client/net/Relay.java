@@ -29,7 +29,7 @@ public final class Relay {
 	}
 
 	private static final Set<String> UP = Set.of("ground", "unground", "clear", "dmg", "mobdmg", "pcells", "unlead", "killed",
-		"scaninfo", "hackresult", "hackspread", "env", "vteleported", "devices", "devstate", "devresult");
+		"scaninfo", "hackresult", "hackspread", "env", "vteleported", "devices", "devstate", "devresult", "parked");
 	/** {@code terrain} is BOTH from Phase 3 (megaplan 3-R2): this client's Atlas keeps it, and the server's shared map grows from it. */
 	private static final Set<String> BOTH = Set.of("hello", "state", "aim", "npcs", "stats", "terrain");
 	/** Splittable messages: the array field and how many elements make one indivisible unit (a ground range is a quadruple). */

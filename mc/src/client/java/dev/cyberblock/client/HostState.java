@@ -397,10 +397,16 @@ public final class HostState {
 		vehicle = inVehicle;
 	}
 
-	/** The latest pose if the host is still sending, else null. */
+	/**
+	 * Cyberpunk does not drive Steve while this is set: the player is in the Afterlife hub (megaplan 7-H1, client/hub/HubClient), where
+	 * Minecraft is the whole picture and V is parked in Night City. Any thread reads it.
+	 */
+	public static volatile boolean released;
+
+	/** The latest pose if the host is still sending (and drives Steve), else null. */
 	static Pose live() {
 		Pose p = latest;
-		return p != null && System.nanoTime() - p.receivedNanos() < TIMEOUT_NANOS ? p : null;
+		return p != null && !released && System.nanoTime() - p.receivedNanos() < TIMEOUT_NANOS ? p : null;
 	}
 
 	/** The pose for the frame being rendered, or null when no host is attached. */

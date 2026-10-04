@@ -14,12 +14,14 @@
 	"entrypoints": {
 		"main": [
 			"dev.cyberblock.Cyberblock",
-			"dev.cyberblock.cyber.CyberMod"
+			"dev.cyberblock.cyber.CyberMod",
+			"dev.cyberblock.hub.HubMod"
 		],
 		"client": [
 			"dev.cyberblock.client.CyberblockClient",
 			"dev.cyberblock.client.cyber.CyberClient",
-			"dev.cyberblock.client.ui.UiClient"
+			"dev.cyberblock.client.ui.UiClient",
+			"dev.cyberblock.client.hub.HubClient"
 		]
 	},
 	"mixins": [
