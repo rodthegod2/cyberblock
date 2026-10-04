@@ -1,8 +1,199 @@
 # Cyberblock — in-game test session (2026-10-03)
 
 Everything below is built, unit-tested, compile-checked against the real 2.31 game scripts and reviewed. Work top to
-bottom (**Re-test Q first**, then **In-game fixes 3**, then Re-test 3); each step says what should happen. Tell Claude "F4: what you saw" or "R5 L-1: what you saw" (or "step N: ...") and it reads
+bottom (**Re-test: Wave A first**; it points into Re-test Q and Re-test 1 for the details; then **In-game fixes 3**, then
+Re-test 3); each step says what should happen. Tell Claude "F4: what you saw" or "R5 L-1: what you saw" (or "step N: ...") and it reads
 `red4ext\logs\Cyberblock.log`, Minecraft's `mc\run\logs\latest.log` and captures the game window to diagnose.
+
+## Re-test: Wave A (Phase Q + Phase 1 + Phase 2 tools)
+
+One combined session for everything Wave A built: **Phase Q** (quick wins), **Phase 1** (the server/client split: every
+world, singleplayer too, now runs through a small server), the **Phase 2 tools** (server sync, modpack, resource pack,
+server bundle, server admin) and **Phase 0's CET checks**. Plan: `docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md`
+sections 3 to 6. The numbered details of each Phase Q item stay in "Re-test Q" and of Phase 1 in "Re-test 1" below; this
+section is the order to play them in plus the checks the merge added. Tell Claude "W-A3: what you saw" and it reads
+`Cyberblock.log`, `latest.log` and the game window. Restart Minecraft the way you always do: it builds the merged mod.
+
+**What to try (one screen):**
+1. **Solo, survival:** mine a placed stone at eye height and at your feet; hold attack through the inventory (W-A1).
+2. **Solo:** walk up a staircase of five placed blocks: no vault or climb; a kerb and a ladder still work (W-A2).
+3. **Solo, F5:** walk, sprint, glide, wind-charge launch, shield; a wall and a corridor; `/cyberblock debug view on` (W-A3).
+4. **Solo, creative:** break a street outline block, it is back in about 10 s; the settings screen; the void rescue (W-A4).
+5. **Solo:** Gorilla Arms, a charged blow and quick jabs, standing and sprinting (W-A5).
+6. **Solo:** drive V more than 300 m with Cyberblock Off, then F9: a floor under Steve at once (W-A6).
+7. **Solo:** a short Re-test 3 pass (blocks, TNT, a hack, a perk, an implant, Y/L/O, Sandevistan) behaves as before (W-A7).
+8. **Solo:** the Phase 0 CET lines (W-A8), then paste the `CBP0` lines to Claude.
+9. **Two local clients:** ask Claude to start the local test server; join it, add the test guest; TNT, hits, toggles,
+   scans, quit and rejoin (W-B).
+10. **Apex, deployment day (only when you are ready):** answer the Apex questions, then megaplan section 6.3 step by step (W-C).
+
+| Part | What changed |
+|---|---|
+| Phase Q | survival mining, stairs and the step-up assist, the third-person camera, outline blocks in creative, the settings screen, Gorilla Arms charged blows, the UI coverage list |
+| Phase 1 | client relay and server sessions (one per Cyberpunk host), guest toggles, version handshake, reconnect, rate limits, the DLL's `session`; singleplayer uses the same path |
+| Phase 2 tools | `tools.server_sync` (backup, verify, upload; dry run by default; no delete), `tools.modpack`, `tools.respack`, `tools.server_bundle`, the "Join Cyberblock" title button, `/cyberblock status` and `/cyberblock hosts add|remove` |
+| Phase 0 | `docs/notes/phase0-feasibility.md` (Cyberpunk checks b to h) and the contract amendment in the megaplan; the CET lines below confirm them |
+
+### W-A. Solo (singleplayer with Cyberpunk)
+**W-A1. Survival mining** (Re-test Q, Q1).
+1. Survival, iron pickaxe, a placed stone at eye height and one at your feet: cracks grow and each breaks in vanilla time.
+   With `/cyberblock debug aim on` the log shows `aim: target block d=.. limit=..` on the block every tick, the stage rising
+   0 to 9 and no `destroying=false` while attack is held.
+2. Hold attack on a stone, open and close the inventory (E) while still holding: breaking resumes without a new click
+   (`aim: screen closed, attack held`). Release during the screen: attack is not stuck afterwards.
+3. Place a block about 1 m in front of a wall and aim at it: the aim distance (`aim:` lines) is the wall's distance, not the
+   block's.
+
+**W-A2. Stairs** (Re-test Q, Q2).
+1. Walk up a staircase of five 1-block placed blocks with the step-up assist on: no vault or climb, V is lifted step by step
+   (`locomotion: step up ...`). Jumping at a block logs `locomotion: climb refused on Cyberblock box` or
+   `locomotion: vault refused on Cyberblock box`.
+2. Assist off (Esc, **Cyberblock...**, Step-up assist; log `locomotion: step-up assist off`): V climbs the staircase by
+   jumping, still with no vault or climb animation.
+3. A real Night City kerb or low wall still vaults, a high ledge still climbs, a ladder still works; none of them logs `refused`.
+4. A block placed against a Night City wall or under an overhang never lifts V into or through the geometry; step-up never
+   fires in a vehicle, a scene or a menu.
+5. Release W while a menu is open, close the menu and stand next to a block: V is not lifted (no stuck MoveX/MoveY axis).
+
+**W-A3. Third person** (Re-test Q, Q3).
+1. F5, then walk, sprint, glide and launch (a wind charge or a mace burst under V): no Steve jitter against the camera, no
+   one-frame standing pose; the overlay shows interp 1.00 and steve-V near 0. The launch pose was not covered by the fake
+   host: watch it.
+2. Back flat against a wall and into a corner: the camera comes in close to V's head and never shows the inside of the wall
+   or what is behind it. Turning in a narrow corridor never clips.
+3. The crosshair hits what it covers.
+4. `/cyberblock debug view on`: within a tick the overlay shows `collide <m> smooth <m> age <ms>` and the 5 s `view:` line has
+   a number for collide (not `n/a`). `/cyberblock debug view off`: the DLL log shows `prefs: ... debug off` and `cam` stops
+   carrying `vdbg`.
+5. Distance, shoulder, FOV and recenter change in Esc, **Cyberblock...**. Vehicle distance may do nothing: report which.
+6. Log (Cyberblock.log): `view: gate open` on foot in Active; `view: gate menu`, `braindance`, `photo mode`, `scene` or
+   `workspot` in those states, with third person off in each. In a car, switching camera with V logs
+   `view: vehicle camera FPP|TPPClose|TPPMedium|TPPFar (tpp ...)` on each switch.
+
+**W-A4. Outline blocks and the settings screen** (Re-test Q, Q5; now on Phase 1's per-host barriers).
+1. Creative, holding a pickaxe or an empty hand (not a sword: vanilla creative cannot break blocks with a sword): break the
+   street outline block under the crosshair. Log `outline: <name> broke x y z (snap back in 10 s)`, then about 10 s later
+   `outline: restored 1` and the block is back; Cyberpunk receives no block event.
+2. Survival: the outline block cannot be broken; TNT never removes outline blocks.
+3. Esc: a **Cyberblock...** button at the top left opens "Cyberblock settings" (QB's real screen; **Done** returns to the
+   pause screen). Turn **Creative can erase the replica permanently** on (log `outline: permanent erase on (by <name>)`),
+   break an outline block: `kept: permanent erase`; it stays broken until V walks away and back (`outline: restored N`).
+4. `/cyberblock settings` opens the same screen.
+5. Void rescue with Cyberpunk Off (Steve not driven by V): in creative and not flying on the outline street, break the block
+   under you: you fall, are put back on the last solid spot with no fall damage, and the action bar says "Caught you: back
+   to safe ground" (log `outline: rescued <name> to x y z`).
+
+**W-A5. Gorilla Arms** (Re-test Q, Q6).
+1. Implant, empty hand, standing: a fully charged swing knocks the pedestrian down (Cyberblock.log `knock: ... tier=knockdown`
+   at about `s=7`); uncharged clicks stagger (`tier=stagger` at about `s=4.5`).
+2. Sprinting, quick uncharged jabs: each staggers (about 4.5 m/s), never a knockdown. Sprinting with a fully charged punch:
+   still a strong knockdown (9.5 m/s).
+3. The Gorilla Arms perk only: a sprinting quick jab staggers; a sprinting charged blow knocks down (7 m/s).
+4. A mob hitting an NPC and the slam/lunge abilities (L): knockback unchanged.
+
+**W-A6. Far activation** (Phase 1, 1N).
+1. Drive V more than 300 m with Cyberblock Off, then F9: no `relay: <name> dropped ground x N (far)` line in latest.log and a
+   solid Night City floor under Steve at once.
+2. After a big teleport of Steve (fast travel or an elevator, Cyberblock On) the ground keeps building with no `far` drops.
+
+**W-A7. Singleplayer as before** (Re-test 1, step 1; Phase 1, 1C).
+1. A short Re-test 3 pass: place blocks, set off TNT, one hack, one glide, open the journal: all as before. latest.log has
+   `handshake: <name> mod X dll X -> host` and `handshake: server X -> host`, and `session: <name> started`.
+2. Press the scan key on an NPC: a scaninfo tooltip and no `act scan from <name> dropped` line. Then a quickhack chip, a perk
+   bought in the skill tree, an implant installed and removed in the Cyberware screen, the Y/L/O keys and a Sandevistan
+   sprint: each acts and none logs `bad act ... dropped`.
+3. Quit to title while Cyberpunk is paused or in a menu, right after placing blocks: no collision boxes left in Night City
+   afterwards, and Cyberblock.log shows `session: cleaned`.
+4. `/cyberblock survey status` answers from your own game (the server asks your client with `survey_cmd`).
+
+**W-A8. Phase 0 CET checks** (about 10 minutes; nothing changes a save). Make a manual save, free roam, do not save during
+the checks. Open the CET console, paste the setup lines S1 to S8 of `docs/notes/phase0-feasibility.md` ("In-game CET
+session", each prints `CBP0 ... ready`), then each line below in order and copy the `CBP0` lines back to Claude (they are
+also in `<Cyberpunk 2077>\bin\x64\plugins\cyber_engine_tweaks\scripting.log`).
+
+| # | Do this, then paste | Expected printout |
+|---|---|---|
+| B1 | face a plain building wall 2-20 m away: `CB.ray()` | a `Static` line with `mat=` a material name (not `None`/`nil`), `ent=none`, `obj=` a world node class, `look=` a mesh appearance |
+| B2 | face a closed door: `CB.ray()` | a line with `ent=Door` (or a subclass); note the group |
+| B3 | face a shop window or glass: `CB.ray()` | a glass-like material name (or a miss: glass may not block rays) |
+| B4 | stand on a road: `CB.ray(true)` | a `Static` or `Terrain` line with an asphalt/road-like material |
+| B5 | face a neon sign: `CB.ray()` | a material name; `ent=` a device class if the sign is a device |
+| C1 | face the same door: `CB.dev(CB.hit or CB.look())` | `CBP0 Door id=<number> pid=<text> state=... door=... CLOSED ... locked=false` |
+| C2 | `CB.act("ActionToggleOpen")`, wait 1 s, `CB.dev(CB.d)`, then `CB.act("ActionToggleOpen")` again | the door opens (`OPENED`), then closes |
+| C3 | `CB.act("ActionToggleLock")`, `CB.dev(CB.d)`, then again | `locked=true`, then unlocked |
+| C4 | face a light: `CB.dev(CB.look())`, `CB.act("ActionToggleON")`, then again | the light goes off, then on |
+| D1 | `CB.spawn("Character.tyger_claws_gangster1_ranged1_nue_ma")` | a Tyger Claw appears about 10 m ahead within 2 s |
+| D2 | after 2 s: `CB.npc()` | `CBP0 NPCPuppet high=...Relaxed... att=...` |
+| D3 | `CB.hostile()`, wait 3 s, `CB.npc()` (get ready to fight) | he attacks; `high=` shows `Combat` |
+| G5 | while he fights: `CB.park(true)`; wait 30 s next to him; try to save | `parked=true`; he searches, V takes no damage, saving is refused |
+| G6 | `CB.park(false)`, then `CB.despawn()` | `parked=false`, then `deleted true` |
+| D5 | `CB.spawn("Character.prevention_maxtac_rifle_ma")`, `CB.npc()` after 2 s, `CB.despawn()`; then the same with `"Character.ncpd_base_drone_wyvern"` | a Max-Tac trooper, then an NCPD drone appear and are deleted |
+| E1 | `CB.heat()` | `CBP0 heat 0` |
+| E2 | `CB.heat(2)`, wait 2 s, `CB.heat()` | two wanted stars; `CBP0 heat 2` |
+| E3 | `CB.heat(0)`, wait 5 s, `CB.heat()` | the stars go; `CBP0 heat 0` |
+| E4 | `CB.gang("tygerClaws")`, then `CB.gang("tygerClaws",Enum.new("EAIAttitude","AIA_Friendly"))` | the current attitude, then `AIA_Friendly` |
+| E5 | `CB.gang("tygerClaws",CB.was)` | the first attitude again |
+| F1 | look at a pedestrian, a ganger and a vendor in turn: `CB.tags()` | `npc fac=... type=Human arch=... g=<Female or Male> ... vendor=... stock=...` |
+| F2 | look at a parked car: `CB.tags()` | `car type=...Car model=... look=<appearance> main=<three numbers or ->` |
+| G1 | `CB.go(2000,0,80)` | `CBP0 moved`; V falls in a far place |
+| G2 | at once and every 2 s until it hits: `CB.snap()` | `no ground yet` a few times, then `ground at z=<number>` |
+| G3 | `CB.back()` | `CBP0 home` |
+| H1 | look at a pedestrian about 10 m away: `CB.t=CB.look() CB.p(CB.n(CB.t:GetClassName()))` | `CBP0 NPCPuppet` |
+| H2 | walk about 40 m away behind a wall: `CB.hack()` | `CBP0 asked ping at 4x m`; the ping outline; Cyberblock.log `hack ping on <id>: ok (...)` |
+| H3 | a vending machine or TV: `CB.t=CB.look()`, 40 m away behind a wall, `CB.hack("device")` | its distraction starts; `hack device on <id>: ok (distract ...)` |
+| ENV | `local t=Game.GetTimeSystem():GetGameTime() local w=Game.GetWeatherSystem():GetWeatherState() CB.p(GameTime.Hours(t)..":"..GameTime.Minutes(t), w and CB.n(w.name) or "no state")` | `CBP0 <h>:<m> <weather preset name>` |
+| C5 (last) | note C1's `id=`; load the save you made; face the same door: `CB.dev(CB.look())` | the same `id=` as in C1 |
+
+### W-B. Two local clients through a local test server (Phase 1)
+Ask Claude: "start the local test server". Claude starts a dedicated Fabric 26.3 test server from a temporary worktree
+(Gradle never runs in the folder you play from) on `127.0.0.1:25929` (offline mode, local only), whitelists and ops you, and
+starts the offline test guest `CbGuest1` with `uv run python -m tools.mpcheck --guest 25929`. You join with your own
+Minecraft (Multiplayer, Direct Connection, `127.0.0.1:25929`) and Cyberpunk, F9 on.
+1. You are the host: latest.log `handshake: server X -> host`; `/cyberblock hosts` and `/cyberblock status` list you with
+   `mod X dll Y, up N/s, dropped N` and the content counts.
+2. The guest places TNT next to V: it explodes in Night City. `/cyberblock guests explosions off`: the same TNT breaks
+   Minecraft blocks only and the guest's action bar says blocked; `on` brings it back. Toggle it several times: no new
+   `session: X started`, no `blocks reset:true` resync, V's collision boxes stay.
+3. The guest hits an NPC's hitbox (F3+B shows the proxy boxes): the NPC flinches. `/cyberblock guests damage off` stops it.
+4. Gorilla Arms and demolitions are the guest's own: a guest with the implant or perk shoves a proxy, one without does not
+   (even when you have it); a guest with demolitions gets TNT radius x1.5, your demolitions never enlarges a guest's TNT.
+5. The guest scans your NPC with your hacks toggle on: the scan routes and shows info. `/cyberblock guests hacks off`: the
+   guest gets the guest-blocked line.
+6. A creative player breaks a Night City barrier: it comes back after 10 s or when V's probes report the cell again.
+7. A big TNT chain near V: if the DOWN queue overflows, latest.log shows `block resync for <name>` on the next ticks and V's
+   collision matches the world again.
+8. Respawn while active: no server exception; blocks resync once you are back.
+9. Quit and rejoin: `session: <name> ended (...)`, then `session: <name> started`; no leftover collision; the ground comes back.
+10. As a level-2 op (and from a level-2 datapack function) `/cyberblock hosts add X` is refused as unknown or unauthorized; as a
+    level-3+ op it succeeds and says it applies "at their next handshake". Add a host, reconnect that client:
+    `handshake: ... -> host`. As a non-op, `/cyberblock hosts` is unavailable. Every refusal shows the server's `joinHelp`
+    once (set one in `config/cyberblock/server.json` to see it).
+
+### W-C. Apex deployment day (Phase 2 tools; megaplan section 6.3)
+Only when you are ready to move the Apex server to Cyberblock; nothing is deleted on the server and Rod's Ores stays one panel
+change away (megaplan section 6.4). First answer the open Apex questions (Claude asks them in one message). Then:
+1. Downloads into a folder outside the repo: the Fabric API and voice chat jars for 26.3 and the Fabric server launcher
+   jar (6.3 A).
+2. Backup: Stop in the panel, then in **your own terminal** `uv run python -m tools.server_sync backup --to
+   "%USERPROFILE%\CyberblockServerBackups\rods-ores-<date>"` (it asks for the FTP password hidden), then `verify`; confirm the
+   file count and size (6.3 B).
+3. On the real Apex FTP, run `upload --stage <stage>` as a dry run: the listing is read with no "cannot read the server
+   listing" error, a staged non-allowlisted file that already exists (for example `plugins/<some>.jar`) is refused, and new
+   world files show as `new`.
+4. A real world upload (`--go`): the stage folder gets a `.cbupload.json`; re-running the same command after an
+   interruption prints `skip ...` for files already sent.
+5. Panel changes click by click (6.3 D), first join (6.3 E): `cyberblock server: ready (protocol 1, maxHosts 1, requireMod,
+   whitelist on)` in the console.
+6. Import the rebuilt mrpack into a new launcher instance and start it: latest.log no longer has "Removed resource pack fabric
+   from options", and the Cyberblock pack (`file/cyberblock-pack-<ver>.zip`) is active under Resource Packs; the title screen
+   shows **Join Cyberblock**.
+
+**Descopes and risks (Wave A):** `maxHosts` stays 1 until Phase 3; a guest does not see Night City's people yet (figures are
+Phase 3); a world opened to LAN refuses the offline test guest (W-B uses a local offline server instead, or a friend with a
+real account); the vehicle camera distance, the climb refusal's obstacle point and a third-person FOV setter are unproven in
+2.31; Phase 0's material names, combat AI of spawned NPCs, heat write and the stable device id wait for the CET lines; the
+voice chat port and Java 25 on Apex wait for the panel answers; `call` and `buy` device actions and turrets as Night City
+spawns are dropped (megaplan amendment of section 1.9).
 
 ## Re-test Q (do this first)
 
@@ -98,18 +289,17 @@ and the debug overlay", "Creative mode and the outline blocks", "The Cyberblock 
 ### Q7. Phase 0 CET checks (about 10 minutes, nothing changes a save)
 The CET console lines from package 0R for checks (b) to (h) of the megaplan section 4.1, each with the printout to expect.
 Paste what each prints (or tell Claude to read `Cyberblock.log` when the line logs there). Every line undoes what it does.
-**These rows are placeholders until 0R's notes land (`docs/notes/phase0-feasibility.md`); the integrator replaces each
-"to be filled" with the exact line and the expected printout.**
+**The exact lines and printouts are in "Re-test: Wave A", W-A8** (setup lines S1 to S8 in `docs/notes/phase0-feasibility.md`).
 
-| Check | What it asks of Cyberpunk 2.31 | CET line | Expected printout |
-|---|---|---|---|
-| (b) | raycast hit object and material: cast at a wall, a door, glass, asphalt and a neon sign | to be filled | to be filled |
-| (c) | devices: enumerate devices within 48 m, read type, state and locked; open and close a door, toggle a light | to be filled | to be filled |
-| (d) | spawn one ganger 10 m away and despawn it | to be filled | to be filled |
-| (e) | raise heat to 2 and back to 0; make one gang friendly toward V and back | to be filled | to be filled |
-| (f) | print role, affiliation, gender and archetype of a few NPCs, a car's record, class and colour, and a vendor's stock | to be filled | to be filled |
-| (g) | teleport V 2 km away and back; park V for 30 s next to a hostile NPC | to be filled | to be filled |
-| (h) | hack an NPC 40 m away behind a wall through the event pump | to be filled | to be filled |
+| Check | What it asks of Cyberpunk 2.31 | CET lines (W-A8) |
+|---|---|---|
+| (b) | raycast hit object and material: cast at a wall, a door, glass, asphalt and a neon sign | B1 to B5 |
+| (c) | devices: read type, state and locked; open and close a door, toggle a light; a stable id across a load | C1 to C5 |
+| (d) | spawn a ganger 10 m away, make him hostile, despawn him; a Max-Tac trooper and a drone | D1 to D5 |
+| (e) | raise heat to 2 and back to 0; make one gang friendly toward V and back | E1 to E5 |
+| (f) | print role, affiliation, gender and archetype of a few NPCs, a car's record, class and colour, and a vendor's stock | F1, F2 |
+| (g) | teleport V 2 km away and back; park V for 30 s next to a hostile NPC | G1 to G3, G5, G6 |
+| (h) | hack an NPC and a device 40 m away behind a wall through the event pump | H1 to H3 |
 
 **Descopes and risks (Phase Q):** the vehicle camera distance may not be settable in 2.31 (the row then does nothing and the
 DLL log says so); the climb refusal depends on reading the obstacle point (fallbacks: a raycast tag test, then a collision

@@ -13,7 +13,7 @@ Version 1.0.0 is set in the files on 2026-10-03; it is tagged and published only
 Phase Q of the multiplayer plan (`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md`): quick wins before the server
 work, on top of the 1.0.0 work below. Built and unit-tested; the in-game list is
 [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test Q". The later Wave A phases (the Phase 0 feasibility notes, the
-server/client split and the Apex tools) add their lines below.
+server/client split and the Apex tools) are the next entry.
 
 #### Added
 - **Survival mining.** Placed blocks crack and break at the normal Minecraft speed with a pickaxe, at eye height and at the
@@ -39,6 +39,37 @@ server/client split and the Apex tools) add their lines below.
 
 #### Changed
 - Creative can break the invisible outline blocks of Night City (and they come back) instead of them being untouchable.
+
+### Unreleased additions: Wave A (Phase 0, Phase 1, Phase 2 tools)
+The rest of Wave A of the multiplayer plan, merged with Phase Q for one combined in-game test
+([docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test: Wave A").
+
+#### Added
+- **Playing together (LAN), Phase 1.** The Minecraft mod is split into a client relay and a server with one session per
+  Cyberpunk host; singleplayer goes through the same path, so opening a world to LAN lets a friend join as a guest. A guest's
+  TNT, explosions, hits and blocks reach the host's Cyberpunk game; the host switches what guests may do with
+  `/cyberblock guests <explosions|damage|hacks|devices|spawns> on|off`. Perks and implants are per player (a guest's Gorilla
+  Arms and demolitions are the guest's own). A version handshake with clear messages, a reconnect that cleans Night City and
+  brings the ground back, and per-type rate limits. Wire contract: `shared/protocol.md` "Multiplayer (Phase 1)" (new
+  `hstate`, `session`, `survey_cmd`, the DLL's `hello.ver` and the documented `pteleport`).
+- **Content as data.** `tools/content_check.py` validates content files (`data/<namespace>/cyberblock/<kind>/<name>.json`) against
+  the JSON Schemas in `shared/content-schemas/`.
+- **Multiplayer test tools.** `tools/mpcheck.py` runs a dedicated test server, offline clients and fake hosts through the
+  scenarios singleplayer, guest, versions, flood, reconnect and twohosts (`--guest <port>` starts one test guest);
+  `tools/fakehost.py` gains `--name`, `--ver`, `--ids-from` and `--wait-host`; `server/` holds the test server templates.
+- **Dedicated-server admin (Phase 2).** `/cyberblock status`, `/cyberblock hosts add|remove <name>`, a startup line, a
+  whitelist warning and the server's `joinHelp` on every refusal.
+- **Server and modpack tools (Phase 2).** `tools.server_sync` (FTP backup with a manifest, verify, a dry-run-first upload of
+  staged files with an overwrite allowlist and no delete; the password never printed or stored), `tools.server_bundle`,
+  `tools.modpack` (a Modrinth `.mrpack`), `tools.respack` (the resource pack and its SHA-1), and a **Join Cyberblock** title
+  button when the modpack carries a server.
+- **Phase 0 feasibility notes.** `docs/notes/phase0-feasibility.md`: what Cyberpunk 2.31 allows for the later phases
+  (raycast materials, devices, spawns, heat and attitude, NPC tags, far teleport and parking, remote hacks), the fallbacks,
+  and the CET lines of the combined test; the plan's contracts in sections 1.8 and 1.9 are narrowed to match.
+
+#### Changed
+- Online play is now a goal of the design (spec section 1.1); the spec's non-goal "online play of any kind" is reversed.
+- Steve's fall grace around a glide or launch is kept by the server per host (from the client's `hstate`).
 
 ### Added
 - **Layer 1, the passthrough.** Real Minecraft Java 26.3 (Fabric mod) is drawn into Cyberpunk 2077 2.31 every frame through a
@@ -73,17 +104,6 @@ server/client split and the Apex tools) add their lines below.
 - **Release 1.0.0.** A release zip with an installer (`install.bat`, `uninstall.bat`, `install.ps1`), a launcher install
   with a "Play Cyberblock" button, GitHub Actions CI, this changelog, licence and third-party notices.
 - **Tools.** `tools.fakehost` modes `--ui`, `--hacks` and `--seat`; `tools.package` builds the release zip.
-- **Playing together (LAN), Phase 1 of the multiplayer plan.** The Minecraft mod is split into a client relay and a server
-  with one session per Cyberpunk host; singleplayer goes through the same path, so opening a world to LAN lets a friend join
-  as a guest. A guest's TNT, explosions, hits and blocks reach the host's Cyberpunk game; the host switches what guests may
-  do with `/cyberblock guests <explosions|damage|hacks|devices|spawns> on|off`. A version handshake with clear messages, a
-  reconnect that cleans Night City and brings the ground back, and per-type rate limits. Wire contract: `shared/protocol.md`
-  "Multiplayer (Phase 1)" (new `hstate`, `session`, `survey_cmd`, the DLL's `hello.ver` and the documented `pteleport`).
-- **Content as data.** `tools/content_check.py` validates content files (`data/<namespace>/cyberblock/<kind>/<name>.json`) against
-  the JSON Schemas in `shared/content-schemas/`.
-- **Multiplayer test tools.** `tools/mpcheck.py` runs a dedicated test server, offline clients and fake hosts through the
-  scenarios singleplayer, guest, versions, flood, reconnect and twohosts (`--guest <LAN port>` starts one test guest for a
-  world opened to LAN); `tools/fakehost.py` gains `--name`, `--ver` and `--ids-from`; `server/` holds the test server templates.
 
 ### Changed
 - Cyberpunk's HUD no longer comes back for prompts, dialogues or vehicles: Minecraft draws them.
@@ -91,7 +111,6 @@ server/client split and the Apex tools) add their lines below.
   strong hits) instead of flinging everyone.
 - The glide steers with the camera like the vanilla elytra (the DLL owns the glide's yaw).
 - Implants no longer share one activation key or a tap-and-hold selection.
-- Online play is now a goal of the design (spec section 1.1); the spec's non-goal "online play of any kind" is reversed.
 
 ### Fixed
 - Re-test 3: every hack looked the same because the hack wheel preferred its remembered pick over the chip in the hand.

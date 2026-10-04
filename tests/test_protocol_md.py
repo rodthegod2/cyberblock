@@ -1377,10 +1377,21 @@ def test_re_test_q_has_the_five_phase_q_checks_the_gorilla_check_and_phase_0_row
         assert fact in gorilla, f"Re-test Q6 does not say {fact!r}"
     assert "latest.log" not in gorilla
     assert 'Cyberblock_Log(s"knock: \\(target) s=\\(s) tier=\\(tierName)' in Path("cp/scripts/Cyberblock/Effects.reds").read_text(encoding="utf-8")
-    for check in ("(b)", "(c)", "(d)", "(e)", "(f)", "(g)", "(h)"):  # Phase 0's CET checks, placeholders until 0R's notes land
+    for check in ("(b)", "(c)", "(d)", "(e)", "(f)", "(g)", "(h)"):  # Phase 0's CET checks: Q7 points at Wave A's W-A8 lines
         assert f"| {check} |" in q, check
-    assert q.count("| to be filled | to be filled |") == 7
-    assert "placeholders until 0R's notes land" in q
+    assert "to be filled" not in q and "W-A8" in q
+
+
+def test_re_test_wave_a_is_first_and_carries_the_phase_0_cet_lines():
+    """The Wave A integrator's combined section: first, one screen of things to try, and every CET line of 0R's notes."""
+    assert TESTING.index("## Re-test: Wave A (Phase Q + Phase 1 + Phase 2 tools)") < TESTING.index("## Re-test Q (do this first)")
+    wave = section_of(TESTING, "## Re-test: Wave A (Phase Q + Phase 1 + Phase 2 tools)")
+    assert len(wave.split("**What to try (one screen):**", 1)[1].split("| Part |", 1)[0].strip().splitlines()) <= 15
+    notes = Path("docs/notes/phase0-feasibility.md").read_text(encoding="utf-8")
+    for row in re.findall(r"^\| (B\d|C\d|D\d|E\d|F\d|G\d|H\d|ENV|C5 \(last\)) \|", notes, re.M):
+        assert f"| {row} |" in wave, f"CET line {row} is missing from Re-test: Wave A"
+    for part in ("### W-A. Solo", "### W-B. Two local clients", "### W-C. Apex deployment day"):
+        assert part in wave, part
 
 
 def test_changelog_has_an_unreleased_entry_for_phase_q_at_the_top_of_the_1_0_0_section():

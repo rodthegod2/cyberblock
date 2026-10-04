@@ -987,6 +987,23 @@ and stops everything it started). `uv run python -m tools.mpcheck --guest <port>
 `CbGuest1`), but a world opened to LAN checks every Minecraft login and refuses it ("Invalid session"): to try a guest in
 your own LAN world you need a second player with a real Minecraft account.
 
+#### On a dedicated server (Phase 2 tools)
+The same mod runs on a dedicated Fabric 26.3 server (a hosting panel's **Custom Jar** option runs the Fabric server launcher
+jar). The step-by-step move of a hosted server, with the way back, is section 6.3 and 6.4 of the multiplayer plan; the
+player guide for it comes with the Phase 2 docs. What is already there:
+- **Admin commands** (operators): `/cyberblock status` lists every player's role, session state, `mod X dll Y`, message
+  rates and the loaded content; `/cyberblock hosts add|remove <name>` edits who may host (level 3, like `/whitelist`) and
+  applies at that player's next handshake. The server log starts with `cyberblock server: ready (protocol 1, maxHosts N,
+  requireMod, whitelist on|OFF)` and warns every minute while a dedicated server runs without a whitelist. The `joinHelp`
+  text of `config/cyberblock/server.json` is added to every refusal.
+- **Tools** (run by the server owner from a checkout): `tools.server_sync` backs up a server over FTP with a manifest,
+  verifies it and uploads only staged files (a dry run unless `--go`; it has no delete command and refuses to overwrite
+  files outside an allowlist; the FTP password is read only from the environment or a hidden prompt, never printed);
+  `tools.server_bundle` stages the server files outside the repo; `tools.modpack` and `tools.respack` build the modpack
+  (`dist/cyberblock-<version>.mrpack`) and the resource pack for friends.
+- **Join Cyberblock.** A modpack with a `config/cyberblock/join.json` adds a **Join Cyberblock** button to the title screen
+  that connects to that server.
+
 ---
 
 ## 6. Game modes and the starter kit
@@ -1064,7 +1081,8 @@ Useful commands: `/cyberblock kit`, `/cyberblock settings` (the [settings screen
 (map all of Night City once for the [Atlas](#the-atlas-map); `stop`, `status`, `redo`),
 `/cyberblock perks free on|off` (free skill points), `/gamemode creative`, `/gamemode survival`,
 `/xp add @s 30 levels`, `/effect clear @s`. Playing with friends: `/cyberblock guests <toggle> on|off` and, for server
-operators, `/cyberblock hosts` (see [Playing together (LAN)](#playing-together-lan)).
+operators, `/cyberblock hosts`, `/cyberblock status` and `/cyberblock hosts add|remove <name>` (see
+[Playing together (LAN)](#playing-together-lan) and [On a dedicated server](#on-a-dedicated-server-phase-2-tools)).
 
 ---
 
