@@ -50,7 +50,7 @@ import org.jspecify.annotations.Nullable;
  * grant is dropped.
  *
  * <p><b>Spawning.</b> A Minecraft-only player (or a host whose Cyberpunk is not active) is placed in the replica: on the floor under
- * the spot (refused when Night City has no ground there yet). A host whose Cyberpunk is active moves V: {@code vteleport
+ * the spot, or on the nearest floor above it when the spot hangs under the replica (refused when Night City has no ground there yet). A host whose Cyberpunk is active moves V: {@code vteleport
  * {id, p, yaw, why:"holo"}} DOWN (the scripts' settle probe and ground snap, Phase 0 (g)); on {@code vteleported ok} Steve is put on
  * V's snapped spot (within 32 blocks of the asked one), so V and Steve stay paired; a failure says why and the cooldown is given
  * back. A host at the table in the hub first steps out to the spot (7H's leave unparks V) and the vteleport follows 1.5 s later.
@@ -77,7 +77,6 @@ public final class HoloModule {
 	static final int DETAIL_TICKS = 100;
 	static final int HUB_LEAVE_TICKS = 30;
 	static final long ANSWER_MS = 30_000L;
-	static final int CLIMB = 64, DROP = 48;
 
 	/** Hide my pin (megaplan 1.13: a persisted per-player attachment); kept through death. */
 	public static final AttachmentType<Boolean> HIDE_PIN = AttachmentRegistry.<Boolean>builder()
@@ -472,7 +471,7 @@ public final class HoloModule {
 		}
 	}
 
-	/** A Minecraft-only player (or a host whose Cyberpunk is off) is stood on the replica's floor under the spot. */
+	/** A Minecraft-only player (or a host whose Cyberpunk is off) is stood on the replica's floor at the spot ({@link #ground}). */
 	private static void placeSteve(final MinecraftServer server, final ServerPlayer player, final Target t, final long now) {
 		ServerLevel city = server.overworld();
 		Vec3 spot = ground(city, t.pos());
@@ -615,33 +614,13 @@ public final class HoloModule {
 	}
 
 	/**
-	 * Where a player can stand at {@code p}: up out of solid blocks (at most 64), then down to the first floor (at most 48 below);
-	 * null when there is no floor (Night City is not built there yet) or the column leaves the world.
+	 * Where a player can stand at {@code p} ({@link HoloRules#stand}: up out of solid blocks, down to the first floor, else up to the
+	 * nearest floor above); null when there is no floor near (Night City is not built there yet).
 	 */
 	static @Nullable Vec3 ground(final ServerLevel level, final Vec3 p) {
 		BlockPos at = BlockPos.containing(p);
-		int up = 0;
-		while (up <= CLIMB && !(free(level, at.above(up)) && free(level, at.above(up + 1)))) {
-			up++;
-		}
-
-		if (up > CLIMB) {
-			return null;
-		}
-
-		BlockPos feet = at.above(up);
-		for (int d = 0; d <= DROP; d++) {
-			BlockPos below = feet.below(d + 1);
-			if (below.getY() < level.getMinY()) {
-				return null;
-			}
-
-			if (!free(level, below)) {
-				return new Vec3(p.x, feet.below(d).getY(), p.z);
-			}
-		}
-
-		return null;
+		Integer y = HoloRules.stand(dy -> free(level, new BlockPos(at.getX(), dy, at.getZ())), at.getY(), level.getMinY());
+		return y == null ? null : new Vec3(p.x, y, p.z);
 	}
 
 	private static boolean free(final ServerLevel level, final BlockPos pos) {

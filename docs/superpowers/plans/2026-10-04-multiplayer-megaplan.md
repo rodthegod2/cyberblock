@@ -2003,8 +2003,8 @@ Lang owner: **7A**. Merge order: 7D, 7S, 7V, 7A, 7N, 7H, 7T, 7P.
   still taken over; only quest locks (`LockInHubMenu`), the prologue ripperdoc and the ripperdoc tutorials stay
   pass-through. (3) Fast travel picked at the Holo-Table while V is parked in the hub runs 1 s after the hub exit
   (never while parked: vanilla fast travel strips the park's restrictions); the Holo-Table lists the host's points
-  through 7T's `HoloFastTravel.points` hook, fed by 7V's `FastTravelPoints.known()` / `travel()` (installed at the
-  Phase 7 merge). Re-test 7 adds: open a gun shop and a ripperdoc as the host and grep `Cyberblock.log` for
+  through 7T's `HoloFastTravel.points` hook, fed by 7V's `FastTravelPoints.known()` / `travel()` (installed by
+  `HoloClient.init` through `HoloFastTravel.install()`, 7T fixer). Re-test 7 adds: open a gun shop and a ripperdoc as the host and grep `Cyberblock.log` for
   `vendors: <name> pass-through`: there is none, and `vendors: <name> -> minecraft screen open` is there for both; at the
   Holo-Table pick a fast-travel point (toast "when you leave the hub"), leave the hub: V fast travels there, Steve
   follows, and V stays at the destination (`fast travel: to <name> (Holo-Table)` after `park: off (hub exit)`).
