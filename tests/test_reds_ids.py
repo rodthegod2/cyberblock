@@ -10,6 +10,7 @@ package S calls are declared in Natives.reds with the contract's signature.
 Session (megaplan 2026-10-04 section 1.8, task 1-H1): the n"session" event wiring and the cleanup it triggers.
 """
 import importlib.util
+import json
 import re
 import sys
 from pathlib import Path
@@ -236,6 +237,29 @@ def test_leaving_the_host_role_cleans_night_city():
     # a refused reason is a Cyberpunk warning only while Minecraft is not drawn, and once
     assert re.search(r"!system\.InkOn\(\) \|\| !Cyberblock_IsLinked\(\)", cleanup)
     assert "NotEquals(reason, this.shownRefusal)" in cleanup and "this.shownRefusal = reason;" in cleanup
+
+
+# Megaplan task 6-S1 (fix): a solved Breach sends each daemon content's `action` as its id, so every shipped action (6A's
+# data/cyberblock/cyberblock/daemon/*.json, once merged) must be one Daemons.reds runs; an unknown one answers
+# "unsupported daemon", and the Phase 0 (h) range refusal is the contract's key.
+SHIPPED_DAEMONS = {"open_door", "disable_cameras", "disable_turrets", "reveal_enemies", "overload", "lights_out",
+                   "make_friendly", "distract", "traffic_switch"}
+
+
+def daemon_ids() -> set[str]:
+    code = all_code()["Daemons.reds"]
+    action = code[code.index("public static func Action("):]
+    action = action[:action.index("\n  }\n")]
+    return set(re.findall(r'Equals\(id, "(\w+)"\)', action))
+
+
+def test_every_shipped_daemon_action_runs():
+    content = SCRIPTS.parent.parent.parent / "mc" / "src" / "main" / "resources" / "data" / "cyberblock" / "cyberblock" / "daemon"
+    shipped = SHIPPED_DAEMONS | {json.loads(p.read_text(encoding="utf-8"))["action"] for p in content.glob("*.json")}
+    assert shipped - daemon_ids() == set(), "daemon actions Daemons.reds does not run"
+    code = all_code()
+    assert 'return "unsupported daemon";' in code["Daemons.reds"]
+    assert 'return "cyberblock.hack.out_of_range";' in code["RemoteHacks.reds"]
 
 
 def test_the_survey_tour_is_blocked_while_not_host():

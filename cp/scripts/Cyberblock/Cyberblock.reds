@@ -367,6 +367,7 @@ public class CyberblockSystem extends ScriptableSystem {
     CyberblockSeat.Clear(game);
     CyberblockView.Clear(game);
     CyberblockLocomotion.Clear(game);
+    CyberblockRemoteHacks.Clear(game); // megaplan 6-S1: held engines, locked doors, switched-off devices (RemoteHacks.reds)
   }
 
   // Crouched as the game's own crouch indicator counts it: Crouch, CrouchDodge or Slide

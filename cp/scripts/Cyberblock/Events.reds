@@ -18,6 +18,8 @@
 //     not live, so every vteleport gets its Cyberblock_TeleportDone (megaplan 2026-10-04 task 3-S1, Teleport.reds, Park.reds)
 //   devact -> CyberblockDeviceService.OnEvent, whatever the state: it answers every request with Cyberblock_DeviceResult,
 //     refusing while not live (megaplan 2026-10-04 task 4-S1, Devices.reds)
+//   rhack -> CyberblockRemoteHacks.OnEvent, daemon -> CyberblockDaemons.OnEvent, whatever the state: each answers every
+//     request with Cyberblock_HackResult, refusing while not live (megaplan 2026-10-04 task 6-S1, RemoteHacks.reds, Daemons.reds)
 //
 // While a save is written, CyberblockSystem does not call Tick at all: the events wait in the DLL's queue and are applied
 // after the save. While not live otherwise (Off, Lost, no player) Night City is left alone:
@@ -88,6 +90,10 @@ public class CyberblockEvents {
           }
         } else if Equals(kind, n"devact") {
           CyberblockDeviceService.OnEvent(game); // refuses itself while not live (Devices.reds)
+        } else if Equals(kind, n"rhack") {
+          CyberblockRemoteHacks.OnEvent(game, live); // refuses itself while not live (RemoteHacks.reds)
+        } else if Equals(kind, n"daemon") {
+          CyberblockDaemons.OnEvent(game, live); // refuses itself while not live (Daemons.reds)
         } else if !live {
           if !CyberblockEvents.Refuse(kind) {
             dropped += 1;
