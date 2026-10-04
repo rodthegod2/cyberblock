@@ -8,7 +8,9 @@
 // collision boxes and their registry are reset (the next host session sends `blocks reset:true` and every block
 // again), puppets are despawned and tethers released, a running V teleport is aborted and a parked V released
 // (Teleport.reds, Park.reds), and the Atlas survey tour stops (Survey.reds counts the tour blocked while IsHost is false,
-// which ends a running tour with V put back). The DLL has already done its side (flight
+// which ends a running tour with V put back). Phase 8 (task 8-S1): the Night City spawns are deleted, a glitch ends, our
+// wanted level and faction attitudes are undone and the server's Heat tier and factions forgotten (Spawns.reds,
+// Glitch.reds, Heat.reds). The DLL has already done its side (flight
 // stop, Minecraft pause released). A refused reason shows once as Cyberpunk's own warning, and only while Minecraft is
 // not drawn (Cyberblock not On, or the link gone): while it is, Minecraft shows the reason itself.
 //
@@ -53,6 +55,11 @@ public class CyberblockSession {
     }
     // Megaplan 7-S1: a hub of the ended host session is over (Hub.reds); V was released just above.
     CyberblockHub.Forget(s"session \(NameToString(state))");
+    // Megaplan 8-S1: the spawns of the ended host session go, a glitch ends, our wanted level and faction attitudes are
+    // undone, and the server's tier and factions are no longer this host's (Spawns.reds, Glitch.reds, Heat.reds).
+    CyberblockSpawns.Clear(game, s"session \(NameToString(state))");
+    CyberblockGlitch.Clear(game, s"session \(NameToString(state))");
+    CyberblockHeat.Restore(game, s"session \(NameToString(state))", true);
     Cyberblock_Log(s"session: cleaned (\(StrLen(reason) > 0 ? reason : NameToString(state)))");
     if Equals(state, n"refused") && StrLen(reason) > 0 && NotEquals(reason, this.shownRefusal) {
       if IsDefined(system) && (!system.InkOn() || !Cyberblock_IsLinked()) {
