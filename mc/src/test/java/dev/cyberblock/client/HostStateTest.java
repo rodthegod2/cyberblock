@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.cyberblock.Bridge;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -260,24 +263,148 @@ class HostStateTest {
 		HostState.resetKeys();
 	}
 
+	private static final long MS = 1_000_000L;
+	private static final double EPS = 1e-9;
+
+	private static void aim(final double d, final long now) {
+		HostState.updateAim(json("{'t':'aim','d':" + d + "}"), now);
+	}
+
+	/** A fresh host: the first distance is believed at once (a rise from nothing would otherwise take 300 ms). */
+	private static void freshAim(final double d) {
+		HostState.resetAim();
+		aim(d, 0L);
+		aim(d, 0L);
+		aim(d, 0L);
+	}
+
 	@Test
-	void aimLimitsReach() {
-		HostState.updateAim(json("{'t':'aim','d':2.5}"));
-		assertEquals(2.5, HostState.aimLimit(4.5));
-		assertEquals(1.0, HostState.aimLimit(1.0)); // a shorter reach stays as it is
+	void aimLimitsReachWithAMargin() {
+		freshAim(2.5);
+		assertEquals(2.5 + HostState.AIM_MARGIN, HostState.aimLimit(4.5, 0L), EPS);
+		assertEquals(1.0, HostState.aimLimit(1.0, 0L)); // a shorter reach stays as it is
 	}
 
 	@Test
 	void noSurfaceMeansFullReach() {
-		HostState.updateAim(json("{'t':'aim','d':-1}"));
-		assertEquals(4.5, HostState.aimLimit(4.5));
+		freshAim(2.5);
+		aim(-1, 0L);
+		assertEquals(4.5, HostState.aimLimit(4.5, 0L), "no surface rises at once");
+		assertEquals(-1.0, HostState.aimRaw());
 	}
 
 	@ParameterizedTest
 	@ValueSource(strings = {"{'d':'NaN'}", "{'d':'Infinity'}", "{'d':1e9}", "{}"})
 	void badAimIsRejectedAndKeepsTheLastOne(final String bad) {
-		HostState.updateAim(json("{'d':3.0}"));
+		freshAim(3.0);
 		assertThrows(RuntimeException.class, () -> HostState.updateAim(json(bad)));
-		assertEquals(3.0, HostState.aimLimit(4.5));
+		assertEquals(3.0 + HostState.AIM_MARGIN, HostState.aimLimit(4.5, 0L), EPS);
+	}
+
+	/** Plan Q-B1: the host's ray ends on the collision box at d; the block's own face is 2 mm further: inside the limit. */
+	@Test
+	void theBlockFaceJustBehindTheBoxFaceIsInsideTheLimit() {
+		freshAim(2.437);
+		Vec3 eye = new Vec3(0.5, 65.62, 0.5);
+		Vec3 dir = new Vec3(0, 0, 1);
+		double face = 2.437 + 0.002;
+		AABB block = new AABB(0, 64, eye.z + face, 1, 65.99, eye.z + face + 1);
+		Vec3 end = eye.add(dir.scale(HostState.aimLimit(4.5, 0L)));
+		assertTrue(block.clip(eye, end).isPresent(), "the pick reaches the block");
+	}
+
+	/** Q-B4: a creative player aims at an outline block whose top face is exactly where the host's ray stops (a street floor). */
+	@Test
+	void anOutlineBlockAtTheAimDistanceItselfIsTargeted() {
+		freshAim(1.62);
+		Vec3 eye = new Vec3(0.5, 65.62, 0.5);
+		Vec3 down = new Vec3(0, -1, 0);
+		AABB street = new AABB(0, 63, 0, 1, 64, 1); // the barrier under V's feet, its top at y 64
+		Vec3 end = eye.add(down.scale(HostState.aimLimit(4.5, 0L)));
+		assertTrue(street.clip(eye, end).isPresent());
+	}
+
+	@Test
+	void aRealWallInFrontStillBlocksTheBlockBehindIt() {
+		freshAim(1.5); // the wall
+		Vec3 eye = new Vec3(0.5, 65.62, 0.5);
+		AABB behind = new AABB(0, 65, eye.z + 2.5, 1, 66, eye.z + 3.5); // 1 m behind the wall face
+		Vec3 end = eye.add(new Vec3(0, 0, 1).scale(HostState.aimLimit(4.5, 0L)));
+		assertFalse(behind.clip(eye, end).isPresent());
+	}
+
+	@Test
+	void oneShortSampleDoesNotChangeTheLimit() {
+		freshAim(3.0);
+		aim(1.0, 50 * MS); // a single dip (a hand, a passing NPC, a stray ray)
+		assertEquals(3.0 + HostState.AIM_MARGIN, HostState.aimLimit(4.5, 60 * MS), EPS);
+		aim(3.0, 100 * MS);
+		assertEquals(3.0 + HostState.AIM_MARGIN, HostState.aimLimit(4.5, 500 * MS), EPS, "the dip is over");
+	}
+
+	@Test
+	void theLimitFallsAfterThreeShorterSamples() {
+		freshAim(3.0);
+		aim(2.0, 100 * MS);
+		aim(2.0, 110 * MS);
+		assertEquals(3.0 + HostState.AIM_MARGIN, HostState.aimLimit(4.5, 120 * MS), EPS);
+		aim(1.9, 130 * MS);
+		assertEquals(1.9 + HostState.AIM_MARGIN, HostState.aimLimit(4.5, 130 * MS), EPS);
+	}
+
+	/** The host sends aim on change only: one shorter value that holds is believed after 300 ms with no further sample. */
+	@Test
+	void theLimitFallsAfter300MsOfAShorterValue() {
+		freshAim(3.0);
+		aim(2.0, 1000 * MS);
+		assertEquals(3.0 + HostState.AIM_MARGIN, HostState.aimLimit(4.5, 1299 * MS), EPS);
+		assertEquals(2.0 + HostState.AIM_MARGIN, HostState.aimLimit(4.5, 1300 * MS), EPS);
+	}
+
+	@Test
+	void theLimitRisesAtOnce() {
+		freshAim(1.0);
+		aim(3.0, 10 * MS);
+		assertEquals(3.0 + HostState.AIM_MARGIN, HostState.aimLimit(4.5, 10 * MS), EPS);
+	}
+
+	private static final BlockPos STONE = new BlockPos(3, 65, 7);
+
+	@Test
+	void stickinessKeepsTheBlockBeingBrokenFor500Ms() {
+		HostState.resetAim();
+		HostState.picked(STONE, true, 0L);
+		assertEquals(STONE, HostState.stickyTarget(true, p -> true, 499 * MS));
+		assertEquals(STONE, HostState.stickyTarget(true, p -> true, 500 * MS));
+		assertNull(HostState.stickyTarget(true, p -> true, 501 * MS));
+		assertNull(HostState.stickyTarget(true, p -> true, 0L), "once over, it stays over");
+	}
+
+	@Test
+	void stickinessEndsOnRelease() {
+		HostState.resetAim();
+		HostState.picked(STONE, true, 0L);
+		assertNull(HostState.stickyTarget(false, p -> true, 10 * MS));
+		assertNull(HostState.stickyTarget(true, p -> true, 20 * MS));
+	}
+
+	@Test
+	void stickinessEndsWhenTheBlockIsGone() {
+		HostState.resetAim();
+		HostState.picked(STONE, true, 0L);
+		assertNull(HostState.stickyTarget(true, p -> false, 10 * MS));
+		assertNull(HostState.stickyTarget(true, p -> true, 20 * MS));
+	}
+
+	@Test
+	void stickinessFollowsTheLatestBlockAndNeedsAttack() {
+		HostState.resetAim();
+		HostState.picked(STONE, false, 0L);
+		assertNull(HostState.stickyTarget(true, p -> true, 0L), "picked without attack: nothing to keep");
+		HostState.picked(STONE, true, 0L);
+		HostState.picked(null, true, 400 * MS); // the limit dipped: the pick found nothing, the old block stays
+		assertEquals(STONE, HostState.stickyTarget(true, p -> true, 450 * MS));
+		HostState.picked(STONE.above(), true, 460 * MS);
+		assertEquals(STONE.above(), HostState.stickyTarget(true, p -> true, 900 * MS));
 	}
 }

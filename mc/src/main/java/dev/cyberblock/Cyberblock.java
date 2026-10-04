@@ -8,9 +8,12 @@ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,11 +45,22 @@ public class Cyberblock implements ModInitializer {
 			}
 		};
 		ServerLifecycleEvents.SERVER_STARTED.register(WorldBridge::attach);
+		ServerLifecycleEvents.SERVER_STARTED.register(OutlineRules::attach);
 		// before the world is saved, so Night City's barriers and the proxies are never kept in the save
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
 			ProxyManager.clear();
 			MobWar.clear();
 			WorldBridge.detach();
+			OutlineRules.detach();
+			SafeSpots.clear();
+		});
+		// outline blocks: survival may not break them, creative breaks come back (plan Q-B4); server side only
+		PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, blockEntity) ->
+			!(level instanceof ServerLevel server && player instanceof ServerPlayer breaker) || WorldBridge.mayBreak(server, breaker, pos, state));
+		PlayerBlockBreakEvents.AFTER.register((level, player, pos, state, blockEntity) -> {
+			if (level instanceof ServerLevel server && player instanceof ServerPlayer breaker) {
+				WorldBridge.broken(server, breaker, pos, state);
+			}
 		});
 		ServerEntityEvents.ENTITY_LOAD.register(MobWar::onEntityLoad);
 		ServerTickEvents.END_SERVER_TICK.register(WorldBridge::tick);
@@ -54,6 +68,7 @@ public class Cyberblock implements ModInitializer {
 		ServerTickEvents.END_SERVER_TICK.register(MobWar::tick);
 		ServerTickEvents.END_SERVER_TICK.register(Projectiles::tick);
 		ServerTickEvents.END_SERVER_TICK.register(PlayerEffects::tick);
+		ServerTickEvents.END_SERVER_TICK.register(SafeSpots::tick);
 		// /cyberblock level, for everyone (permission level 0; Brigadier merges it with the cyber track's /cyberblock literals)
 		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> dispatcher.register(
 			Commands.literal("cyberblock").then(Commands.literal("level").executes(command -> level(command.getSource())))));
@@ -66,6 +81,29 @@ public class Cyberblock implements ModInitializer {
 
 			dispatcher.register(Commands.literal("cyberblock").then(survey));
 		});
+		// /cyberblock debug aim|view [on|off] (plan Q-B3): the Cyberblock client handles these before they are sent; the server only
+		// has them for completion and to answer a client without the mod (permission level 0)
+		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> {
+			var debug = Commands.literal("debug");
+			for (String flag : new String[] {"aim", "view"}) {
+				var node = Commands.literal(flag).executes(command -> clientOnly(command.getSource()));
+				for (String state : new String[] {"on", "off"}) {
+					node = node.then(Commands.literal(state).executes(command -> clientOnly(command.getSource())));
+				}
+
+				debug = debug.then(node);
+			}
+
+			dispatcher.register(Commands.literal("cyberblock").then(debug)
+				.then(Commands.literal("settings").executes(command -> clientOnly(command.getSource()))));
+		});
+		// /cyberblock outline [erase on|off] (plan Q-B5): operators and the singleplayer owner
+		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> dispatcher.register(
+			Commands.literal("cyberblock").then(Commands.literal("outline").requires(OutlineRules::mayChange)
+				.executes(command -> outline(command.getSource(), null))
+				.then(Commands.literal("erase")
+					.then(Commands.literal("on").executes(command -> outline(command.getSource(), true)))
+					.then(Commands.literal("off").executes(command -> outline(command.getSource(), false)))))));
 		LOG.info("cyberblock loaded");
 	}
 
@@ -87,6 +125,26 @@ public class Cyberblock implements ModInitializer {
 		String line = Bridge.surveyCommand.apply(op);
 		source.sendSuccess(() -> Component.literal(line), false);
 		return 1;
+	}
+
+	/** /cyberblock outline (on null: the status) and /cyberblock outline erase on|off. */
+	private static int outline(final CommandSourceStack source, final Boolean on) {
+		if (on != null && OutlineRules.setCreativeErases(on)) {
+			LOG.info("outline: permanent erase {} (by {})", on ? "on" : "off", source.getTextName());
+		}
+
+		boolean now = OutlineRules.creativeErases();
+		// a system message: the world's send_command_feedback is off (CyberblockClient), which would hide sendSuccess
+		source.sendSystemMessage(Component.translatableWithFallback("cyberblock.outline.erase." + (now ? "on" : "off"), now
+			? "Creative can erase the replica permanently: ON (broken outline blocks stay until the probes see the cell again)"
+			: "Creative can erase the replica permanently: OFF (broken outline blocks come back in about 10 s)"));
+		return 1;
+	}
+
+	/** A client-side command reached the server: the player's client does not have the Cyberblock mod. */
+	private static int clientOnly(final CommandSourceStack source) {
+		source.sendFailure(Component.translatableWithFallback("cyberblock.debug.client_only", "This needs the Cyberblock mod on your client"));
+		return 0;
 	}
 
 	private static String metres(final int k) {

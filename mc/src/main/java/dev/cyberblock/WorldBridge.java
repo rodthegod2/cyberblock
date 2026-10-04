@@ -8,9 +8,11 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 
 /** Server-side half: Night City's collision as invisible barrier blocks, commands, and block changes for the host. */
 public final class WorldBridge {
@@ -23,6 +25,8 @@ public final class WorldBridge {
 	private static final BlockEvents.Outbox blockEvents = new BlockEvents.Outbox();
 	/** While placing or removing the host's own ground: those changes aren't news to the host (server thread only). */
 	private static boolean placingGround;
+	/** Outline blocks a creative player broke, until they come back (server thread only). */
+	private static final OutlineGuard guard = new OutlineGuard();
 	/** The protocol's limit for one pcells message. */
 	private static final int MAX_PROJECTILE_CELLS = 64;
 	/** Barriers on Night City surfaces in the way of Steve's projectiles, for 3 seconds (server thread only). */
@@ -213,6 +217,7 @@ public final class WorldBridge {
 			BlockState air = Blocks.AIR.defaultBlockState();
 			BlockState barrier = Blocks.BARRIER.defaultBlockState();
 			BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+			int restored = 0;
 			placingGround = true;
 			try {
 				for (Ranges.Range r : ranges) {
@@ -223,19 +228,29 @@ public final class WorldBridge {
 						}
 
 						if (place) {
+							// a broken outline block the probes report again comes back now, whatever its decision (plan Q-B6)
+							boolean wasBroken = guard.reported(pos.asLong());
 							if (level.getBlockState(pos).isAir()) {
 								level.setBlock(pos, barrier, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
 								barriers.add(pos.immutable());
+								restored += wasBroken ? 1 : 0;
 							} else if (pcells.promote(pos.asLong()) && level.getBlockState(pos).is(Blocks.BARRIER)) {
 								barriers.add(pos.immutable()); // a projectile's barrier the probes now report as ground stays
 							}
-						} else if (barriers.remove(pos.immutable()) && level.getBlockState(pos).is(Blocks.BARRIER)) {
-							level.setBlock(pos, air, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+						} else {
+							guard.unclaimed(pos.asLong());
+							if (barriers.remove(pos.immutable()) && level.getBlockState(pos).is(Blocks.BARRIER)) {
+								level.setBlock(pos, air, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+							}
 						}
 					}
 				}
 			} finally {
 				placingGround = false;
+			}
+
+			if (restored > 0) {
+				Cyberblock.LOG.info("outline: restored {}", restored);
 			}
 		});
 	}
@@ -259,6 +274,7 @@ public final class WorldBridge {
 
 		placingGround = false;
 		barriers.clear();
+		guard.clear();
 		removeTemp(level, pcells.clear());
 	}
 
@@ -302,6 +318,32 @@ public final class WorldBridge {
 		});
 	}
 
+	/**
+	 * Server thread: broken outline blocks whose 10 s are up come back (plan Q-B6), into air with no player inside the cell. A player
+	 * standing on top of it (feet on its top face, give or take a little: Steve stands where V stands) does not count: the block
+	 * comes back under him, as Night City's ground is there.
+	 */
+	private static void snapBack(final ServerLevel level, final long now) {
+		long[] due = guard.due(now, cell -> level.getBlockState(BlockPos.of(cell)).isAir(),
+			cell -> level.getEntitiesOfClass(Player.class, new AABB(BlockPos.of(cell)).deflate(0.1)).isEmpty());
+		if (due.length == 0) {
+			return;
+		}
+
+		placingGround = true;
+		try {
+			for (long cell : due) {
+				BlockPos pos = BlockPos.of(cell);
+				level.setBlock(pos, Blocks.BARRIER.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+				barriers.add(pos);
+			}
+		} finally {
+			placingGround = false;
+		}
+
+		Cyberblock.LOG.info("outline: restored {}", due.length);
+	}
+
 	/** Server thread: takes the given projectile barriers out (unless something else replaced them meanwhile). */
 	private static void removeTemp(final ServerLevel level, final long[] cells) {
 		BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
@@ -316,6 +358,52 @@ public final class WorldBridge {
 		} finally {
 			placingGround = false;
 		}
+	}
+
+	/** Server thread: which of our outline blocks this is (before it was broken), or null when it is not one of ours. */
+	private static OutlineRules.Kind outlineKind(final ServerLevel level, final BlockPos pos, final BlockState state) {
+		MinecraftServer s = server;
+		if (s == null || level != s.overworld() || !state.is(Blocks.BARRIER)) {
+			return null;
+		}
+
+		if (barriers.contains(pos)) {
+			return OutlineRules.Kind.OUTLINE_BARRIER;
+		}
+
+		return pcells.contains(pos.asLong()) ? OutlineRules.Kind.PROJECTILE_BARRIER : null;
+	}
+
+	/** Server thread, before a player breaks a block (PlayerBlockBreakEvents.BEFORE): false refuses the break (plan Q-B4). */
+	public static boolean mayBreak(final ServerLevel level, final ServerPlayer player, final BlockPos pos, final BlockState state) {
+		OutlineRules.Kind kind = outlineKind(level, pos.immutable(), state);
+		return kind == null || OutlineRules.decide(player.gameMode(), OutlineRules.creativeErases(), kind) != OutlineRules.Decision.DENY;
+	}
+
+	/**
+	 * Server thread, after a player broke a block (PlayerBlockBreakEvents.AFTER; state is what it was). An outline block: only the
+	 * Minecraft block went (BlockEvents.change sends nothing for barrier to air: Cyberpunk hears nothing), and the cell leaves our
+	 * barrier set, so a later unground does not try to remove it.
+	 */
+	public static void broken(final ServerLevel level, final ServerPlayer player, final BlockPos pos, final BlockState state) {
+		BlockPos cell = pos.immutable();
+		OutlineRules.Kind kind = outlineKind(level, cell, state);
+		if (kind == OutlineRules.Kind.PROJECTILE_BARRIER) {
+			pcells.promote(cell.asLong()); // forgotten: it is not ours to take out when its 3 s are up
+			return;
+		}
+
+		if (kind != OutlineRules.Kind.OUTLINE_BARRIER) {
+			return;
+		}
+
+		barriers.remove(cell);
+		OutlineRules.Decision decision = OutlineRules.decide(player.gameMode(), OutlineRules.creativeErases(), kind);
+		long now = level.getServer().getTickCount();
+		guard.broke(cell.asLong(), now, decision);
+		SafeSpots.outlineBroke(cell, now);
+		Cyberblock.LOG.info("outline: {} broke {} {} {} ({})", player.getName().getString(), cell.getX(), cell.getY(), cell.getZ(),
+			decision == OutlineRules.Decision.KEEP ? "kept: permanent erase" : "snap back in 10 s");
 	}
 
 	/** Run a command as the server (op). Results go to the log, not to chat (send_command_feedback is off). */
@@ -340,6 +428,10 @@ public final class WorldBridge {
 	static void tick(final MinecraftServer s) {
 		if (pcells.size() > 0) {
 			removeTemp(s.overworld(), pcells.expire(s.getTickCount()));
+		}
+
+		if (guard.size() > 0) {
+			snapBack(s.overworld(), s.getTickCount());
 		}
 
 		boolean active = Cyberblock.active;

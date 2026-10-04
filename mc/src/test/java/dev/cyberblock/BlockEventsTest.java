@@ -84,6 +84,20 @@ class BlockEventsTest {
 		assertNull(BlockEvents.change(Blocks.BARRIER.defaultBlockState(), air(), Cause.WORLD));
 	}
 
+	/**
+	 * Plan Q-B4: a player breaking an outline block removes only the Minecraft block; Cyberpunk hears nothing, whoever broke it. A
+	 * waterlogged barrier leaves water behind.
+	 */
+	@Test
+	void breakingAnOutlineBlockSendsNothing() {
+		BlockState barrier = Blocks.BARRIER.defaultBlockState();
+		BlockState wet = barrier.setValue(net.minecraft.world.level.block.BarrierBlock.WATERLOGGED, true);
+		for (Cause cause : Cause.values()) {
+			assertNull(BlockEvents.change(barrier, air(), cause), "barrier to air, " + cause);
+			assertNull(BlockEvents.change(wet, Blocks.WATER.defaultBlockState(), cause), "waterlogged barrier to water, " + cause);
+		}
+	}
+
 	@Test
 	void hostGroundChangesProduceNothing() {
 		assertNull(BlockEvents.change(air(), stone(), Cause.HOST_GROUND));

@@ -6,6 +6,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.cyber.HackWheel;
 import dev.cyberblock.client.mixin.KeyMappingAccessor;
+import dev.cyberblock.client.settings.DebugFlags;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -19,7 +20,64 @@ import org.lwjgl.sdl.SDLScancode;
 import org.lwjgl.sdl.SDLVideo;
 
 /** Host input, applied on the client thread: the host window has the focus, so Minecraft never sees these itself. */
-final class ClientInput {
+public final class ClientInput {
+	/** A game key as the host's messages drive it: a KeyMapping in the game, a stand-in in the tests. */
+	interface Key {
+		boolean isDown();
+
+		void setDown(boolean down);
+
+		/** One more press for vanilla to consume (KeyMapping's click count). */
+		void click();
+	}
+
+	/**
+	 * The host's attack and use keys (plan Q-B2). A press adds exactly one click, a repeated "down" adds none, and the key stays down
+	 * until the host's "up": continuous breaking needs the key held, not clicked. A screen releases every key when it opens
+	 * (Gui.setScreen calls KeyMapping.releaseAll) and the host's "up" may come while it is open, so what the host holds is kept here
+	 * and put back when the screen closes: the key is neither stuck down nor released early.
+	 */
+	static final class HeldKeys {
+		private boolean attack, use;
+
+		/** A key message (k "attack" or "use"), with or without a screen open. */
+		void host(final String k, final boolean down) {
+			if (k.equals("attack")) {
+				this.attack = down;
+			} else if (k.equals("use")) {
+				this.use = down;
+			}
+		}
+
+		boolean holds(final String k) {
+			return k.equals("attack") ? this.attack : k.equals("use") && this.use;
+		}
+
+		void clear() {
+			this.attack = this.use = false;
+		}
+
+		/** No screen is open: the key follows the host, one click per press. */
+		static void apply(final Key key, final boolean down) {
+			if (down && !key.isDown()) {
+				key.click();
+			}
+
+			key.setDown(down);
+		}
+
+		/** The screen closed: the key is down again exactly if the host still holds it (no click: the press was counted before). */
+		void screenClosed(final String k, final Key key) {
+			key.setDown(this.holds(k));
+		}
+	}
+
+	private static final HeldKeys held = new HeldKeys();
+	/** A screen was open at the end of the last client tick. Client thread. */
+	private static boolean hadScreen;
+	/** Inside Minecraft.tick (between the start and end client tick events). Client thread. */
+	private static boolean inTick;
+
 	/**
 	 * What the host asked for with "hud" (a re-test 3 host always says false). A vehicle no longer hides the HUD (plan retest3 M2,
 	 * F3): hiding it would also hide the first-person hand (26.3 skips renderItemInHand while the HUD is hidden); the UI track trims
@@ -55,8 +113,68 @@ final class ClientInput {
 		}
 	}
 
+	/** Start of each client tick. */
+	static void tickStart() {
+		inTick = true;
+	}
+
+	/** Minecraft.tick is over: from here to the next tick start the mouse is what it really is. */
+	static void tickOver() {
+		inTick = false;
+	}
+
+	/** End of each client tick: a screen that closed gives the host's held attack and use back to the game. */
+	static void tickEnd(final Minecraft minecraft) {
+		tickOver();
+		boolean screen = minecraft.gui.screen() != null;
+		if (hadScreen && !screen && HostState.live() != null) {
+			held.screenClosed("attack", key(minecraft.options.keyAttack));
+			held.screenClosed("use", key(minecraft.options.keyUse));
+			if (DebugFlags.aim()) {
+				Cyberblock.LOG.info("aim: screen closed, attack {} use {}", held.holds("attack") ? "held" : "up", held.holds("use") ? "held" : "up");
+			}
+		}
+
+		hadScreen = screen;
+	}
+
+	/**
+	 * Whether the mouse counts as grabbed (MouseHandlerMixin). Vanilla breaks a block over several ticks only while the mouse is
+	 * grabbed (Minecraft.handleKeybinds: continueAttack(screen == null && keyAttack.isDown() && mouseHandler.isMouseGrabbed()), and
+	 * continueAttack(false) calls stopDestroyBlock every tick). The mouse is grabbed only while the Minecraft window has the focus,
+	 * which it never has behind the host: so the destroy progress restarted every tick and no crack ever grew (plan Q-B2). While
+	 * the host drives, the host's attack key is the mouse. Only inside a client tick: the other two callers (mouse look in runTick and
+	 * Window.onResize, which would move the real cursor) run outside it and keep the truth.
+	 */
+	public static boolean grabsMouse() {
+		return inTick && HostState.live() != null;
+	}
+
+	private static Key key(final KeyMapping mapping) {
+		return new Key() {
+			@Override
+			public boolean isDown() {
+				return mapping.isDown();
+			}
+
+			@Override
+			public void setDown(final boolean down) {
+				mapping.setDown(down);
+			}
+
+			@Override
+			public void click() {
+				KeyMappingAccessor access = (KeyMappingAccessor) mapping;
+				access.cyberblock$setClickCount(access.cyberblock$getClickCount() + 1);
+			}
+		};
+	}
+
 	/** The host went away: Steve, his hand and the HUD are back. */
 	static void reset(final Minecraft minecraft) {
+		held.clear();
+		minecraft.options.keyAttack.setDown(false);
+		minecraft.options.keyUse.setDown(false);
 		hudHidden = false;
 		HostState.setVehicle(false);
 		HostState.resetKeys();
@@ -151,7 +269,9 @@ final class ClientInput {
 				Screen screen = minecraft.gui.screen();
 				if (screen != null) {
 					// vanilla gives a key to the open screen and never to the game (handleKeybinds does not run, and KeyMapping.releaseAll
-					// only runs when a screen opens): a click counted now would stay queued and fire as soon as the screen closes
+					// only runs when a screen opens): a click counted now would stay queued and fire as soon as the screen closes. What
+					// the host holds is kept, and given back to the game when the screen closes (tickEnd)
+					held.host(k, down);
 					if (down) {
 						pressOnScreen(screen, key, mods(m));
 					}
@@ -160,6 +280,8 @@ final class ClientInput {
 					if (key == minecraft.options.keyUse && HackWheel.use(minecraft, down)) {
 						return;
 					}
+
+					held.host(k, down);
 
 					// Ctrl+Q drops the whole stack: vanilla asks the window whether Ctrl is down, and the host's window has the keyboard
 					if (key == minecraft.options.keyDrop && down && (mods(m) & InputConstants.MOD_CONTROL) != 0) {
@@ -170,12 +292,11 @@ final class ClientInput {
 						return;
 					}
 
-					if (down && !key.isDown()) {
-						KeyMappingAccessor access = (KeyMappingAccessor)key;
-						access.cyberblock$setClickCount(access.cyberblock$getClickCount() + 1);
+					if (key == minecraft.options.keyAttack && DebugFlags.aim() && down != key.isDown()) {
+						Cyberblock.LOG.info("aim: attack {}", down ? "down (one click)" : "up");
 					}
 
-					key.setDown(down);
+					HeldKeys.apply(key(key), down);
 				}
 			}
 			case "slot" -> {

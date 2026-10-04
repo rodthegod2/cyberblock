@@ -4,6 +4,9 @@ package dev.cyberblock.client;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.ProxyEntities;
 import dev.cyberblock.WorldBridge;
+import dev.cyberblock.client.settings.AimDebug;
+import dev.cyberblock.client.settings.SettingsClient;
+import dev.cyberblock.client.view.ViewClient;
 import java.util.List;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -49,9 +52,12 @@ public class CyberblockClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		HostLink.launch();
+		SettingsClient.init();
+		ViewClient.init();
 		// proxies are never drawn: Cyberpunk shows the NPC or vehicle they stand for
 		EntityRendererRegistry.register(ProxyEntities.HUMAN, NoopRenderer::new);
 		EntityRendererRegistry.register(ProxyEntities.VEHICLE, NoopRenderer::new);
+		ClientTickEvents.START_CLIENT_TICK.register(minecraft -> ClientInput.tickStart());
 		ClientTickEvents.END_CLIENT_TICK.register(CyberblockClient::tick);
 		// launcher players (plan retest3 M5): a "Play Cyberblock" button on the title screen
 		ScreenEvents.AFTER_INIT.register((minecraft, screen, width, height) -> {
@@ -96,6 +102,8 @@ public class CyberblockClient implements ClientModInitializer {
 
 		AutoWorld.tick(minecraft);
 		StatusReporter.tick(minecraft);
+		AimDebug.tick(minecraft);
+		ClientInput.tickEnd(minecraft);
 	}
 
 	/** Settings for sitting behind another game: keep running unfocused, and no sky/cloud/bobbing effects in the picture. */
