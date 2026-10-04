@@ -391,7 +391,7 @@ TEST(device_box_follows_kind_size_and_yaw)
 	const cb::Aabb door = cb::devices::device_box(device(1, {10.0, 20.0, 5.0}, "door"));
 	CHECK(near(door.min.x, 10.0 - 1.2 - m) && near(door.max.x, 10.0 + 1.2 + m)); // width along right (+X at yaw 0)
 	CHECK(near(door.min.y, 20.0 - 0.3 - m) && near(door.max.y, 20.0 + 0.3 + m)); // depth along forward (+Y)
-	CHECK(near(door.min.z, 5.0 - m) && near(door.max.z, 5.0 + 2.8 + m));        // stands on its position
+	CHECK(near(door.min.z, 5.0 + cb::devices::kFloorGap) && near(door.max.z, 5.0 + cb::devices::kFloorGap + 2.8 + m)); // stands on its position
 	Device turned = device(1, {10.0, 20.0, 5.0}, "door");
 	turned.yaw = 90.0;
 	const cb::Aabb t = cb::devices::device_box(turned);
@@ -418,10 +418,11 @@ TEST(probe_hits_inside_device_boxes_never_become_ground)
 	CHECK(cb::drop_hits_in_boxes(wall, &codes, boxes) == 2);
 	CHECK(wall.size() == 2 && near(wall[0].x, 5.0) && near(wall[1].z, 3.2)); // beside it, and above it
 	CHECK(codes == std::vector<int>({7, 9}));
-	std::vector<Vec3> down{{0.0, 0.0, 2.8}, {0.0, 0.0, -1.0}};
+	std::vector<Vec3> down{{0.0, 0.0, 2.8}, {0.0, 0.0, -1.0}, {0.5, 0.2, 0.0}};
 	std::vector<int> wrong{1}; // not one code per hit: left alone
-	CHECK(cb::drop_hits_in_boxes(down, &wrong, boxes) == 1 && down.size() == 1 && wrong.size() == 1);
-	CHECK(cb::drop_hits_in_boxes(down, nullptr, {}) == 0 && down.size() == 1);
+	CHECK(cb::drop_hits_in_boxes(down, &wrong, boxes) == 1 && down.size() == 2 && wrong.size() == 1);
+	CHECK(near(down[1].z, 0.0)); // the floor under the door stays ground
+	CHECK(cb::drop_hits_in_boxes(down, nullptr, {}) == 0 && down.size() == 2);
 	CHECK(cb::inside(boxes[0], boxes[0].min) && cb::inside(boxes[0], boxes[0].max));
 
 	// the filtered hits never reach the ground ProbeSet sends
@@ -430,6 +431,31 @@ TEST(probe_hits_inside_device_boxes_never_become_ground)
 	cb::ProbeSet set;
 	const cb::Delta d = set.submit({0.0, 0.0, 0.0}, {}, hits, 32.0, 0.0, 1.0);
 	CHECK(d.add.empty());
+}
+
+TEST(device_boxes_keep_the_surface_devices_sit_on)
+{
+	// standing kinds: a down hit at exactly the device's height is its floor
+	for (const char *kind : {"door", "gate", "vending", "terminal", "traffic", "container"})
+	{
+		const std::vector<cb::Aabb> boxes{cb::devices::device_box(device(1, {3.0, 4.0, 7.0}, kind))};
+		std::vector<Vec3> floor{{3.0, 4.0, 7.0}, {3.3, 4.2, 7.0}, {3.0, 4.0, 6.5}};
+		CHECK(cb::drop_hits_in_boxes(floor, nullptr, boxes) == 0 && floor.size() == 3);
+	}
+	// only doors and gates enter the probe filter (section 1.11): the floor under a vending machine or a street lamp
+	// and the wall behind a wall camera stay ground
+	cb::devices::BoxSet set;
+	std::vector<Device> list{device(1, {0.0, 0.0, 0.0}, "door"), device(2, {10.0, 0.0, 0.0}, "vending"),
+							 device(3, {20.0, 0.0, 0.0}, "light"), device(4, {30.0, 0.0, 4.0}, "camera"),
+							 device(5, {40.0, 0.0, 0.0}, "gate")};
+	set.set(list, 1.0);
+	const std::vector<cb::Aabb> boxes = set.current(1.0);
+	CHECK(boxes.size() == 2);
+	std::vector<Vec3> down{{0.0, 0.0, 0.0}, {10.0, 0.0, 0.0}, {10.4, 0.3, 0.0}, {20.0, 0.0, 0.0}, {40.0, 0.0, 0.0}};
+	CHECK(cb::drop_hits_in_boxes(down, nullptr, boxes) == 0 && down.size() == 5);
+	std::vector<Vec3> wall{{30.0, -0.4, 4.0}, {30.2, -0.4, 3.8}, {0.0, 0.0, 1.5}, {40.0, 0.0, 1.5}};
+	CHECK(cb::drop_hits_in_boxes(wall, nullptr, boxes) == 2 && wall.size() == 2); // the door and the gate leave
+	CHECK(near(wall[0].x, 30.0) && near(wall[1].x, 30.2));
 }
 
 TEST(device_boxes_expire_and_are_bounded)

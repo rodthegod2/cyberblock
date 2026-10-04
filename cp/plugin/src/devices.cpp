@@ -274,17 +274,25 @@ namespace cb::devices
 		const double c = std::abs(std::cos(a)), s = std::abs(std::sin(a));
 		const double hx = c * size.w / 2 + s * size.d / 2 + kBoxMargin;
 		const double hy = s * size.w / 2 + c * size.d / 2 + kBoxMargin;
-		const double bottom = size.centered ? device.pos.z - size.h / 2 : device.pos.z;
-		return {{device.pos.x - hx, device.pos.y - hy, bottom - kBoxMargin},
+		// a standing device's box starts just above its base: the floor it stands on stays ground
+		const double bottom = size.centered ? device.pos.z - size.h / 2 : device.pos.z + kFloorGap;
+		const double below = size.centered ? kBoxMargin : 0.0;
+		return {{device.pos.x - hx, device.pos.y - hy, bottom - below},
 				{device.pos.x + hx, device.pos.y + hy, bottom + size.h + kBoxMargin}};
 	}
 
 	void BoxSet::set(std::span<const Device> devices, double now)
 	{
+		// section 1.11: only door and gate hits leave the replica (doors are not walls); the other kinds sit on or in
+		// a surface that must stay ground, and Minecraft's ReplicaRules.excluded handles their cells
 		std::vector<Aabb> next;
-		next.reserve(std::min(devices.size(), kMax));
-		for (const Device &device : devices.first(std::min(devices.size(), kMax)))
-			next.push_back(device_box(device));
+		for (const Device &device : devices)
+		{
+			if (next.size() == kMax)
+				break;
+			if (device.kind == "door" || device.kind == "gate")
+				next.push_back(device_box(device));
+		}
 		std::lock_guard<std::mutex> lock(m_lock);
 		m_boxes = std::move(next);
 		m_at = now;

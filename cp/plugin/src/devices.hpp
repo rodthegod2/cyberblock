@@ -181,18 +181,21 @@ namespace cb::devices
 	};
 	/// The default box of `kind` (a 1 m cube standing on the position for an unknown kind).
 	BoxSize default_size(std::string_view kind);
-	/// Every box grows by this on each side: probe hits lie on the device's surface.
+	/// Every box grows by this on each side (except below a standing device): probe hits lie on the device's surface.
 	inline constexpr double kBoxMargin = 0.25;
+	/// A standing device's box starts this far above its position, so floor hits at or below its base are kept.
+	inline constexpr double kFloorGap = 0.05;
 	/// The Cyberpunk-space box around a device: its default size turned by its yaw, plus the margin.
 	Aabb device_box(const Device &device);
 
-	/// The boxes of the last device list (thread-safe). They expire kMaxAge seconds after they were set.
+	/// The boxes of the doors and gates (section 1.11) in the last device list (thread-safe). They expire kMaxAge
+	/// seconds after they were set.
 	class BoxSet
 	{
 	public:
 		static constexpr size_t kMax = 256;
 		static constexpr double kMaxAge = 5.0;
-		/// The boxes of `devices` (the first kMax).
+		/// The boxes of the doors and gates in `devices` (the first kMax of them).
 		void set(std::span<const Device> devices, double now);
 		std::vector<Aabb> current(double now) const;
 
