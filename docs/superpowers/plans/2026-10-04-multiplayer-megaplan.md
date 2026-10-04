@@ -459,7 +459,7 @@ style of `Cyberblock_SubmitNpcs`.
 ### 1.9 New DLL ↔ client wire messages, by phase (contract shapes; Phase 0 may narrow fields, never rename them)
 | Phase | `t` | Direction / class | Fields |
 |---|---|---|---|
-| Q2, Q3 | `prefs` | MC → CP, LOCAL | `dist` 1.5..8 m (third-person distance), `shoulder` -1..1 m, `fov` 0 (the game's) or 50..110, `recenter` bool, `vdist` 0 (the game's) or 3..14 m (vehicle camera distance, only if Phase Q finds it settable), `stepup` bool (Q2 step-up assist); after each host `hello` and on change. Phase 9 adds `scale` 0.5..1.0 (Performance mode frame-export scale) |
+| Q2, Q3 | `prefs` | MC → CP, LOCAL | `dist` 1.5..8 m (third-person distance), `shoulder` -1..1 m, `fov` 0 (the game's) or 50..110, `recenter` bool, `vdist` 0 (the game's) or 3..14 m (vehicle camera distance, only if Phase Q finds it settable), `stepup` bool (Q2 step-up assist), `debug` bool (the `/cyberblock debug view` flag that gates `cam.vdbg`; added by the Phase Q integrator, default false); after each host `hello` and on change. Phase 9 adds `scale` 0.5..1.0 (Performance mode frame-export scale) |
 | Q3 | `cam` (ext) | CP → MC, LOCAL | adds `vdbg:[collide m, smooth m, age ms]` only while `/cyberblock debug view` is on |
 | 3 | `unground` (ext) | CP → MC, UP | adds `seen:true` when the cells were observed empty inside the probe radius (absent: they only left the radius); replica blocks go only on `seen:true` |
 | 3 | `ground` (ext) | CP → MC, UP | adds optional `m:[code, ...]`, one material code per quadruple (0 unknown; codes from `material_palette`) |
