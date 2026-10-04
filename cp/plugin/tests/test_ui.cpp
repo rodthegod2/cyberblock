@@ -271,6 +271,32 @@ TEST(ui_reply_builds_groups_lines_and_pins)
 	CHECK(!reply.begin("inventory", 1) && !reply.active());
 }
 
+TEST(ui_vendor_reply_carries_the_price_in_state)
+{
+	// megaplan 7-D1: groups = stock categories, lines = items (text, price in `state`, the item hash in `hash`)
+	ReplyBuilder reply;
+	CHECK(reply.begin("vendor", 9));
+	reply.group(77, "Pistols", "other", false, false);
+	reply.line(4000000001u, "Liberty", 12500);   // a price far above the journal's 0..2
+	reply.line(5, "Free sample", -3);            // never negative
+	reply.line(6, "Overpriced", 2147483647);     // Int32 max stays
+	reply.group(78, "Armor", "main", false, false); // an unknown-to-vendor group kind still maps like any other
+	const auto r = reply.end();
+	CHECK(r.has_value());
+	const json &m = r->message;
+	CHECK(m["t"] == "reply" && m["kind"] == "vendor" && m["id"] == 9 && m["groups"].size() == 2);
+	CHECK(m["groups"][0]["title"] == "Pistols" && m["groups"][0]["lines"].size() == 3);
+	const json &lines = m["groups"][0]["lines"];
+	CHECK(lines[0]["hash"] == 4000000001u && lines[0]["text"] == "Liberty" && lines[0]["state"] == 12500);
+	CHECK(lines[1]["state"] == 0 && lines[2]["state"] == 2147483647);
+	// the other kinds keep their 0..2 state
+	CHECK(reply.begin("journal", 1));
+	reply.group(1, "Q", "side", false, false);
+	reply.line(1, "x", 12500);
+	CHECK(reply.end()->message["groups"][0]["lines"][0]["state"] == 2);
+	CHECK(r->bytes == m.dump().size());
+}
+
 TEST(ui_reply_caps_counts_and_bytes)
 {
 	ReplyBuilder reply;
@@ -352,6 +378,27 @@ TEST(ui_uiact_validation)
 	CHECK(!parse_uiact(json{{"t", "uiact"}, {"a", "track"}, {"arg", std::string(65, 'a')}}));
 	CHECK(parse_uiact(json{{"t", "uiact"}, {"a", "track"}, {"arg", std::string(64, 'a')}}).has_value());
 	CHECK(!parse_uiact(json::array()));
+}
+
+TEST(ui_buy_and_sell_need_the_item_hash)
+{
+	// megaplan 7-D1 / 7-V1: `uiact buy|sell` with the item hash (and the stock list's reply id)
+	const auto buy = parse_uiact(json::parse(R"({"t":"uiact","a":"buy","hash":4000000001,"id":9})"));
+	CHECK(buy.has_value() && buy->a == "buy" && buy->hash == 4000000001u && buy->id == 9);
+	const auto sell = parse_uiact(json::parse(R"({"t":"uiact","a":"sell","hash":17})"));
+	CHECK(sell.has_value() && sell->a == "sell" && sell->hash == 17 && sell->id == 0);
+	std::string why;
+	CHECK(!parse_uiact(json::parse(R"({"t":"uiact","a":"buy"})"), &why) && why.find("hash") != std::string::npos);
+	CHECK(!parse_uiact(json::parse(R"({"t":"uiact","a":"sell"})")));
+	CHECK(!parse_uiact(json::parse(R"({"t":"uiact","a":"buy","hash":0})"))); // no item
+	CHECK(!parse_uiact(json::parse(R"({"t":"uiact","a":"buy","hash":-4})")));
+	CHECK(!parse_uiact(json::parse(R"({"t":"uiact","a":"buy","hash":1.5})")));
+	CHECK(!parse_uiact(json::parse(R"({"t":"uiact","a":"sell","hash":"7"})")));
+	CHECK(!parse_uiact(json::parse(R"({"t":"uiact","a":"buy","hash":4294967296})")));
+	// they queue like any other action, and are dropped while Cyberblock is off
+	UiActions q;
+	CHECK(q.push(*buy, true) && q.pop(true)->a == "buy");
+	CHECK(!q.push(*sell, false) && !q.pop(true).has_value());
 }
 
 TEST(ui_actions_drop_everything_but_resume_while_off)

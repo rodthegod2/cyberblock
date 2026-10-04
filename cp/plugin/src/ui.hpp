@@ -68,11 +68,15 @@ namespace cb::ui
 	inline constexpr const char *kPassNames[] = {"vendor",   "ripperdoc", "stash",    "wardrobe", "crafting",
 												 "breach",   "arcade",    "braindance", "tutorial", "settings",
 												 "saves",    "death",     "loading",  "other"};
-	inline constexpr const char *kReplyKinds[] = {"journal", "phone", "atlas"};
+	/// "vendor" (Phase 7, megaplan 7-D1): groups = a vendor's stock categories, lines = its items (`hash` the item, `text`
+	/// its name, `state` its price in eddies, 0..Int32 max, not the 0..2 of the other kinds).
+	inline constexpr const char *kReplyKinds[] = {"journal", "phone", "atlas", "vendor"};
 	inline constexpr const char *kGroupKinds[] = {"main", "side", "gig", "other", "sms"}; // unknown -> other
-	/// `uiact.a` (Minecraft -> Cyberpunk).
+	/// `uiact.a` (Minecraft -> Cyberpunk). Phase 7: `buy` and `sell` (a vendor's item by `hash`, `id` the stock list's
+	/// reply id); parse_uiact requires a non-zero `hash` for them.
 	inline constexpr const char *kUiActs[] = {"save",      "loadlast", "mainmenu",   "cpmenu",    "track",
-											  "smsreply",  "fasttravel", "journalreq", "phonereq", "atlasreq"};
+											  "smsreply",  "fasttravel", "journalreq", "phonereq", "atlasreq",
+											  "buy",       "sell"};
 
 	/// The entry of `names` equal to `name`, or `fallback` when it is none of them.
 	template<size_t N>
@@ -170,7 +174,8 @@ namespace cb::ui
 		/// Starts a reply (forgetting an unfinished one); false (and inactive) for an unknown kind.
 		bool begin(std::string_view kind, int32_t id);
 		void group(uint32_t hash, std::string_view title, std::string_view kind, bool tracked, bool done);
-		/// state: 0 active / from the contact, 1 done / from V, 2 failed / a reply V can choose (clamped to 0..2).
+		/// state: 0 active / from the contact, 1 done / from V, 2 failed / a reply V can choose (clamped to 0..2); in a
+		/// "vendor" reply the item's price in eddies (clamped to 0..Int32 max).
 		void line(uint32_t hash, std::string_view text, int32_t state);
 		/// `posCp` in Cyberpunk space, converted with `off`; `index` is the fast-travel index (-1 none); a non-empty
 		/// `district` (at most kNameBytes) is sent as `d` (Atlas extension: district labels).
@@ -231,8 +236,8 @@ namespace cb::ui
 		int32_t id = 0;
 	};
 
-	/// Validates a `uiact`: `a` one of kUiActs, optional `arg` string ≤ 64 bytes, `hash` a whole number 0..2^32-1, `id`
-	/// a whole number in Int32. nullopt (with `why`) when invalid.
+	/// Validates a `uiact`: `a` one of kUiActs, optional `arg` string ≤ 64 bytes, `hash` a whole number 0..2^32-1 (1..2^32-1
+	/// and required for `buy` and `sell`), `id` a whole number in Int32. nullopt (with `why`) when invalid.
 	std::optional<UiAction> parse_uiact(const nlohmann::json &m, std::string *why = nullptr);
 
 	/// The queue the script drains through Cyberblock_NextUiAction (thread-safe: the link thread pushes, the game thread
