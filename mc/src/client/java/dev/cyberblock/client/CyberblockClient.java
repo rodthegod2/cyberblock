@@ -4,6 +4,7 @@ package dev.cyberblock.client;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.ProxyEntities;
 import dev.cyberblock.WorldBridge;
+import dev.cyberblock.client.net.ClientNet;
 import dev.cyberblock.client.settings.AimDebug;
 import dev.cyberblock.client.settings.SettingsClient;
 import dev.cyberblock.client.view.ViewClient;
@@ -21,6 +22,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
 import net.minecraft.client.gui.screens.DeathScreen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.entity.NoopRenderer;
 import net.minecraft.client.tutorial.TutorialSteps;
 import net.minecraft.server.level.ServerPlayer;
@@ -52,6 +54,9 @@ public class CyberblockClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		HostLink.launch();
+		// the relay, handshake, roster and reconnect (megaplan Phase 1), and the client side of Cyberblock.hostActive (section 1.4)
+		ClientNet.init();
+		Cyberblock.clientHostActive = player -> player instanceof LocalPlayer && HostState.active();
 		SettingsClient.init();
 		ViewClient.init();
 		// proxies are never drawn: Cyberpunk shows the NPC or vehicle they stand for
@@ -90,7 +95,7 @@ public class CyberblockClient implements ClientModInitializer {
 	private static void tick(final Minecraft minecraft) {
 		// a death with no host driving (the void) is respawned straight away; while the host drives, Cyberpunk damage can kill
 		// Steve for real: then the death screen is shown over the host's picture and he respawns with the host's cursor and click
-		if (minecraft.player != null && !Cyberblock.active && minecraft.gui.screen() instanceof DeathScreen && --respawnIn <= 0) {
+		if (minecraft.player != null && !HostState.active() && minecraft.gui.screen() instanceof DeathScreen && --respawnIn <= 0) {
 			respawnIn = 40;
 			minecraft.player.respawn();
 		}

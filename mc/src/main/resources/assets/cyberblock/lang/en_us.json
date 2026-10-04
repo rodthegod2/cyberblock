@@ -366,5 +366,10 @@
 	"cyberblock.ui.pass.death": "Flatlined",
 	"cyberblock.ui.pass.loading": "Loading Night City...",
 	"cyberblock.ui.pass.other": "Night City",
-	"cyberblock.ui.screen.unavailable": "Night City is not connected"
+	"cyberblock.ui.screen.unavailable": "Night City is not connected",
+	"cyberblock.handshake.title": "Cyberblock",
+	"cyberblock.reconnect.title": "Connection lost",
+	"cyberblock.reconnect.in": "Reconnecting to %s in %s s",
+	"cyberblock.reconnect.cancel": "Cancel",
+	"cyberblock.guest.blocked": "That player's Night City does not allow this"
 }

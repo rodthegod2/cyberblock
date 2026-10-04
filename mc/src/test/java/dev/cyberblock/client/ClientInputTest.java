@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.settings.DebugFlags;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,13 +23,12 @@ class ClientInputTest {
 	/** After every host hello the chosen view goes to the host again (first person until F5 is pressed). */
 	@Test
 	void theViewIsResentToTheHost() {
-		Consumer<String> was = Cyberblock.events;
 		List<String> sent = new ArrayList<>();
-		Cyberblock.events = sent::add;
+		Consumer<String> was = HostLink.swapOut(sent::add);
 		try {
 			ClientInput.sendPerspective();
 		} finally {
-			Cyberblock.events = was;
+			HostLink.swapOut(was);
 		}
 
 		assertEquals(List.of(ClientInput.perspMessage(false)), sent);

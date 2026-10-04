@@ -1,6 +1,5 @@
 package dev.cyberblock.client;
 
-import dev.cyberblock.Cyberblock;
 import java.util.Locale;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -30,7 +29,7 @@ public final class StatusReporter {
 		if (!status.equals(last) || ++ticksSinceSent >= 2) {
 			last = status;
 			ticksSinceSent = 0;
-			Cyberblock.events.accept(status);
+			HostLink.send(status);
 		}
 	}
 

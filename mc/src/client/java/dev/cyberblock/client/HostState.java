@@ -5,8 +5,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
-import dev.cyberblock.Bridge;
-import dev.cyberblock.Cyberblock;
+import dev.cyberblock.client.net.HState;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
 import org.jspecify.annotations.Nullable;
@@ -46,6 +46,20 @@ public final class HostState {
 	private static volatile boolean vehicle;
 	/** The pose this frame renders with, taken once per frame so every hook agrees. Render thread only. */
 	private static Pose frame;
+	/**
+	 * What the server once read from shared statics (megaplan section 1.2, now sent as {@code hstate}): V crouched (cam.cr), held by
+	 * the game (cam.held), in the air (cam.air), standing still on the ground, V's feet in Cyberpunk z (NaN before the first cam) and
+	 * the cam's lv. Any thread reads them.
+	 */
+	private static volatile boolean crouching, held, airborne, stands;
+	private static volatile double feetCpZ = Double.NaN;
+	private static volatile int camLevel;
+	/** The ground alignment k of the world this client plays in, from the server's last {@code align} (0 before one). */
+	private static volatile int alignK;
+	/** Host jump key presses since start (monotonic): readers keep their own last value; nobody consumes it. */
+	private static final AtomicInteger jumpPresses = new AtomicInteger();
+	/** Cyberpunk is driving this client's camera: a live pose for the frame being rendered. Any thread reads it. */
+	private static volatile boolean active;
 
 	private HostState() {
 	}
@@ -59,13 +73,13 @@ public final class HostState {
 	 *
 	 * <p>"lv" (plan retest2 section 1.2) is the ground alignment k (0..63) the host converted this cam with: Minecraft y = Cyberpunk
 	 * z - k/64. Until the host has applied a new k (an align is on its way), its y is off by (lv - k)/64, so both y values are
-	 * corrected to this world's k (Bridge.alignK). Absent (fakehost, an older host): taken to be this world's k.
+	 * corrected to this world's k (alignK, from the server's align). Absent (fakehost, an older host): taken to be this world's k.
 	 */
 	static void update(final JsonObject m) {
 		JsonArray p = m.getAsJsonArray("p");
 		JsonArray r = m.getAsJsonArray("r");
 		JsonArray pl = m.has("pl") ? m.getAsJsonArray("pl") : p;
-		int k = Bridge.alignK;
+		int k = alignK;
 		int lv = m.has("lv") ? level(m.get("lv")) : k;
 		double dy = (lv - k) / LEVEL_STEPS;
 		double x = coordinate(p, 0, "p.x"), y = coordinate(p, 1, "p.y") + dy, z = coordinate(p, 2, "p.z");
@@ -97,13 +111,14 @@ public final class HostState {
 			fly, flag(m, "menu"), air, held, flag(m, "seat")
 		);
 		// V crouched (layers 3-6): Steve crouches too (KeyboardInputMixin), and the cyber track reads it for optical camo
-		Bridge.hostCrouching = flag(m, "cr");
+		crouching = flag(m, "cr");
 		// V cannot be moved: the server refuses ender pearl teleports (ThrownEnderpearlMixin)
-		Bridge.hostHeld = held;
+		HostState.held = held;
 		// the ground alignment (GroundAlign) is chosen from V's feet in Cyberpunk z, while V stands (plan retest2 R4)
-		Bridge.hostFeetCpZ = rawPy + lv / LEVEL_STEPS;
-		Bridge.hostStands = !air && !held && !fly;
-		Bridge.hostAirborne = air;
+		feetCpZ = rawPy + lv / LEVEL_STEPS;
+		camLevel = lv;
+		stands = !air && !held && !fly;
+		airborne = air;
 	}
 
 	private static boolean flag(final JsonObject m, final String name) {
@@ -132,7 +147,7 @@ public final class HostState {
 		if (k.equals("jump")) {
 			if (down && !jumpDown) {
 				jumpPressed = true;
-				Bridge.hostJumpPresses.incrementAndGet(); // the cyber track's legs VFX keep their own last value
+				jumpPresses.incrementAndGet(); // the cyber track's legs VFX keep their own last value
 			}
 
 			jumpDown = down;
@@ -162,11 +177,60 @@ public final class HostState {
 	static void resetKeys() {
 		jumpDown = sprintDown = jumpPressed = false;
 		resetAim();
-		Bridge.hostCrouching = false;
-		Bridge.hostHeld = false;
-		Bridge.hostStands = false;
-		Bridge.hostAirborne = false;
-		Bridge.hostFeetCpZ = Double.NaN;
+		crouching = held = stands = airborne = false;
+		feetCpZ = Double.NaN;
+	}
+
+	/** V is crouched (cam.cr): Steve crouches too (KeyboardInputMixin), and the cyber track reads it for optical camo. */
+	public static boolean crouching() {
+		return crouching;
+	}
+
+	/** The game holds V (cam.held). */
+	public static boolean held() {
+		return held;
+	}
+
+	/** V is in the air (cam.air). */
+	public static boolean airborne() {
+		return airborne;
+	}
+
+	/** V stands still on the ground: !air && !held && !fly. */
+	public static boolean stands() {
+		return stands;
+	}
+
+	/** V's feet in Cyberpunk z (cam.pl y + lv/64); NaN before the first cam and after the host went away. */
+	public static double feetCpZ() {
+		return feetCpZ;
+	}
+
+	/** Host jump key presses since start. */
+	public static int jumpPresses() {
+		return jumpPresses.get();
+	}
+
+	public static int alignK() {
+		return alignK;
+	}
+
+	/** The server's {@code align} k for this world (ClientNet sees it on its way to the DLL); 0 off a server. */
+	public static void setAlignK(final int k) {
+		alignK = Math.clamp(k, 0, (int) LEVEL_STEPS - 1);
+	}
+
+	/** Cyberpunk drives the camera (a live pose this frame). */
+	public static boolean active() {
+		return active;
+	}
+
+	/** The {@code hstate} sample for the server (megaplan section 1.2); {@code launch} comes from Flight. */
+	public static HState.Snapshot hstate(final boolean launch) {
+		Pose p = live();
+		boolean on = p != null;
+		return new HState.Snapshot(on, vehicle, on && airborne, on && crouching, on && held, on && p.fly(), launch, on && p.seat(),
+			camLevel, on ? feetCpZ : Double.NaN);
 	}
 
 	/**
@@ -331,7 +395,6 @@ public final class HostState {
 
 	static void setVehicle(final boolean inVehicle) {
 		vehicle = inVehicle;
-		Bridge.hostInVehicle = inVehicle; // the server refuses ender pearl teleports (ThrownEnderpearlMixin)
 	}
 
 	/** The latest pose if the host is still sending, else null. */
@@ -347,6 +410,6 @@ public final class HostState {
 
 	public static void beginFrame() {
 		frame = live();
-		Cyberblock.active = frame != null;
+		active = frame != null;
 	}
 }
