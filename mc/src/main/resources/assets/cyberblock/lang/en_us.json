@@ -259,6 +259,7 @@
 	"advancements.cyberblock.sandevistan_kill.description": "Defeat an enemy while the Sandevistan runs",
 	"cyberblock.sandevistan.hud": "SANDEVISTAN",
 	"menu.cyberblock.play": "Play Cyberblock",
+	"menu.cyberblock.join": "Join Cyberblock",
 	"cyberblock.view.third": "Third person",
 	"cyberblock.view.first": "First person",
 

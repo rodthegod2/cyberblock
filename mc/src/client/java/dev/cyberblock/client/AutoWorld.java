@@ -1,17 +1,27 @@
 package dev.cyberblock.client;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import dev.cyberblock.Cyberblock;
+import java.io.IOException;
+import java.io.Reader;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Pattern;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.ConnectScreen;
 import net.minecraft.client.gui.screens.DisconnectedScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.client.multiplayer.resolver.ServerAddress;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -28,7 +38,9 @@ import net.minecraft.world.level.levelgen.presets.WorldPreset;
  * <li>tools/play.py: "--quickPlaySingleplayer cyberblock" opens the world, but only if it exists; when it doesn't, quick play ends
  * on an error screen, and this creates it instead;</li>
  * <li>a normal launcher installation (plan retest3 M5, F11): the title screen's "Play Cyberblock" button, and
- * -Dcyberblock.autostart=true, which presses it once per session as soon as the title screen shows.</li>
+ * -Dcyberblock.autostart=true, which presses it once per session as soon as the title screen shows;</li>
+ * <li>a modpack installation (megaplan 2-K4): when config/cyberblock/join.json exists, a "Join Cyberblock" button next to it that
+ * connects to the server named there (the file comes with the modpack and is never committed).</li>
  * </ul>
  */
 public final class AutoWorld {
@@ -95,6 +107,66 @@ public final class AutoWorld {
 		int[] at = place(width, height, taken);
 		widgets.add(Button.builder(Component.translatableWithFallback("menu.cyberblock.play", "Play Cyberblock"),
 			button -> start(minecraft, screen, "button")).bounds(at[0], at[1], at[2], BUTTON_HEIGHT).build());
+
+		JoinTarget target = readJoin(FabricLoader.getInstance().getConfigDir().resolve(JOIN_FILE));
+		if (target != null) {
+			taken.add(new int[] {at[0], at[1], at[2], BUTTON_HEIGHT});
+			int[] next = place(width, height, taken);
+			widgets.add(Button.builder(Component.translatableWithFallback("menu.cyberblock.join", "Join Cyberblock"),
+				button -> join(minecraft, screen, target)).bounds(next[0], next[1], next[2], BUTTON_HEIGHT).build());
+		}
+	}
+
+	/** What config/cyberblock/join.json holds: the server's list name and its address as typed in the multiplayer screen. */
+	record JoinTarget(String name, String address) {
+	}
+
+	private static final String JOIN_FILE = "cyberblock/join.json";
+	private static final Pattern ADDRESS = Pattern.compile("[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(:[0-9]{1,5})?");
+
+	/** The join target in this file, or null when there is no file or it is not usable (a missing or bad address never breaks the title screen). */
+	static JoinTarget readJoin(final Path file) {
+		if (!Files.isRegularFile(file)) {
+			return null;
+		}
+
+		try (Reader in = Files.newBufferedReader(file)) {
+			JsonObject json = JsonParser.parseReader(in).getAsJsonObject();
+			String address = text(json, "address");
+			if (address == null || !validAddress(address)) {
+				Cyberblock.LOG.warn("launcher: {} has no valid address, no Join button", JOIN_FILE);
+				return null;
+			}
+
+			String name = text(json, "name");
+			return new JoinTarget(name == null || name.isEmpty() ? "Cyberblock" : name, address);
+		} catch (IOException | RuntimeException e) {
+			Cyberblock.LOG.warn("launcher: cannot read {} ({}), no Join button", JOIN_FILE, e.toString());
+			return null;
+		}
+	}
+
+	/** The same shape tools/modpack.py accepts: host name or IPv4 address, optionally ":port" (1 to 65535). */
+	private static boolean validAddress(final String address) {
+		if (!ADDRESS.matcher(address).matches()) {
+			return false;
+		}
+
+		int colon = address.indexOf(':');
+		int port = colon < 0 ? 1 : Integer.parseInt(address.substring(colon + 1));
+		return port >= 1 && port <= 65535;
+	}
+
+	/** The stripped string value of key, or null when it is absent or not a string. */
+	private static String text(final JsonObject json, final String key) {
+		return json.has(key) && json.get(key).isJsonPrimitive() && json.getAsJsonPrimitive(key).isString() ? json.get(key).getAsString().strip() : null;
+	}
+
+	/** Connects to the configured server; failing or cancelling goes back to the title screen. Client thread. */
+	private static void join(final Minecraft minecraft, final Screen parent, final JoinTarget target) {
+		Cyberblock.LOG.info("launcher: joining {}", target.name());
+		ConnectScreen.startConnecting(parent, minecraft, ServerAddress.parseString(target.address()),
+			new ServerData(target.name(), target.address(), ServerData.Type.OTHER), false, null);
 	}
 
 	static final int BUTTON_HEIGHT = 20;
@@ -103,7 +175,7 @@ public final class AutoWorld {
 
 	/**
 	 * Where the button goes, as {x, y, width}: above vanilla's first button, else beside it (right, then left), else the top-left
-	 * corner; the first place inside the screen that overlaps no widget (taken: {x, y, w, h}) and neither the logo nor the splash
+	 * corner (then down the left edge); the first place inside the screen that overlaps no widget (taken: {x, y, w, h}) and neither the logo nor the splash
 	 * text (LogoRenderer draws them from y 30 to about 88 around the centre).
 	 */
 	static int[] place(final int width, final int height, final List<int[]> taken) {
@@ -128,6 +200,13 @@ public final class AutoWorld {
 		for (int[] c : candidates) {
 			if (fits(c, width, height, blocked)) {
 				return c;
+			}
+		}
+
+		for (int row = 0; row < 8; row++) { // the top-left corner, then down the left edge
+			int[] corner = {GAP, GAP + row * (BUTTON_HEIGHT + GAP), SIDE};
+			if (fits(corner, width, height, blocked)) {
+				return corner;
 			}
 		}
 
