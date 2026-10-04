@@ -47,6 +47,9 @@
 //   citylights  ForceCLSStateRequest ForcedOFF (source n"CyberblockBlackout", priority High, not savable) queued to
 //               CityLightSystem (as DeviceOperations' CLS request); check 1 s later: CityLightSystem.GetState is ForcedOFF;
 //               else devices only.
+//   device_off  ScriptableDeviceComponentPS.ExecutePSAction(ActionSetDeviceOFF), V the executor (blackout, daemons; the
+//               Phase 4 devact path); check 1 s later: at least one of the batch is OFF; else Phase 0 (c)'s fallback (the
+//               action is not callable: devices stay as they are, logged).
 //   range (h)   Phase 0 (h): every streamed target, no distance limit. When a car hack took no effect by either path
 //               on a car more than 50 m from V, the written fallback takes over: remote hacks and daemons only within
 //               50 m of V (farther targets answer "out of range"); logged 'rhack: remote range: ...'.
@@ -299,6 +302,9 @@ public class CyberblockRemoteService extends ScriptableService {
     if Equals(what, n"ping_area") {
       return "the vanilla Ping upload on the nearest hackable person, then hostiles, cameras and turrets within 30 m revealed";
     }
+    if Equals(what, n"device_off") {
+      return fallback ? "none: devices stay as they are (Phase 0 c fallback: the action is not callable; blackout keeps the city lights)" : "ScriptableDeviceComponentPS.ExecutePSAction(SetDeviceOFF) with V as executor (the Phase 4 devact path)";
+    }
     if Equals(what, n"heat") {
       return fallback ? "Minecraft Heat only (Phase 0 e fallback)" : "PreventionSystem SetWantedLevel +1 (the quest path)";
     }
@@ -441,9 +447,14 @@ public class CyberblockRemoteService extends ScriptableService {
         vehicle.ForceBrakesUntilStoppedOrFor(8.0);
       }
       let fallback = this.UsesFallback(n"veh_engine");
-      this.Hold(game, vehicle, mine ? 10.0 : 30.0, mine || vehicle.IsEngineTurnedOn());
+      let running = vehicle.IsEngineTurnedOn();
+      this.Hold(game, vehicle, mine ? 10.0 : 30.0, mine || running);
       CyberblockRemoteService.Engine(game, vehicle, false, fallback);
-      this.Check(game, n"veh_engine_off", id, fallback ? 2 : 1, 1.5, speed, far);
+      if running {
+        this.Check(game, n"veh_engine_off", id, fallback ? 2 : 1, 1.5, speed, far);
+      } else {
+        run.note += ", engine was off (not checked)";
+      }
       return "";
     }
     if Equals(hack, n"veh_start") {
@@ -705,6 +716,9 @@ public class CyberblockRemoteService extends ScriptableService {
       this.Check(game, n"citylights", 0ul, 1, 1.0, 0.0, false);
     }
     this.Schedule(game, n"off", 0ul, serial, minutes * 60.0);
+    if off > 0 {
+      this.Check(game, n"device_off", 0ul, 1, 1.0, Cast<Float>(serial), false);
+    }
     let district = Cyberblock_EventText();
     run.note = s"\(off) devices off for \(minutes) min within 150 m of V\(StrLen(district) > 0 ? s" (district \(district) asked)" : "")";
     return "";
@@ -854,6 +868,7 @@ public class CyberblockRemoteService extends ScriptableService {
   // Daemons.reds: the switch-off batch serial comes back on after seconds.
   public func ScheduleOff(game: GameInstance, serial: Int32, seconds: Float) -> Void {
     this.Schedule(game, n"off", 0ul, serial, seconds);
+    this.Check(game, n"device_off", 0ul, 1, 1.0, Cast<Float>(serial), false);
   }
 
   public func OnTimer(game: GameInstance, what: CName, target: Uint64, serial: Int32) -> Void {
@@ -903,6 +918,27 @@ public class CyberblockRemoteService extends ScriptableService {
         this.Confirm(what);
       } else if this.cityLights {
         this.Fall(what, s"state \(IsDefined(cls) ? EnumInt(cls.GetState()) : -1) after the request");
+      }
+      return;
+    }
+    if Equals(what, n"device_off") {
+      let serial = RoundF(check.speed);
+      let asked = 0;
+      let off = 0;
+      let i = 0;
+      while i < ArraySize(this.offSerials) {
+        if this.offSerials[i] == serial {
+          asked += 1;
+          if IsDefined(this.offDevices[i]) && this.offDevices[i].IsOFF() {
+            off += 1;
+          }
+        }
+        i += 1;
+      }
+      if off > 0 {
+        this.Confirm(what);
+      } else if asked > 0 {
+        this.Fall(what, s"none of \(asked) devices was off 1 s later");
       }
       return;
     }
