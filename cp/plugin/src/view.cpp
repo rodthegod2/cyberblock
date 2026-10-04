@@ -12,7 +12,8 @@
 //     vehicleCinematicCameraComponent.swift). The FOV is optional: without it the view works with the game's FOV.
 // No 2.31 script or native API sets a vehicle camera's distance (vehicleTPPCameraComponent exposes no functions or fields;
 // VehicleTPPCameraPresetParams_Record and TPPCameraSetup_Record are read-only TweakDB records; only the discrete
-// vehicleRequestCameraPerspectiveEvent exists), so `prefs.vdist` is logged and the game's vehicle cameras stay.
+// vehicleRequestCameraPerspectiveEvent exists), so the DLL hands `prefs.vdist` to the scripts (the event `prefs`) and
+// View.reds picks the nearest of the game's three third-person vehicle camera presets.
 // The offset is in V's local axes, assuming the component's parent frame is V's (logged on the first applied frame as
 // "view: applied, eye moved D m (expected E m)", which checks it). Every function is resolved once; if one is missing,
 // "view: disabled: ... missing" is logged and the view never applies (cam.fp stays true).
@@ -308,8 +309,8 @@ namespace cb::view
 		const world::ViewPrefs prefs = world::view_prefs();
 		static bool vdistLogged = false;
 		if (prefs.vdist > 0.0 && !std::exchange(vdistLogged, true))
-			log::info("view: vehicle camera distance %.1f m asked; 2.31 has no settable vehicle camera distance, the "
-					  "game's vehicle cameras stay (logged once)",
+			log::info("view: vehicle camera distance %.1f m asked; 2.31 has no settable distance, the scripts pick the "
+					  "nearest of the game's vehicle camera presets (logged once)",
 					  prefs.vdist);
 
 		if (!natives::active)

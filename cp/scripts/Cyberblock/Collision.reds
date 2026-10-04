@@ -56,6 +56,7 @@ public class CyberblockCollisionService extends ScriptableService {
   private let endHandler: ref<CallbackSystemHandler>;
   private let filterLogged: Bool;
   private let spawnFailLogged: Bool;
+  private let mode: Int32; // the Q-S2 path: 0 not decided yet, 1 wrap path, 2 fallback filter (Fallback)
 
   public static func Get() -> ref<CyberblockCollisionService> {
     return GameInstance.GetScriptableServiceContainer().GetService(n"CyberblockCollisionService") as CyberblockCollisionService;
@@ -321,12 +322,18 @@ public class CyberblockCollisionService extends ScriptableService {
     // the query filter from the preset's QueryDetect groups (2.31 engine\physics\collision_presets.json), each set by
     // QueryFilter.AddGroup (it ORs the group's bit into mask2, where cooked colliders keep QueryDetect; mask1 stays 0
     // as in cooked colliders). The masks once hard-coded here were an older bit layout (docs/notes/collision-spike.md).
+    // Megaplan Q-S2 fallback: when the wrap path (Locomotion.reds, which reads the player obstacle system) cannot work,
+    // the boxes leave out the Static query group, which the obstacle and climb probes look for; the simulation filter
+    // stays World Static, so V, NPCs and cars still collide (needsInGame). Decided once per game run.
+    let fallback = this.Fallback();
     let simulation: SimulationFilter;
     SimulationFilter.SimulationFilter_BuildFromPreset(simulation, n"World Static");
     let query = QueryFilter.ZERO();
     let groups: array<CName> = [n"Static", n"Visibility", n"Shooting", n"VehicleBlocker", n"PhotoModeCamera", n"TankBlocker", n"PlayerBlocker"];
     for group in groups {
-      QueryFilter.AddGroup(query, group);
+      if !fallback || NotEquals(group, n"Static") {
+        QueryFilter.AddGroup(query, group);
+      }
     }
     let filter = new physicsFilterData();
     filter.preset = n"World Static";
@@ -348,6 +355,21 @@ public class CyberblockCollisionService extends ScriptableService {
     collider.filterData = filter;
     collider.dynamicTrafficSetting = traffic;
     return collider;
+  }
+
+  // The Q-S2 wrap path needs the player obstacle system (SpatialQueriesSystem.GetPlayerObstacleSystem, as
+  // Locomotion.reds reads it); without it the boxes take the fallback filter. Logged once: 'collision: wrap path' or
+  // 'collision: preset <name> (fallback)'.
+  private func Fallback() -> Bool {
+    if this.mode == 0 {
+      let spatial = GameInstance.GetSpatialQueriesSystem(GetGameInstance());
+      let ready = IsDefined(spatial) && IsDefined(spatial.GetPlayerObstacleSystem());
+      this.mode = ready ? 1 : 2;
+      Cyberblock_Log(ready
+        ? "collision: wrap path (vault and climb refused by Locomotion.reds; preset World Static)"
+        : "collision: preset World Static without Static query (fallback; no player obstacle system)");
+    }
+    return this.mode == 2;
   }
 
   private func Center(slot: Int32) -> Vector4 {
