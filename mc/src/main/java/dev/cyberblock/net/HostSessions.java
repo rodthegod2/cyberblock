@@ -93,6 +93,11 @@ public final class HostSessions {
 		ends.add(l);
 	}
 
+	/** When this player's last host session ended (epoch ms, saved with the world in cyberblock_hosts; 0 = never): Offline Builds. */
+	public static long lastSessionEnd(final UUID player) {
+		return Permissions.store().lastSession(player);
+	}
+
 	/** The player holds the host role (a session in any state). */
 	public static boolean isHost(final UUID player) {
 		return sessions.containsKey(player);
