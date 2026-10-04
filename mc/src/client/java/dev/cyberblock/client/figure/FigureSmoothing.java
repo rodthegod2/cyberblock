@@ -1,7 +1,8 @@
 package dev.cyberblock.client.figure;
 
 /**
- * Where one figure is drawn (plan 2026-10-04 task 3-F1: real speed, smoothed client-side). The server runs each proxy on at its last
+ * Where one figure is drawn (plan 2026-10-04 tasks 3-F1 and 5-F1: real speed, smoothed client-side over two of the host's 10 Hz
+ * samples, no rubber-banding). The server runs each proxy on at its last
  * speed between the host's lists (ProxyDiff.Motion, at most 0.5 s) and corrects it when the next list comes; the part of a move that
  * the figure's recent speed did not predict is such a correction, and the figure eases into it over about TAU seconds instead of
  * jumping. A move longer than SNAP is a teleport: the figure is just there. Pure: no game in here.
@@ -10,9 +11,12 @@ public final class FigureSmoothing {
 	/** Metres: a farther move between two frames is a teleport. */
 	static final double SNAP = 6.0;
 	/** Seconds a correction takes to fade (to 1/e). */
-	static final double TAU = 0.1;
-	/** Seconds over which the figure's speed follows the target's. */
-	static final double SPEED_TAU = 0.1;
+	static final double TAU = 0.15;
+	/**
+	 * Seconds over which the figure's speed follows the target's: two of the host's samples at 10 Hz (megaplan task 5-F1). Over one
+	 * sample a list that arrives late or early swings the speed enough to pull the figure back a few centimetres (rubber-banding).
+	 */
+	static final double SPEED_TAU = 0.2;
 	/** Metres: the drawn figure never trails its hitbox by more than this. */
 	static final double MAX_OFFSET = 1.5;
 	/** Seconds: a longer gap between frames (a pause, a lag spike) counts as this long. */
@@ -21,6 +25,11 @@ public final class FigureSmoothing {
 	private boolean started;
 	private long nanos;
 	private double tx, ty, tz, ox, oy, oz, vx, vy, vz;
+
+	/** m/s over the ground the figure is drawn moving at (its smoothed speed): what the walk and run fallback goes by. */
+	public double speed() {
+		return Math.sqrt(this.vx * this.vx + this.vz * this.vz);
+	}
 
 	/** Where to draw it this frame (nanos: System.nanoTime) for the game's position of it: {x, y, z}. */
 	public double[] at(final double x, final double y, final double z, final long now) {

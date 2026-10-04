@@ -1,15 +1,23 @@
 package dev.cyberblock;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import dev.cyberblock.cyber.Kills;
+import dev.cyberblock.cyber.ScanInfo;
+import dev.cyberblock.figure.FigureLook;
+import dev.cyberblock.figure.FigureTags;
+import dev.cyberblock.figure.Figures;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.Permissions;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
@@ -41,6 +49,18 @@ public final class ProxyManager {
 	/** Hits sent to the hosts since the last log line, and the latest one. */
 	private static int hitsSent;
 	private static String lastHit = "";
+	/** Each host's scanned threats by id (task 5-F1: the figures' threat colour); at most MAX_SCANNED per host. */
+	private static final Map<UUID, Map<Long, Integer>> scanned = new HashMap<>();
+	private static final int MAX_SCANNED = 512;
+	/** Hosts whose npcs tags were logged this session (the Phase 0 f path line). */
+	private static final Set<UUID> tagsLogged = new HashSet<>();
+	/** Each host's latest explosion on V (a {"t":"dmg"} of kind explosion): a person dying near it right after was blown up. */
+	record Blast(Vec3 at, long nanos) {
+	}
+
+	private static final Map<UUID, Blast> blasts = new HashMap<>();
+	static final long BLAST_NANOS = 2_000_000_000L;
+	static final double BLAST_RANGE = 10.0;
 
 	private ProxyManager() {
 	}
@@ -64,6 +84,12 @@ public final class ProxyManager {
 			WorldModule.warn(parsed.rejected() + " bad npcs entries skipped");
 		}
 
+		// the Phase 5 tags (role, faction, gender, archetype, anim, vehicle class and colour, hp): the figures' look (task 5-F1)
+		FigureTags.Parsed tags = FigureTags.parse(message);
+		if (!parsed.entries().isEmpty() && tagsLogged.add(s.uuid())) {
+			Cyberblock.LOG.info(Figures.tagsLine(s.name(), tags.seen()));
+		}
+
 		ProxyFleet<ProxyEntity> fleet = fleets.of(s.uuid());
 		ProxyDiff.Graveyard graveyard = graves.computeIfAbsent(s.uuid(), o -> new ProxyDiff.Graveyard());
 		// a proxy that was killed or unloaded under us is simply gone: it is spawned again below if the host still lists it
@@ -72,7 +98,7 @@ public final class ProxyManager {
 		fleet.motions.keySet().retainAll(fleet.proxies.keySet());
 		// the host's last sighting of an NPC that died or a car that was destroyed, whoever did it: a body or a wreck
 		for (ProxyDiff.Entry e : parsed.dead()) {
-			died(s.uuid(), level, e.id(), e, received, "npcs dead flag");
+			died(s.uuid(), level, e.id(), e, tags.byId().get(e.id()), received, "npcs dead flag");
 		}
 
 		// a dead NPC the host still lists for a moment is not stood up again next to its body
@@ -87,13 +113,21 @@ public final class ProxyManager {
 		}
 
 		for (ProxyDiff.Entry e : plan.move()) {
-			fleet.proxies.get(e.id()).apply(e);
+			ProxyEntity proxy = fleet.proxies.get(e.id());
+			proxy.apply(e);
+			proxy.look(Figures.look(e.kind() == ProxyDiff.Kind.VEHICLE, tags.byId().getOrDefault(e.id(), FigureTags.NONE), e.id()));
 			fleet.motions.merge(e.id(), ProxyDiff.Motion.first(e, received), (was, first) -> was.next(e, received));
 		}
 
 		for (ProxyDiff.Entry e : plan.spawn()) {
 			ProxyEntity proxy = spawn(level, s.uuid(), e);
 			if (proxy != null) {
+				proxy.look(Figures.look(e.kind() == ProxyDiff.Kind.VEHICLE, tags.byId().getOrDefault(e.id(), FigureTags.NONE), e.id()));
+				Integer threat = scanned.getOrDefault(s.uuid(), Map.of()).get(e.id());
+				if (threat != null) {
+					proxy.setThreat(threat);
+				}
+
 				fleet.proxies.put(e.id(), proxy);
 				fleet.kinds.put(e.id(), e.kind());
 				fleet.motions.put(e.id(), ProxyDiff.Motion.first(e, received));
@@ -125,7 +159,10 @@ public final class ProxyManager {
 		return proxy;
 	}
 
-	/** ProxyEntities.register (the proxies' startup): the host's kill reports make bodies and wrecks. */
+	/**
+	 * ProxyEntities.register (the proxies' startup): the host's kill reports make bodies and wrecks; its scans colour the figures'
+	 * tags and its explosions on V tell a blown-up body; the skin and vehicle maps (task 5-F1).
+	 */
 	static void listen() {
 		HostSessions.listen("killed", (s, m) -> {
 			try {
@@ -134,6 +171,16 @@ public final class ProxyManager {
 				WorldModule.warn("bad killed message for the figures: " + e);
 			}
 		});
+		HostSessions.listen("scaninfo", ProxyManager::scanned);
+		HostSessions.listen("dmg", ProxyManager::hostDamage);
+		Figures.register();
+	}
+
+	/** What the figures knew of a host goes with its session (or with every session at a world save). */
+	private static void forget(final UUID owner) {
+		scanned.remove(owner);
+		tagsLogged.remove(owner);
+		blasts.remove(owner);
 	}
 
 	/**
@@ -147,7 +194,50 @@ public final class ProxyManager {
 			return;
 		}
 
-		died(s.uuid(), server.overworld(), killed.target(), null, System.nanoTime(), "killed");
+		died(s.uuid(), server.overworld(), killed.target(), null, null, System.nanoTime(), "killed");
+	}
+
+	/** {"t":"scaninfo"} from a host: the threat its scan named is the figure's threat colour from now on (task 5-F1). */
+	static void scanned(final HostSession s, final JsonObject message) {
+		ScanInfo info = ScanInfo.parse(message);
+		if (info == null || !info.ok() || info.device()) {
+			return;
+		}
+
+		int threat = FigureLook.threat(info.threat());
+		Map<Long, Integer> known = scanned.computeIfAbsent(s.uuid(), o -> new HashMap<>());
+		if (known.size() >= MAX_SCANNED && !known.containsKey(info.target())) {
+			known.clear();
+		}
+
+		known.put(info.target(), threat);
+		ProxyEntity proxy = fleets.get(s.uuid(), info.target());
+		if (proxy != null && !proxy.isRemoved()) {
+			proxy.setThreat(threat);
+		}
+	}
+
+	/** {"t":"dmg"} from a host: an explosion that hurt V (at its from, else at Steve) may be what kills the NPCs around it. */
+	static void hostDamage(final HostSession s, final JsonObject message) {
+		if (!(message.get("kind") instanceof JsonPrimitive kind) || !"explosion".equals(kind.getAsString())) {
+			return;
+		}
+
+		Vec3 at = null;
+		if (message.get("from") instanceof JsonArray from && from.size() == 3 && from.asList().stream().allMatch(v -> v instanceof JsonPrimitive p && p.isNumber())) {
+			at = new Vec3(from.get(0).getAsDouble(), from.get(1).getAsDouble(), from.get(2).getAsDouble());
+		} else if (s.player() != null) {
+			at = s.player().position();
+		}
+
+		if (at != null && Double.isFinite(at.x) && Double.isFinite(at.y) && Double.isFinite(at.z)) {
+			blasts.put(s.uuid(), new Blast(at, System.nanoTime()));
+		}
+	}
+
+	/** The owner's latest explosion was near enough and recent enough to be what killed something at this place. */
+	static boolean blownBy(final @Nullable Blast blast, final Vec3 at, final long nanos) {
+		return blast != null && nanos - blast.nanos() <= BLAST_NANOS && blast.at().distanceToSqr(at) <= BLAST_RANGE * BLAST_RANGE;
 	}
 
 	/**
@@ -155,8 +245,8 @@ public final class ProxyManager {
 	 * no live proxy, one is laid at seen (the dead flag's position) or else where the list left it out, but only when the list left it
 	 * out lately and it was not buried already, so each death leaves one body whichever report comes first. why: which report, logged.
 	 */
-	private static void died(final UUID owner, final ServerLevel level, final long id, final ProxyDiff.@Nullable Entry seen, final long nanos,
-		final String why) {
+	private static void died(final UUID owner, final ServerLevel level, final long id, final ProxyDiff.@Nullable Entry seen,
+		final @Nullable FigureTags tags, final long nanos, final String why) {
 		ProxyDiff.Entry last = graves.computeIfAbsent(owner, o -> new ProxyDiff.Graveyard()).killed(id, nanos);
 		ProxyFleet<ProxyEntity> fleet = fleets.all().get(owner);
 		ProxyEntity proxy = fleet == null ? null : fleet.proxies.remove(id);
@@ -174,18 +264,25 @@ public final class ProxyManager {
 		}
 
 		if (proxy != null) {
-			bury(owner, proxy, why);
+			if (tags != null) {
+				proxy.look(Figures.look(proxy.getType() == ProxyEntities.VEHICLE, tags, id));
+			}
+
+			bury(owner, proxy, why, nanos);
 		}
 	}
 
-	/** The proxy is dead: its leash goes (the host knows), it lies there for the guests, and ProxyManager.tick removes it in time. */
-	private static void bury(final UUID owner, final ProxyEntity proxy, final String why) {
+	/**
+	 * The proxy is dead: its leash goes (the host knows), it lies there for the guests, and ProxyManager.tick removes it in time. A
+	 * destroyed vehicle always went up in flames; a person did when an explosion was near just before.
+	 */
+	private static void bury(final UUID owner, final ProxyEntity proxy, final String why, final long nanos) {
 		proxy.reportRemoved();
 		if (proxy.isLeashed()) {
 			proxy.dropLeash();
 		}
 
-		proxy.die();
+		proxy.die(proxy.getType() == ProxyEntities.VEHICLE || blownBy(blasts.get(owner), proxy.position(), nanos));
 		corpses.computeIfAbsent(owner, o -> new ArrayList<>()).add(proxy);
 		boolean car = proxy.getType() == ProxyEntities.VEHICLE;
 		Cyberblock.LOG.info("figures: {} {} died ({} for {} s; from the {})", car ? "vehicle" : "person", Long.toUnsignedString(proxy.proxyId()),
@@ -240,6 +337,7 @@ public final class ProxyManager {
 				it.remove();
 				clear(e.getValue());
 				graves.remove(e.getKey());
+				forget(e.getKey());
 				continue;
 			}
 
@@ -306,6 +404,7 @@ public final class ProxyManager {
 		}
 
 		clearCorpses(owner);
+		forget(owner);
 	}
 
 	private static void clear(final ProxyFleet<ProxyEntity> fleet) {

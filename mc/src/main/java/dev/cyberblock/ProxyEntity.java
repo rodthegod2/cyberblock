@@ -1,6 +1,7 @@
 package dev.cyberblock;
 
 import dev.cyberblock.cyber.CyberwareEffects;
+import dev.cyberblock.figure.FigureLook;
 import java.util.UUID;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
@@ -74,12 +75,28 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	private static final EntityDataAccessor<Integer> DATA_PINGED = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.INT);
 	/**
 	 * Dead in Night City (plan 2026-10-04 task 3-F1): a guest's figure lies down (a car stays a dark wreck) until ProxyManager
-	 * removes it. The figure's look is synced entity data like this, set from the host's list in apply(Entry); Phase 5 (5F) adds the
-	 * skin id, anim bits, threat, colour and hp next to it.
+	 * removes it. The figure's look is synced entity data like this, set from the host's list.
 	 */
 	private static final EntityDataAccessor<Boolean> DATA_DEAD = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.BOOLEAN);
+	/*
+	 * The figure's look (megaplan task 5-F1, figure/FigureLook): a person's skin id or a vehicle's model id, the slim model, the
+	 * host's anim bits, the scan's threat level (-1 unscanned, 0..4), a vehicle's paint (0xRRGGBB, -1 none), hp 0..1, the name tag's
+	 * label, and whether it died in an explosion.
+	 */
+	private static final EntityDataAccessor<String> DATA_LOOK = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.STRING);
+	private static final EntityDataAccessor<Boolean> DATA_SLIM = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.BOOLEAN);
+	private static final EntityDataAccessor<Integer> DATA_ANIM = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.INT);
+	private static final EntityDataAccessor<Integer> DATA_THREAT = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.INT);
+	private static final EntityDataAccessor<Integer> DATA_COLOUR = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.INT);
+	private static final EntityDataAccessor<Float> DATA_HP = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.FLOAT);
+	private static final EntityDataAccessor<String> DATA_LABEL = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.STRING);
+	private static final EntityDataAccessor<Boolean> DATA_BLOWN = SynchedEntityData.defineId(ProxyEntity.class, EntityDataSerializers.BOOLEAN);
+	/** A Minecraft explosion this recent (ticks) that reached it means it died in that explosion. */
+	static final int BLAST_TICKS = 40;
 	/** Ticks since it died, on each side (the client counts from when it saw it die): how far the body has fallen. */
 	private int deadTicks;
+	/** When a Minecraft explosion last reached it (server tick count). */
+	private int blastTick = Integer.MIN_VALUE;
 
 	public ProxyEntity(final EntityType<? extends ProxyEntity> type, final Level level) {
 		super(type, level);
@@ -94,6 +111,66 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 		entityData.define(DATA_HOSTILE, false);
 		entityData.define(DATA_PINGED, 0);
 		entityData.define(DATA_DEAD, false);
+		entityData.define(DATA_LOOK, FigureLook.NEUTRAL.look());
+		entityData.define(DATA_SLIM, false);
+		entityData.define(DATA_ANIM, 0);
+		entityData.define(DATA_THREAT, -1);
+		entityData.define(DATA_COLOUR, -1);
+		entityData.define(DATA_HP, 1.0F);
+		entityData.define(DATA_LABEL, "");
+		entityData.define(DATA_BLOWN, false);
+	}
+
+	/** Server thread: the look worked out from the host's tags (Figures.look); unchanged values are not sent again. */
+	void look(final FigureLook look) {
+		this.entityData.set(DATA_LOOK, look.look());
+		this.entityData.set(DATA_SLIM, look.slim());
+		this.entityData.set(DATA_ANIM, look.anim());
+		this.entityData.set(DATA_COLOUR, look.colour());
+		this.entityData.set(DATA_HP, look.hp());
+		this.entityData.set(DATA_LABEL, look.label());
+	}
+
+	/** Server thread: the threat a scan of it named (-1 unscanned, 0 none .. 4 extreme). */
+	void setThreat(final int threat) {
+		this.entityData.set(DATA_THREAT, Math.clamp(threat, -1, 4));
+	}
+
+	/** A person's skin id or a vehicle's model id (FigureLook); valid on the client. */
+	public String lookId() {
+		return this.entityData.get(DATA_LOOK);
+	}
+
+	public boolean slim() {
+		return this.entityData.get(DATA_SLIM);
+	}
+
+	/** The host's anim bits (FigureTags: 1 walk, 2 run, 4 aim, 8 fire, 16 ragdoll, 32 dead, 64 crouch, 128 combat). */
+	public int anim() {
+		return this.entityData.get(DATA_ANIM);
+	}
+
+	public int threat() {
+		return this.entityData.get(DATA_THREAT);
+	}
+
+	/** A vehicle's paint 0xRRGGBB, -1 for none. */
+	public int colour() {
+		return this.entityData.get(DATA_COLOUR);
+	}
+
+	public float hp() {
+		return this.entityData.get(DATA_HP);
+	}
+
+	/** The name tag's label (FigureLook). */
+	public String label() {
+		return this.entityData.get(DATA_LABEL);
+	}
+
+	/** It died in an explosion (a vehicle always does): the client bursts it. */
+	public boolean blown() {
+		return this.entityData.get(DATA_BLOWN);
 	}
 
 	/** Server thread: the host's latest list entry for it: its place and the synced figure data. */
@@ -109,8 +186,10 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 	 * Server thread: it died in Night City (ProxyManager.bury). It stops being anything to hit, hunt, outline or report; it only lies
 	 * there for the guests until ProxyManager removes it.
 	 */
-	void die() {
+	void die(final boolean blown) {
+		this.entityData.set(DATA_BLOWN, blown || this.tickCount - this.blastTick <= BLAST_TICKS);
 		this.entityData.set(DATA_DEAD, true);
+		this.entityData.set(DATA_HP, 0.0F);
 		this.setHostile(false);
 		this.setPinged(0);
 	}
@@ -286,7 +365,13 @@ public final class ProxyEntity extends LivingEntity implements Leashable {
 			: direct instanceof AbstractArrow ? ProxyDamage.Medium.ARROW
 			: direct instanceof Projectile ? ProxyDamage.Medium.PROJECTILE : ProxyDamage.Medium.BODY;
 		// no kind for an explosion (TNT, creeper, firework...): the host's real Cyberpunk explosion is what hurts the NPC, and this one is consumed
-		String kind = ProxyDamage.kind(source.is(DamageTypeTags.IS_EXPLOSION), source.is(DamageTypeTags.IS_FIRE), medium, actor);
+		boolean blast = source.is(DamageTypeTags.IS_EXPLOSION);
+		if (blast) {
+			// should the NPC die soon after, it died in this explosion (task 5-F1: a body that bursts)
+			this.blastTick = this.tickCount;
+		}
+
+		String kind = ProxyDamage.kind(blast, source.is(DamageTypeTags.IS_FIRE), medium, actor);
 		if (kind == null || this.dead() || !(damage > 0.0F) || !Float.isFinite(damage)) {
 			return false;
 		}
