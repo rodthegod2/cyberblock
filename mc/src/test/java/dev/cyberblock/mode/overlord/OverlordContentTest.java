@@ -139,6 +139,33 @@ class OverlordContentTest {
 		assertEquals("NE", OverlordWorld.compass(10, -10));
 	}
 
+	/** 8A's shipped defaults (on main after the merge) all load, and every outbreak names a shipped palette entry. */
+	@Test
+	void everyShippedEntryLoads() throws java.io.IOException {
+		Path root = Path.of("src/main/resources/data/cyberblock/cyberblock");
+		org.junit.jupiter.api.Assumptions.assumeTrue(Files.isDirectory(root.resolve("spawn_palette")) && Files.isDirectory(root.resolve("event")),
+			"8A's spawn_palette and event defaults are not on this branch");
+		java.util.Set<Identifier> palette = new java.util.HashSet<>();
+		try (var files = Files.list(root.resolve("spawn_palette"))) {
+			for (Path f : files.filter(p -> p.toString().endsWith(".json")).toList()) {
+				Identifier id = Identifier.fromNamespaceAndPath("cyberblock", f.getFileName().toString().replace(".json", ""));
+				assertDoesNotThrow(() -> OverlordContent.parseSpawn(id, json(Files.readString(f))), f.toString());
+				palette.add(id);
+			}
+		}
+
+		try (var files = Files.list(root.resolve("event"))) {
+			for (Path f : files.filter(p -> p.toString().endsWith(".json")).toList()) {
+				OverlordContent.EventEntry e = assertDoesNotThrow(() -> OverlordContent.parseEvent(ID, json(Files.readString(f))), f.toString());
+				if (e.effect().spawn() != null) {
+					assertTrue(palette.contains(e.effect().spawn()), f + " names " + e.effect().spawn());
+				}
+			}
+		}
+
+		assertFalse(palette.isEmpty());
+	}
+
 	@Test
 	void survivalPlayersCraftTheConsole() throws java.io.IOException {
 		JsonObject recipe = json(Files.readString(Path.of("src/main/resources/data/cyberblock/recipe/overlord_console.json")));
