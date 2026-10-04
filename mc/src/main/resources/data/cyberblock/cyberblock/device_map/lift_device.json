@@ -1,0 +1,1 @@
+{"schema": 1, "class": "LiftDevice", "kind": "elevator", "block": "cyberblock:lift_platform", "size": [2, 1, 2], "attachments": [{"block": "cyberblock:lift_call_button", "offset": [0, 1, 0], "when": "always"}]}

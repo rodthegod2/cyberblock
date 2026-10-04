@@ -1,0 +1,1 @@
+{"schema": 1, "class": "gameContainerObjectBase", "kind": "container", "block": "cyberblock:crate", "alt_block": "minecraft:chest", "alt_when": "readable", "size": [1, 1, 1]}

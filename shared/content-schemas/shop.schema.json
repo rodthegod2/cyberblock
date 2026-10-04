@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "shop",
+  "description": "The `shop` content kind (megaplan 1.7, 1.16 and tasks 4-A1, 4-M1; Phase 7 adds the hub vendors): a stock list paid in Minecraft eddies (the `cyberblock:eddies` item, section 1.16; a credchip, `cyberblock:eddie_chip`, is worth 100). `title_key` is the lang key of the shop screen's title; each `stock` row sells `count` of `item` for `price` eddies, at most `limit` purchases between restocks (absent: unlimited); `sell` rows are what the shop buys from the player (absent: nothing); `restock` is the seconds between restocks (0: never). Item ids are vanilla ids or cyberblock items. A vending machine picks its shop through `device_map` `shops`.",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128
+    }
+  },
+  "type": "object",
+  "required": [
+    "schema",
+    "title_key",
+    "stock"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "#/$defs/id"
+    },
+    "title_key": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.]+$",
+      "maxBytes": 96
+    },
+    "stock": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 24,
+      "items": {
+        "type": "object",
+        "required": [
+          "item",
+          "count",
+          "price"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "item": {
+            "$ref": "#/$defs/id"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 99999
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          }
+        }
+      }
+    },
+    "sell": {
+      "type": "array",
+      "maxItems": 24,
+      "items": {
+        "type": "object",
+        "required": [
+          "item",
+          "count",
+          "price"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "item": {
+            "$ref": "#/$defs/id"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 99999
+          }
+        }
+      }
+    },
+    "restock": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400
+    }
+  }
+}

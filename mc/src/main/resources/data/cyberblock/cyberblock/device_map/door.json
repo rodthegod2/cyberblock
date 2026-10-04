@@ -1,0 +1,1 @@
+{"schema": 1, "class": "Door", "kind": "door", "block": "minecraft:oak_door", "alt_block": "minecraft:iron_door", "alt_when": "secure", "size": [1, 2, 1], "attachments": [{"block": "cyberblock:lamp_red", "offset": [0, 2, 0], "when": "locked"}]}
