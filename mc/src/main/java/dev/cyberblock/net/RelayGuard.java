@@ -62,8 +62,10 @@ final class RelayGuard {
 		Map.entry("hackresult", new Rule(40, 80, Sanity.Kind.NONE, true)),
 		Map.entry("hackspread", new Rule(40, 80, Sanity.Kind.NONE, true)),
 		Map.entry("stats", new Rule(2, 4, Sanity.Kind.NONE, false)),
-		// Phase 3 (package 3E): env at the DLL's 1 Hz like stats
+		// Phase 3 (package 3E): env at the DLL's 1 Hz like stats; vteleported answers a vteleport request id (its p is checked by
+		// MeetUp against the requested spot: V's new place is far from Steve by design)
 		Map.entry("env", new Rule(2, 4, Sanity.Kind.NONE, false)),
+		Map.entry("vteleported", new Rule(2, 4, Sanity.Kind.NONE, true)),
 		// LOCAL until Phase 3 (the shared Night City map); its row is ready: 30/s, the survey's burst of 200
 		Map.entry("terrain", new Rule(30, 200, Sanity.Kind.TERRAIN, false))));
 

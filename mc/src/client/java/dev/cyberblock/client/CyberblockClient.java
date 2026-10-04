@@ -59,6 +59,8 @@ public class CyberblockClient implements ClientModInitializer {
 		Cyberblock.clientHostActive = player -> player instanceof LocalPlayer && HostState.active();
 		SettingsClient.init();
 		ViewClient.init();
+		// Phase 3E: the Meet Up request as a toast
+		dev.cyberblock.client.ui.MeetUpPrompt.init();
 		// proxies are never drawn: Cyberpunk shows the NPC or vehicle they stand for
 		EntityRendererRegistry.register(ProxyEntities.HUMAN, NoopRenderer::new);
 		EntityRendererRegistry.register(ProxyEntities.VEHICLE, NoopRenderer::new);

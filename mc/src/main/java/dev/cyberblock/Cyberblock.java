@@ -92,8 +92,8 @@ public class Cyberblock implements ModInitializer {
 					.then(Commands.literal("off").executes(command -> outline(command.getSource(), false)))))));
 		// content as data (megaplan section 1.7)
 		ContentLoader.init();
-		// Phase 3E: time and weather from the primary host
-		dev.cyberblock.env.EnvSync.init();
+		// Phase 3E: time and weather from the primary host, /cyberblock meetup
+		dev.cyberblock.env.EnvSync.init(); dev.cyberblock.meetup.MeetUp.init();
 		// dedicated-server admin bits (megaplan 2-M1): startup line, whitelist warning, /cyberblock status and hosts add|remove
 		dev.cyberblock.net.admin.ServerAdmin.init();
 		LOG.info("cyberblock loaded");
