@@ -2,6 +2,7 @@ package dev.cyberblock.net;
 
 import java.util.Locale;
 import java.util.UUID;
+import net.minecraft.server.level.ServerPlayer;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -45,6 +46,38 @@ public record Permissions(int bits, int devices) {
 		}
 	}
 
+	/**
+	 * The Phase 4 device types and their bits (megaplan section 1.11), each on top of the {@code devices} toggle. The id is the
+	 * {@code devices.kind} value, the command name ({@code /cyberblock guests devices <type> on|off}) and the device_map kind.
+	 */
+	public enum DeviceType {
+		DOOR(1), GATE(2), LIGHT(4), CAMERA(8), TERMINAL(16), VENDING(32), TRAFFIC(64), ELEVATOR(128), TURRET(256), SCREEN(512), CONTAINER(1024);
+
+		private final int bit;
+
+		DeviceType(final int bit) {
+			this.bit = bit;
+		}
+
+		public int bit() {
+			return this.bit;
+		}
+
+		public String id() {
+			return this.name().toLowerCase(Locale.ROOT);
+		}
+
+		public static @Nullable DeviceType byId(final String id) {
+			for (DeviceType t : values()) {
+				if (t.id().equals(id)) {
+					return t;
+				}
+			}
+
+			return null;
+		}
+	}
+
 	/** Every toggle bit. */
 	public static final int ALL = 31;
 	/** Phase 4's 11 device types (section 1.11), all allowed by default. */
@@ -67,8 +100,17 @@ public record Permissions(int bits, int devices) {
 		return this.has(Toggle.DEVICES) && (this.devices & typeBit) != 0;
 	}
 
+	public boolean device(final DeviceType type) {
+		return this.device(type.bit());
+	}
+
 	public Permissions with(final Toggle toggle, final boolean on) {
 		return new Permissions(on ? this.bits | toggle.bit() : this.bits & ~toggle.bit(), this.devices);
+	}
+
+	/** One device type on or off (the devices toggle itself is unchanged). */
+	public Permissions with(final DeviceType type, final boolean on) {
+		return new Permissions(this.bits, on ? this.devices | type.bit() : this.devices & ~type.bit());
 	}
 
 	private static volatile HostsData store = new HostsData();
@@ -102,5 +144,22 @@ public record Permissions(int bits, int devices) {
 		}
 
 		return of(owner).has(toggle);
+	}
+
+	/**
+	 * May this actor use the owner's device of this type (Phase 4)? As {@link #allows}, and for a guest both the owner's devices
+	 * toggle and the type's bit must be on. Server thread.
+	 */
+	public static boolean allowsDevice(final UUID owner, final @Nullable UUID actor, final DeviceType type) {
+		if (actor == null || actor.equals(owner) || HostSessions.isHost(actor)) {
+			return true;
+		}
+
+		return of(owner).device(type);
+	}
+
+	/** Server thread: a host turns one device type on or off for its guests (saved; its client hears it in a fresh hs_ack). */
+	public static void setDevice(final ServerPlayer host, final DeviceType type, final boolean on) {
+		ServerNet.setPerms(host, of(host.getUUID()).with(type, on));
 	}
 }

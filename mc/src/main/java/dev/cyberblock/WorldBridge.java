@@ -494,6 +494,20 @@ public final class WorldBridge {
 		});
 	}
 
+	/**
+	 * Runs block changes that are Night City's own (Phase 4 device blocks, megaplan 4-M1) as host ground: never sent to any host as a
+	 * player's block, never recorded in PlacedBlocks or the Offline Builds log. Server thread.
+	 */
+	public static void asHostGround(final Runnable changes) {
+		boolean was = placingGround;
+		placingGround = true;
+		try {
+			changes.run();
+		} finally {
+			placingGround = was;
+		}
+	}
+
 	/** The server, or null before it started and after it stopped. */
 	public static MinecraftServer server() {
 		return server;
