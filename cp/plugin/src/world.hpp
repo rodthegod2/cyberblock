@@ -53,11 +53,12 @@ namespace cb::world
 		Session, // Phase 1 (megaplan 2026-10-04 sections 1.2 and 1.8): the Minecraft server's verdict on this host changed
 		VTeleport, // Phase 3 (megaplan sections 1.8 and 1.9): move V to a spot (Meet Up, Holo-Table, hub exit)
 		Park,      // Phase 3: park V (on) or bring V back (off)
+		DevAct,    // Phase 4 (megaplan sections 1.8 and 1.9, task 4-D1): act on a device; parsed by devices.cpp
 	};
 
 	/// The CName redscript sees from Cyberblock_NextEvent: "explosion", "hit", "ignite", "block_add", "block_remove",
 	/// "block_reset", "teleport", "lead", "lead_release", "pull", "knock", "effect", "hack", "scan", "perk", "perkfx",
-	/// "cyber", "cyberfx", "prefs", "session", "vteleport", "park"; "" (the empty CName) for None.
+	/// "cyber", "cyberfx", "prefs", "session", "vteleport", "park", "devact"; "" (the empty CName) for None.
 	const char *event_name(EventKind kind);
 
 	/// One Minecraft event, already in Cyberpunk space. Which fields each kind fills is the event table of plan
@@ -67,7 +68,8 @@ namespace cb::world
 		EventKind kind = EventKind::None;
 		Vec3 pos{};          // explosion centre | block AABB min corner | teleport / vteleport feet | lead anchor | pull toward |
 							 // knock centre
-		uint64_t target = 0; // hit / ignite / lead / pull / hack / scan target: the EntityID hash (scan: 0 = look-at)
+		uint64_t target = 0; // hit / ignite / lead / pull / hack / scan target: the EntityID hash (scan: 0 = look-at) |
+							 // devact: the device id
 		double amount = 0;   // explosion power | hit dmg / 20 (fraction of the target's max health) | ignite seconds |
 							 // teleport / vteleport yaw (Cyberpunk degrees) | lead length | pull strength | knock radius |
 							 // effect seconds | perk rank | perkfx seconds | cyber 1 installed, 0 not | cyberfx seconds |
@@ -75,9 +77,9 @@ namespace cb::world
 		Vec3 vector{};       // hit impulse, m/s
 		bool flag = false;   // explosion fire | lead has a fixed anchor | hack chains | prefs stepup | park on
 		std::string name;    // effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id | session state |
-							 // vteleport why
+							 // vteleport why | devact act
 		double extra = 0;    // knock strength | effect amplifier | session perms bitmask
-		int32_t id = 0;      // hit: the mob that dealt it (-1 none) | hack, scan, vteleport: the request id
+		int32_t id = 0;      // hit: the mob that dealt it (-1 none) | hack, scan, vteleport, devact: the request id
 		std::string text;    // session: the reason (Cyberblock_EventText)
 	};
 
@@ -157,9 +159,10 @@ namespace cb::world
 		/// Whether the mashup is Active. While it is not, the transient events (explosion, hit, ignite, teleport, lead,
 		/// lead_release, pull, knock, effect, perkfx, cyberfx) are discarded (nothing can act on them), and each change of
 		/// state discards the ones already queued, so a stale blast never replays on the next activation. `block_add`,
-		/// `block_remove`, `block_reset`, `perk`, `cyber`, `scan`, `hack`, `session`, `vteleport` and `park` are always
-		/// kept: redscript's block registry, perk ranks and installed cyberware need every one of them, a scan, a hack, a
-		/// vteleport or a park must be answered, and a session change must clean Night City whatever the state.
+		/// `block_remove`, `block_reset`, `perk`, `cyber`, `scan`, `hack`, `session`, `vteleport`, `park` and `devact` are
+		/// always kept: redscript's block registry, perk ranks and installed cyberware need every one of them, a scan, a
+		/// hack, a vteleport, a park or a devact must be answered, and a session change must clean Night City whatever the
+		/// state.
 		void set_active(bool active);
 		void push(const Event &event);
 		/// Counts a message parse_event rejected.

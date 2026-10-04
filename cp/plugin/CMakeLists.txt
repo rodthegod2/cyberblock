@@ -29,6 +29,7 @@ add_executable(cb_tests tests/test_main.cpp tests/test_cbmath.cpp tests/test_pro
 	src/cbmath.cpp src/screenfx.cpp src/follow.cpp src/iat.cpp src/keys.cpp src/link.cpp src/log.cpp src/probes.cpp src/snapshots.cpp src/survey.cpp src/wire.cpp
 	src/world.cpp src/ws.cpp)
 target_sources(cb_tests PRIVATE tests/test_session.cpp) # Phase 1 (megaplan 2026-10-04 task 1-H1)
+target_sources(cb_tests PRIVATE src/devices.cpp tests/test_devices.cpp) # Phase 4 (megaplan 2026-10-04 task 4-D1)
 target_include_directories(cb_tests PRIVATE src)
 target_link_libraries(cb_tests PRIVATE nlohmann_json::nlohmann_json ws2_32)
 # The UI bridge's pure builders (package U, plan 2026-10-03-retest3-polish section 1.3); ui.cpp includes no RED4ext.
