@@ -178,8 +178,11 @@ public final class UiModel {
 	public record Group(long hash, String title, String kind, boolean tracked, boolean done, List<Line> lines) {
 	}
 
-	/** @param index the fast-travel index, -1 when the pin is not one */
-	public record ReplyPin(Pos p, String kind, String name, int index) {
+	/**
+	 * @param index the fast-travel index, -1 when the pin is not one
+	 * @param district the pin's district (Atlas extension {@code d}), "" when unknown
+	 */
+	public record ReplyPin(Pos p, String kind, String name, int index, String district) {
 	}
 
 	public record Reply(String kind, int id, List<Group> groups, List<ReplyPin> pins) {
@@ -456,7 +459,7 @@ public final class UiModel {
 			List<ReplyPin> pins = new ArrayList<>();
 			if (m.has("pins")) {
 				for (JsonElement e : array(m, "pins")) {
-					if (pins.size() >= 256) {
+					if (pins.size() >= 1024) { // the Atlas extension (protocol.md "Atlas") raised re-test 3's 256
 						bad.incrementAndGet();
 						break;
 					}
@@ -464,7 +467,7 @@ public final class UiModel {
 					try {
 						JsonObject o = object(e);
 						pins.add(new ReplyPin(pos(o.get("p")), oneOf(string(o, "kind", 16, true), PIN_KINDS, "other"), string(o, "name", 64, false),
-							o.has("i") ? (int) integer(o.get("i"), -1, Integer.MAX_VALUE) : -1));
+							o.has("i") ? (int) integer(o.get("i"), -1, Integer.MAX_VALUE) : -1, string(o, "d", 64, false)));
 					} catch (Invalid | IllegalStateException x) {
 						bad.incrementAndGet();
 					}

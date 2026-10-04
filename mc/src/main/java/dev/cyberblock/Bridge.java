@@ -69,6 +69,12 @@ public final class Bridge {
 	/** V is in a vehicle (the host's state.vehicle). M sets it. */
 	public static volatile boolean hostInVehicle;
 
+	/**
+	 * {@code /cyberblock survey <op>} (op start, redo, stop or status): the client asks Cyberpunk for the Atlas survey tour and returns
+	 * the line the command prints. The client sets it; called on the server thread.
+	 */
+	public static volatile java.util.function.Function<String, String> surveyCommand = op -> "The Atlas is not available";
+
 	private Bridge() {
 	}
 

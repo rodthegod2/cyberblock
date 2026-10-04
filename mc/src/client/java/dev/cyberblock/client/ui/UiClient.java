@@ -1,6 +1,8 @@
 package dev.cyberblock.client.ui;
 
 import dev.cyberblock.client.StatusReporter;
+import dev.cyberblock.client.atlas.AtlasStore;
+import dev.cyberblock.client.atlas.SurveyClient;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
@@ -15,6 +17,9 @@ public class UiClient implements ClientModInitializer {
 	public void onInitializeClient() {
 		UiLink.register();
 		UiHud.register();
+		// the Atlas's shared map of Night City and the survey tour (protocol.md "Atlas")
+		AtlasStore.register();
+		SurveyClient.register();
 		ClientTickEvents.END_CLIENT_TICK.register(UiClient::tick);
 	}
 
