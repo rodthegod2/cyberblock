@@ -239,3 +239,32 @@ def test_vectors_file_matches_truth():
         assert cbmath.mc_yaw_to_cp_yaw(case["mc"]) == case["cp"]
     for case in data["mc_vel"]:
         assert list(cbmath.mc_vel_to_cp(*case["mc"])) == case["cp"]
+
+
+# ---- the Atlas survey (explored map): 2-m cells -------------------------------------------------------------------
+def test_survey_cell_uses_the_minecraft_axes_and_the_top_face_rule():
+    assert cbmath.survey_cell(10.4, 20.6, 5.0) == (5, -11, 5)       # Minecraft x 10.4, z -20.6
+    assert cbmath.survey_cell(2.0, -2.0, 40.5) == (1, 1, 41)        # a cell edge belongs to the cell above it; ties go up
+    assert cbmath.survey_cell(1.999, -1.999, 40.49) == (0, 0, 40)
+    assert cbmath.survey_cell(-0.5, 0.5, -3.5) == (-1, -1, -3)
+    # the surface height is the same nearest whole y as the floor range of a down hit
+    for x, y, z in [(10.4, 20.6, 5.0), (-3.2, -7.9, 12.25), (7.0, 7.0, 7.999)]:
+        for k in (0, 57):
+            off = cbmath.level_offset(k)
+            assert cbmath.survey_cell(x, y, z, off)[2] == cbmath.down_hit_to_range(x, y, z, off)[3] + 1
+
+
+def test_survey_column_is_the_centre_of_its_cell():
+    for cx, cz in [(0, 0), (-1, -1), (5, -3), (-623, -407), (1999, 1999)]:
+        x, y = cbmath.survey_column(cx, cz)
+        assert cbmath.survey_cell(x, y, 0.0)[:2] == (cx, cz)
+        assert cbmath.survey_cell(x - 0.99, y + 0.99, 0.0)[:2] == (cx, cz) and cbmath.survey_cell(x + 0.99, y - 0.99, 0.0)[:2] == (cx, cz)
+
+
+def test_survey_vectors_match_truth():
+    data = json.loads(Path("shared/vectors.json").read_text())
+    assert {c["k"] for c in data["survey"]} == {0, 57} and len(data["survey"]) >= 20 and len(data["survey_column"]) >= 5
+    for case in data["survey"]:
+        assert list(cbmath.survey_cell(*case["hit"], cbmath.level_offset(case["k"]))) == case["cell"]
+    for case in data["survey_column"]:
+        assert list(cbmath.survey_column(*case["cell"])) == case["cp"]

@@ -97,6 +97,18 @@ namespace cb
 		return {floor_int(x), floor_int(-y), b, b};
 	}
 
+	SurveyCell survey_cell(double x, double y, double z, double off)
+	{
+		const Vec3 mc = cp_to_mc_pos(x, y, z, off);
+		return {floor_int(mc.x / kSurveyCell), floor_int(mc.z / kSurveyCell), floor_int(mc.y + 0.5)};
+	}
+
+	std::array<double, 2> survey_column(int cx, int cz)
+	{
+		const Vec3 cp = mc_to_cp_pos(kSurveyCell * cx + kSurveyCell / 2.0, 0.0, kSurveyCell * cz + kSurveyCell / 2.0, 0.0);
+		return {cp.x, cp.y};
+	}
+
 	Vec3 rotate(const Quat &q, Vec3 v)
 	{
 		// t = 2 (u x v); v' = v + r t + u x t, with u = (i, j, k)

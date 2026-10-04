@@ -8,8 +8,8 @@ import pytest
 from PIL import Image
 from websockets.asyncio.server import serve
 
-from test_protocol_md import (L36_EXAMPLES, L36_NEW_CP_TO_MC, R3_EXT_CP, R3_NEW_CP, R3_VALIDATORS,  # shared/protocol.md: the example messages and the
-                              VALIDATORS)  # documented limits of layers 3-6 and of re-test 3
+from test_protocol_md import (AT_VALIDATORS, L36_EXAMPLES, L36_NEW_CP_TO_MC, R3_EXT_CP, R3_NEW_CP, R3_VALIDATORS,  # shared/protocol.md: the example
+                              VALIDATORS)  # messages and the documented limits of layers 3-6, re-test 3 and the Atlas
 from tools import fakehost, shm
 
 HELLO = {"t": "hello", "proto": 1, "mod": "cyberblock", "mc": "26.3"}
@@ -482,13 +482,15 @@ def mode_set(*names):
     return frozenset(names)
 
 
-CP_SENT = L36_NEW_CP_TO_MC | {"cam", "key", "click"} | R3_NEW_CP | R3_EXT_CP  # the types the fake host sends that protocol.md gives a validator
+CP_SENT = L36_NEW_CP_TO_MC | {"cam", "key", "click", "terrain"} | R3_NEW_CP | R3_EXT_CP  # the types the fake host sends that protocol.md gives a validator
 
 
 def valid3(m):
     """A message the fake host sent obeys the documented limits (the re-test 3 validators win over the layers 3-6 ones)."""
     if m["t"] not in CP_SENT:
         return True
+    if m["t"] == "terrain" or (m["t"] == "reply" and m.get("kind") == "atlas"):  # the Atlas extension wins for these
+        return AT_VALIDATORS[m["t"]](m)
     return (R3_VALIDATORS if m["t"] in R3_NEW_CP | R3_EXT_CP else VALIDATORS)[m["t"]](m)
 
 

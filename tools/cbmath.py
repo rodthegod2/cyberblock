@@ -89,6 +89,26 @@ def wall_hit_to_range(x: float, y: float, z: float, off: float = 0.0) -> tuple[i
     return (math.floor(x), math.floor(-y), b, b)
 
 
+# ---- the Atlas survey (explored map): 2-m cells of the highest Night City surface -----------------------------------
+
+SURVEY_CELL = 2
+"""Metres (Minecraft blocks) per side of an Atlas survey cell."""
+
+
+def survey_cell(x: float, y: float, z: float, off: float = 0.0) -> tuple[int, int, int]:
+    """A survey hit (the highest Night City surface of a column, Cyberpunk space) -> (cx, cz, h): its 2-m Minecraft cell
+    cx = floor(x / 2), cz = floor(-y / 2), and the surface's Minecraft y h = floor(z - off + 0.5), the nearest whole y
+    (the top-face rule of down_hit_to_range)."""
+    mx, my, mz = cp_to_mc_pos(x, y, z, off)
+    return (math.floor(mx / SURVEY_CELL), math.floor(mz / SURVEY_CELL), math.floor(my + 0.5))
+
+
+def survey_column(cx: int, cz: int) -> tuple[float, float]:
+    """The Cyberpunk column (x, y) at the centre of survey cell (cx, cz): Minecraft (2cx + 1, 2cz + 1) -> (2cx + 1, -(2cz + 1))."""
+    x, y, _ = mc_to_cp_pos(SURVEY_CELL * cx + SURVEY_CELL / 2, 0.0, SURVEY_CELL * cz + SURVEY_CELL / 2)
+    return (x, y)
+
+
 # ---- the six rebindable keys (plan 2026-10-03-retest3-polish section 1.7) -------------------------------------------
 # Not a conversion, but a rule the DLL (keys::bindable, keys::apply_binds) and Minecraft (VirtualKeys) must share: this is
 # its reference, and shared/vectors.json `binds` and `binds_apply` pin both mirrors to it.

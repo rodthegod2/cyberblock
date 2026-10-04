@@ -259,8 +259,10 @@ class UiModelTest {
 	@Test
 	void replyAtlasAndPhone() {
 		UiModel.Reply atlas = UiModel.parseReply(json("{'kind':'atlas','id':9,'groups':[],'pins':[{'p':[1,2,3],'kind':'fasttravel','name':'Japantown','i':3},{'p':[4,5,6],'kind':'quest','name':'Job','i':-1}]}"));
-		assertEquals(new UiModel.ReplyPin(new UiModel.Pos(1, 2, 3), "fasttravel", "Japantown", 3), atlas.pins().get(0));
+		assertEquals(new UiModel.ReplyPin(new UiModel.Pos(1, 2, 3), "fasttravel", "Japantown", 3, ""), atlas.pins().get(0));
 		assertEquals(-1, atlas.pins().get(1).index());
+		assertEquals("Westbrook", UiModel.parseReply(json("{'kind':'atlas','id':9,'groups':[],'pins':[{'p':[1,2,3],'kind':'fasttravel','name':'J','i':-1,'d':'Westbrook'}]}"))
+			.pins().get(0).district());
 		UiModel.Reply phone = UiModel.parseReply(json("{'kind':'phone','id':2,'groups':[{'hash':5,'title':'Judy','kind':'sms','tracked':false,'done':false,'lines':[{'hash':6,'text':'Hi V','state':0},{'hash':7,'text':'Sure','state':2}]}]}"));
 		assertEquals(2, phone.groups().get(0).lines().get(1).state());
 		assertTrue(phone.pins().isEmpty());
@@ -285,13 +287,14 @@ class UiModelTest {
 		assertEquals(128, r.groups().size());
 		assertEquals(512, r.groups().stream().mapToInt(g -> g.lines().size()).sum());
 		StringBuilder pins = new StringBuilder();
-		for (int i = 0; i < 300; i++) {
-			pins.append(i == 0 ? "" : ",").append("{'p':[").append(i).append(",0,0],'kind':'other','name':'" + repeat('n', 70) + "','i':-1}");
+		for (int i = 0; i < 1100; i++) {
+			pins.append(i == 0 ? "" : ",").append("{'p':[").append(i).append(",0,0],'kind':'other','name':'" + repeat('n', 70) + "','i':-1,'d':'" + repeat('d', 70) + "'}");
 		}
 
 		r = UiModel.parseReply(json("{'kind':'atlas','id':1,'groups':[],'pins':[" + pins + "]}"));
-		assertEquals(256, r.pins().size());
+		assertEquals(1024, r.pins().size()); // the Atlas extension's cap
 		assertEquals(64, r.pins().get(0).name().length());
+		assertEquals(64, r.pins().get(0).district().length());
 	}
 
 	// ---- npcs (radar) ----

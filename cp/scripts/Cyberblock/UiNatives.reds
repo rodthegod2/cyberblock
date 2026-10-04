@@ -34,6 +34,8 @@ public native func Cyberblock_Notify(kind: CName, title: String, text: String, s
 // NextUiAction pops one and makes it current: n"pause", n"resume", n"save", n"loadlast", n"mainmenu", n"cpmenu",
 // n"track", n"smsreply", n"fasttravel", n"journalreq", n"phonereq", n"atlasreq"; n"" when empty.
 public native func Cyberblock_NextUiAction() -> CName;
+// The DLL ran CyberblockUi.Pump within the last 0.5 s; while false, CyberblockSystem's tick pumps instead.
+public native func Cyberblock_UiPumpLive() -> Bool;
 public native func Cyberblock_UiActionArg() -> String;
 public native func Cyberblock_UiActionHash() -> Uint32;
 public native func Cyberblock_UiActionId() -> Int32;
@@ -43,5 +45,6 @@ public native func Cyberblock_UiActionId() -> Int32;
 public native func Cyberblock_ReplyBegin(kind: CName, id: Int32) -> Void;             // kind: journal | phone | atlas
 public native func Cyberblock_ReplyGroup(hash: Uint32, title: String, kind: CName, tracked: Bool, done: Bool) -> Void;
 public native func Cyberblock_ReplyLine(hash: Uint32, text: String, state: Int32) -> Void; // belongs to the last group
-public native func Cyberblock_ReplyPin(pos: Vector4, kind: CName, name: String, index: Int32) -> Void;
+// district: the pin's district name ("" unknown), for the Atlas's district labels.
+public native func Cyberblock_ReplyPin(pos: Vector4, kind: CName, name: String, index: Int32, district: String) -> Void;
 public native func Cyberblock_ReplyEnd() -> Void;

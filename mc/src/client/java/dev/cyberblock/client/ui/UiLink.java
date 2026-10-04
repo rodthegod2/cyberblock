@@ -189,6 +189,12 @@ public final class UiLink {
 		return id;
 	}
 
+	/** A Minecraft toast like Cyberpunk's notifications (kind as {@code notify.kind}), from any thread. */
+	public static void toast(final String kind, final String title, final String text, final double seconds) {
+		UiModel.Notify notify = new UiModel.Notify(UiModel.NOTIFY_KINDS.contains(kind) ? kind : "info", title, text, seconds);
+		onClient(() -> UiEvents.notify(notify));
+	}
+
 	/** A screen that closed no longer wants its reply. */
 	public static void forget(final int id) {
 		waiting.remove(id);

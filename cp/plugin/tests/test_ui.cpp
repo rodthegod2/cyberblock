@@ -281,11 +281,11 @@ TEST(ui_reply_caps_counts_and_bytes)
 		for (uint32_t l = 0; l < 5; ++l)
 			reply.line(l, "Hey", 0);
 	}
-	for (int p = 0; p < 300; ++p)
+	for (int p = 0; p < 1100; ++p)
 		reply.pin({0.0, 0.0, 0.0}, "quest", "p", -1, 0.0);
 	const auto r = reply.end();
-	CHECK(r->groups == 128 && r->lines == 512 && r->pins == 256);
-	CHECK(r->dropped == (200 - 128) + (1000 - 512) + (300 - 256));
+	CHECK(r->groups == 128 && r->lines == 512 && r->pins == 1024);
+	CHECK(r->dropped == (200 - 128) + (1000 - 512) + (1100 - 1024));
 
 	// 256 KB: big lines stop fitting before the line cap
 	CHECK(reply.begin("journal", 2));
@@ -404,4 +404,17 @@ TEST(ui_actions_are_bounded_and_keep_pause_edges)
 	while (const auto a = q.pop(true))
 		last = *a;
 	CHECK(last.a == "pause");
+}
+
+TEST(ui_reply_pin_carries_its_district_only_when_known)
+{
+	ReplyBuilder reply;
+	CHECK(reply.begin("atlas", 7));
+	reply.pin({1.0, 2.0, 3.0}, "fasttravel", "Japantown West", 12, 0.0, "Westbrook");
+	reply.pin({1.0, 2.0, 3.0}, "vendor", "Gun shop", -1, 0.0, "");
+	reply.pin({1.0, 2.0, 3.0}, "vendor", "Ctrl", -1, 0.0, std::string(80, 'd') + "");
+	const auto r = reply.end();
+	const nlohmann::json &pins = r->message["pins"];
+	CHECK(pins.size() == 3 && pins[0]["d"] == "Westbrook" && !pins[1].contains("d"));
+	CHECK(pins[2]["d"].get<std::string>().size() == 64); // cut to kNameBytes, the control character stripped
 }

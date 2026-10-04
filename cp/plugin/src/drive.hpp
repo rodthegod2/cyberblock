@@ -9,6 +9,7 @@
 #pragma once
 #include "cbmath.hpp"
 #include <cstdint>
+#include <optional>
 
 namespace cb::drive
 {
@@ -29,4 +30,13 @@ namespace cb::drive
 	/// after the teleport may already be the new one, a frame ahead of that camera, and Steve would then be drawn (and moved
 	/// by the compositor) a frame ahead of the camera framing him. Main thread.
 	bool feet_before_teleport(Vec3 &feet);
+
+	/// The Atlas survey tour (survey.hpp): while a hold is set, V is teleported to `cpFeet` (Cyberpunk space) every frame
+	/// the flight gate allows (Cyberblock active, not in a vehicle, not held, flights allowed, no Cyberpunk menu), facing
+	/// as at the hold's first frame, so V hangs in the air while Night City streams in. nullopt ends it. Any thread.
+	void set_hold(std::optional<Vec3> cpFeet);
+	/// After a tour: V is teleported once to `cpFeet` facing `yaw` (Cyberpunk degrees) on the next frame the gate allows,
+	/// within 2 s (the scripts put V back themselves too; this one runs on the main thread after the last hold frame).
+	/// Any thread.
+	void request_return(Vec3 cpFeet, double yaw);
 }

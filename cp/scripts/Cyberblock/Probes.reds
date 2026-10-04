@@ -20,6 +20,11 @@
 // SqrtF, CeilF, Entity.GetWorldPosition, TimeSystem.GetSimTime + EngineTime.ToFloat (as Effects.reds).
 // Collision groups n"Static" and n"Terrain" both exist (used together by AIFindTeleportPositionForTakedown).
 // SyncRaycastByCollisionGroup takes a single group, so one query-filter ray covers Static + Terrain instead.
+// The Atlas survey (SurveyNatives.reds): after the probes, up to 48 more casts per tick go to long down rays at the 2-m
+// columns Cyberblock_SurveyNext hands out around V (from feet.z + 500 to feet.z - 200 m, through our boxes like every
+// probe): the highest Static, Terrain or Water surface of each column. A hit gets one short Water-only ray (0.5 m
+// above to 0.5 m below it) that tells water from ground; the collision group n"Water" is the one vanilla's swim checks
+// pass to RaycastWithASingleGroup (defaultTransition.swift).
 // Codeware 1.20.3: TraceResult.GetHitEntity(script_ref<TraceResult>) -> ref<Entity>,
 // StaticEntitySystem.IsTagged(EntityID, CName); the boxes are 1 m cubes centred on their entity position, tagged
 // CyberblockCollisionService.Tag().
@@ -94,6 +99,52 @@ public class CyberblockProbes {
     }
     Cyberblock_SubmitProbes(feet, downHits, wallHits, radius);
     this.Aim(player, queries, filter);
+    if !CyberblockSurveyTour.Running(game) {
+      CyberblockProbes.Survey(queries, feet, 48);
+    }
+  }
+
+  // The Atlas survey's casts this tick: columns from Cyberblock_SurveyNext until `budget` rays are used or none is left.
+  // Returns the number of columns cast.
+  public static func Survey(queries: ref<SpatialQueriesSystem>, feet: Vector4, budget: Int32) -> Int32 {
+    let hits: array<Vector4>;
+    let casts = 0;
+    while casts < budget {
+      let column = Cyberblock_SurveyNext(feet);
+      if column.W < 0.5 {
+        break;
+      }
+      ArrayPush(hits, CyberblockProbes.SurveyRay(queries, column.X, column.Y, feet.Z, casts));
+    }
+    if ArraySize(hits) > 0 {
+      Cyberblock_SubmitSurvey(hits);
+    }
+    return ArraySize(hits);
+  }
+
+  // One survey column: the highest Night City surface (Static, Terrain or Water) between `aroundZ` + 500 and - 200 m,
+  // as (x, y, z, kind) with kind 0 miss, 1 ground or building, 2 water. `casts` counts the rays it took.
+  public static func SurveyRay(queries: ref<SpatialQueriesSystem>, x: Float, y: Float, aroundZ: Float, out casts: Int32) -> Vector4 {
+    let surface: QueryFilter;
+    QueryFilter.AddGroup(surface, n"Static");
+    QueryFilter.AddGroup(surface, n"Terrain");
+    QueryFilter.AddGroup(surface, n"Water");
+    let result: TraceResult;
+    let used = 0;
+    let top = new Vector4(x, y, aroundZ + 500.0, 1.0);
+    let bottom = new Vector4(x, y, aroundZ - 200.0, 1.0);
+    let hit = CyberblockProbes.TraceNightCity(queries, surface, top, bottom, result, used);
+    casts += used;
+    if !hit {
+      return new Vector4(x, y, 0.0, 0.0);
+    }
+    let z = result.position.Z;
+    let water: QueryFilter;
+    QueryFilter.AddGroup(water, n"Water");
+    let check: TraceResult;
+    casts += 1;
+    let isWater = queries.SyncRaycastByQueryFilter(new Vector4(x, y, z + 0.5, 1.0), new Vector4(x, y, z - 0.5, 1.0), water, check);
+    return new Vector4(x, y, z, isWater ? 2.0 : 1.0);
   }
 
   // A raycast against Night City (Static + Terrain) that passes through our collision boxes: from just beyond the

@@ -795,7 +795,7 @@ chat):
 
 | Where | What |
 |---|---|
-| **Top left** | the **radar**: an 80 × 80 map in the style of a Minecraft map item. It shows terrain shading around you (24 m), people as dots (red hostile, white neutral), cars as grey squares, Minecraft mobs, map pins with Minecraft's own map markers, an arrow for Steve and an arrow at the edge that points to your quest objective. It rotates with where you look. |
+| **Top left** | the **radar**: an 80 × 80 map in the style of a Minecraft map item. It shows the [Atlas](#the-atlas-map) map of Night City around you and your own blocks (24 m), people as dots (red hostile, white neutral), cars as grey squares, Minecraft mobs, map pins with Minecraft's own map markers, an arrow for Steve and an arrow at the edge that points to your quest objective. It rotates with where you look. |
 | **Under the radar** | **eddies** with a gold nugget (`€$ 12450`), the **wanted level** as up to five stars, the **time** and **district**, and the **speed** in km/h in a vehicle |
 | **Top right** | the **tracked quest**: its title in yellow, its objectives with a box or a tick, counters ("2/3"), "(optional)" and the **distance to the waypoint** in metres |
 | **Waypoint** | the objective also shows on Minecraft's **locator bar** (the strip near the hotbar), so you can follow it in any direction; if the bar is not shown, the arrow on the radar and the quest panel still point to it |
@@ -816,7 +816,7 @@ Minecraft screen:
 | You press | You get |
 |---|---|
 | **Esc** or **H** | the **Night City pause screen** ("Night City (paused)"): Back to Night City, Save Game, Load Last Save, Map, Journal, Messages, Night City Menu..., Minecraft Options..., Quit to Cyberpunk Main Menu (it asks first). **Cyberpunk is paused while this screen is open.** Saving says "Saving is not possible right now" when Cyberpunk does not allow a save. |
-| **M** | the **Atlas**: a map of the pins around you in Minecraft style (select a pin to see what it is; quests are tracked from the Journal). **Fast travel is not offered from the Atlas in 1.0.0:** selecting a fast-travel point tells you to use the Night City map through *Night City Menu...* |
+| **M** | the **Atlas**: Night City as a Minecraft map, with every map pin (see [The Atlas (map)](#the-atlas-map)). **Fast travel is not offered from the Atlas in 1.0.0:** selecting a fast-travel point tells you to use the Night City map through *Night City Menu...* |
 | **J** | the **Journal**: Main Jobs, Side Jobs, Gigs and Other, each quest with its objectives (done ones ticked), a **Track** button and a "Tracked" mark |
 | **Messages / the phone** | the **Phone**: your contacts and message threads, with a Reply button that sends the choice you pick |
 | **I** (or Cyberpunk's crafting menu) | Minecraft's **inventory** |
@@ -824,6 +824,36 @@ Minecraft screen:
 | **U** | the Cyberware screen (as before) |
 
 Crafting benches in the world are different: they are pass-through menus (below).
+
+#### The Atlas (map)
+**M** opens the Atlas: Night City drawn like a Minecraft filled map. Nothing of Cyberpunk's own map art is used: Cyberblock
+measures the city itself with Cyberpunk's collision (long rays straight down) and keeps the **highest surface of every 2 m
+square**. Minecraft colours it like a map item: **streets and open ground light sand**, low buildings light grey, buildings
+grey, tall buildings dark grey, megabuildings and towers nearly black, **water blue**, with Minecraft's map shading (an edge
+facing north is brighter, the ground north of a tall building darker). Squares nobody has measured yet stay plain parchment.
+- **It fills in as you move:** while Cyberblock is on, about 48 rays per tick map everything within about 96 m of V, so the
+  streets you walk or drive through appear on their own (the **radar** shows the same map around you).
+- **Survey once, and every world and save uses it.** Type **`/cyberblock survey`** once, stand somewhere safe on foot and
+  leave the game alone (AFK). Cyberblock makes V invisible and invulnerable, locks saving, and carries V in steps of 200 m
+  across the whole city (V hangs in the air at each stop while the city streams in, about 10-15 s a stop; a full survey takes
+  a few hours). A boss bar at the top shows the stops done and the time left; a toast says when it is done. **At the end V is
+  put back exactly where V stood**, visible, with saving unlocked. The map is kept **once for the whole installation** in
+  `%APPDATA%\.minecraft-cyberblock\cyberblock\nightcity-map\` (Night City is the same in every Minecraft world and every
+  Cyberpunk save), so you only ever survey once.
+  - `/cyberblock survey stop` ends it early (V goes back home); so do **F9**, getting into a vehicle, a scene or combat
+    starting, or Minecraft disconnecting. Opening a Cyberpunk menu only pauses it.
+  - It resumes: `/cyberblock survey` again skips every stop already on the map. On a finished map it says Night City is
+    already mapped; **`/cyberblock survey redo`** maps it all again. `/cyberblock survey status` shows the progress.
+  - It only starts while Cyberblock is on, V is on foot, alive, not in combat, not in a scene, not gliding. Stops over open
+    water, or where nothing has streamed in, are skipped.
+- **Pins:** every pin of Cyberpunk's world map (fast-travel points, vendors, ripperdocs, gigs, quests, apartments, cars and
+  the rest) as one of Minecraft's own map markers. **Hover** a pin for its name, its kind and its district; the buttons at the
+  top (**Quests, Travel, Shops, Gigs, Places**) hide or show each kind; where pins would cover each other the more important
+  one is shown (quests always). Zoomed out, **district names** label the map.
+- **Moving around:** drag to pan, the wheel or **+**/**-** to zoom (it stays crisp: every square is one block of colour),
+  **You** centres the map on V. The tracked objective is the red marker and V is the white arrow.
+- **Tracking:** select a quest pin and press **Track** to track that job (as the Night City map does for quest pins); other
+  pins are tracked on the Night City map (*Night City Menu...*). The Journal's **Track** works as before.
 
 #### Menus Cyberblock cannot replace
 Some Cyberpunk menus have no Minecraft equivalent that could do the same job: **shops and vendors, the ripperdoc, the
@@ -900,7 +930,8 @@ type, Enter, Backspace, Delete, the arrows, Home/End and Tab all go to Minecraft
 sends, Esc cancels. V stands still meanwhile. (Cyberblock.log notes "typing reaches Minecraft's screens" the first
 time.)
 
-Useful commands: `/cyberblock kit`, `/cyberblock level` (re-align the ground to where V stands),
+Useful commands: `/cyberblock kit`, `/cyberblock level` (re-align the ground to where V stands), `/cyberblock survey`
+(map all of Night City once for the [Atlas](#the-atlas-map); `stop`, `status`, `redo`),
 `/cyberblock perks free on|off` (free skill points), `/gamemode creative`, `/gamemode survival`,
 `/xp add @s 30 levels`, `/effect clear @s`.
 

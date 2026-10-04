@@ -157,14 +157,14 @@ namespace cb::ui
 	std::optional<nlohmann::json> make_screen_pass(std::string_view name);
 
 	/// The `reply` message, built entry by entry (Cyberblock_ReplyBegin/Group/Line/Pin/End). At most 128 groups, 512
-	/// lines and 256 pins, and the whole message at most 256 KB: anything past a limit is dropped and counted. A line
+	/// lines and 1024 pins, and the whole message at most 256 KB: anything past a limit is dropped and counted. A line
 	/// belongs to the last group (dropped with it, or when there is none).
 	class ReplyBuilder
 	{
 	public:
 		static constexpr size_t kMaxGroups = 128;
 		static constexpr size_t kMaxLines = 512;
-		static constexpr size_t kMaxPins = 256;
+		static constexpr size_t kMaxPins = 1024; // Atlas extension (was 256): every map pin of Night City fits
 		static constexpr size_t kMaxBytes = 256 * 1024;
 
 		/// Starts a reply (forgetting an unfinished one); false (and inactive) for an unknown kind.
@@ -172,8 +172,9 @@ namespace cb::ui
 		void group(uint32_t hash, std::string_view title, std::string_view kind, bool tracked, bool done);
 		/// state: 0 active / from the contact, 1 done / from V, 2 failed / a reply V can choose (clamped to 0..2).
 		void line(uint32_t hash, std::string_view text, int32_t state);
-		/// `posCp` in Cyberpunk space, converted with `off`; `index` is the fast-travel index (-1 none).
-		void pin(Vec3 posCp, std::string_view kind, std::string_view name, int32_t index, double off);
+		/// `posCp` in Cyberpunk space, converted with `off`; `index` is the fast-travel index (-1 none); a non-empty
+		/// `district` (at most kNameBytes) is sent as `d` (Atlas extension: district labels).
+		void pin(Vec3 posCp, std::string_view kind, std::string_view name, int32_t index, double off, std::string_view district = {});
 
 		struct Result
 		{

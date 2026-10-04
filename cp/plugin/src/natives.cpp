@@ -7,6 +7,7 @@
 #include "native_reg.hpp"
 #include "probes.hpp"
 #include "snapshots.hpp"
+#include "survey_game.hpp"
 #include "ui.hpp"
 #include "view.hpp"
 #include "world.hpp"
@@ -1015,5 +1016,6 @@ namespace cb::natives
 		add(rtti, "Cyberblock_Log", &Log, nullptr, {{"String", "msg"}});
 		log::info("redscript natives registered");
 		ui::register_natives(rtti); // the UI bridge's natives (ui_game.cpp, re-test 3 plan section 1.3)
+		survey_game::register_natives(rtti); // the Atlas survey's natives (survey_game.cpp)
 	}
 }

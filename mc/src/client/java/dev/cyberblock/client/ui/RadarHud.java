@@ -2,6 +2,8 @@ package dev.cyberblock.client.ui;
 
 import dev.cyberblock.ProxyEntities;
 import dev.cyberblock.client.HostState;
+import dev.cyberblock.client.atlas.AtlasTextures;
+import dev.cyberblock.client.atlas.AtlasTiles;
 import java.util.List;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -23,7 +25,8 @@ import net.minecraft.world.phys.AABB;
 
 /**
  * The radar (section 1.11): top-left, 80x80, in the style of a held map. The parchment is vanilla's map background; on it the
- * client level's blocks within 24 blocks shaded like a map item, Cyberpunk's NPCs (red hostile, white neutral, grey squares for
+ * Atlas's map of Night City around V (the same tile textures as the Atlas, AtlasTextures), the client level's blocks within 24
+ * blocks shaded like a map item, Cyberpunk's NPCs (red hostile, white neutral, grey squares for
  * vehicles), Minecraft's own mobs, the minimap pins with vanilla map-decoration sprites, Steve's arrow in the middle and an
  * arrow on the edge toward the tracked objective. It turns with the host camera, so straight ahead is up.
  */
@@ -68,6 +71,7 @@ public final class RadarHud {
 		float cx = x0 + SIZE / 2.0F, cy = y0 + SIZE / 2.0F;
 		graphics.blit(RenderPipelines.GUI_TEXTURED, McTheme.MAP_BACKGROUND, x0, y0, 0.0F, 0.0F, SIZE, SIZE, SIZE, SIZE);
 		graphics.enableScissor(x0 + BORDER, y0 + BORDER, x0 + SIZE - BORDER, y0 + SIZE - BORDER);
+		drawAtlas(graphics, cx, cy, yaw, px, pz);
 		scan(minecraft.level, player);
 		drawTerrain(graphics, cx, cy, yaw, px - scannedX - 1.0, pz - scannedZ - 1.0);
 
@@ -120,6 +124,27 @@ public final class RadarHud {
 		// Steve: the map's player arrow, always pointing up (the radar turns instead)
 		decoration(graphics, PLAYER, cx, cy, 0.0F, 0xFFFFFFFF);
 		graphics.disableScissor();
+	}
+
+	/**
+	 * The Atlas tiles under the radar, in the terrain grid's frame: drawn at local -(world - Steve) (a tile turned by 180 degrees,
+	 * scale -2 per cell), then turned with the camera like the grid (RadarProjection.gridRotation).
+	 */
+	private static void drawAtlas(final GuiGraphicsExtractor graphics, final float cx, final float cy, final float yaw, final double px, final double pz) {
+		AtlasTextures.beginFrame();
+		int span = AtlasTiles.TILE * AtlasTiles.CELL;
+		double reach = RANGE * 1.5; // the radar square's corners, turned
+		graphics.pose().pushMatrix();
+		graphics.pose().translate(cx, cy);
+		graphics.pose().rotate(RadarProjection.gridRotation(yaw));
+		graphics.pose().scale((float) SCALE, (float) SCALE);
+		for (int tz = (int) Math.floor((pz - reach) / span); tz <= (int) Math.floor((pz + reach) / span); tz++) {
+			for (int tx = (int) Math.floor((px - reach) / span); tx <= (int) Math.floor((px + reach) / span); tx++) {
+				AtlasTextures.drawTile(graphics, tx, tz, (float) (px - (double) tx * span), (float) (pz - (double) tz * span), -AtlasTiles.CELL);
+			}
+		}
+
+		graphics.pose().popMatrix();
 	}
 
 	/** A 2x2 dot with a dark rim, so white dots show on the pale parchment. */

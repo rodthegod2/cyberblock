@@ -132,3 +132,24 @@ def test_strikes_on_people_carry_a_hit_shape():
                    "shape.result.hitPositionEnter = hitPosition", "shape.userData = zone",
                    "ArrayPush(hit.hitRepresentationResult.hitShapes, shape)"):
         assert needed in shape, needed
+
+# Every native the scripts declare is registered by the DLL with the same parameter count (cb::natives::add), so a script
+# call can never reach a missing function or read its arguments wrongly (the Atlas survey natives included).
+DECL = re.compile(r"native func (Cyberblock_\w+)\(([^)]*)\)")
+REG = re.compile(r'add\(rtti,\s*"(Cyberblock_\w+)",\s*&\w+,\s*(?:nullptr|"[^"]*")(?:,\s*\{(.*?)\})?\);', re.S)
+
+
+def test_every_declared_native_is_registered_with_its_parameters():
+    declared = {}
+    for text in all_code().values():
+        for name, params in DECL.findall(text):
+            declared[name] = len([p for p in params.split(",") if p.strip()])
+    src = Path(__file__).resolve().parent.parent / "cp" / "plugin" / "src"
+    registered = {}
+    for path in src.glob("*.cpp"):
+        for name, params in REG.findall(path.read_text(encoding="utf-8")):
+            registered[name] = len(re.findall(r'\{"[^"]+",\s*"\w+"\}', params or ""))
+    assert {"Cyberblock_SurveyNext", "Cyberblock_SurveyTourTick", "Cyberblock_UiPumpLive"} <= set(declared)
+    for name, count in declared.items():
+        assert name in registered, f"{name} is declared but the DLL never registers it"
+        assert registered[name] == count, f"{name}: {count} script parameters, {registered[name]} registered"

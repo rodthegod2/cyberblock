@@ -57,6 +57,15 @@ public class Cyberblock implements ModInitializer {
 		// /cyberblock level, for everyone (permission level 0; Brigadier merges it with the cyber track's /cyberblock literals)
 		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> dispatcher.register(
 			Commands.literal("cyberblock").then(Commands.literal("level").executes(command -> level(command.getSource())))));
+		// /cyberblock survey [start|redo|stop|status]: the Atlas survey tour (the client sends `survey` to Cyberpunk)
+		CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> {
+			var survey = Commands.literal("survey").executes(command -> survey(command.getSource(), "start"));
+			for (String op : new String[] {"start", "redo", "stop", "status"}) {
+				survey = survey.then(Commands.literal(op).executes(command -> survey(command.getSource(), op)));
+			}
+
+			dispatcher.register(Commands.literal("cyberblock").then(survey));
+		});
 		LOG.info("cyberblock loaded");
 	}
 
@@ -71,6 +80,12 @@ public class Cyberblock implements ModInitializer {
 		int was = WorldBridge.level(source.getServer(), "/cyberblock level");
 		String now = metres(Bridge.alignK), before = metres(Math.max(was, 0));
 		source.sendSuccess(() -> Component.translatable("cyberblock.level.done", now, before), false);
+		return 1;
+	}
+
+	private static int survey(final CommandSourceStack source, final String op) {
+		String line = Bridge.surveyCommand.apply(op);
+		source.sendSuccess(() -> Component.literal(line), false);
 		return 1;
 	}
 

@@ -858,3 +858,146 @@ def test_guide_quickhack_table_covers_all_ten_chips_with_their_extras():
         assert f"**{chip}**" in table, chip
     for fact in ("real cobwebs", "6 s", "5 s", "4 s", "2 nearest", "35 %", "32 blocks", "30 m", "2 s", "6 s", "creeper face"):
         assert fact in table, fact
+
+
+# ---- Atlas (explored map and survey tour): `terrain`, `surveystate`, the atlas `reply` extension and `survey` ----------
+AT_CP_TO_MC, AT_MC_TO_CP = "Atlas: Cyberpunk → Minecraft", "Atlas: Minecraft → Cyberpunk"
+AT_CP_EXAMPLES, AT_MC_EXAMPLES = "Atlas examples, Cyberpunk to Minecraft:", "Atlas examples, Minecraft to Cyberpunk:"
+SURVEY_STATES, SURVEY_OPS = names("Survey states"), names("Survey ops")
+
+
+def terrain_ok(m) -> bool:
+    c = m["c"]
+    if not (isinstance(c, list) and len(c) % 4 == 0 and 0 < len(c) <= 4 * 64 and all(whole(v, -2**31, 2**31 - 1) for v in c)):
+        return False
+    return all(abs(c[i]) < 1.5e7 and abs(c[i + 1]) < 1.5e7 and abs(c[i + 2]) <= 20000 and c[i + 3] in (0, 1) for i in range(0, len(c), 4))
+
+
+def surveystate_ok(m) -> bool:
+    return (m["state"] in SURVEY_STATES and whole(m["done"]) and whole(m["total"]) and m["done"] <= m["total"]
+            and (m["eta"] == -1 or num(m["eta"], 0, 1e7)) and ctext(m["reason"], 64)
+            and ("stop" not in m or (isinstance(m["stop"], list) and len(m["stop"]) == 2 and all(whole(v, -100000, 100000) for v in m["stop"]))))
+
+
+def atlas_pin_ok(e) -> bool:
+    base = {"p", "kind", "name", "i"}
+    return (set(e) in (base, base | {"d"}) and vec3(e["p"]) and e["kind"] in PIN_KINDS and ctext(e["name"], 64) and whole(e["i"], -1)
+            and ("d" not in e or ctext(e["d"], 64)))
+
+
+def atlas_reply_ok(m) -> bool:
+    return (m["kind"] == "atlas" and whole(m["id"]) and m["groups"] == [] and list_ok(m, "pins", 1024, atlas_pin_ok)
+            and len(json.dumps(m).encode("utf-8")) <= REPLY_BYTES)
+
+
+def survey_ok(m) -> bool:
+    if m["op"] not in SURVEY_OPS or ("done" in m and m["op"] != "start"):
+        return False
+    done = m.get("done", [])
+    return isinstance(done, list) and len(done) % 2 == 0 and len(done) <= 2 * 4096 and all(whole(v, -100000, 100000) for v in done)
+
+
+AT_VALIDATORS = {"terrain": terrain_ok, "surveystate": surveystate_ok, "reply": atlas_reply_ok, "survey": survey_ok}
+AT_EXAMPLES = [(m["t"], m) for first in (AT_CP_EXAMPLES, AT_MC_EXAMPLES) for m in examples(first)]
+
+
+def at_example(t, **changes):
+    m = copy.deepcopy(next(m for u, m in AT_EXAMPLES if u == t))
+    m.update(changes)
+    return m
+
+
+def test_atlas_name_lists():
+    assert SURVEY_STATES == ["running", "paused", "done", "stopped", "refused", "idle"] and SURVEY_OPS == ["start", "stop", "status"]
+
+
+def test_atlas_every_type_has_a_row_an_example_and_a_validator():
+    assert documented(AT_CP_TO_MC) == {"terrain", "surveystate", "reply"} and documented(AT_MC_TO_CP) == {"survey"}
+    assert {m["t"] for m in examples(AT_CP_EXAMPLES)} == documented(AT_CP_TO_MC)
+    assert {m["t"] for m in examples(AT_MC_EXAMPLES)} == documented(AT_MC_TO_CP)
+    assert "**extends re-test 3:**" in rows_by_type(AT_CP_TO_MC)["reply"]
+    assert {t for t, _ in AT_EXAMPLES} == set(AT_VALIDATORS)
+
+
+def test_atlas_every_example_field_is_named_in_its_row():
+    for heading, first in ((AT_CP_TO_MC, AT_CP_EXAMPLES), (AT_MC_TO_CP, AT_MC_EXAMPLES)):
+        rows = rows_by_type(heading)
+        for m in examples(first):
+            inherited = set(example(R3_CP_EXAMPLES, "reply")) if m["t"] == "reply" else set()
+            for key in set(m) - {"t"} - inherited:
+                assert re.search(rf"\b{key}\b", rows[m["t"]]), f"{m['t']}.{key} is not described in its Atlas row"
+    reply = next(m for t, m in AT_EXAMPLES if t == "reply")
+    assert any("d" in p for p in reply["pins"]) and any("d" not in p for p in reply["pins"])  # d is optional
+
+
+@pytest.mark.parametrize("t, m", AT_EXAMPLES, ids=[f"{t}-{i}" for i, (t, _) in enumerate(AT_EXAMPLES)])
+def test_atlas_example_obeys_the_documented_limits(t, m):
+    assert AT_VALIDATORS[t](m)
+
+
+def test_atlas_terrain_example_matches_cbmath():
+    """The example's first cell is the survey cell of a real hit (tools/cbmath.py survey_cell at k 0)."""
+    from tools import cbmath
+    m = next(m for t, m in AT_EXAMPLES if t == "terrain")
+    assert list(cbmath.survey_cell(-1245.5, 812.25, 66.62)) == m["c"][:3] and m["c"][3] == 0 and m["c"][-1] == 1
+
+
+AT_OUT_OF_LIMITS = [
+    ("terrain", at_example("terrain", c=[1, 2, 3])), ("terrain", at_example("terrain", c=[1, 2, 3, 2])),
+    ("terrain", at_example("terrain", c=[1, 2, 20001, 0])), ("terrain", at_example("terrain", c=[15_000_000, 2, 3, 0])),
+    ("terrain", at_example("terrain", c=[1.5, 2, 3, 0])), ("terrain", at_example("terrain", c=[1, 2, 3, 0] * 65)),
+    ("terrain", at_example("terrain", c=[])),
+    ("surveystate", at_example("surveystate", state="flying")), ("surveystate", at_example("surveystate", done=981)),
+    ("surveystate", at_example("surveystate", done=-1)), ("surveystate", at_example("surveystate", reason="r" * 65)),
+    ("surveystate", at_example("surveystate", stop=[1])), ("surveystate", at_example("surveystate", eta=-2)),
+    ("reply", at_example("reply", pins=[{"p": [0, 0, 0], "kind": "quest", "name": "n", "i": -1, "d": "d" * 65}])),
+    ("reply", at_example("reply", pins=[{"p": [0, 0, 0], "kind": "quest", "name": "n", "i": -1}] * 1025)),
+    ("reply", at_example("reply", pins=[{"p": [0, 0, 0], "kind": "quest", "name": "n", "i": -1, "x": 1}])),
+    ("survey", at_example("survey", op="pause")), ("survey", at_example("survey", done=[1, 2, 3])),
+    ("survey", at_example("survey", done=[1, 200000])), ("survey", at_example("survey", done=[0, 0] * 4097)),
+    ("survey", {"t": "survey", "op": "stop", "done": [1, 2]}),
+]
+
+
+@pytest.mark.parametrize("t, m", AT_OUT_OF_LIMITS, ids=[f"{t}-{i}" for i, (t, _) in enumerate(AT_OUT_OF_LIMITS)])
+def test_atlas_validators_reject_out_of_limit_messages(t, m):
+    try:
+        ok = AT_VALIDATORS[t](m)
+    except (KeyError, TypeError):
+        ok = False
+    assert not ok
+
+
+def test_atlas_validators_accept_the_limits_themselves():
+    assert terrain_ok(at_example("terrain", c=[-14_999_999, 14_999_999, -20000, 1] * 64))
+    assert surveystate_ok(at_example("surveystate", done=980, eta=-1)) and surveystate_ok({**at_example("surveystate"), "state": "idle"})
+    assert surveystate_ok({k: v for k, v in at_example("surveystate").items() if k != "stop"})  # stop is optional
+    assert survey_ok({"t": "survey", "op": "status"}) and survey_ok({"t": "survey", "op": "start"})
+    assert atlas_reply_ok(at_example("reply", pins=[{"p": [0, 0, 0], "kind": "fasttravel", "name": "n", "i": -1, "d": "Westbrook"}] * 1024))
+
+
+def test_atlas_rules_are_stated_in_the_document():
+    text = " ".join((section("Atlas semantics and limits") + section(AT_CP_TO_MC) + section(AT_MC_TO_CP)).split())
+    for phrase in ("2-m cell", "survey_cell(x, y, z, off)", "survey_column(cx, cz)", "`survey` and `survey_column` sets", "at most 64 cells",
+                   "48 more rays", "300 s", "20 s after a miss", "Water-only", "200 m apart", "serpentine", "8 pins", "9 km", "150 m",
+                   "3 × 3", "1.5 s", "15 s", "220 m", "400 rays", "only water", "invisible", "invulnerable", "saving is locked",
+                   "put back exactly", "menu pauses", "90 %", "never superseded", "1024", "4096 pairs"):
+        assert phrase in text, f"{phrase!r} is not stated"
+
+
+def test_atlas_survey_constants_agree_with_the_dll():
+    hpp = Path("cp/plugin/src/survey.hpp").read_text(encoding="utf-8")
+    for name, value in (("kRadius", "96.0"), ("kRefreshSeconds", "300.0"), ("kMissRetrySeconds", "20.0"), ("kCellsPerMessage", "64"),
+                        ("kTourSpacing", "200.0"), ("kTourHalf", "110.0"), ("kTourHoldZ", "150.0"), ("kTourHoldAbove", "25.0"),
+                        ("kProbeStep", "80.0"), ("kSettleMin", "1.5"), ("kSettleStable", "1.0"), ("kSettleTimeout", "15.0"),
+                        ("kMinPins", "8"), ("kBoundsMargin", "200.0"), ("kMaxSpan", "9000.0"), ("kWorldLimit", "8000.0"), ("kMaxDone", "4096")):
+        assert re.search(rf"\b{name} = {re.escape(value)};", hpp), f"survey.hpp {name} is not {value}"
+
+
+def test_guide_documents_the_atlas_and_the_one_time_survey():
+    text = " ".join(GUIDE.split())
+    for phrase in ("#### The Atlas (map)", "Survey once, and every world and save uses it.", "`/cyberblock survey`", "`/cyberblock survey redo`",
+                   "/cyberblock survey stop", "/cyberblock survey status", "put back exactly where V stood", "nightcity-map",
+                   "Quests, Travel, Shops, Gigs, Places", "**Track**"):
+        assert phrase in text, f"HOW-TO-PLAY.md does not say {phrase!r}"
+    assert "Nothing of Cyberpunk's own map art is used" in text

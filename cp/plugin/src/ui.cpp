@@ -314,7 +314,7 @@ namespace cb::ui
 		m_bytes += bytes;
 	}
 
-	void ReplyBuilder::pin(Vec3 posCp, std::string_view kind, std::string_view name, int32_t index, double off)
+	void ReplyBuilder::pin(Vec3 posCp, std::string_view kind, std::string_view name, int32_t index, double off, std::string_view district)
 	{
 		if (!m_active)
 			return;
@@ -327,6 +327,8 @@ namespace cb::ui
 				  {"kind", known_or(kind, kPinKinds, "other")},
 				  {"name", clean_text(name, kNameBytes)},
 				  {"i", std::max(index, -1)}};
+		if (const std::string d = clean_text(district, kNameBytes); !d.empty())
+			p["d"] = d;
 		const size_t bytes = p.dump().size() + 1;
 		if (!fits(bytes))
 		{
