@@ -39,7 +39,8 @@
 			"config": "cyberblock.ui.client.mixins.json",
 			"environment": "client"
 		},
-		"cyberblock.heat.mixins.json"
+		"cyberblock.heat.mixins.json",
+		"cyberblock.downed.mixins.json"
 	],
 	"depends": {
 		"fabricloader": ">=0.19.5",
