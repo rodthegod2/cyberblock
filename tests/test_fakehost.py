@@ -1259,3 +1259,147 @@ def test_replica_flags_are_checked(monkeypatch, argv):
 def test_replica_combines_with_ui_and_hacks_modes(tmp_path, exporting, quick):
     _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[SESSION_HOST], hold=0.3, modes=mode_set("replica", "ui"))
     assert {"ground", "env", "stats", "quest"} <= set(types(got))
+
+
+# ---- Phase 5: --figures (megaplan 5-P1): the tagged `npcs` list ----
+import re  # noqa: E402
+
+from test_protocol_md import P5_ANIM_BITS, p5_npcs_ok  # noqa: E402  (a Phase 5 block of its own, so that it merges apart from the others)
+
+from tools import cbmath  # noqa: E402
+
+FIGURE_TIMES = (0.0, 1.0, 3.3, 7.9, 8.0, 8.2, 8.6, 20.0)
+FIGURE_AFTER_POSES = fakehost.FIGURE_COUNT - 1 - 2 - len(fakehost.FIGURE_PARKED) - 2  # the index of the victim in a list that still has everybody
+
+
+def figure_by_id(t, ids_from=None):
+    return {e["id"]: e for e in fakehost.figures_npcs(t, ids_from)["list"]}
+
+
+def test_figures_every_list_is_a_valid_phase_5_npcs_message_of_at_most_48_unique_entries():
+    assert fakehost.FIGURE_COUNT == 46 and len(fakehost.figure_ids()) == 46
+    for t in FIGURE_TIMES:
+        m = fakehost.figures_npcs(t)
+        assert p5_npcs_ok(m) and len(m["list"]) <= 48, t
+        assert json.loads(json.dumps(m)) == m  # plain JSON
+    assert any(int(i) > 2**53 for i in fakehost.figure_ids())  # ids stay strings
+
+
+def test_figures_one_person_per_skin_group_with_both_genders_and_the_vendor_roles():
+    groups = fakehost.FIGURE_GROUPS
+    assert len({g[0] for g in groups}) == len(groups) == 27
+    for needle in ("civ_", "gang_tyger_claws", "gang_valentinos", "gang_maelstrom", "gang_6th_street", "gang_animals", "gang_scavengers", "gang_voodoo_boys",
+                   "gang_mox", "gang_aldecaldos", "corp_arasaka", "corp_militech", "corp_kang_tao", "law_ncpd_patrol", "law_ncpd_swat", "law_maxtac",
+                   "law_trauma_team", "law_netwatch", "role_ripperdoc", "role_vendor", "role_fixer", "role_bartender", "cyberpsycho"):
+        assert any(g[0].startswith(needle) for g in groups), needle
+    people = [e for e in fakehost.figures_npcs(0.0)["list"] if e["kind"] == "human" and e["p"][2] in fakehost.FIGURE_ROWS_Z]
+    assert len(people) == len(fakehost.figure_roster()) == 32
+    for (group, fac, role, arch, g), e in zip(fakehost.figure_roster(), people):
+        assert (e["fac"], e.get("role", ""), e["arch"], e["g"]) == (fac, role, arch, g), group
+        assert e["anim"] == 0 and e["hp"] == 1.0 and not e["hostile"] and "dead" not in e
+    assert {e["g"] for e in people} == {1, 2} and {e["role"] for e in people if "role" in e} == {"RipperDoc", "Clothes", "Drinks"}
+    assert len({tuple(e["p"]) for e in fakehost.figures_npcs(0.0)["list"]}) == 46  # nobody stands in anybody
+
+
+def test_figures_show_every_animation_bit_and_the_dll_bits_follow_the_speed():
+    assert list(fakehost.FIGURE_ANIM_BITS) == P5_ANIM_BITS and list(fakehost.FIGURE_ANIM_BITS.values()) == [1 << i for i in range(8)]
+    seen = {name: set() for name in fakehost.FIGURE_ANIM_BITS}
+    for t in FIGURE_TIMES:
+        for e in fakehost.figures_npcs(t)["list"]:
+            for name, bit in fakehost.FIGURE_ANIM_BITS.items():
+                if e["anim"] & bit:
+                    seen[name].add(e["id"])
+    assert all(seen.values()), {k: v for k, v in seen.items() if not v}
+    ids = fakehost.figure_ids()
+    walker, runner = ids[FIGURE_AFTER_POSES + 1], ids[FIGURE_AFTER_POSES + 2]
+    speed = lambda i, t: math.hypot(*(b - a for a, b in zip(figure_by_id(t)[i]["p"][::2], figure_by_id(t + 0.1)[i]["p"][::2]))) / 0.1  # noqa: E731
+    assert math.isclose(speed(walker, 1.0), 1.4, abs_tol=1e-6) and figure_by_id(1.0)[walker]["anim"] == 1  # the DLL's walk band is 0.6 to 3.2 m/s
+    assert math.isclose(speed(runner, 1.0), 4.0, abs_tol=1e-6) and figure_by_id(1.0)[runner]["anim"] == 2  # above 3.2: run
+    assert all(e["anim"] == 0 and e["g"] == 0 for e in fakehost.figures_npcs(0.0)["list"] if e["kind"] == "vehicle")  # a car has no pose
+
+
+def test_figures_the_victim_fights_is_listed_once_flagged_dead_and_goes():
+    victim = fakehost.figure_ids()[FIGURE_AFTER_POSES]
+    alive, dying, gone = figure_by_id(7.9)[victim], figure_by_id(fakehost.FIGURE_DEAD_AT + 0.1)[victim], figure_by_id(fakehost.FIGURE_DEAD_AT + 1.0)
+    assert alive["anim"] & fakehost.FIGURE_ANIM_BITS["fire"] and alive["hostile"] and "dead" not in alive
+    assert dying["dead"] is True and dying["anim"] == fakehost.FIGURE_ANIM_BITS["dead"] and dying["hp"] == 0.0
+    assert victim not in gone and len(gone) == 45 and p5_npcs_ok(fakehost.figures_npcs(fakehost.FIGURE_DEAD_AT + 1.0))
+    assert [e["id"] for e in fakehost.figures_npcs(9.0)["list"]] == [e["id"] for e in fakehost.figures_npcs(20.0)["list"]]  # the others keep their ids
+
+
+def test_figures_vehicles_have_a_colour_from_the_template_triple_one_has_none_and_the_cruiser_chases():
+    cars = [e for e in fakehost.figures_npcs(0.0)["list"] if e["kind"] == "vehicle"]
+    assert len(cars) == 6 and all(re.fullmatch(r"[A-Za-z]+/[A-Za-z0-9]+", e["vc"]) for e in cars)
+    parked = cars[:4]
+    assert [e["col"] for e in parked[:3]] == [cbmath.colour_hex(p) for _, p in fakehost.FIGURE_PARKED[:3]] and "col" not in parked[3]  # the class default
+    assert len({e["col"] for e in cars if "col" in e}) == 5 and {e["vc"].split("/")[0] for e in cars} == {"Car", "Bike"}
+    cruiser, fleeing = cars[4], cars[5]
+    assert cruiser["hostile"] and cruiser["fac"] == "NCPD" and not fleeing["hostile"] and not any(e["hostile"] for e in parked)
+    x = lambda car, t: figure_by_id(t)[car["id"]]["p"][0]  # noqa: E731
+    assert math.isclose(x(fleeing, 0.0) - x(cruiser, 0.0), fakehost.FIGURE_GAP) and x(fleeing, 0.4) - x(cruiser, 0.4) < fakehost.FIGURE_GAP  # the cruiser closes in
+    assert cruiser["p"][2] == fleeing["p"][2] == fakehost.FIGURE_ROAD_Z and cruiser["yaw"] == fleeing["yaw"] == -90.0
+
+
+def test_figures_stay_on_the_slab():
+    for t in (0.0, 2.5, 7.0, 30.0):
+        for e in fakehost.figures_npcs(t)["list"]:
+            x, y, z = e["p"]
+            assert abs(x) <= fakehost.SLAB_HALF and abs(z) <= fakehost.SLAB_HALF and y == fakehost.SLAB_Y + 1.0
+
+
+def test_figure_ids_number_from_n_and_refuse_a_start_that_would_overflow():
+    ids = fakehost.figure_ids(100)
+    assert ids[0] == "100" and ids[-1] == str(100 + fakehost.FIGURE_COUNT - 1) and [e["id"] for e in fakehost.figures_npcs(0.0, 100)["list"]] == list(ids)
+    assert fakehost.figure_ids(2**64 - fakehost.FIGURE_COUNT)[-1] == str(2**64 - 1)
+    for bad in (0, -1, 2**64 - fakehost.FIGURE_COUNT + 1):
+        with pytest.raises(ValueError):
+            fakehost.figure_ids(bad)
+
+
+def test_figures_session_host_brings_clear_the_slab_and_the_tagged_figures():
+    host = fakehost.Cyberpunk(frozenset(), frozenset({"figures"}))
+    got = host.reply(SESSION_HOST)
+    assert [m["t"] for m in got] == ["clear", "ground", "npcs"] and got[-1] == fakehost.figures_npcs(0.0) and p5_npcs_ok(got[-1])
+    assert host.npcs(0.0) == fakehost.figures_npcs(0.0) and fakehost.Cyberpunk(frozenset(), frozenset({"figures"}), ids_from=7).npcs(0.0)["list"][0]["id"] == "7"
+    assert fakehost.Cyberpunk(frozenset(), frozenset()).npcs(0.0) == fakehost.npcs_message()  # only --figures changes the list
+
+
+def test_figures_mode_sends_the_tagged_list_repeatedly_and_no_replica_messages(tmp_path, exporting, quick):
+    _, got = run_against_fake_minecraft(tmp_path, 30, exporting, replies=[SESSION_HOST], hold=1.0, layers=layer_set(), modes=mode_set("figures"))
+    lists = [m for m in got if m["t"] == "npcs"]
+    assert len(lists) >= 4 and all(p5_npcs_ok(m) for m in lists) and len({json.dumps(m) for m in lists}) > 2  # they move and the victim dies
+    assert {"vteleported", "parked", "env", "unground", "killed", "dmg"}.isdisjoint(types(got))
+    assert any(e.get("dead") for m in lists for e in m["list"]) and max(len(m["list"]) for m in lists) == 46 and min(len(m["list"]) for m in lists) == 45
+    assert all(any("col" in e for e in m["list"]) and any(e.get("role") == "RipperDoc" for e in m["list"]) for m in lists)
+
+
+def test_figures_flag_picks_the_mode_and_keeps_the_positional_arguments(monkeypatch):
+    seen = []
+
+    async def fake_run(*args, **kwargs):
+        seen.append((args, kwargs))
+        return 1
+
+    monkeypatch.setattr(fakehost, "run", fake_run)
+    for argv in (["--figures"], ["--figures", "--hold", "3", "--ids-from", "5000", "--layer2"]):
+        monkeypatch.setattr("sys.argv", ["fakehost", *argv])
+        assert fakehost.main() == 0
+    assert [a[9] for a, _ in seen] == [frozenset({"figures"})] * 2 and [a[6] for a, _ in seen] == [10.0, 3.0]
+    assert all(k == {} and len(a) == 13 for a, k in seen)
+
+
+@pytest.mark.parametrize("argv", [["--figures", "--replica"], ["--figures", "--ids-from", str(2**64 - 45)], ["--figures", "--ids-from", "0"]])
+def test_figures_flags_are_checked(monkeypatch, argv):
+    async def fake_run(*args, **kwargs):
+        return 1
+
+    monkeypatch.setattr(fakehost, "run", fake_run)
+    monkeypatch.setattr("sys.argv", ["fakehost", *argv])
+    with pytest.raises(SystemExit) as e:
+        fakehost.main()
+    assert e.value.code == 2
+
+
+def test_figures_run_refuses_a_bad_id_start_before_it_connects(tmp_path):
+    with pytest.raises(ValueError):
+        asyncio.run(fakehost.run("ws://127.0.0.1:1", 1, tmp_path, modes=mode_set("figures"), ids_from=2**64 - 10, hold=0.1))
