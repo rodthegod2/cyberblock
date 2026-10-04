@@ -64,6 +64,8 @@ public class CyberblockClient implements ClientModInitializer {
 		FigureRenderer.register();
 		// Phase 3E: the Meet Up request and the Offline Builds summary as toasts
 		dev.cyberblock.client.ui.MeetUpPrompt.init(); dev.cyberblock.client.ui.OfflineBuildsToast.init();
+		// Phase 5K: the cyber skin from the roster, the player list marker and ally outlines
+		dev.cyberblock.client.skin.SkinClient.init();
 		ClientTickEvents.START_CLIENT_TICK.register(minecraft -> ClientInput.tickStart());
 		ClientTickEvents.END_CLIENT_TICK.register(CyberblockClient::tick);
 		// launcher players (plan retest3 M5): a "Play Cyberblock" button on the title screen

@@ -1,26 +1,26 @@
 // Based on universal-modder (MIT) by Rehan: examples/minecraft-gta5-passthrough
 package dev.cyberblock.client.mixin;
 
-import dev.cyberblock.client.HostState;
-import java.util.UUID;
+import dev.cyberblock.client.skin.CyberSkin;
 import net.minecraft.client.player.AbstractClientPlayer;
-import net.minecraft.client.resources.DefaultPlayerSkin;
 import net.minecraft.world.entity.player.PlayerSkin;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** While a host is attached the player is classic Steve (the wide-armed default skin), whatever the account's skin. */
+/**
+ * Megaplan 5-K1: every player the roster flags as linked wears the cyber skin, on every client and in the local player's own view
+ * (the third-person body, the first-person arms and the model choice all read getSkin). It replaces the Phase Q classic-Steve rule;
+ * {@code -Dcyberblock.ownSkin} is ignored (SkinClient logs it).
+ */
 @Mixin(AbstractClientPlayer.class)
 abstract class AbstractClientPlayerMixin {
-	/** DefaultPlayerSkin picks floorMod(uuid.hashCode(), 18); index 15 is entity/player/wide/steve. */
-	private static final UUID CLASSIC_STEVE = new UUID(0L, 15L);
-
 	@Inject(method = "getSkin", at = @At("HEAD"), cancellable = true)
-	private void cyberblock$steve(final CallbackInfoReturnable<PlayerSkin> cir) {
-		if (HostState.active() && !Boolean.getBoolean("cyberblock.ownSkin")) {
-			cir.setReturnValue(DefaultPlayerSkin.get(CLASSIC_STEVE));
+	private void cyberblock$cyberSkin(final CallbackInfoReturnable<PlayerSkin> cir) {
+		PlayerSkin skin = CyberSkin.of(((AbstractClientPlayer) (Object) this).getUUID());
+		if (skin != null) {
+			cir.setReturnValue(skin);
 		}
 	}
 }
