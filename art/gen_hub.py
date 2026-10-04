@@ -227,9 +227,10 @@ def match_terminal() -> base.DeviceBlock:
 def leaderboard_board() -> base.DeviceBlock:
     textures = {"leaderboard_board_front": board_front(random.Random("leaderboard_board_front")),
                 "leaderboard_board_edge": base.plain_housing(random.Random("leaderboard_board_edge"))}
-    faces = {"north": "front", "south": ("edge", [0, 0, 16, 14]), "west": ("edge", [0, 0, 2, 14]), "east": ("edge", [0, 0, 2, 14]),
-             "up": ("edge", [0, 0, 16, 2]), "down": ("edge", [0, 0, 16, 2])}  # the plate is on the south edge of its cell and looks north
-    mdl = base.model({"front": "leaderboard_board_front", "edge": "leaderboard_board_edge"}, [base.element([0, 1, 14], [16, 15, 16], faces, 6)],
+    faces = {"north": ("front", [0, 0, 16, 16]), "south": ("edge", [0, 0, 16, 16]), "west": ("edge", [0, 0, 2, 16]),
+             "east": ("edge", [0, 0, 2, 16]), "up": ("edge", [0, 0, 16, 2]), "down": ("edge", [0, 0, 16, 2])}
+    # the plate is a 2 px slab on the south edge of its cell and looks north, so the whole texture shows on its front
+    mdl = base.model({"front": "leaderboard_board_front", "edge": "leaderboard_board_edge"}, [base.element([0, 0, 14], [16, 16, 16], faces, 6)],
                      "edge", ao=False)
     return base.DeviceBlock("leaderboard_board", "Leaderboard Board", {"facing": base.FACINGS}, textures, {"leaderboard_board": mdl},
                             lambda s: "leaderboard_board", "leaderboard_board", lockable=False)
