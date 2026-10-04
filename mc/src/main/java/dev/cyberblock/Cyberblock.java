@@ -112,6 +112,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.hack.breach.Breach.init();
 		// Phase 6I: the interaction map (Vehicle Panel, Traffic Tool, Net Map, Comms Panel) and its rhack routing (megaplan 6-I1)
 		dev.cyberblock.hack.actions.RemoteActions.init();
+		// Phase 7N: role screens on figures and hub NPCs, gigs, the hub NPC entity and its content kinds (megaplan 7-N1)
+		dev.cyberblock.npc.NpcModule.init();
 		LOG.info("cyberblock loaded");
 	}
 

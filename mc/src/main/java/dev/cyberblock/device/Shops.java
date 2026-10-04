@@ -23,7 +23,11 @@ public final class Shops {
 	public record Row(String item, int count, int price, int limit) {
 	}
 
-	public record Shop(String titleKey, List<Row> stock, int restockSeconds) {
+	/** sell: what a hub vendor buys from players (megaplan 7-N1; price per row's count); vending machines ignore it. */
+	public record Shop(String titleKey, List<Row> stock, int restockSeconds, List<Row> sell) {
+		public Shop(final String titleKey, final List<Row> stock, final int restockSeconds) {
+			this(titleKey, stock, restockSeconds, List.of());
+		}
 	}
 
 	static final int MAX_ROWS = 24, MAX_COUNT = 64, MAX_PRICE = 99_999, MAX_LIMIT = 64, MAX_RESTOCK = 86_400;
@@ -55,16 +59,13 @@ public final class Shops {
 		}
 
 		List<Row> stock = rows(json.get("stock"), true);
-		if (json.has("sell")) {
-			rows(json.get("sell"), false);
-		}
-
+		List<Row> sell = json.has("sell") ? rows(json.get("sell"), false) : List.of();
 		int restock = 0;
 		if (json.has("restock")) {
 			restock = whole(json.get("restock"), 0, MAX_RESTOCK, "restock must be 0 to " + MAX_RESTOCK + " seconds");
 		}
 
-		return new Shop(title, stock, restock);
+		return new Shop(title, stock, restock, sell);
 	}
 
 	private static List<Row> rows(final @Nullable JsonElement e, final boolean stock) {
