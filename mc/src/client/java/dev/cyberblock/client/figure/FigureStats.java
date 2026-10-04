@@ -41,7 +41,7 @@ final class FigureStats {
 
 		window.sample(minecraft.getFps());
 		if (window.samples >= LOG_SECONDS) {
-			String line = window.line(0);
+			String line = window.line(FigureBudget.cap());
 			if (line != null) {
 				Cyberblock.LOG.info(line);
 			}
