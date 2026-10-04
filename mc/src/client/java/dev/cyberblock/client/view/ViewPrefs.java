@@ -31,11 +31,16 @@ public record ViewPrefs(double dist, double shoulder, double fov, boolean recent
 		return Double.isFinite(v) && v > 0.0 ? Math.clamp(v, min, max) : 0.0;
 	}
 
-	/** The wire message: {"t":"prefs","dist":..,"shoulder":..,"fov":..,"recenter":..,"vdist":..,"stepup":..}, all six fields. */
-	public JsonObject message() {
+	/**
+	 * The wire message: {"t":"prefs","dist":..,"shoulder":..,"fov":..,"recenter":..,"vdist":..,"stepup":..,"debug":..}, all six
+	 * values plus {@code debug}, the view debug flag (DebugFlags.view(): the DLL adds {@code cam.vdbg} while it is on). The flag
+	 * is always sent, so the DLL also hears it go off; it is not a camera option and never goes into the config file.
+	 */
+	public JsonObject message(final boolean debug) {
 		JsonObject m = new JsonObject();
 		m.addProperty("t", "prefs");
 		this.fill(m);
+		m.addProperty("debug", debug);
 		return m;
 	}
 

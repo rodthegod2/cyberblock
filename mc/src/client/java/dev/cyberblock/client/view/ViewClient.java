@@ -5,6 +5,7 @@ import com.google.gson.JsonParser;
 import dev.cyberblock.Bridge;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.settings.CyberblockSettingsScreen;
+import dev.cyberblock.client.settings.DebugFlags;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -24,6 +25,8 @@ import net.minecraft.resources.Identifier;
 public final class ViewClient {
 	private static final Path FILE = FabricLoader.getInstance().getConfigDir().resolve("cyberblock").resolve("view.json");
 	private static volatile ViewPrefs prefs = ViewPrefs.DEFAULT;
+	/** The view debug flag the last prefs carried (the DLL starts with it off). */
+	private static volatile boolean sentDebug;
 
 	private ViewClient() {
 	}
@@ -34,7 +37,10 @@ public final class ViewClient {
 		Bridge.listen("hello", m -> send());
 		Bridge.listen("cam", ViewDebugHud::cam);
 		HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(Cyberblock.ID, "view_debug"), ViewDebugHud::draw);
-		ClientTickEvents.END_CLIENT_TICK.register(minecraft -> ViewDebugHud.tick());
+		ClientTickEvents.END_CLIENT_TICK.register(minecraft -> {
+			ViewDebugHud.tick();
+			tick();
+		});
 		ScreenEvents.AFTER_INIT.register((minecraft, screen, width, height) -> {
 			if (screen instanceof CyberblockSettingsScreen) {
 				ViewSettingsRows.add(screen);
@@ -57,8 +63,18 @@ public final class ViewClient {
 		send();
 	}
 
-	private static void send() {
-		Cyberblock.events.accept(prefs.message().toString());
+	/** `/cyberblock debug view` flipped since the last prefs: the DLL hears it, so `cam` carries vdbg exactly while it is on. */
+	private static void tick() {
+		if (DebugFlags.view() != sentDebug) {
+			send();
+		}
+	}
+
+	/** Link thread (hello) and client thread (settings rows, tick). */
+	private static synchronized void send() {
+		boolean debug = DebugFlags.view();
+		sentDebug = debug;
+		Cyberblock.events.accept(prefs.message(debug).toString());
 	}
 
 	private static ViewPrefs load() {

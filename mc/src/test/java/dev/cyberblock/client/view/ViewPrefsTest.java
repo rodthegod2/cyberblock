@@ -6,12 +6,20 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Test;
 
-/** Megaplan Q-V4 / section 1.9: the prefs message always carries six valid fields. */
+/** Megaplan Q-V4 / section 1.9: the prefs message always carries six valid fields and the view debug flag. */
 class ViewPrefsTest {
 	@Test
 	void defaultsAreTheDllsAndTheMessageHasAllSixFields() {
-		JsonObject m = ViewPrefs.DEFAULT.message();
-		assertEquals(JsonParser.parseString("{'t':'prefs','dist':3.2,'shoulder':0.45,'fov':0.0,'recenter':true,'vdist':0.0,'stepup':true}"), m);
+		JsonObject m = ViewPrefs.DEFAULT.message(false);
+		assertEquals(JsonParser.parseString("{'t':'prefs','dist':3.2,'shoulder':0.45,'fov':0.0,'recenter':true,'vdist':0.0,'stepup':true,'debug':false}"), m);
+	}
+
+	@Test
+	void theViewDebugFlagRidesOnTheMessageButNeverInTheFile() {
+		assertTrue(ViewPrefs.DEFAULT.message(true).get("debug").getAsBoolean());
+		assertFalse(ViewPrefs.DEFAULT.message(false).get("debug").getAsBoolean(), "off is sent too, so the DLL hears it go off");
+		assertFalse(ViewPrefs.DEFAULT.toJson().has("debug"));
+		assertEquals(ViewPrefs.DEFAULT, ViewPrefs.fromJson(JsonParser.parseString("{'debug':true}").getAsJsonObject()));
 	}
 
 	@Test
@@ -46,7 +54,7 @@ class ViewPrefsTest {
 
 	@Test
 	void sliderNoiseIsRoundedOnTheWire() {
-		JsonObject m = ViewPrefs.DEFAULT.withDist(3.2000000000000006).withShoulder(0.449999).message();
+		JsonObject m = ViewPrefs.DEFAULT.withDist(3.2000000000000006).withShoulder(0.449999).message(false);
 		assertEquals(3.2, m.get("dist").getAsDouble());
 		assertEquals(0.45, m.get("shoulder").getAsDouble());
 	}
