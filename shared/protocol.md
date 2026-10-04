@@ -1274,7 +1274,7 @@ One message per line (JSON Lines). The vendor `reply` shows both group kinds; th
 
 Phase 7 examples, Cyberpunk to Minecraft:
 ```jsonl
-{"t":"reply","kind":"vendor","id":31,"groups":[{"hash":501,"title":"Pistols","kind":"buy","tracked":false,"done":false,"lines":[{"hash":90210,"text":"Unity pistol","state":1200},{"hash":90211,"text":"Liberty pistol","state":2400}]},{"hash":502,"title":"Your items","kind":"sell","tracked":false,"done":false,"lines":[{"hash":4000000001,"text":"Broken radio","state":35}]}],"pins":[]}
+{"t":"reply","kind":"vendor","id":31,"groups":[{"hash":501,"title":"Pistols","kind":"buy","tracked":false,"done":false,"lines":[{"hash":90210,"text":"Kessler K9 pistol","state":1200},{"hash":90211,"text":"Dune Runner revolver","state":2400}]},{"hash":502,"title":"Your items","kind":"sell","tracked":false,"done":false,"lines":[{"hash":4000000001,"text":"Broken radio","state":35}]}],"pins":[]}
 ```
 
 Phase 7 examples, Minecraft to Cyberpunk:
