@@ -8,8 +8,9 @@
     uv run python -m tools.server_sync upload --stage <folder> --overwrite <relpath> [--overwrite ...] [--go]
 
 Connection, from the environment only: APEX_FTP_HOST, APEX_FTP_USER, APEX_FTP_PASS, APEX_FTP_PORT (default 21) and
-APEX_FTP_BASE (default /default). With no APEX_FTP_PASS and an interactive terminal the password is asked hidden
-(getpass). Rule 0.6: the password, the host and the user name are never printed, logged or written; output says
+APEX_FTP_BASE (default /default; a server profile lives in its own /profile_xxxxx folder). With no APEX_FTP_PASS the
+password saved in Windows Credential Manager is used (`uvx keyring set cyberblock-apex-ftp ftp` once, then run with
+`uv run --with keyring`); failing that, an interactive terminal asks for it hidden (getpass). Rule 0.6: the password, the host and the user name are never printed, logged or written; output says
 "the server" and errors are re-raised with those values scrubbed.
 
 backup: a resumable recursive download (a file is skipped when its size and modification time already match) into
@@ -50,6 +51,7 @@ ALLOWLIST = ("server.properties", "server.properties.*", "mods/*", "config/cyber
              "fabric-server-mc.*-launcher.*.jar")
 MIRROR, MANIFEST, SUMMARY, JOURNAL = "server", "manifest.json", "summary.json", ".cbupload.json"
 PART = ".cbpart"  # suffix of a file still downloading; a complete file is renamed into place
+KEYRING_SERVICE = "cyberblock-apex-ftp"
 WINDOWS_BAD = set('<>:"|?*\\/') | {chr(c) for c in range(32)}
 
 
@@ -84,11 +86,21 @@ class Conn:
         return posixpath.join(self.base, rel) if rel else self.base
 
 
+def saved_password() -> str:
+    """The password saved once with `uvx keyring set cyberblock-apex-ftp ftp` (Windows Credential Manager), or "".
+    keyring is optional: run with `uv run --with keyring` to use it; without it this returns ""."""
+    try:
+        import keyring
+    except ImportError:
+        return ""
+    return keyring.get_password(KEYRING_SERVICE, "ftp") or ""
+
+
 def conn_from_env(env=os.environ) -> Conn:
     host, user = env.get("APEX_FTP_HOST", ""), env.get("APEX_FTP_USER", "")
     if missing := [name for name, value in (("APEX_FTP_HOST", host), ("APEX_FTP_USER", user)) if not value]:
         raise SyncError(f"set {' and '.join(missing)} in your environment first")
-    password = env.get("APEX_FTP_PASS", "")
+    password = env.get("APEX_FTP_PASS", "") or saved_password()
     if not password:
         if not sys.stdin.isatty():
             raise SyncError("APEX_FTP_PASS is not set and there is no terminal to ask for it: run this in your own terminal")
