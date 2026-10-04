@@ -172,6 +172,23 @@ def test_the_fakehost_command_line_parses_with_the_real_fakehost(monkeypatch):
     assert fakehost.main() == 0 and seen[-1][10:] == ("x", None, None)  # an empty --ver means no ver at all
 
 
+def test_the_singleplayer_wait_for_the_host_reaches_the_fakehost_as_a_keyword(monkeypatch):
+    """--wait-host (the scenario waits for `session host`, the world) is passed only when asked, as a keyword of run()."""
+    from tools import fakehost
+    argv = mpcheck.fakehost_argv(port=1, name="x", ver=None, frame="f", out_dir=Path("O"), layers=(2, 6), wait_host=150)[4:]
+    assert argv[argv.index("--wait-host") + 1] == "150"
+    assert "--wait-host" not in mpcheck.fakehost_argv(port=1, name="x", ver=None, frame="f", out_dir=Path("O"))
+    seen = []
+
+    async def fake_run(*args, **kwargs):
+        seen.append((args, kwargs))
+        return 1
+
+    monkeypatch.setattr(fakehost, "run", fake_run)
+    monkeypatch.setattr("sys.argv", ["fakehost", *argv])
+    assert fakehost.main() == 0 and seen[0][1] == {"wait_host": 150.0} and len(seen[0][0]) == 13
+
+
 # ---- ports and frames ------------------------------------------------------------------------------------------------------
 def test_default_ports_are_package_1t_and_stay_in_the_phase_1_ranges():
     p = mpcheck.Ports()
@@ -520,7 +537,7 @@ class SimEnv:
             self.world_client = c
         return c
 
-    def fakehost(self, client, *, ver, ids_from=None, layers=(2,), modes=(), cmds=(), hold=900, no_setup=True):
+    def fakehost(self, client, *, ver, ids_from=None, layers=(2,), modes=(), cmds=(), hold=900, no_setup=True, wait_host=None):
         name, srv = client.name, self.server_obj
         log = LogFile(self.tmp / f"fakehost-{name}-{len(self.hosts)}.log")
         log.path.write_text("", encoding="utf-8")

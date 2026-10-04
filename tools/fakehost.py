@@ -656,7 +656,8 @@ async def scenario(ws, first_frame: int, cam: dict, fps: float, hold: float, com
 
 async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str = shm.NAME, setup: bool = True,
               hold: float | None = None, commands: Sequence[str] = (), layers: frozenset[int] = frozenset({2}),
-              modes: frozenset[str] = frozenset(), name: str | None = None, ver: str | None = None, ids_from: int | None = None) -> int:
+              modes: frozenset[str] = frozenset(), name: str | None = None, ver: str | None = None, ids_from: int | None = None,
+              wait_host: float | None = None) -> int:
     """Returns the number of frame sets saved. `hold` (seconds) runs the scripts of `layers` (2 to 6) and of the re-test 3
     `modes` (ui, hacks, seat) after the orbit. Multiplayer: `name` prefixes every printed line, `ver` is the DLL version in
     the `hello` (None: no `ver`, a DLL from before Phase 1), `ids_from` numbers the NPCs (None: the protocol.md example ids)."""
@@ -690,6 +691,11 @@ async def run(url: str, frames: int, out: Path, fps: float = 60.0, shm_name: str
                 break
             await asyncio.sleep(0.01)
         if hold is not None:
+            if wait_host is not None:  # the link opens at the title screen: the scenario waits for the world (`session host`)
+                waited = time.perf_counter() + wait_host
+                while host.session != "host" and time.perf_counter() < waited:
+                    await asyncio.sleep(0.25)
+                print(f"{host.tag}{'the client made this DLL the host' if host.session == 'host' else f'no session host within {wait_host:g} s'}; starting the scenario")
             await scenario(ws, frames + 1, orbit_cam(frames, frames), fps, hold, commands, host)
         listener.cancel()
     return saved
@@ -719,7 +725,10 @@ def main() -> int:
     ap.add_argument("--name", default=None, help="a log prefix: every printed line starts with [NAME] (letters, digits, _ . -, at most 32), for two fake hosts at once")
     ap.add_argument("--ver", default=None, help=f"the DLL version in the hello (at most {MAX_VER} characters; default: this checkout's version; an empty value sends no ver, like a DLL from before Phase 1)")
     ap.add_argument("--ids-from", type=int, default=None, metavar="N", help="number the three NPCs N, N+1 and N+2 instead of the protocol.md example ids, to force an id collision between two fake hosts (1 <= N <= 2**64 - 3)")
+    ap.add_argument("--wait-host", type=float, default=None, metavar="SECONDS", help="before the --hold scenario, wait up to this long for Minecraft's `session state:host` (the world is loaded), as tools/mpcheck.py's singleplayer scenario does")
     args = ap.parse_args()
+    if args.wait_host is not None and args.wait_host < 0:
+        ap.error("--wait-host must not be negative")
     if args.name is not None and not NAME_RE.fullmatch(args.name):
         ap.error("--name must be 1 to 32 letters, digits, '_', '.' or '-'")
     if args.ver is not None and len(args.ver) > MAX_VER:
@@ -741,7 +750,8 @@ def main() -> int:
         ap.error("--view, --stairs, --seat and --layer4 each drive the camera: use only one of them")
     try:
         saved = asyncio.run(run(url, args.frames, args.out, args.fps, args.shm, not args.no_setup,
-                                args.hold if layers or modes else None, args.cmd, layers, modes, args.name, ver, args.ids_from))
+                                args.hold if layers or modes else None, args.cmd, layers, modes, args.name, ver, args.ids_from,
+                                **({"wait_host": args.wait_host} if args.wait_host is not None else {})))
     except (ConnectionError, TimeoutError, ConnectionClosed) as e:
         print(f"{tag}no connection to Minecraft at {url} ({e}); start the dev client first:\n"
               '  mc\\gradlew.bat runClient --args="--quickPlaySingleplayer cyberblock"', file=sys.stderr)

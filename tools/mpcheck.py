@@ -191,7 +191,8 @@ def server_argv(repo: Path, *, port: int, run_dir: Path) -> list[str]:
 
 
 def fakehost_argv(*, port: int, name: str, ver: str | None, frame: str, out_dir: Path, ids_from: int | None = None, hold: float = HOLD_S,
-                  layers: Iterable[int] = (2,), modes: Iterable[str] = (), cmds: Iterable[str] = (), no_setup: bool = True, frames: int = 60) -> list[str]:
+                  layers: Iterable[int] = (2,), modes: Iterable[str] = (), cmds: Iterable[str] = (), no_setup: bool = True, frames: int = 60,
+                  wait_host: float | None = None) -> list[str]:
     """tools.fakehost as one fake host: its own link port, log prefix, frame name and DLL version. `-u`: its output goes to a
     log file that the scenarios read while it runs, so it must not sit in a buffer until the process ends."""
     argv = [sys.executable, "-u", "-m", "tools.fakehost", "--port", str(port), "--name", name, "--shm", frame, "--out", str(out_dir),
@@ -199,6 +200,7 @@ def fakehost_argv(*, port: int, name: str, ver: str | None, frame: str, out_dir:
     argv += [f"--layer{n}" for n in layers] + [f"--{m}" for m in modes]
     argv += ["--no-setup"] if no_setup else []
     argv += ["--ids-from", str(ids_from)] if ids_from is not None else []
+    argv += ["--wait-host", f"{wait_host:g}"] if wait_host is not None else []
     for command in cmds:
         argv += ["--cmd", command]
     return argv
@@ -500,11 +502,11 @@ class Env:
         return Client(name, port, frame, proc, proc.log)
 
     def fakehost(self, client: Client, *, ver: str | None, ids_from: int | None = None, layers: Iterable[int] = (2,), modes: Iterable[str] = (),
-                 cmds: Iterable[str] = (), hold: float = HOLD_S, no_setup: bool = True) -> FakeHost:
+                 cmds: Iterable[str] = (), hold: float = HOLD_S, no_setup: bool = True, wait_host: float | None = None) -> FakeHost:
         """A fake Cyberpunk host connected to `client`'s link (waits until the client listens)."""
         client.wait_listening()
         argv = fakehost_argv(port=client.port, name=client.name, ver=ver, frame=client.frame, out_dir=self.run / f"frames-{client.name}", ids_from=ids_from,
-                             hold=hold, layers=layers, modes=modes, cmds=cmds, no_setup=no_setup)
+                             hold=hold, layers=layers, modes=modes, cmds=cmds, no_setup=no_setup, wait_host=wait_host)
         proc = Proc(f"fakehost-{client.name}", argv, self.repo, self._child_env(), self.run / "logs" / f"fakehost-{client.name}-{len(self.started)}.log")
         self.started.append(proc)
         self.logs[f"fake host {client.name}"] = proc.log
@@ -607,7 +609,10 @@ def proxies_stand(server: Server) -> bool:
 def scenario_singleplayer(env: Env, rep: Report) -> None:
     world, client_dir = env.make_world()
     client = env.client("CbHost1", world=world, run_dir=client_dir)
-    host = env.fakehost(client, ver=env.mod_version, layers=(2, 3, 6), modes=("ui", "hacks"), cmds=["summon tnt 3 64 0"], hold=30, no_setup=False)
+    # the link opens at the title screen, long before the world: the scenario (the TNT command, the hack key) waits for the
+    # client's `session host`, which comes once the integrated server made this player the host
+    host = env.fakehost(client, ver=env.mod_version, layers=(2, 3, 6), modes=("ui", "hacks"), cmds=["summon tnt 3 64 0"], hold=30, no_setup=False,
+                        wait_host=T_JOIN)
     rep.step("the client joined its own world as the host", lambda: client.log.wait(r"handshake: server \S+ -> host", T_JOIN), must=True)
     rep.step("the fake host ran to its end", lambda: poll(lambda: not host.proc.alive(), 30 + T_EFFECT + 60, 1.0, "the fake host to finish"))
     text = host.log.text()
