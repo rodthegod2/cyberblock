@@ -1914,6 +1914,38 @@ Phase 8 examples, Minecraft to Cyberpunk:
 {"t":"glitch","seconds":0}
 ```
 
+## Phase 9 (the settings screen, package 9S)
+No new DLL message. The settings screen (megaplan 9-S1) reads the server's values with one client ↔ server pair and changes them only through `/cyberblock`
+commands, so the server decides (section 1.13).
+
+| Payload | Direction | Fields | When |
+|---|---|---|---|
+| `cyberblock:act` `t:"settings"` | C2S | `{}` (any other field is ignored) | the screen opens, changes tab, or sent a command for a server row |
+| `cyberblock:ui` `t:"settings"` | S2C | `perms` (guest toggle bits, section 1.6: 1 explosions, 2 damage, 4 hacks, 8 devices, 16 spawns), `devices` (device-type bits, section 1.11), `body` `male`\|`female`, `pvp`, `hidePin`, `host` (a host session), `admin` (an operator or the singleplayer owner), `erase` (the effective creative erase), `eraseForced` (server.json forces it), `overlord` `chill`\|`normal`\|`brutal`, `heat` 25..200; `world` only when `admin`: `allowHosts`, `hosts` (how many names), `maxHosts`, `requireMod`, `rate`, `sanityRadius`, `pvpDefault`, `backups:{daily, keep, hour}`, `webMap`, `joinPassword` (bool), `joinHelp` (bool: set or not) | the answer, at the end of the server tick in which the act arrived (one per player per tick, however many acts) |
+
+- **The join password never travels.** `world.joinPassword` is only whether one is set; neither the password nor the join help text is sent. A player still locked by the join
+  password gets no answer (`ServerNet` drops a locked player's acts).
+- **The commands the rows send:** `/cyberblock guests <toggle> on|off`, `/cyberblock guests devices <type> on|off`, `/cyberblock body male|female`, `/cyberblock holo hide
+  on|off`, `/cyberblock pvp on|off`, `/cyberblock outline erase on|off` and the new `/cyberblock difficulty overlord chill|normal|brutal` and `/cyberblock difficulty heat
+  <25-200>` (operators and the singleplayer owner; `/cyberblock difficulty` alone shows them to everyone). The difficulty is saved with the world (`cyberblock:difficulty`):
+  a new match's Overlord starts at that intensity (its host may change it per match) and every chaos gain is multiplied by the Heat scaling before it reaches the meter.
+- **Client only:** the Performance tab's frame scale (50..100 % by 5) and figure cap (16..48 by 4) live in `config/cyberblock/performance.json` on the player's PC.
+- **Log lines:** server `settings: difficulty: Overlord intensity default <i>, Heat scaling <n> % (world setting ...)` at start, `settings: Overlord intensity default <i> (by
+  <name>)`, `settings: Heat scaling <n> % (by <name>)`; client `settings: server values received (admin yes|no, host yes|no, server.json rows shown|hidden)`, `settings:
+  server values: ...` on each change, `settings: /<command>` for each row sent, and once per start `settings: performance frame scale <n> %, figure cap <n> (...); applied by
+  <readers>` or `nothing applies them yet`.
+
+Phase 9 examples, client to server (`cyberblock:act`, `t:"settings"`):
+```jsonl
+{}
+```
+
+Phase 9 examples, server to client (`cyberblock:ui`, `t:"settings"`), a guest and an operator:
+```jsonl
+{"perms":15,"devices":2047,"body":"male","pvp":false,"hidePin":false,"host":false,"admin":false,"erase":false,"eraseForced":false,"overlord":"normal","heat":100}
+{"perms":31,"devices":2047,"body":"female","pvp":true,"hidePin":false,"host":true,"admin":true,"erase":false,"eraseForced":false,"overlord":"brutal","heat":150,"world":{"allowHosts":true,"hosts":0,"maxHosts":4,"requireMod":true,"rate":1.0,"sanityRadius":160,"pvpDefault":false,"backups":{"daily":true,"keep":7,"hour":5},"webMap":false,"joinPassword":true,"joinHelp":false}}
+```
+
 ## Shared memory `Local\CyberblockFrame`
 Exactly the reference `FrameExporter` layout (see its Javadoc) with magic `0x52464243` ("CBFR"). The
 reference flags (zero-to-one depth, bottom-up rows, reversed-Z) are kept.

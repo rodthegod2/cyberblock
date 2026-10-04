@@ -82,8 +82,9 @@ final class ServerValues {
 		}
 
 		if (!s.equals(before)) {
-			Cyberblock.LOG.info("settings: server values: guests {} devices {}, body {}, pvp {}, pin {}, erase {}, overlord {}, heat {} %", s.perms(), s.devices(),
-				s.body(), s.pvp() ? "on" : "off", s.hidePin() ? "hidden" : "shown", s.erase() ? "on" : "off", s.overlord().key(), s.heat());
+			Cyberblock.LOG.info("settings: server values: admin {}, guests {} devices {}, body {}, pvp {}, pin {}, erase {}, overlord {}, heat {} %",
+				s.admin() ? "yes" : "no", s.perms(), s.devices(), s.body(), s.pvp() ? "on" : "off", s.hidePin() ? "hidden" : "shown", s.erase() ? "on" : "off",
+				s.overlord().key(), s.heat());
 		}
 
 		if (Minecraft.getInstance().gui.screen() instanceof CyberblockSettingsScreen screen) {

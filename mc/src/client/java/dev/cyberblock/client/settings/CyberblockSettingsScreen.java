@@ -225,7 +225,7 @@ public final class CyberblockSettingsScreen extends Screen {
 		}
 
 		tab.rows(toggles, 3);
-		tab.text(Component.translatableWithFallback("cyberblock.settings.guests.devices", "Device types guests may use (with Devices on)"));
+		tab.text(Component.translatableWithFallback("cyberblock.settings.guests.device_types", "Device types guests may use (with Devices on)"));
 		List<AbstractWidget> types = new ArrayList<>();
 		Component needsDevices = Component.translatableWithFallback("cyberblock.settings.guests.devices.off", "Turn Devices on first");
 		for (Permissions.DeviceType d : Permissions.DeviceType.values()) {
@@ -244,7 +244,7 @@ public final class CyberblockSettingsScreen extends Screen {
 			HALF, Component.translatableWithFallback("cyberblock.settings.body", "Cyber skin"),
 			Component.translatableWithFallback("cyberblock.settings.body.help", "How every player sees you while your Cyberpunk game is linked"),
 			SettingsWire.Snapshot::body, s -> true, v -> "cyberblock body " + v).button;
-		AbstractWidget pin = this.onOff(HALF, Component.translatableWithFallback("cyberblock.settings.hide_pin", "Hide me on the Holo-Table"),
+		AbstractWidget pin = this.onOff(HALF, Component.translatableWithFallback("cyberblock.settings.hide_pin", "Hide my Holo pin"),
 			Component.translatableWithFallback("cyberblock.settings.hide_pin.help", "Outside matches your pin is left off other players' Holo-Tables"),
 			SettingsWire.Snapshot::hidePin, s -> true, on -> "cyberblock holo hide " + (on ? "on" : "off")).button;
 		tab.rows(List.of(body, pin), 2);
@@ -327,7 +327,7 @@ public final class CyberblockSettingsScreen extends Screen {
 			SettingsWire.Snapshot s = ServerValues.snapshot();
 			note.setMessage(s == null ? WAITING : s.world() == null
 				? Component.translatableWithFallback("cyberblock.settings.world.hidden", "Only the host or an operator can see the server's settings")
-				: Component.translatableWithFallback("cyberblock.settings.world.read_only", "Read-only here: the server admin sets these in config/cyberblock/server.json"));
+				: Component.translatableWithFallback("cyberblock.settings.world.read_only", "Read-only: the server admin sets these in server.json"));
 		});
 	}
 
