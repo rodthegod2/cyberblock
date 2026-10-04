@@ -67,6 +67,31 @@ class HandshakeTest {
 	}
 
 	@Test
+	void theHostRuleWithAndWithoutAJoinPassword() {
+		// owner, locked, allowHosts, whitelisted, verified, listed
+		assertNull(Handshake.hostRefusal(true, true, false, false, false, false), "the singleplayer/LAN owner always hosts");
+		assertEquals(Handshake.HostRefusal.LOCKED, Handshake.hostRefusal(false, true, true, true, false, true), "locked comes before everything else");
+		assertEquals(Handshake.HostRefusal.NOT_ALLOWED, Handshake.hostRefusal(false, false, false, true, true, true));
+		assertEquals(Handshake.HostRefusal.NOT_WHITELISTED, Handshake.hostRefusal(false, false, true, false, false, true));
+		assertNull(Handshake.hostRefusal(false, false, true, true, false, true), "whitelisted");
+		assertNull(Handshake.hostRefusal(false, false, true, false, true, true), "no whitelist, but passed the join password");
+		assertEquals(Handshake.HostRefusal.NOT_LISTED, Handshake.hostRefusal(false, false, true, false, true, false), "the hosts list still applies");
+	}
+
+	@Test
+	void aLockedHostWaitsAsAGuestWithTheLoginReason() {
+		Handshake.Result r = decide(1, "1.0.0", "1.0.0", true, Handshake.HostRefusal.LOCKED, 0, 1);
+		assertTrue(r.ok(), "the player stays: it only has to log in");
+		assertFalse(r.host());
+		assertTrue(r.reason().contains("/login"), r.reason());
+		assertTrue(r.reason().length() <= Payloads.REASON_CAP);
+		// the same hs decided again after /login (ServerNet.rehandshake): no refusal, so the host role
+		assertTrue(decide(1, "1.0.0", "1.0.0", true, Handshake.hostRefusal(false, false, true, false, true, true), 0, 1).host());
+		assertEquals("guest", decide(1, "1.0.0", "", false, Handshake.HostRefusal.LOCKED, 0, 1).role(), "a plain guest just plays as a guest");
+		assertEquals("", decide(1, "1.0.0", "", false, Handshake.HostRefusal.LOCKED, 0, 1).reason());
+	}
+
+	@Test
 	void theVersionRuleComesFirst() {
 		// a mismatched mod is refused even when it could host
 		assertFalse(decide(1, "2.0.0", "2.0.0", true, null, 0, 1).ok());

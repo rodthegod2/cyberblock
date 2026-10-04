@@ -3,10 +3,13 @@ package dev.cyberblock.mixin;
 
 import dev.cyberblock.PlayerEffects;
 import dev.cyberblock.Wire;
+import dev.cyberblock.net.JoinLock;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
 import java.util.Collection;
+import java.util.OptionalInt;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.MenuProvider;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.portal.TeleportTransition;
@@ -20,7 +23,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Minecraft moving the player (/tp) moves his host's V too ({"t":"pteleport"} to his own session); otherwise the host would pull it
- * back. Layer 5: Steve's status effects go to his host as they change (PlayerEffects).
+ * back. Layer 5: Steve's status effects go to his host as they change (PlayerEffects). A player locked by the join password
+ * (JoinLock) drops nothing with Q and opens no container, whatever opened it.
  */
 @Mixin(ServerPlayer.class)
 abstract class ServerPlayerMixin {
@@ -30,6 +34,22 @@ abstract class ServerPlayerMixin {
 		if (s != null && s.active()) {
 			Vec3 p = transition.position();
 			s.send(Wire.pteleport(p.x, p.y, p.z));
+		}
+	}
+
+	@Inject(method = "drop(Z)V", at = @At("HEAD"), cancellable = true)
+	private void cyberblock$lockedDropsNothing(final boolean all, final CallbackInfo ci) {
+		ServerPlayer self = (ServerPlayer) (Object) this;
+		if (JoinLock.locked(self)) {
+			self.containerMenu.sendAllDataToRemote(); // the client already took the item out of the hand
+			ci.cancel();
+		}
+	}
+
+	@Inject(method = "openMenu", at = @At("HEAD"), cancellable = true)
+	private void cyberblock$lockedOpensNothing(final MenuProvider menu, final CallbackInfoReturnable<OptionalInt> cir) {
+		if (JoinLock.locked((ServerPlayer) (Object) this)) {
+			cir.setReturnValue(OptionalInt.empty());
 		}
 	}
 

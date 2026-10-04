@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.HostLink;
+import dev.cyberblock.client.net.LoginScreen;
 import dev.cyberblock.cyber.CyberActs;
 import dev.cyberblock.cyber.CyberWire;
 import dev.cyberblock.cyber.PerkRules;
@@ -40,7 +41,12 @@ public final class CyberLink {
 			HostLink.send(CyberWire.perks(Map.of()));
 			HostLink.send(CyberWire.cyberware(Set.of()));
 		});
-		if (!ClientPlayNetworking.registerGlobalReceiver(Payloads.Ui.TYPE, (payload, context) -> onUi(payload.t(), payload.json()))) {
+		if (!ClientPlayNetworking.registerGlobalReceiver(Payloads.Ui.TYPE, (payload, context) -> {
+			// the join password box is the client net's; everything else here is the cyber track's
+			if (!LoginScreen.onUi(payload.t(), payload.json())) {
+				onUi(payload.t(), payload.json());
+			}
+		})) {
 			// the client net already receives `cyberblock:ui`: it hands the cyber track's types to onUi
 			Cyberblock.LOG.info("cyber: cyberblock:ui is received by the client net");
 		}

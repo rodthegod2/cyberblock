@@ -372,5 +372,22 @@
 	"cyberblock.reconnect.title": "Connection lost",
 	"cyberblock.reconnect.in": "Reconnecting to %s in %s s",
 	"cyberblock.reconnect.cancel": "Cancel",
-	"cyberblock.guest.blocked": "That player's Night City does not allow this"
+	"cyberblock.guest.blocked": "That player's Night City does not allow this",
+	"cyberblock.login.title": "Password needed",
+	"cyberblock.login.subtitle": "Type /login <password>",
+	"cyberblock.login.prompt": "This server needs a password: type /login <password>",
+	"cyberblock.login.reminder": "Log in first: type /login <password>",
+	"cyberblock.login.countdown": "Type /login <password> (%s s left)",
+	"cyberblock.login.usage": "Type /login <password>",
+	"cyberblock.login.player_only": "Only a player can log in",
+	"cyberblock.login.off": "This server has no join password",
+	"cyberblock.login.already": "You are already logged in",
+	"cyberblock.login.too_fast": "Wait a second between /login attempts",
+	"cyberblock.login.wrong": "Wrong password (attempts left: %s)",
+	"cyberblock.login.welcome": "Welcome to Cyberblock, %s! You will not need the password again on this world.",
+	"cyberblock.login.status.on": "Join password: on; %s players verified on this world, %s locked now",
+	"cyberblock.login.status.off": "Join password: off (set joinPassword in config/cyberblock/server.json, then restart the server)",
+	"cyberblock.login.reset": "Cleared %s verified players: everyone must /login at their next join (players online now stay logged in)",
+	"cyberblock.login.box": "Password",
+	"cyberblock.login.button": "Log in"
 }

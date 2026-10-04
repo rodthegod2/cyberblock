@@ -22,7 +22,8 @@ SESSION_HOST = {"t": "session", "state": "host", "reason": "", "perms": {"explos
 @pytest.fixture(autouse=True)
 def quick(monkeypatch):
     """Every wait of the scenarios shrinks to a fraction of a second (the real values are minutes)."""
-    for name, value in (("T_QUIET", 0.05), ("T_EFFECT", 0.6), ("T_JOIN", 0.6), ("T_SERVER", 0.6), ("T_CLIENT", 0.6), ("FLOOD_S", 0.1), ("T_STOP", 0.05)):
+    for name, value in (("T_QUIET", 0.05), ("T_EFFECT", 0.6), ("T_JOIN", 0.6), ("T_SERVER", 0.6), ("T_CLIENT", 0.6), ("FLOOD_S", 0.1), ("T_STOP", 0.05),
+                        ("LOGIN_GAP_S", 0.0)):
         monkeypatch.setattr(mpcheck, name, value)
 
 
@@ -88,13 +89,24 @@ def test_server_json_example_has_the_defaults_of_plan_section_1_13():
     config = json.loads((REPO / "server" / "server.json.example").read_text(encoding="utf-8"))
     assert config == {"schema": 1, "allowHosts": True, "hosts": [], "maxHosts": 1, "requireMod": True, "joinHelp": "", "rate": 1.0,
                       "sanityRadius": 160, "creativeErasesReplica": False, "pvpDefault": False, "backups": {"daily": True, "keep": 7, "hour": 5},
-                      "webMap": False}
+                      "webMap": False, "joinPassword": ""}
 
 
 def test_server_json_sets_max_hosts_and_keeps_everything_else():
     example = (REPO / "server" / "server.json.example").read_text(encoding="utf-8")
     two = json.loads(mpcheck.server_json(example, 2))
     assert two["maxHosts"] == 2 and {k: v for k, v in two.items() if k != "maxHosts"} == {k: v for k, v in json.loads(example).items() if k != "maxHosts"}
+    locked = json.loads(mpcheck.server_json(example, 1, "hunter2"))
+    assert locked["joinPassword"] == "hunter2" and json.loads(mpcheck.server_json(example, 1))["joinPassword"] == ""
+
+
+def test_a_join_password_server_gets_a_random_password_that_no_repr_shows(env):
+    server = env.server("joinpassword", join_password=True)
+    config = json.loads((server.dir / "config" / "cyberblock" / "server.json").read_text(encoding="utf-8"))
+    assert config["joinPassword"] == server.join_password and len(server.join_password) >= 12
+    assert server.join_password not in repr(server)
+    env.stop_all()
+    assert env.server("guest").join_password == "" and json.loads((env.servers[-1].dir / "config" / "cyberblock" / "server.json").read_text(encoding="utf-8"))["joinPassword"] == ""
 
 
 def test_mod_version_is_read_from_gradle_properties_and_the_other_versions_are_refused_ones():
@@ -194,7 +206,7 @@ def test_default_ports_are_package_1t_and_stay_in_the_phase_1_ranges():
     p = mpcheck.Ports()
     p.check()
     servers = {name: p.server(name) for name in mpcheck.SCENARIOS}
-    assert servers == {"singleplayer": 25914, "guest": 25914, "versions": 25915, "flood": 25916, "reconnect": 25917, "twohosts": 25918}
+    assert servers == {"singleplayer": 25914, "guest": 25914, "versions": 25915, "flood": 25916, "reconnect": 25917, "twohosts": 25918, "joinpassword": 25915}
     assert {p.client(n) for n in mpcheck.OFFLINE_NAMES} == {25754, 25755, 25756, 25757} and 25600 not in servers.values()
     assert [p.frame(n) for n in mpcheck.OFFLINE_NAMES] == ["Local\\CyberblockFrame1TH", "Local\\CyberblockFrame1TH2", "Local\\CyberblockFrame1TG", "Local\\CyberblockFrame1TG2"]
 
@@ -217,7 +229,7 @@ def test_a_frame_prefix_that_makes_the_users_frame_name_is_refused():
 
 def test_every_scenario_has_a_function_and_a_server_slot():
     assert set(mpcheck.SCENARIOS) == set(mpcheck.SCENARIO_FUNCS) == set(mpcheck.SERVER_SLOT)
-    assert mpcheck.SCENARIOS == ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts")
+    assert mpcheck.SCENARIOS == ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword")
 
 
 # ---- logs ------------------------------------------------------------------------------------------------------------------
@@ -457,9 +469,28 @@ class SimProc:
 class SimServer(mpcheck.Server):
     """An ideal server as the megaplan describes it, driven by RCON commands and fake-host events. `bugs` switch parts off."""
 
-    def __init__(self, tmp, port, env_sim, bugs):
-        super().__init__(port, 0, "pw", None, LogFile(tmp / f"server-{port}.log"), tmp)
+    def __init__(self, tmp, port, env_sim, bugs, join_password=""):
+        super().__init__(port, 0, "pw", None, LogFile(tmp / f"server-{port}.log"), tmp, join_password)
         self.sim, self.bugs, self.toggles = env_sim, bugs, {}
+        self.locked, self.verified, self.wrong, self.pending = set(), set(), {}, {}
+
+    def login(self, actor, typed):
+        """As JoinLock.login: the right password verifies (and the waiting host link is granted), five wrong ones kick."""
+        if actor not in self.locked:
+            return ""
+        if "log-password" in self.bugs:
+            append(self.log, f"[Server thread/INFO]: login: {actor} typed {typed}")
+        if typed == self.join_password:
+            self.locked.discard(actor)
+            self.verified.add(actor)
+            append(self.log, f"[Server thread/INFO]: login: {actor} verified")
+            if actor in self.pending and "no-rehandshake" not in self.bugs:
+                self.sim.grant(actor, *self.pending.pop(actor))
+            return ""
+        self.wrong[actor] = self.wrong.get(actor, 0) + 1
+        if self.wrong[actor] >= 5:
+            append(self.log, f"[Server thread/INFO]: {actor} lost connection: Cyberblock: wrong join password 5 times. Ask the server owner for the password.")
+        return ""
 
     def allows(self, owner, actor, toggle):
         """As 1N's Permissions.allows: no player behind the action (the console), the owner or another host is always allowed;
@@ -478,6 +509,8 @@ class SimServer(mpcheck.Server):
         actor = None
         if match := re.fullmatch(r"execute as (\S+) run (.*)", command):
             actor, command = match.groups()
+        if command.startswith("login "):
+            return self.login(actor, command[len("login "):])
         if command.startswith("cyberblock guests "):
             _, _, toggle, state = command.split()
             self.toggles.setdefault(actor, {})[toggle] = state == "on"
@@ -512,9 +545,9 @@ class SimEnv:
     def say(self, line):
         self.said.append(line)
 
-    def server(self, scenario, max_hosts=1):
+    def server(self, scenario, max_hosts=1, join_password=False):
         self.max_hosts = max_hosts
-        self.server_obj = SimServer(self.tmp, self.ports.server(scenario), self, self.bugs)
+        self.server_obj = SimServer(self.tmp, self.ports.server(scenario), self, self.bugs, "sim-join-pw" if join_password else "")
         self.server_obj.log.path.write_text("Done (1s)!\n", encoding="utf-8")
         self.logs["server"] = self.server_obj.log
         return self.server_obj
@@ -532,7 +565,17 @@ class SimEnv:
         if version and srv:
             append(srv.log, f"[Server thread/INFO]: {name} lost connection: Cyberblock version mismatch: server {MOD}, your mod {version}. Update from the modpack.")
         elif join and srv:
+            if srv.join_password and name not in srv.verified:
+                srv.locked.add(name)
+                append(srv.log, f"[Server thread/INFO]: login: {name} is locked until /login (join password)")
             append(srv.log, f"[Server thread/INFO]: handshake: {name} mod {MOD} dll  -> guest (no DLL)")
+            stop = proc.stop
+
+            def leave():
+                stop()
+                srv.locked.discard(name)
+                append(srv.log, f"[Server thread/INFO]: {name} lost connection: Disconnected")
+            proc.stop = leave
         if world:
             self.world_client = c
         return c
@@ -563,20 +606,29 @@ class SimEnv:
                 append(log, f"[{name}] {line}")
             proc.running = False
             return fh
-        if ver == MOD:
-            append(srv.log, f"[Server thread/INFO]: handshake: {name} mod {MOD} dll {ver} -> host (ok)")
-            append(srv.log, f"[Server thread/INFO]: session: {name} started")
-            append(log, f'[{name}] session: {{"t": "session", "state": "host"}}')
-            append(log, f'[{name}] blocks: {{"t": "blocks", "reset": true, "c": []}}')
-            host["linked"] = True
-            # the ground the fake host sent when its link opened was dropped (it was no host yet): only what it sends in
-            # answer to `session state:host` reaches the server, as with the real client
-            answer = fakehost.Cyberpunk(frozenset(layers), frozenset(modes), ids_from, name).reply(SESSION_HOST)
-            host["ground"] = any(m["t"] == "ground" and m["c"] for m in answer)
+        if ver == MOD and name in srv.locked:  # the join password: the link waits as a guest until /login
+            append(srv.log, f"[Server thread/INFO]: handshake: {name} mod {MOD} dll {ver} -> guest (Cyberblock: type /login <password> first; "
+                            "your Cyberpunk link starts right after that)")
+            srv.pending[name] = (host, layers, modes, ids_from)
+        elif ver == MOD:
+            self.grant(name, host, layers, modes, ids_from)
         else:
             append(srv.log, f"[Server thread/INFO]: handshake: {name} mod {MOD} dll {ver} -> guest (plugin differs)")
             append(log, f'[{name}] session: {{"t": "session", "state": "refused", "reason": "Cyberblock: your Cyberpunk plugin is {ver} but your mod is {MOD}; you can play as a guest."}}')
         return fh
+
+    def grant(self, name, host, layers, modes, ids_from):
+        """The server makes the link a host: the session starts and the fake host answers `session host` with its ground."""
+        srv, log = self.server_obj, host["log"]
+        append(srv.log, f"[Server thread/INFO]: handshake: {name} mod {MOD} dll {MOD} -> host (ok)")
+        append(srv.log, f"[Server thread/INFO]: session: {name} started")
+        append(log, f'[{name}] session: {{"t": "session", "state": "host"}}')
+        append(log, f'[{name}] blocks: {{"t": "blocks", "reset": true, "c": []}}')
+        host["linked"] = True
+        # the ground the fake host sent when its link opened was dropped (it was no host yet): only what it sends in
+        # answer to `session state:host` reaches the server, as with the real client
+        answer = fakehost.Cyberpunk(frozenset(layers), frozenset(modes), ids_from, name).reply(SESSION_HOST)
+        host["ground"] = any(m["t"] == "ground" and m["c"] for m in answer)
 
     def stop_all(self):
         self.stopped.append(True)
@@ -701,6 +753,20 @@ def test_twohosts_scenario_passes_and_notices_a_hit_that_leaks_to_the_other_host
     assert "a hit on id 5000 of host 1 reaches only host 1" in failed(leaky)
 
 
+def test_joinpassword_scenario_passes_against_an_ideal_server(tmp_path):
+    sim = SimEnv(tmp_path)
+    rep = run_scenario(sim, "joinpassword")
+    assert rep.ok, failed(rep)
+    assert len(rep.checks) == 12 and sim.server_obj.verified == {"CbHost1"} and sim.server_obj.wrong == {"CbGuest1": 5}
+
+
+@pytest.mark.parametrize("bug, expected", [("no-rehandshake", {"the waiting link becomes a host at once", "its session starts"}),
+                                           ("log-password", {"the password is in no log"})])
+def test_joinpassword_scenario_notices_a_link_that_keeps_waiting_or_a_logged_password(tmp_path, bug, expected):
+    rep = run_scenario(SimEnv(tmp_path, bugs=[bug]), "joinpassword")
+    assert expected <= set(failed(rep)) and not rep.ok
+
+
 def test_singleplayer_scenario_passes_when_the_relay_shows_the_whole_story(tmp_path):
     rep = run_scenario(SimEnv(tmp_path), "singleplayer")
     assert rep.ok, failed(rep)
@@ -784,7 +850,7 @@ def test_dry_run_prints_every_command_and_starts_nothing(capsys, monkeypatch):
     out = capsys.readouterr().out
     for name in mpcheck.SCENARIOS:
         assert f"== {name}" in out
-    assert out.count("runServer") == 5 and "-Pcyberblock.serverPort=25918" in out and "JAVA_TOOL_OPTIONS=-Dcyberblock.devtools=true" in out
+    assert out.count("runServer") == 6 and "-Pcyberblock.serverPort=25918" in out and "JAVA_TOOL_OPTIONS=-Dcyberblock.devtools=true" in out
     assert "--quickPlaySingleplayer" in out and "--quickPlayMultiplayer 127.0.0.1:25915" in out and "tools.fakehost" in out
 
 

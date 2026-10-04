@@ -3,6 +3,7 @@ package dev.cyberblock.mixin;
 
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.WorldModule;
+import dev.cyberblock.net.JoinLock;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
@@ -19,7 +20,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * wind charge, plan retest2 R5) Minecraft moves him: then vanilla physics, collisions, fall and elytra damage apply. While the
  * host moves him his falls are V's: V's fall damage reaches Steve as the host's "fall" damage (HostDamage), so Minecraft's own
  * fall distance and fall damage would count it twice. Both sides: Cyberblock.hostActive asks the session on the server and the
- * client's own host state on the client (plan 2026-10-04 section 1.4).
+ * client's own host state on the client (plan 2026-10-04 section 1.4). Mobs do not pick a player locked by the join password as a
+ * target (TargetingConditions asks canBeSeenAsEnemy, javap of the 26.3 jar).
  */
 @Mixin(Player.class)
 abstract class PlayerMixin {
@@ -29,6 +31,13 @@ abstract class PlayerMixin {
 		if (Cyberblock.hostActive(self) && !self.isFallFlying() && !WorldModule.launching(self)) {
 			((Entity) self).noPhysics = true;
 			self.resetFallDistance();
+		}
+	}
+
+	@Inject(method = "canBeSeenAsEnemy", at = @At("HEAD"), cancellable = true)
+	private void cyberblock$lockedIsNoTarget(final CallbackInfoReturnable<Boolean> cir) {
+		if (JoinLock.locked((Player) (Object) this)) {
+			cir.setReturnValue(false);
 		}
 	}
 

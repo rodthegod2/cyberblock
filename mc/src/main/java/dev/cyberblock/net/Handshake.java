@@ -17,7 +17,9 @@ public final class Handshake {
 	public enum HostRefusal {
 		NOT_ALLOWED("Cyberblock: this server does not allow Cyberpunk hosts"),
 		NOT_WHITELISTED("Cyberblock: only whitelisted players can link a Cyberpunk game on this server"),
-		NOT_LISTED("Cyberblock: you are not on this server's list of Cyberpunk hosts");
+		NOT_LISTED("Cyberblock: you are not on this server's list of Cyberpunk hosts"),
+		/** A join password is set and this player has not typed /login yet: the link starts right after it (JoinLock). */
+		LOCKED("Cyberblock: type /login <password> first; your Cyberpunk link starts right after that");
 
 		private final String reason;
 
@@ -34,6 +36,35 @@ public final class Handshake {
 	 * @param refusal why this player may not host (null: allowed by the whitelist, the hosts list and allowHosts)
 	 * @param otherHosts players other than this one that hold the host role now
 	 */
+	/**
+	 * Who may host (section 1.6), as a pure rule: the singleplayer/LAN owner always; nobody still locked by the join password;
+	 * otherwise allowHosts, then the whitelist (or, on a server with a join password, a player who passed /login), then the hosts
+	 * list when it is not empty.
+	 *
+	 * @param verified a join password is set and this player passed /login on this world
+	 * @param listed the hosts list is empty or names this player
+	 */
+	public static @Nullable HostRefusal hostRefusal(final boolean owner, final boolean locked, final boolean allowHosts, final boolean whitelisted,
+		final boolean verified, final boolean listed) {
+		if (owner) {
+			return null;
+		}
+
+		if (locked) {
+			return HostRefusal.LOCKED;
+		}
+
+		if (!allowHosts) {
+			return HostRefusal.NOT_ALLOWED;
+		}
+
+		if (!whitelisted && !verified) {
+			return HostRefusal.NOT_WHITELISTED;
+		}
+
+		return listed ? null : HostRefusal.NOT_LISTED;
+	}
+
 	public record Input(int proto, String mod, String dll, boolean wantHost, String serverVersion, @Nullable HostRefusal refusal, int otherHosts,
 		int maxHosts) {
 	}

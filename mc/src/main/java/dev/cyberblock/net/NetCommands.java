@@ -31,6 +31,8 @@ public final class NetCommands {
 		dispatcher.register(Commands.literal("cyberblock")
 			.then(guests)
 			.then(Commands.literal("hosts").requires(NetCommands::opOrOwner).executes(c -> hosts(c.getSource()))));
+		// /login, /cyberblock login and /cyberblock password [reset] (the optional join password)
+		JoinLock.register(dispatcher);
 	}
 
 	/** Ops (permission level 2) and the singleplayer/LAN owner. */

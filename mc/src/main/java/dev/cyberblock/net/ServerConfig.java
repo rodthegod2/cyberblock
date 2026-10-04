@@ -25,12 +25,14 @@ import java.util.regex.Pattern;
  * {@link #get()} is the one the server started with.
  */
 public record ServerConfig(boolean allowHosts, List<String> hosts, int maxHosts, boolean requireMod, String joinHelp, double rate,
-	int sanityRadius, boolean creativeErasesReplica, boolean pvpDefault, Backups backups, boolean webMap) {
+	int sanityRadius, boolean creativeErasesReplica, boolean pvpDefault, Backups backups, boolean webMap, String joinPassword) {
 	public static final int SCHEMA = 1;
 	/** Phase 1 runs one host; Phase 3 raises the default to 4 once its multi-host check passes. */
 	public static final int DEFAULT_MAX_HOSTS = 1;
 	static final int MAX_HOSTS_LIMIT = 16;
 	static final int JOIN_HELP_CAP = 200;
+	/** joinPassword: at most 64 characters after trimming ("" = no join password). */
+	public static final int JOIN_PASSWORD_CAP = 64;
 	private static final Pattern NAME = Pattern.compile("[A-Za-z0-9_]{1,16}");
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
@@ -38,11 +40,23 @@ public record ServerConfig(boolean allowHosts, List<String> hosts, int maxHosts,
 		public static final Backups DEFAULT = new Backups(true, 7, 5);
 	}
 
-	public static final ServerConfig DEFAULT = new ServerConfig(true, List.of(), DEFAULT_MAX_HOSTS, true, "", 1.0, 160, false, false, Backups.DEFAULT, false);
+	public static final ServerConfig DEFAULT = new ServerConfig(true, List.of(), DEFAULT_MAX_HOSTS, true, "", 1.0, 160, false, false, Backups.DEFAULT, false, "");
 	private static volatile ServerConfig current = DEFAULT;
 
 	public ServerConfig {
 		hosts = List.copyOf(hosts);
+	}
+
+	/** A join password is set: unverified players are locked until /login (JoinLock). */
+	public boolean joinPasswordOn() {
+		return !this.joinPassword.isEmpty();
+	}
+
+	/** The record's own toString would print the join password into any log line that shows the config. */
+	@Override
+	public String toString() {
+		return "ServerConfig[allowHosts=" + this.allowHosts + ", hosts=" + this.hosts + ", maxHosts=" + this.maxHosts + ", requireMod=" + this.requireMod
+			+ ", rate=" + this.rate + ", sanityRadius=" + this.sanityRadius + ", joinPassword=" + (this.joinPasswordOn() ? "on" : "off") + "]";
 	}
 
 	/** The config the server started with (DEFAULT before any start). */
@@ -120,7 +134,8 @@ public record ServerConfig(boolean allowHosts, List<String> hosts, int maxHosts,
 			r.bool("creativeErasesReplica", DEFAULT.creativeErasesReplica),
 			r.bool("pvpDefault", DEFAULT.pvpDefault),
 			backups,
-			r.bool("webMap", DEFAULT.webMap));
+			r.bool("webMap", DEFAULT.webMap),
+			r.password("joinPassword"));
 	}
 
 	static String toJson(final ServerConfig c) {
@@ -143,6 +158,7 @@ public record ServerConfig(boolean allowHosts, List<String> hosts, int maxHosts,
 		backups.addProperty("hour", c.backups.hour());
 		o.add("backups", backups);
 		o.addProperty("webMap", c.webMap);
+		o.addProperty("joinPassword", c.joinPassword);
 		return GSON.toJson(o) + System.lineSeparator();
 	}
 
@@ -218,6 +234,27 @@ public record ServerConfig(boolean allowHosts, List<String> hosts, int maxHosts,
 			}
 
 			return p.getAsString();
+		}
+
+		/**
+		 * The join password, trimmed: a string of at most 64 characters that chat can type (no control characters, no section
+		 * sign). A problem never quotes the value; a bad one leaves the join password off (and the whitelist warning on).
+		 */
+		String password(final String key) {
+			if (!this.json.has(key)) {
+				this.problems.accept(key + " is missing; using the default (no join password)");
+				return "";
+			}
+
+			JsonPrimitive p = this.primitive(key);
+			String v = p != null && p.isString() ? p.getAsString().strip() : null;
+			if (v == null || v.length() > JOIN_PASSWORD_CAP || !v.chars().allMatch(c -> c >= ' ' && c != 0x7F && c != 0xA7)) {
+				this.problems.accept(key + " must be a string of at most " + JOIN_PASSWORD_CAP
+					+ " characters without control characters or section signs; the join password is OFF");
+				return "";
+			}
+
+			return v;
 		}
 
 		/** Player names (1-16 letters, digits, _) or UUIDs; a bad entry is skipped, a bad list is the default (empty). */

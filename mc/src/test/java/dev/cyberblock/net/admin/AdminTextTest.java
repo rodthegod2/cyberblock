@@ -41,10 +41,11 @@ class AdminTextTest {
 		content.put("test", 1);
 		List<String> lines = AdminText.status(List.of(
 			new AdminText.Row("CbHost1", "host", "active", "mod 1.0.0 dll 1.0.0", "up 12/s, dropped 0"),
-			new AdminText.Row("CbGuest1", "guest", "", "mod 1.0.0", "")), 1, true, true, List.of("CbHost1"), content);
+			new AdminText.Row("CbGuest1", "guest", "", "mod 1.0.0", "")), 1, true, true, false, List.of("CbHost1"), content);
 		assertEquals(List.of(
 			"Cyberblock status: 2 online, 1 host (max 1), requireMod, whitelist on",
 			"hosts allowed: CbHost1",
+			"join password: off",
 			"- CbHost1: host (active), mod 1.0.0 dll 1.0.0, up 12/s, dropped 0",
 			"- CbGuest1: guest, mod 1.0.0",
 			"content: material_palette 12, test 1"), lines);
@@ -52,10 +53,21 @@ class AdminTextTest {
 
 	@Test
 	void statusSaysWhoMayHostWhenTheListIsEmpty() {
-		List<String> lines = AdminText.status(List.of(), 1, false, false, List.of(), Map.of());
+		List<String> lines = AdminText.status(List.of(), 1, false, false, false, List.of(), Map.of());
 		assertEquals(List.of(
 			"Cyberblock status: 0 online, 0 hosts (max 1), modOptional, whitelist OFF",
 			"hosts allowed: any whitelisted player",
+			"join password: off",
+			"content: none loaded"), lines);
+	}
+
+	@Test
+	void statusShowsOnlyWhetherAJoinPasswordIsSet() {
+		List<String> lines = AdminText.status(List.of(), 1, true, false, true, List.of(), Map.of());
+		assertEquals(List.of(
+			"Cyberblock status: 0 online, 0 hosts (max 1), requireMod, whitelist OFF",
+			"hosts allowed: any whitelisted or logged-in player",
+			"join password: on",
 			"content: none loaded"), lines);
 	}
 }

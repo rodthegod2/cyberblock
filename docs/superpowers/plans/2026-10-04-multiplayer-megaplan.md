@@ -363,8 +363,13 @@ public final class HostSession {
 ### 1.6 Security, rate limits and host permissions
 - **Who may host:** only players on the server whitelist (`white-list=true` is required on a dedicated server; the
   singleplayer or LAN owner always may), and, when `hosts` in the server config is not empty, only the players listed
-  there. Guests can never send `up`: an `up` from a player without an active host role is dropped and counted, and 50 of
-  them within a minute kick the player.
+  there. **Join password** (optional, `joinPassword` in section 1.13): a player who has not passed it is locked (held in
+  place, no interaction, chat, damage or command but `/login`) and its host link waits as a guest with "Cyberblock: type
+  /login <password> first; your Cyberpunk link starts right after that"; the right password re-runs its handshake at once.
+  A player who passed it counts as whitelisted for hosting (the `hosts` list still applies). Five wrong tries or 120 s
+  without one kick; verified UUIDs are kept per world with a salted fingerprint of the password, and a new password locks
+  everyone again. Guests can never send `up`: an `up` from a player without an active host role is dropped and counted,
+  and 50 of them within a minute kick the player.
 - **Envelope checks on every `up`** (server, before any handler): `t` is one of the UP types of section 1.2; `json`
   parses and its `t` equals the envelope `t`; size within the cap; the per-type token bucket below has a token; for types
   with positions, every position is within the session's **sanity radius** of the host's player (160 blocks
@@ -608,8 +613,10 @@ device control per type (the toggle bits). State changes made by NPCs show in Mi
 - `config/cyberblock/server.json` (written with defaults on first start; bad values are logged and replaced by defaults):
   `{"schema":1, "allowHosts":true, "hosts":[], "maxHosts":1, "requireMod":true, "joinHelp":"", "rate":1.0,
   "sanityRadius":160, "creativeErasesReplica":false, "pvpDefault":false, "backups":{"daily":true, "keep":7, "hour":5},
-  "webMap":false}`. `hosts` holds player names or UUIDs. Phase 3 raises the default `maxHosts` to 4 when its multi-host
-  check passes.
+  "webMap":false, "joinPassword":""}`. `hosts` holds player names or UUIDs. Phase 3 raises the default `maxHosts` to 4 when
+  its multi-host check passes. `joinPassword` (added after Phase 2, at most 64 characters, trimmed; `""` = off) lets a server
+  run without a whitelist: every player must `/login <password>` once per world (section 1.6); it is never logged, sent to a
+  client or shown, and `/cyberblock status` says only `join password: on|off`.
 - Per host: SavedData `cyberblock_hosts` (guest toggles, last session time for Offline Builds). Per player (Fabric data
   attachments, persisted): `body`, `pvp`, `hidePin`.
 - **The Cyberblock settings screen** starts in Phase Q (task Q-B5, one row: "Creative can erase the replica permanently",

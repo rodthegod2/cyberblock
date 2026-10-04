@@ -17,7 +17,7 @@ import org.junit.jupiter.api.io.TempDir;
 class ServerConfigTest {
 	private static final String DEFAULTS = "{\"schema\":1, \"allowHosts\":true, \"hosts\":[], \"maxHosts\":1, \"requireMod\":true, \"joinHelp\":\"\", "
 		+ "\"rate\":1.0, \"sanityRadius\":160, \"creativeErasesReplica\":false, \"pvpDefault\":false, \"backups\":{\"daily\":true, \"keep\":7, \"hour\":5}, "
-		+ "\"webMap\":false}";
+		+ "\"webMap\":false, \"joinPassword\":\"\"}";
 
 	@AfterEach
 	void restore() {
@@ -90,6 +90,60 @@ class ServerConfigTest {
 		assertTrue(c.listsHost("cbhost1", new UUID(9, 9)), "names match in any case");
 		assertTrue(c.listsHost("Someone", new UUID(1, 1)), "or by UUID");
 		assertFalse(c.listsHost("CbGuest1", new UUID(3, 3)));
+	}
+
+	@Test
+	void theJoinPasswordIsOffByDefaultAndTrimmed() {
+		assertEquals("", ServerConfig.DEFAULT.joinPassword());
+		assertFalse(ServerConfig.DEFAULT.joinPasswordOn());
+		JsonObject o = JsonParser.parseString(DEFAULTS).getAsJsonObject();
+		o.addProperty("joinPassword", "  hunter2 ");
+		List<String> problems = new ArrayList<>();
+		ServerConfig c = ServerConfig.parse(o, problems::add);
+		assertEquals("hunter2", c.joinPassword());
+		assertTrue(c.joinPasswordOn());
+		assertEquals(List.of(), problems);
+		o.addProperty("joinPassword", "p".repeat(ServerConfig.JOIN_PASSWORD_CAP));
+		assertEquals(ServerConfig.JOIN_PASSWORD_CAP, ServerConfig.parse(o, problems::add).joinPassword().length(), "64 characters are fine");
+		o.addProperty("joinPassword", "pass with spaces");
+		assertEquals("pass with spaces", ServerConfig.parse(o, problems::add).joinPassword());
+		assertEquals(List.of(), problems);
+	}
+
+	@Test
+	void aBadJoinPasswordIsReportedWithoutItsValueAndLeavesItOff() {
+		String secret = "hunter2";
+		for (String bad : new String[] {secret + "x".repeat(ServerConfig.JOIN_PASSWORD_CAP), secret + "\tx",secret + "\u00A7a", secret + "\u007F"}) {
+			JsonObject o = JsonParser.parseString(DEFAULTS).getAsJsonObject();
+			o.addProperty("joinPassword", bad);
+			List<String> problems = new ArrayList<>();
+			ServerConfig c = ServerConfig.parse(o, problems::add);
+			assertEquals("", c.joinPassword(), bad);
+			assertEquals(1, problems.size(), problems.toString());
+			assertTrue(problems.get(0).startsWith("joinPassword must be a string of at most 64 characters"), problems.get(0));
+			assertFalse(problems.get(0).contains(secret), "a problem never quotes the password");
+		}
+
+		JsonObject o = JsonParser.parseString(DEFAULTS).getAsJsonObject();
+		o.addProperty("joinPassword", 1234);
+		List<String> problems = new ArrayList<>();
+		assertEquals("", ServerConfig.parse(o, problems::add).joinPassword());
+		assertFalse(problems.get(0).contains("1234"));
+		o.remove("joinPassword");
+		problems.clear();
+		assertEquals("", ServerConfig.parse(o, problems::add).joinPassword(), "an older file without the field: off");
+		assertEquals(List.of("joinPassword is missing; using the default (no join password)"), problems);
+	}
+
+	@Test
+	void theConfigNeverPrintsTheJoinPassword() {
+		JsonObject o = JsonParser.parseString(DEFAULTS).getAsJsonObject();
+		o.addProperty("joinPassword", "hunter2");
+		ServerConfig c = ServerConfig.parse(o, p -> {});
+		assertFalse(c.toString().contains("hunter2"), c.toString());
+		assertTrue(c.toString().contains("joinPassword=on"));
+		assertTrue(ServerConfig.DEFAULT.toString().contains("joinPassword=off"));
+		assertTrue(ServerConfig.toJson(ServerConfig.DEFAULT).contains("\"joinPassword\": \"\""), "the defaults file has the field, empty");
 	}
 
 	@Test

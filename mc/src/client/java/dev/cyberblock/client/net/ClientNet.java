@@ -77,6 +77,7 @@ public final class ClientNet {
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, minecraft) -> onJoin(minecraft));
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, minecraft) -> minecraft.execute(ClientNet::onDisconnect));
 		ClientTickEvents.END_CLIENT_TICK.register(ClientNet::tick);
+		LoginScreen.register();
 	}
 
 	public static Role role() {
@@ -365,7 +366,7 @@ public final class ClientNet {
 
 	/** Disconnect texts that are a refusal, not a lost connection, in the player's language. */
 	private static List<String> refusals() {
-		List<String> out = new ArrayList<>(List.of("Cyberblock version mismatch", "needs the Cyberblock modpack", "too many messages"));
+		List<String> out = new ArrayList<>(List.of("Cyberblock version mismatch", "needs the Cyberblock modpack", "too many messages", "join password"));
 		for (String vanilla : VANILLA_REFUSALS) {
 			out.add(Component.translatable(vanilla).getString());
 		}

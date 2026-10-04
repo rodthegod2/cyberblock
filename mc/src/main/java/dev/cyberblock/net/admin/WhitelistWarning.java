@@ -2,7 +2,8 @@ package dev.cyberblock.net.admin;
 
 /**
  * When to repeat the whitelist warning (plan task 2-M1): at once, then every minute, while a dedicated server runs with
- * the whitelist off. Turning the whitelist on silences it; turning it off again warns at once. One thread only.
+ * the whitelist off. Turning the whitelist on, or setting a join password (a deliberate public server: everyone must /login),
+ * silences it; turning both off again warns at once. One thread only.
  */
 final class WhitelistWarning {
 	static final long EVERY_MS = 60_000;
@@ -12,8 +13,8 @@ final class WhitelistWarning {
 	private boolean warned;
 	private long last;
 
-	boolean due(final long nowMs, final boolean dedicated, final boolean whitelist) {
-		if (!dedicated || whitelist) {
+	boolean due(final long nowMs, final boolean dedicated, final boolean whitelist, final boolean joinPassword) {
+		if (!dedicated || whitelist || joinPassword) {
 			warned = false;
 			return false;
 		}

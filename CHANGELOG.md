@@ -9,6 +9,17 @@ and the tools.
 Version 1.0.0 is set in the files on 2026-10-03; it is tagged and published only after the in-game re-test
 ([docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test 3") has passed.
 
+### Unreleased additions: join password
+- **Join password for dedicated servers.** `joinPassword` in `config/cyberblock/server.json` (default `""`, off) lets a
+  server run without a whitelist: a player who joins is held in place and can do nothing (no building, items, chat, damage
+  or Cyberpunk host link) until `/login <password>` (also `/cyberblock login`; Cyberblock clients get a password box).
+  One try per second, five wrong tries or 120 s without one kick; verified players are remembered per world (with a salted
+  fingerprint of the password, so a new password locks everyone again). A waiting Cyberpunk host becomes a host right after
+  the password. `/cyberblock password [reset]` for operators, `join password: on|off` in `/cyberblock status`; the whitelist
+  warning is quiet while a password is set. The password is never logged, sent to clients or shown.
+- **Harness.** `tools.mpcheck joinpassword` checks the lock, the host link after `/login`, a reconnect, the kick after five
+  wrong passwords and that the password reaches no log.
+
 ### Unreleased additions: Phase Q (multiplayer plan)
 Phase Q of the multiplayer plan (`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md`): quick wins before the server
 work, on top of the 1.0.0 work below. Built and unit-tested; the in-game list is

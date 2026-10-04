@@ -976,6 +976,7 @@ roles, versions and message rates with `/cyberblock hosts`.
 | "Cyberblock: another Cyberpunk host is already active (max N)" | the server allows N hosts and they are taken: you play as a guest |
 | "This server needs the Cyberblock modpack: ..." | the player has no Cyberblock mod: install it first |
 | "Reconnecting to ... in N s" (with **Cancel**) | the connection dropped; it retries after 5, 10, 20, 40 and then every 60 s for 10 minutes. Meanwhile Night City is cleaned up as if the link had dropped, and when you are back the whole ground returns |
+| "This server needs a password: type /login <password>" | a dedicated server with a join password: type `/login` and the password the owner gave you (see "On a dedicated server") |
 | "Cyberblock: too many messages from your Cyberpunk link" | the server's rate limit kicked a link that flooded it: restart Cyberpunk and Minecraft, and report it if it was not a test |
 
 **Leaving.** When a host quits or loses the link, the server removes that host's collision, proxies and tethers at once;
@@ -996,6 +997,18 @@ player guide for it comes with the Phase 2 docs. What is already there:
   applies at that player's next handshake. The server log starts with `cyberblock server: ready (protocol 1, maxHosts N,
   requireMod, whitelist on|OFF)` and warns every minute while a dedicated server runs without a whitelist. The `joinHelp`
   text of `config/cyberblock/server.json` is added to every refusal.
+- **Join password (a server without a whitelist).** Set `"joinPassword": "<your password>"` in
+  `config/cyberblock/server.json` (at most 64 characters) and restart the server. Every player who joins is then held in
+  place with "This server needs a password: type /login <password>" until they type `/login <password>` (or
+  `/cyberblock login <password>`; with the Cyberblock mod a small password box opens by itself). Until then they cannot
+  move, build, break, use or pick up items, chat, take damage or link their Cyberpunk game; their Cyberpunk link starts
+  right after the right password. One try per second; five wrong tries, or 120 s without the password, disconnect them.
+  The server remembers each player who logged in on this world, so they type it once; change the password and everyone
+  must log in again. A player who logged in may host Cyberpunk like a whitelisted one (the `hosts` list still applies).
+  The minute warning about the missing whitelist stays quiet while a join password is set. Operators see `join password:
+  on|off` in `/cyberblock status`, `/cyberblock password` shows how many players are verified and `/cyberblock password
+  reset` (level 3) clears that list. The password is never logged, sent to players or shown by a command; share it the way
+  you would share the server address.
 - **Tools** (run by the server owner from a checkout): `tools.server_sync` backs up a server over FTP with a manifest,
   verifies it and uploads only staged files (a dry run unless `--go`; it has no delete command and refuses to overwrite
   files outside an allowlist; the FTP password is read only from the environment or a hidden prompt, never printed);

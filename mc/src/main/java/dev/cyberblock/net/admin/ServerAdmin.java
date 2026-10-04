@@ -5,6 +5,7 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
+import dev.cyberblock.net.ServerConfig;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -86,7 +87,8 @@ public final class ServerAdmin {
 			stopWarnings();
 			warnings = Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().daemon().name("cyberblock-whitelist-warning").factory());
 			warnings.scheduleAtFixedRate(() -> {
-				if (WARNING.due(System.nanoTime() / 1_000_000L, true, server.getPlayerList().isUsingWhitelist())) {
+				// a join password makes it a deliberate public server (everyone must /login): no warning
+				if (WARNING.due(System.nanoTime() / 1_000_000L, true, server.getPlayerList().isUsingWhitelist(), ServerConfig.get().joinPasswordOn())) {
 					Cyberblock.LOG.warn(WhitelistWarning.TEXT);
 				}
 			}, 0, 5, TimeUnit.SECONDS);
@@ -142,8 +144,8 @@ public final class ServerAdmin {
 		}
 
 		HostsConfig.Settings now = HostsConfig.read(configFile());
-		for (String line : AdminText.status(rows, now.maxHosts(), now.requireMod(), server.getPlayerList().isUsingWhitelist(), now.hosts(),
-			contentCounts.get())) {
+		for (String line : AdminText.status(rows, now.maxHosts(), now.requireMod(), server.getPlayerList().isUsingWhitelist(),
+			ServerConfig.get().joinPasswordOn(), now.hosts(), contentCounts.get())) {
 			source.sendSuccess(() -> Component.literal(line), false);
 		}
 

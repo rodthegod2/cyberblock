@@ -17,6 +17,8 @@ Scenarios (megaplan task 1-T2). Each one starts what it needs on its own test po
   flood         a DLL link that floods `ground`: rate limits, the overflow kick, the server survives
   reconnect     the host's DLL link drops (barriers and proxies gone) and returns (`blocks reset:true`, the whole ground again)
   twohosts      `maxHosts` 2, two fake hosts with colliding ids: each one gets only its own hits
+  joinpassword  a server with a join password: a host waits as a guest until `/login`, then hosts at once; after a reconnect it
+                is remembered; five wrong passwords kick; the password is in no log (it is random per run, like the RCON one)
 
 Safety: the commit charge must be under 60 GB before anything starts (it waits 60 s and checks again); the server is offline
 mode on 127.0.0.1; its RCON password is random per run, held in memory and written only to server.properties in the run
@@ -63,8 +65,9 @@ COMMIT_LIMIT_GB, COMMIT_RECHECK_S, COMMIT_MAX_WAIT_S = 60.0, 60.0, 1800.0  # meg
 CLIENT_BASE, SERVER_BASE = 25754, 25914  # package 1T (megaplan section 1.15): client 25754.., harness servers 25914-25918
 FRAME_PREFIX = "Local\\CyberblockFrame1T"  # + H (host client) or G (guest client), + the client number from 2 on
 OFFLINE_NAMES = ("CbHost1", "CbHost2", "CbGuest1", "CbGuest2")
-SCENARIOS = ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts")
-SERVER_SLOT = {"singleplayer": 0, "guest": 0, "versions": 1, "flood": 2, "reconnect": 3, "twohosts": 4}  # + SERVER_BASE
+SCENARIOS = ("singleplayer", "guest", "versions", "flood", "reconnect", "twohosts", "joinpassword")
+# + SERVER_BASE; scenarios run one after another, so two may share a port
+SERVER_SLOT = {"singleplayer": 0, "guest": 0, "versions": 1, "flood": 2, "reconnect": 3, "twohosts": 4, "joinpassword": 1}
 FORBIDDEN_PORTS = {25600}  # the user's own Minecraft <-> Cyberpunk link
 GRADLE_HEAP = "-Dorg.gradle.jvmargs=-Xmx1536m"
 # seconds: a server starting, a client opening its link port, a join, an effect to show up, "this must not happen"
@@ -72,6 +75,7 @@ T_SERVER, T_CLIENT, T_JOIN, T_EFFECT, T_QUIET = 300.0, 400.0, 150.0, 45.0, 6.0
 T_STOP = 60.0  # a server gets this long to stop after RCON `stop` before its process tree is killed
 HOLD_S = 900 # a fake host keeps its link this long (the scenario stops it earlier)
 FLOOD_S = 16.0  # how long `flood` keeps flooding (the overflow rule needs more than 10 s)
+LOGIN_GAP_S = 1.2  # `joinpassword`: between two /login attempts (the server takes one per second)
 HOSTILE_ID = "9007199254740993"  # the fake host's hostile human (protocol.md example id)
 COLLIDING_ID = 5000  # `twohosts`: both fake hosts number their NPCs from here
 SLAB = (0, 63, 0)  # a cell of the fake host's ground and its four far corners (x, y, z)
@@ -162,10 +166,12 @@ def mismatched_dll_version(version: str) -> str:
     return "0.0.1" if version != "0.0.1" else "0.0.2"
 
 
-def server_json(example: str, max_hosts: int) -> str:
-    """config/cyberblock/server.json: the defaults of the template with `maxHosts` set."""
+def server_json(example: str, max_hosts: int, join_password: str = "") -> str:
+    """config/cyberblock/server.json: the defaults of the template with `maxHosts` (and `joinPassword` when given) set."""
     config = json.loads(example)
     config["maxHosts"] = max_hosts
+    if join_password:
+        config["joinPassword"] = join_password
     return json.dumps(config, indent=2) + "\n"
 
 
@@ -332,6 +338,7 @@ class Server:
     proc: Proc | None
     log: LogFile
     dir: Path
+    join_password: str = field(default="", repr=False)  # `joinpassword` only; never in a repr or a report
 
     def rcon(self, command: str) -> str:
         return rcon(self.rcon_port, self.password, command)
@@ -444,8 +451,9 @@ class Env:
         if play.port_open(port):
             raise MpError(f"port {port} ({what}) is already in use: not touching whatever listens there")
 
-    def server(self, scenario: str, max_hosts: int = 1) -> Server:
-        """A dedicated test server on this scenario's port (offline mode, whitelist of the offline names, RCON on a free port)."""
+    def server(self, scenario: str, max_hosts: int = 1, join_password: bool = False) -> Server:
+        """A dedicated test server on this scenario's port (offline mode, whitelist of the offline names, RCON on a free port);
+        with `join_password`, a random one in server.json (held like the RCON password: never printed or logged)."""
         port = self.ports.server(scenario)
         self._require_free(port, "test server")
         serial = self._serial()
@@ -457,14 +465,15 @@ class Env:
                                                                           "rcon.password": self._password, "broadcast-rcon-to-ops": False}), encoding="utf-8")
         (d / "eula.txt").write_text((self.repo / "server" / "eula.txt.template").read_text(encoding="utf-8"), encoding="utf-8")
         (d / "whitelist.json").write_text(json.dumps([{"uuid": offline_uuid(n), "name": n} for n in OFFLINE_NAMES], indent=2), encoding="utf-8")
+        join = secrets.token_urlsafe(12) if join_password else ""
         (d / "config" / "cyberblock" / "server.json").write_text(
-            server_json((self.repo / "server" / "server.json.example").read_text(encoding="utf-8"), max_hosts), encoding="utf-8")
+            server_json((self.repo / "server" / "server.json.example").read_text(encoding="utf-8"), max_hosts, join), encoding="utf-8")
         wait_for_commit(self.commit_limit, say=self.say)
-        self.say(f"starting the test server on 127.0.0.1:{port} (maxHosts {max_hosts})")
+        self.say(f"starting the test server on 127.0.0.1:{port} (maxHosts {max_hosts}{', /login required' if join else ''})")
         proc = Proc(f"server-{port}", server_argv(self.repo, port=port, run_dir=d), self.repo / "mc",
                     self._child_env({"JAVA_TOOL_OPTIONS": "-Dcyberblock.devtools=true"}), self.run / "logs" / f"server-{port}-{serial}.log")
         self.started.append(proc)
-        server = Server(port, rcon_port, self._password, proc, proc.log, d)
+        server = Server(port, rcon_port, self._password, proc, proc.log, d, join)
         self.servers.append(server)
         self.logs[f"server {port}"] = proc.log
         proc.log.wait(r"Done \(", T_SERVER)
@@ -739,8 +748,39 @@ def scenario_twohosts(env: Env, rep: Report) -> None:
     rep.step("a hit on the same id of host 2 reaches only host 2",lambda: reaches_only(second, first))
 
 
+def scenario_joinpassword(env: Env, rep: Report) -> None:
+    server = env.server("joinpassword", join_password=True)
+    client = env.client("CbHost1", join=server.port)
+    host = env.fakehost(client, ver=env.mod_version)
+    rep.step("a player who has not logged in is locked", lambda: server.log.wait(r"login: CbHost1 is locked until /login", T_JOIN), must=True)
+    rep.step("its Cyberpunk link waits as a guest with the /login reason", lambda: server.log.wait(r"handshake: CbHost1 .*-> guest \(Cyberblock: type /login", T_JOIN),
+             must=True)
+    rep.step("no host session starts while it is locked", lambda: server.log.quiet(r"session: CbHost1 started", T_QUIET))
+    mark = server.log.mark()
+    server.rcon(f"execute as CbHost1 run login {server.join_password}")
+    rep.step("the right password unlocks the player", lambda: server.log.wait(r"login: CbHost1 verified", T_EFFECT, mark), must=True)
+    rep.step("the waiting link becomes a host at once", lambda: server.log.wait(host_pattern("CbHost1"), T_EFFECT, mark))
+    rep.step("its session starts", lambda: server.log.wait(r"session: CbHost1 started", T_EFFECT, mark))
+    mark = server.log.mark()
+    host.stop()
+    client.proc.stop()
+    rep.step("the player left", lambda: server.log.wait(r"CbHost1 lost connection", T_EFFECT, mark), must=True)
+    mark = server.log.mark()
+    env.fakehost(env.client("CbHost1", join=server.port), ver=env.mod_version)
+    rep.step("after a reconnect the remembered player hosts without /login", lambda: server.log.wait(host_pattern("CbHost1"), T_JOIN, mark))
+    rep.step("and is not locked again", lambda: not server.log.find(r"login: CbHost1 is locked", mark))
+    env.client("CbGuest1", join=server.port)
+    rep.step("a new player is locked", lambda: server.log.wait(r"login: CbGuest1 is locked until /login", T_JOIN), must=True)
+    mark = server.log.mark()
+    for _ in range(5):
+        server.rcon("execute as CbGuest1 run login not-the-password")
+        time.sleep(LOGIN_GAP_S)
+    rep.step("five wrong passwords kick", lambda: server.log.wait(r"CbGuest1 lost connection: Cyberblock: wrong join password", T_EFFECT, mark))
+    rep.step("the password is in no log", lambda: all(server.join_password not in log.text() for log in env.logs.values()))
+
+
 SCENARIO_FUNCS = {"singleplayer": scenario_singleplayer, "guest": scenario_guest, "versions": scenario_versions, "flood": scenario_flood,
-                  "reconnect": scenario_reconnect, "twohosts": scenario_twohosts}
+                  "reconnect": scenario_reconnect, "twohosts": scenario_twohosts, "joinpassword": scenario_joinpassword}
 
 
 class Flooder(threading.Thread):

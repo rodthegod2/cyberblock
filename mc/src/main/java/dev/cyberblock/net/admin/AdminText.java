@@ -30,12 +30,15 @@ public final class AdminText {
 	}
 
 	static List<String> status(final List<Row> rows, final int maxHosts, final boolean requireMod, final boolean whitelist,
-		final List<String> allowedHosts, final Map<String, Integer> content) {
+		final boolean joinPassword, final List<String> allowedHosts, final Map<String, Integer> content) {
 		long hosts = rows.stream().filter(r -> r.role().equals("host")).count();
 		List<String> lines = new ArrayList<>();
 		lines.add("Cyberblock status: " + rows.size() + " online, " + hosts + (hosts == 1 ? " host" : " hosts") + " (max " + maxHosts + "), "
 			+ modRule(requireMod) + ", whitelist " + onOff(whitelist));
-		lines.add("hosts allowed: " + (allowedHosts.isEmpty() ? "any whitelisted player" : String.join(", ", allowedHosts)));
+		lines.add("hosts allowed: " + (!allowedHosts.isEmpty() ? String.join(", ", allowedHosts)
+			: joinPassword ? "any whitelisted or logged-in player" : "any whitelisted player"));
+		// on or off only: the password itself is never shown
+		lines.add("join password: " + (joinPassword ? "on" : "off"));
 		for (Row r : rows) {
 			StringBuilder line = new StringBuilder("- ").append(r.name()).append(": ").append(r.role());
 			if (!r.state().isEmpty()) {

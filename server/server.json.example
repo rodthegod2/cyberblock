@@ -10,5 +10,6 @@
   "creativeErasesReplica": false,
   "pvpDefault": false,
   "backups": {"daily": true, "keep": 7, "hour": 5},
-  "webMap": false
+  "webMap": false,
+  "joinPassword": ""
 }

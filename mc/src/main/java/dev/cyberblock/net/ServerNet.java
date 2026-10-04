@@ -46,6 +46,7 @@ public final class ServerNet {
 		final int joinTick;
 		final RelayGuard guard;
 		boolean handshaken, kicked;
+		int proto;
 		String mod = "", dll = "";
 		boolean wantHost;
 		Handshake.Result result = new Handshake.Result(true, Payloads.ROLE_GUEST, "");
@@ -74,6 +75,7 @@ public final class ServerNet {
 		ServerLifecycleEvents.SERVER_STARTED.register(ServerNet::started);
 		ServerLifecycleEvents.SERVER_STOPPING.register(s -> stopping());
 		ServerTickEvents.END_SERVER_TICK.register(ServerNet::tick);
+		JoinLock.init();
 		wireAdmin();
 	}
 
@@ -91,7 +93,13 @@ public final class ServerNet {
 			return s == null ? "" : String.format(Locale.ROOT, "up %.1f/s, dropped %d", s.upRate(), s.droppedDown());
 		};
 		ServerAdmin.contentCounts = Content::counts;
-		ServerAdmin.configChanged = () -> ServerConfig.load(configFile());
+		ServerAdmin.configChanged = () -> {
+			ServerConfig.load(configFile());
+			MinecraftServer s = server;
+			if (s != null) {
+				JoinLock.reconfigured(s); // a joinPassword edited meanwhile locks or unlocks the players online
+			}
+		};
 	}
 
 	private static String orNone(final String version) {
@@ -121,66 +129,78 @@ public final class ServerNet {
 		server = s;
 		ServerConfig.load(configFile());
 		Permissions.use(s.overworld().getDataStorage().computeIfAbsent(HostsData.TYPE));
+		JoinLock.started(s);
 	}
 
 	private static void stopping() {
 		HostSessions.endAll("server stop");
 		conns.clear();
+		JoinLock.stopping();
 		Permissions.use(new HostsData());
 		server = null;
 	}
 
 	private static void onJoin(final ServerPlayer player, final MinecraftServer s) {
 		conns.put(player.getUUID(), new Conn(player.getUUID(), player.getPlainTextName(), s.getTickCount()));
+		JoinLock.onJoin(player, s);
 		HostSessions.rosterChanged();
 	}
 
 	private static void onLeave(final ServerPlayer player) {
 		HostSessions.end(player.getUUID(), "disconnect");
 		conns.remove(player.getUUID());
+		JoinLock.onLeave(player.getUUID());
 		HostSessions.rosterChanged();
 	}
 
-	/** Why this player may not host, or null when it may: the singleplayer/LAN owner always may (section 1.6). */
+	/**
+	 * Why this player may not host, or null when it may (section 1.6, Handshake.hostRefusal): the singleplayer/LAN owner always
+	 * may; a player still locked by the join password may not yet; a player who passed the join password counts as whitelisted.
+	 */
 	private static Handshake.@Nullable HostRefusal refusal(final MinecraftServer s, final ServerPlayer player, final ServerConfig config) {
 		NameAndId id = player.nameAndId();
-		if (isOwner(s, player)) {
-			return null;
-		}
-
-		if (!config.allowHosts()) {
-			return Handshake.HostRefusal.NOT_ALLOWED;
-		}
-
 		PlayerList list = s.getPlayerList();
-		if (!list.isUsingWhitelist() || !list.isWhiteListed(id)) {
-			return Handshake.HostRefusal.NOT_WHITELISTED;
-		}
-
-		if (!config.hosts().isEmpty() && !config.listsHost(player.getPlainTextName(), player.getUUID())) {
-			return Handshake.HostRefusal.NOT_LISTED;
-		}
-
-		return null;
+		return Handshake.hostRefusal(isOwner(s, player), JoinLock.locked(player.getUUID()), config.allowHosts(),
+			list.isUsingWhitelist() && list.isWhiteListed(id), JoinLock.verified(player.getUUID()),
+			config.hosts().isEmpty() || config.listsHost(player.getPlainTextName(), player.getUUID()));
 	}
 
 	private static void onHs(final ServerPlayer player, final Payloads.Hs hs) {
 		MinecraftServer s = player.level().getServer();
 		UUID uuid = player.getUUID();
 		Conn conn = conns.computeIfAbsent(uuid, u -> new Conn(u, player.getPlainTextName(), s.getTickCount()));
+		conn.proto = hs.proto();
+		conn.mod = hs.mod();
+		conn.dll = hs.dll();
+		conn.wantHost = hs.wantHost();
+		handshake(player, conn, s);
+	}
+
+	/**
+	 * The join password decided again for this player (it logged in, or the password was turned on or off): its last hs is
+	 * answered again, so a Cyberpunk host that waited becomes a host now (hs_ack host; its client then relays the DLL's hello) and
+	 * a re-locked host goes back to guest. Nothing to do before the client's first hs.
+	 */
+	static void rehandshake(final ServerPlayer player) {
+		Conn conn = conns.get(player.getUUID());
+		if (conn != null && conn.handshaken && !conn.kicked) {
+			handshake(player, conn, player.level().getServer());
+		}
+	}
+
+	/** Decides the conn's last hs (section 1.5), answers hs_ack and grants or ends the host session. */
+	private static void handshake(final ServerPlayer player, final Conn conn, final MinecraftServer s) {
+		UUID uuid = conn.uuid;
 		ServerConfig config = ServerConfig.get();
 		String version = modVersion();
-		Handshake.Result result = Handshake.decide(new Handshake.Input(hs.proto(), hs.mod(), hs.dll(), hs.wantHost(), version,
+		Handshake.Result result = Handshake.decide(new Handshake.Input(conn.proto, conn.mod, conn.dll, conn.wantHost, version,
 			refusal(s, player, config), HostSessions.hostsOtherThan(uuid), config.maxHosts()));
 		// every refusal carries the server's joinHelp once (megaplan 2-M1; unchanged while joinHelp is empty)
 		result = new Handshake.Result(result.ok(), result.role(), ServerAdmin.refusal(result.reason()));
 		boolean wasHost = conn.result.host();
 		conn.handshaken = true;
-		conn.mod = hs.mod();
-		conn.dll = hs.dll();
-		conn.wantHost = hs.wantHost();
 		conn.result = result;
-		Cyberblock.LOG.info("handshake: {} mod {} dll {} -> {} ({})", conn.name, hs.mod(), hs.dll().isEmpty() ? "none" : hs.dll(), result.role(),
+		Cyberblock.LOG.info("handshake: {} mod {} dll {} -> {} ({})", conn.name, conn.mod, conn.dll.isEmpty() ? "none" : conn.dll, result.role(),
 			result.reason());
 		sendAck(player, conn);
 		if (!result.ok()) {
@@ -195,9 +215,9 @@ public final class ServerNet {
 					send(p, new Payloads.Down(json));
 				}
 			});
-			session.versions(hs.mod(), hs.dll());
+			session.versions(conn.mod, conn.dll);
 		} else if (wasHost || HostSessions.isHost(uuid)) {
-			HostSessions.end(uuid, hs.dll().isEmpty() ? "DLL link lost" : "role revoked");
+			HostSessions.end(uuid, conn.dll.isEmpty() ? "DLL link lost" : "role revoked");
 		}
 	}
 
@@ -217,8 +237,9 @@ public final class ServerNet {
 	private static void onUp(final ServerPlayer player, final Payloads.Up up) {
 		UUID uuid = player.getUUID();
 		Conn conn = conns.computeIfAbsent(uuid, u -> new Conn(u, player.getPlainTextName(), player.level().getServer().getTickCount()));
-		if (conn.kicked) {
-			return; // the ups already queued behind the kick: one disconnect, with its reason, is enough
+		if (conn.kicked || JoinLock.locked(uuid)) {
+			// the ups already queued behind a kick: one disconnect, with its reason, is enough; a locked player relays nothing
+			return;
 		}
 
 		HostSession session = HostSessions.of(uuid);
@@ -265,6 +286,10 @@ public final class ServerNet {
 
 	/** A host changes what guests may do to its game; the client hears the new bits in a fresh hs_ack. */
 	private static void onPerms(final ServerPlayer player, final Payloads.Perms perms) {
+		if (JoinLock.locked(player)) {
+			return;
+		}
+
 		setPerms(player, new Permissions(perms.perms(), perms.devices()));
 	}
 
@@ -280,7 +305,7 @@ public final class ServerNet {
 	private static void onAct(final ServerPlayer player, final Payloads.Act act) {
 		BiConsumer<ServerPlayer, JsonObject> handler = actHandlers.get(act.t());
 		JsonObject m = parse(act.json());
-		if (handler == null || m == null) {
+		if (handler == null || m == null || JoinLock.locked(player)) {
 			Cyberblock.LOG.debug("act {} from {} dropped", act.t(), player.getPlainTextName());
 			return;
 		}
@@ -302,6 +327,7 @@ public final class ServerNet {
 	}
 
 	private static void tick(final MinecraftServer s) {
+		JoinLock.tick(s);
 		drainHeld(s);
 		HostSessions.flushAll();
 		if (HostSessions.takeRosterDirty()) {
