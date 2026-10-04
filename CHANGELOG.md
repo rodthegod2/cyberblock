@@ -5,6 +5,36 @@ All notable changes to Cyberblock are listed here. The format follows
 [Semantic Versioning](https://semver.org/). One version number covers the DLL, the scripts, the shader, the Minecraft mod
 and the tools.
 
+## [Unreleased]
+Phase Q of the multiplayer plan (`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md`): quick wins before the server
+work. Built and unit-tested; the in-game list is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test Q". The later Wave A
+phases (the Phase 0 feasibility notes, the server/client split and the Apex tools) add their lines below.
+
+### Added
+- **Survival mining.** Placed blocks crack and break at the normal Minecraft speed with a pickaxe, at eye height and at the
+  feet: the aim limit has a margin, smoothing and a sticky target, and V on the ground no longer counts as mid-air.
+- **Stairs.** Cyberpunk's vault and climb prompts are refused on your placed blocks (real ledges and ladders still work), and
+  a **step-up assist** lifts V onto a single block in the way (a setting, on by default).
+- **A third-person camera that holds still.** The DLL tests four rays for wall collision, smooths the distance, swings the
+  shoulder offset to the centre near walls and takes a distance, shoulder offset, FOV and vehicle distance; Steve is placed per
+  rendered frame, his elytra, shield and use-item poses no longer flicker, and the crosshair is drawn where his aim meets the
+  target. `/cyberblock debug view on|off` shows a frame time and pose age overlay; `/cyberblock debug aim on|off` logs the
+  aim.
+- **Outline blocks in creative.** Creative can break the invisible outline blocks of Night City (they return in about 10 s,
+  or stay broken with the new setting "Creative can erase the replica permanently", `/cyberblock outline erase on|off`); a
+  player who falls through is rescued; survival and adventure keep them unbreakable.
+- **The Cyberblock settings screen** (`/cyberblock settings`, a "Cyberblock..." button on both pause screens).
+- **A Minecraft-style loading screen** for the loading cover, and `docs/notes/ui-coverage.md`, one table of which Cyberpunk
+  screens are Minecraft, pass through, or are converted by which later phase.
+- **Protocol.** `prefs` (Minecraft to Cyberpunk) and `cam.vdbg` in `shared/protocol.md` "Phase Q".
+- **Tools.** `tools.fakehost --view` (a walking, sprinting and gliding third-person stream) and `--stairs` (a staircase of
+  placed blocks with the aim at their faces) reproduce the camera and mining cases without Cyberpunk.
+- **Repository hygiene.** `tests/test_hygiene.py` fails the suite when a tracked file carries the account name of whoever runs
+  it, a server password, the hosting provider's FTP host names or a drive-letter path in the plan's new files.
+
+### Changed
+- Creative can break the invisible outline blocks of Night City (and they come back) instead of them being untouchable.
+
 ## [1.0.0] - unreleased
 Version 1.0.0 is set in the files on 2026-10-03; it is tagged and published only after the in-game re-test
 ([docs/TESTING-PLAN.md](docs/TESTING-PLAN.md), "Re-test 3") has passed.

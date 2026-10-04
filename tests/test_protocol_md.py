@@ -1117,3 +1117,65 @@ def test_phase_q_documented_defaults_match_the_checked_ones():
     text = section("Phase Q semantics and limits")
     for key, value in PREFS_DEFAULTS.items():
         assert re.search(rf"\b{key} {str(value).lower()}\b", text), f"default {key} {value} is not in the Defaults bullet"
+
+
+# ---- Phase Q player docs and the Re-test Q list (plan 2026-10-04 megaplan Q-P3) ----------------------------------------
+TESTING = Path("docs/TESTING-PLAN.md").read_text(encoding="utf-8")
+CHANGELOG = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+
+def test_guide_documents_phase_q():
+    text = " ".join(GUIDE.split())
+    for phrase in ("### Mining placed blocks, stairs and the step-up assist", "#### Third-person camera options and the debug overlay",
+                   "### Creative mode and the outline blocks", "#### The Cyberblock settings screen", "Step-up assist",
+                   "vault", "climb", "`/cyberblock debug view on`", "`/cyberblock debug aim on`", "`/cyberblock settings`",
+                   "`/cyberblock outline erase on|off`", "Creative can erase the replica permanently", "comes back in about 10 seconds",
+                   "Caught you: back to safe ground", "Only the host or an operator can change this", "1.5 to 8 m", "-1 to 1 m", "50 to 110", "3 to 14 m",
+                   "view: frame <ms> pose age <ms> interp <f> dist <m> collide <m>", "aim: target <block|entity|none> d=<m> limit=<m>",
+                   "locomotion: vault refused on Cyberblock box", "outline: restored N"):
+        assert phrase in text, f"HOW-TO-PLAY.md does not say {phrase!r}"
+    outline = section_of(GUIDE, "### Creative mode and the outline blocks")
+    for fact in ("Survival and adventure", "cannot be broken", "Creative:", "Permanent erase", "walk away and back"):
+        assert fact in outline, fact
+
+
+def section_of(doc: str, heading: str) -> str:
+    """The text of a markdown section from its heading to the next heading of the same or a higher level."""
+    level = len(heading.split()[0])
+    start = doc.index(heading + "\n")
+    rest = doc[start + len(heading):]
+    end = re.search(rf"^#{{1,{level}}} ", rest, re.M)
+    return rest[: end.start()] if end else rest
+
+
+def test_testing_plan_starts_with_re_test_q_and_leaves_room_for_the_next_phases():
+    assert TESTING.index("## Re-test Q (do this first)") < TESTING.index("## In-game fixes 3") < TESTING.index("## Re-test 3 (do this first)")
+    q = section_of(TESTING, "## Re-test Q (do this first)")
+    assert "<!-- end of Re-test Q." in q and "Re-test 1" in q.split("<!-- end of Re-test Q.", 1)[1]  # the marker says where Re-test 1 goes
+    assert q.rstrip().endswith("-->")  # nothing follows the marker inside the section, so appending below it is safe
+    for item in ("### Q1. Survival mining", "### Q2. A staircase of placed blocks", "### Q3. Third person", "### Q4. UI coverage and the escape hatch",
+                 "### Q5. Outline blocks and the settings screen", "### Q6. Gorilla Arms charged punch", "### Q7. Phase 0 CET checks"):
+        assert item in q, item
+    assert len(q.split("**What to try (one screen):**", 1)[1].split("| Item |", 1)[0].strip().splitlines()) <= 15  # one screen
+
+
+def test_re_test_q_has_the_five_phase_q_checks_the_gorilla_check_and_phase_0_rows():
+    q = " ".join(section_of(TESTING, "## Re-test Q (do this first)").split())
+    for fact in ("iron pickaxe", "eye height", "your **feet**", "five** placed blocks", "no vault or climb prompt", "kerb", "ladder",
+                 "F5", "glide", "launch with a wind charge", "shield", "along a wall", "corridor", "crosshair", "frame time and pose age",
+                 "comes back in about 10 seconds", "Survival:", "stays broken until you walk away", "docs/notes/ui-coverage.md", "Night City Menu...",
+                 "`locomotion: vault refused on Cyberblock box`", "`aim: target block d=... limit=...`", "`outline: restored N`",
+                 "fully charged", "uncharged", "knockdown"):
+        assert fact in q, f"Re-test Q does not say {fact!r}"
+    for check in ("(b)", "(c)", "(d)", "(e)", "(f)", "(g)", "(h)"):  # Phase 0's CET checks, placeholders until 0R's notes land
+        assert f"| {check} |" in q, check
+    assert q.count("| to be filled | to be filled |") == 7
+    assert "placeholders until 0R's notes land" in q
+
+
+def test_changelog_has_an_unreleased_section_for_phase_q_above_1_0_0():
+    assert CHANGELOG.index("## [Unreleased]") < CHANGELOG.index("## [1.0.0]")
+    text = " ".join(section_of(CHANGELOG, "## [Unreleased]").split())
+    for phrase in ("Survival mining", "Stairs", "step-up assist", "third-person camera", "Outline blocks in creative", "settings screen",
+                   "`prefs`", "`cam.vdbg`", "--view", "--stairs", "tests/test_hygiene.py"):
+        assert phrase in text, f"CHANGELOG Unreleased does not say {phrase!r}"
