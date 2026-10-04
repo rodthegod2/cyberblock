@@ -144,13 +144,71 @@ class RelayGuardTest {
 	@Test
 	void farEntriesAreDroppedAndTheRestKept() {
 		RelayGuard g = this.guard();
-		RelayGuard.Verdict v = g.check(true, "ground", "{\"t\":\"ground\",\"c\":[10,10,60,64,500,0,60,64,-100,-100,1,2]}", 0, 0, NONE_ISSUED);
-		assertTrue(accepted(v));
-		assertEquals("[10,10,60,64,-100,-100,1,2]", v.message().get("c").toString());
-		assertFalse(accepted(g.check(true, "ground", ground(161, 0, 0, 1), 0, 0, NONE_ISSUED)), "nothing left: dropped");
+		assertFalse(accepted(g.check(true, "ground", "{\"t\":\"ground\",\"c\":[10,10,60,64,500,0,60,64,-100,-100,1,2]}", 0, 0, NONE_ISSUED)),
+			"held while the position may catch up");
+		this.now.addAndGet(RelayGuard.HOLD_MS);
+		List<RelayGuard.Message> out = g.drain(true, 0, 0, NONE_ISSUED);
+		assertEquals(1, out.size());
+		assertEquals("[10,10,60,64,-100,-100,1,2]", out.get(0).m().get("c").toString());
+		assertFalse(accepted(g.check(true, "ground", ground(161, 0, 0, 1), 0, 0, NONE_ISSUED)));
+		this.now.addAndGet(RelayGuard.HOLD_MS);
+		assertTrue(g.drain(true, 0, 0, NONE_ISSUED).isEmpty(), "nothing left: dropped");
 		assertTrue(accepted(g.check(true, "ground", ground(1000, 1000, 0, 1), 1000, 1000, NONE_ISSUED)), "the radius is around the host's player");
 		this.now.addAndGet(5000);
 		assertTrue(log(g).contains("dropped ground x 2 (far)"));
+	}
+
+	/** Cyberblock On: the DLL's clear and whole ground near V arrive before Steve's movement packet that puts him at V. */
+	@Test
+	void farGroundWaitsForThePositionToCatchUpAndKeepsTheOrder() {
+		RelayGuard g = this.guard();
+		assertTrue(accepted(g.check(true, "clear", "{\"t\":\"clear\"}", 0, 0, NONE_ISSUED)));
+		assertFalse(accepted(g.check(true, "ground", ground(1000, 1000, 60, 64), 0, 0, NONE_ISSUED)));
+		assertFalse(accepted(g.check(true, "state", "{\"t\":\"state\",\"v\":1}", 0, 0, NONE_ISSUED)), "nothing overtakes a held ground");
+		assertFalse(accepted(g.check(true, "unground", "{\"t\":\"unground\",\"c\":[1001,1000,62,64]}", 0, 0, NONE_ISSUED)));
+		assertTrue(g.drain(true, 0, 0, NONE_ISSUED).isEmpty(), "still far, still in time");
+		// one tick later the server has the movement packet
+		this.now.addAndGet(50);
+		List<RelayGuard.Message> out = g.drain(true, 1000, 1000, NONE_ISSUED);
+		assertEquals(List.of("ground", "state", "unground"), out.stream().map(RelayGuard.Message::t).toList());
+		assertEquals("[1000,1000,60,64]", out.get(0).m().get("c").toString(), "the whole ground");
+		assertTrue(g.drain(true, 1000, 1000, NONE_ISSUED).isEmpty());
+		assertTrue(accepted(g.check(true, "ground", ground(1002, 1000, 60, 64), 1000, 1000, NONE_ISSUED)), "near again: no wait");
+		this.now.addAndGet(5000);
+		assertFalse(log(g).contains("far"), "nothing was dropped");
+	}
+
+	@Test
+	void stillFarAfterTheHoldIsDroppedAndTheRestFollows() {
+		RelayGuard g = this.guard();
+		g.check(true, "ground", ground(1000, 1000, 60, 64), 0, 0, NONE_ISSUED);
+		g.check(true, "aim", "{\"t\":\"aim\",\"d\":1}", 0, 0, NONE_ISSUED);
+		this.now.addAndGet(RelayGuard.HOLD_MS - 1);
+		assertTrue(g.drain(true, 0, 0, NONE_ISSUED).isEmpty());
+		this.now.addAndGet(1);
+		assertEquals(List.of("aim"), g.drain(true, 0, 0, NONE_ISSUED).stream().map(RelayGuard.Message::t).toList());
+		this.now.addAndGet(5000);
+		assertTrue(log(g).contains("dropped ground x 1 (far)"));
+	}
+
+	@Test
+	void losingTheHostRoleDiscardsWhatIsHeld() {
+		RelayGuard g = this.guard();
+		g.check(true, "ground", ground(1000, 1000, 60, 64), 0, 0, NONE_ISSUED);
+		assertTrue(g.drain(false, 1000, 1000, NONE_ISSUED).isEmpty());
+		assertTrue(g.drain(true, 1000, 1000, NONE_ISSUED).isEmpty(), "nothing left to release");
+	}
+
+	@Test
+	void theHoldQueueIsCapped() {
+		RelayGuard g = new RelayGuard(100.0, 160.0, this.now::get);
+		g.check(true, "ground", ground(1000, 1000, 60, 64), 0, 0, NONE_ISSUED);
+		int released = 0;
+		for (int i = 0; i < RelayGuard.HOLD_CAP; i++) {
+			released += g.check(true, "aim", "{\"t\":\"aim\",\"d\":1}", 0, 0, NONE_ISSUED).messages().size();
+		}
+
+		assertEquals(RelayGuard.HOLD_CAP, released, "past the cap the oldest is checked as it stands, the rest follow");
 	}
 
 	@Test

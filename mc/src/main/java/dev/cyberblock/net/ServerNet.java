@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import java.util.function.IntPredicate;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
@@ -186,8 +187,7 @@ public final class ServerNet {
 		UUID uuid = player.getUUID();
 		Conn conn = conns.computeIfAbsent(uuid, u -> new Conn(u, player.getPlainTextName(), player.level().getServer().getTickCount()));
 		HostSession session = HostSessions.of(uuid);
-		RelayGuard.Verdict verdict = conn.guard.check(session != null, up.t(), up.json(), player.getX(), player.getZ(),
-			session == null ? id -> false : session.requests()::issued);
+		RelayGuard.Verdict verdict = conn.guard.check(session != null, up.t(), up.json(), player.getX(), player.getZ(), issued(session));
 		if (verdict.kick() != null) {
 			Cyberblock.LOG.info("relay: {} kicked ({})", conn.name, session == null ? "guest up flood" : "overflow");
 			HostSessions.end(uuid, "overflow");
@@ -195,13 +195,35 @@ public final class ServerNet {
 			return;
 		}
 
-		if (verdict.message() == null || session == null) {
+		deliver(conn, session, verdict.messages());
+	}
+
+	private static IntPredicate issued(final @Nullable HostSession session) {
+		return session == null ? id -> false : session.requests()::issued;
+	}
+
+	/** Hands the guard's ready messages to the session, in order. */
+	private static void deliver(final Conn conn, final @Nullable HostSession session, final List<RelayGuard.Message> messages) {
+		if (session == null) {
 			return;
 		}
 
-		session.countUp();
-		if (!HostSessions.receive(session, up.t(), verdict.message())) {
-			conn.guard.count(up.t(), "invalid", 1);
+		for (RelayGuard.Message m : messages) {
+			session.countUp();
+			if (!HostSessions.receive(session, m.t(), m.m())) {
+				conn.guard.count(m.t(), "invalid", 1);
+			}
+		}
+	}
+
+	/** Each tick: messages a guard held for the host's position to catch up are checked again against the player's newer position. */
+	private static void drainHeld(final MinecraftServer s) {
+		for (Conn c : conns.values()) {
+			ServerPlayer p = s.getPlayerList().getPlayer(c.uuid);
+			if (p != null) {
+				HostSession session = HostSessions.of(c.uuid);
+				deliver(c, session, c.guard.drain(session != null, p.getX(), p.getZ(), issued(session)));
+			}
 		}
 	}
 
@@ -244,6 +266,7 @@ public final class ServerNet {
 	}
 
 	private static void tick(final MinecraftServer s) {
+		drainHeld(s);
 		HostSessions.flushAll();
 		if (HostSessions.takeRosterDirty()) {
 			Payloads.Roster roster = roster(s);
