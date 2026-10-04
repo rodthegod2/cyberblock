@@ -4,6 +4,7 @@ package dev.cyberblock;
 import com.google.gson.JsonObject;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
+import dev.cyberblock.replica.ChangeLog;
 import dev.cyberblock.replica.NightCityMap;
 import dev.cyberblock.replica.Palette;
 import dev.cyberblock.replica.ReplicaBlocks;
@@ -559,6 +560,7 @@ public final class WorldBridge {
 
 		long cell = pos.asLong();
 		p.apply(cell, op);
+		ChangeLog.changed(cell, op == BlockEvents.Op.ADD, level.getServer().getTickCount());
 		for (HostSession session : HostSessions.all()) {
 			ServerPlayer player = session.player();
 			BlockFeed feed = host(session.uuid()).feed;
