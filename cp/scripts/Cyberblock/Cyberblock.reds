@@ -286,6 +286,7 @@ public class CyberblockSystem extends ScriptableSystem {
       Cyberblock_SetChoices(false);
       // No world to act on: Minecraft block changes still update the collision registry, the other events are dropped.
       this.events.Tick(game, false);
+      CyberblockDeviceService.Update(game, null, false);
       return;
     }
     this.Step(player, toggle);
@@ -329,6 +330,8 @@ public class CyberblockSystem extends ScriptableSystem {
     if !this.saving {
       this.npcs.Tick(player, active);
     }
+    // Megaplan 4-S1: Night City's devices within 48 m every 0.5 s, their changes every tick (Devices.reds).
+    CyberblockDeviceService.Update(game, player, live);
     // Minecraft draws Cyberpunk's HUD: stream its data (U3). Registered on session ready; also here after a script
     // reload in the middle of a session.
     this.hud.Register(game);
