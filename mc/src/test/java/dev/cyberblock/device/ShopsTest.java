@@ -32,6 +32,14 @@ class ShopsTest {
 	}
 
 	@Test
+	void sellRowsAreKeptForHubVendors() {
+		Shops.Shop s = Shops.parse(DRINKS, JsonParser.parseString("{\"schema\":1,\"title_key\":\"x\",\"stock\":[{\"item\":\"minecraft:apple\",\"count\":1,\"price\":2}],"
+			+ "\"sell\":[{\"item\":\"minecraft:iron_ingot\",\"count\":4,\"price\":10}]}").getAsJsonObject());
+		assertEquals(List.of(new Shops.Row("minecraft:iron_ingot", 4, 10, 0)), s.sell());
+		assertEquals(List.of(), Shops.parse(DRINKS, JsonParser.parseString(DRINKS_FILE).getAsJsonObject()).sell());
+	}
+
+	@Test
 	void badShopsAreRefused() {
 		String[] bad = {"{\"schema\":1,\"title_key\":\"x\",\"stock\":[]}", "{\"schema\":1,\"title_key\":\"Bad Key\",\"stock\":[{\"item\":\"minecraft:apple\",\"count\":1,\"price\":1}]}",
 			"{\"schema\":1,\"title_key\":\"x\",\"stock\":[{\"item\":\"minecraft:apple\",\"count\":65,\"price\":1}]}",
