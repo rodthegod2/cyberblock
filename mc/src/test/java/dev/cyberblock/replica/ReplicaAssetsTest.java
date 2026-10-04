@@ -2,26 +2,32 @@ package dev.cyberblock.replica;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import javax.imageio.ImageIO;
+import net.minecraft.resources.Identifier;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
-/** Megaplan 3-A1: every replica block has its blockstate, model, item definition, texture and name; the palette points only at them. */
+/** Megaplan 3-A1: every replica block has its blockstate, model, item definition, texture and name; the palette entries point only at them. */
 class ReplicaAssetsTest {
 	private static final Path RES = Path.of("src/main/resources");
 	private static final Path ASSETS = RES.resolve("assets/cyberblock");
-	private static final Path PALETTE = RES.resolve("data/cyberblock/cyberblock/material_palette/default.json");
+	private static final Path PALETTE = RES.resolve("data/cyberblock/cyberblock/material_palette");
 
 	private static final List<String> DYES = List.of(
 		"white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray", "light_gray", "cyan", "purple", "blue",
@@ -71,31 +77,46 @@ class ReplicaAssetsTest {
 	}
 
 	@Test
-	void theDefaultPaletteHasCodes0To26AndOnlyPointsAtBlocksThatExist() throws IOException {
-		JsonObject palette = json(PALETTE);
-		assertEquals(1, palette.get("schema").getAsInt());
-		JsonArray codes = palette.getAsJsonArray("codes");
+	void thePaletteHasOneEntryPerCodeAndPerHeuristicClassPointingAtBlocksThatExist() throws IOException {
 		List<String> ids = blockIds();
-		assertEquals(27, codes.size());
-		for (int code = 0; code < codes.size(); code++) {
-			JsonObject entry = codes.get(code).getAsJsonObject();
-			assertEquals(code, entry.get("code").getAsInt());
-			assertEquals("cyberblock:" + (code == 0 ? ids.get(0) : ids.get(code - 1)), entry.get("block").getAsString());
+		Set<Integer> codes = new TreeSet<>();
+		Set<String> classes = new TreeSet<>();
+		for (Path file : paletteFiles()) {
+			JsonObject entry = json(file);
+			assertEquals(1, entry.get("schema").getAsInt(), file.toString());
+			String block = entry.get("block").getAsString();
+			assertTrue(block.startsWith("cyberblock:") && ids.contains(block.substring("cyberblock:".length())), block);
+			assertFalse(entry.has("code") && entry.has("heuristic"), file.toString());
+			if (entry.has("code")) {
+				int code = entry.get("code").getAsInt();
+				assertEquals("cyberblock:" + ids.get(code - 1), block, file.toString());
+				codes.add(code);
+			} else {
+				classes.add(entry.get("heuristic").getAsString());
+			}
 		}
 
-		List<String> references = new ArrayList<>();
-		for (JsonElement match : palette.getAsJsonArray("match")) {
-			assertFalse(match.getAsJsonObject().getAsJsonArray("names").isEmpty());
-			references.add(match.getAsJsonObject().get("block").getAsString());
+		assertEquals(IntStream.rangeClosed(1, 26).boxed().toList(), List.copyOf(codes));
+		assertEquals(new TreeSet<>(List.of("street", "sidewalk", "roof", "offroad", "wall_base", "wall_brick", "wall_trim", "wall_window", "wall",
+			"water")), classes);
+	}
+
+	/** The shipped entries through 3R's real loader (Palette.parse): skipped until the replica package is merged. */
+	@Test
+	void theReplicaLoaderParsesEveryShippedEntry() throws Exception {
+		Class<?> palette;
+		try {
+			palette = Class.forName("dev.cyberblock.replica.Palette");
+		} catch (ClassNotFoundException e) {
+			Assumptions.abort("the replica Palette loader (3R) is not merged yet");
+			return;
 		}
 
-		JsonObject heuristic = palette.getAsJsonObject("heuristic");
-		references.add(heuristic.get("water").getAsString());
-		references.addAll(heuristic.getAsJsonObject("default").asMap().values().stream().map(JsonElement::getAsString).toList());
-		heuristic.getAsJsonObject("districts").asMap().values()
-			.forEach(set -> set.getAsJsonObject().asMap().values().forEach(b -> references.add(b.getAsString())));
-		for (String reference : references) {
-			assertTrue(reference.startsWith("cyberblock:") && ids.contains(reference.substring("cyberblock:".length())), reference);
+		Method parse = palette.getDeclaredMethod("parse", Identifier.class, JsonObject.class);
+		parse.setAccessible(true);
+		for (Path file : paletteFiles()) {
+			String name = file.getFileName().toString().replace(".json", "");
+			assertNotNull(parse.invoke(null, Identifier.fromNamespaceAndPath("cyberblock", name), json(file)), name);
 		}
 	}
 
@@ -103,10 +124,16 @@ class ReplicaAssetsTest {
 	void theKeysOtherPhase3PackagesUseAreThere() throws IOException {
 		JsonObject lang = json(ASSETS.resolve("lang/en_us.json"));
 		for (String key : List.of(
-			"cyberblock.worldcheck.refused", "cyberblock.meetup.request", "cyberblock.meetup.accept", "cyberblock.meetup.failed",
-			"cyberblock.offline.summary", "cyberblock.changes.header", "cyberblock.replica.protected", "cyberblock.ui.atlas.shared",
+			"cyberblock.meetup.request", "cyberblock.meetup.accept", "cyberblock.meetup.failed", "cyberblock.meetup.arrived",
+			"cyberblock.offline.summary", "cyberblock.offline.counts", "cyberblock.changes.header", "cyberblock.figure.hostile",
 			"entity.cyberblock.proxy_human", "entity.cyberblock.proxy_vehicle")) {
 			assertTrue(lang.has(key) && !lang.get(key).getAsString().isBlank(), key);
+		}
+	}
+
+	private static List<Path> paletteFiles() throws IOException {
+		try (Stream<Path> files = Files.list(PALETTE)) {
+			return files.filter(f -> f.toString().endsWith(".json")).sorted().toList();
 		}
 	}
 }

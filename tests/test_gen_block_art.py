@@ -12,7 +12,7 @@ from tools import content_check
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "mc" / "src" / "main" / "resources" / "assets" / "cyberblock"
-PALETTE = ROOT / "mc" / "src" / "main" / "resources" / "data" / "cyberblock" / "cyberblock" / "material_palette" / "default.json"
+PALETTE = ROOT / "mc" / "src" / "main" / "resources" / "data" / "cyberblock" / "cyberblock" / "material_palette"
 DYES = ["white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray", "light_gray", "cyan", "purple", "blue",
         "brown", "green", "red", "black"]
 MATERIALS = ["concrete_light", "concrete_dark", "asphalt", "sidewalk", "glass", "metal", "brick", "tile", "ground", "water"]
@@ -79,68 +79,90 @@ def test_the_neutral_skin_is_64x64_with_the_classic_body_filled():
     assert skin.getpixel((63, 63))[3] == 0  # the unused corner stays transparent
 
 
-# --- the material_palette defaults -----------------------------------------------------------------------------------------
+# --- the material_palette defaults (one entry per file, the shape the replica's Palette loader reads) ---------------------------
+HEURISTICS = {"street": "asphalt", "sidewalk": "sidewalk", "roof": "concrete_light", "offroad": "ground", "wall_base": "concrete_dark",
+              "wall_brick": "brick", "wall_trim": "metal", "wall_window": "glass", "wall": "concrete_light", "water": "water"}
+"""The heuristic classes and the materials 3R's loader has built in: the shipped entries must not change behaviour."""
+
+
 @pytest.fixture(scope="module")
-def palette() -> dict:
-    return json.loads(PALETTE.read_text("utf-8"))
+def palette() -> dict[str, dict]:
+    return {p.stem: json.loads(p.read_text("utf-8")) for p in sorted(PALETTE.glob("*.json"))}
 
 
-def lookup(palette: dict, name: str) -> str | None:
-    """What the loader does for a probe material or mesh appearance name."""
-    lowered = name.lower()
-    return next((m["block"] for m in palette["match"] if any(n in lowered for n in m["names"])), None)
+def coded(palette: dict) -> dict[int, dict]:
+    return {e["code"]: e for e in palette.values() if "code" in e}
 
 
-def test_codes_run_0_to_26_in_art_order(palette):
-    assert [c["code"] for c in palette["codes"]] == list(range(27))
-    assert [c["block"] for c in palette["codes"][1:]] == [f"cyberblock:{i}" for i in IDS]
-    assert palette["codes"][0]["block"] == "cyberblock:nc_concrete_light"
+def test_one_file_per_code_1_to_26_named_after_its_block_in_art_order(palette):
+    codes = coded(palette)
+    assert sorted(codes) == list(range(1, 27))
+    assert [codes[c]["block"] for c in range(1, 27)] == [f"cyberblock:{i}" for i in IDS]
+    assert all(name == e["block"].split(":")[1] for name, e in palette.items() if "code" in e)
+
+
+def test_one_file_per_heuristic_class_with_the_built_in_material(palette):
+    heur = {e["heuristic"]: e["block"] for e in palette.values() if "heuristic" in e}
+    assert heur == {h: f"cyberblock:nc_{m}" for h, m in HEURISTICS.items()}
+    assert all(name == f"heuristic_{e['heuristic']}" for name, e in palette.items() if "heuristic" in e)
+    assert len(palette) == 26 + len(HEURISTICS)
+
+
+def test_no_entry_carries_material_names(palette):
+    """The server only receives codes: the names-to-codes table is the shared one in shared/ (tools/cbmath.py)."""
+    assert all(set(e) <= {"schema", "block", "code", "heuristic", "colour"} for e in palette.values())
+
+
+def test_codes_agree_with_the_shared_table(palette):
+    """shared/vectors.json `materials` (3P) pins the codes: every case name resolves to the same block through the palette."""
+    shared = json.loads((ROOT / "shared" / "vectors.json").read_text("utf-8")).get("materials")
+    if shared is None:
+        pytest.skip("shared/vectors.json has no `materials` yet (3P merges it)")
+    codes = coded(palette)
+    table = {c["code"]: c["block"] for c in shared["codes"]}
+    assert {c: e["block"] for c, e in codes.items()} == {c: b for c, b in table.items() if c != 0}
+    for case in shared["cases"]:
+        want = table[case["code"]]
+        assert (codes[case["code"]]["block"] if case["code"] else None) == want, case
 
 
 def test_neon_colours_are_the_tube_colours(art, palette):
-    assert [c["colour"] for c in palette["codes"][11:]] == [art.NEON_DYES[d] for d in DYES]
+    codes = coded(palette)
+    assert [codes[c]["colour"] for c in range(11, 27)] == [art.NEON_DYES[d] for d in DYES]
 
 
 def test_colours_are_close_to_the_textures(palette):
-    for entry in palette["codes"][1:11]:
+    for code, entry in coded(palette).items():
+        if code > 10:
+            continue
         texture = Image.open(ASSETS / "textures" / "block" / f"{entry['block'].split(':')[1]}.png").convert("RGB")
         mean = ImageStat.Stat(texture).mean
         want = [int(entry["colour"][1 + 2 * i:3 + 2 * i], 16) for i in range(3)]
         assert sum(abs(a - b) for a, b in zip(mean, want)) < 90, entry
 
 
-@pytest.mark.parametrize("name,block", [
-    ("concrete", "nc_concrete_light"), ("Concrete_Wet", "nc_concrete_dark"), ("road_asphalt_01", "nc_asphalt"),
-    ("pavement_tiles", "nc_sidewalk"), ("shop_window", "nc_glass"), ("steel_plate", "nc_metal"), ("brick_red", "nc_brick"),
-    ("ceramic_tile", "nc_tile"), ("dirt_dry", "nc_ground"), ("water_still", "nc_water"), ("neon_pink_sign", "nc_neon_pink"),
-    ("light_blue_neon", "nc_neon_light_blue"), ("neon_sign", "nc_neon_cyan"), ("metal_panel", "nc_metal"),
-])
-def test_names_map_to_blocks(palette, name, block):
-    assert lookup(palette, name) == f"cyberblock:{block}"
+def test_every_block_has_art(palette):
+    for entry in palette.values():
+        assert (ASSETS / "blockstates" / f"{entry['block'].split(':')[1]}.json").is_file(), entry
 
 
-def test_unknown_names_match_nothing(palette):
-    assert lookup(palette, "default") is None and lookup(palette, "environment") is None
-
-
-def test_every_referenced_block_has_art_and_a_code(palette):
-    coded = {c["block"] for c in palette["codes"]}
-    heur = palette["heuristic"]
-    refs = [m["block"] for m in palette["match"]] + [heur["water"]] + list(heur["default"].values())
-    refs += [b for s in heur["districts"].values() for b in s.values()]
-    for ref in refs:
-        assert ref in coded, ref
-        assert (ASSETS / "blockstates" / f"{ref.split(':')[1]}.json").is_file()
-    assert set(heur["default"]) == {"street", "raised", "wall", "tower"}
-    assert all(k == k.lower() for k in heur["districts"])
-
-
-def test_content_check_passes_the_defaults_and_refuses_a_bad_palette(tmp_path):
+def test_content_check_passes_the_defaults_and_refuses_bad_entries(tmp_path):
     assert content_check.check([content_check.DEFAULT_DATA]).ok
     pack = tmp_path / "data" / "friend" / "cyberblock" / "material_palette"
     pack.mkdir(parents=True)
-    (pack / "bad.json").write_text(json.dumps({"schema": 1, "match": [{"names": ["Concrete"], "block": "no block"}], "extra": 1}))
+    bad = {
+        "both": {"schema": 1, "block": "cyberblock:nc_brick", "code": 7, "heuristic": "wall"},
+        "names": {"schema": 1, "block": "cyberblock:nc_brick", "match": [{"names": ["brick"]}]},
+        "code0": {"schema": 1, "block": "cyberblock:nc_brick", "code": 0},
+        "class": {"schema": 1, "block": "cyberblock:nc_brick", "heuristic": "tower"},
+        "vanilla": {"schema": 1, "block": "minecraft:stone"},
+        "noblock": {"schema": 1, "code": 3},
+    }
+    for name, data in bad.items():
+        (pack / f"{name}.json").write_text(json.dumps(data))
+    (pack / "good.json").write_text(json.dumps({"schema": 1, "block": "cyberblock:nc_brick", "heuristic": "street", "colour": "#884422"}))
     problems = content_check.check([content_check.data_root(tmp_path)]).problems
-    assert any("names" in p or "pattern" in p or "does not match" in p for p in problems)
-    assert any("block" in p for p in problems) and any("extra" in p for p in problems)
+    for name in bad:
+        assert any(f"/{name}.json:" in p for p in problems), (name, problems)
+    assert not any("/good.json:" in p for p in problems), problems
     shutil.rmtree(tmp_path)

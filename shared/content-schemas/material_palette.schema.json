@@ -1,72 +1,23 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "material_palette",
-  "description": "The `material_palette` content kind (megaplan 1.7, task 3-A1): which replica block a Cyberpunk surface becomes. `codes`: the material code (0 unknown, 1..10 concrete_light, concrete_dark, asphalt, sidewalk, glass, metal, brick, tile, ground, water, 11..26 neon in vanilla dye order) a `ground.m` entry carries -> block and representative colour (code 0 is the last resort when no heuristic applies). `match`: ordered; the first entry with a name that is a substring of the lower-cased probe material or mesh appearance name wins (the shared name table that maps names to codes is derived from this list). `heuristic`: used for a cell whose code is 0 (no material readable, Phase 0 b): `water` for the Atlas water flag, `street_height` and `tower_height` (metres above the local ground) split floors into street and raised floors and walls into ordinary and tower walls, then `default` plus the first `districts` entry whose key is a substring of the lower-cased `stats.district` (its set overrides the default key by key). Block ids are `cyberblock:nc_<material>` registered by the replica package; a missing block makes the loader skip the entry. Files merge by id order; a datapack may ship only the parts it changes.",
+  "description": "The `material_palette` content kind (megaplan 1.7, tasks 3-A1 and 3-R1): which replica block a Night City cell becomes. One entry per file, read by the replica's Palette loader. With `code` (1..26, the shared material codes of shared/protocol.md and shared/vectors.json `materials`: 1..10 concrete_light, concrete_dark, asphalt, sidewalk, glass, metal, brick, tile, ground, water, 11..26 neon in vanilla dye order) the entry maps the material code a `ground.m` entry carries to `block`. With `heuristic` it gives the block of one heuristic class, used for a cell whose code is 0 (no material readable, Phase 0 b): street, sidewalk, roof, offroad (a street in an outskirts district), wall_base, wall_brick (a wall base in a brick district), wall_trim, wall_window, wall, water (the shared map's water flag). With neither it maps the block's own code to the block. The server only receives codes, never material names: the names-to-codes table lives in shared/ (tools/cbmath.py). `colour` is the block's representative map colour. `block` must be a `cyberblock:nc_*` replica block, or the loader skips the entry. A file with the same id as a default replaces it; the loader has the defaults built in, so a datapack ships only the entries it changes.",
   "$defs": {
-    "id": {"type": "string", "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$", "maxBytes": 128},
-    "colour": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
-    "heuristicSet": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "street: a floor at street level; raised: a floor above street_height (roofs, platforms, bridges); wall: a wall cell up to tower_height; tower: a wall cell above it.",
-      "properties": {
-        "street": {"$ref": "#/$defs/id"},
-        "raised": {"$ref": "#/$defs/id"},
-        "wall": {"$ref": "#/$defs/id"},
-        "tower": {"$ref": "#/$defs/id"}
-      }
-    }
+    "block": {"type": "string", "pattern": "^cyberblock:nc_[a-z_]+$", "maxBytes": 64}
   },
   "type": "object",
-  "required": ["schema"],
+  "required": ["schema", "block"],
   "additionalProperties": false,
   "properties": {
     "schema": {"const": 1},
-    "id": {"$ref": "#/$defs/id"},
-    "codes": {
-      "type": "array",
-      "maxItems": 256,
-      "uniqueItems": true,
-      "items": {
-        "type": "object",
-        "required": ["code", "block"],
-        "additionalProperties": false,
-        "properties": {
-          "code": {"type": "integer", "minimum": 0, "maximum": 255},
-          "block": {"$ref": "#/$defs/id"},
-          "colour": {"$ref": "#/$defs/colour"}
-        }
-      }
-    },
-    "match": {
-      "type": "array",
-      "maxItems": 256,
-      "items": {
-        "type": "object",
-        "required": ["names", "block"],
-        "additionalProperties": false,
-        "properties": {
-          "names": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 32,
-            "uniqueItems": true,
-            "items": {"type": "string", "minLength": 1, "maxBytes": 48, "pattern": "^[a-z0-9_. -]+$"}
-          },
-          "block": {"$ref": "#/$defs/id"}
-        }
-      }
-    },
-    "heuristic": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "water": {"$ref": "#/$defs/id"},
-        "street_height": {"type": "number", "minimum": 0, "maximum": 8},
-        "tower_height": {"type": "number", "minimum": 4, "maximum": 500},
-        "default": {"$ref": "#/$defs/heuristicSet"},
-        "districts": {"type": "object", "additionalProperties": {"$ref": "#/$defs/heuristicSet"}}
-      }
-    }
-  }
+    "id": {"type": "string", "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$", "maxBytes": 128},
+    "block": {"$ref": "#/$defs/block"},
+    "code": {"type": "integer", "minimum": 1, "maximum": 26},
+    "heuristic": {"enum": ["street", "sidewalk", "roof", "offroad", "wall_base", "wall_brick", "wall_trim", "wall_window", "wall", "water"]},
+    "colour": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"}
+  },
+  "anyOf": [
+    {"properties": {"code": false}},
+    {"properties": {"heuristic": false}}
+  ]
 }
