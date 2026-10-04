@@ -23,11 +23,24 @@ chips, and install cyberware (Mantis Blades, Sandevistan, Cyberdeck and more) in
 > of Mojang Synergies AB. **You need your own legal copies of Cyberpunk 2077 and Minecraft: Java Edition.** No game files,
 > assets, fonts or code from either game are included or redistributed. See [NOTICE.md](NOTICE.md).
 
-Status: version 1.0.0 is set in the files. Layer 1 (the passthrough) has been verified in game; everything else passes every
-automated suite and is being re-played in game (the checklist is [docs/TESTING-PLAN.md](docs/TESTING-PLAN.md): "Re-test Q" first,
-then "Re-test 3"). Unreleased: survival mining of placed blocks, stairs and a step-up assist, a third-person camera that does not
-clip, breakable outline blocks in creative and the first Cyberblock settings screen
-([the guide](docs/HOW-TO-PLAY.md#mining-placed-blocks-stairs-and-the-step-up-assist)).
+Status: version 2.0.0 is set in the files (proposed: the wire grew a server; it is tagged and published only after the in-game
+tests pass and the owner says so). Layer 1 (the passthrough) has been verified in game; everything else, the whole multiplayer plan
+included, passes every automated suite and is being re-played in game (the checklists are in
+[docs/TESTING-PLAN.md](docs/TESTING-PLAN.md): "Full multiplayer pass" and "Re-test 9" first). What 2.0.0 adds over a single-player mod is
+**Cyberblock as a multiplayer game**: a dedicated server, friends who join with Minecraft only, Night City as a shared replica,
+devices, figures, hacking, the Afterlife hub, game modes, content as datapacks, a settings screen, Performance mode and daily
+server backups; the release notes are the top entry of [CHANGELOG.md](CHANGELOG.md).
+
+## Play together
+Three guides, one for each person involved:
+- **[docs/JOIN.md](docs/JOIN.md): joining a server** (for friends): import the modpack, press **Join Cyberblock**, play with Minecraft only.
+- **[docs/SERVER.md](docs/SERVER.md): running a server** (for the owner): the setup step by step, who may join (whitelist or join
+  password), the configuration file, backups, updating and the way back.
+- **[docs/CONTENT.md](docs/CONTENT.md): adding your own content** (for anyone): dialogue lines, skins, shops, landmarks, Breach
+  daemons and Overlord events as a datapack, no code.
+
+The player guide for everything in the game is [docs/HOW-TO-PLAY.md](docs/HOW-TO-PLAY.md); its
+[playing together](docs/HOW-TO-PLAY.md#playing-together-lan) section covers a LAN world too.
 
 ## Install (players)
 You need a Windows PC that can run both games at once (about 64 GB of RAM, see
@@ -45,12 +58,12 @@ You need a Windows PC that can run both games at once (about 64 GB of RAM, see
   [Fabric API](https://modrinth.com/mod/fabric-api) 0.161.0 or newer.
 
 **Steps** (the full version, with every setting, is in [docs/HOW-TO-PLAY.md](docs/HOW-TO-PLAY.md#1-setup)):
-1. Download `Cyberblock-1.0.0.zip` from the releases page and unzip it.
+1. Download `Cyberblock-2.0.0.zip` from the releases page and unzip it.
 2. Close Cyberpunk and double-click **`install.bat`**. It finds your game, backs up your saves once, never overwrites a file
    it did not write, and keeps your own ReShade preset. **`uninstall.bat`** removes exactly what it installed.
 3. Run the Fabric Installer for Minecraft 26.3 to create a launcher installation. Edit it in the Minecraft Launcher: game
    directory `%APPDATA%\.minecraft-cyberblock`, JVM arguments **replaced** with
-   `-Xmx2G -XX:+UseZGC --enable-native-access=ALL-UNNAMED -Dcyberblock.autostart=true`. Copy `minecraft\mods\cyberblock-1.0.0.jar`
+   `-Xmx2G -XX:+UseZGC --enable-native-access=ALL-UNNAMED -Dcyberblock.autostart=true`. Copy `minecraft\mods\cyberblock-2.0.0.jar`
    and the Fabric API jar into `%APPDATA%\.minecraft-cyberblock\mods`.
 4. Start that installation (the title screen has a **Play Cyberblock** button), leave the window open behind Cyberpunk,
    start Cyberpunk, load a save and press **F9**. Turn frame generation off in Cyberpunk's graphics settings.
@@ -98,7 +111,8 @@ Everything works on Night City's real NPCs, vehicles and devices.
 - A 20-perk skill tree, a starter kit, free perks in creative (or `/cyberblock perks free on`) and `/cyberblock level`.
 - **Playing together (LAN):** open your world to LAN and a friend with only Minecraft (and the Cyberblock mod) joins as a
   guest: their TNT, hits and blocks reach your Cyberpunk game, and you decide what they may do with
-  `/cyberblock guests` ([details](docs/HOW-TO-PLAY.md#playing-together-lan)). Online servers are the next goal.
+  `/cyberblock guests` ([details](docs/HOW-TO-PLAY.md#playing-together-lan)). A dedicated server runs the same world for friends
+  ([running one](docs/SERVER.md), [joining one](docs/JOIN.md)).
 - **Night City as Minecraft (Phase 3, on a server):** guests see the streets the hosts explored as solid, coloured replica
   blocks (neon glows) that are saved in the world, the people and cars as figures at real speed, Cyberpunk's time of day and
   weather, can build while the host is away, and `/cyberblock meetup <player>` takes you to a friend
@@ -124,6 +138,11 @@ Everything works on Night City's real NPCs, vehicles and devices.
   fair warning, Cyberpunk-linked players make **matches** at the Match Terminal (PvP only when both opt in, Gang Wars), chips work on **players** with a Breach to
   block them, one **Server Heat** meter brings the NCPD and Max-Tac, you go **down** and get revived (or call the Trauma Team) instead of dying, and spectators get a
   caster overlay ([details](docs/HOW-TO-PLAY.md#modes-the-van-the-overlord-matches-and-more-phase-8)).
+- **The finish (Phase 9):** every kind of content is data a friend adds as a datapack ([CONTENT.md](docs/CONTENT.md)), one **settings screen**
+  with a tab each for guests, look, PvP, difficulty, performance and the world
+  ([details](docs/HOW-TO-PLAY.md#the-cyberblock-settings-screen)), **Performance mode** for weaker PCs
+  ([details](docs/HOW-TO-PLAY.md#performance-mode)) and **daily server backups** you can download
+  ([SERVER.md](docs/SERVER.md)).
 
 ## Build from source
 ```
@@ -132,7 +151,7 @@ cmake -S cp/plugin -B cp/plugin/build -G "Visual Studio 17 2022" -A x64
 cmake --build cp/plugin/build --config Release   # Cyberblock.dll
 uv run tools/install.py                          # install into the game (Cyberpunk closed)
 uv run tools/play.py                             # start the Minecraft dev client, then Cyberpunk
-uv run python -m tools.package                   # build dist/Cyberblock-1.0.0.zip
+uv run python -m tools.package                   # build dist/Cyberblock-2.0.0.zip
 ```
 Requirements: JDK 25, Visual Studio 2022 Build Tools (C++ x64 + Windows SDK), CMake, Python 3.12 + [uv](https://docs.astral.sh/uv/),
 git. The repository uses submodules (`third_party/`); the [spec](docs/superpowers/specs/2026-10-02-minecraft-cyberpunk-passthrough-design.md)

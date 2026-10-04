@@ -27,11 +27,20 @@ Cyberblock is on.
 > [creative mode and the outline blocks](#creative-mode-and-the-outline-blocks) and
 > [the settings screen](#the-cyberblock-settings-screen); `docs/TESTING-PLAN.md` starts with "Re-test Q".
 >
+> **Multiplayer (version 2.0.0, proposed; the whole multiplayer plan is built and tested by machine, played in game only as the
+> test lists say).** A dedicated server, friends who join with Minecraft only, Night City as solid replica blocks, devices,
+> figures and skins, redstone hacking, Breach Protocol, the Afterlife hub, the Holo-Table, the Van, the Overlord, matches and Heat,
+> content as datapacks, a settings screen, Performance mode and daily backups. Start with [playing together](#playing-together-lan);
+> the server owner reads [SERVER.md](SERVER.md), a friend who joins reads [JOIN.md](JOIN.md), and anyone who wants to add dialogue,
+> skins or shops reads [CONTENT.md](CONTENT.md). The in-game lists are "Full multiplayer pass" and "Re-test 9" in
+> `docs/TESTING-PLAN.md`.
+>
 > **Quick links:** [release install](#1-setup), [the key table](#3-controls), [the Minecraft interface](#the-minecraft-interface),
 > [netrunning, step by step](#netrunning-step-by-step), [what each chip does](#what-each-chip-does),
 > [cyberware](#cyberware-u-y-l-and-o), [vehicles](#vehicles-and-third-person) and
 > [free perks and `/cyberblock level`](#6-game-modes-and-the-starter-kit) and
-> [playing together over LAN](#playing-together-lan).
+> [playing together over LAN](#playing-together-lan), [the settings screen](#the-cyberblock-settings-screen),
+> [Performance mode](#performance-mode) and [adding your own content](#adding-your-own-content-datapacks).
 
 ---
 
@@ -57,9 +66,9 @@ and **building from source** (for developers). Both end in the same installed fi
 - Windows 10 or 11. The release installer needs only Windows PowerShell 5.1 (it is part of Windows), not Python.
 
 ### Release install (players)
-1. **Download** `Cyberblock-1.0.0.zip` from the project's releases page and unzip it anywhere. It contains `install.bat`,
+1. **Download** `Cyberblock-2.0.0.zip` from the project's releases page and unzip it anywhere. It contains `install.bat`,
    `uninstall.bat`, `install.ps1`, this guide, the licence texts, a `game\` folder (the plugin, the scripts and the ReShade
-   shader) and `minecraft\mods\cyberblock-1.0.0.jar`.
+   shader) and `minecraft\mods\cyberblock-2.0.0.jar`.
 2. **Close Cyberpunk**, then double-click **`install.bat`**. (If it cannot find your game, drag your Cyberpunk 2077 folder
    onto `install.bat`, or run `install.ps1 -Game "<your Cyberpunk 2077 folder>"` in PowerShell.) The installer:
    - finds the game through Steam's libraries and **refuses to run while Cyberpunk is running**;
@@ -79,7 +88,7 @@ and **building from source** (for developers). Both end in the same installed fi
       - **JVM arguments:** **replace** the whole field with
         `-Xmx2G -XX:+UseZGC --enable-native-access=ALL-UNNAMED -Dcyberblock.autostart=true`. Replace it, do not append:
         the default arguments contain a larger heap and another garbage collector that fight with Cyberpunk for memory.
-   3. Copy `minecraft\mods\cyberblock-1.0.0.jar` **and the Fabric API jar** into `%APPDATA%\.minecraft-cyberblock\mods`
+   3. Copy `minecraft\mods\cyberblock-2.0.0.jar` **and the Fabric API jar** into `%APPDATA%\.minecraft-cyberblock\mods`
       (create the folder if it is missing).
 4. **Play:** start the Cyberblock installation from the launcher. The title screen has a **Play Cyberblock** button that
    opens (or, the first time, creates) the Night City world; with `-Dcyberblock.autostart=true` it opens the world by
@@ -88,7 +97,7 @@ and **building from source** (for developers). Both end in the same installed fi
 
 **Updating:** unzip the new release, close Cyberpunk, run `install.bat` again (it replaces its own files and removes files
 a newer version no longer ships), replace the jar in the `mods` folder, and restart Minecraft. A Minecraft that was
-already running keeps the old mod. If Cyberblock.log says `version mismatch: DLL 1.0.0, mod X`, the two halves are from
+already running keeps the old mod. If Cyberblock.log says `version mismatch: DLL 2.0.0, mod X`, the two halves are from
 different releases.
 
 ### From source (developers)
@@ -106,7 +115,7 @@ uv run tools/install.py
 ```
 The build produces `cp/plugin/build/Release/Cyberblock.dll`. You do not build the Minecraft mod by hand: `tools/play.py`
 builds and starts it through Gradle (see [Launching](#2-launching)). To build the release zip yourself:
-`uv run python -m tools.package` writes `dist/Cyberblock-1.0.0.zip`.
+`uv run python -m tools.package` writes `dist/Cyberblock-2.0.0.zip`.
 
 `tools/install.py` copies the same files as the release installer and writes the **same manifest**, so the two installers
 and both uninstallers are interchangeable:
@@ -867,7 +876,7 @@ Minecraft screen:
 | You press | You get |
 |---|---|
 | **Esc** or **H** | the **Night City pause screen** ("Night City (paused)"): Back to Night City, Save Game, Load Last Save, Map, Journal, Messages, Night City Menu..., Minecraft Options..., Quit to Cyberpunk Main Menu (it asks first). **Cyberpunk is paused while this screen is open.** Saving says "Saving is not possible right now" when Cyberpunk does not allow a save. |
-| **M** | the **Atlas**: Night City as a Minecraft map, with every map pin (see [The Atlas (map)](#the-atlas-map)). **Fast travel is not offered from the Atlas in 1.0.0:** selecting a fast-travel point tells you to use the Night City map through *Night City Menu...* |
+| **M** | the **Atlas**: Night City as a Minecraft map, with every map pin (see [The Atlas (map)](#the-atlas-map)). **The Atlas does not fast travel:** selecting a fast-travel point tells you to use the [Holo-Table](#the-holo-table-phase-7) (fast travel is a list there) or the Night City map through *Night City Menu...* |
 | **J** | the **Journal**: Main Jobs, Side Jobs, Gigs and Other, each quest with its objectives (done ones ticked), a **Track** button and a "Tracked" mark |
 | **Messages / the phone** | the **Phone**: your contacts and message threads, with a Reply button that sends the choice you pick |
 | **I** (or Cyberpunk's crafting menu) | Minecraft's **inventory** |
@@ -917,14 +926,45 @@ facing north is brighter, the ground north of a tall building darker). Squares n
 
 #### The Cyberblock settings screen
 **Esc, then Cyberblock...** (a button on Minecraft's pause screen and on the Night City pause screen), or
-`/cyberblock settings`, opens one place for Cyberblock's own settings. It is plain Minecraft widgets; a row you may not
-change is greyed, and its tooltip says "Only the host or an operator can change this".
-- **Third-person camera:** distance, shoulder, FOV, auto-recenter and vehicle distance (see
-  [the camera options](#third-person-camera-options-and-the-debug-overlay)), and **Step-up assist**
-  (see [stairs](#mining-placed-blocks-stairs-and-the-step-up-assist)).
-- **Creative can erase the replica permanently:** the world setting of
-  [the outline blocks](#creative-mode-and-the-outline-blocks) (off by default; only you in your own world, or an
-  operator, can change it).
+`/cyberblock settings`, opens one place for every Cyberblock option. It is plain Minecraft widgets in six tabs. A row you may not
+change is greyed, and its tooltip says "Only the host or an operator can change this". **Server-side values are changed through
+`/cyberblock` commands that the screen sends, so the server decides**; values that belong to your own PC are saved locally.
+
+| Tab | What is on it |
+|---|---|
+| **Guests** | what guests may do to **your** Cyberpunk game: one switch each for `explosions`, `damage`, `hacks`, `spawns` and `devices`, and under `devices` one switch per device type (door, gate, light, camera, terminal, vending machine, traffic light, lift, turret, screen, container). The same as `/cyberblock guests <toggle> on|off`. Only a host sees these rows enabled |
+| **Look** | your **skin mode** (the cyber skin body, male or female: V or Lucy, `/cyberblock body`), the **third-person camera** (distance, shoulder, FOV, auto-recenter, vehicle distance: [the options](#third-person-camera-options-and-the-debug-overlay)) and **Step-up assist** ([stairs](#mining-placed-blocks-stairs-and-the-step-up-assist)) |
+| **PvP** | your PvP switch ([the rule](#matches-pvp-and-gang-wars): off by default, on for both players or no damage, 15 seconds before you can turn it off again) and the server's default |
+| **Difficulty** | the **Overlord intensity** default (Chill, Normal or Brutal) and how strongly **Server Heat** scales (host and operators) |
+| **Performance** | **Performance mode**, the resolution scale and the figure cap ([below](#performance-mode)) |
+| **World** | **Creative can erase the replica permanently** (off by default; only you in your own world, or an operator: [the outline blocks](#creative-mode-and-the-outline-blocks)), and, for operators, the server's own values you would otherwise edit in `server.json` |
+
+A change takes effect at once and **Done** closes the screen. Anything the server refuses (you are not the host or an operator)
+says so on the action bar and leaves the row as it was.
+
+#### Performance mode
+Cyberblock draws one extra picture per frame, so a PC with a heavy Cyberpunk setup can run short of time. **Performance mode** (the
+**Performance** tab of [the settings screen](#the-cyberblock-settings-screen)) trades looks for frame time. It is **off by
+default** and changes nothing for the other players:
+- **Resolution scale** (`prefs.scale`, 50 to 100 percent): Minecraft renders and exports its picture at that fraction of the
+  window, and the ReShade effect **scales it back up** into Cyberpunk's picture. 100 percent is the picture as before; 75 percent
+  costs a little sharpness for a lot less time; 50 percent is for rescuing a weak PC.
+- **Figure cap:** how many of the host's Night City people and cars you see as figures (the nearest 16 to 48; 48 by default).
+  Beyond a distance, figures also **stop animating** and stand still, which costs nothing and is hard to notice.
+- **Server budgets** (nothing to set): replica placements, device updates and the downed-player queue each have a per-tick budget, so
+  four guests exploring at once do not stall the server tick.
+
+**Numbers** (measured by the performance pass with two hosts and four guests on the local test server; your PC will differ):
+
+| What | Before | After (Performance mode) |
+|---|---|---|
+| frame export time per frame | not recorded in this guide yet | not recorded in this guide yet |
+| compositor time per frame | not recorded in this guide yet | not recorded in this guide yet |
+| server tick time, two hosts and four guests | not recorded in this guide yet | not recorded in this guide yet |
+
+The measurement steps are check R9-5 of [Re-test 9](TESTING-PLAN.md). The figures come from that run and not from a guess, so this
+table is filled in after the first full measurement. **If the frame time still stutters** with four guests in view, lower the scale
+one step first, then the figure cap, and read [Stutter, swimming or lag](#stutter-swimming-or-lag).
 
 #### Menus Cyberblock cannot replace
 Some Cyberpunk menus have no Minecraft equivalent that could do the same job: **shops and vendors, the ripperdoc, the
@@ -938,15 +978,19 @@ border) around them, and Minecraft's own world is not drawn over them. When the 
 - A tutorial or shard popup that waits for input (the game is paused by Cyberpunk itself) and the braindance timeline are
   shown the same way.
 - Loading screens during quest teleports show "Loading Night City..." drawn by Minecraft as a cover.
+- **Save and load lists** are Cyberpunk's own menus, restyled. A Minecraft **Night City saves** screen (list, load, save) replaces
+  them only where the 2.31 save-list calls are verified; `docs/notes/ui-coverage.md` says which way this build goes and why, and the
+  [Re-test 9](TESTING-PLAN.md) check R9-6 looks at it. Saving from the pause screen always works through "Save Game".
 - **Escape hatch:** if you ever want Cyberpunk's own pause menu, open the Minecraft pause screen and click **Night City
   Menu...**. It opens the real Cyberpunk menu once. If Minecraft is not running or not linked, every Cyberpunk menu works
-  as in vanilla.
+  as in vanilla. It works at all times, also on a server, in a match and while Performance mode is on (a test checks it, and
+  [Re-test 9](TESTING-PLAN.md) R9-6 has the in-game check).
 
 ### Playing together (LAN)
 Since Phase 1 every world, including your singleplayer one, runs through a small server, so a friend can join it. You play
 exactly as before: you are the **host** (your Minecraft is linked to your Cyberpunk). Your friend is a **guest**: a second
 Minecraft player in your Night City, with **Minecraft only** (no Cyberpunk needed). Both of you need the Cyberblock mod,
-from the same release (the version must match in major and minor, for example 1.0.x with 1.0.y).
+from the same release (the version must match in major and minor, for example 2.0.x with 2.0.y).
 
 **Start.** In your Minecraft press Esc, **Open to LAN**, **Start LAN World**. Minecraft prints the port in chat ("Local game
 hosted on port ..."). Your friend adds your address and that port under Multiplayer, Direct Connection (same network or a
@@ -993,8 +1037,8 @@ real-account player who logged in earlier stays verified.
 
 #### On a dedicated server (Phase 2 tools)
 The same mod runs on a dedicated Fabric 26.3 server (a hosting panel's **Custom Jar** option runs the Fabric server launcher
-jar). The step-by-step move of a hosted server, with the way back, is section 6.3 and 6.4 of the multiplayer plan; the
-player guide for it comes with the Phase 2 docs. What is already there:
+jar). The step-by-step setup, with the way back, the configuration file, the operator commands and the backups, is
+**[SERVER.md](SERVER.md)**; what a friend does to join is **[JOIN.md](JOIN.md)**. What is there:
 - **Admin commands** (operators): `/cyberblock status` lists every player's role, session state, `mod X dll Y`, message
   rates and the loaded content; `/cyberblock hosts add|remove <name>` edits who may host (level 3, like `/whitelist`) and
   applies at that player's next handshake. The server log starts with `cyberblock server: ready (protocol 1, maxHosts N,
@@ -1016,9 +1060,22 @@ player guide for it comes with the Phase 2 docs. What is already there:
   verifies it and uploads only staged files (a dry run unless `--go`; it has no delete command and refuses to overwrite
   files outside an allowlist; the FTP password is read only from the environment or a hidden prompt, never printed);
   `tools.server_bundle` stages the server files outside the repo; `tools.modpack` and `tools.respack` build the modpack
-  (`dist/cyberblock-<version>.mrpack`) and the resource pack for friends.
+  (`dist/cyberblock-<version>.mrpack`) and the resource pack for friends; `tools.server_sync pull-backups --to <folder>` downloads
+  the server's daily backups (below).
+- **Daily backups.** At the hour set in `backups.hour` of `config/cyberblock/server.json` (server local time, 5 by default) the server
+  saves, zips the world into `backups/cyberblock-<date>.zip`, keeps the newest `backups.keep` (7) and logs `backup: <file> <size>`.
+  With less free disk than twice the world size it skips the backup and warns instead. Operators run one at once with
+  `/cyberblock backup now`. Details and the restore steps: [SERVER.md](SERVER.md).
 - **Join Cyberblock.** A modpack with a `config/cyberblock/join.json` adds a **Join Cyberblock** button to the title screen
   that connects to that server.
+
+#### Adding your own content (datapacks)
+The lines Night City's people say, their skins, the shops, the places on the Holo-Table, the Breach daemons, the Overlord's events,
+the Heat tiers and the match modes are **data**. A friend adds to them with an ordinary datapack in the world's `datapacks` folder,
+and an operator's `/reload` shows the result; no code, no mod update. [CONTENT.md](CONTENT.md) shows how to add a dialogue line, a
+skin, a shop, a landmark, a Breach daemon and an Overlord event, each with a file you can copy, and `tools.content_check --dir
+<pack>` checks a pack before you load it. A file with the same id as a default replaces the default; a bad file is logged
+(`content: <kind> <id> skipped: <why>`) and skipped.
 
 ### Night City as Minecraft (Phase 3)
 Until now a guest saw only the Minecraft world and what their actions did. With Phase 3 a guest sees **Night City itself, built
@@ -1581,8 +1638,8 @@ around V so Steve, mobs and arrows have something solid to stand on. In creative
 - **Creative:** you may break one (it is only a Minecraft block: nothing happens in Cyberpunk). It **comes back in about
   10 seconds**, or at once when Cyberpunk reports that spot again. If you dig through the street and fall, Cyberblock
   catches you and puts you back on the last safe ground ("Caught you: back to safe ground").
-- **Permanent erase:** the setting **Creative can erase the replica permanently** (off by default; Esc, **Cyberblock...**,
-  or `/cyberblock outline erase on|off`; `/cyberblock outline` shows the state; operators, or you in singleplayer) makes
+- **Permanent erase:** the setting **Creative can erase the replica permanently** (off by default; Esc, **Cyberblock...**, the
+  **World** tab, or `/cyberblock outline erase on|off`; `/cyberblock outline` shows the state; operators, or you in singleplayer) makes
   broken outline blocks stay broken until you walk away and back and Cyberpunk reports the spot again.
 - The server decides from your game mode, so a client cannot cheat around it. Log lines: `outline: <name> broke <x> <y> <z>
   (snap back in 10 s)` or `(kept: permanent erase)`, and `outline: restored N`.
@@ -1605,6 +1662,8 @@ Useful commands: `/cyberblock kit`, `/cyberblock settings` (the [settings screen
 `/cyberblock spectate` and `/cyberblock spectate stop` (watch a match and come back, see [Modes](#modes-the-van-the-overlord-matches-and-more-phase-8)),
 `/cyberblock overlord optin on|off` (in a match: let its Overlord send enemies and events near you), `/cyberblock guests spawns on|off` (whether Night City enemies
 the Overlord or a guest spawns reach your game, see [Modes](#modes-the-van-the-overlord-matches-and-more-phase-8)),
+`/cyberblock login <password>` (a server with a join password: type it once), `/cyberblock backup now` (operators: make a server backup now, see
+[SERVER.md](SERVER.md)), `/reload` (operators: load datapack content, see [CONTENT.md](CONTENT.md)),
 `/cyberblock perks free on|off` (free skill points), `/gamemode creative`, `/gamemode survival`,
 `/xp add @s 30 levels`, `/effect clear @s`. Playing with friends: `/cyberblock guests <toggle> on|off` and, for server
 operators, `/cyberblock hosts`, `/cyberblock status` and `/cyberblock hosts add|remove <name>` (see
@@ -1681,7 +1740,7 @@ give V a double jump: it upgrades the legs implants.)
   **only** `-Xmx2G -XX:+UseZGC --enable-native-access=ALL-UNNAMED -Dcyberblock.autostart=true`.
 - **No "Play Cyberblock" button:** the mod is not loaded (see the line above), or the installation does not use the Fabric
   26.3 profile.
-- **`version mismatch: DLL 1.0.0, mod X`** in Cyberblock.log: the plugin and the mod jar come from different versions. Install
+- **`version mismatch: DLL 2.0.0, mod X`** in Cyberblock.log: the plugin and the mod jar come from different versions. Install
   both from the same release zip and restart Minecraft.
 - **Logs:**
   - `<Cyberpunk 2077>\red4ext\logs\Cyberblock.log` for the DLL and the scripts;
@@ -1723,6 +1782,8 @@ Minecraft restart all un-pause Cyberpunk. Cyberblock.log says `ui: unpaused (<re
 ### Stutter, swimming or lag
 - Turn frame generation off. Keep "Re-project to Cyberpunk's camera" on in the effect.
 - Minecraft is capped at 120 fps and 2 GB of heap on purpose, so it leaves the GPU and memory to Cyberpunk.
+- Still short of frame time? Turn on [Performance mode](#performance-mode) (Esc, **Cyberblock...**, **Performance**): a lower
+  resolution scale and fewer, calmer figures.
 
 ### Memory and the page file
 Running both games needs a lot of **Windows commit** (RAM plus page file), not just VRAM.
@@ -1734,6 +1795,17 @@ Running both games needs a lot of **Windows commit** (RAM plus page file), not j
     Performance → Advanced → Virtual memory;
   - close other heavy programs while playing.
 - **Watching it:** `Cyberblock.log` logs system commit next to VRAM, and warns above 92 % of the limit.
+
+### Joining a server and playing together
+- **"This server needs the Cyberblock modpack", "version mismatch" or "needs a password":** the table under
+  [Playing together](#playing-together-lan) says what each means; [JOIN.md](JOIN.md) walks a friend through the install, the
+  password and the first minutes.
+- **The world around you is empty:** you are a guest and no host has explored that part of Night City yet. The replica grows
+  as hosts walk; the Holo-Table sends you where the map exists.
+- **My actions do not reach the host's game:** the host switched that permission off; the action bar says "blocked". The host
+  changes it on the **Guests** tab of [the settings screen](#the-cyberblock-settings-screen).
+- **The game stutters in a crowd or with guests around:** [Performance mode](#performance-mode).
+- **Something is wrong on the server itself:** the table in [SERVER.md](SERVER.md) lists the log lines and what they mean.
 
 ### Something else
 - **Mobs and NCPD do nothing to each other:** run `CyberblockPuppets.SetEnabled(false)` in CET. Mobs still hurt
