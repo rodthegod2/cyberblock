@@ -6,6 +6,7 @@ import com.google.gson.JsonParser;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.content.Content;
 import dev.cyberblock.net.admin.ServerAdmin;
+import dev.cyberblock.skin.CyberSkins;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -386,7 +387,7 @@ public final class ServerNet {
 		return !s.isDedicatedServer() && s.isSingleplayerOwner(player.nameAndId());
 	}
 
-	/** Every online player (at most 200): linked = a LINKED or ACTIVE session; the rest are Phase 1 defaults. */
+	/** Every online player (at most 200): linked = a LINKED or ACTIVE session, body from the player (5K); the rest are Phase 1 defaults. */
 	static Payloads.Roster roster(final MinecraftServer s) {
 		List<Payloads.RosterEntry> list = new ArrayList<>();
 		boolean pvp = ServerConfig.get().pvpDefault();
@@ -395,9 +396,8 @@ public final class ServerNet {
 				break;
 			}
 
-			HostSession session = HostSessions.of(p);
-			boolean linked = session != null && session.state() != HostSession.State.NONE;
-			list.add(new Payloads.RosterEntry(p.getUUID(), cap(p.getPlainTextName(), Payloads.NAME_CAP), linked, "male", -1, pvp, false, false));
+			list.add(new Payloads.RosterEntry(p.getUUID(), cap(p.getPlainTextName(), Payloads.NAME_CAP), CyberSkins.linked(p), CyberSkins.body(p), -1,
+				pvp, false, false));
 		}
 
 		return new Payloads.Roster(List.copyOf(list));

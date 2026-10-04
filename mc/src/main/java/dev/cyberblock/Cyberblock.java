@@ -100,6 +100,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.env.EnvSync.init(); dev.cyberblock.meetup.MeetUp.init(); dev.cyberblock.env.OfflineBuilds.init();
 		// dedicated-server admin bits (megaplan 2-M1): startup line, whitelist warning, /cyberblock status and hosts add|remove
 		dev.cyberblock.net.admin.ServerAdmin.init();
+		// Phase 5K: the body attachment, /cyberblock body male|female and the [V] team prefix for linked players
+		dev.cyberblock.skin.CyberSkins.init();
 		LOG.info("cyberblock loaded");
 	}
 

@@ -459,6 +459,12 @@
 	"cyberblock.figure.civilian": "Civilian",
 	"cyberblock.figure.hostile": "Hostile",
 	"cyberblock.figure.vehicle": "Vehicle",
+	"cyberblock.body.male": "male V (classic model)",
+	"cyberblock.body.female": "female V (Lucy, slim model)",
+	"cyberblock.body.current": "Your cyber skin: %s. Change it with /cyberblock body male|female",
+	"cyberblock.body.set": "Your cyber skin is now %s; every player sees it while your Cyberpunk game is linked",
+	"cyberblock.body.players_only": "Only a player has a cyber skin body",
+	"cyberblock.team.v": "Linked V",
 	"cyberblock.survey.no_host": "Only a player with a linked Cyberpunk game can run the Atlas survey",
 	"cyberblock.survey.asked": "Asked your Cyberpunk game: survey %s"
 }
