@@ -21,7 +21,8 @@ side; the mod, plugin and scripts of Phase 6 have their own entries. The in-game
   cyberware id `firewall`; class rows, a rate row, validators, names and examples in `tests/test_phase6_protocol.py` (and the class tables of
   `tests/test_protocol_md.py`). Every Cyberpunk effect is timed (`secs` on every vehicle hack, never 0 on a blackout, traffic switch or gridlock)
   and restored on the session end, a link drop and before a save (a save lock while one is pending); the photo feed needs the owner's `hacks`
-  toggle; an abort after the first pick is a failed Breach (the same puzzle is kept otherwise, and a failure has a 10 s cooldown); only hand uses
+  toggle; an abort after the first pick is a failed Breach (the same puzzle is kept otherwise, and a failure has a 10 s cooldown; an owner hears
+  at most one alarm a minute; the screen's `size` is 4 and `dev` `"0"` for Phase 8's short breach on a player); only hand uses
   are checked against the player's reach, the Net Map and the Traffic Tool are bounded by the 50 m from V.
 - **Fake host.** `tools.fakehost --hacks2`: the `--devices` scene plus a Net Port; every valid `rhack` and `daemon` is answered with one `hackresult`
   (vehicle hacks change the car until their `secs` run out, `cam_feed` needs a camera, a blackout switches the devices of an area off and gives them back, `outline` and

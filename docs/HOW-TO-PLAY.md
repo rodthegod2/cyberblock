@@ -1258,7 +1258,8 @@ widgets and font, and it is **played on the server**, so no client can cheat.
 - **What a solved daemon does.** It is **a real action in the host's Night City**, sent to the host's game: open a door, **disable the
   cameras** of the area, **reveal enemies** (as the Ping chip does), **overload** a device, and more (they are data files, so a datapack can
   add one). The **Net Port that you breach is the one it runs from.**
-- **Failing.** Running out of buffer or time **raises an alarm in the host's game** (the cameras of the area alert): breaching is a risk.
+- **Failing.** Running out of buffer or time with no daemon uploaded **raises an alarm in the host's game** (the cameras of the area alert):
+  breaching is a risk. A host gets at most one alarm a minute; a second failure in that minute joins the first.
   A failure also costs **Heat**; the Heat meter belongs to a later phase, and until it exists the host's wanted level goes up by one **only
   if the game allows that** (the plugin says which in the log).
 - **No walking away from a bad grid.** The timer starts when the screen opens. **Closing the screen after your first pick is a failure** (the

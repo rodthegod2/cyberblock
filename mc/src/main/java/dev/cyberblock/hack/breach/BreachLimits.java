@@ -6,42 +6,35 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Breach's rate limits on a host's devices, in server ticks (megaplan 6-B1 and the hacking rate limits):
+ * Breach's rate limits on a host's devices, in server ticks (protocol.md "Phase 6"):
  * <ul>
- * <li>a device that was breached (solved or failed) is closed to breaches for {@link #DEVICE_TICKS};</li>
- * <li>a player whose device breach failed may not breach any device for {@link #PLAYER_TICKS};</li>
+ * <li>after a failed breach the same player may not breach that device again for {@link #COOLDOWN_TICKS}
+ * ({@code cyberblock.breach.cooldown});</li>
  * <li>an owner gets at most one alarm daemon per {@link #ALARM_TICKS}: a later failure in that window is merged into the
- * alarm already raised (no daemon, no Heat), so a guest cannot push a host's wanted level up by failing breach after breach.</li>
+ * alarm already raised (no daemon, no Heat), so guests cannot push a host's wanted level up by failing breach after breach.</li>
  * </ul>
  * Practice breaches (no device) are not limited. Server thread only.
  */
 final class BreachLimits {
-	/** A device after a breach that ended with a pick: 30 s. */
-	static final long DEVICE_TICKS = 600;
-	/** A player after a failed device breach, across every device: 30 s. */
-	static final long PLAYER_TICKS = 600;
+	/** One player on one device. */
+	record Hold(UUID player, DeviceRegistry.Key device) {
+	}
+
+	/** The same player on the same device after a failure: 10 s. */
+	static final long COOLDOWN_TICKS = 200;
 	/** One alarm daemon per owner: 60 s. */
 	static final long ALARM_TICKS = 1200;
-	private final Map<DeviceRegistry.Key, Long> devices = new HashMap<>();
-	private final Map<UUID, Long> players = new HashMap<>();
+	private final Map<Hold, Long> cooldowns = new HashMap<>();
 	private final Map<UUID, Long> alarms = new HashMap<>();
 
-	/** Ticks until the device may be breached again (0: now). */
-	long deviceWait(final DeviceRegistry.Key device, final long now) {
-		return Math.max(0L, devices.getOrDefault(device, now) - now);
+	/** Ticks until this player may breach this device again (0: now). */
+	long cooldown(final Hold hold, final long now) {
+		return Math.max(0L, cooldowns.getOrDefault(hold, now) - now);
 	}
 
-	/** Ticks until the player may breach a device again (0: now). */
-	long playerWait(final UUID player, final long now) {
-		return Math.max(0L, players.getOrDefault(player, now) - now);
-	}
-
-	/** A device breach ended with at least one pick: the device closes, and after a failure the player too. */
-	void ended(final DeviceRegistry.Key device, final UUID player, final boolean failed, final long now) {
-		devices.put(device, now + DEVICE_TICKS);
-		if (failed) {
-			players.put(player, now + PLAYER_TICKS);
-		}
+	/** This player's breach of this device failed. */
+	void failed(final Hold hold, final long now) {
+		cooldowns.put(hold, now + COOLDOWN_TICKS);
 	}
 
 	/** May the owner get an alarm daemon now? True records it; false means one was sent within {@link #ALARM_TICKS}. */
@@ -55,22 +48,19 @@ final class BreachLimits {
 		return true;
 	}
 
-	/** The devtools bypass ({@code /cyberblock test breach <x> <y> <z> ...}): the device and the player may breach at once. */
-	void clear(final DeviceRegistry.Key device, final UUID player) {
-		devices.remove(device);
-		players.remove(player);
+	/** The devtools bypass ({@code /cyberblock test breach <x> <y> <z> ...}): the player may breach the device at once. */
+	void clear(final Hold hold) {
+		cooldowns.remove(hold);
 	}
 
 	/** Forgets what has run out (once a second). */
 	void prune(final long now) {
-		devices.values().removeIf(until -> until <= now);
-		players.values().removeIf(until -> until <= now);
+		cooldowns.values().removeIf(until -> until <= now);
 		alarms.values().removeIf(at -> now - at >= ALARM_TICKS);
 	}
 
 	void clear() {
-		devices.clear();
-		players.clear();
+		cooldowns.clear();
 		alarms.clear();
 	}
 }
