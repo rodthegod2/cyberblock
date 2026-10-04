@@ -484,6 +484,72 @@ style of `Cyberblock_SubmitNpcs`.
 Every new message gets validators on both sides, `shared/protocol.md` rows and examples, `tests/test_protocol_md.py`
 VALIDATORS and a fake host mode, in the phase that adds it.
 
+> **Amendment 2026-10-04 (Phase 0 contract narrowing; Wave A integrator).** From package 0R's desk evidence
+> (`docs/notes/phase0-feasibility.md`, "Contract narrowing needed"). Names are unchanged; only fields and values narrow.
+> Items marked *(CET Xn)* are confirmed or corrected by that line of the Phase 0 CET session in Re-test Wave A; until
+> then they are the working contract for the phase's S/D packages.
+>
+> **Section 1.8 (natives):**
+> 1. **Ph3 probe materials:** the second form, `Cyberblock_SubmitProbeMaterials(down: array<CName>, wall: array<CName>)`
+>    (`Probes.reds`), parallel to the down and wall hit arrays of the same tick and called right before
+>    `Cyberblock_SubmitProbes`. Each entry is `TraceResult.material`, or the hit node's `meshAppearance` when the material
+>    is `None`. One shared, fixed name table (`shared/`) maps names to `material_palette` codes; unknown names are 0
+>    (logged once each). *(CET B1-B5)*
+> 2. **Ph3 device hits:** a probe ray whose `GetHitEntity` is a `Device` is cast again past it, as Cyberblock boxes are, so
+>    doors and gates never enter the static replica. *(CET B2; else Phase 4's device-box filter)*
+> 3. **Ph3 `Cyberblock_SetEnv`:** `weather` is the raw `worldWeatherState.name` CName (Codeware
+>    `WeatherSystem.GetWeatherState().name`); the DLL maps it to the 1.9 `env` enum by name. Time is
+>    `TimeSystem.GetGameTime`. *(CET ENV)*
+> 4. **Ph3 `vteleport` and `park`:** `vteleport` = `TeleportationFacility.Teleport` + the survey's settle probe (hold high,
+>    3 x 3 down rays stable 0.5 s, 15 s at most) + a down-ray snap. `park` = `SetInvisible` + god mode `Invulnerable`
+>    (source `n"CyberblockPark"`) + save lock (`n"CyberblockPark"`) + `GameplayRestriction.NoMovement` and
+>    `NoCameraControl`. `Cyberblock_TeleportDone` reasons: `""`, `"no ground"`, `"timeout"`, `"blocked (<why>)"`.
+>    *(CET G1-G3, G5-G6)*
+> 5. **Ph4 `Cyberblock_SubmitDevices`:** `ids` = `CyberblockIds.Hash(device)` (fallback: hash of the position rounded to
+>    25 cm plus the class); `classes` = the RTTI class name; `kinds` from the class's `IsA` chain; `sizes` always zero
+>    (Minecraft takes the size from `device_map`); `states` = `EDeviceStatus`, or `EDoorStatus` for doors; `flags` as 1.9.
+>    `Cyberblock_DeviceState.by` comes from the performed action's executor. The list comes from a Codeware attach
+>    registry (`EntityTarget.Type(n"Device")`), changes from `@wrapMethod(Device)` `OnPerformedAction` and
+>    `OnPSChangedEvent` (fallback: 2 Hz polling within 48 m). *(CET C1-C5)*
+> 6. **Ph4 `devact` events:** `act` limited to `open, close, toggle, lock, unlock, on, off, disable, enable, distract,
+>    friendly`. `call`, `buy` and `breach` are not Cyberpunk actions (lift calls are unproven, vending is a Minecraft shop,
+>    Breach is a Minecraft minigame whose daemons send the supported acts).
+> 7. **Ph5 `Cyberblock_SubmitNpcs2`:** `roles` = the vendor type name (`RipperDoc`, `Clothes`, ...) or `n""`; `factions`
+>    = `Affiliation().EnumName()`; `genders` from `GetResolvedGenderName`; `archetypes` =
+>    `ArchetypeData().Type().EnumName()`; `anims` from the puppet-state blackboard and `IsRagdolling`, bits 1 and 2 always
+>    0 (the DLL derives walk and run from position deltas); `vclass` = `"<type>/<model>"` from `Vehicle_Record.Type()` and
+>    `Model()`; `colours` from the matching `VehicleColorTemplate` `MainColor`, -1 when none; `hp` from the Health stat
+>    pool. *(CET F1-F2; F2 fixes the colour number format)*
+> 8. **Ph8 `spawn` events:** `rec` values map to the verified character records of check (d); `turret` is removed (a
+>    turret is a device, not a character record). *(CET D1-D5)*
+>
+> **Section 1.9 (wire messages):**
+> 1. **3 `ground` (ext):** the `m` codes come from the shared name table of 1.8 item 1; 0 is unknown.
+> 2. **3 `env`:** `time` from the game time; `weather` mapped from the preset name, `other` when unmapped.
+> 3. **3 `vteleported`:** `reason` ∈ `""`, `no ground`, `timeout`, `blocked (<why>)`; `p` is the snapped feet position.
+> 4. **4 `devices`:** `size` is omitted (Minecraft uses `device_map`); `st` is `EDeviceStatus` (-2..1) or, for doors,
+>    `EDoorStatus` (-2..1); `fl` bit 4 (quest-locked) = door `SEALED` or device `DISABLED`; bit 16 (powered) = the state
+>    is not `UNPOWERED`; `cls` ≤ 48 chars.
+> 5. **4 `devstate`:** `by` = `host` when the executor is V, `npc` when an NPC, `script` when there is none, `guest` when the
+>    action came from a guest's `devact` (the DLL remembers the request for 2 s).
+> 6. **4 `devact`:** `act` limited to the list of 1.8 item 6; other values answer `{ok:false, reason:"unsupported"}`. The
+>    `vending` (buy) and `elevator` (call) rows of 1.11 show greyed (`cyberblock.device.unsupported`) until proven.
+> 7. **5 `npcs` (ext):** `role` from the vendor type only (fixer, bartender, medic and mechanic come from `npc_role` and
+>    `skin_map` content); `g` from the resolved gender name; `anim` bits 1/2 set by the DLL; `vc` = `"<type>/<model>"`
+>    (for example `Car/Turbo`, ≤ 32 chars); `col` only when a colour template matches (else the class default colour).
+> 8. **8 `spawn`:** `rec` loses `turret`; turrets are Minecraft-side only.
+>
+> **Section 1.11 note:** confirmed script classes: `Door`, `SecurityGate`, `RoadBlock`, `ElectricLight`, `InteractiveSign`,
+> `BillboardDevice`, `SurveillanceCamera`, `Terminal`, `Computer`, `VendingMachine`, `TrafficLight`, `LiftDevice`,
+> `SecurityTurret`, `TV`. There is no `GarageDoor` class: garage doors are `Door` types, road barriers `RoadBlock`.
+> Containers are `gameContainerObjectBase`, not devices (read-only, unchanged).
+>
+> **Fallbacks applied now (section 4.1):** (a) Apex has a Custom Jar option, so the no-custom-jar branch is dropped; the
+> Java 25, disk and UDP-port branches stay in force. (b) no material → `material_palette` heuristic plus `meshAppearance`.
+> (c) size from `device_map`; lift call and vending buy greyed. (d) turrets Minecraft-side only. (f) roles from vendor type
+> plus content; walk/run from position deltas; class default colour. (g) the hold-high-until-a-down-ray-hits method is
+> the method. (h) only streamed targets; others answer `cyberblock.hack.out_of_range`.
+
 ### 1.10 Keys (unchanged; keep the table clash-free)
 | Key | Action | Rebindable |
 |---|---|---|
