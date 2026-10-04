@@ -1,0 +1,32 @@
+{
+	"schema": 1,
+	"title_key": "cyberblock.daemon.distract",
+	"text_key": "cyberblock.daemon.distract.text",
+	"sequence": [
+		"1C",
+		"FF"
+	],
+	"kinds": [
+		"screen",
+		"vending",
+		"terminal",
+		"light"
+	],
+	"action": "distract",
+	"tiers": [
+		{
+			"seconds": 8,
+			"radius": 10
+		},
+		{
+			"seconds": 15,
+			"radius": 16
+		},
+		{
+			"seconds": 30,
+			"radius": 24
+		}
+	],
+	"weight": 5,
+	"min_security": 1
+}

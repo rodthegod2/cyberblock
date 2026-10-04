@@ -1,0 +1,32 @@
+{
+	"schema": 1,
+	"title_key": "cyberblock.daemon.reveal_enemies",
+	"text_key": "cyberblock.daemon.reveal_enemies.text",
+	"sequence": [
+		"1C",
+		"55"
+	],
+	"kinds": [
+		"terminal",
+		"camera",
+		"screen",
+		"vending"
+	],
+	"action": "reveal_enemies",
+	"tiers": [
+		{
+			"seconds": 10,
+			"radius": 20
+		},
+		{
+			"seconds": 20,
+			"radius": 35
+		},
+		{
+			"seconds": 40,
+			"radius": 60
+		}
+	],
+	"weight": 5,
+	"min_security": 1
+}

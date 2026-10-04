@@ -1,0 +1,31 @@
+{
+	"schema": 1,
+	"title_key": "cyberblock.daemon.traffic_switch",
+	"text_key": "cyberblock.daemon.traffic_switch.text",
+	"sequence": [
+		"55",
+		"BD",
+		"7A"
+	],
+	"kinds": [
+		"traffic",
+		"terminal"
+	],
+	"action": "traffic_switch",
+	"tiers": [
+		{
+			"seconds": 15,
+			"radius": 20
+		},
+		{
+			"seconds": 30,
+			"radius": 35
+		},
+		{
+			"seconds": 60,
+			"radius": 60
+		}
+	],
+	"weight": 4,
+	"min_security": 1
+}

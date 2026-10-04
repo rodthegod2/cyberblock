@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "daemon",
+  "description": "The `daemon` content kind (megaplan 1.7 and tasks 6-A1, 6-B1, 6-S1): one Breach Protocol daemon. `sequence` is the fixed run of hex codes (2 to 4, from the six codes of the grid) the player must put into the buffer in that order; `kinds` lists the device kinds (section 1.11) whose breach may offer it; `action` is the real thing it does, one of the closed list the scripts implement (a datapack may re-skin an action with another name, sequence and strengths, but cannot invent an action); `tiers` holds exactly three rows, strength 1, 2 and 3 in that order (the server picks the strength from how many and how long the solved daemons are, section 6-B1): `seconds` is how long the effect lasts (for a one-shot action, how long its aftermath lasts) and `radius` the reach in blocks around the breached device (the scripts convert to Cyberpunk metres 1:1). `weight` is the relative chance the generator picks it among the daemons that fit; `min_security` is the lowest `breach_tier` security level (1 ordinary, 2 secure, 3 hardened) at which it is offered. `title_key` and `text_key` are lang keys (the name and one line of what it does). On the wire the `daemon` message `list` carries each solved daemon's `action` value (the bare name from the closed list below, for example `open_door`), never its content id or file name: a re-skinned datapack daemon `friend:unlatch` with action `open_door` is sent as `open_door`. The content id is used only on the server, to pick daemons and to look up their title and text. Actions: open_door (doors and gates in reach unlock and open), disable_cameras (cameras in reach go dark), reveal_enemies (people in reach are outlined for the team), overload (the breached device and its neighbours short out and stun people near them), disable_turrets (turrets in reach stand down), lights_out (lights in reach switch off), distract (screens, vending machines and speakers draw people's attention), traffic_switch (traffic lights in reach change), make_friendly (turrets and cameras in reach turn friendly).",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+      "maxBytes": 128
+    },
+    "code": {
+      "enum": [
+        "1C",
+        "55",
+        "BD",
+        "E9",
+        "7A",
+        "FF"
+      ]
+    },
+    "tier": {
+      "type": "object",
+      "required": [
+        "seconds",
+        "radius"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600
+        },
+        "radius": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 150
+        }
+      }
+    }
+  },
+  "type": "object",
+  "required": [
+    "schema",
+    "title_key",
+    "text_key",
+    "sequence",
+    "kinds",
+    "action",
+    "tiers"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "#/$defs/id"
+    },
+    "title_key": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.]+$",
+      "maxBytes": 96
+    },
+    "text_key": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.]+$",
+      "maxBytes": 96
+    },
+    "sequence": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 4,
+      "items": {
+        "$ref": "#/$defs/code"
+      }
+    },
+    "kinds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 11,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "door",
+          "gate",
+          "light",
+          "camera",
+          "terminal",
+          "vending",
+          "traffic",
+          "elevator",
+          "turret",
+          "screen",
+          "container"
+        ]
+      }
+    },
+    "action": {
+      "enum": [
+        "open_door",
+        "disable_cameras",
+        "reveal_enemies",
+        "overload",
+        "disable_turrets",
+        "lights_out",
+        "distract",
+        "traffic_switch",
+        "make_friendly"
+      ]
+    },
+    "tiers": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/tier"
+      }
+    },
+    "weight": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    },
+    "min_security": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3
+    }
+  }
+}

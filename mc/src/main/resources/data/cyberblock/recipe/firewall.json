@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "equipment",
+	"ingredients": [
+		"minecraft:brick",
+		"minecraft:blaze_powder",
+		"minecraft:iron_ingot",
+		"minecraft:redstone"
+	],
+	"result": {
+		"id": "cyberblock:firewall",
+		"count": 1
+	}
+}

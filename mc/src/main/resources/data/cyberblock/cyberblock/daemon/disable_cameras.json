@@ -1,0 +1,32 @@
+{
+	"schema": 1,
+	"title_key": "cyberblock.daemon.disable_cameras",
+	"text_key": "cyberblock.daemon.disable_cameras.text",
+	"sequence": [
+		"55",
+		"E9",
+		"7A"
+	],
+	"kinds": [
+		"camera",
+		"terminal",
+		"screen"
+	],
+	"action": "disable_cameras",
+	"tiers": [
+		{
+			"seconds": 20,
+			"radius": 15
+		},
+		{
+			"seconds": 45,
+			"radius": 25
+		},
+		{
+			"seconds": 90,
+			"radius": 40
+		}
+	],
+	"weight": 6,
+	"min_security": 1
+}

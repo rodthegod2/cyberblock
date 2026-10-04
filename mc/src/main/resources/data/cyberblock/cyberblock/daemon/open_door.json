@@ -1,0 +1,32 @@
+{
+	"schema": 1,
+	"title_key": "cyberblock.daemon.open_door",
+	"text_key": "cyberblock.daemon.open_door.text",
+	"sequence": [
+		"BD",
+		"1C"
+	],
+	"kinds": [
+		"door",
+		"gate",
+		"terminal",
+		"container"
+	],
+	"action": "open_door",
+	"tiers": [
+		{
+			"seconds": 15,
+			"radius": 8
+		},
+		{
+			"seconds": 30,
+			"radius": 14
+		},
+		{
+			"seconds": 60,
+			"radius": 24
+		}
+	],
+	"weight": 6,
+	"min_security": 1
+}

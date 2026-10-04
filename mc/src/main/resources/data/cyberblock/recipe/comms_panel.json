@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "misc",
+	"ingredients": [
+		"minecraft:iron_ingot",
+		"minecraft:redstone",
+		"minecraft:note_block",
+		"minecraft:glass_pane"
+	],
+	"result": {
+		"id": "cyberblock:comms_panel",
+		"count": 1
+	}
+}

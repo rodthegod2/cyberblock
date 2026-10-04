@@ -1,0 +1,32 @@
+{
+	"schema": 1,
+	"title_key": "cyberblock.daemon.disable_turrets",
+	"text_key": "cyberblock.daemon.disable_turrets.text",
+	"sequence": [
+		"E9",
+		"BD",
+		"1C"
+	],
+	"kinds": [
+		"turret",
+		"terminal",
+		"gate"
+	],
+	"action": "disable_turrets",
+	"tiers": [
+		{
+			"seconds": 20,
+			"radius": 12
+		},
+		{
+			"seconds": 40,
+			"radius": 20
+		},
+		{
+			"seconds": 80,
+			"radius": 30
+		}
+	],
+	"weight": 4,
+	"min_security": 1
+}

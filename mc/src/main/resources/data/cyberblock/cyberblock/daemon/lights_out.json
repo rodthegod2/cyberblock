@@ -1,0 +1,31 @@
+{
+	"schema": 1,
+	"title_key": "cyberblock.daemon.lights_out",
+	"text_key": "cyberblock.daemon.lights_out.text",
+	"sequence": [
+		"7A",
+		"55"
+	],
+	"kinds": [
+		"light",
+		"terminal",
+		"traffic"
+	],
+	"action": "lights_out",
+	"tiers": [
+		{
+			"seconds": 20,
+			"radius": 10
+		},
+		{
+			"seconds": 40,
+			"radius": 18
+		},
+		{
+			"seconds": 90,
+			"radius": 30
+		}
+	],
+	"weight": 5,
+	"min_security": 1
+}

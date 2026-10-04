@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "redstone",
+	"ingredients": [
+		"minecraft:observer",
+		"minecraft:redstone",
+		"minecraft:lapis_lazuli",
+		"minecraft:iron_ingot"
+	],
+	"result": {
+		"id": "cyberblock:proximity_sensor",
+		"count": 1
+	}
+}

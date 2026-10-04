@@ -1,0 +1,14 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"category": "misc",
+	"ingredients": [
+		"minecraft:map",
+		"minecraft:redstone",
+		"minecraft:lapis_lazuli",
+		"minecraft:compass"
+	],
+	"result": {
+		"id": "cyberblock:net_map",
+		"count": 1
+	}
+}

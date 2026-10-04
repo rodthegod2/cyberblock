@@ -1,0 +1,29 @@
+{
+	"schema": 1,
+	"security": 3,
+	"grid": 7,
+	"buffer": 5,
+	"seconds": 45,
+	"daemons_min": 2,
+	"daemons_max": 3,
+	"firewall": [
+		{
+			"grid_add": 0,
+			"buffer_add": 0,
+			"seconds_add": -5,
+			"daemons_add": 0
+		},
+		{
+			"grid_add": 0,
+			"buffer_add": -1,
+			"seconds_add": -10,
+			"daemons_add": 0
+		},
+		{
+			"grid_add": 0,
+			"buffer_add": -1,
+			"seconds_add": -15,
+			"daemons_add": 0
+		}
+	]
+}
