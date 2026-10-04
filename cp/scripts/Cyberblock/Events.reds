@@ -12,7 +12,7 @@
 //   effect -> CyberblockBuffs.Effect           hack -> CyberblockHacks.Hack       scan -> CyberblockScan.Scan
 //   perk -> CyberblockPerks.Set                perkfx -> CyberblockPerks.Fx (hands it to CyberblockCyberware.Fx)
 //   cyber -> CyberblockCyberware.Set           cyberfx -> CyberblockCyberware.Fx  (plan 2026-10-03-retest2 1.3)
-//   prefs -> CyberblockLocomotion.SetStepUp(flag = prefs.stepup)  (megaplan 2026-10-04 Q-D1/Q-S2; recorded whatever the state)
+//   prefs -> CyberblockLocomotion.SetStepUp(flag = prefs.stepup), CyberblockView.SetVehicleDistance(amount = vdist)  (megaplan 2026-10-04 Q-D1/Q-S2; recorded whatever the state)
 //   session -> CyberblockSession.OnEvent, whatever the state (megaplan 2026-10-04 task 1-H1, Session.reds)
 //
 // While a save is written, CyberblockSystem does not call Tick at all: the events wait in the DLL's queue and are applied
@@ -66,6 +66,7 @@ public class CyberblockEvents {
           CyberblockCyberware.Set(game, Cyberblock_EventName(), RoundF(Cyberblock_EventAmount()) == 1);
         } else if Equals(kind, n"prefs") {
           CyberblockLocomotion.SetStepUp(Cyberblock_EventFlag());
+          CyberblockView.SetVehicleDistance(Cyberblock_EventAmount()); // prefs.vdist (View.reds)
         } else if Equals(kind, n"session") {
           let system = CyberblockSystem.Get(game);
           if IsDefined(system) {

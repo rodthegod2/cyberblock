@@ -10,7 +10,12 @@
 // is logged on change as 'view: vehicle camera <perspective> (tpp <b>)'. The 2.31 vehicle camera has no script-settable
 // distance: VehicleCameraManager exposes IsTPPActive, GetActivePerspective and GetPersistentPerspective only, and the
 // game picks among its three third-person presets by queueing vehicleRequestCameraPerspectiveEvent on the player
-// (DefaultTransition.RequestVehicleCameraPerspective, defaultTransition.swift:1649).
+// (DefaultTransition.RequestVehicleCameraPerspective, defaultTransition.swift:1649). So `prefs.vdist` (Minecraft's
+// vehicle camera distance, 0 = the game's own; the DLL hands it over as the amount of the event `prefs`) picks the
+// nearest of those presets: under 5.5 m TPPClose, under 9 m TPPMedium, else TPPFar. It is asked once per mount (and when
+// vdist changes) while a third-person vehicle camera is active, so V's own camera key still works; a second later the
+// active perspective is checked: 'view: vdist <m> -> vehicle camera <preset>' when it took, else 'view: vdist not
+// settable (game default)' once, and it is not asked again.
 //
 // 2.31 script API (NativeDB, redscript), compile-checked: BraindanceSystem.GetIsInBraindance, fetched from the
 // scriptable systems container as PlayerPuppet does (and CyberblockEffects.LockReason); GameInstance.GetPhotoModeSystem
@@ -23,6 +28,11 @@ public class CyberblockViewService extends ScriptableService {
   public let gate: String;          // the last reason logged ("" before the first)
   public let perspective: Int32;    // the last vehicle camera perspective logged, while perspectiveKnown
   public let perspectiveKnown: Bool;
+  public let vdist: Float;          // prefs.vdist, 0 = the game's own
+  public let vdistAsked: Bool;      // asked for this mount (cleared on dismount and when vdist changes)
+  public let vdistWant: Int32;      // the perspective asked for
+  public let vdistCheckIn: Int32;   // ticks until the asked perspective is checked (0: nothing to check)
+  public let vdistDead: Bool;       // the request did not take: the game's own vehicle cameras stay
 
   public static func Get() -> ref<CyberblockViewService> {
     return GameInstance.GetScriptableServiceContainer().GetService(n"CyberblockViewService") as CyberblockViewService;
@@ -36,6 +46,15 @@ public abstract class CyberblockView {
     Cyberblock_SetViewAllowed(Equals(reason, "open"));
     CyberblockView.Note(reason);
     CyberblockView.ProbeVehicleCamera(player);
+  }
+
+  // Event prefs (Events.reds): Minecraft's vehicle camera distance, 0 = the game's own, else 3..14 m.
+  public static func SetVehicleDistance(vdist: Float) -> Void {
+    let service = CyberblockViewService.Get();
+    if IsDefined(service) && service.vdist != vdist {
+      service.vdist = vdist;
+      service.vdistAsked = false;
+    }
   }
 
   public static func Clear(game: GameInstance) -> Void {
@@ -96,8 +115,11 @@ public abstract class CyberblockView {
     }
     if !IsDefined(cameras) {
       service.perspectiveKnown = false;
+      service.vdistAsked = false;
+      service.vdistCheckIn = 0;
       return;
     }
+    CyberblockView.ApplyVehicleDistance(service, player, cameras);
     let perspective = EnumInt(cameras.GetActivePerspective());
     if !service.perspectiveKnown || service.perspective != perspective {
       service.perspectiveKnown = true;
@@ -105,6 +127,36 @@ public abstract class CyberblockView {
       let tpp = cameras.IsTPPActive();
       Cyberblock_Log(s"view: vehicle camera \(CyberblockView.PerspectiveName(perspective)) (tpp \(tpp))");
     }
+  }
+
+  // prefs.vdist as the nearest of the game's three third-person vehicle camera presets (see the header).
+  private static func ApplyVehicleDistance(service: ref<CyberblockViewService>, player: ref<PlayerPuppet>, cameras: ref<VehicleCameraManager>) -> Void {
+    if service.vdistCheckIn > 0 {
+      service.vdistCheckIn -= 1;
+      if service.vdistCheckIn == 0 {
+        if EnumInt(cameras.GetActivePerspective()) == service.vdistWant {
+          Cyberblock_Log(s"view: vdist \(service.vdist) m -> vehicle camera \(CyberblockView.PerspectiveName(service.vdistWant))");
+        } else {
+          service.vdistDead = true;
+          Cyberblock_Log("view: vdist not settable (game default)");
+        }
+      }
+      return;
+    }
+    if service.vdistDead || service.vdistAsked || service.vdist <= 0.0 || !cameras.IsTPPActive() {
+      return;
+    }
+    let want = service.vdist < 5.5 ? vehicleCameraPerspective.TPPClose : service.vdist < 9.0 ? vehicleCameraPerspective.TPPMedium : vehicleCameraPerspective.TPPFar;
+    service.vdistAsked = true;
+    service.vdistWant = EnumInt(want);
+    if EnumInt(cameras.GetActivePerspective()) == service.vdistWant {
+      Cyberblock_Log(s"view: vdist \(service.vdist) m -> vehicle camera \(CyberblockView.PerspectiveName(service.vdistWant)) (already)");
+      return;
+    }
+    let request = new vehicleRequestCameraPerspectiveEvent();
+    request.cameraPerspective = want;
+    player.QueueEvent(request);
+    service.vdistCheckIn = 10; // 1 s at 10 Hz
   }
 
   private static func PerspectiveName(perspective: Int32) -> String {

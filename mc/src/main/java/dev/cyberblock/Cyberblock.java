@@ -90,6 +90,10 @@ public class Cyberblock implements ModInitializer {
 				.then(Commands.literal("erase")
 					.then(Commands.literal("on").executes(command -> outline(command.getSource(), true)))
 					.then(Commands.literal("off").executes(command -> outline(command.getSource(), false)))))));
+		// /cyberblock worldcheck [on|off]: a dedicated server refuses hosts on a world that is not the Night City type; spawn platform
+		dev.cyberblock.net.WorldCheck.init();
+		// /cyberblock lan offline on|off: the owner lets offline guests join a world opened to LAN (off at every world start)
+		dev.cyberblock.net.LanAccess.init();
 		// content as data (megaplan section 1.7)
 		ContentLoader.init();
 		// dedicated-server admin bits (megaplan 2-M1): startup line, whitelist warning, /cyberblock status and hosts add|remove
@@ -108,6 +112,12 @@ public class Cyberblock implements ModInitializer {
 		source.sendSystemMessage(Component.translatableWithFallback("cyberblock.outline.erase." + (now ? "on" : "off"), now
 			? "Creative can erase the replica permanently: ON (broken outline blocks stay until the probes see the cell again)"
 			: "Creative can erase the replica permanently: OFF (broken outline blocks come back in about 10 s)"));
+		if (OutlineRules.creativeErasesSource() == OutlineRules.Source.SERVER_JSON) {
+			// megaplan 1.13: server.json wins when it sets the value explicitly; the world's setting is kept for when it does not
+			source.sendSystemMessage(Component.translatableWithFallback("cyberblock.outline.erase.forced",
+				"Set by config/cyberblock/server.json (creativeErasesReplica: true); change it there and restart to use this world's setting"));
+		}
+
 		return 1;
 	}
 

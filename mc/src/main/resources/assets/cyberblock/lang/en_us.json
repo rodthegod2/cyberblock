@@ -385,6 +385,7 @@
 	"cyberblock.login.too_fast": "Wait a second between /login attempts",
 	"cyberblock.login.wrong": "Wrong password (attempts left: %s)",
 	"cyberblock.login.welcome": "Welcome to Cyberblock, %s! You will not need the password again on this world.",
+	"cyberblock.login.welcome_offline": "Welcome to Cyberblock, %s! You joined without a Minecraft account, so you will need the password again next time.",
 	"cyberblock.login.status.on": "Join password: on; %s players verified on this world, %s locked now",
 	"cyberblock.login.status.off": "Join password: off (set joinPassword in config/cyberblock/server.json, then restart the server)",
 	"cyberblock.login.reset": "Cleared %s verified players: everyone must /login at their next join (players online now stay logged in)",

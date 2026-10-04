@@ -3130,5 +3130,322 @@
     -3999.0
    ]
   }
+ ],
+ "prefs_apply": [
+  {
+   "given": {},
+   "current": {
+    "dist": 3.2,
+    "shoulder": 0.45,
+    "fov": 0.0,
+    "recenter": true,
+    "vdist": 0.0,
+    "stepup": true,
+    "debug": false
+   },
+   "expect": {
+    "dist": 3.2,
+    "shoulder": 0.45,
+    "fov": 0.0,
+    "recenter": true,
+    "vdist": 0.0,
+    "stepup": true,
+    "debug": false
+   },
+   "bad": 0
+  },
+  {
+   "given": {
+    "dist": 5.0,
+    "shoulder": -0.3,
+    "fov": 90.0,
+    "recenter": false,
+    "vdist": 6.5,
+    "stepup": false
+   },
+   "current": {
+    "dist": 3.2,
+    "shoulder": 0.45,
+    "fov": 0.0,
+    "recenter": true,
+    "vdist": 0.0,
+    "stepup": true,
+    "debug": false
+   },
+   "expect": {
+    "dist": 5.0,
+    "shoulder": -0.3,
+    "fov": 90.0,
+    "recenter": false,
+    "vdist": 6.5,
+    "stepup": false,
+    "debug": false
+   },
+   "bad": 0
+  },
+  {
+   "given": {
+    "dist": 3.2,
+    "shoulder": 0.45,
+    "fov": 0.0,
+    "recenter": true,
+    "vdist": 0.0,
+    "stepup": true,
+    "debug": false
+   },
+   "current": {
+    "dist": 5.0,
+    "shoulder": -0.3,
+    "fov": 90.0,
+    "recenter": false,
+    "vdist": 6.5,
+    "stepup": false,
+    "debug": true
+   },
+   "expect": {
+    "dist": 3.2,
+    "shoulder": 0.45,
+    "fov": 0.0,
+    "recenter": true,
+    "vdist": 0.0,
+    "stepup": true,
+    "debug": false
+   },
+   "bad": 0
+  },
+  {
+   "given": {
+    "debug": true
+   },
+   "current": {
+    "dist": 3.2,
+    "shoulder": 0.45,
+    "fov": 0.0,
+    "recenter": true,
+    "vdist": 0.0,
+    "stepup": true,
+    "debug": false
+   },
+   "expect": {
+    "dist": 3.2,
+    "shoulder": 0.45,
+    "fov": 0.0,
+    "recenter": true,
+    "vdist": 0.0,
+    "stepup": true,
+    "debug": true
+   },
+   "bad": 0
+  },
+  {
+   "given": {
+    "debug": false
+   },
+   "current": {
+    "dist": 5.0,
+    "shoulder": -0.3,
+    "fov": 90.0,
+    "recenter": false,
+    "vdist": 6.5,
+    "stepup": false,
+    "debug": true
+   },
+   "expect": {
+    "dist": 5.0,
+    "shoulder": -0.3,
+    "fov": 90.0,
+    "recenter": false,
+    "vdist": 6.5,
+    "stepup": false,
+    "debug": false
+   },
+   "bad": 0
+  },
+  {
+   "given": {
+    "dist": 0.5,
+    "shoulder": -4,
+    "fov": 20,
+    "vdist": 1
+   },
+   "current": {
+    "dist": 3.2,
+    "shoulder": 0.45,
+    "fov": 0.0,
+    "recenter": true,
+    "vdist": 0.0,
+    "stepup": true,
+    "debug": false
+   },
+   "expect": {
+    "dist": 1.5,
+    "shoulder": -1.0,
+    "fov": 50.0,
+    "recenter": true,
+    "vdist": 3.0,
+    "stepup": true,
+    "debug": false
+   },
+   "bad": 0
+  },
+  {
+   "given": {
+    "dist": 80,
+    "shoulder": 4,
+    "fov": 170,
+    "vdist": 99
+   },
+   "current": {
+    "dist": 3.2,
+    "shoulder": 0.45,
+    "fov": 0.0,
+    "recenter": true,
+    "vdist": 0.0,
+    "stepup": true,
+    "debug": false
+   },
+   "expect": {
+    "dist": 8.0,
+    "shoulder": 1.0,
+    "fov": 110.0,
+    "recenter": true,
+    "vdist": 14.0,
+    "stepup": true,
+    "debug": false
+   },
+   "bad": 0
+  },
+  {
+   "given": {
+    "fov": -5,
+    "vdist": -1
+   },
+   "current": {
+    "dist": 5.0,
+    "shoulder": -0.3,
+    "fov": 90.0,
+    "recenter": false,
+    "vdist": 6.5,
+    "stepup": false,
+    "debug": true
+   },
+   "expect": {
+    "dist": 5.0,
+    "shoulder": -0.3,
+    "fov": 0.0,
+    "recenter": false,
+    "vdist": 0.0,
+    "stepup": false,
+    "debug": true
+   },
+   "bad": 0
+  },
+  {
+   "given": {
+    "fov": 0,
+    "vdist": 0
+   },
+   "current": {
+    "dist": 5.0,
+    "shoulder": -0.3,
+    "fov": 90.0,
+    "recenter": false,
+    "vdist": 6.5,
+    "stepup": false,
+    "debug": true
+   },
+   "expect": {
+    "dist": 5.0,
+    "shoulder": -0.3,
+    "fov": 0.0,
+    "recenter": false,
+    "vdist": 0.0,
+    "stepup": false,
+    "debug": true
+   },
+   "bad": 0
+  },
+  {
+   "given": {
+    "dist": "far",
+    "shoulder": true,
+    "fov": null,
+    "recenter": 1,
+    "stepup": "yes",
+    "vdist": [
+     3
+    ],
+    "debug": "on"
+   },
+   "current": {
+    "dist": 5.0,
+    "shoulder": -0.3,
+    "fov": 90.0,
+    "recenter": false,
+    "vdist": 6.5,
+    "stepup": false,
+    "debug": true
+   },
+   "expect": {
+    "dist": 5.0,
+    "shoulder": -0.3,
+    "fov": 90.0,
+    "recenter": false,
+    "vdist": 6.5,
+    "stepup": false,
+    "debug": true
+   },
+   "bad": 7
+  },
+  {
+   "given": {
+    "debug": 1,
+    "dist": 2.5
+   },
+   "current": {
+    "dist": 3.2,
+    "shoulder": 0.45,
+    "fov": 0.0,
+    "recenter": true,
+    "vdist": 0.0,
+    "stepup": true,
+    "debug": false
+   },
+   "expect": {
+    "dist": 2.5,
+    "shoulder": 0.45,
+    "fov": 0.0,
+    "recenter": true,
+    "vdist": 0.0,
+    "stepup": true,
+    "debug": false
+   },
+   "bad": 1
+  },
+  {
+   "given": {
+    "scale": 0.75,
+    "dist": 4
+   },
+   "current": {
+    "dist": 3.2,
+    "shoulder": 0.45,
+    "fov": 0.0,
+    "recenter": true,
+    "vdist": 0.0,
+    "stepup": true,
+    "debug": false
+   },
+   "expect": {
+    "dist": 4.0,
+    "shoulder": 0.45,
+    "fov": 0.0,
+    "recenter": true,
+    "vdist": 0.0,
+    "stepup": true,
+    "debug": false
+   },
+   "bad": 0
+  }
  ]
 }

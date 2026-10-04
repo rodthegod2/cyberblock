@@ -161,7 +161,7 @@ public final class ServerNet {
 		NameAndId id = player.nameAndId();
 		PlayerList list = s.getPlayerList();
 		return Handshake.hostRefusal(isOwner(s, player), JoinLock.locked(player.getUUID()), config.allowHosts(),
-			list.isUsingWhitelist() && list.isWhiteListed(id), JoinLock.verified(player.getUUID()),
+			list.isUsingWhitelist() && list.isWhiteListed(id), JoinLock.verified(s, player),
 			config.hosts().isEmpty() || config.listsHost(player.getPlainTextName(), player.getUUID()));
 	}
 
@@ -195,6 +195,12 @@ public final class ServerNet {
 		String version = modVersion();
 		Handshake.Result result = Handshake.decide(new Handshake.Input(conn.proto, conn.mod, conn.dll, conn.wantHost, version,
 			refusal(s, player, config), HostSessions.hostsOtherThan(uuid), config.maxHosts()));
+		if (result.host() && WorldCheck.refusesHosts()) {
+			// a dedicated server whose overworld is not the Night City world type (WorldCheck; an operator can override it)
+			result = new Handshake.Result(true, Payloads.ROLE_GUEST, WorldCheck.REFUSED);
+			player.sendSystemMessage(WorldCheck.refusal());
+		}
+
 		// every refusal carries the server's joinHelp once (megaplan 2-M1; unchanged while joinHelp is empty)
 		result = new Handshake.Result(result.ok(), result.role(), ServerAdmin.refusal(result.reason()));
 		boolean wasHost = conn.result.host();

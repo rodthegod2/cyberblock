@@ -141,3 +141,33 @@ def apply_binds(given: dict, current: dict) -> tuple[dict, bool]:
     keys = [out[n] for n in BIND_NAMES]
     clash = len(set(keys)) != len(keys)
     return (dict(BIND_DEFAULTS) if clash else out), clash
+
+
+# ---- `prefs`, the third-person camera preferences (megaplan 2026-10-04 section 1.9, Phase Q) --------------------------
+# The DLL's world::parse_prefs is the receiver; shared/vectors.json `prefs_apply` pins it to this reference.
+
+PREFS_DEFAULTS = {"dist": 3.2, "shoulder": 0.45, "fov": 0.0, "recenter": True, "vdist": 0.0, "stepup": True, "debug": False}
+"""The DLL's defaults (Q-D1), held before any `prefs`, after every `hello` and after a link drop. `debug` is Minecraft's
+`/cyberblock debug view` flag: the DLL adds `cam.vdbg` while it is true."""
+_PREFS_NUMBERS = {"dist": (1.5, 8.0, False), "shoulder": (-1.0, 1.0, False), "fov": (50.0, 110.0, True), "vdist": (3.0, 14.0, True)}
+
+
+def apply_prefs(given: dict, current: dict) -> tuple[dict, int]:
+    """A `prefs` message applied to `current` (world::parse_prefs): a missing field keeps its value; a number is clamped
+    into its range (`fov` and `vdist`: 0 or below is 0, the game's own, and above 0 is clamped); a field of the wrong type
+    keeps its value and is counted; other fields are ignored. Returns (prefs, bad)."""
+    out, bad = dict(current), 0
+    for key, (lo, hi, zero_off) in _PREFS_NUMBERS.items():
+        if key in given:
+            v = given[key]
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+                out[key] = 0.0 if zero_off and v <= 0 else min(max(float(v), lo), hi)
+            else:
+                bad += 1
+    for key in ("recenter", "stepup", "debug"):
+        if key in given:
+            if isinstance(given[key], bool):
+                out[key] = given[key]
+            else:
+                bad += 1
+    return out, bad

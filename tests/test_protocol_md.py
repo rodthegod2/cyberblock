@@ -1322,6 +1322,19 @@ def test_phase_q_documented_defaults_match_the_checked_ones():
         assert re.search(rf"\b{key} {str(value).lower()}\b", text), f"default {key} {value} is not in the Defaults bullet"
 
 
+def test_phase_q_prefs_vectors_follow_the_reference_and_every_result_is_a_valid_prefs():
+    """shared/vectors.json `prefs_apply` (tools.gen_vectors from tools/cbmath.py apply_prefs; the DLL's cb_tests run the same
+    cases): each result is what the reference gives, and as a message it is a valid seven-field `prefs`, debug flag included."""
+    from tools import cbmath
+    assert cbmath.PREFS_DEFAULTS == PREFS_DEFAULTS
+    cases = json.loads(Path("shared/vectors.json").read_text(encoding="utf-8"))["prefs_apply"]
+    assert len(cases) >= 12 and any(c["expect"]["debug"] and not c["current"]["debug"] for c in cases)
+    assert any(not c["expect"]["debug"] and c["current"]["debug"] for c in cases)
+    assert any("debug" not in c["given"] and c["expect"]["debug"] == c["current"]["debug"] for c in cases), "a six-field prefs keeps it"
+    for case in cases:
+        assert cbmath.apply_prefs(case["given"], case["current"]) == (case["expect"], case["bad"]), case
+        assert prefs_ok({"t": "prefs", **case["expect"]}), case
+
 # ---- Phase Q player docs and the Re-test Q list (plan 2026-10-04 megaplan Q-P3) ----------------------------------------
 TESTING = Path("docs/TESTING-PLAN.md").read_text(encoding="utf-8")
 CHANGELOG = Path("CHANGELOG.md").read_text(encoding="utf-8")

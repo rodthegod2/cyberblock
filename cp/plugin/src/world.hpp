@@ -67,7 +67,8 @@ namespace cb::world
 		uint64_t target = 0; // hit / ignite / lead / pull / hack / scan target: the EntityID hash (scan: 0 = look-at)
 		double amount = 0;   // explosion power | hit dmg / 20 (fraction of the target's max health) | ignite seconds |
 							 // teleport yaw (Cyberpunk degrees) | lead length | pull strength | knock radius |
-							 // effect seconds | perk rank | perkfx seconds | cyber 1 installed, 0 not | cyberfx seconds
+							 // effect seconds | perk rank | perkfx seconds | cyber 1 installed, 0 not | cyberfx seconds |
+							 // prefs vdist (0 = the game's own)
 		Vec3 vector{};       // hit impulse, m/s
 		bool flag = false;   // explosion fire | lead has a fixed anchor | hack chains | prefs stepup
 		std::string name;    // effect name | hack name | perk id | perkfx id | cyberware id | cyberfx id | session state
@@ -230,24 +231,22 @@ namespace cb::world
 		double shoulder = 0.45; // m to the right (negative: left), -1..1
 		double fov = 0.0;       // 0 = the game's own, else 50..110 (gameCameraComponent.SetFOV units)
 		bool recenter = true;   // swing the shoulder offset to the centre while a wall is on that side
-		double vdist = 0.0;     // 0 = the game's own, else 3..14 m (2.31 has no settable vehicle camera distance: unused)
+		double vdist = 0.0;     // 0 = the game's own, else 3..14 m (View.reds picks the nearest vehicle camera preset)
 		bool stepup = true;     // the step-up assist (scripts, through the event `prefs`)
-		// CONTRACT DEVIATION, pending the integrator (megaplan section 1.9 defines prefs as the six fields above and gives
-		// Minecraft no way to tell the DLL that `/cyberblock debug view` is on, yet `cam.vdbg` is sent only while it is):
-		// an optional `debug` bool, Minecraft's view debug flag, so `cam` carries `vdbg`. A six-field `prefs` keeps it.
-		bool debug = false;
+		bool debug = false;     // Minecraft's `/cyberblock debug view` flag: `cam` carries `vdbg` while it is on
 		bool operator==(const ViewPrefs &) const = default;
 	};
 
 	/// `prefs` applied on top of `current`: every number is clamped into its range (`fov` and `vdist`: below 0 is 0, above
 	/// 0 but under the lower bound is raised to it); a field that is missing keeps its current value; a field that is not
 	/// finite or of the wrong type keeps its current value and is counted in `bad` (its name in `why`, the first one only);
-	/// `debug` (the deviation above) is optional like every field; any other field is ignored. Never throws.
+	/// `debug` is optional like every field (a `prefs` without it keeps the flag); any other field is ignored. Never throws.
+	/// shared/vectors.json `prefs_apply` (tools/cbmath.py apply_prefs) pins these rules.
 	ViewPrefs parse_prefs(const nlohmann::json &message, const ViewPrefs &current, size_t &bad, std::string &why);
 	/// The prefs in effect (on_minecraft_message keeps them). Any thread.
 	ViewPrefs view_prefs();
-	/// The `vdbg` the next `cam` carries: `values` while Minecraft's view debug flag is on (today the `debug` deviation
-	/// above, the one place to change when the integrator picks the channel), else none. Any thread.
+	/// The `vdbg` the next `cam` carries: `values` while Minecraft's view debug flag (`prefs.debug`) is on, else none. Any
+	/// thread.
 	std::optional<std::array<double, 3>> vdbg_to_send(const std::array<double, 3> &values);
 
 	// ---- Cyberpunk -> Minecraft -------------------------------------------------------------------------------------
