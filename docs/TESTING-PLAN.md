@@ -1,11 +1,329 @@
 # Cyberblock — in-game test session (2026-10-03)
 
-Everything below is built, unit-tested, compile-checked against the real 2.31 game scripts and reviewed. **For the multiplayer
+Everything below is built, unit-tested, compile-checked against the real 2.31 game scripts and reviewed. **Start with "Re-test: Wave C
+(Phases 6, 7, 8, 9)" just below** (what changed since your last session). **For the multiplayer
 version (2.0.0, proposed) do the "Full multiplayer pass" first: it is the one session that plays everything from Phase Q to Phase 9
 in order, and its step M-8 is "Re-test 9".** The older sections are the detailed checks it points into. Work top to
 bottom (**Re-test: Wave B (Phases 3, 4, 5) first** when you are testing Wave B, then its Phase 3, 4 and 5 sections; then
 **Re-test: Wave A**, which points into Re-test Q and Re-test 1 for the details; then **In-game fixes 3**, then Re-test 3); each step says what should happen. Tell Claude "F4: what you saw" or "R5 L-1: what you saw" (or "step N: ...") and it reads
 `red4ext\logs\Cyberblock.log`, Minecraft's `mc\run\logs\latest.log` and captures the game window to diagnose.
+
+## Re-test: Wave C (Phases 6, 7, 8, 9)
+
+**Do this first.** Wave C built Phases 6, 7, 8 and 9 and their fixes after review; this is the short list of what changed since the
+sections below were written, with one id per check. Tell Claude "6B-2: what you saw" and it reads `Cyberblock.log`, the server log
+and `latest.log`. The long sections below (Full multiplayer pass, Re-test 9, Re-test 6, Re-test: Wave C, Phase 7 and Phase 8) hold the
+detail; open them only where a check here sends you or something looks wrong. Phase 0 is still not run: a line that names a fallback
+is the written fallback, not a failure.
+
+**What to try (one screen)**
+
+*Solo first* (your singleplayer world, Cyberpunk linked, F9 On):
+1. **Cyberdeck block and Breach:** place a Cyberdeck block (6R-3), then Breach a Net Port: the timer runs at once, closing after a pick
+   raises the alarm (6B-1 to 6B-3).
+2. **Cars and the map:** Vehicle Panel on an NPC car and on V's car, a blackout from the Net Map, the Traffic Tool (6I-1, 6I-2, 6P-1 to 6P-4);
+   lock V's parked car and fast travel away (6S-2).
+3. **The Afterlife:** `/cyberblock hub`, the Holo-Table's fast-travel group, a save and load while in the hub, F9 Off in the hub (7H, 7T, 7V,
+   7S, 7D, 7P).
+4. **People and gigs:** a medic heal, a Breach gig and a reach gig, a ripperdoc implant you cannot buy yet, ammo at its cap (7N, 7A, 7V-3, 7V-4).
+5. **Heat and going down:** `/cyberblock heat set 95`, Second Heart, a downed crawl, a spawn during a dialogue (8T, 8S, 8D).
+6. **Phase 9:** Esc, **Saves...**, load a save (9U); Cyberblock settings, Performance, Frame scale 75 % and restart (9S-3).
+
+*Then on the server with friends* (the join password stays on; `/login` first):
+7. **Guests hack:** a guest quickhack, the feed map and `/cyberblock guests hacks off` (6R-1, 6I-3 to 6I-5, 6B-4).
+8. **The Van and a match:** a guest in the Hacker Van (8V); Gang Wars and Free For All at the Match Terminal (8M); the Overlord with opt-in,
+   events and supply drops (8O, 8A, 8P); chips on players (8X); spectate (8T-6, 8T-7).
+9. **The finish:** the settings screen's Guests tab clicked fast as a non-operator host (9S-1, 9S-2), a friend's datapack (9P-1, 9C-1),
+   `/cyberblock backup now` a few times (9B), and if you have four players, device load (9F-1).
+10. **Test server only:** start it with `-Dcyberblock.remoteRange=near` for 6R-2 (never on the real server).
+
+### W6. Phase 6 (hacking, Breach, the interaction map)
+**6R (hack range, Cyberdeck block)**
+- **6R-1.** Server log: only one Phase 0 (h) line, `hack range: every streamed target (...)`, at the first remote action of any kind: a
+  guest quickhack, rhack, a Device Relay or a Breach Port. There should be no `redstone: remote actions reach` line.
+- **6R-2.** Start the server with `-Dcyberblock.remoteRange=near` (test server only): the line reads `hack range: fallback active ...
+  (forced by -Dcyberblock.remoteRange=near)`. A Device Relay linked to a device more than 50 m from V and a guest quickhack on a target
+  more than 50 m away should both give out of range.
+- **6R-3.** Place a Cyberdeck block: its front lights are dark, a right-click says "RAM 0 of 16", and it gains 1 RAM every 5 s (full after
+  about 80 s). Use some RAM, break the block and place it again: it is empty again, not full.
+
+**6B (Breach)**
+- **6B-1.** P6-4: right-click the Net Port. The timer bar starts draining at once, before any pick.
+- **6B-2.** P6-4: make one pick, then close the screen. Expect the alarm (or, within a minute of the previous alarm, the action bar still says
+  it and the server log shows `alarm merged`).
+- **6B-3.** P6-4: open, close without a pick, right-click again. Expect the same grid with the timer still running; let it run out and
+  expect the alarm. Right after a failure, a right-click says to wait (10 s).
+- **6B-4.** P6-10: with `/cyberblock guests hacks off`, the guest's Breach opens and plays out; at the end the action bar says blocked and
+  nothing reaches Night City.
+- **6B-5.** Phase 8 (8X closes the Breach): when a player intrusion lands, the target's short breach screen shows it ended instead of a dead
+  puzzle.
+
+**6I (the interaction map)**
+- **6I-1.** Vehicle Panel on a host's car as a guest with hacks on: brake, lock and the other vehicle hacks land ("done"), not "Night City
+  did not answer". They undo themselves after 30 s.
+- **6I-2.** Traffic Tool switch, Net Map blackout (pick a length) and gridlock, outline and ping at a point near V all get an answer from
+  Night City. The DLL log shows target 0 and the p/r/secs values.
+- **6I-3.** Feed map consent: a guest takes host A's feed map while A allows hacks, then A runs `/cyberblock guests hacks off`. Within about
+  a second the guest's held map goes blank and stays blank while A or another host keeps watching the Net Map feed. A copy of the map in
+  an item frame, or a cartography-table clone, shows nothing.
+- **6I-4.** A player locked by the join password who holds a feed map sees no picture.
+- **6I-5.** The server log shows the line `feed: feed maps get each frame as a per-holder map packet (the map's saved colours stay blank)`.
+
+**6S (the scripts)**
+- **6S-1.** Fail a Breach on purpose while the police are off (during a quest that disables NCPD, or in a police-free area): the wanted
+  level must not change, and the log must show `Minecraft Heat only (police off here)`. With the police on, the wanted level goes up by
+  one, and the log line `rhack: heat path: ...` does not name the fallback.
+- **6S-2.** Lock V's own parked car from Minecraft, then fast travel away within 15 s. Come back, and also save, load and come back: the
+  doors open normally. The log shows `doors of car <id> restored`; if it shows `restore kept`, it is followed by `restored` once the
+  car loads again.
+- **6S-3.** Remote Start on a car whose engine a quest keeps off answers "not hackable (engine locked)". A car used by a quest answers
+  "not hackable (quest)". Kill engine then Remote Start on an ordinary car still works.
+- **6S-4.** Unconfirmed at runtime: Codeware reflection reading `PreventionSystem.m_ignoreSecurityAreasByQuest`. If it fails, the log
+  shows `rhack: heat path: Minecraft Heat only (Phase 0 e fallback) (fallback: PreventionSystem.m_ignoreSecurityAreasByQuest not
+  readable ...)`.
+
+**6D (the photo feed in the DLL)**
+- **6D-1.** P6-8 step 3 (fallback): with the feed fallen back (for example a Cyberblock.fx without the Feed pass, or the cost monitor
+  tripping), within about 3 s of opening the Net Map photo feed (or holding the feed map) the panel and the map show a top-down replica
+  view around V in map colours with a red mark in the middle. The server log has `feed: <host> sent no picture within 3 s of feedreq on;
+  path: the top-down replica render around V (the fallback)`. The host's `Cyberblock.log` has the single `the back-buffer feed is off
+  for this Minecraft session` line and the server log has no `bad feed ... dropped` warnings.
+- **6D-2.** P6-8 steps 1-2 (normal path): the real 128x128 picture arrives about once a second and the replica never replaces it while
+  pictures keep coming.
+
+**6A (content tiers)**
+- **6A-1.** Nothing new to play: the scripts already ignored the content tiers. Only the shipped seconds values and the docs changed.
+
+**6P (Re-test 6 points)**
+- **6P-1.** Re-test 6 P6-5: `veh_*` hacks on an NPC car and on the host's car. Expect the per-hack times, remote start not undone, and a
+  save during a lock that happens at once with the car unlocked (`rhack: cleared`).
+- **6P-2.** P6-5 step 6: a car more than 50 m from V. Does it work (every streamed target), or does the fallback switch on (`hack range:
+  fallback active`)?
+- **6P-3.** P6-4: Breach timer from the first pick, a new grid after an abort before a pick, the 30 s `locked_out` / `player_locked_out`
+  lockouts, and `alarm merged` on a second failure within 60 s.
+- **6P-4.** P6-6: blackout within 150 m of V for 1/2/5 min and `rhack: blackout over`; the Traffic Tool flips one intersection.
+- **6P-5.** P6-8 / P6-10.3: photo feed log lines `feed: on (path: ...)` / `feed: off (Minecraft stopped asking)` and server `feed: <host>
+  feedreq on|off`. On the fallback there is no picture.
+
+### W7. Phase 7 (people, the Afterlife hub, the Holo-Table)
+**7N (people's screens)**
+- **7N-1.** Take a `breach_device` gig (for example `open_the_ledger`, terminal), solve a Breach on a matching device, and check the gig
+  steps and can be turned in. The log line is `breach: <who> solved ...` followed by the gig progress.
+- **7N-2.** Medic: heal with missing hearts, check eddies are charged and health is full, and that no `heal DOWN to Cyberpunk` text
+  appears in the log.
+- **7N-3.** Die with a medic or vendor screen open and press a row: nothing happens, and Respawn works normally.
+- **7N-4.** In spectator mode, crafted or leftover screen presses do nothing.
+
+**7H (the hub)**
+- **7H-1.** A survival guest in the Afterlife holding a stack of stone, carrots or a bucket right-clicks the Holo-Table: the table opens.
+  Placing the stone is still refused.
+- **7H-2.** A linked host with Cyberblock Off (F9) types `/cyberblock hub`: they enter and stay, and the server log shows `hub: <name> V
+  not parked yet (blocked (Cyberblock is not active)) ...`. Switching On parks V (Hub.reds `hub: V parked`), and the server then logs the
+  confirmed park path.
+- **7H-3.** An active host enters the hub: Steve appears at the arrival point and does not flash to V's coordinates or fall through the
+  void. The client log shows `hub: in the Afterlife` before any position change.
+- **7H-4.** A host in the hub switches Cyberblock Off and plays in Minecraft's own window: within about 5 s the client logs `hub: input
+  from Minecraft's own window (no linked host DLL showing the hub)`, and real mouse clicks on the pause screen and the "Leave the
+  Afterlife" button land where the real cursor is.
+
+**7T (the Holo-Table)**
+- **7T-1.** P7-8: as a linked host, open the Holo-Table. The "Fast travel" group should list Cyberpunk's fast-travel points, and picking
+  one should travel there. A guest should see the group empty.
+- **7T-2.** As a Minecraft-only player on the void world, spawn at each shipped landmark from the Holo-Table. Each should land on the
+  replica floor, including landmarks whose guessed y is below the floor, with no "Night City is not built there yet" refusal where the
+  replica exists.
+
+**7V (vendors and fast travel in the scripts)**
+- **7V-1.** P7-8: open the Holo-Table as the host. Your Cyberpunk fast-travel points are listed under "Fast travel". Pick one from the
+  hub: `Cyberblock.log` shows `park: off (hub exit)` and then `fast travel: to <name> (Holo-Table)`.
+- **7V-2.** P7-8 step 3: a guest's Holo-Table lists no fast-travel points.
+- **7V-3.** P7-7 step 6: a ripperdoc implant locked by Street Cred or level shows "(locked)". A click toasts "Requirements not met", the
+  money does not change, and the log shows `vendors: buy ... refused (requirements not met)`.
+- **7V-4.** P7-7 step 7: with an ammo type at its cap, buying it gives "Ammo full". Below the cap, Shift+click stops at the cap. A
+  grenade, injector or inhaler buys only 1 even with Shift+click.
+
+**7S (the hub across sessions)**
+- **7S-1.** Re-test 7 P7-5 step 6, new: as host in the hub, open Cyberpunk's menu, load a save, press F9. Expect `hub: kept through the
+  session ready (...)` and then `park: on (...)` in `Cyberblock.log`, with V invisible and frozen under full-screen Minecraft. V must
+  never be free under the cover.
+- **7S-2.** Quit to the main menu while in the hub, load back in, press F9: expect `hub: kept through the session end` and the same `park:
+  on (...)`.
+- **7S-3.** Close the Minecraft client while in the hub, rejoin outside the hub: expect V free and `hub: forgotten (Minecraft lost)` or
+  `(the link dropped)`, as before.
+- **7S-4.** Not wired yet (the repair contract): once it is, expect `mechanic: repaired <car> (repair event, hp N %)` (vanilla path) or
+  `mechanic: repaired <car> (fallback: direct reset; the repair event left hp at N %)`.
+
+**7D (the hub in the DLL)**
+- **7D-1.** In the Afterlife hub, cause a Minecraft stall of more than 2 s (or a slow hub load) so the scripts go Lost and come back to
+  Active. The log shows `hub: in (Cyberblock active again); the scripts are told again`, followed by `hub: in (parking V)` and `hub: V
+  parked`. An NPC walking by ignores V.
+- **7D-2.** In the hub, save and reload (or end the session and reload while Steve is still in the hub). After returning to Active, V is
+  parked again.
+
+**7A (Phase 7 content)**
+- **7A-1.** Take a Breach gig (for example `doors_that_forgot`) and solve Breach on a door with a host online. The gig should step
+  forward or complete, and the reward should be paid.
+- **7A-2.** As a guest with Minecraft only and no host online, take Bone Collector or Feeding the Strays and hand in drops from mobs on
+  the replica. Check that hostile mobs actually spawn on the void world's replica floors.
+- **7A-3.** Take a reach gig (for example Noodles After Dark), Holo-Table to the landmark or walk there, and confirm it completes within 6
+  blocks horizontally at any height.
+
+**7P (Re-test 7 points)**
+- **7P-1.** P7-5 step 7: as the host in the hub, close or kill the Minecraft client. V should be visible, moving, with the camera free and
+  saving allowed, and `Cyberblock.log` should show `park: off (Minecraft lost)` and `hub: forgotten (Minecraft lost)` (or `(the link
+  dropped)`). Rejoin: the hub picks up once; leave it and V is free.
+- **7P-2.** P7-5 steps 4, 8 and 9: use the top-right "Afterlife hub" / "Leave the Afterlife" button on both pause screens. For a guest
+  locked until `/login` it should do nothing.
+- **7P-3.** P7-7 step 6: open a gun shop and an ordinary ripperdoc as the host. Both should show `vendors: <name> -> minecraft screen
+  open` and neither should show `vendors: <name> pass-through`.
+- **7P-4.** P7-8 step 3: pick a fast-travel point at the Holo-Table in the hub. You should leave the hub first, then V fast travels and
+  Steve follows. In the log, `fast travel: to <name> (Holo-Table)` should come after `park: off (hub exit)`.
+
+### W8. Phase 8 (the Van, the Overlord, matches, Heat, going down)
+**8V (the Hacker Van)**
+- **8V-1.** Craft the Hacker Van in survival from a minecart, chest, copper ingot, redstone and a Net Map (it shows the `hacker_van` item
+  icon). Park it and sit in as a guest. Open the Van screen and confirm the photo feed panel shows a picture within about 3 s, from the
+  DLL or, without one, the replica top-down render. The server log's `feed:` line says which path is active.
+- **8V-2.** While seated, quit and rejoin, or restart the server: you are back in the Van, a right-click opens a working screen
+  (targets, host), and the server logs `... as netrunner again`.
+- **8V-3.** As a host with Cyberpunk Off (LINKED), right-click a Van: you are refused with "The Van is for guests...". With the server
+  forcing it (for example `/ride`), you are put out within half a second.
+- **8V-4.** Zoom the Van miniature all the way out: it stops at 512 blocks and the client does not stall; the detail near V still
+  updates as the replica streams in.
+
+**8O (the Overlord)**
+- **8O-1.** A match in LOBBY or ENDED gets no Overlord or Auto-Director spawns. The server log shows `overlord: match hooks: running set,
+  ...` instead of the `no match hook` line.
+- **8O-2.** With a linked host in the match who opted in but whose spawns toggle is off: a `night_city` blackout, traffic jam or EMP, or an
+  airstrike near them, sends no rhack, glitch or explosion to their Cyberpunk game. With spawns on (and explosions on), they do.
+- **8O-3.** An airstrike or an Overlord creeper's blast does not break blocks, item frames or armour stands, and does not hurt a player
+  who is not in the match or did not opt in.
+- **8O-4.** Overlord zombies, skeletons and spiders ignore and cannot damage a passing player who is not in the match or did not opt in.
+  Overlord endermen never pick up blocks.
+- **8O-5.** Picking a console spot over a void gap is refused with "No ground there".
+- **8O-6.** The Overlord Console stands on the Match Terminal dais in the Afterlife (it is placed into an existing hub at the next server
+  start).
+- **8O-7.** A supply drop's eddies fall as stacks that only the opted-in match players near the drop can pick up (at most 100 per drop,
+  300 per match, 100 per player per match). The Overlord cannot pick them up.
+
+**8M (matches)**
+- **8M-1.** At a Match Terminal: the server log says `match: 4 match mode(s) offered (match_mode content)` with no `content: match_mode
+  ... skipped` line.
+- **8M-2.** Create Gang Wars with a tiny zone: the zone is clamped to 96..320. Start is refused until 4 teammates have joined (2 per team
+  on 2 teams). Capture points have radius 8 and take 20 s. A takedown scores 2 and each held point scores 1 a second.
+- **8M-3.** Free For All: each joiner gets their own team (up to 8). Joining as hacker is refused with "That match mode has no such role".
+- **8M-4.** In a running PvP match, `/cyberblock pvp off` (and the HUD/Cyberware button) shows "You fight in a PvP match: leave the match
+  to turn PvP off". After leaving, the earlier toggle comes back once the 15 s lock is over.
+- **8M-5.** Name tags: two strangers with PvP on are on different `cbm_p_*` teams (check with `/team list`). Inside a match, linked and
+  Minecraft-only teammates share `cbm_<match>_<team>p`, and Outline/Ping results go to teammates only.
+- **8M-6.** After a win: the Afterlife Match Wins board goes up by 1 for each winning teammate or hacker. In Gang Wars,
+  `/scoreboard objectives list` shows `cb_rep_<gang>` with +1 for winners and -1 for losers.
+- **8M-7.** Meet Up with a player standing inside a running match you are not in is refused with "Meet Up refused: <name> is inside a
+  running match you are not in".
+- **8M-8.** Last Team Standing (`respawn_s` 0): a killed teammate is announced as out. When only one team has players left the match ends
+  and that team wins.
+- **8M-9.** A PvP downing followed by a bleed-out still scores `scoring.kill` for the attacker's team, and only once.
+
+**8X (hacking players)**
+- **8X-1.** With `pvpDefault=false`: a second player stands between the hacker and an NPC. The hack key's scan still locks the NPC (red or
+  yellow NPC tooltip, not a grey "none" player tooltip), and a quickhack hits the NPC.
+- **8X-2.** With both players in PvP: the target opens a Net Port device breach, then the hacker uploads a chip into him. The log says
+  `no breach possible`. After 1.5 s it lands, the target's device breach stays open and keeps running, and no alarm, Heat or cooldown
+  follows.
+- **8X-3.** With both in PvP and no other breach: the target ignores the short Breach. At the deadline the server closes it (the screen
+  shows it ended), the chip lands and nothing else happens.
+- **8X-4.** Linked victim in a war zone: hit him with Cripple Movement and Short Circuit. Confirm only the damage shows in Cyberpunk, and
+  the server log's landed line carries the `linked victim:` clause. Reboot Optics still sends the glitch DOWN.
+
+**8T (Heat, going down, spectating)**
+- **8T-1.** Heat squads on a world with ground (the server's replica): `/cyberblock heat set 95`. Expect `heat: Minecraft squads ...` with
+  officer/heavy/maxtac/drone units that stay, not respawning every second. `/cyberblock heat` should show a steady squads count. At tier
+  4 (set 80) with chaos, only the top chaos player is hunted.
+- **8T-2.** A datapack-free server logs `content: loaded heat_tier 5` and `heat: ready (heat_tier content (5 tiers))`, with no `heat_tier
+  ... skipped` lines.
+- **8T-3.** Host with F9 Off on a server with Heat at tier 2 or higher: squads hunt that host's Steve. With F9 On: one line `heat: <name>
+  testing the real wanted level ...`, followed by either `real wanted level path active` or `not seen within 60 s ... until the next
+  raise tests again`.
+- **8T-4.** Second Heart installed and ready: take lethal damage. Expect `cyberware: activate second_heart` and the totem animation, not
+  `downed: ... went down`.
+- **8T-5.** Downed host: Steve and V crawl (log `downed: <host> went down (...); host: V crawls through the slowness effect, Night City
+  combat is not blocked`). A second client sees the host crawling, which proves `roster.downed` arrives.
+- **8T-6.** `/cyberblock spectate` as a non-op guest right after taking a hit: "You cannot spectate in a fight". Again after 10 s: it
+  starts with `player pins` in the log. A hidden pin stays off the caster map, and a second player shows as a dot with a name on the map.
+- **8T-7.** Spectate, then kill the server (from the hosting panel) and restart it: on rejoin, after `/login`, the player is put back in
+  its old mode and place (`spectate: <name> put back after a server stop while spectating`).
+
+**8S (Heat and spawns in the scripts)**
+- **8S-1.** Start a dialogue or cinematic while the server Heat tier rises. Expect `heat: raise held (V is in a scene, wanted level A),
+  kept` and the stars to arrive once the scene ends.
+- **8S-2.** In a police-free area or during a quest that turns NCPD off, change the tier, or go Off/Lost after a server raise. Expect
+  `raise held`/`lowering held (prevention disabled by a quest or scene ...)` or `heat: wanted level A left (...; not cleared: ...)`. The
+  police must stay off, and a later save must keep the quest's settings.
+- **8S-3.** If reflection cannot read `m_ignoreSecurityAreasByQuest`, expect a single `heat: path: none ... (fallback:
+  PreventionSystem.m_ignoreSecurityAreasByQuest not readable ...)` line and no wanted-level writes after it.
+- **8S-4.** An Overlord spawn near the 150 m edge should now attach (alwaysSpawned). Expect `spawns: <id> ok (k attached)` within 3 s,
+  never `matched no spawn` on the server, and no double squad.
+- **8S-5.** Request a spawn during a dialogue. Expect `spawns: <id> refused (V is in a scene)`, and the server sends its Minecraft squad
+  without Night City being marked FALLBACK.
+- **8S-6.** Pause the game right after a spawn request arrives. Expect `refused (answered too late (N s), its NPCs deleted)` and no Night
+  City NPCs left behind.
+
+**8D (spawns in the DLL)**
+- **8D-1.** With a match running, open the Cyberpunk pause menu for over 1 s while an Overlord spawn is sent. On unpause,
+  `Cyberblock.log` should show `spawn: <id> expired after N s in the queue ... spawnresult expired`, and no Night City NPCs should
+  appear for that request. Only the Minecraft squad should arrive, and the server should not log `matched no spawn`.
+- **8D-2.** Normal play with no pause: spawns should still be handed to the scripts (`handed to the scripts` line) and answered ok, with
+  no `expired` lines.
+
+**8A (Phase 8 content)**
+- **8A-1.** An Overlord spawns Max-Tac (heat tier 4) in daytime on the nightcity world. The wither skeletons hunt the player and do not
+  burn or turn neutral.
+- **8A-2.** Walker Pack (husks) and Scavenger Pack survive daylight in the replica.
+- **8A-3.** With `/cyberblock guests explosions off`, an Overlord airstrike near the host's Steve sends no Cyberpunk explosion, and no
+  blocks break in the match area.
+- **8A-4.** A supply drop gives 25 eddies, 16 arrows and 2 bread. The Overlord who paid cannot open it.
+- **8A-5.** In a Free For All, a Minecraft-only player can join as teammate.
+
+**8P (Re-test 8 points)**
+- **8P-1.** P8-2: before `/cyberblock overlord optin on` a spawn near the host is refused ("No opted-in player of this match"); after it,
+  the gang crew lands after the 3 s warning.
+- **8P-2.** P8-5: the host's stars follow the Heat with `guests spawns off` (the top chaos host gets 5 at tier 4).
+- **8P-3.** P8-8: `/cyberblock spectate stop` brings the guest back and removes the caster overlay; a second `/cyberblock spectate` says
+  "already spectating".
+- **8P-4.** P8-10: with `guests spawns off` the Overlord's spawns are Minecraft squads, but the wanted level still follows the Heat and
+  Gang Wars still changes attitudes.
+- **8P-5.** Machine check (Claude runs it in a worktree): `uv run python -m tools.mpcheck match heat overlord`.
+
+### W9. Phase 9 (content, saves, performance, settings, backups)
+- **9C-1.** Put a datapack whose `pack.mcmeta` has only `min_format` into `<world>/datapacks`. Minecraft should refuse it ("must declare
+  both min_format and max_format"), and `tools.content_check --dir` should report it too.
+- **9U-1.** Load a valid save from Esc, **Saves...**, Load: the log shows `saves: load "<name>" (index <i>)` and the save loads.
+- **9U-2.** Load a save Cyberpunk marks invalid (if one exists): it is greyed out with "Cyberpunk cannot load this save". If one gets
+  through anyway, the log shows `saves: load "<name>" dropped (not valid)` with a warning toast, and Cyberpunk's own menu shows the same
+  save as unloadable.
+- **9U-3.** If the metadata never arrives in game: every row shows "Load this one through Night City Menu...", Load stays disabled, and
+  the log shows `saves: metadata for 0 of <n>`. The fallback is Night City Menu..., which opens Cyberpunk's own lists.
+- **9U-4.** Select a save, then press New Save: when the list refreshes 2 s later, the highlight stays on the same save (one row lower),
+  and the confirmation shows its type and date.
+- **9F-1.** Under heavy device or replica load (3-4 hosts sending device lists at the relay limit), a door's final state should match
+  the host's latest devstate, and no replica blocks should appear that no host reports. The server's budget report line may now show
+  a non-zero `overflowed` count, which here means older waiting jobs that ran early.
+- **9S-1.** On the server, as a host who is not an operator: open Cyberblock settings, Guests, and click all 16 rows quickly. Each clicked
+  row should show its new value with " ..." and the rows should confirm about one per second. You must stay connected (no "Kicked
+  for spamming").
+- **9S-2.** Spin the mouse wheel over any Guests, Look or PvP row: the value must not change and nothing should be sent. The Look tab's
+  camera rows should still scroll normally.
+- **9S-3.** Set Performance, Frame scale to 75 %, then restart. `config/cyberblock/performance.json` should contain scale 0.75, the
+  client log should show `performance: frame scale 0.75, figure cap N (Performance mode on)`, the slider should reopen at 75 %, and the
+  DLL should log the new prefs scale right away when the slider moves.
+- **9B-1.** On a dedicated server with the default keep=7: run `/cyberblock backup now` several times in one day. `backups/` should keep
+  every earlier `cyberblock-<date>.zip`, plus at most 3 `cyberblock-<date>-HHmmss.zip`.
+- **9B-2.** Run `/cyberblock backup now` on a large world, then `stop` within a few seconds. The log should show `backup: stopped, the
+  server is stopping` before `Stopping server`, and `backups/` should hold no `.zip.part`.
+- **9P-1.** R9-1: the friend-namespace dialogue file adds a greeting next to the shipped ones, and the log says `content: loaded dialogue
+  N (cyberblock, <yours>)`.
+- **9P-2.** R9-3: Look tab Hide my Holo pin; World tab `server.json` rows are read-only and match the file.
+- **9P-3.** R9-5: Performance tab Frame scale and Figures sliders (no on/off switch), "Saved on this PC only".
 
 ## Full multiplayer pass (one session: do this first, then Re-test 9 inside it)
 

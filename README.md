@@ -141,8 +141,8 @@ Everything works on Night City's real NPCs, vehicles and devices.
 - **The finish (Phase 9):** every kind of content is data a friend adds as a datapack ([CONTENT.md](docs/CONTENT.md)), one **settings screen**
   with a tab each for guests, look, PvP, difficulty, performance and the world
   ([details](docs/HOW-TO-PLAY.md#the-cyberblock-settings-screen)), **Performance mode** for weaker PCs
-  ([details](docs/HOW-TO-PLAY.md#performance-mode)) and **daily server backups** you can download
-  ([SERVER.md](docs/SERVER.md)).
+  ([details](docs/HOW-TO-PLAY.md#performance-mode)), **daily server backups** you can download
+  ([SERVER.md](docs/SERVER.md)) and Night City's **save list as a Minecraft screen** (Esc, Saves...).
 
 ## Build from source
 ```

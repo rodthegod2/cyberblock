@@ -1981,6 +1981,26 @@ Phase 9 examples, server to client (`cyberblock:ui`, `t:"settings"`), a guest an
 {"perms":31,"devices":2047,"body":"female","pvp":true,"hidePin":false,"host":true,"admin":true,"erase":false,"eraseForced":false,"overlord":"brutal","heat":150,"world":{"allowHosts":true,"hosts":0,"maxHosts":4,"requireMod":true,"rate":1.0,"sanityRadius":160,"pvpDefault":false,"backups":{"daily":true,"keep":7,"hour":5},"webMap":false,"joinPassword":true,"joinHelp":false}}
 ```
 
+## Phase 9 (the Night City saves screen, package 9U)
+No new message type; `proto` stays 1. The Minecraft "Night City saves" screen (megaplan 9-U1, Esc then "Saves...") extends three `uiact`
+actions. The full design, the 2.31 API evidence and the runtime check are in `docs/notes/ui-coverage.md` section 3a.
+
+### Phase 9 saves: Minecraft → Cyberpunk
+| `t` | fields | when |
+|---|---|---|
+| `uiact` | **extends re-test 3 and Phase 7:** `journalreq` with `arg:"saves"` asks for Night City's save list, answered by a `reply` `kind:"journal"` (shape below). `loadlast` with an `arg` (the save's name, as line 1 of its group) and `id` (its index, the group's `hash`) loads that save: the host asks for the list again, finds the save by its exact name (the index only while it still names that save) and loads it only when Cyberpunk calls it valid; without an `arg` it is still "Load Last Save". `save` with `arg:"new"` makes a new manual save; without an `arg` it is still the quick save | the Minecraft "Night City saves" screen (9-U1); LOCAL |
+
+- **The saves `reply`.** Group 0 is the status: `hash:0`, `title` `"ok"` or `"unavailable: <why>"`, `done` = not ok, no lines; an
+  unavailable list has no further groups. Then one group per save, in Cyberpunk's order, at most 127: `hash` = the save's index in
+  Cyberpunk's list, `title` = its location (else its name), `done` = Cyberpunk marks it invalid; lines: `hash:1` the save's name (the
+  load key), `hash:2` `"<type>|<level>|<seconds played>|<timestamp>|<life path>"` (only when its metadata came; type is the
+  `inkSaveType` name), `hash:3` the tracked job (only when it has one). Minecraft offers a load only for a save whose line 2 came,
+  whose `done` is false and whose name fits `arg` (64 bytes).
+- **Runtime check:** when no list comes within 3 s the reply is `"unavailable: ..."` and the screen points to Night City Menu...
+  (Cyberpunk's own lists, the pass-through). Log lines: `saves: Minecraft save list active (RequestSavesForLoad answered, <n> saves)`
+  or `saves: pass-through (...)`, `saves: metadata for <k> of <n>`, `saves: load "<name>" (index <i>)` and `saves: load "<name>"
+  dropped (not valid)`. `tools.fakehost --ui` answers `journalreq arg:"saves"` with a two-save sample.
+
 ## Shared memory `Local\CyberblockFrame`
 Exactly the reference `FrameExporter` layout (see its Javadoc) with magic `0x52464243` ("CBFR"). The
 reference flags (zero-to-one depth, bottom-up rows, reversed-Z) are kept.

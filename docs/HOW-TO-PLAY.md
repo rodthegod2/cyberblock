@@ -980,8 +980,12 @@ border) around them, and Minecraft's own world is not drawn over them. When the 
 - A tutorial or shard popup that waits for input (the game is paused by Cyberpunk itself) and the braindance timeline are
   shown the same way.
 - Loading screens during quest teleports show "Loading Night City..." drawn by Minecraft as a cover.
-- **Save and load lists** are Cyberpunk's own menus, restyled. A Minecraft **Night City saves** screen (list, load, save) replaces
-  them only where the 2.31 save-list calls are verified; `docs/notes/ui-coverage.md` says which way this build goes and why, and the
+- **Save and load lists:** Esc, then **Saves...** opens a Minecraft **Night City saves** screen: your saves newest first (place,
+  type, level, play time, date), **Load** (with a confirmation naming the place, type and date), **New Save**, Quick Save and Load
+  Last Save. A save Cyberpunk marks invalid is greyed out ("Cyberpunk cannot load this save") and a load is only made when
+  Cyberpunk calls the save valid. If Night City does not answer with its list within 3 s (the 2.31 call is unconfirmed in game),
+  the screen says so and **Night City Menu...** opens Cyberpunk's own lists, restyled, as before; the log says which way is active
+  (`saves: Minecraft save list active ...` or `saves: pass-through ...`). `docs/notes/ui-coverage.md` has the details and
   [Re-test 9](TESTING-PLAN.md) check R9-6 looks at it. Saving from the pause screen always works through "Save Game".
 - **Escape hatch:** if you ever want Cyberpunk's own pause menu, open the Minecraft pause screen and click **Night City
   Menu...**. It opens the real Cyberpunk menu once. If Minecraft is not running or not linked, every Cyberpunk menu works

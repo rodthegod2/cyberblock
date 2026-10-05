@@ -59,6 +59,29 @@ that friends join with Minecraft only, while one or more players ("hosts") link 
   --all`); the Cyberpunk side of it is played in game only through the test lists.
 - The performance numbers in the guide are filled in after the first measured run (R9-5).
 
+### Unreleased additions: Phase 9 integration (Wave C)
+Phase 9's packages merged in plan order (9C, 9U, 9F, 9S, 9B, 9P) on top of Phases 6, 7 and 8.
+- **Content (9C).** `examples/content-datapack/` (Neon Crew: one dialogue line, skin, shop, landmark, Breach daemon and Overlord event, with a
+  `pack.mcmeta` and the resource-pack half), loader checks, the client's `cyberblock:content` receiver and reload tests. `tools.content_check
+  --dir` refuses a datapack root without a usable `pack.mcmeta` (both `min_format` and `max_format`, as Minecraft 26.3 requires).
+- **Night City saves (9U).** Esc, **Saves...** is a Minecraft screen (`SavesScreen`, `Saves.reds`): list, load by name (only a save Cyberpunk
+  calls valid), New Save, Quick Save. When Night City gives no list within 3 s, Night City Menu... (Cyberpunk's own lists) is the fallback and
+  the log says which path is active. The escape hatch also catches screens Minecraft cannot open. `shared/protocol.md` documents the `uiact`
+  extensions and the saves `reply`; `tools.fakehost --ui` answers `journalreq arg:"saves"`.
+- **Performance (9F).** `prefs.scale` (Minecraft renders at 50-100 % and Cyberblock.fx upscales), the figure cap and distance LOD on each
+  client, per-tick server budgets for replica placements, device updates and the DOWN queue (a full queue runs the host's oldest job, so a
+  host's messages keep their order), `tools.perfcheck` and `tools.loadhost`.
+- **Settings screen (9S).** The full screen with the tabs Guests, Look, PvP, Difficulty, Performance and World, its server half (the settings
+  snapshot, `/cyberblock difficulty`), commands paced one about every 1.1 s so a non-operator is never kicked for spam, and no mouse-wheel
+  changes on server rows.
+- **Backups (9B).** Daily world backups, `/cyberblock backup now` (at most 3 extra timed zips a day, never evicting a daily one), no half file on
+  failure or shutdown, and `tools.server_sync pull-backups`.
+- **Merge fixes.** `shared/protocol.md` keeps 9F's Performance mode and 9S's settings sections side by side; `Cyberblock.java` runs both
+  `ServerSettings.init` and `Backups.init`; `docs/CONTENT.md` is 9P's tested guide plus 9C's worked example; the docs state the distance LOD
+  and the server budgets plainly (9F merged them); the recipe test writes the guide's `pack.mcmeta`.
+- **Test plan.** `docs/TESTING-PLAN.md` starts with **Re-test: Wave C (Phases 6, 7, 8, 9)**: a one-screen "What to try" (solo first, then on the
+  server with friends) and one id per check (6R-1 ... 9P-3).
+
 ### Unreleased additions: Phase 9 (multiplayer plan, package 9P)
 Phase 9 of the multiplayer plan, docs and release side: the finish. The mod, client, tools and scripts of Phase 9 have their own entries
 (packages 9C content, 9U UI gaps, 9F performance, 9S settings screen and 9B backups).
@@ -71,7 +94,7 @@ Phase 9 of the multiplayer plan, docs and release side: the finish. The mod, cli
   "Creative mode and the outline blocks" note with the World-tab setting **Creative can erase the replica permanently**.
 - **Test plan.** `docs/TESTING-PLAN.md` starts with the **Full multiplayer pass** (the one session for Waves A to C and Phase 9, steps M-1 to
   M-10, each pointing into the detailed older sections) and **Re-test 9** (R9-1 to R9-8: a friend's datapack with a dialogue line and a skin shown
-  by `/reload`, the other kinds from CONTENT.md (and the example datapack where the build has it), every settings tab, a backup at the set hour and `pull-backups`, Performance mode with four guests, the save
+  by `/reload`, the other kinds from CONTENT.md and the example datapack, every settings tab, a backup at the set hour and `pull-backups`, Performance mode with four guests, the save
   and load screen or its documented pass-through, the escape hatch, the "which way" lines and the machine checks).
 - **Version 2.0.0 (proposed).** `pyproject.toml`, `uv.lock`, `cp/plugin/CMakeLists.txt` (and with it `CB_VERSION` and the DLL's `kVersion`),
   `mc/gradle.properties` (the mod jar and `fabric.mod.json`), the `Natives.reds` header and this changelog say 2.0.0, and the documents name

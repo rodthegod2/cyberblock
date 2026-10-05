@@ -42,7 +42,7 @@ Re-test 3 modes (shared/protocol.md "Re-test 3"; combinable with each other and 
   --ui     plays the UI stream: `stats`, a `quest` with a waypoint, `pins`, a patch of Atlas `terrain`, a `prompt`, a 4-choice `choices` hub whose
            selection changes while its timer runs down, a `sub`title, a ringing `call`, three `notify` toasts,
            `screen open:"pause"`, then `screen pass:"vendor"` with `cam menu:true` and `pass:""`, and a `key
-           perspective` tap (F5); the camera follows `persp back` (`fp:false`). Answers `uiact journalreq`, `phonereq`
+           perspective` tap (F5); the camera follows `persp back` (`fp:false`). Answers `uiact journalreq` (`arg:"saves"` with a sample save list), `phonereq`
            and `atlasreq` with sample `reply` messages. Prints `uiact`, `persp`, `binds` and every `status`
            (`pause` included).
   --hacks  answers every `hack` with `hackresult` carrying `upload` and `kind` (the hostile human is a squad member, the
@@ -386,6 +386,16 @@ def ui_terrain() -> list[dict]:
 def ui_replies(m: dict) -> list[dict]:
     """--ui: the sample `reply` to a `uiact journalreq`, `phonereq` or `atlasreq` (`id` echoed; nothing for other actions)."""
     rid = m.get("id", 0)
+    if m.get("a") == "journalreq" and m.get("arg") == "saves":  # Phase 9 (9-U1): the Night City saves list, status group first
+        return [{"t": "reply", "kind": "journal", "id": rid, "pins": [], "groups": [
+            {"hash": 0, "title": "ok", "kind": "other", "tracked": False, "done": False, "lines": []},
+            {"hash": 0, "title": "Watson", "kind": "other", "tracked": False, "done": False, "lines": [
+                {"hash": 1, "text": "ManualSave-2", "state": 0},
+                {"hash": 2, "text": "ManualSave|12|43500|1759000000|StreetKid", "state": 0},
+                {"hash": 3, "text": "The Pickup", "state": 0}]},
+            {"hash": 1, "title": "Watson", "kind": "other", "tracked": False, "done": False, "lines": [
+                {"hash": 1, "text": "AutoSave-1", "state": 0},
+                {"hash": 2, "text": "AutoSave|11|40200|1758900000|StreetKid", "state": 0}]}]}]
     if m.get("a") == "journalreq":
         return [{"t": "reply", "kind": "journal", "id": rid, "pins": [], "groups": [
             {"hash": 3735928559, "title": "The Pickup", "kind": "main", "tracked": True, "done": False,
