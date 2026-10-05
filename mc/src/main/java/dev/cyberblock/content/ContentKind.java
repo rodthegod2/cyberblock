@@ -22,6 +22,14 @@ public record ContentKind<T>(String id, Parser<T> parser, boolean clientSide) {
 		T parse(Identifier id, JsonObject json);
 	}
 
+	/**
+	 * Every kind of megaplan section 1.7, in the table's order: each has a schema in {@code shared/content-schemas}, defaults under
+	 * {@code data/cyberblock/cyberblock/<kind>/} and a loader some package registers at startup ({@link #unregistered()} names a
+	 * missing one; the loader logs it). The {@code test} kind of the skeleton and the Afterlife {@code hub} layout (built once, not
+	 * reloaded) are not content kinds in this sense.
+	 */
+	public static final List<String> SECTION_1_7 = List.of("material_palette", "device_map", "shop", "skin_map", "vehicle_map", "daemon",
+		"breach_tier", "dialogue", "contract", "ripperdoc", "landmark", "npc_role", "event", "spawn_palette", "heat_tier", "match_mode");
 	private static final Pattern ID = Pattern.compile("[a-z0-9_]{1,32}");
 	private static final Map<String, ContentKind<?>> KINDS = new ConcurrentHashMap<>();
 
@@ -47,6 +55,11 @@ public record ContentKind<T>(String id, Parser<T> parser, boolean clientSide) {
 
 	static Collection<ContentKind<?>> all() {
 		return List.copyOf(KINDS.values());
+	}
+
+	/** The section 1.7 kinds no package has registered (empty once every phase's module has started). */
+	static List<String> unregistered() {
+		return SECTION_1_7.stream().filter(id -> !KINDS.containsKey(id)).toList();
 	}
 
 	/** Tests only. */

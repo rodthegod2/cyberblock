@@ -76,6 +76,8 @@ public final class ClientNet {
 		ClientPlayNetworking.registerGlobalReceiver(Payloads.Down.TYPE, (p, context) -> context.client().execute(() -> onDown(p.json())));
 		ClientPlayNetworking.registerGlobalReceiver(Payloads.Roster.TYPE, (p, context) -> context.client().execute(() -> Roster.set(
 			p.list().stream().map(e -> new Roster.Entry(e.uuid(), e.name(), e.linked(), e.body(), e.team(), e.pvp(), e.downed(), e.hidden())).toList())));
+		// cyberblock:content (megaplan 1.7): the client kinds, on join and after every server /reload
+		ClientPlayNetworking.registerGlobalReceiver(Payloads.Content.TYPE, (p, context) -> context.client().execute(() -> dev.cyberblock.content.ContentLoader.receive(p.kind(), p.json())));
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, minecraft) -> onJoin(minecraft));
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, minecraft) -> minecraft.execute(ClientNet::onDisconnect));
 		ClientTickEvents.END_CLIENT_TICK.register(ClientNet::tick);

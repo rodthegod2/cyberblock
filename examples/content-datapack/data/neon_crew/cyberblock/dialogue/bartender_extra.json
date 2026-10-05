@@ -1,0 +1,19 @@
+{
+	"schema": 1,
+	"role": "cyberblock:bartender",
+	"lines": {
+		"greeting": [
+			"The Neon Crew drinks here on Fridays, {player}. Pull up a stool."
+		],
+		"farewell": [
+			"Tell them the Neon Crew sent you."
+		],
+		"bark": [
+			"Somebody keeps leaving glow sticks in the ice bucket. I have stopped asking."
+		],
+		"rumour": [
+			"There is a crew painting rooftops in colours the cameras cannot name. They always leave a diner open for strangers.",
+			"If the street lamps hum in tune tonight, the Neon Crew is up to something."
+		]
+	}
+}

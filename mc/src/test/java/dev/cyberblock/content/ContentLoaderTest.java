@@ -145,4 +145,45 @@ class ContentLoaderTest {
 		assertArrayEquals(new double[] {1, 2, 3}, Content.position(o, "q"));
 		assertThrows(IllegalArgumentException.class, () -> Content.string(o, "missing", 5));
 	}
+
+	@Test
+	void theClientReplacesAKindWholeFromTheServersPayload() {
+		ContentKind<String> client = ContentKind.register("t_client", (id, json) -> Content.string(json, "skin", 32), true);
+		String first = "{\"schema\":1,\"entries\":{\"cyberblock:a\":{\"schema\":1,\"skin\":\"one\"},\"friend:b\":{\"schema\":1,\"skin\":\"two\"}}}";
+		ContentLoader.receive("t_client", first, this.info::add, this.warn::add);
+		assertEquals(Map.of(id("cyberblock:a"), "one", id("friend:b"), "two"), Content.all(client));
+		assertEquals(List.of(), this.warn);
+
+		Content.Snapshot<?> held = Content.snapshot(client);
+		ContentLoader.receive("t_client", first, this.info::add, this.warn::add);
+		assertSame(held, Content.snapshot(client), "the same payload again (an integrated server's own) changes nothing");
+
+		String second = "{\"schema\":1,\"entries\":{\"cyberblock:a\":{\"schema\":1,\"skin\":\"uno\"},\"friend:bad\":{\"schema\":1}}}";
+		ContentLoader.receive("t_client", second, this.info::add, this.warn::add);
+		assertEquals(Map.of(id("cyberblock:a"), "uno"), Content.all(client), "replaced whole: friend:b is gone, the bad entry skipped");
+		assertEquals(List.of("content: t_client friend:bad skipped: skin must be a string"), this.warn);
+
+		ContentLoader.receive("t_client", "{\"schema\":1,\"entries\":{}}", this.info::add, this.warn::add);
+		assertTrue(Content.all(client).isEmpty(), "a kind the server emptied is emptied here");
+	}
+
+	@Test
+	void theClientIgnoresWhatItCannotUse() {
+		ContentKind<String> client = ContentKind.register("t_client", (id, json) -> Content.string(json, "skin", 32), true);
+		ContentLoader.receive("t_client", "{\"schema\":1,\"entries\":{\"cyberblock:a\":{\"schema\":1,\"skin\":\"one\"}}}", this.info::add, this.warn::add);
+		this.warn.clear();
+		ContentLoader.receive("t_client", "not json", this.info::add, this.warn::add);
+		ContentLoader.receive("t_client", "{\"schema\":2,\"entries\":{}}", this.info::add, this.warn::add);
+		ContentLoader.receive("t_client", "{\"schema\":1}", this.info::add, this.warn::add);
+		ContentLoader.receive("t_client", "[]", this.info::add, this.warn::add);
+		assertEquals(3 + 1, this.warn.size(), this.warn.toString());
+		assertEquals(Map.of(id("cyberblock:a"), "one"), Content.all(client), "a bad payload leaves what the client had");
+
+		this.warn.clear();
+		ContentLoader.receive("t_test", "{\"schema\":1,\"entries\":{}}", this.info::add, this.warn::add);
+		ContentLoader.receive("no_such_kind", "{}", this.info::add, this.warn::add);
+		assertEquals(2, this.warn.size());
+		assertTrue(this.warn.get(0).contains("not a client content kind"), this.warn.get(0));
+		assertTrue(Content.all(this.test).isEmpty(), "a server-only kind is never filled from a payload");
+	}
 }

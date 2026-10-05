@@ -1,0 +1,17 @@
+{
+	"schema": 1,
+	"class": "VendingMachine",
+	"kind": "vending",
+	"block": "cyberblock:vending_machine",
+	"size": [
+		1,
+		1,
+		1
+	],
+	"shops": [
+		"cyberblock:vending_snacks",
+		"cyberblock:vending_drinks",
+		"cyberblock:vending_gear",
+		"neon_crew:neon_stall"
+	]
+}

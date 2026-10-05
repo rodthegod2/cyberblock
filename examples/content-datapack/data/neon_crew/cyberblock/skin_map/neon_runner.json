@@ -1,0 +1,11 @@
+{
+	"schema": 1,
+	"texture": "neon_crew:textures/entity/npc/neon_runner.png",
+	"model": "slim",
+	"faction": [
+		"Maelstrom",
+		"Scavengers"
+	],
+	"gender": "female",
+	"priority": 10
+}

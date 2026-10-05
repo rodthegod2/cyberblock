@@ -60,7 +60,7 @@ public final class ContentLoader {
 			new SimpleReloadListener<Map<ContentKind<?>, Content.Snapshot<?>>>() {
 				@Override
 				protected Map<ContentKind<?>, Content.Snapshot<?>> prepare(final PreparableReloadListener.SharedState state) {
-					return loadAll(state.resourceManager());
+					return loadAll(state.resourceManager(), line -> Cyberblock.LOG.info(line), line -> Cyberblock.LOG.warn(line));
 				}
 
 				@Override
@@ -87,7 +87,12 @@ public final class ContentLoader {
 		return new TestEntry(name, colour, pos);
 	}
 
-	private static Map<ContentKind<?>, Content.Snapshot<?>> loadAll(final ResourceManager manager) {
+	/** Every registered kind from the datapacks of the manager (one reload's worth); names any section 1.7 kind nobody registered. */
+	static Map<ContentKind<?>, Content.Snapshot<?>> loadAll(final ResourceManager manager, final Consumer<String> info, final Consumer<String> warn) {
+		for (String id : ContentKind.unregistered()) {
+			warn.accept("content: kind " + id + " has no loader (megaplan section 1.7): its files are ignored");
+		}
+
 		Map<ContentKind<?>, Content.Snapshot<?>> out = new LinkedHashMap<>();
 		for (ContentKind<?> kind : ContentKind.all()) {
 			FileToIdConverter files = FileToIdConverter.json(Cyberblock.ID + "/" + kind.id());
@@ -97,7 +102,7 @@ public final class ContentLoader {
 				texts.put(files.fileToId(e.getKey()), r::readAllAsString);
 			}
 
-			out.put(kind, load(kind, texts, line -> Cyberblock.LOG.info(line), line -> Cyberblock.LOG.warn(line)));
+			out.put(kind, load(kind, texts, info, warn));
 		}
 
 		return out;
@@ -148,6 +153,58 @@ public final class ContentLoader {
 		}
 
 		return new Content.Snapshot<>(Collections.unmodifiableMap(new LinkedHashMap<>(entries)), clientJson);
+	}
+
+	/**
+	 * A {@code cyberblock:content} payload on the client: replaces the kind's snapshot whole with the entries the server sent (a
+	 * removed file disappears, an empty kind empties it), parsed with the same parser and the same skip-and-log rules as the server's
+	 * files. A kind that is unknown or not clientSide here, or a payload that is not the server's wrapper, is logged and ignored; the
+	 * payload an integrated server sent to its own client equals the snapshot already there and changes nothing. Client thread.
+	 */
+	public static void receive(final String kindId, final String json) {
+		receive(kindId, json, line -> Cyberblock.LOG.info(line), line -> Cyberblock.LOG.warn(line));
+	}
+
+	static void receive(final String kindId, final String json, final Consumer<String> info, final Consumer<String> warn) {
+		ContentKind<?> kind = ContentKind.byId(kindId);
+		if (kind == null || !kind.clientSide()) {
+			warn.accept("content: " + kindId + " from the server is not a client content kind here: ignored");
+			return;
+		}
+
+		Content.Snapshot<?> current = Content.snapshot(kind);
+		if (current != null && current.clientJson().equals(json)) {
+			return;
+		}
+
+		try {
+			Content.put(kind, fromWrapper(kind, json, info, warn));
+		} catch (RuntimeException e) {
+			warn.accept("content: " + kindId + " from the server ignored: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+		}
+	}
+
+	private static <T> Content.Snapshot<T> fromWrapper(final ContentKind<T> kind, final String json, final Consumer<String> info, final Consumer<String> warn) {
+		JsonObject wrapper = JsonParser.parseString(json).getAsJsonObject();
+		if (!wrapper.has("schema") || wrapper.get("schema").getAsInt() != SCHEMA) {
+			throw new IllegalArgumentException("\"schema\" must be " + SCHEMA);
+		}
+
+		Map<Identifier, Text> files = new TreeMap<>();
+		for (Map.Entry<String, JsonElement> e : wrapper.getAsJsonObject("entries").entrySet()) {
+			Identifier id = Identifier.tryParse(e.getKey());
+			if (id == null) {
+				warn.accept("content: " + kind.id() + " " + e.getKey() + " skipped: not an id");
+				continue;
+			}
+
+			String text = e.getValue().toString();
+			files.put(id, () -> text);
+		}
+
+		Content.Snapshot<T> loaded = load(kind, files, info, warn);
+		// keep the server's own text so the same payload again is recognised
+		return new Content.Snapshot<>(loaded.entries(), json);
 	}
 
 	/** Every clientSide kind to one player (cyberblock:content), on join and after each reload. */

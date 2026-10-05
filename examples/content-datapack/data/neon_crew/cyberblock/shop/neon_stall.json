@@ -1,0 +1,32 @@
+{
+	"schema": 1,
+	"title_key": "neon_crew.shop.neon_stall",
+	"restock": 900,
+	"stock": [
+		{
+			"item": "minecraft:glow_berries",
+			"count": 8,
+			"price": 6,
+			"limit": 8
+		},
+		{
+			"item": "minecraft:glow_ink_sac",
+			"count": 4,
+			"price": 14,
+			"limit": 4
+		},
+		{
+			"item": "minecraft:sea_lantern",
+			"count": 2,
+			"price": 30,
+			"limit": 4
+		}
+	],
+	"sell": [
+		{
+			"item": "minecraft:glow_ink_sac",
+			"count": 4,
+			"price": 5
+		}
+	]
+}

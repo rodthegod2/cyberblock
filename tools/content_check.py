@@ -12,6 +12,11 @@ pattern, minimum, maximum, exclusiveMinimum, exclusiveMaximum, anyOf, oneOf, all
 Cyberblock keywords: `maxBytes` (a string's UTF-8 byte cap, the plan's "byte caps") and `x-ref` (the string is the id of an
 existing file of that kind, in the checked folders or the shipped defaults).
 
+A `--dir` folder that is a datapack root (it holds `data/`) must also have a usable `pack.mcmeta` (`pack.description` and an integer or
+[major, minor] `pack.min_format` and `pack.max_format`, both required, covering the data pack format of this game version), because
+Minecraft silently ignores a datapack folder without one (it refuses min_format without max_format, and the old `pack_format` alone
+for this format). A bare `data/` folder needs none.
+
 Exit code 0: nothing wrong; 1: problems (listed one per line, `<file>: <where>: <what>`); 2: bad usage. Warnings (a file in a
 sub-folder, which the loader never reads) are listed but do not fail the check.
 """
@@ -26,6 +31,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "shared" / "content-schemas"
 DEFAULT_DATA = ROOT / "mc" / "src" / "main" / "resources" / "data"
+DATA_PACK_FORMAT = 121  # data_major of Minecraft 26.3 (version.json "pack_version" in the game jar)
 MAX_FILE_BYTES = 1_000_000  # the `cyberblock:content` payload cap: one file can never be larger than a payload
 NAMESPACE_RE, NAME_RE = re.compile(r"[a-z0-9_.-]+"), re.compile(r"[a-z0-9_.-]+")
 ANNOTATIONS = {"$schema", "$id", "$comment", "title", "description", "default", "examples", "$defs"}
@@ -311,6 +317,46 @@ def check(roots: list[Path], schema_dir: Path = SCHEMA_DIR, reference_roots: lis
     return result
 
 
+def format_major(value: object) -> int | None:
+    """A pack format as the major number: an integer or a [major, minor] pair; None for anything else."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, list) and len(value) == 2 and all(isinstance(v, int) and not isinstance(v, bool) for v in value):
+        return value[0]
+    return None
+
+
+def check_pack_meta(folder: Path) -> list[str]:
+    """What is wrong with the pack.mcmeta of a datapack root; [] for a bare data folder (nothing to check) or a good one."""
+    if not (folder / "data").is_dir():
+        return []
+    path = folder / "pack.mcmeta"
+    if not path.is_file():
+        return ["pack.mcmeta: missing: Minecraft ignores a datapack folder without a pack.mcmeta (needs pack.description, pack.min_format and pack.max_format)"]
+    try:
+        meta = parse(path.read_bytes())
+    except ValueError as e:
+        return [f"pack.mcmeta: not valid JSON: {e}"]
+    pack = meta.get("pack") if isinstance(meta, dict) else None
+    if not isinstance(pack, dict):
+        return ["pack.mcmeta: needs a \"pack\" object"]
+    problems = []
+    if not isinstance(pack.get("description"), (str, dict, list)):
+        problems.append("pack.mcmeta: pack.description is missing (text)")
+    low = format_major(pack.get("min_format"))
+    if low is None:
+        problems.append(f"pack.mcmeta: pack.min_format must be a whole number such as {DATA_PACK_FORMAT}")
+    high = format_major(pack.get("max_format"))
+    if "max_format" not in pack:  # the game refuses min_format without max_format ("must declare both")
+        problems.append(f"pack.mcmeta: pack.max_format is missing: Minecraft needs both min_format and max_format (such as {DATA_PACK_FORMAT})")
+    elif high is None:
+        problems.append("pack.mcmeta: pack.max_format must be a whole number or [major, minor]")
+    if not problems and not (low <= DATA_PACK_FORMAT <= high):
+        problems.append(f"pack.mcmeta: the pack formats {low}..{high} do not cover this game's data pack format "
+                        f"{DATA_PACK_FORMAT}, so Minecraft will not enable it by itself")
+    return problems
+
+
 def report(result: Result, say: Callable[[str], None] = print) -> int:
     for line in result.warnings:
         say(f"warning: {line}")
@@ -340,6 +386,7 @@ def main(argv: list[str] | None = None) -> int:
     defaults = [DEFAULT_DATA] if DEFAULT_DATA.is_dir() else []
     if args.dir:
         result = check([data_root(d) for d in args.dir], reference_roots=[] if args.no_defaults else defaults)
+        result.problems[:0] = [f"{d.as_posix()}/{message}" for d in args.dir for message in check_pack_meta(d)]
     else:
         result = check(defaults)
     return report(result)

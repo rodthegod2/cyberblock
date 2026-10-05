@@ -1,0 +1,14 @@
+{
+	"schema": 1,
+	"name": "Neon Crew Rooftop Diner",
+	"district": "Watson",
+	"kind": "viewpoint",
+	"pos": [
+		210,
+		38,
+		-120
+	],
+	"yaw": 180,
+	"description": "A rooftop booth lit by glow sticks, open to anyone who climbs the fire escape.",
+	"approx": true
+}
