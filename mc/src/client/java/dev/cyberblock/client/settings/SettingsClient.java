@@ -13,7 +13,8 @@ import net.minecraft.network.chat.Component;
 /**
  * The client half of {@code /cyberblock debug} (plan Q-B3) and {@code /cyberblock settings} (Q-B5): the chat screen's command is
  * handled here before it is sent, so both work on any server (the server registers the same literals for completion, and to answer
- * a client without the mod). Also the "Cyberblock..." button on the vanilla pause screen.
+ * a client without the mod). Also the "Cyberblock..." button on the vanilla pause screen, and the settings screen's server values (their commands paced
+ * every tick) and screenshot tour (megaplan 9-S1).
  */
 public final class SettingsClient {
 	/** {@code /cyberblock settings} was typed: the screen opens on the next tick, once the chat screen has closed itself. */
@@ -23,12 +24,17 @@ public final class SettingsClient {
 	}
 
 	public static void init() {
+		ServerValues.init();
+		SettingsShots.init();
 		ClientSendMessageEvents.ALLOW_COMMAND.register(SettingsClient::command);
 		ClientTickEvents.END_CLIENT_TICK.register(minecraft -> {
 			if (openSettings) {
 				openSettings = false;
 				CyberblockSettingsScreen.open(null);
 			}
+
+			ServerValues.tick();
+			SettingsShots.tick(minecraft);
 		});
 		ScreenEvents.AFTER_INIT.register((minecraft, screen, width, height) -> {
 			if (screen instanceof PauseScreen pause && pause.showsPauseMenu()) {

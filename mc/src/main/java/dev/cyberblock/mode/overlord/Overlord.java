@@ -77,7 +77,8 @@ public final class Overlord {
 	static final class MatchState {
 		final String id;
 		final ThreatPoints points = new ThreatPoints(START_POINTS);
-		Intensity intensity = Intensity.NORMAL;
+		/** A new match starts at the world's default (9-S1, the settings screen's Difficulty tab); its host may change it. */
+		Intensity intensity = dev.cyberblock.settings.Difficulty.overlordDefault();
 		final Deque<long[]> timelineAt = new ArrayDeque<>();
 		final Deque<String> timeline = new ArrayDeque<>();
 		final List<Pending> pending = new ArrayList<>();
