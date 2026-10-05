@@ -12,7 +12,6 @@ and published only after the in-game multiplayer session ([docs/TESTING-PLAN.md]
 "Added", ships in 2.0.0.
 
 ### Release notes: 2.0.0, the multiplayer version
-<!-- integrator: name the distance level of detail and the server tick budgets under "The finish" only if wc/9F merged them. -->
 **Cyberblock is now a multiplayer game.** What was a single-player passthrough of Minecraft in Night City is a Minecraft server
 that friends join with Minecraft only, while one or more players ("hosts") link their own Cyberpunk 2077 game to it.
 
@@ -31,7 +30,8 @@ that friends join with Minecraft only, while one or more players ("hosts") link 
 - **The finish (Phase 9).** Every content kind is data: friends add dialogue, skins, shops, landmarks, Breach daemons and Overlord events
   as a datapack ([docs/CONTENT.md](docs/CONTENT.md)); one **settings screen** with the tabs Guests, Look, PvP, Difficulty, Performance
   and World (the World tab shows `server.json` read-only); **Performance mode**, two sliders saved on each player's PC: **Frame scale**
-  (50 to 100 %, default 100) and **Figures** (16 to 48, default 48); **daily server backups** with
+  (50 to 100 %, default 100) and **Figures** (16 to 48, default 48), plus figures that stop animating beyond a distance and per-tick
+  **server budgets** for replica placements, device updates and the messages to each host's Cyberpunk; **daily server backups** with
   `tools.server_sync pull-backups`; the save and load lists as a Minecraft screen where the game's API allows, otherwise documented
   as pass-through.
 - **Quality of life from the first sessions.** Survival mining of placed blocks, stairs with no vault prompt and a step-up assist,

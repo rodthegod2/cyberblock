@@ -108,6 +108,8 @@ def test_the_content_recipes_are_valid_content(tmp_path):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(body + "\n", encoding="utf-8")
         assert json.loads(body)["schema"] == 1, rel
+    # the pack root needs the pack.mcmeta the guide shows (content_check refuses a datapack root without a usable one)
+    (tmp_path / "pack.mcmeta").write_text(re.search(r'`(\{"pack": \{.*?\}\})`', CONTENT)[1], encoding="utf-8")
     done = subprocess.run([sys.executable, "-m", "tools.content_check", "--dir", str(tmp_path)], cwd=ROOT, capture_output=True, text=True)
     assert done.returncode == 0, done.stdout + done.stderr
     assert "6 file(s) ok" in done.stdout

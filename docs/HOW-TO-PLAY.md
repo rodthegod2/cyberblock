@@ -952,10 +952,9 @@ other players. To trade looks for frame time, **lower Frame scale first, then Fi
   before; 75 percent costs a little sharpness for a lot less time; 50 percent is for rescuing a weak PC.
 - **Figures** (the figure cap, 16 to 48 in steps of 4, default 48): how many of the nearest Night City people and cars of the
   host you see as figures.
-<!-- integrator: keep each item below only if wc/9F merged it; otherwise delete the item (and the CHANGELOG / TESTING-PLAN mention). -->
-- **Also part of the performance pass, when this build has it (the release notes say):** beyond a distance, figures
-  **stop animating** and stand still; and **Server budgets** (nothing to set): replica placements, device updates and the
-  downed-player queue each get a per-tick budget, so four guests exploring at once do not stall the server tick.
+- **Also part of the performance pass:** beyond a distance, figures **stop animating** and stand still; and **Server
+  budgets** (nothing to set): replica placements, device updates and the messages to each host's Cyberpunk game each get a
+  per-tick budget, so four guests exploring at once do not stall the server tick.
 
 **Numbers** (measured by the performance pass with two hosts and four guests on the local test server; your PC will differ):
 

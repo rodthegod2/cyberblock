@@ -142,7 +142,7 @@ every option; **Performance mode** lowers the frame cost; the server **backs its
 
 | Item | What changed |
 |---|---|
-| Content | every kind of section 1.7 has a schema, a loader, defaults and hot reload; `docs/CONTENT.md` with six checked recipes; `tools.content_check`; an example datapack in `examples/content-datapack/` when the build has that folder |
+| Content | every kind of section 1.7 has a schema, a loader, defaults and hot reload; `docs/CONTENT.md` with six checked recipes; `tools.content_check`; an example datapack in `examples/content-datapack/` |
 | UI gaps | the save and load lists as a Minecraft screen where the API is verified (else the pass-through, documented in `docs/notes/ui-coverage.md`); the escape hatch tested |
 | Performance | **Performance mode**: two sliders saved on your PC, **Frame scale** (`prefs.scale`, 50 to 100 percent by 5, default 100) and **Figures** (the figure cap, 16 to 48 by 4, default 48); a distance level of detail and server budgets only where the release notes list them |
 | Settings screen | six tabs: **Guests**, **Look**, **PvP**, **Difficulty**, **Performance**, **World**; server values go through `/cyberblock` commands, so the server decides; the World tab shows `server.json` read-only |
@@ -162,10 +162,9 @@ every option; **Performance mode** lowers the frame cost; the server **backs its
    without a restart or a rejoin.
 
 ### R9-2. The other content kinds, and the example datapack
-<!-- integrator: the examples/content-datapack lines of R9-2 and R9-8 stay only once 9C's folder exists and passes content_check --dir; if 9C is descoped, delete them. -->
 1. Add the **shop**, **landmark**, **Breach daemon** and **Overlord event** recipes of [CONTENT.md](CONTENT.md) to your R9-1 pack, run
-   `uv run python -m tools.content_check --dir <your pack>` first, then `/reload`. **Expect:** the log lists the kinds loaded. If your build has the folder
-   `examples/content-datapack/` (one file of each kind), check it the same way (`tools.content_check --dir examples/content-datapack`) and copy it in as well.
+   `uv run python -m tools.content_check --dir <your pack>` first, then `/reload`. **Expect:** the log lists the kinds loaded. Check the folder
+   `examples/content-datapack/` (one file of each kind) the same way (`tools.content_check --dir examples/content-datapack`) and copy it in as well.
 2. **A shop:** point a vending machine's `device_map` or a person's `npc_role` at your shop (CONTENT.md says how); buy and sell. **A landmark:** it appears on the Holo-Table and a gig can
    send you there. **A Breach daemon:** run a Breach on a Net Port; your re-skinned daemon is offered. **An Overlord event:** it is on the Overlord Console's event list with your cost and
    warning.
@@ -228,7 +227,7 @@ Copy these lines to Claude (the wording is the packages', so search for the word
 
 ### R9-8. Without Cyberpunk: the machine checks
 1. `uv run pytest -q`, `uv run python -m tools.content_check` (the shipped defaults; the test suite also checks the six CONTENT.md recipes), `uv run python -m tools.content_check
-   --dir examples/content-datapack` only when the build has that folder, and
+   --dir examples/content-datapack`, and
    `uv run python -m tools.mpcheck --all` on a worktree (never the folder you play from). **Expect:** all pass; a SKIP is not a pass, so if a scenario says SKIP, read why.
 2. In a worktree `gradlew.bat test build`, then `cmake --build cp/plugin/build --config Release`, `cp\plugin\build\Release\cb_tests.exe` and `ctest -C Release` (which runs `fx_check`).
 

@@ -186,8 +186,7 @@ per-player data; it does not hold the Night City map your own PC keeps (the surv
   files stay outside the repository, and the `.mrpack` holds your address, so give it to friends directly, never publish it.
 - **Performance.** Players on weaker PCs use **Performance mode** in their own settings screen: they lower **Frame scale**, then
   **Figures**, saved on their own PC ([HOW-TO-PLAY](HOW-TO-PLAY.md#performance-mode)); nothing for you to configure.
-  <!-- integrator: keep the next sentence only if wc/9F merged the server tick budgets. -->
-  Where the release notes list them, the server's replica placements, device updates and downed-player queue also have a
+  The server's replica placements, device updates and the messages to each host's Cyberpunk game also have a
   per-tick budget so a busy night stays smooth. `/cyberblock status` shows message rates, and
   the log lists `relay: <name> dropped <t> x N (<why>)` when a player's game floods the server.
 - **A web map** of the replica is possible with BlueMap: [WEBMAP.md](WEBMAP.md).

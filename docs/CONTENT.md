@@ -1,4 +1,4 @@
-﻿# Adding your own content (a datapack guide for friends)
+# Adding your own content (a datapack guide for friends)
 
 Almost everything in Cyberblock that is a list of things is **data**, not code: the lines the people of Night City say, the skins
 their figures wear, the shops, the places the Holo-Table can send you to, the Breach Protocol daemons, the Overlord's events, the
@@ -8,7 +8,7 @@ result. This page shows how, with one worked example for each of the six things 
 The rule behind it is the same for every kind: **the mod ships defaults, a datapack adds files, and a datapack file with the same id
 as a default replaces it.** A bad file is skipped with one log line and never stops the server.
 
-**A worked example** to copy: [`examples/content-datapack/`](../examples/content-datapack/), a datapack called **Neon Crew**
+**A worked example** to copy: `examples/content-datapack/` in the repository, a datapack called **Neon Crew**
 that adds one of each (a dialogue line, a skin, a shop, a landmark, a Breach daemon and an Overlord event), with a valid
 `pack.mcmeta` and an `assets/` folder for the resource-pack half (the skin picture and the lang keys). Copy it into
 `<world>\datapacks\`, rename the namespace and change the words.
