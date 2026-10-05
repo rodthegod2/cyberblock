@@ -73,6 +73,19 @@ class PauseEscapeHatchTest {
 	}
 
 	@Test
+	void aScreenMinecraftCannotOpenFallsBackToCyberpunksOwnMenu() {
+		// megaplan 9-U1: every screen.open name maps to a menu Menus.reds CyberblockOpenVanilla opens
+		for (String name : UiModel.OPEN_NAMES) {
+			String arg = UiEvents.hatchFor(name);
+			assertTrue(List.of("pause", "map", "journal", "inventory", "skills").contains(arg), name + " -> " + arg);
+		}
+
+		assertEquals("map", UiEvents.hatchFor("map"));
+		assertEquals("pause", UiEvents.hatchFor("phone"));
+		assertEquals("pause", UiEvents.hatchFor("cyberware"));
+	}
+
+	@Test
 	void everyButtonThatTalksToCyberpunkNeedsTheLink() {
 		for (Item item : Item.values()) {
 			boolean noLink = switch (item) {

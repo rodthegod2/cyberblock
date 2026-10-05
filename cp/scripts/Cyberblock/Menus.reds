@@ -15,6 +15,10 @@
 // keys are not intercepted. Arg "vendor" (the Minecraft vendor screen's "Night City vendor...") reopens the host's
 // vendor as Cyberpunk's own screen (Vendors.reds).
 //
+// Phase 9 (megaplan 9-U1, Saves.reds): `uiact journalreq arg:"saves"` answers the "Night City saves" screen's list,
+// `uiact loadlast` with an arg loads that save by name, `uiact save arg:"new"` makes a new manual save; without an arg
+// both stay the pause screen's quick save and "Load Last Save".
+//
 // Phase 7 (megaplan 7-V1): `uiact buy` and `sell` trade at the host's vendor (Vendors.reds); `uiact fasttravel` fast
 // travels the host to a point of the Holo-Table's list (`uiact atlasreq arg:"fasttravel"`, ReplyFastTravel) when
 // FastTravelBlock finds nothing against it: FastTravelSystem.IsFastTravelEnabled/GetFastTravelPoints, the
@@ -316,14 +320,23 @@ public abstract class CyberblockMenus {
         }
         break;
       case n"save":
-        CyberblockMenus.Save(game, requests);
+        if Equals(Cyberblock_UiActionArg(), "new") {
+          CyberblockSaves.NewSave(game);
+        } else {
+          CyberblockMenus.Save(game, requests);
+        }
         break;
       case n"loadlast":
-        if IsDefined(requests) && requests.HasLastCheckpoint() {
-          CyberblockMenus.Resume(s, requests);
-          requests.LoadLastCheckpoint(true);
+        if StrLen(Cyberblock_UiActionArg()) > 0 {
+          // a save picked on Minecraft's "Night City saves" screen (Saves.reds)
+          CyberblockSaves.Load(Cyberblock_UiActionArg(), Cyberblock_UiActionId());
         } else {
-          Cyberblock_Notify(n"warning", "No save to load", "", 3.0);
+          if IsDefined(requests) && requests.HasLastCheckpoint() {
+            CyberblockMenus.Resume(s, requests);
+            requests.LoadLastCheckpoint(true);
+          } else {
+            Cyberblock_Notify(n"warning", "No save to load", "", 3.0);
+          }
         }
         break;
       case n"mainmenu":
@@ -359,7 +372,11 @@ public abstract class CyberblockMenus {
         CyberblockMenus.FastTravel(game, Cyberblock_UiActionId(), Cyberblock_UiActionArg());
         break;
       case n"journalreq":
-        CyberblockMenus.ReplyJournal(game, Cyberblock_UiActionId());
+        if Equals(Cyberblock_UiActionArg(), "saves") {
+          CyberblockSaves.List(Cyberblock_UiActionId());
+        } else {
+          CyberblockMenus.ReplyJournal(game, Cyberblock_UiActionId());
+        }
         break;
       case n"phonereq":
         CyberblockMenus.ReplyPhone(game, Cyberblock_UiActionId());
@@ -376,10 +393,13 @@ public abstract class CyberblockMenus {
     }
   }
 
-  private static func Resume(s: ref<CyberblockUiService>, requests: wref<inkISystemRequestsHandler>) -> Void {
+  // Night City's pause ends before a load (also Saves.reds).
+  public static func Resume(s: ref<CyberblockUiService>, requests: wref<inkISystemRequestsHandler>) -> Void {
     if s.pausedByUs {
       s.pausedByUs = false;
-      requests.UnpauseGame();
+      if IsDefined(requests) {
+        requests.UnpauseGame();
+      }
       Cyberblock_Log("ui: resumed");
     }
   }

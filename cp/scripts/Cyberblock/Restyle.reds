@@ -38,6 +38,8 @@ public abstract class CyberblockRestyle {
     CyberblockVendors.Update(game, on);
     // A Holo-Table fast travel picked while V was parked runs after the hub exit (Menus.reds).
     CyberblockMenus.UpdateFastTravel(game, on);
+    // The save list's feature check counts pumps (Saves.reds).
+    CyberblockSaves.Update();
     let s = CyberblockUiService.Get();
     if !IsDefined(s) {
       return;
