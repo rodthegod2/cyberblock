@@ -1,311 +1,272 @@
-# Adding your own content to Cyberblock (a datapack guide)
+﻿# Adding your own content (a datapack guide for friends)
 
-Cyberblock keeps its content as **data**, not code: the lines people say, the skins they wear, what a vending machine sells,
-the places on the Holo-Table, the Breach Protocol daemons and the Overlord's events are all small JSON files. A friend adds
-to them, or changes them, with an ordinary Minecraft **datapack**: no programming, no rebuild, and `/reload` shows the
-change.
+Almost everything in Cyberblock that is a list of things is **data**, not code: the lines the people of Night City say, the skins
+their figures wear, the shops, the places the Holo-Table can send you to, the Breach Protocol daemons, the Overlord's events, the
+Heat tiers and more. A friend adds to them with an ordinary Minecraft **datapack**, with no programming, and `/reload` shows the
+result. This page shows how, with one worked example for each of the six things people most often want to add.
 
-This guide walks through one worked example, [`examples/content-datapack/`](../examples/content-datapack/), a datapack called
-**Neon Crew** that adds one of each: a dialogue line, a skin, a shop, a landmark, a Breach daemon and an Overlord event.
-Copy it, rename the namespace and change the words.
+The rule behind it is the same for every kind: **the mod ships defaults, a datapack adds files, and a datapack file with the same id
+as a default replaces it.** A bad file is skipped with one log line and never stops the server.
 
-- [1. The five minute version](#1-the-five-minute-version)
-- [2. How a content file works](#2-how-a-content-file-works)
-- [3. Recipes](#3-recipes): [dialogue](#a-a-dialogue-line) · [skin](#b-a-skin) · [shop](#c-a-shop) · [landmark](#d-a-landmark) ·
-  [Breach daemon](#e-a-breach-daemon) · [Overlord event](#f-an-overlord-event)
-- [4. Textures and lang files](#4-textures-and-lang-files)
-- [5. Checking, reloading and troubleshooting](#5-checking-reloading-and-troubleshooting)
-- [6. Every content kind](#6-every-content-kind)
+**A worked example** to copy: [`examples/content-datapack/`](../examples/content-datapack/), a datapack called **Neon Crew**
+that adds one of each (a dialogue line, a skin, a shop, a landmark, a Breach daemon and an Overlord event), with a valid
+`pack.mcmeta` and an `assets/` folder for the resource-pack half (the skin picture and the lang keys). Copy it into
+`<world>\datapacks\`, rename the namespace and change the words.
 
----
-
-## 1. The five minute version
-
-1. Copy `examples/content-datapack/` to your world's `datapacks/` folder and rename it (for example `neon_crew`). A server
-   keeps it in `<world>/datapacks/`; a single-player world in `saves/<world>/datapacks/`.
-2. Run `/datapack list`. If the pack is listed as available and not enabled, `/datapack enable "file/neon_crew"`.
-3. Run `/reload`. The server log prints one line per kind, for example `content: loaded landmark 15 (cyberblock, neon_crew)`
-   (the 14 shipped landmarks plus yours), and `/cyberblock status` lists how many entries of each kind are loaded.
-4. Walk up to a vending machine, open the Holo-Table, or ask the Overlord Console for events: your content is there.
-
-To check a pack **before** you load it, from the Cyberblock repository:
+## Where the files go
 
 ```
-uv run python -m tools.content_check --dir path/to/neon_crew
+<world>\datapacks\<your pack>\
+    pack.mcmeta                                   (as in any datapack)
+    data\<your namespace>\cyberblock\<kind>\<name>.json
 ```
 
-It validates every file against the schema of its kind, checks that references (shops, roles, spawn entries) point at files
-that exist, checks that `pack.mcmeta` is usable, and prints one line per problem. Exit code 0 means nothing is wrong.
+- **`<your namespace>`** is a short lower-case name of your own (`friend`, your nickname). It keeps your ids apart from the
+  mod's (`cyberblock:...`). The id of a file is `<namespace>:<name>`: `friend:corner_store`.
+- **`<kind>`** is one of the kinds in the table below, **`<name>`** is the file name without `.json` (lower case letters, digits,
+  `_`, `.`, `-`).
+- `pack.mcmeta` is the usual datapack file: `{"pack": {"description": "My pack", "min_format": 121, "max_format": 121}}`.
+  `121` is the data pack format of Minecraft 26.3. Write **both** `min_format` and `max_format`: Minecraft refuses a pack that
+  has only one of them, and `tools.content_check` reports it too. Cyberblock does not care about it, Minecraft does.
+- On a dedicated server the world folder is on the server, so the **server owner** puts the datapack there (a hosting panel's
+  file manager is enough). A datapack in a singleplayer world or a world opened to LAN is yours to drop in. Only an
+  operator can `/reload`.
 
----
+## The format, for every kind
 
-## 2. How a content file works
+- One JSON object per file, UTF-8, at most 1 000 000 bytes, with `"schema": 1`.
+- Strings have byte caps (a dialogue line 200 bytes, a name 48), colours are `#RRGGBB`, positions are Minecraft `[x, y, z]`, and
+  references are ids (`friend:corner_store`).
+- No duplicate keys, no comments: it is strict JSON.
+- Every kind has a schema in `shared/content-schemas/<kind>.schema.json`. Its `description` field is the plain-language
+  reference for the kind (every field, its limits and what the game does with it); open it when a field here is not enough.
+- **Original text and art only.** Never paste dialogue, quest text or textures from either game.
 
-**Where files live.** Every datapack file is `data/<namespace>/cyberblock/<kind>/<name>.json`. The `<namespace>` is yours (use
-one word, lower case, such as `neon_crew`); the mod's own files are in the namespace `cyberblock`, inside the mod jar.
+## Check it before you load it
+
+From a checkout of the repository:
 
 ```
-neon_crew/                          <- the datapack folder, goes in <world>/datapacks/
-  pack.mcmeta                       <- required: Minecraft ignores a folder without it
-  data/
-    neon_crew/cyberblock/
-      dialogue/bartender_extra.json
-      skin_map/neon_runner.json
-      shop/neon_stall.json
-      landmark/rooftop_diner.json
-      daemon/unlatch.json
-      event/flash_blackout.json
-    cyberblock/cyberblock/
-      device_map/vending_machine.json   <- same id as a shipped file: replaces it
-  assets/neon_crew/...              <- textures and lang: see section 4 (not part of a datapack)
+uv run python -m tools.content_check --dir "<your pack folder or its data folder>"
 ```
 
-**The id** of a file is `<namespace>:<name>`: `data/neon_crew/cyberblock/shop/neon_stall.json` is `neon_crew:neon_stall`.
-Other files point at it by that id (a vending machine lists the shops it sells by id).
+It checks your files together with the shipped defaults (so a reference to `cyberblock:bartender` is found), prints one line per
+problem as `<file>: <where>: <what>`, and exits 0 when everything is fine. The same tool checks the defaults in every test run.
 
-**`pack.mcmeta`** is the one file Minecraft needs to treat the folder as a datapack:
+## Load it
 
-```json
-{"pack": {"description": "Neon Crew", "min_format": 121, "max_format": 121}}
-```
+1. Put the pack folder into `<world>\datapacks\`.
+2. As an operator type **`/reload`** (a restart does the same). The server log says
+   `content: loaded <kind> N (<namespaces>)` once per kind, and `content: <kind> <id> skipped: <why>` for a bad file.
+3. Players get what they need through the mod's own channel (`cyberblock:content`): nobody installs anything. **Textures** are
+   different: they are resource-pack assets (`assets/<namespace>/textures/...`), so a skin needs a resource pack as well as the
+   data file (see "A skin").
+4. `/cyberblock status` lists how many files of each kind are loaded.
 
-`121` is the data pack format of Minecraft 26.3, the version Cyberblock runs on. Write both `min_format` and `max_format`:
-Minecraft refuses a pack that has only one of them.
+## The kinds
 
-**Every file is one JSON object** that starts with `"schema": 1`. Text has a length cap (counted in bytes), colours are
-`"#RRGGBB"`, positions are Minecraft `[x, y, z]`, and references are ids. The exact rules of each kind are in
-`shared/content-schemas/<kind>.schema.json`; the `description` at the top of each schema explains every field in plain
-words.
+| Kind | What a file holds |
+|---|---|
+| `dialogue` | the original lines of one NPC role (greetings, barks, rumours, purchase and farewell lines) |
+| `npc_role` | what a figure does when you right-click it: which screen, services, prices, drinks, where it stands in the hub |
+| `skin_map` | which skin and player model an NPC figure wears (by role, faction, gender, archetype), and the two cyber skins |
+| `vehicle_map` | which of the 12 vehicle models a Night City vehicle is drawn as, and its colour |
+| `shop` | a stock list paid in Minecraft eddies, with limits and restock times |
+| `device_map` | which Minecraft block a Night City device becomes (and which shops a vending machine sells from) |
+| `material_palette` | which replica block a Night City surface becomes |
+| `landmark` | a named place the Holo-Table can send you to and a gig can ask you to reach |
+| `contract` | one fixer gig: text, objective, reward |
+| `ripperdoc` | a clinic's implant catalogue, prices and surgery risk |
+| `daemon` | one Breach Protocol daemon: its code sequence, the devices that offer it, the real action it runs |
+| `breach_tier` | how hard a Breach is, by the device's security level |
+| `event` | one Overlord event: cost, warning, effect |
+| `spawn_palette` | one entry of the Overlord's spawn palette (Minecraft mobs and Night City enemies) and the Heat squads |
+| `heat_tier` | one tier of the server's Heat meter |
+| `match_mode` | a match mode for the Match Terminal (team deathmatch, Gang Wars, ...) |
+| `hub` | the layout of the Afterlife hub |
 
-**Replace or add.** A new id adds an entry. A file with the **same id as a shipped file** replaces it (put it in the
-`cyberblock` namespace, with the shipped file's name). Where a kind says so (dialogue, skins) several entries combine
-instead; the recipes say which.
+## Recipes
 
-**A bad file never stops the game.** The server skips it and logs one line, `content: <kind> <id> skipped: <why>`, and keeps
-every other file. Fix the file and `/reload`.
+Each recipe shows the file's path inside your pack and its whole content. All of them are checked by the test suite with
+`tools.content_check`, so they are valid as they stand. Change the words, keep the shape.
 
----
+### A dialogue line
 
-## 3. Recipes
+A person picks its lines from **every** dialogue file whose `"role"` names its role, so to add lines you write a small file of
+your own, in **your namespace**, that names the role. Your lines join the shipped ones: nothing is lost, and a later mod update
+that adds lines to the bartender still reaches your server. `greeting`, `farewell` and `bark` are required in every file, so give
+at least one line of each; the other contexts (`rumour`, `purchase`, `sale`, `no_funds`, `gig_offer`, `gig_done`, `drink`,
+`healed`, `repaired`, `installed`, `surgery_ok`, `surgery_fail`) are optional. A line may use `{player}`, `{item}`, `{price}`,
+`{title}`, `{reward}`, `{implant}` and `{drink}`.
 
-### a. A dialogue line
-
-Kind `dialogue`. Each NPC role (`bartender`, `fixer`, `medic`, `mechanic`, `ripperdoc`, `vendor`) speaks the lines of its own
-file **and of every file whose `role` names it**, so a datapack adds lines beside the shipped ones without copying them:
-
+`data/friend/cyberblock/dialogue/bartender_more.json`
 ```json
 {
   "schema": 1,
   "role": "cyberblock:bartender",
   "lines": {
-    "greeting": ["The Neon Crew drinks here on Fridays, {player}. Pull up a stool."],
-    "farewell": ["Tell them the Neon Crew sent you."],
-    "bark": ["Somebody keeps leaving glow sticks in the ice bucket. I have stopped asking."],
-    "rumour": ["There is a crew painting rooftops in colours the cameras cannot name."]
+    "greeting": ["Pull up a stool, {player}. The neon is free, the drinks are not."],
+    "farewell": ["Safe streets, {player}."],
+    "bark": ["Somebody keep the music up, the silence is getting ideas."],
+    "rumour": ["They say the late train to Arroyo runs on gossip alone."]
   }
 }
 ```
 
-- `lines` maps a **context** to its lines (1 to 32 per context, at most 200 bytes each). The screen picks the context from
-  what just happened and a line at random: `greeting`, `farewell`, `bark` (idle remarks), `rumour`, `purchase`, `sale`,
-  `no_funds`, `gig_offer`, `gig_done`, `drink`, `healed`, `repaired`, `installed`, `surgery_ok`, `surgery_fail`.
-- The schema asks every file for `greeting`, `farewell` and `bark`, so an add-on file brings one of each next to the new
-  line.
-- A line may use `{player}`, `{item}`, `{price}`, `{title}`, `{reward}`, `{implant}` and `{drink}`; the screen fills them in.
-- Write your own words. Never copy lines from the game.
-- To **replace** a role's lines instead, ship a file with the shipped id (`data/cyberblock/cyberblock/dialogue/bartender.json`).
+After `/reload` the log line `content: loaded dialogue N (cyberblock, friend)` names your namespace. **Replacing** the shipped
+lines instead is the general rule (a file with the same id as a default replaces it: here
+`data/cyberblock/cyberblock/dialogue/bartender.json`); do that only when you want the shipped lines gone, because your copy then
+has to carry every line you keep and no longer gets the mod's new ones. To give a **new role** its own lines, add an `npc_role`
+file and a `dialogue` file with the role's id, and list its `tags` (the vendor types and content roles of the figures that get
+this role).
 
-### b. A skin
+### A skin
 
-Kind `skin_map`. A row says which skin and player model a Night City person wears. A person matches a row when **every key
-the row has** holds for them; of the matching rows the highest `priority` wins.
+A skin is two things: a **data row** that says who wears it, and a **64 x 64 PNG** in a resource pack. The row:
 
+`data/friend/cyberblock/skin_map/tyger_claws_plus.json`
 ```json
 {
   "schema": 1,
-  "texture": "neon_crew:textures/entity/npc/neon_runner.png",
-  "model": "slim",
-  "faction": ["Maelstrom", "Scavengers"],
-  "gender": "female",
+  "texture": "friend:textures/entity/npc/tyger_claws_plus.png",
+  "model": "classic",
+  "faction": "TygerClaws",
+  "gender": "male",
   "priority": 10
 }
 ```
 
-- Match keys: `role`, `faction`, `gender` (`male` or `female`) and `archetype`. A value is one name or a list. The names are
-  the game's own (`faction`: `Maelstrom`, `NCPD`, `TygerClaws`, ...); the shipped files in `skin_map/` show the spellings.
-- `model` is `classic` (4 px arms) or `slim` (3 px arms). Use `classic` for a row without `gender`.
-- `priority` above the shipped rows (they use 0) makes your row win; without it ties are broken by how many keys match.
-- `texture` is the id of a 64x64 skin PNG. The picture comes from a resource pack, see [section 4](#4-textures-and-lang-files).
-- Rows with `"cyber": "male"` or `"female"` instead of match keys are the skins of linked players.
+- `faction`, `role`, `gender` and `archetype` are the match keys: an NPC wears the row when every key the row has holds for it
+  (a key may be one name or a list). Of the matching rows the highest `priority` wins, so a row with `priority` 10 beats the shipped
+  rows (priority 0) for the same people; with the same id as a default it replaces that default.
+- `texture` is the full resource id: `<namespace>:textures/entity/<anything>.png`. The PNG goes into a resource pack at
+  `assets/friend/textures/entity/npc/tyger_claws_plus.png`. Every player needs that pack: the server owner can add it to the
+  server's resource pack (see [SERVER.md](SERVER.md)), or you give your friends the pack.
+- `model` is `classic` (4 pixel arms) or `slim` (3 pixel arms). A row without `gender` should use `classic`.
+- Draw your own skin: no texture from either game.
 
-Vehicles work the same way with kind `vehicle_map` (which of the twelve vehicle models a vehicle class uses, and its colour).
+### A shop
 
-### c. A shop
+A shop is a stock list paid in Minecraft eddies (the `cyberblock:eddies` item; a credchip `cyberblock:eddie_chip` is 100).
 
-Kind `shop`. A stock list paid in **eddies** (the `cyberblock:eddies` item; a credchip is worth 100):
-
+`data/friend/cyberblock/shop/corner_store.json`
 ```json
 {
   "schema": 1,
-  "title_key": "neon_crew.shop.neon_stall",
+  "title_key": "friend.shop.corner_store",
   "restock": 900,
   "stock": [
-    {"item": "minecraft:glow_berries", "count": 8, "price": 6, "limit": 8},
-    {"item": "minecraft:sea_lantern", "count": 2, "price": 30, "limit": 4}
+    {"item": "minecraft:bread", "count": 4, "price": 8, "limit": 6},
+    {"item": "minecraft:golden_carrot", "count": 2, "price": 22, "limit": 4},
+    {"item": "minecraft:torch", "count": 16, "price": 10}
   ],
-  "sell": [{"item": "minecraft:glow_ink_sac", "count": 4, "price": 5}]
+  "sell": [
+    {"item": "minecraft:iron_ingot", "count": 4, "price": 12}
+  ]
 }
 ```
 
-- Each `stock` row sells `count` of `item` for `price` eddies, at most `limit` times between restocks (leave `limit` out
-  for unlimited). `sell` rows are what the shop buys. `restock` is the seconds between restocks (0: never).
-- `title_key` is a **lang key** for the shop's title (see [section 4](#4-textures-and-lang-files)).
-- A shop does nothing until something sells it. A **vending machine** picks from the `shops` list of its `device_map` file, so
-  the example ships a copy of the shipped file `cyberblock:vending_machine` with the new shop added to the list
-  (`data/cyberblock/cyberblock/device_map/vending_machine.json`). Because it has the shipped id, it replaces the original.
-  A **vendor in the Afterlife** sells the shop named in its `npc_role` (`shop`, or `shop_by_tag`).
+- `stock` rows sell `count` of `item` for `price` eddies, at most `limit` times between restocks (no `limit`: unlimited);
+  `sell` rows are what the shop buys from you; `restock` is the seconds between restocks (0: never).
+- `title_key` is a language key. A key no language file knows is shown as written, so either use a key of the mod
+  (`cyberblock.afterlife.shop.arms`) or add the key to a resource pack's `lang` file.
+- **Putting the shop somewhere:** a vending machine takes shops from its `device_map` file (`shops`, up to eight), and a person
+  takes one from its `npc_role` file (`shop`, or `shop_by_tag` to pick by the vendor's type). Ship a changed copy of that
+  file next to your shop (same id as the default replaces it), listing `friend:corner_store`.
 
-### d. A landmark
+### A landmark
 
-Kind `landmark`. A named place the Holo-Table can send a player to and a fixer's gig can name:
+A landmark is a named place the Holo-Table can spawn you at, and a fixer's gig can send you to (`reach_landmark`).
 
+`data/friend/cyberblock/landmark/rooftop_garden.json`
 ```json
 {
   "schema": 1,
-  "name": "Neon Crew Rooftop Diner",
+  "name": "Rooftop Garden",
   "district": "Watson",
   "kind": "viewpoint",
-  "pos": [210, 38, -120],
+  "pos": [-1200, 90, 640],
   "yaw": 180,
-  "description": "A rooftop booth lit by glow sticks, open to anyone who climbs the fire escape.",
+  "description": "A square of green that somebody carried up forty floors, one bucket at a time.",
   "approx": true
 }
 ```
 
-- `pos` is a **Minecraft** position in the replica of Night City. Cyberpunk's position `(x, y, z)` is the Minecraft position
-  `(x, z, -y)`, so a spot at Cyberpunk `(210, 120, 38)` is `[210, 38, -120]`.
-- `yaw` is the way the player faces on arrival: 0 south, 90 west, 180 north, 270 east.
-- `kind` is `district`, `plaza`, `market`, `transit`, `viewpoint` or `wilds`.
-- `approx: true` says the position was guessed. The table snaps the arrival to the ground and refuses the spawn when there is
-  none (the player is never stuck); a gig counts an approximate point by x and z only. Measure the spot in game and set
-  `approx` to `false` (or leave it out).
+`pos` is a Minecraft position in the replica ([x, y, z]: Cyberpunk's (x, y, z) is Minecraft's (x, z, -y)). Set `approx` to `true`
+while you are guessing: the table snaps your arrival to the ground and refuses a spawn with no ground instead of leaving you
+stuck. `kind` is one of `district`, `plaza`, `market`, `transit`, `viewpoint`, `wilds`; `yaw` is the way you face (0 south, 90 west,
+180 north, 270 east).
 
-### e. A Breach daemon
+### A Breach daemon
 
-Kind `daemon`. A daemon is one sequence the player must enter in a Breach Protocol puzzle, and the real effect it has. The
-effect (`action`) is one of a **closed list** the game scripts implement; a datapack can re-skin an action (a new name, text,
-sequence, kinds, weight and minimum security) but cannot invent a new action.
+A daemon is one run of hex codes the player must put into the Breach buffer, and the real thing it does. A datapack can
+**re-skin** a daemon (another name, text, sequence, devices, weight) but cannot invent an action: the actions are a closed list
+the scripts implement (`open_door`, `disable_cameras`, `reveal_enemies`, `overload`, `disable_turrets`, `lights_out`, `distract`,
+`traffic_switch`, `make_friendly`).
 
+`data/friend/cyberblock/daemon/quiet_hinges.json`
 ```json
 {
   "schema": 1,
-  "title_key": "neon_crew.daemon.unlatch",
-  "text_key": "neon_crew.daemon.unlatch.text",
-  "sequence": ["FF", "1C", "55"],
+  "title_key": "friend.daemon.quiet_hinges",
+  "text_key": "friend.daemon.quiet_hinges.text",
+  "sequence": ["1C", "BD", "55"],
   "kinds": ["door", "gate"],
   "action": "open_door",
-  "tiers": [{"seconds": 0, "radius": 8}, {"seconds": 0, "radius": 14}, {"seconds": 0, "radius": 24}],
-  "weight": 4,
+  "tiers": [
+    {"seconds": 0, "radius": 8},
+    {"seconds": 0, "radius": 15},
+    {"seconds": 0, "radius": 25}
+  ],
+  "weight": 5,
   "min_security": 1
 }
 ```
 
-- `sequence` is 2 to 4 of the six grid codes `1C`, `55`, `BD`, `E9`, `7A`, `FF`.
-- `action` is one of `open_door`, `disable_cameras`, `reveal_enemies`, `overload`, `disable_turrets`, `lights_out`, `distract`,
-  `traffic_switch`, `make_friendly`.
-- `kinds` lists the device kinds whose Breach may offer it (`door`, `gate`, `light`, `camera`, `terminal`, `vending`,
-  `traffic`, `elevator`, `turret`, `screen`, `container`). `weight` (1 to 10) is how often it is picked; `min_security` (1 to 3)
-  is the lowest device security it is offered at.
-- `tiers` are exactly three rows, strength 1, 2, 3. Copy the shipped action's rows: the game sends only the strength, so
-  changing them here changes nothing in game.
-- Give it a sequence no shipped daemon uses, so the player can tell which daemon a run solves.
+The codes come from the six of the grid (`1C`, `55`, `BD`, `E9`, `7A`, `FF`), two to four per daemon. `tiers` has exactly three rows
+(strength 1, 2 and 3). The numbers in `tiers` are the action's documented defaults mirrored by the scripts: the game sends only the
+strength, so changing them changes nothing in game. The schema's `description` lists them.
 
-### f. An Overlord event
+### An Overlord event
 
-Kind `event`. One thing the Overlord Console can trigger on a spot of the match area for Threat Points:
+An event is something the Overlord Console can trigger on a picked spot of a match area, paid for with Threat Points.
 
+`data/friend/cyberblock/event/long_blackout.json`
 ```json
 {
   "schema": 1,
-  "name": "Flash Blackout",
-  "description": "Every light in the area snaps off for a few seconds. Short, cheap and rude.",
-  "cost": 12,
-  "warning_s": 4,
-  "cooldown_s": 45,
-  "radius": 14,
-  "scales_with_intensity": false,
+  "name": "Long Blackout",
+  "description": "The lights of the area stay dark for a long, uncomfortable minute.",
+  "cost": 35,
+  "warning_s": 6,
+  "cooldown_s": 180,
+  "radius": 48,
+  "scales_with_intensity": true,
   "night_city": true,
-  "effect": {"type": "blackout", "seconds": 10}
+  "effect": {
+    "type": "blackout",
+    "seconds": 75
+  }
 }
 ```
 
-- `cost` is in Threat Points. `warning_s` (never below 3) is how long players get the sound and marker before it lands;
-  `cooldown_s` is how long before it can be queued again; `radius` is the reach in blocks.
-- `effect` is one of seven shapes, chosen by `type`: `blackout`, `emp`, `airstrike`, `traffic_jam`, `supply_drop`, `weather`
-  and `outbreak`. Each has its own fields (the schema lists them). An `outbreak` names a `spawn_palette` entry in `spawn`.
-- The fairness rules are not data: an event never breaks blocks, a supply drop cannot be opened by the Overlord who paid for
-  it, and every effect names the Overlord as its cause.
+`warning_s` can never be below 3: the players in the area always get the warning sound and marker first. `effect.type` is one of
+`blackout`, `emp`, `airstrike`, `traffic_jam`, `supply_drop`, `weather` and `outbreak`, and each has its own fields (the schema's
+`description` lists them). The Overlord's fairness rules (opt-in, minimum distance, spawn cap, intensity) apply to every event, yours
+included. A `supply_drop` is capped at 100 eddies on purpose.
 
----
-
-## 4. Textures and lang files
-
-A datapack carries **data**. Pictures (a skin PNG) and words for lang keys (`title_key`, `text_key`) are **resource-pack
-assets**, which a datapack folder does not deliver.
-
-- The example's `assets/neon_crew/` folder holds the skin at `textures/entity/npc/neon_runner.png` (a plain 64x64 placeholder
-  drawn for the example; make your own) and `lang/en_us.json` with the three keys the example uses.
-- To use them, make a **resource pack** next to the datapack: a folder in `resourcepacks/` with its own `pack.mcmeta` (see
-  `respack/pack.mcmeta` in the repository: resource pack format 97) and the `assets/` folder inside it.
-- On a dedicated server, the server owner puts the same assets in the server's resource pack, which clients download when
-  they join (`respack/`, built by `uv run python -m tools.respack`).
-- Without the pictures a client shows Minecraft's missing-texture skin; without the lang entries it shows the raw key. The data
-  itself loads either way.
-
-Use only art you made or may share. Never put game assets in a pack.
-
----
-
-## 5. Checking, reloading and troubleshooting
+## When something does not show up
 
 | What you see | What it means |
 |---|---|
-| `content: loaded <kind> N (cyberblock, neon_crew)` | the kind loaded, N entries, from these namespaces |
-| `content: <kind> <id> skipped: <why>` | that one file was refused; the reason names the field |
-| `content: kind <kind> has no loader` | a mod bug: tell the maintainer (every kind should have a loader) |
-| `FAIL <file>: <where>: <what>` from `content_check` | the file breaks the schema; `<where>` is the path to the field |
-| `refers to <kind> "<id>", which does not exist` | a reference (a shop, a role) points at a missing file |
-| `pack.mcmeta: missing` | Minecraft ignores a datapack folder without one |
+| `content: <kind> <id> skipped: <why>` in the server log | the file is wrong in the way `<why>` says; `tools.content_check` prints the same text |
+| nothing at all in the log for your file | it is not at `data/<namespace>/cyberblock/<kind>/<name>.json`, or the datapack is not enabled (`/datapack list` shows it), or a sub-folder holds it (the loader reads only that folder, not below it) |
+| your new row is ignored, the shipped one still wins | give it a higher `priority` (`skin_map`, `vehicle_map`) or the same id as the file it should replace |
+| a screen shows a raw key such as `friend.shop.corner_store` | the language key has no entry: add it to a resource pack's lang file |
+| `pack.mcmeta` refused ("must declare both min_format and max_format") | write both, as in "Where the files go" |
+| a texture is missing (purple and black) | the PNG is not in a resource pack the player has, at the path the `texture` field names |
+| the change shows for you but not for a friend | they have not rejoined or the server did not `/reload`; content reaches them through `cyberblock:content` |
 
-- `/reload` re-reads every file. Edit, save, `/reload`, look again. Clients get the kinds they need (the material palette of
-  the replica) in the same moment; the rest is used on the server and reaches players through the screens.
-- `/cyberblock status` (as an operator) lists how many entries of each kind are loaded, on a line starting `content:`.
-- If an edit does not show, check the log for a `skipped` line first, then that the id is what you think it is (the folder
-  name is the namespace, the file name is the name).
-- A file larger than 1 000 000 bytes is refused. `content_check` also refuses a duplicate key and a stray comma, which are easy to miss by eye.
-
----
-
-## 6. Every content kind
-
-| Kind | Holds | Schema |
-|---|---|---|
-| `material_palette` | Cyberpunk surface material (or a heuristic class) to replica block | `material_palette.schema.json` |
-| `device_map` | Cyberpunk device class to device kind, block, size, vending shops | `device_map.schema.json` |
-| `shop` | stock and sell lists, prices, restock times | `shop.schema.json` |
-| `skin_map` | NPC role, faction, gender, archetype to skin and model; cyber skins | `skin_map.schema.json` |
-| `vehicle_map` | vehicle class to one of the 12 vehicle models and its colour | `vehicle_map.schema.json` |
-| `daemon` | Breach daemon sequences and the action each does | `daemon.schema.json` |
-| `breach_tier` | grid size, buffer and timer by device security and Firewall rank | `breach_tier.schema.json` |
-| `dialogue` | original lines per NPC role | `dialogue.schema.json` |
-| `contract` | fixer gigs: text, objective, reward | `contract.schema.json` |
-| `ripperdoc` | implant catalogue, prices, surgery risk | `ripperdoc.schema.json` |
-| `landmark` | places for the Holo-Table and reach gigs | `landmark.schema.json` |
-| `npc_role` | which screen a role opens, its services, where it lives in the hub | `npc_role.schema.json` |
-| `event` | Overlord events: cost, warning, effect | `event.schema.json` |
-| `spawn_palette` | Overlord spawn entries and their Threat Point costs | `spawn_palette.schema.json` |
-| `heat_tier` | Server Heat tiers 1 to 5 | `heat_tier.schema.json` |
-| `match_mode` | match modes: rules, time limits, zone settings | `match_mode.schema.json` |
-
-The schemas are in `shared/content-schemas/`. The Afterlife hub layout (`hub`) is also a content file, but it is built once
-into the hub dimension and is not reloaded.
+The full list of kinds, their phases and the rule behind them is section 1.7 of the multiplayer plan
+(`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md`). Hosting a server for friends: [SERVER.md](SERVER.md). Joining one:
+[JOIN.md](JOIN.md).

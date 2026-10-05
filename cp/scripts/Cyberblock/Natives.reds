@@ -1,5 +1,5 @@
-// Natives.reds — declarations only; implemented by Cyberblock.dll (version 1.0.0)
-public native func Cyberblock_Version() -> String;              // "1.0.0"
+// Natives.reds — declarations only; implemented by Cyberblock.dll (version 2.0.0)
+public native func Cyberblock_Version() -> String;              // "2.0.0"
 public native func Cyberblock_IsLinked() -> Bool;              // WebSocket open and hello exchanged
 public native func Cyberblock_SecondsSinceFrame() -> Float;    // since the last shared-memory frame or status; 999 if never
 public native func Cyberblock_ScreenOpen() -> Bool;            // last status.screen

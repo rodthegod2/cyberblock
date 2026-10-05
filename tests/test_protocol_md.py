@@ -1415,9 +1415,9 @@ def test_re_test_wave_a_is_first_and_carries_the_phase_0_cet_lines():
 
 
 def test_changelog_has_an_unreleased_entry_for_phase_q_at_the_top_of_the_1_0_0_section():
-    """It is a `###` entry inside the top `## [1.0.0]` section, not a `## [Unreleased]` heading: tests/test_version.py wants the
+    """It is a `###` entry inside the top `## [2.0.0]` section, not a `## [Unreleased]` heading: tests/test_version.py wants the
     first `##` heading of the changelog to be the current version (the integrator may change that when a release is cut)."""
-    assert CHANGELOG.index("## [1.0.0]") < CHANGELOG.index("### Unreleased additions: Phase Q") < re.search(r"^### Added$", CHANGELOG, re.M).start()
+    assert CHANGELOG.index("## [2.0.0]") < CHANGELOG.index("### Unreleased additions: Phase Q") < re.search(r"^### Added$", CHANGELOG, re.M).start()
     text = " ".join(section_of(CHANGELOG, "### Unreleased additions: Phase Q (multiplayer plan)").split())
     for phrase in ("Survival mining", "Stairs", "step-up assist", "third-person camera", "Outline blocks in creative", "settings screen",
                    "`prefs`", "`cam.vdbg`", "--view", "--stairs", "tests/test_hygiene.py"):

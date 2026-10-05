@@ -1,9 +1,243 @@
 # Cyberblock — in-game test session (2026-10-03)
 
-Everything below is built, unit-tested, compile-checked against the real 2.31 game scripts and reviewed. Work top to
+Everything below is built, unit-tested, compile-checked against the real 2.31 game scripts and reviewed. **For the multiplayer
+version (2.0.0, proposed) do the "Full multiplayer pass" first: it is the one session that plays everything from Phase Q to Phase 9
+in order, and its step M-8 is "Re-test 9".** The older sections are the detailed checks it points into. Work top to
 bottom (**Re-test: Wave B (Phases 3, 4, 5) first** when you are testing Wave B, then its Phase 3, 4 and 5 sections; then
 **Re-test: Wave A**, which points into Re-test Q and Re-test 1 for the details; then **In-game fixes 3**, then Re-test 3); each step says what should happen. Tell Claude "F4: what you saw" or "R5 L-1: what you saw" (or "step N: ...") and it reads
 `red4ext\logs\Cyberblock.log`, Minecraft's `mc\run\logs\latest.log` and captures the game window to diagnose.
+
+## Full multiplayer pass (one session: do this first, then Re-test 9 inside it)
+
+**This is the one user test for Wave C and Phase 9**: everything the multiplayer plan built, played once, in the order an evening
+would go. It does not repeat the detail of the older sections; each step says which section holds the detailed checks, so you tick
+the short item here and open the long one only where something looks wrong. Tell Claude "M-4: what you saw" and it reads
+`Cyberblock.log`, the server log, `latest.log` and the game window.
+
+**Who and what you need.**
+- **The server.** The Cyberblock server on your hosting plan (with the join password on, as it runs today) **or** the local test
+  server Claude starts. Use the real one only when you want the full evening; the local one answers every item except a backup at
+  the set hour (use `/cyberblock backup now` there).
+- **Four people if you can:** you as **host** (Cyberpunk running, Cyberblock On, V on a street with people around), and **three guests**
+  (Minecraft only, with the modpack: [JOIN.md](JOIN.md) is their guide). A second host makes M-4, M-6 and M-7 richer but is not
+  required. Fewer people means fewer items, not a failure.
+- Close **Cyberpunk, Minecraft and the server** before the very first launch of a new build; Claude installs it (Cyberpunk must be closed).
+- Phase 0 is still not run. Where a result says "fallback", "Minecraft squads" or "no write", that is the written fallback of
+  [phase0-feasibility.md](notes/phase0-feasibility.md), not a failure; the "which way" lines (M-10) tell you which one you have.
+
+**What to try (one screen):**
+1. **Join** with the modpack: **Join Cyberblock**, the password, `/login` (M-1).
+2. **Link your Cyberpunk** and walk: the city grows under the guests (M-2).
+3. **Guests build, blow things up, and you flip the switches** (M-3).
+4. **Devices and hacking:** a door, a vending machine, a Breach, the interaction map (M-4).
+5. **Figures and skins:** the people and cars as figures, your cyber skin (M-5).
+6. **The Afterlife:** talk, buy, take a gig, use the Holo-Table (M-6).
+7. **A match** with PvP, the Overlord, Heat, a revive, a spectator (M-7).
+8. **Datapack, settings, Performance mode** with four guests (M-8, the Phase 9 items).
+9. **Backups,** a server restart and a rejoin (M-9).
+10. **Read the "which way" lines** to Claude (M-10).
+
+| Phase | Detailed section |
+|---|---|
+| Q, 1, 2 (quick wins, the server split, the deployment) | Re-test: Wave A, Re-test Q and Re-test 1 (below) |
+| 3, 4, 5 (replica, devices, figures and skins) | [Re-test: Wave B](#re-test-wave-b-phases-3-4-5) and its Phase 3, 4 and 5 sections |
+| 6 (hacking, Breach, interaction map) | [Re-test 6](#re-test-6-phase-6-hacking-and-the-interaction-map) |
+| 7 (hub, talking, Holo-Table) | [Re-test: Wave C, Phase 7](#re-test-wave-c-phase-7-npc-interaction-the-afterlife-hub-and-the-holo-table) |
+| 8 (roles and modes) | [Re-test: Wave C, Phase 8](#re-test-wave-c-phase-8-roles-and-modes) |
+| 9 (content, settings, performance, backups) | [Re-test 9](#re-test-9-phase-9-the-finish-content-settings-performance-backups) |
+
+### M-1. Join (the friends' way in)
+1. Each guest follows [JOIN.md](JOIN.md) on a PC that has never had Cyberblock: import the `.mrpack` in the Modrinth App or Prism Launcher, press **Play**,
+   then **Join Cyberblock**. **Expect:** two clicks from the launcher to the server; the resource pack prompt; with the join password on, the password box
+   opens by itself (or `/login <password>` works); until then the player cannot move or chat.
+2. A wrong password five times, or waiting 120 seconds, **kicks** the guest. The password itself is **never** in any log.
+3. A guest with an older mod gets "Cyberblock version mismatch: server X, your mod Y. Update from the modpack." and a player without the mod gets the modpack message.
+4. **Expect in the server log:** `handshake: <name> ...` for each player, and `session: <name> started` for the host. `/cyberblock status` lists everyone with their
+   roles and versions and says `join password: on`.
+
+### M-2. The host links Cyberpunk, and the city grows
+1. Host: start Cyberpunk, load a save, **F9** (the usual route in [HOW-TO-PLAY](HOW-TO-PLAY.md#2-launching)). **Expect:** `handshake: ... -> host` in
+   `latest.log`, `session: <host> active` on the server, and the guests see **replica blocks** appear along the streets the host walks (grey, asphalt, glass, neon).
+2. The host walks a few blocks, drives a short way and goes through a doorway. **Expect:** a solid floor, no door turned into a wall, and a guest's Atlas drawing
+   what the host explored. Details: Re-test: Wave B, Phase 3.
+3. A second Cyberpunk player (if you have one) joins as the second host (`maxHosts` 4): both hosts' people and cars stay with their own game.
+
+### M-3. Guests act on the host's game, and the switches
+1. A guest places blocks across a street and lights TNT near V: **expect** the host's Night City explodes and a pedestrian stops at the wall. Details: Re-test: Wave A.
+2. Host: `/cyberblock guests explosions off`, then the guest lights TNT again: **expect** the action bar says "blocked", Minecraft still explodes, Night City does not.
+   Turn it back `on`. Do the same for `damage`, `hacks`, `devices` (one device type) and `spawns`.
+3. The host leaves Cyberpunk (F9 off, or quit): **expect** the host's collision, proxies and figures go with the session and the replica stays; the guests keep
+   building (Offline Builds); when the host returns **expect** "While you were away: N blocks placed".
+
+### M-4. Devices, redstone hacking and the interaction map
+1. Walk to a door, a camera, a vending machine and a traffic light near V: **expect** them as blocks the guest can use; a door opens in the host's game; the vending
+   machine sells for eddies. Details: Re-test: Wave B, Phase 4.
+2. A guest builds a Device Relay and a Breach Port from redstone, runs a Breach on a Net Port and solves it: **expect** the daemons run in the host's game; a failed
+   Breach sounds the alarm. Open the interaction map (Vehicle Panel, Net Map, Comms Panel): one hack each. Details: Re-test 6.
+
+### M-5. Figures, skins, your cyber skin
+1. A guest looks at the people and cars of the host's Night City: **expect** figures in their faction's skin (women on the slim model), posed and moving, cars in
+   their colours; linked players show as V with a `[V]` tag; `/cyberblock body female` makes yours Lucy. Details: Re-test: Wave B, Phase 5.
+
+### M-6. The Afterlife, the people and the Holo-Table
+1. `/cyberblock hub` as a guest and as the host: **expect** the hub, the shops, the fixer, the bartender, the ripperdoc and the Holo-Table; the host's V is parked while
+   in the hub. Buy, sell, take a gig and finish it, install an implant, spawn at a landmark with the Holo-Table and fast travel from it. Details: Re-test: Wave C, Phase 7.
+
+### M-7. A match, the Van, the Overlord and the rest
+1. At the Match Terminal the host creates a team deathmatch, a guest joins, PvP is on for both; a guest runs the **Van** and a drone, another is the **Overlord**
+   (after `/cyberblock overlord optin on` the spawns appear with a 3 second warning). Push the **Heat** to tier 4; go **down** and get revived; a third guest
+   spectates with `/cyberblock spectate`. Details: Re-test: Wave C, Phase 8 (P8-1 to P8-10).
+
+### M-8. The Phase 9 items (all of Re-test 9)
+1. Do [Re-test 9](#re-test-9-phase-9-the-finish-content-settings-performance-backups), R9-1 to R9-6, with all four players on the server. R9-5 (Performance mode
+   with four guests) is the reason to have four.
+
+### M-9. Backups, a restart and a rejoin
+1. Check R9-4 (the backup at the set hour and `pull-backups`) if you are on the real server over the night, or `/cyberblock backup now` on the local one.
+2. **Restart the server** in the middle of the evening: **expect** every client shows "Reconnecting to ... in N s" with **Cancel**, comes back by itself (after 5, 10,
+   20, 40 and then every 60 s for 10 minutes), the host's session starts again and the whole ground returns. Players who logged in earlier need no password again.
+3. A guest closes Minecraft without warning and rejoins: **expect** the world exactly as it was, and no leftover collision on the host's side.
+4. The host quits Cyberpunk and plays on in Minecraft only: **expect** the same as the third step of M-3.
+
+### M-10. Which way is it working? And what you saw
+Copy these lines to Claude (the wording is the packages', so search for the word):
+
+| Search for | Where | The line says |
+|---|---|---|
+| `handshake:` | server log and `latest.log` | who joined, with which versions and as host or guest |
+| `session:` | server log, `Cyberblock.log` | a host's session `started`, `active`, `ended (<reason>)` |
+| `worldcheck:` | server log | the server's world is the Night City void world (`ok`) |
+| `relay:` | server log | the message rates, and any `dropped <t> x N (<why>)` |
+| `content:` | server log | every kind loaded, and every file skipped with its reason |
+| `backup:` | server log | the backup file and its size |
+| `spawn: path`, `heat: path`, `attitude: path` | `Cyberblock.log` | which of the Phase 8 paths is active (real enemies and wanted level, or the fallback) |
+
+**Tell Claude, at the end:** what was fun, what was confusing, what broke, and the frame time (a number, or "smooth", "stutters") at the default Performance sliders and with them lowered.
+
+## Re-test 9 (Phase 9: the finish: content, settings, performance, backups)
+
+The Phase 9 part of the one multiplayer session (it is step M-8 of the Full multiplayer pass above, and can also be played alone on the local test server).
+After Phase 9 the mod is complete and tunable: **every kind of content is data** a friend adds as a datapack and `/reload` shows; **one settings screen** holds
+every option; **Performance mode** lowers the frame cost; the server **backs itself up daily**; the docs cover it all. Plan:
+`docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 13. The guides are [docs/CONTENT.md](CONTENT.md),
+[the settings screen and Performance mode](HOW-TO-PLAY.md#the-cyberblock-settings-screen) and [docs/SERVER.md](SERVER.md). Tell Claude "R9-3: what you saw".
+
+**Before you start.**
+- Phase 0 is still not run. Two things in this section depend on game facts: **R9-6** (the save and load lists as a Minecraft screen exist only where the 2.31 save-list
+  calls were verified; otherwise they stay Cyberpunk's own restyled menus, which is the documented answer, not a failure) and the measured numbers of **R9-5**.
+- The names of tabs, buttons and log lines below follow the plan; if a screen words one differently, say so: that is a note, not a failure.
+- You need an **operator** account (`/op <name>`), a **world folder** you can write to (the local test server's, or the real server's through its panel), and for
+  R9-5 four players (one host, three guests; fewer is fine, the note says what changes).
+- For R9-4 on the real server, `APEX_FTP_PASS` is set by **you** in your own terminal (never typed into a chat or a command line); Claude never sees it.
+
+**What to try (one screen):**
+1. **A friend's datapack:** add a dialogue line and a skin from [CONTENT.md](CONTENT.md), `/reload`, hear the line and see the skin (R9-1).
+2. **The other kinds:** a shop, a landmark, a Breach daemon and an Overlord event from the [CONTENT.md](CONTENT.md) recipes (R9-2).
+3. **The settings screen:** every tab, every option (R9-3).
+4. **A backup** at the set hour (or `/cyberblock backup now`) and `pull-backups` to your PC (R9-4).
+5. **Performance mode** (the Frame scale and Figures sliders) with four guests: frame time steady, and the numbers (R9-5).
+6. **Save and load:** the Night City saves screen, or the documented pass-through; and the **escape hatch** (R9-6).
+7. **Read the "which way" lines** to Claude (R9-7).
+8. **Without Cyberpunk:** the machine checks (R9-8).
+
+| Item | What changed |
+|---|---|
+| Content | every kind of section 1.7 has a schema, a loader, defaults and hot reload; `docs/CONTENT.md` with six checked recipes; `tools.content_check`; an example datapack in `examples/content-datapack/` when the build has that folder |
+| UI gaps | the save and load lists as a Minecraft screen where the API is verified (else the pass-through, documented in `docs/notes/ui-coverage.md`); the escape hatch tested |
+| Performance | **Performance mode**: two sliders saved on your PC, **Frame scale** (`prefs.scale`, 50 to 100 percent by 5, default 100) and **Figures** (the figure cap, 16 to 48 by 4, default 48); a distance level of detail and server budgets only where the release notes list them |
+| Settings screen | six tabs: **Guests**, **Look**, **PvP**, **Difficulty**, **Performance**, **World**; server values go through `/cyberblock` commands, so the server decides; the World tab shows `server.json` read-only |
+| Backups | `backups.hour`, `backups.keep`, `backups/cyberblock-<date>.zip`, a skip with a warning when the disk is low, `/cyberblock backup now`, `tools.server_sync pull-backups --to <folder>` |
+| Docs and version | HOW-TO-PLAY, `docs/SERVER.md`, `docs/JOIN.md`, `docs/CONTENT.md`, the README, the release notes, and the version **2.0.0** (proposed: the owner decides; no tag, no release, no push) |
+
+### R9-1. A friend's datapack: a dialogue line and a skin, shown by `/reload`
+1. Close nothing: the server runs. Make a datapack folder in the world's `datapacks` (the layout is in [CONTENT.md](CONTENT.md), "Where the files go"), with
+   `pack.mcmeta`, a **dialogue** file in **your own namespace** that adds lines to the bartender (CONTENT.md's recipe `data/<yours>/cyberblock/dialogue/bartender_more.json`
+   with `"role": "cyberblock:bartender"` and at least one `greeting`, `farewell` and `bark`; it does not replace the shipped file) and a **skin_map** row with a higher
+   `priority` than the shipped rows for one faction, plus its 64 x 64 PNG in a resource pack the guests have.
+2. Run `uv run python -m tools.content_check --dir <your pack>` first. **Expect:** `content: N file(s) ok`.
+3. As an operator type `/reload`. **Expect in the server log:** `content: loaded dialogue N (cyberblock, <yours>)` and `content: loaded skin_map N (...)`; with a
+   deliberate typo in a second file, `content: <kind> <id> skipped: <why>` and **nothing else breaks**.
+4. A guest right-clicks the **bartender** in the Afterlife a few times. **Expect:** your new greeting among the shipped ones (both kinds show up). The faction you re-skinned shows in your skin
+   (`Cyberblock.log` and the figures: Re-test: Wave B, Phase 5 explains what a figure is). **Edit the file again** (change the line), `/reload` again: **expect** the new text
+   without a restart or a rejoin.
+
+### R9-2. The other content kinds, and the example datapack
+<!-- integrator: the examples/content-datapack lines of R9-2 and R9-8 stay only once 9C's folder exists and passes content_check --dir; if 9C is descoped, delete them. -->
+1. Add the **shop**, **landmark**, **Breach daemon** and **Overlord event** recipes of [CONTENT.md](CONTENT.md) to your R9-1 pack, run
+   `uv run python -m tools.content_check --dir <your pack>` first, then `/reload`. **Expect:** the log lists the kinds loaded. If your build has the folder
+   `examples/content-datapack/` (one file of each kind), check it the same way (`tools.content_check --dir examples/content-datapack`) and copy it in as well.
+2. **A shop:** point a vending machine's `device_map` or a person's `npc_role` at your shop (CONTENT.md says how); buy and sell. **A landmark:** it appears on the Holo-Table and a gig can
+   send you there. **A Breach daemon:** run a Breach on a Net Port; your re-skinned daemon is offered. **An Overlord event:** it is on the Overlord Console's event list with your cost and
+   warning.
+3. Remove the datapack and `/reload`: **expect** everything back to the defaults, no leftover entry.
+
+### R9-3. The settings screen: every tab, every option
+Press **Esc**, then **Cyberblock...** (or `/cyberblock settings`). Take a screenshot of each tab if you can.
+1. **Guests** (host): switch `explosions`, `damage`, `hacks`, `spawns` and `devices` and one device type off and on, with a guest trying the action each time. **Expect:** "blocked" on
+   the guest's action bar while off, the action reaching your game while on; the same as `/cyberblock guests ...`. As a **guest** the rows are greyed with the tooltip "Only the
+   host or an operator can change this".
+2. **Look:** your cyber skin (male or female), **Hide my Holo pin**, the third-person camera options and Step-up assist. **Expect:** they apply at once (F5; walk up a stair;
+   with the pin hidden, outside a match your pin is gone from the other players' Holo-Tables).
+3. **PvP:** your PvP switch. **Expect:** a red name tag while on; the 15 second rule after a hit; outside a match it does nothing to others.
+4. **Difficulty** (host or operator): the Overlord intensity default (Chill, Normal, Brutal) and the Heat scaling. **Expect:** a new match's Overlord starts at the chosen
+   intensity; the Heat climbs slower or faster.
+5. **Performance:** see R9-5.
+6. **World** (host or operator): **Creative can erase the replica permanently** on and off (a creative player breaks a replica block: it returns in about 10 seconds, or stays
+   broken when on; log `outline: <name> broke <x> <y> <z> (snap back in 10 s)` or `(kept: permanent erase)`). As a guest or a non-operator the row is greyed. Under it the
+   `server.json` values (join password, hosting, hosts list, hosts at once, PvP for new players, backups, join help, ...) are **shown read-only**, with the note that the
+   server admin sets them in `server.json`: **expect** they match the file and cannot be clicked.
+7. Close and reopen the screen, then **rejoin**: **expect** every value is as you left it (server values from the server, your own from your PC).
+
+### R9-4. A backup at the set hour, and `pull-backups`
+1. In `config/cyberblock/server.json` set `backups.hour` to the next full hour of the **server's local time** (or leave 5 and use `/cyberblock backup now`), restart the server.
+2. At the hour (or after the command), **expect in the server log:** `backup: backups/cyberblock-<date>.zip <size>` (the exact path wording is the package's) and a new zip in the server's
+   `backups/` folder. With `backups.keep` 2, make three backups: **expect** only the newest two stay.
+3. **Low disk:** if you can, say so to Claude; the plan's check is that the server **skips and warns** when free space is under twice the world size. Do not fill a real disk to test it.
+4. On your PC, in **your own terminal** with `APEX_FTP_PASS` set by you (or the hidden prompt): `uv run python -m tools.server_sync pull-backups --to "<server backup folder>"`.
+   **Expect:** the zips download, nothing in the output shows the address, the user or the password, and a second run downloads nothing new.
+5. Open one zip: **expect** the world folder with `level.dat`. (The restore steps are in [SERVER.md](SERVER.md), section 6.)
+
+### R9-5. Performance mode with four guests, and the numbers
+1. All four players on the server, the host linked, V in a busy street. Note the frame rate in Cyberpunk with the **Performance** tab at its defaults (**Frame scale** 100 %,
+   **Figures** 48: full quality; the number you normally look at, or "smooth"/"stutters"). Claude will also read the frame export and compositor times the performance pass logs
+   (search `Cyberblock.log` for `perf` or `frame`; the exact word is 9F's).
+2. **Esc, Cyberblock..., Performance:** there is no on/off switch; lower **Frame scale** to 75 percent, then **Figures** to 24. **Expect:** the Minecraft picture a little
+   softer, **fewer figures** in the distance, and the frame rate **steady** or better with all four guests in view; V's controls unchanged. The tab says "Saved on this PC only".
+3. Set Frame scale to 50 percent: **expect** a clearly softer picture and a larger gain. Put both sliders back to their defaults (100 % and 48): **expect** the first picture and the old behaviour.
+4. Server side: with the four guests flying and building at once (a guest running forward with a stack of blocks is enough), **expect** no tick warnings in the server log ("Can't keep up"),
+   and `/cyberblock status` rates staying sane.
+5. **Write the numbers down** (or let Claude read them): frame export time, compositor time and the server tick with two hosts and four guests, before and after. They go into the table of
+   [Performance mode](HOW-TO-PLAY.md#performance-mode). With only one or two players the gain is smaller; say so.
+
+### R9-6. Save and load, and the escape hatch
+1. Open the pause screen (Esc) and pick **Save Game**, then **Load Last Save**. **Expect:** the game saves and loads (the toasts "Saving Night City...", "Saved").
+2. Open the **save and load list**. **Expect one of two answers, both fine:** a Minecraft **Night City saves** screen (list, load, save) where the 2.31 save-list API was verified, or Cyberpunk's own
+   save list, restyled with the Minecraft frame, as `docs/notes/ui-coverage.md` documents. Say which you saw.
+3. **The escape hatch, at every moment:** press Esc, then **Night City Menu...**: the real Cyberpunk menu opens once. Do it on the server, inside a match, in the hub (V parked), with Frame scale lowered and
+   with the settings screen just closed. **Expect:** it always opens. Close Minecraft and press Esc in Cyberpunk: every Cyberpunk menu works as in vanilla.
+
+### R9-7. Which way is it working? (the runtime paths)
+Copy these lines to Claude (the wording is the packages', so search for the word):
+
+| Search for | Where | The line says |
+|---|---|---|
+| `content:` | server log | each kind loaded and each file skipped, after every `/reload` |
+| `backup:` | server log | the backup made, its size, and any skip with its reason |
+| `perf` or `scale` | `latest.log` and `Cyberblock.log` | the resolution scale and the figure cap in force, and the frame export time |
+| `handshake:` and `session:` | server log | the players and sessions of the test |
+
+### R9-8. Without Cyberpunk: the machine checks
+1. `uv run pytest -q`, `uv run python -m tools.content_check` (the shipped defaults; the test suite also checks the six CONTENT.md recipes), `uv run python -m tools.content_check
+   --dir examples/content-datapack` only when the build has that folder, and
+   `uv run python -m tools.mpcheck --all` on a worktree (never the folder you play from). **Expect:** all pass; a SKIP is not a pass, so if a scenario says SKIP, read why.
+2. In a worktree `gradlew.bat test build`, then `cmake --build cp/plugin/build --config Release`, `cp\plugin\build\Release\cb_tests.exe` and `ctest -C Release` (which runs `fx_check`).
+
+### Phase 9 descopes and risks (short)
+- **The save and load lists** become a Minecraft screen only where the 2.31 save-list calls are verified; otherwise the pass-through stays and `docs/notes/ui-coverage.md` says why (R9-6).
+- **Backups need disk space** on the hosting plan: the server skips with a warning under twice the world size; copy the zips to your PC with `pull-backups` and delete old ones on the host.
+- **Performance numbers** in HOW-TO-PLAY are filled from R9-5's measurement; until then the table says so. They depend on the PC.
+- **The version 2.0.0 is a proposal.** Everything names it, nothing is tagged, released or pushed; if you want another number, say so and Claude changes the version files together.
+- **Phase 0 is still not run:** the fallbacks of Phases 3 to 8 are the active paths until the CET checks say otherwise.
 
 ## Re-test 6 (Phase 6: hacking and the interaction map)
 
@@ -1467,7 +1701,7 @@ Minecraft):
 
 | Where | Line |
 |---|---|
-| DLL | `Cyberblock 1.0.0 loading`; `Minecraft says hello: mod cyberblock 1.0.0, Minecraft 26.3`; `version mismatch: DLL 1.0.0, mod X` |
+| DLL | `Cyberblock 2.0.0 loading`; `Minecraft says hello: mod cyberblock 2.0.0, Minecraft 26.3`; `version mismatch: DLL 2.0.0, mod X` |
 | DLL | `binds: hack G, skills K, cyberware U, activate Y, arms L, camo O` |
 | DLL | `flight: N frames, ..., yaw start A end B, mouse x N counts at R deg/count, pitch min..max`; `look: R deg per mouse count` |
 | DLL | `seat: on (third person\|first person)`, `seat: off`; `view: third person on (distance D m)`, `view: first person (<reason>)`, `view: applied, eye moved D m` |
@@ -1603,7 +1837,7 @@ Fire the Sandevistan (**Y**) while moving and looking around.
 ### F11. Release install, the launcher and the Play button
 On a **clean copy** (a copy of the Cyberpunk folder with the frameworks, or a spare Windows account) with no earlier
 Cyberblock:
-1. `uv run python -m tools.package` and unzip `dist/Cyberblock-1.0.0.zip` somewhere else. Close Cyberpunk, run **install.bat**.
+1. `uv run python -m tools.package` and unzip `dist/Cyberblock-2.0.0.zip` somewhere else. Close Cyberpunk, run **install.bat**.
    **Expect:** it finds the game (or accepts a dropped folder), warns if RED4ext, redscript, Codeware or ReShade is missing, backs
    up the saves, refuses to overwrite a foreign file, keeps an existing `ReShade.fxh` and `ReShadePreset.ini`.
 2. Create the launcher installation as README and HOW-TO-PLAY say (Fabric 26.3, game directory `%APPDATA%\.minecraft-cyberblock`,
@@ -1611,7 +1845,7 @@ Cyberblock:
    Fabric API in `mods`). Start it from the launcher: the title screen has **Play Cyberblock** and the world opens by itself.
 3. Start Cyberpunk, load a save, **F9**. Play for a minute; quit.
 4. **uninstall.bat**: the game folder is as before (a file you edited is left with a message).
-- **Log:** `Cyberblock 1.0.0 loading`, `Minecraft says hello: mod cyberblock 1.0.0, Minecraft 26.3`, no `version mismatch`;
+- **Log:** `Cyberblock 2.0.0 loading`, `Minecraft says hello: mod cyberblock 2.0.0, Minecraft 26.3`, no `version mismatch`;
   Minecraft `launcher: opening cyberblock (autostart)` or `(button)`.
 - Also open the advancements screen (press the key you bound to Advancements in Controls, see F8 step 2): the Cyberblock tab
   lists six advancements.
@@ -2173,8 +2407,8 @@ lines and tuning hints. Where a package's check was overtaken by a later fix, th
   world drawn over the menu, then `off` on close.
 - [ ] **F13:** during an incoming call, T answers in Cyberpunk (log `phone: T goes to Cyberpunk ...`, via U's
   `Cyberblock_SetPhonePrompt`, merged) instead of opening Minecraft chat.
-- [ ] **F11:** the load line reads `Cyberblock 1.0.0 loading`. With M's `hello.ver`: `Minecraft says hello: mod
-  cyberblock 1.0.0, Minecraft 26.3`; an older mod gives `version mismatch: DLL 1.0.0, mod unknown`.
+- [ ] **F11:** the load line reads `Cyberblock 2.0.0 loading`. With M's `hello.ver`: `Minecraft says hello: mod
+  cyberblock 2.0.0, Minecraft 26.3`; an older mod gives `version mismatch: DLL 2.0.0, mod unknown`.
 
 #### Re-test 3 — package U (Cyberpunk UI bridge)
 - [ ] While On, trigger a tutorial popup that waits for input (for example a new-mechanic tutorial). Expect `ui: shown
@@ -2239,7 +2473,7 @@ lines and tuning hints. Where a package's check was overtaken by a later fix, th
 - [ ] **F11 launcher:** install the jar in a launcher profile with the JVM args from plan 1.13. Expected: the title screen
   shows "Play Cyberblock" above Singleplayer, and with `-Dcyberblock.autostart=true` the Night City world opens by itself
   once. latest.log: `launcher: opening cyberblock (autostart)`.
-- [ ] **F11 version:** with the 1.0.0 DLL, Cyberblock.log shows `Minecraft says hello: mod cyberblock 1.0.0, Minecraft
+- [ ] **F11 version:** with the 2.0.0 DLL, Cyberblock.log shows `Minecraft says hello: mod cyberblock 2.0.0, Minecraft
   26.3` and no version mismatch.
 - [ ] **F4:** glide with the elytra and swing the mouse mid-glide. Expected: latest.log's `glide started ... yaw A` and
   `glide ended ... yaw B` differ, and match the yaw change in the DLL flight summary.
@@ -2276,7 +2510,7 @@ lines and tuning hints. Where a package's check was overtaken by a later fix, th
 - [ ] **F11/F8:** Esc, **Minecraft Options...**, Controls, bind Advancements to a free key. Close the menus and press it:
   the advancements screen opens with the Cyberblock tab (six advancements). If the key does nothing while Active, ask W to
   add an Advancements button instead.
-- **Release zip on a clean machine (F11).** Unzip `dist/Cyberblock-1.0.0.zip`, run `install.bat` on a copy of the game
+- **Release zip on a clean machine (F11).** Unzip `dist/Cyberblock-2.0.0.zip`, run `install.bat` on a copy of the game
   folder: it must refuse while Cyberpunk runs, find the game through Steam (or accept a dropped folder with `-Game`), warn
   about missing frameworks, back up the saves once, never overwrite a foreign file, keep an existing `ReShade.fxh` and
   `ReShadePreset.ini`. The manifest it writes must be readable by `tools/install.py --remove`, and the manifest of
