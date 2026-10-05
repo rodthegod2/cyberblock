@@ -64,6 +64,11 @@ add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/fx_check.stamp
 	COMMENT "fx_check: compiling Cyberblock.fx")
 add_custom_target(fx_checked ALL DEPENDS ${CMAKE_BINARY_DIR}/fx_check.stamp)
 
+# Megaplan 9-F1: the compositor's per-frame upload at each Performance mode scale, on this PC's D3D12 GPU (tests/compositor_bench.cpp);
+# built only when asked for.
+add_executable(compositor_bench EXCLUDE_FROM_ALL tests/compositor_bench.cpp)
+target_link_libraries(compositor_bench PRIVATE d3d12 dxgi)
+
 # Manual link check against a running Minecraft (tests/link_smoke.cpp); built only when asked for.
 add_executable(link_smoke EXCLUDE_FROM_ALL tests/link_smoke.cpp src/link.cpp src/ws.cpp src/log.cpp)
 target_include_directories(link_smoke PRIVATE src)

@@ -1,5 +1,6 @@
 // Layer 2 in the DLL: parsing and converting Minecraft's events, the bounded event queue, and the dmg / npcs messages.
 #include "test.hpp"
+#include "compositor.h"
 #include "world.hpp"
 #include <algorithm>
 #include <array>
@@ -680,10 +681,43 @@ TEST(prefs_parse_every_field_and_ignore_others)
 {
 	size_t bad = 9;
 	const ViewPrefs p = prefs_of(json::parse(R"({"t":"prefs","dist":5,"shoulder":-0.3,"fov":90,"recenter":false,
-		"vdist":6.5,"stepup":false,"debug":true,"scale":0.75})"), {}, bad);
+		"vdist":6.5,"stepup":false,"debug":true,"scale":0.75,"zoom":2})"), {}, bad);
 	CHECK(bad == 0);
 	CHECK(approx(p.dist, 5) && approx(p.shoulder, -0.3) && approx(p.fov, 90) && !p.recenter && approx(p.vdist, 6.5) &&
-		  !p.stepup && p.debug);
+		  !p.stepup && p.debug && approx(p.scale, 0.75));
+}
+
+// Phase 9 (megaplan 9-F1): Performance mode's `prefs.scale` and the frame size it asks Minecraft for
+TEST(prefs_scale_is_clamped_into_half_to_full_kept_when_bad_and_back_to_full_on_hello)
+{
+	size_t bad = 0;
+	CHECK(approx(ViewPrefs{}.scale, 1.0));
+	ViewPrefs p = prefs_of(json::parse(R"({"scale":0.2})"), {}, bad);
+	CHECK(bad == 0 && approx(p.scale, 0.5));
+	p = prefs_of(json::parse(R"({"scale":3})"), ViewPrefs{.scale = 0.6}, bad);
+	CHECK(bad == 0 && approx(p.scale, 1.0));
+	p = prefs_of(json::parse(R"({"scale":"half","dist":4})"), ViewPrefs{.scale = 0.6}, bad);
+	CHECK(bad == 1 && approx(p.scale, 0.6) && approx(p.dist, 4));
+	p = prefs_of(json{{"scale", kNaN}}, ViewPrefs{.scale = 0.7}, bad);
+	CHECK(bad == 1 && approx(p.scale, 0.7));
+	p = prefs_of(json::parse(R"({"dist":4})"), ViewPrefs{.scale = 0.7}, bad); // a prefs without it keeps it
+	CHECK(bad == 0 && approx(p.scale, 0.7));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"prefs","scale":0.5})"));
+	CHECK(approx(cb::world::view_prefs().scale, 0.5));
+	cb::world::on_minecraft_message(json::parse(R"({"t":"hello","proto":1})"));
+	CHECK(approx(cb::world::view_prefs().scale, 1.0));
+	cb::world::events().clear();
+}
+
+TEST(the_frame_size_is_each_side_times_the_scale_rounded_half_up)
+{
+	CHECK(compositor::scaled_side(1920, 1.0) == 1920 && compositor::scaled_side(1080, 1.0) == 1080);
+	CHECK(compositor::scaled_side(1920, 0.5) == 960 && compositor::scaled_side(1080, 0.5) == 540);
+	CHECK(compositor::scaled_side(1366, 0.75) == 1025); // 1024.5 rounds up (tools/loadhost.py scaled_view agrees)
+	CHECK(compositor::scaled_side(2160, 0.3) == 1080 && compositor::scaled_side(2160, 7.0) == 2160); // clamped into 0.5..1
+	CHECK(compositor::scaled_side(1080, kNaN) == 1080);
+	CHECK(compositor::scaled_side(0, 0.5) == 0 && compositor::scaled_side(-5, 0.5) == 0); // no backbuffer yet
+	CHECK(compositor::scaled_side(1, 0.5) == 1);
 }
 
 TEST(prefs_numbers_are_clamped_into_their_ranges)

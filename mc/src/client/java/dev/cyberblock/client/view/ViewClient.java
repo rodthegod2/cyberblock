@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.client.HostLink;
+import dev.cyberblock.client.perf.Performance;
 import dev.cyberblock.client.settings.CyberblockSettingsScreen;
 import dev.cyberblock.client.settings.DebugFlags;
 import java.io.IOException;
@@ -70,11 +71,18 @@ public final class ViewClient {
 		}
 	}
 
-	/** Link thread (hello) and client thread (settings rows, tick). */
+	/** Performance mode changed (client.perf.Performance): the DLL hears the new frame scale in a whole prefs. */
+	public static void prefsChanged() {
+		send();
+	}
+
+	/** Link thread (hello) and client thread (settings rows, tick). From Phase 9 every prefs carries `scale` (megaplan 9-F1): eight fields. */
 	private static synchronized void send() {
 		boolean debug = DebugFlags.view();
 		sentDebug = debug;
-		HostLink.send(prefs.message(debug).toString());
+		JsonObject m = prefs.message(debug);
+		m.addProperty("scale", Performance.scale());
+		HostLink.send(m.toString());
 	}
 
 	private static ViewPrefs load() {

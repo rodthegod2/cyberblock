@@ -275,6 +275,7 @@ namespace cb::world
 		double vdist = 0.0;     // 0 = the game's own, else 3..14 m (View.reds picks the nearest vehicle camera preset)
 		bool stepup = true;     // the step-up assist (scripts, through the event `prefs`)
 		bool debug = false;     // Minecraft's `/cyberblock debug view` flag: `cam` carries `vdbg` while it is on
+		double scale = 1.0;     // Phase 9 (megaplan 9-F1, Performance mode): Minecraft's picture at 0.5..1 of the screen's size
 		bool operator==(const ViewPrefs &) const = default;
 	};
 
@@ -282,7 +283,8 @@ namespace cb::world
 	/// 0 but under the lower bound is raised to it); a field that is missing keeps its current value; a field that is not
 	/// finite or of the wrong type keeps its current value and is counted in `bad` (its name in `why`, the first one only);
 	/// `debug` is optional like every field (a `prefs` without it keeps the flag); any other field is ignored. Never throws.
-	/// shared/vectors.json `prefs_apply` (tools/cbmath.py apply_prefs) pins these rules.
+	/// shared/vectors.json `prefs_apply` (tools/cbmath.py apply_prefs) pins these rules. Phase 9 adds `scale`, clamped into
+	/// 0.5..1 by the same rules (compositor::frame_size asks Minecraft for a picture that much smaller; the effect upscales it).
 	ViewPrefs parse_prefs(const nlohmann::json &message, const ViewPrefs &current, size_t &bad, std::string &why);
 	/// The prefs in effect (on_minecraft_message keeps them). Any thread.
 	ViewPrefs view_prefs();

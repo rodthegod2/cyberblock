@@ -3,6 +3,7 @@ package dev.cyberblock.device;
 import com.google.gson.JsonObject;
 import dev.cyberblock.Cyberblock;
 import dev.cyberblock.WorldBridge;
+import dev.cyberblock.budget.ServerBudgets;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
 import dev.cyberblock.net.Permissions;
@@ -66,9 +67,10 @@ public final class DeviceModule {
 		DeviceMap.register();
 		Shops.register();
 		ReplicaRules.excludedCells = registry::excluded;
-		HostSessions.listen("devices", DeviceModule::devices);
-		HostSessions.listen("devstate", DeviceModule::devstate);
-		HostSessions.listen("devresult", DeviceModule::devresult);
+		// device updates under the server's tick budget (megaplan 9-F1), each host's in the order they came
+		HostSessions.listen("devices", ServerBudgets.devices(DeviceModule::devices));
+		HostSessions.listen("devstate", ServerBudgets.devices(DeviceModule::devstate));
+		HostSessions.listen("devresult", ServerBudgets.devices(DeviceModule::devresult));
 		HostSessions.onEnd(DeviceModule::end);
 		// 4B's device blocks and the vending screen's cyberblock:act devact (buy) come here (rule 0.13: built against wb/p4-b)
 		DeviceHooks.install(DeviceModule::hook);

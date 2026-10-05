@@ -45,7 +45,8 @@ public final class HostSession {
 	private int wanted;
 	private String district = "";
 	private int[] time = {0, 0};
-	private long upCount, downCount, droppedDown;
+	private long upCount, downCount, droppedDown, heldOver;
+	private int mostInTick;
 	private long sampledUp, sampledDown;
 	private double upRate, downRate;
 
@@ -211,17 +212,27 @@ public final class HostSession {
 		return this.down.takeResync();
 	}
 
-	/** End of the server tick: every queued DOWN message goes out in order. */
+	/** End of the server tick: the queued DOWN messages go out in order, at most DownQueue.PER_TICK (the rest next tick). */
 	void flush() {
 		if (this.state == State.NONE) {
 			this.down.clear();
 			return;
 		}
 
-		this.down.drain(json -> {
+		long before = this.downCount;
+		this.heldOver += this.down.drain(json -> {
 			this.downCount++;
 			this.wire.accept(json);
-		});
+		}, DownQueue.PER_TICK);
+		this.mostInTick = Math.max(this.mostInTick, (int) (this.downCount - before));
+	}
+
+	/** Since the last call: {messages held over to a next tick (summed over ticks), most sent in one tick}; then it starts over. */
+	long[] takeDownStats() {
+		long[] s = {this.heldOver, this.mostInTick};
+		this.heldOver = 0L;
+		this.mostInTick = 0;
+		return s;
 	}
 
 	int queued() {

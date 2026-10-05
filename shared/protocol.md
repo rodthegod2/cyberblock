@@ -1914,6 +1914,38 @@ Phase 8 examples, Minecraft to Cyberpunk:
 {"t":"glitch","seconds":0}
 ```
 
+## Phase 9 (Performance mode)
+
+Same wire, same conventions; `proto` stays 1. Plan: `docs/superpowers/plans/2026-10-04-multiplayer-megaplan.md` section 1.9 (row 9) and task 9-F1. One
+field crosses the DLL wire: Performance mode's frame scale. Everything else of the performance pass (the figure cap and distance LOD on each client, the
+server's tick budgets for replica placements, device updates and the DOWN queue) is Minecraft and server only.
+
+### Phase 9: Minecraft → Cyberpunk
+| `t` | fields | when |
+|---|---|---|
+| `prefs` | **extends Phase Q:** adds `scale` (0.5..1, default 1): Performance mode's frame scale. The DLL asks Minecraft for a picture this fraction of the screen's size on each side (the `view` it sends: each side of the backbuffer times `scale`, rounded half up, at least 1); Minecraft renders and exports at that size and Cyberblock.fx upscales it | with every `prefs` (from Phase 9 on Minecraft sends all eight fields), and when the Performance mode setting changes |
+
+### Phase 9 semantics and limits
+- **Defaults:** `scale` 1 (Minecraft at the screen's own size) on every link and again after each `hello`, like the Phase Q fields.
+- **Validation (receiver):** the DLL clamps `scale` into 0.5..1 and keeps the current value when it is missing, not finite or of the wrong type (counted as a
+  bad field, never ending the link), the Phase Q rules. A DLL from before Phase 9 ignores the field (Phase Q: "ignores any other field"): Minecraft then
+  renders at full size.
+- **The picture:** the DLL's `view` carries the scaled size, so Minecraft's window, its rendering and the frame export (`Local\CyberblockFrame`) all
+  shrink together and the slot's `width` and `height` say the size. Cyberblock.fx samples Minecraft's three layers by texture coordinate, so a smaller
+  picture covers the screen as before: the colour bilinear (sharpened by the effect's `UpscaleSharpen` where the picture is smaller than the screen and
+  the neighbours are all Minecraft), the depth point-sampled.
+- **Log lines:** the DLL logs `prefs: ... scale <s>` and, when the size changes, `compositor: Minecraft renders at <s> of the screen (<w>x<h> for
+  <bw>x<bh>)`; its 5 s `memory:` line ends with `uploads: <n> a second at <w>x<h>, staging <ms> ms each`. Minecraft logs `frame export: <w>x<h>, <fps>
+  fps, readback <ms> ms avg (p95 <ms> ms), copy <ms> ms avg (p95 <ms> ms)` every 30 s while it exports.
+
+### Phase 9 examples
+One message per line (JSON Lines): a `prefs` in Performance mode at three quarters of the screen's size.
+
+Phase 9 examples, Minecraft to Cyberpunk:
+```jsonl
+{"t":"prefs","dist":3.2,"shoulder":0.45,"fov":0,"recenter":true,"vdist":0,"stepup":true,"debug":false,"scale":0.75}
+```
+
 ## Shared memory `Local\CyberblockFrame`
 Exactly the reference `FrameExporter` layout (see its Javadoc) with magic `0x52464243` ("CBFR"). The
 reference flags (zero-to-one depth, bottom-up rows, reversed-Z) are kept.

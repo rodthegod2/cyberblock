@@ -2,6 +2,8 @@
 // ReShade add-on half of Cyberblock.dll: uploads Minecraft's latest frame (shared memory "Local\CyberblockFrame") into
 // textures that Cyberblock.fx composites into Cyberpunk's picture against Cyberpunk's depth buffer.
 #pragma once
+#include <algorithm>
+#include <cmath>
 #include "view.hpp"
 
 namespace compositor
@@ -31,6 +33,20 @@ namespace compositor
 	void set_screen_fx(float shake_x, float shake_y, float shake_roll, float portal_warp);
 	/// Cyberpunk's backbuffer size as ReShade sees it (0 until the first frame).
 	void backbuffer_size(int &width, int &height);
+	/// The size Minecraft is asked to render and export at (the link's `view`): the backbuffer's, times Performance mode's
+	/// `prefs.scale` (megaplan 9-F1; 0.5..1, world::view_prefs). Cyberblock.fx samples Minecraft's layers by texture coordinate, so
+	/// a smaller picture is upscaled to the screen (bilinear, plus its UpscaleSharpen). Logs 'compositor: Minecraft renders at
+	/// <scale> of the screen (<w>x<h> for <bw>x<bh>)' when the size changes. Game thread, every frame.
+	void frame_size(int &width, int &height);
+	/// Each side times `scale` (clamped into 0.5..1; not a number: 1), rounded half up, at least 1; 0 stays 0 (no backbuffer yet).
+	/// tools/loadhost.py scaled_view is the same rule. Pure.
+	inline int scaled_side(int side, double scale)
+	{
+		if (side <= 0)
+			return 0;
+		const double s = std::isnan(scale) ? 1.0 : std::clamp(scale, 0.5, 1.0);
+		return std::max(1, static_cast<int>(std::floor(static_cast<double>(side) * s + 0.5)));
+	}
 	/// A Cyberpunk menu is open and passed through (no Minecraft screen replaced it; re-test 3 plan section 1.10): the
 	/// effect's `cb_menu` makes the Composite pass skip Minecraft's world, and the Final pass still adds the overlay (now
 	/// only Minecraft's frame around the menu). Every frame from the game thread; a change is logged.

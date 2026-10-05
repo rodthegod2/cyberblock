@@ -1,6 +1,7 @@
 package dev.cyberblock;
 
 import com.google.gson.JsonObject;
+import dev.cyberblock.budget.ServerBudgets;
 import dev.cyberblock.cyber.CyberData;
 import dev.cyberblock.net.HostSession;
 import dev.cyberblock.net.HostSessions;
@@ -103,9 +104,10 @@ public final class WorldModule {
 			WorldBridge.hello(s);
 			PlayerEffects.hello(s);
 		});
-		listen("ground", WorldBridge::solid);
-		listen("unground", WorldBridge::unsolid);
-		listen("clear", (s, m) -> WorldBridge.clearSolid(s));
+		// the replica's placements under the server's tick budget (megaplan 9-F1): a host's whole street spreads over a few ticks
+		HostSessions.listen("ground", ServerBudgets.replica(guarded("ground", WorldBridge::solid)));
+		HostSessions.listen("unground", ServerBudgets.replica(guarded("unground", WorldBridge::unsolid)));
+		HostSessions.listen("clear", ServerBudgets.replica(guarded("clear", (s, m) -> WorldBridge.clearSolid(s))));
 		listen("npcs", ProxyManager::update);
 		listen("dmg", HostDamage::update);
 		listen("mobdmg", MobWar::damage);
@@ -127,13 +129,17 @@ public final class WorldModule {
 
 	/** A handler that throws is logged (at most every 100th time), never fatal: a bad message never ends a session. */
 	private static void listen(final String t, final BiConsumer<HostSession, JsonObject> handler) {
-		HostSessions.listen(t, (s, m) -> {
+		HostSessions.listen(t, guarded(t, handler));
+	}
+
+	private static BiConsumer<HostSession, JsonObject> guarded(final String t, final BiConsumer<HostSession, JsonObject> handler) {
+		return (s, m) -> {
 			try {
 				handler.accept(s, m);
 			} catch (RuntimeException e) {
 				warn("bad " + t + " message: " + e);
 			}
-		});
+		};
 	}
 
 	/** Server thread: the session ended (disconnect, link lost, role revoked, server stop): nothing of its Night City stays. */

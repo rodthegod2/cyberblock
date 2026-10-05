@@ -93,6 +93,8 @@ uniform int DebugView < ui_type = "combo"; ui_items = "Composite\0Night City dep
 uniform bool Reproject < ui_label = "Re-project to Cyberpunk's camera"; ui_tooltip = "Move Minecraft's (slightly older) frame onto Cyberpunk's current camera."; > = true;
 uniform float PosePrediction < ui_type = "drag"; ui_min = -2.0; ui_max = 3.0; ui_step = 0.05; ui_label = "Pose prediction (frames)";
 	ui_tooltip = "Extrapolate Cyberpunk's camera by this many frames before re-projecting."; > = 0.0;
+uniform float UpscaleSharpen < ui_type = "drag"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.01; ui_label = "Sharpen a scaled Minecraft";
+	ui_tooltip = "Performance mode has Minecraft render below the screen's size and this effect upscale it: sharpen it back a little (0: plain bilinear)."; > = 0.5;
 uniform bool TestFrames < ui_label = "Show test frames without the link";
 	ui_tooltip = "For cp/plugin/tests/replay_frame.py: composite the shared-memory frame as rendered (no re-projection), even while Cyberblock is off in game."; > = false;
 
@@ -173,6 +175,30 @@ float mc_linear(float d)
 float2 mc_uv(float2 ndc)
 {
 	return (cb_mc_flags & 2) ? ndc * 0.5 + 0.5 : float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+}
+
+/// Minecraft's world colour at `muv`, upscaled to the screen: bilinear, and where Minecraft's picture is smaller than the screen
+/// (Performance mode, megaplan 9-F1: prefs.scale) sharpened by UpscaleSharpen, limited to its neighbours' range (no halos) and only
+/// where the four neighbours are covered too (an edge against Night City keeps its plain blend; EdgeSoftness smooths it).
+float4 world_sample(float2 muv)
+{
+	float4 c = tex2Dlod(sWorld, float4(muv, 0, 0));
+	const int2 size = tex2Dsize(sWorld);
+	const float upscale = BUFFER_HEIGHT / float(max(size.y, 1));
+	if (UpscaleSharpen > 0.0 && upscale > 1.05 && c.a > 0.99)
+	{
+		const float2 texel = 1.0 / float2(max(size, 1));
+		const float4 r = tex2Dlod(sWorld, float4(muv + float2(texel.x, 0.0), 0, 0)), l = tex2Dlod(sWorld, float4(muv - float2(texel.x, 0.0), 0, 0));
+		const float4 d = tex2Dlod(sWorld, float4(muv + float2(0.0, texel.y), 0, 0)), u = tex2Dlod(sWorld, float4(muv - float2(0.0, texel.y), 0, 0));
+		if (min(min(r.a, l.a), min(d.a, u.a)) > 0.99)
+		{
+			const float3 lo = min(c.rgb, min(min(r.rgb, l.rgb), min(d.rgb, u.rgb)));
+			const float3 hi = max(c.rgb, max(max(r.rgb, l.rgb), max(d.rgb, u.rgb)));
+			const float k = UpscaleSharpen * saturate(upscale - 1.0);
+			c.rgb = clamp(c.rgb + (c.rgb * 4.0 - (r.rgb + l.rgb + d.rgb + u.rgb)) * 0.25 * k, lo, hi);
+		}
+	}
+	return c;
 }
 
 /// Night City's raw depth to metres along its view axis, per CB_HOST_DEPTH_MODE.
@@ -297,7 +323,7 @@ void PS_Composite(float4 pos : SV_Position, float2 uv : TEXCOORD, out float4 out
 	if (cb_full)
 	{
 		// premultiplied world over the fill; McInfo stays 0 (no Minecraft cover, so no glow, contact shadow or edge softening)
-		const float4 w = tex2D(sWorld, mc_uv(float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0)));
+		const float4 w = world_sample(mc_uv(float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0)));
 		outColor = float4(w.rgb + float3(0.03, 0.035, 0.05) * (1.0 - w.a), 1.0);
 		return;
 	}
@@ -351,7 +377,7 @@ void PS_Composite(float4 pos : SV_Position, float2 uv : TEXCOORD, out float4 out
 			zm = zg;
 		}
 	}
-	const float4 world = inside ? tex2D(sWorld, muv) : 0.0;
+	const float4 world = inside ? world_sample(muv) : 0.0;
 	if (!Reproject)
 		zm = mc_linear(tex2D(sDepth, muv).r);
 

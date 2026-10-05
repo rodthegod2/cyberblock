@@ -114,9 +114,9 @@ namespace
 		if (prefs == g_prefs)
 			return;
 		g_prefs = prefs;
-		cb::log::info("prefs: dist %.2f shoulder %.2f fov %.0f recenter %s vdist %.1f stepup %s debug %s", prefs.dist,
+		cb::log::info("prefs: dist %.2f shoulder %.2f fov %.0f recenter %s vdist %.1f stepup %s debug %s scale %.2f", prefs.dist,
 					  prefs.shoulder, prefs.fov, prefs.recenter ? "on" : "off", prefs.vdist, prefs.stepup ? "on" : "off",
-					  prefs.debug ? "on" : "off");
+					  prefs.debug ? "on" : "off", prefs.scale);
 	}
 
 	void set_level_k(int k)
@@ -845,6 +845,7 @@ namespace cb::world
 		number("shoulder", out.shoulder, -1.0, 1.0, false);
 		number("fov", out.fov, 50.0, 110.0, true);
 		number("vdist", out.vdist, 3.0, 14.0, true);
+		number("scale", out.scale, 0.5, 1.0, false); // Phase 9 (megaplan 9-F1): Performance mode
 		boolean("recenter", out.recenter);
 		boolean("stepup", out.stepup);
 		boolean("debug", out.debug);

@@ -6,13 +6,16 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 /**
- * One session's DOWN queue (megaplan section 1.3): bounded at 2048 messages, flushed every server tick in order. The newest
+ * One session's DOWN queue (megaplan section 1.3): bounded at 2048 messages, flushed every server tick in order, at most PER_TICK a tick
+ * (megaplan 9-F1: a burst spreads over the next ticks). The newest
  * {@code mobs} and {@code proj} replace a queued one of the same type (in its place); past the bound the oldest droppable message
  * ({@code block}, {@code blocks}, {@code mobs}, {@code proj}; else the oldest of all) goes and a blocks resync is owed. Server
  * thread only.
  */
 final class DownQueue {
 	static final int BOUND = 2048;
+	/** Most messages one session sends in a server tick (megaplan 9-F1); the rest wait for the next tick, in order. */
+	static final int PER_TICK = 128;
 	private static final Set<String> REPLACED = Set.of("mobs", "proj");
 	private static final Set<String> DROPPABLE = Set.of("block", "blocks", "mobs", "proj");
 	private final List<Item> items = new ArrayList<>();
@@ -67,11 +70,23 @@ final class DownQueue {
 
 	/** Every queued message in order, then the queue is empty. */
 	void drain(final Consumer<String> out) {
-		List<Item> batch = List.copyOf(this.items);
-		this.items.clear();
+		this.drain(out, Integer.MAX_VALUE);
+	}
+
+	/**
+	 * At most `max` queued messages, oldest first; the rest stay queued for the next call (still replaced and bounded). Returns how many
+	 * stayed.
+	 */
+	int drain(final Consumer<String> out, final int max) {
+		int n = Math.min(Math.max(max, 0), this.items.size());
+		List<Item> head = this.items.subList(0, n);
+		List<Item> batch = List.copyOf(head);
+		head.clear();
 		for (Item it : batch) {
 			out.accept(it.json);
 		}
+
+		return this.items.size();
 	}
 
 	int size() {
