@@ -11,12 +11,20 @@ journal, map and pause are all Minecraft-styled, while Cyberpunk's own HUD stays
 cars, TNT blows up Night City, mobs fight NCPD, you glide over megabuildings with an elytra, hack gangers with quickhack
 chips, and install cyberware (Mantis Blades, Sandevistan, Cyberdeck and more) in ripperdoc slots.
 
-<!-- screenshot: docs/media/hero.png - Steve's hand and hotbar in a Night City street with the Minecraft radar and quest panel -->
-<!-- screenshot: docs/media/quickhacks.png - a quickhack upload beam and the impact on a ganger -->
-<!-- screenshot: docs/media/ui.png - the Minecraft-style dialogue choices and interaction prompt -->
-<!-- screenshot: docs/media/sandevistan.png - the Sandevistan screen effect -->
-<!-- screenshot: docs/media/vehicle-tpp.png - Steve seated in a third-person vehicle camera -->
-*Screenshots pending: they will be added under `docs/media/` before the first release.*
+### Screenshots (development builds)
+These come from automated test runs of the Minecraft side, with a simulated Cyberpunk host feeding it: what a friend who
+plays with Minecraft only sees. In-game shots of Minecraft composited over Cyberpunk will follow.
+
+| | |
+|---|---|
+| ![Night City people as Minecraft figures: Ripper Doc, Fixer, Cyberpsycho, Arasaka and more](docs/media/npc-skins.png) | ![A street with cars, a bike, NPCs, hostile outlines and the Hacker Van](docs/media/street-figures.png) |
+| NPC skins by role and faction | Cars, figures and hostile outlines |
+| ![Device blocks: neon lamps, cameras, vending machines, traffic lights, doors, turrets, gates, screens](docs/media/device-blocks.png) | ![Hostile gang members outlined in red through a wall](docs/media/hostile-outline.png) |
+| Night City's devices as blocks | Hostiles seen through walls |
+| ![The Breach Protocol minigame](docs/media/breach-protocol.png) | ![The Vehicle Panel: lock doors, kill engine, force brake, remote start, jam](docs/media/vehicle-panel.png) |
+| Breach Protocol | Remote car hacking |
+| ![Arriving in the Afterlife hub](docs/media/afterlife-hub.png) | ![The Hacker Van's drone view with the hack target](docs/media/drone-view.png) |
+| The Afterlife hub | Hacker in the Van: the drone |
 
 > **Not affiliated.** Cyberblock is an unofficial fan project. It is **not affiliated with, endorsed by or connected to
 > CD PROJEKT RED or Mojang Studios / Microsoft**. Cyberpunk 2077 is a trademark of CD PROJEKT S.A.; Minecraft is a trademark

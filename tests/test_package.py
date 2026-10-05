@@ -189,7 +189,8 @@ def test_notice_and_readme_carry_the_disclaimer_and_the_placeholders():
     notice, readme = (REPO / "NOTICE.md").read_text(encoding="utf-8"), (REPO / "README.md").read_text(encoding="utf-8")
     for text in (notice, readme):
         assert "not affiliated" in text.lower() and "CD PROJEKT" in text and "Mojang" in text
-    assert "<!-- screenshot:" in readme and "Screenshots pending" in readme
+    shots = re.findall(r"\]\((docs/media/[^)]+)\)", readme)
+    assert shots and all((REPO / shot).is_file() for shot in shots), shots
     assert "No Minecraft or Cyberpunk 2077 game files" in notice
 
 
