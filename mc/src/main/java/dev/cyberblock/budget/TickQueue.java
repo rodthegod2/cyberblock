@@ -13,9 +13,10 @@ import java.util.function.Consumer;
  * Work that hosts' messages bring, done at most {@code budget} units a server tick (megaplan task 9-F1). Each owner's jobs run in the
  * order they came; a job runs at once when its owner has nothing waiting and the tick has budget left, else it waits for the next
  * tick, where the waiting jobs run owner by owner in turn (round robin) while the budget lasts. A job is never split: one bigger than
- * what is left still runs whole, and the overdraft is taken from the next ticks, so the work averages out at the budget. Past
- * {@code maxQueued} waiting jobs an owner's job runs at once (the budget never makes a queue grow without end). Pure: no game in here;
- * server thread only.
+ * what is left still runs whole, and the overdraft is taken from the next ticks, so the work averages out at the budget; the overdraft
+ * stops at {@code MAX_OVERDRAFT_TICKS} ticks' budget, so an overload cannot starve every owner long after it ends. When an owner already
+ * has {@code maxQueued} jobs waiting, its oldest waiting job runs at once and the new one goes to the back (the queue never grows
+ * without end, and the owner's order still holds). Pure: no game in here; server thread only.
  */
 public final class TickQueue {
 	/** One job: does its work and says how many units it used. */
@@ -27,11 +28,14 @@ public final class TickQueue {
 	private record Waiting(int estimate, Job job) {
 	}
 
+	/** The overdraft never goes past this many ticks' budget. */
+	static final int MAX_OVERDRAFT_TICKS = 4;
+
 	private final int budget, maxQueued;
 	private final Consumer<RuntimeException> failed;
 	private final Map<UUID, ArrayDeque<Waiting>> waiting = new LinkedHashMap<>();
 	private int left;
-	/** Since the last report: jobs and units that had to wait, the longest an owner's queue got, jobs run past a full queue. */
+	/** Since the last report: jobs and units that had to wait, the longest an owner's queue got, waiting jobs run early because a queue was full. */
 	private long deferredJobs, deferredUnits, overflowed;
 	private int longest;
 
@@ -47,14 +51,20 @@ public final class TickQueue {
 		return this.budget;
 	}
 
-	/** A new job of `estimate` units for this owner: run now, or queued behind the owner's waiting jobs. */
+	/**
+	 * A new job of `estimate` units for this owner: run now, or queued behind the owner's waiting jobs. When the owner's queue is full,
+	 * its oldest waiting job runs now (past the budget) to make room, so the owner's jobs still run in the order they came.
+	 */
 	public void offer(final UUID owner, final int estimate, final Job job) {
 		ArrayDeque<Waiting> q = this.waiting.get(owner);
-		boolean queueFull = q != null && q.size() >= this.maxQueued;
-		if ((q == null || q.isEmpty()) && this.left > 0 || queueFull) {
-			this.overflowed += queueFull ? 1 : 0;
-			this.left -= this.run(job);
+		if ((q == null || q.isEmpty()) && this.left > 0) {
+			this.spend(this.run(job));
 			return;
+		}
+
+		if (q != null && q.size() >= this.maxQueued) {
+			this.overflowed++;
+			this.spend(this.run(q.poll().job()));
 		}
 
 		if (q == null) {
@@ -78,7 +88,7 @@ public final class TickQueue {
 			for (UUID owner : owners) {
 				ArrayDeque<Waiting> q = this.waiting.get(owner);
 				if (q != null && !q.isEmpty() && this.left > 0) {
-					this.left -= this.run(q.poll().job());
+					this.spend(this.run(q.poll().job()));
 					ran = true;
 				}
 			}
@@ -89,6 +99,10 @@ public final class TickQueue {
 				it.remove();
 			}
 		}
+	}
+
+	private void spend(final int units) {
+		this.left = Math.max(this.left - units, -this.budget * MAX_OVERDRAFT_TICKS);
 	}
 
 	private int run(final Job job) {
@@ -121,7 +135,7 @@ public final class TickQueue {
 		return n;
 	}
 
-	/** Since the last call: {jobs that waited, their units, the longest queue, jobs run at once past a full queue}; then it starts over. */
+	/** Since the last call: {jobs that waited, their units, the longest queue, waiting jobs run early to make room in a full queue}; then it starts over. */
 	public long[] takeStats() {
 		long[] s = {this.deferredJobs, this.deferredUnits, this.longest, this.overflowed};
 		this.deferredJobs = this.deferredUnits = this.overflowed = 0L;

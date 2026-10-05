@@ -24,7 +24,7 @@ public final class ServerBudgets {
 	public static final int REPLICA_CELLS_PER_TICK = 4096;
 	/** Device updates a tick, over every host: a `devices` list counts its entries, a devstate or devresult 1. */
 	public static final int DEVICE_UPDATES_PER_TICK = 64;
-	/** Past this many waiting messages a host's next one runs at once (the budget never grows a queue without end). */
+	/** Past this many waiting messages a host's oldest waiting one runs at once to make room (a queue never grows without end). */
 	static final int MAX_QUEUED = 512;
 	static final int REPORT_TICKS = 1200;
 	private static final TickQueue replica = new TickQueue(REPLICA_CELLS_PER_TICK, MAX_QUEUED, e -> failed("replica", e));

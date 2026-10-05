@@ -64,18 +64,44 @@ class TickQueueTest {
 	}
 
 	@Test
-	void aFullQueueRunsAtOnceAndAnEndedOwnerIsDropped() {
+	void aFullQueueRunsItsOldestJobToMakeRoomAndKeepsTheOrder() {
 		TickQueue q = new TickQueue(1, 2, e -> {});
 		q.offer(A, 1, this.job("a0", 1));
 		q.offer(A, 1, this.job("a1", 1));
 		q.offer(A, 1, this.job("a2", 1));
-		q.offer(A, 1, this.job("now", 1)); // two waiting already: runs at once
-		assertEquals(List.of("a0", "now"), this.ran);
+		q.offer(A, 1, this.job("a3", 1)); // two waiting already: a1 runs now, a3 waits behind a2
+		assertEquals(List.of("a0", "a1"), this.ran);
+		assertEquals(2, q.queued());
+		assertArrayEquals(new long[] {3, 3, 2, 1}, q.takeStats());
+		q.tick(); // -1 + 1 = 0: nothing
+		q.tick();
+		q.tick();
+		assertEquals(List.of("a0", "a1", "a2", "a3"), this.ran);
+	}
+
+	@Test
+	void anEndedOwnersWaitingWorkIsDropped() {
+		TickQueue q = new TickQueue(1, 50, e -> {});
+		q.offer(A, 1, this.job("a0", 1));
+		q.offer(A, 1, this.job("a1", 1));
 		q.drop(A);
 		q.tick();
-		assertEquals(List.of("a0", "now"), this.ran, "the ended session's work is gone");
-		long[] stats = q.takeStats();
-		assertArrayEquals(new long[] {2, 2, 2, 1}, stats);
+		assertEquals(List.of("a0"), this.ran, "the ended session's work is gone");
+		assertEquals(0, q.queued());
+	}
+
+	@Test
+	void theOverdraftHasAFloor() {
+		TickQueue q = new TickQueue(10, 50, e -> {});
+		q.offer(A, 1000, this.job("huge", 1000)); // would be 99 ticks of debt; stops at MAX_OVERDRAFT_TICKS
+		q.offer(B, 1, this.job("b", 1));
+		for (int i = 0; i < TickQueue.MAX_OVERDRAFT_TICKS; i++) {
+			q.tick();
+		}
+
+		assertEquals(List.of("huge"), this.ran);
+		q.tick();
+		assertEquals(List.of("huge", "b"), this.ran);
 	}
 
 	@Test
