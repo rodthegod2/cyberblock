@@ -128,6 +128,8 @@ public class Cyberblock implements ModInitializer {
 		dev.cyberblock.mode.ModeWiring.init();
 		// Phase 9S: the settings screen's server half (its snapshot act and ui, /cyberblock difficulty) (megaplan 9-S1)
 		dev.cyberblock.settings.ServerSettings.init();
+		// Phase 9B: daily world backups and /cyberblock backup now (megaplan 9-B1)
+		dev.cyberblock.backup.Backups.init();
 		LOG.info("cyberblock loaded");
 	}
 
