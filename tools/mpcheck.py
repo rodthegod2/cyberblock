@@ -780,6 +780,15 @@ def refused(log: LogFile, name: str, mod: str, message: str) -> bool:
     return bool(shaken and re.search(rf"{name} lost connection", log.text()[shaken.end():]))
 
 
+def overflow_kicked(log: LogFile, name: str) -> bool:
+    """The server kicked `name` for an overflowing link: the kick text in its `lost connection` line, or, when the client closed first
+    (the server then logs only `Disconnected`), the server's `relay: <name> kicked (overflow)` line followed by the lost connection."""
+    if log.find(rf"{name} lost connection: Cyberblock: too many messages from your Cyberpunk link"):
+        return True
+    kicked = log.find(rf"relay: {name} kicked \(overflow\)")
+    return bool(kicked and re.search(rf"{name} lost connection", log.text()[kicked.end():]))
+
+
 def scenario_flood(env: Env, rep: Report) -> None:
     server = env.server("flood")
     client = env.client("CbHost1", join=server.port)
@@ -791,7 +800,7 @@ def scenario_flood(env: Env, rep: Report) -> None:
         flooder.go.set()
         rep.step("the rate limit drops `ground` messages and says so", lambda: server.log.wait(r"relay: CbHost1 dropped ground x \d+", T_EFFECT))
         rep.step("a link that keeps overflowing is ended and its player kicked",
-                 lambda: server.log.wait(r"CbHost1 lost connection: Cyberblock: too many messages from your Cyberpunk link", FLOOD_S + T_EFFECT))
+                 lambda: poll(lambda: overflow_kicked(server.log, "CbHost1"), FLOOD_S + T_EFFECT, T_POLL, "the overflow kick"))
         rep.step("the session ended", lambda: server.log.wait(r"session: CbHost1 ended", T_EFFECT))
         rep.step("the server is still answering", lambda: server.rcon("list").lstrip().startswith("There are"))
     finally:
